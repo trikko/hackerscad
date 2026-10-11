@@ -10,6 +10,12 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Systems to build (for trying a fix on one)"
+        type: choice
+        options: [all, linux, windows, macos]
+        default: all
 
 # a new push to a branch stops the run still going on it
 concurrency:
@@ -18,6 +24,7 @@ concurrency:
 
 jobs:
   linux:
+    if: contains(fromJSON('["all", "linux"]'), inputs.platforms || 'all')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -75,6 +82,7 @@ jobs:
   # Windows is cross-built on Linux (llvm-mingw, LDC, MSYS2 CLANG64 packages)
   # and tried with Wine, as on a developer's machine
   windows:
+    if: contains(fromJSON('["all", "windows"]'), inputs.platforms || 'all')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -137,7 +145,7 @@ jobs:
 
   # macOS minutes cost ten times the Linux ones: not on pull requests
   macos:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && contains(fromJSON('["all", "macos"]'), inputs.platforms || 'all')
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -168,15 +176,10 @@ jobs:
       # the bundle is only tried here, by no one else: open it, unpacked from
       # the zip just made, and keep a screenshot
       - name: Try the package
-        timeout-minutes: 8
+        timeout-minutes: 5
         run: |
           ditto -x -k dist/*.zip try
           tests/screenshot.sh macos try/hackerscad.app/Contents/MacOS/hackerscad
-          # experiment: the same with each GTK renderer (a strip of the 3D
-          # view is not drawn on screen)
-          for r in ngl gl cairo; do
-            GSK_RENDERER=$r tests/screenshot.sh macos-$r try/hackerscad.app/Contents/MacOS/hackerscad || true
-          done
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -185,7 +188,7 @@ jobs:
         if: always()
         with:
           name: screenshot-macos
-          path: "*-macos*.png"
+          path: "*-macos.png"
 
   # every push to main replaces the "nightly" pre-release with its packages
   nightly:
