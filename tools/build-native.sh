@@ -77,10 +77,10 @@ if ! [ -f "$di" ] || [ "$(cat "$di.stamp" 2>/dev/null)" != "$sum" ]; then
     printf '#include <manifold/manifoldc.h>\n' > "$out/manifoldc.c"
     "$dmd" -c -o- -P-nostdinc -P-I"$out/cstub" -P-I"$msrc/bindings/c/include" "$out/manifoldc.c" -Hf="$out/manifoldc.di"
     # the .di generator drops opaque struct typedefs: declare them again
-    opaque="$(sed -nE 's/^typedef struct (\w+) \1;$/extern (C) struct \1;/p' "$msrc/bindings/c/include/manifold/types.h")"
+    opaque="$(sed -nE 's/^typedef struct ([A-Za-z0-9_]+) \1;$/extern (C) struct \1;/p' "$msrc/bindings/c/include/manifold/types.h")"
     # and drop the compiler's own macros (__FLT_DENORM_MIN__ and the like):
     # some are numbers D cannot represent
     { echo "module hackerscad.kernel.manifold.c;"; echo "$opaque"
-      grep -vE '^\s*enum [^=]*\b__[A-Za-z0-9_]+__ =' "$out/manifoldc.di"; } > "$di"
+      grep -vE '^[[:space:]]*enum [^=]*[^A-Za-z0-9_]__[A-Za-z0-9_]+__ =' "$out/manifoldc.di"; } > "$di"
     echo "$sum" > "$di.stamp"
 fi
