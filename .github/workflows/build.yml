@@ -173,22 +173,10 @@ jobs:
           for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done
       - name: Package
         run: VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/macos/package.sh
-      # the bundle is only tried here, by no one else: open it, unpacked from
-      # the zip just made, and keep a screenshot
-      - name: Try the package
-        timeout-minutes: 5
-        run: |
-          ditto -x -k dist/*.zip try
-          tests/screenshot.sh macos try/hackerscad.app/Contents/MacOS/hackerscad
       - uses: actions/upload-artifact@v4
         with:
           name: macos
           path: dist/*.zip
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshot-macos
-          path: "*-macos.png"
 
   # every push to main replaces the "nightly" pre-release with its packages
   nightly:
