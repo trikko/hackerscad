@@ -2204,6 +2204,8 @@ private:
                     // the list as the user would see it, in the window
                     editor.grabFocus();
                     completion.open();
+                    if (auto sel = arg("select"))
+                        completion.select(sel);
                 }
                 reply(j, null);
                 return;

@@ -81,27 +81,38 @@ final class EditorCompletion
     /// of their own, missing from the window's screenshot).
     void snapshotOver(Snapshot snap, Widget window)
     {
+        import gdk.c.functions : gdk_popup_get_position_x, gdk_popup_get_position_y;
+        import gdk.c.types : GdkPopup;
         import graphene.point : Point;
+        import gtk.native : Native;
+        auto top = cast(Native) window;
+        if (top is null)
+            return;
+        double wx, wy;
+        top.getSurfaceTransform(wx, wy);
         foreach (p; [sig, list])
         {
-            if (!p.getVisible() || p.getWidth() <= 0)
+            if (!p.getVisible() || p.getWidth() <= 0 || p.getSurface() is null)
                 continue;
-            double x, y;
-            Rectangle r;
-            p.getPointingTo(r);
-            view.translateCoordinates(window, r.x, r.y, x, y);
-            if (p is sig)
-                y -= p.getHeight();
-            else
-                y += r.height;
-            snap.save();
+            // where GTK put the popup's surface, and the popover inside it
+            auto popup = cast(GdkPopup*) p.getSurface()._cPtr;
+            double sx, sy;
+            p.getSurfaceTransform(sx, sy);
             Point at;
-            at.x = cast(float) x;
-            at.y = cast(float) y;
+            at.x = cast(float) (gdk_popup_get_position_x(popup) + sx - wx);
+            at.y = cast(float) (gdk_popup_get_position_y(popup) + sy - wy);
+            snap.save();
             snap.translate(at);
             new WidgetPaintable(p).snapshot(snap, p.getWidth(), p.getHeight());
             snap.restore();
         }
+    }
+
+    /// Selects the entry `label` when the list opens next (for the control
+    /// socket: a screenshot with a chosen entry). Call after open().
+    void select(string label)
+    {
+        pendingSelect = label;   // applied by the refresh open() schedules
     }
 
     /// What the list would show at the cursor (for the control socket).
@@ -228,6 +239,7 @@ private:
         fill();
         place(list, current.from);
         list.popup();
+        selectPending();
     }
 
     void fill()
@@ -259,6 +271,7 @@ private:
             rows.append(row);
         }
         rows.selectRow(rows.getRowAtIndex(0));
+        selectPending();
     }
 
     /// The part of a signature worth showing in the list: its result type.
@@ -419,6 +432,22 @@ private:
     }
 
     /// Scrolls the list so that row `i` (of `n`, all the same height) shows.
+    string pendingSelect;
+
+    void selectPending()
+    {
+        if (pendingSelect.length == 0 || !list.getVisible())
+            return;
+        foreach (i, c; current.items[0 .. $ < 80 ? $ : 80])
+            if (c.label == pendingSelect)
+            {
+                rows.selectRow(rows.getRowAtIndex(cast(int) i));
+                ensureVisible(cast(int) i, cast(int) (current.items.length < 80 ? current.items.length : 80));
+                pendingSelect = null;
+                return;
+            }
+    }
+
     void ensureVisible(int i, int n)
     {
         auto adj = scroller.getVadjustment();

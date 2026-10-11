@@ -192,7 +192,8 @@ JSONValue[] toolList()
             ~ "line and col (1-based). Gives the proposals with their signature and documentation, and inside a call "
             ~ "the callee's signature and the argument the cursor is on.",
             `"line": {"type": "integer"}, "col": {"type": "integer"}, `
-            ~ `"show": {"type": "boolean", "description": "also move the cursor there and open the list in the window"}`, `[]`),
+            ~ `"show": {"type": "boolean", "description": "also move the cursor there and open the list in the window"}, `
+            ~ `"select": {"type": "string", "description": "with show, the entry to select in the list"}`, `[]`),
         tool("hcad_gui_cheatsheet", "Opens the cheatsheet window in the user's GUI (every function and object in "
             ~ "one line, and \"how do I…\" recipes), filtered by query when given: to show the user where to look.",
             `"query": {"type": "string"}`, `[]`),
