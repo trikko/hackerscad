@@ -36,7 +36,13 @@ reference is [LANGUAGE.md](LANGUAGE.md).
   line tool: `./hackerscad.AppImage hscad check model.hcad`.
 - **Windows:** unzip `hackerscad-<version>-windows-x86_64.zip` anywhere and
   run `hackerscad\bin\hscad-gui.exe` (the command line tool is `hscad.exe`
-  next to it).
+  next to it). It is not signed: if SmartScreen stops it, choose "More info"
+  and then "Run anyway".
+- **macOS** (Apple Silicon): unzip `hackerscad-<version>-macos-arm64.zip`,
+  move `hackerscad.app` to Applications and clear the attributes macOS puts on
+  downloaded files (the quarantine), or it says the app is damaged (it is not signed by an
+  Apple developer): `xattr -cr /Applications/hackerscad.app`.
+  The command line tool is `hackerscad.app/Contents/Resources/bin/hscad`.
 - **From source** (Linux, macOS): install a D compiler (LDC), dub,
   OpenCascade 7.9, GTK 4, libadwaita, GtkSourceView 5, TBB, CMake and Ninja,
   then:

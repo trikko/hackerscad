@@ -35,7 +35,9 @@ only source of truth, so it diffs, versions and reviews like any other code.
 
 ## Quickstart
 
-Download the AppImage (Linux) or the zip (Windows) from the releases, then:
+Download the package for your system from the releases.
+
+**Linux:** the AppImage runs on its own.
 
 ```sh
 chmod +x hackerscad-*-x86_64.AppImage
@@ -43,7 +45,20 @@ chmod +x hackerscad-*-x86_64.AppImage
 ./hackerscad-*-x86_64.AppImage hscad check model.hcad  # the command line tool
 ```
 
-On Windows, unzip it anywhere and run `hackerscad\bin\hscad-gui.exe`.
+**Windows:** unzip it anywhere and run `hackerscad\bin\hscad-gui.exe` (the
+command line tool is `hscad.exe` next to it). The program is not signed: if
+SmartScreen stops it, choose "More info" and then "Run anyway".
+
+**macOS** (Apple Silicon): unzip it, move `hackerscad.app` to Applications
+and clear the attributes macOS puts on downloaded files (the quarantine). The
+app is not signed by an Apple developer, so without this macOS says it is
+damaged or cannot be opened:
+
+```sh
+xattr -cr /Applications/hackerscad.app
+open /Applications/hackerscad.app                                    # the application
+/Applications/hackerscad.app/Contents/Resources/bin/hscad check model.hcad  # the command line tool
+```
 
 A new file starts from a small example: a clip that keeps bags of biscuits
 closed. Drag its sliders, edit its code, right-click its faces.
