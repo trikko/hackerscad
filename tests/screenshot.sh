@@ -24,7 +24,8 @@ if [ -f "window-$name.png" ]; then
     sleep 1
     case "$(uname -s)" in
         Linux)  import -window root "screen-$name.png" ;;
-        Darwin) screencapture -x "screen-$name.png" ;;
+        # macOS: GTK may still be drawing a second after the first frame
+        Darwin) sleep 2; screencapture -x "screen-$name.png" ;;
         *)      powershell -NoProfile -Command "
                     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
                     \$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
