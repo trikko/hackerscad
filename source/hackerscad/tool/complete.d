@@ -660,8 +660,19 @@ private void signatureAt(ref Context ctx, string before, ref CompletionResult r)
     // a named argument being typed decides which one is active
     auto lastArg = args[args.lastIndexOf(',') + 1 .. $];
     auto colon = lastArg.indexOf(':');
+    // after a named argument only named ones can follow: an empty argument
+    // will be the first one not given yet, a positional one is none
     if (colon < 0 && args[0 .. args.length - lastArg.length].indexOf(':') >= 0)
-        r.activeParam = -1;   // after a named argument only named ones can follow
+    {
+        r.activeParam = -1;
+        if (lastArg.strip.length == 0)
+            foreach (k, p; params)
+                if (args.indexOf(p ~ ":") < 0)
+                {
+                    r.activeParam = cast(int) k;
+                    break;
+                }
+    }
     if (colon > 0)
     {
         auto n = lastArg[0 .. colon].strip;
