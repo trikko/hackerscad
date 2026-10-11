@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/x-hcad">
+    <sub-class-of type="text/plain"/>
+    <comment>hackerscad model</comment>
+    <glob pattern="*.hcad"/>
+  </mime-type>
+</mime-info>

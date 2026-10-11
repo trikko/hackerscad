@@ -1,0 +1,100 @@
+module hardware;
+
+import threads : threadedRod;
+
+/// Metric screw sizes (ISO 4762 socket head cap screws, ISO 4032 nuts,
+/// ISO 7089 washers) with the holes to print or drill for them.
+struct Screw
+{
+    string name;
+    Length d;           /// nominal diameter
+    Length pitch;       /// coarse thread pitch
+    Length tap;         /// pilot hole for tapping or self-tapping
+    Length clearance;   /// clearance hole
+    Length head;        /// head diameter
+    Length headHeight;
+    Length key;         /// hex key size (across flats)
+    Length nut;         /// nut width across flats
+    Length nutHeight;
+    Length washer;      /// washer outer diameter
+    Length insert;      /// hole for a heat-set threaded insert
+    Length insertDepth;
+}
+
+immutable M2 = Screw("M2", 2.mm, 0.4.mm, 1.6.mm, 2.4.mm, 3.8.mm, 2.mm, 1.5.mm, 4.mm, 1.6.mm, 5.mm, 3.2.mm, 4.mm);
+immutable M2_5 = Screw("M2.5", 2.5.mm, 0.45.mm, 2.05.mm, 2.9.mm, 4.5.mm, 2.5.mm, 2.mm, 5.mm, 2.mm, 6.mm, 3.6.mm, 5.mm);
+immutable M3 = Screw("M3", 3.mm, 0.5.mm, 2.5.mm, 3.4.mm, 5.5.mm, 3.mm, 2.5.mm, 5.5.mm, 2.4.mm, 7.mm, 4.2.mm, 5.7.mm);
+immutable M4 = Screw("M4", 4.mm, 0.7.mm, 3.3.mm, 4.5.mm, 7.mm, 4.mm, 3.mm, 7.mm, 3.2.mm, 9.mm, 5.6.mm, 8.1.mm);
+immutable M5 = Screw("M5", 5.mm, 0.8.mm, 4.2.mm, 5.5.mm, 8.5.mm, 5.mm, 4.mm, 8.mm, 4.7.mm, 10.mm, 6.4.mm, 9.5.mm);
+immutable M6 = Screw("M6", 6.mm, 1.mm, 5.mm, 6.6.mm, 10.mm, 6.mm, 5.mm, 10.mm, 5.2.mm, 12.mm, 8.mm, 12.7.mm);
+immutable M8 = Screw("M8", 8.mm, 1.25.mm, 6.8.mm, 9.mm, 13.mm, 8.mm, 6.mm, 13.mm, 6.8.mm, 16.mm, 9.7.mm, 12.7.mm);
+
+/// Hexagonal prism standing on XY, flats parallel to the X axis.
+Solid hexPrism(Length acrossFlats, Length h)
+{
+    auto slab = box(acrossFlats * 2, acrossFlats, h);
+    return slab & slab.rotate(z: 60) & slab.rotate(z: 120);
+}
+
+/// Socket head cap screw. The underside of the head lies on z = 0: the head
+/// grows upwards and the shank downwards, so the screw drops into a hole.
+/// threaded: true models the ISO thread (slower); otherwise the shank is plain.
+Solid screw(Screw s, Length length, bool socket = true, bool threaded = false)
+{
+    auto shank = threaded
+        ? threadedRod(s.d, s.pitch, length).move(z: -length)
+        : cylinder(d: s.d, h: length)
+            .chamfer(edges.filter(e => e.isCircle && e.mid.z < 1.mm), d: s.d * 0.1)
+            .move(z: -length);
+    auto head = cylinder(d: s.head, h: s.headHeight)
+        .fillet(edges.filter(e => e.isCircle && e.mid.z > s.headHeight / 2), r: s.d * 0.12);
+    if (socket)
+        head -= hexPrism(s.key, s.headHeight).move(z: s.headHeight * 0.45);
+    return head + shank;
+}
+
+/// Hex nut standing on z = 0, with the corners chamfered on both faces.
+/// threaded: true cuts the ISO thread in the hole.
+Solid nut(Screw s, bool threaded = false)
+{
+    // a cone narrow at the face and wider than the corners at mid height
+    auto lower = cone(d1: s.nut * 0.95, d2: s.nut * 1.4, h: s.nutHeight / 2);
+    auto upper = lower.mirror(Z).move(z: s.nutHeight);
+    auto body = hexPrism(s.nut, s.nutHeight) & (lower + upper);
+    if (threaded)
+        return body - threadedRod(s.d, s.pitch, s.nutHeight + 2 * s.pitch, chamfer: false).move(z: -s.pitch);
+    return body - cylinder(d: s.d, h: 3 * s.nutHeight, center: true);
+}
+
+/// Flat washer standing on z = 0.
+Solid washer(Screw s) => cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.clearance, h: s.d, center: true);
+
+/// A hole to subtract, with its top on z = 0 going down `depth`:
+/// "clearance" (the screw passes), "tap" (pilot hole for the thread),
+/// "insert" (heat-set insert), "counterbore" (clearance with room for the
+/// head) or "countersink" (for flat heads).
+Solid hole(Screw s, Length depth, string kind = "clearance")
+{
+    switch (kind)
+    {
+    case "clearance":
+        return cylinder(d: s.clearance, h: depth + 0.01.mm).move(z: -depth);
+    case "tap":
+        return cylinder(d: s.tap, h: depth + 0.01.mm).move(z: -depth);
+    case "insert":
+        return cylinder(d: s.insert, h: s.insertDepth).move(z: -s.insertDepth)
+            + cylinder(d: s.tap, h: depth).move(z: -depth);
+    case "counterbore":
+        return cylinder(d: s.head + 0.6.mm, h: s.headHeight + 0.2.mm).move(z: -s.headHeight - 0.2.mm)
+            + cylinder(d: s.clearance, h: depth).move(z: -depth);
+    case "countersink":
+        return cone(d1: s.clearance, d2: s.d * 2, h: s.d / 2).move(z: -s.d / 2)
+            + cylinder(d: s.clearance, h: depth).move(z: -depth);
+    default:
+        assert(false, "hole kind must be clearance, tap, insert, counterbore or countersink, not " ~ kind);
+    }
+}
+
+/// A pocket to trap a nut, from z = 0 going down `depth` (with a little clearance).
+Solid nutTrap(Screw s, Length depth, Length clearance = 0.2.mm) =>
+    hexPrism(s.nut + 2 * clearance, depth + 0.01.mm).move(z: -depth);

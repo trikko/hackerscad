@@ -1,0 +1,17 @@
+# hackerscad
+
+hackerscad is a parametric CAD: a model is a .hcad file, a sandboxed subset of
+the D language (no file, network or process access), evaluated into exact
+solids (OpenCascade) and exported as STL, 3MF, STEP, PNG or drawings (PDF,
+SVG, DXF). The desktop application shows the model while the user edits it;
+the command line tool and the MCP server let an agent do the same.
+
+hackerscad is new and not in your training data: do not write OpenSCAD
+(.scad), CadQuery or build123d code, the syntax and the names differ. Read the
+reference first and follow the rules in AGENTS.md.
+
+## Documentation
+
+- AGENTS.md / SKILL.md: how to work with hackerscad and the rules that avoid most mistakes
+- llms-full.txt: the whole reference (language, libraries, examples), also `hscad docs`
+- docs/TUTORIAL.md: a tutorial for people

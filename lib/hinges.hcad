@@ -1,0 +1,47 @@
+module hinges;
+
+/// The two leaves of a hinge, printed in place: they come out of the
+/// printer already joined and turn around the X axis.
+struct Hinge
+{
+    Solid fixed;    /// the leaf on -Y, with the pin
+    Solid moving;   /// the leaf on +Y, turning around the pin
+}
+
+/// A print-in-place hinge along X, centred on the origin, leaves lying flat
+/// on z = 0 and the axis at z = thickness. `knuckles` alternate between
+/// the leaves (odd numbers keep it symmetric).
+Hinge hinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3.mm, int knuckles = 5,
+    Length clearance = 0.4.mm)
+{
+    assert(knuckles >= 3, "a hinge needs at least 3 knuckles");
+    immutable outer = 2 * thickness;           // knuckle diameter
+    immutable pin = outer * 0.45;
+    immutable segment = length / knuckles;
+
+    /// Knuckle i with the web that joins it to its leaf (side -1 or +1).
+    Solid knuckle(int i, int side)
+    {
+        immutable x0 = -length / 2 + i * segment + (i > 0 ? clearance / 2 : 0.mm);
+        immutable x1 = -length / 2 + (i + 1) * segment - (i < knuckles - 1 ? clearance / 2 : 0.mm);
+        immutable reach = outer / 2 + clearance;
+        auto web = box(x1 - x0, reach, thickness).move(x: (x0 + x1) / 2, y: side * reach / 2);
+        return cylinder(d: outer, h: x1 - x0).rotate(y: 90).move(x: x0, z: thickness) + web;
+    }
+
+    Solid a = box(length, width, thickness).move(y: -width / 2 - outer / 2 - clearance);
+    Solid b = box(length, width, thickness).move(y: width / 2 + outer / 2 + clearance);
+    foreach (i; 0 .. knuckles)
+    {
+        if (i % 2 == 0)
+            a += knuckle(i, -1);
+        else
+            b += knuckle(i, 1);
+    }
+    // the pin belongs to the fixed leaf and runs through the moving knuckles with clearance
+    a += cylinder(d: pin, h: length - 2 * clearance).rotate(y: 90).move(x: -length / 2 + clearance, z: thickness);
+    foreach (i; 0 .. knuckles)
+        if (i % 2 == 1)
+            b -= cylinder(d: pin + 2 * clearance, h: length).rotate(y: 90).move(x: -length / 2, z: thickness);
+    return Hinge(a, b);
+}

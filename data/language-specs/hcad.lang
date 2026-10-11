@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Syntax highlighting for hackerscad .hcad files (a D subset). -->
+<language id="hcad" name="hackerscad" version="2.0" _section="Source">
+  <metadata>
+    <property name="globs">*.hcad</property>
+    <property name="line-comment-start">//</property>
+    <property name="block-comment-start">/*</property>
+    <property name="block-comment-end">*/</property>
+  </metadata>
+  <styles>
+    <style id="comment" name="Comment" map-to="def:comment"/>
+    <style id="string" name="String" map-to="def:string"/>
+    <style id="keyword" name="Keyword" map-to="def:keyword"/>
+    <style id="type" name="Type" map-to="def:type"/>
+    <style id="attribute" name="Attribute" map-to="def:preprocessor"/>
+    <style id="number" name="Number" map-to="def:decimal"/>
+    <style id="unit" name="Unit" map-to="def:special-constant"/>
+    <style id="builtin" name="Builtin" map-to="def:builtin"/>
+    <style id="constant" name="Constant" map-to="def:constant"/>
+  </styles>
+  <definitions>
+    <context id="nested-comment" style-ref="comment">
+      <start>/\+</start>
+      <end>\+/</end>
+      <include>
+        <context ref="nested-comment"/>
+      </include>
+    </context>
+    <context id="hcad">
+      <include>
+        <context ref="def:c-like-comment"/>
+        <context ref="def:c-like-comment-multiline"/>
+        <context ref="nested-comment"/>
+        <context id="string" style-ref="string" end-at-line-end="false">
+          <start>"</start>
+          <end>"</end>
+          <include>
+            <context id="dollar-escape" style-ref="def:special-char">
+              <match>\\\$</match>
+            </context>
+            <context ref="def:escape"/>
+            <context id="interpolation" style-ref="def:special-char">
+              <start>\$\(</start>
+              <end>\)</end>
+              <include>
+                <context ref="hcad"/>
+              </include>
+            </context>
+          </include>
+        </context>
+        <context id="wysiwyg" style-ref="string">
+          <start>`|r"</start>
+          <end>`|"</end>
+        </context>
+        <context id="attribute" style-ref="attribute">
+          <match>@[A-Za-z_][A-Za-z0-9_]*</match>
+        </context>
+        <context id="unit" style-ref="unit">
+          <match>(?&lt;=[0-9])\.(mm|cm|m|inch|deg|rad)\b</match>
+        </context>
+        <context id="number" style-ref="number">
+          <match>\b(0[xX][0-9A-Fa-f_]+|[0-9][0-9_]*(\.[0-9][0-9_]*)?([eE][-+]?[0-9]+)?)\b</match>
+        </context>
+        <context id="keywords" style-ref="keyword">
+          <keyword>module</keyword><keyword>import</keyword><keyword>enum</keyword>
+          <keyword>immutable</keyword><keyword>const</keyword><keyword>auto</keyword>
+          <keyword>struct</keyword><keyword>return</keyword><keyword>if</keyword>
+          <keyword>else</keyword><keyword>foreach</keyword><keyword>foreach_reverse</keyword>
+          <keyword>for</keyword><keyword>while</keyword><keyword>break</keyword>
+          <keyword>continue</keyword><keyword>switch</keyword><keyword>case</keyword>
+          <keyword>default</keyword><keyword>unittest</keyword><keyword>assert</keyword>
+          <keyword>private</keyword><keyword>public</keyword><keyword>in</keyword>
+          <keyword>is</keyword><keyword>void</keyword>
+        </context>
+        <context id="types" style-ref="type">
+          <keyword>int</keyword><keyword>long</keyword><keyword>double</keyword>
+          <keyword>float</keyword><keyword>bool</keyword><keyword>string</keyword>
+          <keyword>Length</keyword><keyword>Angle</keyword><keyword>Area</keyword>
+          <keyword>Volume</keyword><keyword>Vec2</keyword><keyword>Vec3</keyword>
+          <keyword>Solid</keyword><keyword>Edge</keyword><keyword>Face</keyword>
+        </context>
+        <context id="constants" style-ref="constant">
+          <keyword>true</keyword><keyword>false</keyword><keyword>null</keyword>
+          <keyword>X</keyword><keyword>Y</keyword><keyword>Z</keyword>
+          <keyword>PI</keyword><keyword>nothing</keyword>
+        </context>
+        <context id="builtins" style-ref="builtin">
+          <keyword>box</keyword><keyword>cylinder</keyword><keyword>cone</keyword>
+          <keyword>sphere</keyword><keyword>edges</keyword><keyword>faces</keyword>
+          <keyword>writeln</keyword><keyword>vec</keyword>
+        </context>
+      </include>
+    </context>
+  </definitions>
+</language>

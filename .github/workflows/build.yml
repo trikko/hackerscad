@@ -1,0 +1,203 @@
+# Builds, tests and packs hackerscad on Linux, Windows and macOS, takes a
+# screenshot of the application on each, and publishes the screenshots on the
+# "screenshots" branch (shown in the README). Tags (v*) attach the packages to
+# a release draft.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ubuntu 24.04 with OpenCascade built from source: the layers are cached,
+      # so OpenCascade is compiled again only when the Containerfile changes
+      - uses: docker/setup-buildx-action@v3
+      - name: Build environment
+        uses: docker/build-push-action@v6
+        with:
+          context: packaging/linux
+          file: packaging/linux/Containerfile
+          tags: hackerscad-appimage
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src hackerscad-appimage sh -c '
+            git config --global --add safe.directory "*"
+            dub test :core --compiler=ldc2 &&
+            dub build --compiler=ldc2 &&
+            for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done'
+          sudo rm -rf build bin .dub
+
+      - name: AppImage
+        run: ENGINE=docker SKIP_IMAGE_BUILD=1 VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/linux/build-appimage.sh
+
+      - name: Screenshot
+        timeout-minutes: 3
+        # mutter (GNOME's window manager) draws the window decorations
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb mutter imagemagick dbus-x11 libgl1-mesa-dri
+          # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
+          export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
+          xvfb-run -a -s "-screen 0 1440x900x24" bash -c \
+            "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.AppImage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-linux
+          path: "*-linux.png"
+
+  # Windows is cross-built on Linux (llvm-mingw, LDC, MSYS2 CLANG64 packages)
+  # and tried with Wine, as on a developer's machine
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine64 wine p7zip-full libarchive-tools \
+            libglib2.0-bin librsvg2-bin imagemagick cmake ninja-build python3 zip
+      - uses: actions/cache@v4
+        with:
+          path: build/win/dl
+          key: win-downloads-${{ hashFiles('tools/setup-win-cross.sh') }}
+      - name: Toolchain and libraries
+        run: ./tools/setup-win-cross.sh
+      - name: Package
+        run: |
+          export PATH="$(ls -d $PWD/build/win/ldc2-*-linux-x86_64)/bin:$PATH"
+          VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/windows/package.sh
+      - name: Try it with Wine
+        run: |
+          export WINEPREFIX=$PWD/build/win/prefix WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=-all
+          for f in examples/*.hcad; do wine dist/hackerscad/bin/hscad.exe check "$f" || exit 1; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+
+  # the zip on a real Windows machine: the examples, and a screenshot
+  windows-test:
+    needs: windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+      # the runner has no OpenGL 3.3: Mesa's software renderer, next to the exe
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          install: unzip
+          pacboy: mesa:p
+      - name: Unpack
+        run: |
+          unzip -q *.zip -d out
+          cp $MINGW_PREFIX/bin/opengl32.dll $MINGW_PREFIX/bin/libgallium_wgl.dll out/hackerscad/bin/
+          for dll in $(ldd $MINGW_PREFIX/bin/libgallium_wgl.dll | awk '{print $3}' | grep -i "^$MINGW_PREFIX/bin/"); do
+            cp -n "$dll" out/hackerscad/bin/
+          done
+      - name: Check the examples
+        run: for f in examples/*.hcad; do out/hackerscad/bin/hscad.exe check "$f" || exit 1; done
+      - name: Screenshot
+        timeout-minutes: 3
+        # llvmpipe: Mesa's default here (D3D12 on top of WARP) does not work
+        run: GALLIUM_DRIVER=llvmpipe tests/screenshot.sh windows out/hackerscad/bin/hscad-gui.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-windows
+          path: "*-windows.png"
+
+  # macOS minutes cost ten times the Linux ones: not on pull requests
+  macos:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: brew install ldc dub opencascade tbb gtk4 libadwaita gtksourceview5 cmake ninja dylibbundler librsvg imagemagick
+      - name: Test
+        run: |
+          dub test :core --compiler=ldc2
+          dub build --compiler=ldc2
+          for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done
+      - name: Package
+        run: VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/macos/package.sh
+      - name: Screenshot
+        timeout-minutes: 3
+        run: tests/screenshot.sh macos dist/hackerscad.app/Contents/MacOS/hackerscad
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-macos
+          path: "*-macos.png"
+
+  # Screenshots are published on the "screenshots" branch, shown in the README
+  screenshots:
+    needs: [linux, windows-test, macos]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: screenshot-*
+          merge-multiple: true
+          path: screenshots
+      - name: Push to the screenshots branch
+        working-directory: screenshots
+        run: |
+          # if the OS could not capture the screen, use the one taken by hackerscad
+          for os in linux macos windows; do
+            [ -f screen-$os.png ] || [ ! -f window-$os.png ] || cp window-$os.png screen-$os.png
+          done
+          git init -q -b screenshots
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Screenshots from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" screenshots
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows-test, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "{linux,windows,macos}"
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/*

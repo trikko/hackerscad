@@ -1,0 +1,111 @@
+// A fluted knob for a potentiometer with a 6 mm D shaft, printable
+// standing up as it is (no overhangs, no supports).
+//
+// Try it:
+//  - drag the sliders in Parameters, or pick a preset;
+//  - edit the code: the view updates as you type;
+//  - right-click a face or an edge to add a fillet, a hole, a pocket...
+//    the GUI writes the code for you.
+module knob;
+
+import std.shapes;
+import hardware : M3, hole;
+
+// @param puts a slider in the Parameters panel; @preset groups values under a name
+@param("Diameter", min: 16.mm, max: 50.mm)
+@preset("small", 18.mm) @preset("large", 36.mm)
+immutable diameter = 26.mm;
+
+@param("Height", min: 12.mm, max: 30.mm)
+@preset("small", 16.mm) @preset("large", 20.mm)
+immutable height = 17.mm;
+
+@param("Flutes", min: 0, max: 30)
+@preset("small", 10) @preset("large", 18)
+immutable flutes = 14;
+
+@param("Shaft clearance", min: 0.mm, max: 0.5.mm)
+immutable clearance = 0.15.mm;
+
+// the potentiometer shaft: 6 mm, with a flat leaving 4.5 mm
+immutable shaftD = 6.mm;
+immutable shaftFlat = 4.5.mm;
+immutable shaftDepth = 10.mm;    // how far the shaft enters the knob
+
+// the shape: a skirt at the bottom, a body narrowing towards the top
+immutable r = diameter / 2;
+immutable skirtR = r + 2.5.mm;
+immutable skirtH = 1.6.mm;
+immutable topR = r * 0.86;
+immutable taper = atan((r - topR) / (height - skirtH));
+
+/// A D-shaped prism: a cylinder with one side cut flat (towards +X).
+Solid dShape(Length d, Length flat, Length h) =>
+    cylinder(d: d, h: h) & box(d, d, h).move(x: flat - d);
+
+/// The body as a profile (radius, height) turned around the axis.
+Solid body()
+{
+    auto profile = polygon([
+        vec(0.mm, 0.mm),
+        vec(skirtR, 0.mm),
+        vec(skirtR, skirtH),
+        vec(r, skirtH + 2.5.mm),     // 45° up to the body: printable
+        vec(topR, height),
+        vec(0.mm, height),
+    ]);
+    return profile
+        .revolve(axis: Y)
+        .rotate(x: 90.deg);
+}
+
+// @part marks a body to show and export; without a colour it is mint
+@part
+Solid knob()
+{
+    auto k = body()
+        .fillet(edges.of(faces.top), r: 1.5.mm)
+        .chamfer(edges.of(faces.bottom), d: 0.4.mm);
+
+    // a shallow dish on top
+    immutable dish = 4 * r;
+    k -= sphere(r: dish).move(z: height + dish - 0.8.mm);
+
+    // flutes: grooves leaning with the taper, half a step away from +X
+    // so the pointer and the set screw fall between two of them
+    immutable flute = 2 * PI * r / flutes * 0.55;
+    foreach (i; 0 .. flutes)
+        k -= cylinder(d: flute, h: height, center: true)
+            .rotate(y: -taper)
+            .move(x: (r + topR) / 2 + flute * 0.2, z: height / 2 + 5.mm)
+            .rotate(z: (i + 0.5) * 360.deg / flutes);
+
+    // the pointer: a groove across the top, in line with the flat of the shaft
+    immutable pointer = topR * 0.6;
+    k -= box(pointer, 1.2.mm, 3.mm)
+        .move(x: topR - 2.5.mm - pointer / 2, z: height - 1.6.mm);
+
+    // the shaft hole, ending in a cone so it prints without a bridge
+    immutable hd = shaftD + 2 * clearance;
+    k -= dShape(hd, shaftFlat + clearance, shaftDepth);
+    k -= cone(d1: hd, d2: 0.mm, h: hd / 2).move(z: shaftDepth);
+
+    // an M3 set screw pressing on the flat (hole() comes from the hardware library)
+    k -= hole(M3, skirtR, "tap")
+        .rotate(y: 90.deg)
+        .move(x: skirtR, z: 6.mm);
+
+    return k;
+}
+
+// a reference part: drawn see-through to check the fit, but left out of
+// STL/3MF/STEP exports
+@part("slategray", alpha: 0.4, export: false)
+Solid shaft() => dShape(shaftD, shaftFlat, shaftDepth + 12.mm).move(z: -12.mm);
+
+// unittests run after every evaluation: their output goes to the console
+unittest
+{
+    assert(height >= shaftDepth + 5.mm, "the shaft would come out of the top: make the knob taller");
+    writeln("knob: $(format("%.1f", knob.volume / 1.cm ^^ 3)) cm³");
+}

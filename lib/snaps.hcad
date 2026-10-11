@@ -1,0 +1,24 @@
+module snaps;
+
+/// Cantilever snap-fit hooks. The hook stands on z = 0 and leans out along
+/// +X; print it standing so the layers run along the beam.
+
+/// A hook: a flexible beam `length` long with a barb `overhang` deep at the
+/// top. `lead` is the slope that pushes it aside when inserting.
+Solid snapHook(Length length = 10.mm, Length thickness = 1.5.mm, Length width = 5.mm, Length overhang = 1.mm,
+    Angle lead = 30.deg)
+{
+    immutable barb = overhang / tan(lead);     // height of the sloped face
+    auto profile = polygon([vec(0.mm, 0.mm), vec(thickness, 0.mm), vec(thickness, length),
+                            vec(thickness + overhang, length), vec(thickness, length + barb),
+                            vec(0.mm, length + barb)]);
+    // drawn in the XY plane (y up the beam), then stood up
+    return profile.extrude(width).move(z: -width / 2).rotate(x: 90).move(y: 0.mm);
+}
+
+/// The slot a hook clicks into, to subtract from the mating wall: a window
+/// `clearance` larger than the barb.
+Solid snapSlot(Length thickness = 1.5.mm, Length width = 5.mm, Length overhang = 1.mm, Length wall = 2.mm,
+    Length clearance = 0.3.mm) =>
+    box(thickness + overhang + 2 * clearance, width + 2 * clearance, wall + 1.mm)
+        .move(x: (thickness + overhang) / 2, z: -0.5.mm);

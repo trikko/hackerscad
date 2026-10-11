@@ -1,0 +1,52 @@
+# Build environment for the Linux AppImage: an old enough glibc (Ubuntu 24.04,
+# glibc 2.39) so the AppImage runs on current distributions, with OpenCascade
+# built from source (Ubuntu ships 7.6) and the official LDC binaries.
+FROM ubuntu:24.04
+
+ARG LDC_VERSION=1.42.0
+ARG OCCT_TAG=V7_9_3
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build git curl ca-certificates xz-utils file pkg-config \
+        libgtk-4-dev libadwaita-1-dev libgtksourceview-5-dev libtbb-dev \
+        libfreetype-dev libfontconfig-dev libgl-dev libx11-dev \
+        desktop-file-utils librsvg2-bin squashfs-tools zsync \
+    && rm -rf /var/lib/apt/lists/*
+
+# D compiler and dub
+RUN curl -fsSL https://github.com/ldc-developers/ldc/releases/download/v${LDC_VERSION}/ldc2-${LDC_VERSION}-linux-x86_64.tar.xz \
+        | tar -xJ -C /opt && ln -s /opt/ldc2-${LDC_VERSION}-linux-x86_64 /opt/ldc
+ENV PATH=/opt/ldc/bin:$PATH
+
+# OpenCascade: only the modules hackerscad uses (no Draw, no OpenGL driver)
+RUN git clone --depth 1 --branch ${OCCT_TAG} https://github.com/Open-Cascade-SAS/OCCT.git /tmp/occt \
+    && cmake -S /tmp/occt -B /tmp/occt-build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release -DINSTALL_DIR=/opt/occt \
+        -DBUILD_LIBRARY_TYPE=Shared -DBUILD_DOC_Overview=OFF \
+        -DBUILD_MODULE_ApplicationFramework=OFF -DBUILD_MODULE_Draw=OFF \
+        -DBUILD_MODULE_DataExchange=ON -DBUILD_MODULE_Visualization=ON \
+        -DBUILD_MODULE_ModelingAlgorithms=ON -DBUILD_MODULE_ModelingData=ON \
+        -DUSE_FREETYPE=ON -DUSE_OPENGL=OFF -DUSE_GLES2=OFF -DUSE_TK=OFF -DUSE_TBB=OFF -DUSE_VTK=OFF \
+        -DUSE_DRACO=OFF -DUSE_RAPIDJSON=OFF -DUSE_FREEIMAGE=OFF -DUSE_OPENVR=OFF -DUSE_FFMPEG=OFF \
+    && ninja -C /tmp/occt-build install \
+    && rm -rf /tmp/occt /tmp/occt-build
+ENV OCCT_INCLUDE=/opt/occt/include/opencascade
+ENV LIBRARY_PATH=/opt/occt/lib
+ENV LD_LIBRARY_PATH=/opt/occt/lib
+
+# AppImage tools
+RUN curl -fsSL -o /usr/local/bin/linuxdeploy \
+        https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
+    && curl -fsSL -o /usr/local/bin/linuxdeploy-plugin-gtk.sh \
+        https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh \
+    && curl -fsSL -o /usr/local/bin/appimagetool \
+        https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+    && chmod +x /usr/local/bin/linuxdeploy /usr/local/bin/linuxdeploy-plugin-gtk.sh /usr/local/bin/appimagetool
+ENV APPIMAGE_EXTRACT_AND_RUN=1
+
+# the SVG loader of gdk-pixbuf (symbolic icons are SVG) and the Adwaita icons
+RUN apt-get update && apt-get install -y --no-install-recommends librsvg2-common adwaita-icon-theme \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src

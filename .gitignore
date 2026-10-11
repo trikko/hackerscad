@@ -1,0 +1,34 @@
+# build output
+.dub/
+build/
+bin/
+dist/
+*.o
+*.obj
+*.pdb
+docs.json
+__dummy.html
+# downloaded by tools/build-native.sh
+third_party/manifold/
+# left by tests and by running the application
+untitled.hcad
+window-*.png
+screen-*.png
+# benchmark executables
+bench/bench-*
+!bench/*.d
+!bench/*.hcad
+!bench/*.png
+# examples kept out of the repository: for development, or work in progress
+examples/dev/
+examples/scissors.hcad
+examples/peeler.hcad
+examples/peeler_julienne.hcad
+examples/phone_stand.hcad
+examples/*.3mf
+# development notes
+docs/PIANO.md
+docs/STILI.md
+docs/BUG_PROFILI_UNITI.md
+docs/CLEAN_ROOM.md
+bench/

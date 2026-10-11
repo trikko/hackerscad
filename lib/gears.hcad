@@ -1,0 +1,82 @@
+module gears;
+
+/// Involute spur gears and racks. `m` is the module (pitch diameter / teeth):
+/// two gears mesh when they have the same module and pressure angle, with
+/// their centres `centerDistance(m, z1, z2)` apart.
+
+Length pitchDiameter(Length m, int teeth) => m * teeth;
+Length outsideDiameter(Length m, int teeth) => m * (teeth + 2);
+Length rootDiameter(Length m, int teeth) => m * (teeth - 2.5);
+Length centerDistance(Length m, int teeth1, int teeth2) => m * (teeth1 + teeth2) / 2;
+
+/// Angle of the involute of a circle of radius rb at radius r.
+double involute(Length rb, Length r)
+{
+    immutable t = sqrt((r / rb) ^^ 2 - 1);
+    return t - atan(t) / 1.rad;
+}
+
+/// The outline of a spur gear centred on the origin, a tooth on +X.
+/// backlash thins the teeth (measured on the pitch circle) so that printed
+/// gears do not bind.
+Profile gearProfile(Length m, int teeth, Angle pressure = 20.deg, Length backlash = 0.1.mm, int steps = 6)
+{
+    assert(teeth >= 6, "a gear needs at least 6 teeth");
+    immutable r = m * teeth / 2;
+    immutable rb = r * cos(pressure);
+    immutable ra = r + m;
+    immutable rf = r - 1.25 * m;
+    // half the tooth thickness on the pitch circle, as an angle, plus the involute offset
+    immutable half = PI / (2 * teeth) - backlash / (2 * r) + involute(rb, r);
+    immutable start = max(rb, rf);
+    Vec2[] pts;
+    foreach (k; 0 .. teeth)
+    {
+        immutable c = 2 * PI * k / teeth;
+        Vec2[] flank;    // from the root to the tip, on the side of negative angles
+        if (rf < rb)
+            flank ~= vec(rf * cos(c - half), rf * sin(c - half));
+        foreach (i; 0 .. steps + 1)
+        {
+            immutable rr = start + (ra - start) * i / steps;
+            immutable a = c - half + involute(rb, rr);
+            flank ~= vec(rr * cos(a), rr * sin(a));
+        }
+        pts ~= flank;
+        // the other flank, mirrored around the tooth's centre line, from the tip to the root
+        foreach_reverse (p; flank)
+        {
+            immutable a = 2 * c - atan2(p.y, p.x) / 1.rad;
+            immutable rr = sqrt(p.x ^^ 2 + p.y ^^ 2);
+            pts ~= vec(rr * cos(a), rr * sin(a));
+        }
+    }
+    return polygon(pts);
+}
+
+/// A spur gear standing on z = 0, with an optional bore.
+Solid spurGear(Length m, int teeth, Length thickness, Length bore = 0.mm, Angle pressure = 20.deg,
+    Length backlash = 0.1.mm)
+{
+    auto g = gearProfile(m, teeth, pressure, backlash).extrude(thickness);
+    if (bore > 0.mm)
+        g -= cylinder(d: bore, h: 3 * thickness, center: true);
+    return g;
+}
+
+/// A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0.
+Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pressure = 20.deg)
+{
+    immutable p = PI * m;
+    immutable b = base > 0.mm ? base : 2 * m;
+    immutable t = tan(pressure);
+    Vec2[] pts = [vec(0.mm, -1.25 * m - b)];
+    foreach (k; 0 .. teeth)
+    {
+        immutable x0 = k * p;
+        pts ~= [vec(x0, -1.25 * m), vec(x0 + p / 4 - 1.25 * m * t, -1.25 * m), vec(x0 + p / 4 + m * t, m),
+                vec(x0 + 3 * p / 4 - m * t, m), vec(x0 + 3 * p / 4 + 1.25 * m * t, -1.25 * m)];
+    }
+    pts ~= [vec(teeth * p, -1.25 * m), vec(teeth * p, -1.25 * m - b)];
+    return polygon(pts).extrude(thickness);
+}

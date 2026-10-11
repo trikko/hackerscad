@@ -1,0 +1,68 @@
+// Parametric box with lid: the first example in the D-like style.
+module box;
+
+import std.shapes;
+import hardware : M3, Screw;
+
+// Each parameter lists its own presets: @preset("name", value).
+@param("Outer width", min: 20.mm, max: 200.mm)
+@preset("small", 40.mm) @preset("large", 120.mm)
+immutable width = 60.mm;
+
+@param("Outer depth", min: 20.mm, max: 200.mm)
+@preset("small", 30.mm)
+immutable depth = 40.mm;
+
+@param("Height", min: 10.mm, max: 100.mm)
+@preset("large", 40.mm)
+immutable height = 25.mm;
+
+@param("Wall thickness", min: 1.2.mm, max: 4.mm)
+immutable wall = 2.mm;
+
+@param("Corner radius", min: 3.mm, max: 15.mm)
+@preset("small", 4.mm)
+immutable radius = 6.mm;
+
+/// Post for a self-tapping screw, with a pilot hole.
+Solid post(Length h, Screw screw = M3)
+{
+    return cylinder(d: screw.d * 2.2, h: h) - cylinder(d: screw.tap, h: h + 1.mm);
+}
+
+@part("steelblue")
+Solid body()
+{
+    auto s = box(width, depth, height)
+        .fillet(edges.filter(e => e.isParallel(Z)), r: radius)
+        .shell(open: faces.top, thickness: wall);
+
+    // one post in each corner, centred on the corner fillet
+    immutable dx = width / 2 - radius, dy = depth / 2 - radius;
+    foreach (sx; [-1, 1])
+        foreach (sy; [-1, 1])
+            s += post(height - 3.mm).move(x: sx * dx, y: sy * dy);
+
+    return s;
+}
+
+@part("orange")
+Solid lid()
+{
+    auto c = box(width, depth, wall)
+        .fillet(edges.parallel(Z), r: radius)
+        .chamfer(edges.filter(e => e.mid.z > wall / 2), d: 0.6.mm);   // the whole top edge
+
+    immutable dx = width / 2 - radius, dy = depth / 2 - radius;
+    foreach (sx; [-1, 1])
+        foreach (sy; [-1, 1])
+            c -= cylinder(d: M3.clearance, h: 3 * wall, center: true).move(x: sx * dx, y: sy * dy);
+
+    return c.nextTo(body, X, gap: 10.mm);
+}
+
+unittest
+{
+    assert(body.bbox.size.z <= 40.mm, "must fit in the drawer");
+    writeln("body volume: $(format("%.1f", body.volume / 1.cm ^^ 3)) cm³");
+}

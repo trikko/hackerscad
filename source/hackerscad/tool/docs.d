@@ -1,0 +1,240 @@
+/// Reference documentation for people and AI agents (`hscad docs`,
+/// `hcad_docs`, llms.txt). Everything is embedded in the binary.
+module hackerscad.tool.docs;
+
+import std.algorithm : canFind;
+import std.string : lineSplitter, strip, startsWith;
+import std.uni : toLower;
+
+import hackerscad.lang.builtins : librarySources;
+
+enum agentGuide = `# hackerscad for agents
+
+hackerscad builds CAD models from .hcad files, a sandboxed subset of D.
+Typical loop: read this reference, write a model, call hcad_render to get
+dimensions and pictures, compare them with the request, fix, then export.
+
+## Rules that avoid most mistakes
+- Every exported body is a function marked @part that takes no arguments and
+  returns a Solid, with the annotation on its own line:
+      @part("steelblue")
+      Solid body() { ... }
+- Reference objects (the shaft a knob fits on, the phone a stand holds) are
+  parts too, see-through and not exported, so the fit can be checked:
+      @part("slategray", alpha: 0.4, export: false)
+- Lengths: write units (60.mm, 2.5.cm, 1.inch). Bare numbers passed to
+  geometry are millimetres. Never add a bare number to a length (60.mm + 5 is
+  an error; write 60.mm + 5.mm).
+- Angles: rotate(z: 45) uses degrees; 30.deg is explicit.
+- Primitives stand on the XY plane and are centred in X and Y:
+  box(x, y, z) spans z = 0 .. z; cylinder(r: or d:, h:) also; center: true
+  centres in Z. sphere(r) is centred on the origin.
+- Booleans: a + b (union), a - b (difference), a & b (intersection).
+- Place parts relative to each other instead of computing coordinates:
+  lid.nextTo(body, X, gap: 10.mm), cap.on(body).
+- Fillets, chamfers and shells take selectors, evaluated on the solid they
+  apply to: .fillet(edges.parallel(Z), r: 3.mm),
+  .chamfer(edges.filter(e => e.mid.z > 5.mm), d: 1.mm),
+  .shell(open: faces.top, thickness: 2.mm). Apply fillets before shell and
+  before cutting holes; a fillet radius must be smaller than the faces next
+  to the edge.
+- To round or chamfer the edges a cut left behind, select them by provenance:
+  .fillet(edges.between(faces.from(holes), faces.top), r: 0.5.mm).
+- Cut with planes: body.split(body.plane(faces.top).offset(-10.mm)) gives
+  .above and .below; s.pieces lists separate bodies, ordered along X, Y, Z.
+- Profiles: rect, circle, polygon, regularPolygon, slot, text, combined
+  with + - &, .round(r), .offset(d); turn them into solids with .extrude(h)
+  or .revolve(axis: Y). On a face: body.extrude(profile, on: frame, depth:)
+  adds, body.cut(profile, on: frame, depth: | through: true) removes.
+- Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),
+  vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
+  height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
+- Exact 2D outlines with dimensions: auto s = sketch(); points, lines, arcs,
+  circles, then constraints (horizontal, vertical, length, distance, angle,
+  tangent, equal…) and s.profile. Prefer it when a request gives dimensions
+  of an irregular outline; a warning lists points left free.
+- To build on a face, take its frame and place parts built on XY (Z up):
+  cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top).at(x: 10.mm)).
+- Axes and planes anywhere: rotate(90.deg, axis: body.axis(edges.filter(e =>
+  e.isCircle && e.radius == 3.mm))), s.mirror(plane(origin: vec(10, 0, 0),
+  normal: X)), plane(p1, p2, p3), plane(axis, point).
+- Existing parts: load("part.stl"/".obj"/".3mf"/".step", scale: 1) gives a solid to
+  modify; text("LABEL", size: 4.mm).centered centres a profile for engraving.
+- Constants are immutable; module-level values cannot be modified.
+- Expose the dimensions a user may want to change as parameters:
+      @param("Outer width", min: 20.mm, max: 200.mm)
+      immutable width = 60.mm;
+  and put requirements in unittest blocks:
+  unittest { assert(body.bbox.size.z <= 40.mm, "must fit in the drawer"); }
+- Use the libraries instead of modelling common parts by hand:
+  import hardware : M3, screw, nut, hole; then M3.clearance, M3.tap,
+  screw(M3, 20.mm), nut(M3), hole(M3, 5.mm, "counterbore"|"insert"|…);
+  import threads (threadedRod, tappedHole); import gears (spurGear, rack,
+  centerDistance); import hinges (hinge(…).fixed/.moving, print in place);
+  import snaps (snapHook, snapSlot); import enclosures (roundedBox, tray,
+  enclosure(vec(x, y, z)).base/.lid).
+- Functions are ordinary arguments: xs.map(x => x * 2), xs.filter(f).
+- Your own modules: import parts.bracket; is parts/bracket.hcad next to the
+  model; import pizza; is pizza.hcad or pizza/package.hcad (which can
+  public import its modules), also from the personal library folder.
+- Strings interpolate: writeln("volume: $(body.volume)"); text("…", size:)
+  is a 2D text profile, not a string function.
+- Errors come with a line, a column and often a suggestion: apply it.
+- Technical drawings: a function marked @drawing returns drawing(title: …),
+  filled with d.standardViews(part) (views, overall dimensions, hole
+  callouts) and d.section(part, XZ, label: "A"); export it as .pdf/.svg/.dxf.
+- Keep models quick to evaluate: text cut into curved faces and threads take
+  seconds; prefer text in relief as a separate part, and plain holes or
+  heat-set inserts (hole(M3, d, "insert")) to modelled threads.
+- Style: annotations (@param, @preset, @part, @drawing) go on their own line above
+  the declaration, several per line when short; chains break before each
+  call, the line starting with the dot.
+`;
+
+/// How an agent works with hackerscad: AGENTS.md, and the body of SKILL.md.
+enum agentsIntro = q"INTRO
+# hackerscad
+
+hackerscad is a parametric CAD: a model is a .hcad file, a sandboxed subset of
+the D language (no file, network or process access), evaluated into exact
+solids (OpenCascade) and exported as STL, 3MF, STEP, PNG or drawings (PDF,
+SVG, DXF). The desktop application shows the model while the user edits it;
+the command line tool and the MCP server let an agent do the same.
+
+hackerscad is new and not in your training data: do not write OpenSCAD
+(.scad), CadQuery or build123d code, the syntax and the names differ. Read the
+reference first and follow the rules below.
+
+## How to work
+
+- **With the MCP server** (best): `claude mcp add hscad -- hscad mcp`. Tools:
+  hcad_docs (the reference, or one topic), hcad_check (errors with line,
+  column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
+  views: look at them), hcad_measure, hcad_export (.3mf .stl .step .png),
+  hcad_drawing (.pdf .svg .dxf). When the user has the application open, the
+  hcad_gui_* tools drive it (open, set parameters, pick faces, context menu,
+  section plane, rollback, screenshot, state), so they see what you do.
+- **With the command line:** `hscad docs` prints the whole reference
+  (`hscad docs fillet` one topic); `hscad check model.hcad --json` reports
+  errors, parts and sizes; `hscad render model.hcad -o model-views.png`
+  draws iso/front/top/right (look at it); `-o model.3mf`, `.step`, `.stl`;
+  `-D width=80.mm` and `--preset name` change parameters.
+- The loop: write the model, check it, render and look, compare sizes and
+  pictures with the request, fix, then export. Put the request's
+  requirements in unittest blocks so the checks repeat them.
+
+INTRO";
+
+/// AGENTS.md: the intro and the rules (`hscad docs --agents`).
+string agentsText()
+{
+    import std.string : indexOf;
+    immutable rules = agentGuide[agentGuide.indexOf("## Rules")  .. $];
+    return agentsIntro ~ rules ~ "\nThe full reference: `hscad docs` (llms-full.txt).\n";
+}
+
+/// SKILL.md: AGENTS.md with the front matter of an installable skill (`hscad docs --skill`).
+string skillText()
+{
+    return "---\nname: hackerscad\n"
+        ~ "description: Official reference for hackerscad, the parametric CAD where models are .hcad files "
+        ~ "(a sandboxed subset of D) exported as STL, 3MF, STEP and drawings. Use it whenever the user asks "
+        ~ "to model, modify, check or export a 3D part with hackerscad, or works on .hcad files.\n---\n\n"
+        ~ agentsText();
+}
+
+/// llms.txt: a page of overview (`hscad docs --summary`).
+string summaryText()
+{
+    import std.string : indexOf;
+    import std.array : replace;
+    return agentsIntro[0 .. agentsIntro.indexOf("## How to work")]
+        .replace("follow the rules below", "follow the rules in AGENTS.md")
+        ~ "## Documentation\n\n"
+        ~ "- AGENTS.md / SKILL.md: how to work with hackerscad and the rules that avoid most mistakes\n"
+        ~ "- llms-full.txt: the whole reference (language, libraries, examples), also `hscad docs`\n"
+        ~ "- docs/TUTORIAL.md: a tutorial for people\n";
+}
+
+/// Sources of the built-in libraries, in a stable order.
+string librarySection()
+{
+    string r;
+    foreach (name; ["hardware", "threads", "gears", "hinges", "snaps", "enclosures"])
+        r ~= "\n## Library source: " ~ name ~ "\n\n```d\n" ~ librarySources[name] ~ "```\n";
+    return r;
+}
+
+/// The full reference (llms.txt), or the parts matching `topic`.
+string reference(string topic = null)
+{
+    auto full = agentGuide ~ "\n" ~ import("LANGUAGE.md") ~ "\n## Example: box with lid\n\n```d\n" ~ import("box.hcad")
+        ~ "```\n\n## Example: knob on a shaft\n\n```d\n" ~ import("knob.hcad") ~ "```\n" ~ librarySection;
+    if (topic.length == 0)
+        return full;
+
+    // whole blocks (a bullet with its continuation lines, a code block, a
+    // paragraph) that mention the topic, under their heading
+    auto t = topic.toLower;
+    string heading, r, block;
+    bool headingShown, inCode;
+
+    void flush()
+    {
+        if (block.length && block.toLower.canFind(t))
+        {
+            if (!headingShown && heading.length)
+            {
+                r ~= "\n" ~ heading ~ "\n";
+                headingShown = true;
+            }
+            r ~= block;
+        }
+        block = null;
+    }
+
+    foreach (line; full.lineSplitter)
+    {
+        if (line.startsWith("```"))
+        {
+            if (inCode)
+            {
+                block ~= line ~ "\n";
+                flush();
+            }
+            else
+            {
+                flush();
+                block = line ~ "\n";
+            }
+            inCode = !inCode;
+            continue;
+        }
+        if (inCode)
+        {
+            block ~= line ~ "\n";
+            continue;
+        }
+        if (line.startsWith("#"))
+        {
+            flush();
+            heading = line;
+            headingShown = false;
+            continue;
+        }
+        if (line.strip.length == 0 || line.startsWith("- "))
+            flush();
+        if (line.strip.length)
+            block ~= line ~ "\n";
+    }
+    flush();
+    return r.length ? r : "nothing found for '" ~ topic ~ "'; call without a topic for the full reference";
+}
+
+unittest
+{
+    assert(reference().canFind("@part"));
+    auto f = reference("fillet");
+    assert(f.canFind("before cutting holes; a fillet radius must be smaller than the faces next\n  to the edge."));
+    assert(reference("zzzz").canFind("nothing found"));
+}

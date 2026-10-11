@@ -1,0 +1,59 @@
+name "hackerscad"
+description "Parametric CAD with a small functional language"
+authors "andrea"
+copyright "Copyright © 2026, andrea"
+license "proprietary"
+
+targetType "executable"
+targetName "hscad"
+targetPath "bin"
+sourcePaths "source/hackerscad/cli"
+importPaths "source"
+dependency "hackerscad:core" version="*"
+
+subPackage {
+	name "gui"
+	targetType "executable"
+	targetName "hscad-gui"
+	targetPath "bin"
+	sourcePaths "source/hackerscad/gui"
+	importPaths "source"
+	dependency "hackerscad:core" version="*"
+	dependency "gid:gtk4" version="~>0.9.11"
+	dependency "gid:gtksource5" version="~>0.9.11"
+	dependency "gid:adw1" version="~>0.9.11"
+	dependency "bindbc-opengl" version="~>1.0.5"
+	versions "GL_33"
+	stringImportPaths "examples"
+	// Windows: the logo as the executable's icon
+	preBuildCommands "sh \"$PACKAGE_DIR/tools/win-resources.sh\"" platform="windows"
+	lflags "$PACKAGE_DIR/build/win/native/hscad-gui.res" platform="windows"
+}
+
+subPackage {
+	name "core"
+	targetType "library"
+	targetPath "build/lib"
+	sourcePaths "source/hackerscad"
+	importPaths "source" "build/native/import"
+	excludedSourceFiles "source/hackerscad/cli/*" "source/hackerscad/gui/*"
+	stringImportPaths "docs" "examples" "lib"
+	extraDependencyFiles "source/hackerscad/kernel/occt/shim.cpp" "source/hackerscad/kernel/occt/shim.h" "tools/build-native.sh"
+	// Linux and macOS: the OpenCascade shim and Manifold linked statically
+	preBuildCommands "$PACKAGE_DIR/tools/build-native.sh" platform="posix"
+	lflags "$PACKAGE_DIR/build/native/libhcad_occt.a" \
+		"$PACKAGE_DIR/build/manifold/bindings/c/libmanifoldc.a" \
+		"$PACKAGE_DIR/build/manifold/src/libmanifold.a" \
+		"$PACKAGE_DIR/build/manifold/_deps/clipper2-build/libClipper2.a" platform="posix"
+	libs "TKernel" "TKMath" "TKG2d" "TKG3d" "TKGeomBase" "TKGeomAlgo" "TKBRep" "TKTopAlgo" \
+		"TKPrim" "TKBO" "TKBool" "TKFillet" "TKOffset" "TKFeat" "TKShHealing" "TKMesh" "TKV3d" "TKService" \
+		"TKXSBase" "TKDE" "TKDESTEP" "TKHLR" platform="posix"
+	// the C++ runtime and TBB (Manifold's parallel backend) differ per system
+	libs "tbb" "stdc++" platform="linux"
+	libs "tbb" "c++" platform="osx"
+	lflags "-L/opt/homebrew/lib" "-L/usr/local/lib" platform="osx"
+	// Windows: both behind their C interfaces in hcad_native.dll (built with
+	// clang/libc++ against MSYS2's CLANG64 libraries, natively or from Linux)
+	preBuildCommands "sh \"$PACKAGE_DIR/tools/build-native.sh\" windows" platform="windows"
+	lflags "$PACKAGE_DIR/build/win/native/hcad_native.lib" platform="windows"
+}

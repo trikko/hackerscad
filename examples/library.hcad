@@ -1,0 +1,84 @@
+// A tour of the built-in libraries, one row each: hardware,
+// gears, printable mechanisms. Under every object, its name
+// (a reference part: drawn, never exported).
+module library_tour;
+
+import std.shapes;
+import hardware;
+import gears;
+import hinges : hinge;
+import snaps;
+import enclosures;
+
+// the grid: columns along X, rows along -Y
+immutable col = 55.mm;
+immutable row = 75.mm;
+
+/// Moves a solid to its cell of the grid.
+Solid cell(Solid s, int c, int r) => s.move(x: c * col, y: -r * row);
+
+// ---- row 0: hardware
+
+@part("silver")
+Solid bolt() => cell(screw(M8, 25.mm, threaded: true).move(z: 25.mm), 0, 0);
+
+@part("silver")
+Solid m8nut() => cell(nut(M8, threaded: true), 1, 0);
+
+@part("silver")
+Solid m8washer() => cell(washer(M8), 2, 0);
+
+// a block with the holes of the library, cut side by side
+@part("steelblue")
+Solid holes()
+{
+    auto b = box(50.mm, 20.mm, 10.mm);
+    immutable kinds = ["clearance", "tap", "insert", "counterbore", "countersink"];
+    foreach (i, k; kinds)
+        b -= hole(M3, 10.mm, k).move(x: (i - 2.0) * 9.mm, z: 10.mm);
+    return cell(b, 3, 0);
+}
+
+// ---- row 1: gears (the second one meshes with the first)
+
+@part("orange")
+Solid gear1() => cell(spurGear(2.mm, 20, 6.mm, bore: 5.mm), 0, 1);
+
+@part("gold")
+Solid gear2() =>
+    cell(spurGear(2.mm, 12, 6.mm, bore: 5.mm)
+        .rotate(z: 180.deg / 12)
+        .move(x: centerDistance(2.mm, 20, 12)), 0, 1);
+
+@part("tomato")
+Solid toothed() => cell(rack(2.mm, 8, 6.mm).move(x: -25.mm, y: -10.mm), 2, 1);
+
+// ---- row 2: printable mechanisms
+
+@part("steelblue")
+Solid leafA() => cell(hinge().fixed, 0, 2);
+
+@part("skyblue")
+Solid leafB() => cell(hinge().moving, 0, 2);
+
+@part("plum")
+Solid hook() => cell(snapHook(), 1, 2);
+
+@part("seagreen")
+Solid box1() => cell(enclosure(vec(40.mm, 30.mm, 20.mm)).base, 2, 2);
+
+@part("lightgreen")
+Solid lid1() => cell(enclosure(vec(40.mm, 30.mm, 20.mm)).lid, 3, 2);
+
+// ---- the names, under each column
+
+/// A name lying on the floor, under cell (c, r).
+Solid name(string s, int c, int r) =>
+    cell(text(s, size: 6.mm).centered.extrude(0.4.mm).move(y: -30.mm), c, r);
+
+@part("dimgray", export: false)
+Solid labels() => fuse([
+    name("screw", 0, 0), name("nut", 1, 0), name("washer", 2, 0), name("hole kinds", 3, 0),
+    name("spurGear", 0, 1), name("rack", 2, 1),
+    name("hinge", 0, 2), name("snapHook", 1, 2), name("enclosure", 2, 2), name("lid", 3, 2),
+]);

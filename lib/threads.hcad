@@ -1,0 +1,32 @@
+module threads;
+
+/// ISO metric threads (basic profile, 60°). Threads are real geometry: they
+/// print and export to STEP, but take longer to compute than plain shapes.
+
+/// Height of the thread tooth for a pitch (from the minor to the major diameter).
+Length toothHeight(Length pitch) => 0.5413 * pitch;
+
+/// A threaded rod of nominal diameter `d` standing on z = 0, with the ends
+/// chamfered (chamfer: false leaves them square).
+Solid threadedRod(Length d, Length pitch, Length length, bool chamfer = true, bool left = false)
+{
+    immutable h = toothHeight(pitch);
+    immutable minor = d - 2 * h;
+    immutable overlap = 0.1 * pitch;   // the tooth sinks into the core so that they fuse
+    // swept along the helix: the profile's +x points to the axis, +y along it
+    auto tooth = polygon([vec(overlap, -0.375 * pitch), vec(-h, -pitch / 16), vec(-h, pitch / 16),
+                          vec(overlap, 0.375 * pitch)]);
+    auto ridge = tooth.sweep(helix(d: minor, pitch: pitch, height: length + 2 * pitch, left: left), frenet: true)
+        .move(z: -pitch);
+    // the core is longer than the ridge: the ends are trimmed afterwards
+    auto core = cylinder(d: minor + 0.02.mm, h: length + 4 * pitch).move(z: -2 * pitch);
+    auto envelope = cylinder(d: d + 0.02.mm, h: length);
+    if (chamfer)
+        envelope = envelope.chamfer(edges.circles, d: h);
+    return (core + ridge) & envelope;
+}
+
+/// A tool to subtract for an internal thread that a `d` screw fits, from
+/// z = 0 going down `depth`. `clearance` widens it for printed parts.
+Solid tappedHole(Length d, Length pitch, Length depth, Length clearance = 0.15.mm) =>
+    threadedRod(d + 2 * clearance, pitch, depth + pitch, chamfer: false).move(z: -depth);

@@ -1,0 +1,53 @@
+// A hook to screw to a wall: a back plate with two countersunk
+// holes and a curved arm. Prints lying on its side (X up), with
+// no supports.
+module wallhook;
+
+import std.shapes;
+import hardware : M4, hole;
+
+@param("Width", min: 10.mm, max: 60.mm)
+@preset("towel", 30.mm) @preset("key", 12.mm)
+immutable width = 20.mm;
+
+@param("Plate height", min: 30.mm, max: 120.mm)
+@preset("towel", 80.mm) @preset("key", 40.mm)
+immutable plate = 60.mm;
+
+@param("Reach", min: 10.mm, max: 80.mm)
+@preset("towel", 45.mm) @preset("key", 15.mm)
+immutable reach = 30.mm;
+
+@param("Lip height", min: 5.mm, max: 40.mm)
+immutable lip = 15.mm;
+
+@param("Thickness", min: 3.mm, max: 10.mm)
+immutable thick = 5.mm;
+
+// the plate stands on XZ with its back on y = 0 (the wall);
+// the arm goes out along -Y and ends with the lip going up
+@part
+Solid hook()
+{
+    auto back = box(width, thick, plate).move(y: -thick / 2);
+    auto arm = box(width, reach, thick).move(y: -reach / 2);
+    auto tip = box(width, thick, lip).move(y: -reach + thick / 2);
+    // printed lying on a side: the bends are rounded in the plane
+    // of the layers; the edges of the sides get 45° chamfers,
+    // which print without supports (round edges there would not)
+    auto h = (back + arm + tip)
+        .fillet(edges.parallel(X), r: thick * 0.45)
+        .chamfer(edges.of(faces.normal(X) + faces.normal(-X)), d: 0.8.mm);
+
+    // two countersunk M4 holes, the heads on the front face
+    foreach (z; [plate * 0.45, plate * 0.82])
+        h -= hole(M4, thick, "countersink")
+            .rotate(x: 90.deg)
+            .move(y: -thick, z: z);
+    return h;
+}
+
+unittest
+{
+    assert(plate * 0.45 > thick + M4.head, "no room for the lower screw");
+}

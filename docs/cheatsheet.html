@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>hackerscad cheatsheet</title>
+<style>
+body { font: 13px/1.35 system-ui, sans-serif; margin: 24px; color: #1d2b26; background: #fff; }
+header { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+header svg { width: 56px; height: 56px; }
+h1 { font-size: 22px; margin: 0; font-weight: 600; }
+header p { margin: 2px 0 0; color: #5b6b65; }
+main { columns: 3 380px; column-gap: 22px; }
+section { break-inside: avoid; margin: 0 0 16px; border: 1px solid #cfe7dd; border-radius: 8px; overflow: hidden; }
+h2 { font-size: 13px; margin: 0; padding: 5px 10px; background: #8fcbb4; color: #10382b; }
+dl { margin: 0; padding: 6px 10px; }
+dt { font: 12px/1.4 ui-monospace, "DejaVu Sans Mono", monospace; color: #0f5540; margin-top: 4px; }
+dd { margin: 0 0 0 12px; color: #4a5a54; }
+@media print { body { margin: 8mm; } main { columns: 3; } }
+</style></head><body>
+<header><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 326 326" width="326" height="326"><title>hackerscad</title><defs><clipPath id="c"><circle cx="163" cy="163" r="163"/></clipPath><linearGradient id="s" x1="0" y1="0" x2="1" y2="1"><stop offset="0.3" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><mask id="m"><rect width="326" height="326" fill="url(#s)"/></mask><g id="g"><path fill="#d2efe3" d="M163 82.5L253.07 134.5L163 186.5L72.93 134.5Z"/><path fill="#a3dac4" d="M72.93 134.5L163 186.5L163 251.5Z"/><path fill="#6fbd9f" d="M72.93 134.5L163 251.5L72.93 199.5Z"/><path fill="#3f8c70" d="M253.07 134.5L163 186.5L163 251.5Z"/><path fill="#1f5545" d="M253.07 134.5L163 251.5L253.07 199.5Z"/><ellipse fill="#3f8c70" cx="163" cy="134.5" rx="44.58" ry="25.74"/><clipPath id="hole"><ellipse cx="163" cy="137.07" rx="43.24" ry="23.16"/></clipPath><g clip-path="url(#hole)"><path fill="#a3dac4" d="M163 147.5L240.46 192.22L163 236.94L85.54 192.22Z"/><path fill="#1f5545" d="M163 97.06L85.54 141.78L85.54 192.22L163 147.5Z"/><path fill="#3f8c70" d="M163 97.06L240.46 141.78L240.46 192.22L163 147.5Z"/></g></g></defs><circle cx="163" cy="163" r="163" fill="#eff1ec"/><g clip-path="url(#c)"><g mask="url(#m)"><g opacity="0.07" fill="#000"><g style="fill:#000"><use href="#g" x="2" y="2"/><use href="#g" x="4" y="4"/><use href="#g" x="6" y="6"/><use href="#g" x="8" y="8"/><use href="#g" x="10" y="10"/><use href="#g" x="12" y="12"/><use href="#g" x="14" y="14"/><use href="#g" x="16" y="16"/><use href="#g" x="18" y="18"/><use href="#g" x="20" y="20"/><use href="#g" x="22" y="22"/><use href="#g" x="24" y="24"/><use href="#g" x="26" y="26"/><use href="#g" x="28" y="28"/><use href="#g" x="30" y="30"/><use href="#g" x="32" y="32"/><use href="#g" x="34" y="34"/><use href="#g" x="36" y="36"/><use href="#g" x="38" y="38"/><use href="#g" x="40" y="40"/><use href="#g" x="42" y="42"/><use href="#g" x="44" y="44"/><use href="#g" x="46" y="46"/><use href="#g" x="48" y="48"/><use href="#g" x="50" y="50"/><use href="#g" x="52" y="52"/><use href="#g" x="54" y="54"/><use href="#g" x="56" y="56"/><use href="#g" x="58" y="58"/><use href="#g" x="60" y="60"/><use href="#g" x="62" y="62"/><use href="#g" x="64" y="64"/><use href="#g" x="66" y="66"/><use href="#g" x="68" y="68"/><use href="#g" x="70" y="70"/><use href="#g" x="72" y="72"/><use href="#g" x="74" y="74"/><use href="#g" x="76" y="76"/><use href="#g" x="78" y="78"/><use href="#g" x="80" y="80"/><use href="#g" x="82" y="82"/><use href="#g" x="84" y="84"/><use href="#g" x="86" y="86"/><use href="#g" x="88" y="88"/><use href="#g" x="90" y="90"/><use href="#g" x="92" y="92"/><use href="#g" x="94" y="94"/><use href="#g" x="96" y="96"/><use href="#g" x="98" y="98"/><use href="#g" x="100" y="100"/><use href="#g" x="102" y="102"/><use href="#g" x="104" y="104"/><use href="#g" x="106" y="106"/><use href="#g" x="108" y="108"/><use href="#g" x="110" y="110"/><use href="#g" x="112" y="112"/><use href="#g" x="114" y="114"/><use href="#g" x="116" y="116"/><use href="#g" x="118" y="118"/><use href="#g" x="120" y="120"/><use href="#g" x="122" y="122"/><use href="#g" x="124" y="124"/><use href="#g" x="126" y="126"/><use href="#g" x="128" y="128"/><use href="#g" x="130" y="130"/><use href="#g" x="132" y="132"/><use href="#g" x="134" y="134"/><use href="#g" x="136" y="136"/><use href="#g" x="138" y="138"/><use href="#g" x="140" y="140"/><use href="#g" x="142" y="142"/><use href="#g" x="144" y="144"/><use href="#g" x="146" y="146"/><use href="#g" x="148" y="148"/><use href="#g" x="150" y="150"/><use href="#g" x="152" y="152"/><use href="#g" x="154" y="154"/><use href="#g" x="156" y="156"/><use href="#g" x="158" y="158"/><use href="#g" x="160" y="160"/><use href="#g" x="162" y="162"/><use href="#g" x="164" y="164"/><use href="#g" x="166" y="166"/><use href="#g" x="168" y="168"/><use href="#g" x="170" y="170"/><use href="#g" x="172" y="172"/><use href="#g" x="174" y="174"/><use href="#g" x="176" y="176"/><use href="#g" x="178" y="178"/><use href="#g" x="180" y="180"/><use href="#g" x="182" y="182"/><use href="#g" x="184" y="184"/><use href="#g" x="186" y="186"/><use href="#g" x="188" y="188"/><use href="#g" x="190" y="190"/><use href="#g" x="192" y="192"/><use href="#g" x="194" y="194"/><use href="#g" x="196" y="196"/><use href="#g" x="198" y="198"/><use href="#g" x="200" y="200"/><use href="#g" x="202" y="202"/><use href="#g" x="204" y="204"/><use href="#g" x="206" y="206"/><use href="#g" x="208" y="208"/><use href="#g" x="210" y="210"/><use href="#g" x="212" y="212"/><use href="#g" x="214" y="214"/><use href="#g" x="216" y="216"/><use href="#g" x="218" y="218"/><use href="#g" x="220" y="220"/><use href="#g" x="222" y="222"/><use href="#g" x="224" y="224"/><use href="#g" x="226" y="226"/><use href="#g" x="228" y="228"/><use href="#g" x="230" y="230"/><use href="#g" x="232" y="232"/><use href="#g" x="234" y="234"/><use href="#g" x="236" y="236"/><use href="#g" x="238" y="238"/></g></g></g></g><use href="#g"/></svg>
+<div><h1>hackerscad cheatsheet</h1><p>version 0.3.1 · s is a Solid, p a Profile, f a Frame · values never change: operations give new ones</p></div></header>
+<main>
+<section><h2>How do I…</h2><dl>
+<dt>auto b = a.move(x: 20.mm);</dt><dd>Copy a solid (values never change: use it again)</dd>
+<dt>peg.linearPattern(4, step: vec(10.mm, 0.mm, 0.mm))</dt><dd>Many copies in a row</dd>
+<dt>peg.circularPattern(6, axis: Z)</dt><dd>Copies around an axis</dd>
+<dt>s + s.mirror(X)</dt><dd>A mirrored copy, keeping the original</dd>
+<dt>plate - cylinder(d: 5.mm, h: 10.mm).move(x: 10.mm)</dt><dd>A hole: subtract a cylinder</dd>
+<dt>s - hole(M3, 6.mm, "countersink").move(z: 6.mm)</dt><dd>Screw holes from the library</dd>
+<dt>box(40, 30, 20).fillet(edges.parallel(Z), r: 4.mm)</dt><dd>Round the vertical edges</dd>
+<dt>s.shell(open: faces.top, thickness: 2.mm)</dt><dd>Hollow out, open on top</dd>
+<dt>cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top))</dt><dd>Build on a face</dd>
+<dt>lid.nextTo(body, X, gap: 10.mm)</dt><dd>Put one part beside another</dd>
+<dt>text("ABC", size: 5.mm).centered.extrude(0.6.mm)</dt><dd>Text in relief</dd>
+<dt>s.split(XY.offset(10.mm)).below</dt><dd>Cut with a plane and keep one side</dd>
+<dt>@part("slategray", alpha: 0.4, export: false)</dt><dd>A reference part, shown but not exported</dd>
+<dt>@param("Width", min: 10.mm, max: 100.mm) immutable width = 40.mm;</dt><dd>A parameter with a slider</dd>
+<dt>unittest { assert(body.bbox.size.z &lt;= 40.mm, "too tall"); }</dt><dd>Check a requirement</dd>
+<dt>writeln(s.volume, " ", s.bbox.size)</dt><dd>Measure</dd>
+</dl></section>
+<section><h2>Objects and types</h2><dl>
+<dt>Solid</dt><dd>A 3D body: boxes, cylinders, booleans, features. Every operation gives a new one.</dd>
+<dt>Profile</dt><dd>A flat 2D outline on XY (rect, circle, text, sketch.profile): extrude or revolve it into a Solid.</dd>
+<dt>Path</dt><dd>A curve in space (path, spline, helix) to sweep a profile along.</dd>
+<dt>Vec</dt><dd>A 2D or 3D vector or point: vec(10.mm, 5.mm, 0.mm); .x .y .z .length.</dd>
+<dt>Vec2</dt><dd>A 2D vector.</dd>
+<dt>Vec3</dt><dd>A 3D vector.</dd>
+<dt>Direction</dt><dd>An axis direction: X, Y, Z, -X…, or any vector.</dd>
+<dt>Plane</dt><dd>An infinite plane: an origin and a normal (XY, plane(…), body.plane(faces.top)); cuts, mirrors, sections.</dd>
+<dt>Axis</dt><dd>A line in space: an origin and a direction (axis(…), body.axis(edges…)); rotations and circular patterns.</dd>
+<dt>Frame</dt><dd>A coordinate system on a face or plane: origin, X, Y and Z (body.frame(faces.top)); placeOn builds on it.</dd>
+<dt>BBox</dt><dd>A solid's bounding box: min, max, size, center.</dd>
+<dt>Split</dt><dd>What split gives: .above (where the plane's normal points) and .below.</dd>
+<dt>Edges</dt><dd>A selection of a solid's edges, for fillet and chamfer: edges.parallel(Z), edges.of(faces.top)…</dd>
+<dt>Faces</dt><dd>A selection of a solid's faces, for shell, draft, frames: faces.top, faces.normal(X)…</dd>
+<dt>Edge</dt><dd>One edge, inside a selector predicate: edges.filter(e =&gt; e.isCircle &amp;&amp; e.radius == 3.mm).</dd>
+<dt>Face</dt><dd>One face, inside a selector predicate: faces.filter(f =&gt; f.center.z &gt; 10.mm).</dd>
+<dt>Sketch</dt><dd>A constrained 2D drawing: points, lines, arcs and constraints; the solver places them, .profile gives the outline.</dd>
+<dt>Drawing</dt><dd>A technical sheet (views, sections, dimensions) returned by a @drawing function; exported as PDF, SVG, DXF.</dd>
+<dt>Assembly</dt><dd>Parts placed by their connections (planned).</dd>
+<dt>Color</dt><dd>A colour: "steelblue", "#RRGGBB", "#RRGGBBAA" or rgb(…).</dd>
+<dt>Length</dt><dd>A length with its unit: 10.mm, 2.5.cm; bare numbers given to geometry are mm.</dd>
+<dt>Angle</dt><dd>An angle: 30.deg, 0.5.rad.</dd>
+<dt>Area</dt><dd>An area (Length × Length).</dd>
+<dt>Volume</dt><dd>A volume.</dd>
+<dt>bool</dt><dd>true or false.</dd>
+<dt>int</dt><dd>An integer.</dd>
+<dt>double</dt><dd>A number.</dd>
+<dt>float</dt><dd>A number.</dd>
+<dt>real</dt><dd>A number.</dd>
+<dt>long</dt><dd>An integer.</dd>
+<dt>string</dt><dd>Text.</dd>
+</dl></section>
+<section><h2>Output</h2><dl>
+<dt>writeln(values…)</dt><dd>Prints to the console (and to the JSON output for agents).</dd>
+<dt>write(values…)</dt><dd>Prints without a newline.</dd>
+<dt>format(fmt: string, values…) → string</dt><dd>Formats like D's format: format("%.1f", x).</dd>
+<dt>to(value)</dt><dd>Converts: x.to!string, s.to!int.</dd>
+</dl></section>
+<section><h2>Math</h2><dl>
+<dt>sqrt(x: number) → number</dt><dd>Square root.</dd>
+<dt>abs(x)</dt><dd>Absolute value (keeps the unit).</dd>
+<dt>floor(x: number) → number</dt><dd>Rounds down.</dd>
+<dt>ceil(x: number) → number</dt><dd>Rounds up.</dd>
+<dt>round(x: number) → number</dt><dd>Rounds to the nearest integer; on a profile, profile.round(r) rounds its corners.</dd>
+<dt>sin(a: Angle) → number</dt><dd>Sine; bare numbers are radians.</dd>
+<dt>cos(a: Angle) → number</dt><dd>Cosine; bare numbers are radians.</dd>
+<dt>tan(a: Angle) → number</dt><dd>Tangent; bare numbers are radians.</dd>
+<dt>asin(x: number) → Angle</dt><dd>Arc sine.</dd>
+<dt>acos(x: number) → Angle</dt><dd>Arc cosine.</dd>
+<dt>atan(x: number) → Angle</dt><dd>Arc tangent.</dd>
+<dt>atan2(y, x) → Angle</dt><dd>The angle of the point (x, y).</dd>
+<dt>min(a, b…)</dt><dd>The smallest argument.</dd>
+<dt>max(a, b…)</dt><dd>The largest argument.</dd>
+<dt>xs.minElement()</dt><dd>The smallest element of a list.</dd>
+<dt>xs.maxElement()</dt><dd>The largest element of a list.</dd>
+<dt>clamp(value, lo, hi)</dt><dd>value limited to lo … hi.</dd>
+</dl></section>
+<section><h2>Vectors</h2><dl>
+<dt>vec(x, y, z) → Vec</dt><dd>A 2D or 3D vector: vec(10.mm, 5.mm).</dd>
+<dt>v.dot(b: Vec) → number</dt><dd>Dot product.</dd>
+<dt>v.cross(b: Vec) → Vec</dt><dd>Cross product.</dd>
+<dt>distance(a, b) → Length</dt><dd>Between two points, or the minimum distance between two solids (0 when they touch).</dd>
+</dl></section>
+<section><h2>Lists</h2><dl>
+<dt>iota(a: int, b: int, step: int) → list</dt><dd>The integers a … b-1 (or 0 … a-1).</dd>
+<dt>xs.map(f: x =&gt; …) → list</dt><dd>xs.map(x =&gt; x * 2).</dd>
+<dt>xs.filter(f: x =&gt; bool) → list</dt><dd>xs.filter(x =&gt; x &gt; 0).</dd>
+<dt>xs.fold(f: (acc, x) =&gt; …, seed)</dt><dd>xs.fold((acc, x) =&gt; acc + x).</dd>
+<dt>xs.sum()</dt><dd>The sum; of solids, their union.</dd>
+<dt>fuse(solids: Solid[]) → Solid</dt><dd>The union of a list of solids.</dd>
+<dt>xs.any(f: x =&gt; bool) → bool</dt><dd>Whether some element satisfies f.</dd>
+<dt>xs.all(f: x =&gt; bool) → bool</dt><dd>Whether every element satisfies f.</dd>
+<dt>xs.count(f: x =&gt; bool) → int</dt><dd>How many elements (that satisfy f).</dd>
+<dt>xs.canFind(value or f) → bool</dt><dd>xs.canFind(value) or xs.canFind(x =&gt; condition).</dd>
+<dt>xs.sort(less: (a, b) =&gt; bool) → list</dt><dd>xs.sort or xs.sort((a, b) =&gt; a &gt; b).</dd>
+<dt>xs.reverse() → list</dt><dd>The list backwards.</dd>
+<dt>xs.retro() → list</dt><dd>The list backwards.</dd>
+<dt>xs.array() → list</dt><dd>A list from a range.</dd>
+<dt>xs.enumerate() → list</dt><dd>(index, value) pairs.</dd>
+<dt>zip(a: list, b: list) → list</dt><dd>Pairs of elements.</dd>
+<dt>cartesianProduct(a: list, b: list) → list</dt><dd>Every pair.</dd>
+<dt>xs.join(sep: string) → string</dt><dd>The elements as one string.</dd>
+</dl></section>
+<section><h2>Colours</h2><dl>
+<dt>rgb(r: 0..255, g: 0..255, b: 0..255, alpha: 0..1) → Color</dt><dd>A colour; rgb(r, g, b, alpha: 0.5) is see-through.</dd>
+</dl></section>
+<section><h2>Solids</h2><dl>
+<dt>box(x: Length, y: Length, z: Length, center: bool) → Solid</dt><dd>A box standing on XY, centred in X and Y.</dd>
+<dt>cylinder(r: Length, h: Length, d: Length, center: bool) → Solid</dt><dd>A cylinder along Z standing on XY; give r or d, and h.</dd>
+<dt>cone(r1: Length, r2: Length, h: Length, d1: Length, d2: Length, center: bool) → Solid</dt><dd>A cone (or truncated cone) along Z.</dd>
+<dt>sphere(r: Length, d: Length) → Solid</dt><dd>A sphere centred on the origin.</dd>
+<dt>load(path: string, scale: number) → Solid</dt><dd>A part from an STL, OBJ, 3MF or STEP file in the project.</dd>
+</dl></section>
+<section><h2>Transforms</h2><dl>
+<dt>s.move(v: Vec, x: Length, y: Length, z: Length)</dt><dd>Moves: move(x: 10.mm) or move(vec(…)).</dd>
+<dt>s.rotate(angle: Angle, axis: Axis, x: Angle, y: Angle, z: Angle)</dt><dd>rotate(z: 45) in degrees, or rotate(angle, axis: a) around any axis.</dd>
+<dt>s.scale(factor: number)</dt><dd>Scales around the origin.</dd>
+<dt>s.mirror(plane: Plane)</dt><dd>mirror(X): across the plane through the origin with that normal, or any plane.</dd>
+<dt>s.color(color: Color, alpha: 0..1) → Solid</dt><dd>Sets the colour: "steelblue", "#RRGGBB", rgb(…).</dd>
+<dt>s.centered()</dt><dd>Moved so its bounding box is centred on the origin.</dd>
+</dl></section>
+<section><h2>Features</h2><dl>
+<dt>s.fillet(edges: Edges, r: Length) → Solid</dt><dd>Rounds the selected edges. Apply it before shell and before cutting holes.</dd>
+<dt>s.chamfer(edges: Edges, d: Length) → Solid</dt><dd>Bevels the selected edges.</dd>
+<dt>s.shell(open: Faces, thickness: Length) → Solid</dt><dd>Hollows the solid, leaving the faces in open: open. Open several faces in one shell.</dd>
+<dt>s.draft(faces: Faces, angle: Angle, pull: Direction, neutral: Length) → Solid</dt><dd>Tapers faces so the part leaves a mould.</dd>
+</dl></section>
+<section><h2>Placement and copies</h2><dl>
+<dt>s.nextTo(other: Solid, dir: Direction, gap: Length) → Solid</dt><dd>Beside another solid: a.nextTo(b, X, gap: 10.mm).</dd>
+<dt>s.on(other: Solid, gap: Length) → Solid</dt><dd>On top of another solid.</dd>
+<dt>s.align(other: Solid, x: string, y: string, z: string) → Solid</dt><dd>Aligns bounding boxes per axis: "min", "center" or "max".</dd>
+<dt>s.linearPattern(n: int, step: Vec) → Solid</dt><dd>n copies, step apart, as one solid.</dd>
+<dt>s.circularPattern(n: int, axis: Axis, angle: Angle) → Solid</dt><dd>n copies around an axis, as one solid.</dd>
+<dt>s.placeOn(frame: Frame) → Solid</dt><dd>A solid built on XY (Z up) moved onto a frame or plane.</dd>
+<dt>s.split(plane: Plane) → Split</dt><dd>Cuts with a plane: .above (where the normal points) and .below.</dd>
+</dl></section>
+<section><h2>Profiles (2D)</h2><dl>
+<dt>rect(w: Length, h: Length) → Profile</dt><dd>A rectangle centred on the origin.</dd>
+<dt>circle(r: Length, d: Length) → Profile</dt><dd>A circle centred on the origin.</dd>
+<dt>polygon(points: Vec[]) → Profile</dt><dd>A polygon through the points.</dd>
+<dt>regularPolygon(n: int, r: Length, d: Length) → Profile</dt><dd>regularPolygon(6, d: 10.mm): d/r through the corners.</dd>
+<dt>slot(length: Length, width: Length) → Profile</dt><dd>A stadium along X.</dd>
+<dt>text(text: string, size: Length, font: string) → Profile</dt><dd>A text outline starting at the origin on the baseline.</dd>
+<dt>p.round(r: Length) → Profile</dt><dd>Rounds the (convex) corners.</dd>
+<dt>p.offset(distance: Length) → Profile</dt><dd>Grows (d &gt; 0) or shrinks the outline; on a plane, the parallel plane.</dd>
+<dt>p.extrude(height: Length, taper: Angle, symmetric: bool) → Solid</dt><dd>A solid along +Z from the profile.</dd>
+<dt>p.revolve(axis: Axis, angle: Angle) → Solid</dt><dd>Turns the profile around an axis in its plane.</dd>
+<dt>p.sweep(path: Path, frenet: bool) → Solid</dt><dd>Moves the profile along a path.</dd>
+<dt>loft(profiles: Profile[], ruled: bool) → Solid</dt><dd>A solid through profiles placed in space.</dd>
+<dt>s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid</dt><dd>Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).</dd>
+</dl></section>
+<section><h2>Paths, sweeps and lofts</h2><dl>
+<dt>path(points: Vec[], closed: bool) → Path</dt><dd>Straight segments through the points.</dd>
+<dt>spline(points: Vec[], closed: bool) → Path</dt><dd>A smooth curve through the points.</dd>
+<dt>helix(r: Length, d: Length, pitch: Length, height: Length, left: bool) → Path</dt><dd>A helix around +Z.</dd>
+</dl></section>
+<section><h2>Planes, axes and frames</h2><dl>
+<dt>plane(origin: Vec, normal: Direction) → Plane</dt><dd>plane(origin:, normal:), plane(p1, p2, p3), or body.plane(faces.top).</dd>
+<dt>axis(origin: Vec, direction: Direction) → Axis</dt><dd>axis(origin:, direction:), axis(p1, p2), or body.axis(edges…).</dd>
+<dt>s.frame(face: Faces, origin: Vec, x: Direction) → Frame</dt><dd>A frame on a face: origin at its centre, Z outwards.</dd>
+<dt>f.at(x: Length, y: Length, z: Length) → Frame</dt><dd>The frame with its origin moved, in local coordinates.</dd>
+<dt>f.turn(angle: Angle) → Frame</dt><dd>The frame turned around its Z.</dd>
+<dt>pl.flip() → Plane</dt><dd>The plane with its normal reversed.</dd>
+</dl></section>
+<section><h2>Measuring</h2><dl>
+<dt>s.bbox → BBox</dt><dd>The bounding box: min, max, size, center.</dd>
+<dt>s.volume → Volume</dt><dd>The volume.</dd>
+<dt>s.area → Area</dt><dd>The surface area (of a profile: its area).</dd>
+<dt>s.isEmpty → bool</dt><dd>Whether nothing is left.</dd>
+<dt>s.isValid → bool</dt><dd>Whether the solid is a valid closed solid.</dd>
+<dt>s.pieces → Solid[]</dt><dd>The separate bodies, ordered along X, then Y, then Z.</dd>
+<dt>s.split(…).above → Solid</dt><dd>The side of the cut the normal points to.</dd>
+<dt>s.split(…).below → Solid</dt><dd>The other side of the cut.</dd>
+<dt>s.bbox.min → Vec</dt><dd>The lowest corner.</dd>
+<dt>s.bbox.max → Vec</dt><dd>The highest corner.</dd>
+<dt>s.bbox.size → Vec</dt><dd>Width, depth and height.</dd>
+<dt>s.bbox.center → Vec</dt><dd>The centre.</dd>
+<dt>v.x → Length</dt><dd>X component.</dd>
+<dt>v.y → Length</dt><dd>Y component.</dd>
+<dt>v.z → Length</dt><dd>Z component.</dd>
+<dt>v.xy → Vec</dt><dd>X and Y.</dd>
+<dt>v.length → Length</dt><dd>Length of the vector (of a list: how many elements).</dd>
+<dt>v.normalized → Vec</dt><dd>The unit vector.</dd>
+<dt>f.origin → Vec</dt><dd>The origin (also of planes and axes).</dd>
+<dt>pl.normal → Direction</dt><dd>The normal.</dd>
+<dt>a.direction → Direction</dt><dd>The direction.</dd>
+</dl></section>
+<section><h2>Selectors</h2><dl>
+<dt>faces.top → Faces</dt><dd>The face(s) facing +Z the most.</dd>
+<dt>faces.bottom → Faces</dt><dd>The face(s) facing -Z.</dd>
+<dt>faces.front → Faces</dt><dd>The face(s) facing -Y.</dd>
+<dt>faces.back → Faces</dt><dd>The face(s) facing +Y.</dd>
+<dt>faces.left → Faces</dt><dd>The face(s) facing -X.</dd>
+<dt>faces.right → Faces</dt><dd>The face(s) facing +X.</dd>
+<dt>faces.largest → Faces</dt><dd>The largest face.</dd>
+<dt>faces.normal(dir: Direction) → Faces</dt><dd>The faces with that normal: faces.normal(X).</dd>
+<dt>faces.from(tool: Solid) → Faces</dt><dd>The faces created by a tool or feature: faces.from(holes).</dd>
+<dt>edges.parallel(axis: Direction) → Edges</dt><dd>The straight edges along an axis: edges.parallel(Z).</dd>
+<dt>edges.perpendicular(axis: Direction) → Edges</dt><dd>The edges at right angles to an axis.</dd>
+<dt>edges.lines → Edges</dt><dd>The straight edges.</dd>
+<dt>edges.circles → Edges</dt><dd>The circular edges.</dd>
+<dt>edges.of(faces: Faces) → Edges</dt><dd>The edges around faces: edges.of(faces.top).</dd>
+<dt>edges.between(a: Faces, b: Faces) → Edges</dt><dd>The edges between two sets of faces.</dd>
+<dt>e.start → Vec</dt><dd>Start point.</dd>
+<dt>e.end → Vec</dt><dd>End point.</dd>
+<dt>e.mid → Vec</dt><dd>Middle point.</dd>
+<dt>e.isLine → bool</dt><dd>Whether it is straight.</dd>
+<dt>e.isCircle → bool</dt><dd>Whether it is a circle or an arc.</dd>
+<dt>e.radius → Length</dt><dd>The radius of a circular edge.</dd>
+<dt>e.isParallel(axis: Direction) → bool</dt><dd>Whether it runs along the axis (a face: whether its normal does).</dd>
+<dt>e.isPerpendicular(axis: Direction) → bool</dt><dd>Whether it is at right angles to the axis.</dd>
+</dl></section>
+<section><h2>Sketches</h2><dl>
+<dt>sketch() → Sketch</dt><dd>A constrained 2D sketch: add points, lines, constraints, then take .profile.</dd>
+<dt>sk.point(x: Length, y: Length, fixed: bool) → Point</dt><dd>A point where it starts; constraints move it.</dd>
+<dt>sk.line(p: Point, q: Point) → Line</dt><dd>A line between two points.</dd>
+<dt>sk.arc(center: Point, start: Point, end: Point) → Arc</dt><dd>An arc, counter-clockwise.</dd>
+<dt>sk.polyline(points, closed: bool) → Line[]</dt><dd>Lines through points (vectors become new points).</dd>
+<dt>sk.coincident(p: Point, q: Point)</dt><dd>Two points in the same place.</dd>
+<dt>sk.fix(p: Point)</dt><dd>Pins a point.</dd>
+<dt>sk.horizontal(line: Line)</dt><dd>A horizontal line (or two points at the same height).</dd>
+<dt>sk.vertical(line: Line)</dt><dd>A vertical line.</dd>
+<dt>sk.equal(a, b)</dt><dd>Equal lengths or radii.</dd>
+<dt>sk.tangent(a, b)</dt><dd>Tangent line and circle, or two circles.</dd>
+<dt>sk.midpoint(p: Point, line: Line)</dt><dd>A point in the middle of a line.</dd>
+<dt>sk.symmetric(p: Point, q: Point, line: Line)</dt><dd>Two points symmetric about a line.</dd>
+<dt>sk.diameter(c: Circle, v: Length)</dt><dd>Sets a diameter.</dd>
+<dt>sk.profile → Profile</dt><dd>Solves the sketch and gives its outline.</dd>
+<dt>sk.dof → int</dt><dd>Degrees of freedom left.</dd>
+<dt>sk.solved → bool</dt><dd>Whether the constraints are satisfied.</dd>
+</dl></section>
+<section><h2>Drawings</h2><dl>
+<dt>drawing(size: string, title: string, author: string, material: string, projection: string, scale: number, landscape: bool) → Drawing</dt><dd>A technical sheet, returned by a @drawing function.</dd>
+<dt>d.standardViews(solid: Solid, iso: bool, dimensions: bool)</dt><dd>Front, top, side and iso views, laid out.</dd>
+<dt>d.view(solid: Solid, name: string, at: Vec, scale: number) → View</dt><dd>One view: "front", "top", "iso"…</dd>
+<dt>d.section(solid: Solid, plane: Plane, label: string) → View</dt><dd>A hatched section.</dd>
+<dt>d.dimension(view: View, from: Vec, to: Vec, offset: Length, text: string)</dt><dd>A dimension between two points.</dd>
+<dt>d.note(text: string, at: Vec, size: Length)</dt><dd>A note on the sheet.</dd>
+</dl></section>
+<section><h2>Units</h2><dl>
+<dt>10.mm</dt><dd>Millimetres: 60.mm.</dd>
+<dt>10.cm</dt><dd>Centimetres.</dd>
+<dt>10.m</dt><dd>Metres.</dd>
+<dt>10.inch</dt><dd>Inches.</dd>
+<dt>10.deg</dt><dd>Degrees: 45.deg.</dd>
+<dt>10.rad</dt><dd>Radians.</dd>
+</dl></section>
+<section><h2>Constants</h2><dl>
+<dt>X: Direction</dt><dd>The X axis (also a plane normal).</dd>
+<dt>Y: Direction</dt><dd>The Y axis.</dd>
+<dt>Z: Direction</dt><dd>The Z axis.</dd>
+<dt>XY: Plane</dt><dd>The XY plane.</dd>
+<dt>XZ: Plane</dt><dd>The XZ plane.</dd>
+<dt>YZ: Plane</dt><dd>The YZ plane.</dd>
+<dt>World: Frame</dt><dd>The global frame.</dd>
+<dt>PI: number</dt><dd>π.</dd>
+<dt>nothing: Solid</dt><dd>The empty solid (also Solid.init): start of a union built in a loop.</dd>
+<dt>edges: Edges</dt><dd>The edges of the solid a feature applies to: edges.parallel(Z).</dd>
+<dt>faces: Faces</dt><dd>The faces of the solid a feature applies to: faces.top.</dd>
+</dl></section>
+<section><h2>Keywords</h2><dl>
+<dt>module</dt><dd>Names the model: module box;</dd>
+<dt>import</dt><dd>import hardware : M3;  import pizza;  import p = parts.bracket;</dd>
+<dt>immutable</dt><dd>A constant: immutable width = 60.mm;</dd>
+<dt>auto</dt><dd>A local variable: auto s = box(…);</dd>
+<dt>return</dt><dd>Gives the result of a function.</dd>
+<dt>foreach</dt><dd>foreach (i; 0 .. n)  foreach (x; xs)</dd>
+<dt>if</dt><dd>if (condition) … else …</dd>
+<dt>else</dt><dd>The other branch of an if.</dd>
+<dt>for</dt><dd>for (int i = 0; i &lt; n; i++)</dd>
+<dt>while</dt><dd>while (condition) …</dd>
+<dt>struct</dt><dd>A record type with fields.</dd>
+<dt>unittest</dt><dd>Design checks, run after every evaluation.</dd>
+<dt>assert</dt><dd>assert(condition, "message")</dd>
+<dt>private</dt><dd>Not visible to modules that import this one.</dd>
+<dt>public</dt><dd>public import: re-exported to whoever imports this module.</dd>
+<dt>true</dt><dd>Boolean true.</dd>
+<dt>false</dt><dd>Boolean false.</dd>
+</dl></section>
+<section><h2>Annotations</h2><dl>
+<dt>@part(color, alpha: 0..1, export: bool)</dt><dd>A body to show and export: @part("steelblue").</dd>
+<dt>@param(description, min:, max:, step:, choices:)</dt><dd>A parameter with a field in the panel.</dd>
+<dt>@preset(name, value)</dt><dd>The parameter's value in a named preset.</dd>
+<dt>@drawing</dt><dd>A function returning a technical drawing.</dd>
+<dt>@assembly</dt><dd>A function returning an assembly.</dd>
+<dt>@unit(unit)</dt><dd>The default unit of bare numbers: @unit(inch) module m;</dd>
+</dl></section>
+<section><h2>import hardware;</h2><dl>
+<dt>struct Screw(name: string, d: Length, pitch: Length, tap: Length, clearance: Length, head: Length, headHeight: Length, key: Length, nut: Length, nutHeight: Length, washer: Length, insert: Length, insertDepth: Length)</dt><dd>Metric screw sizes (ISO 4762 socket head cap screws, ISO 4032 nuts, ISO 7089 washers) with the holes to print or drill for them.</dd>
+<dt>hexPrism(acrossFlats: Length, h: Length) → Solid</dt><dd>Hexagonal prism standing on XY, flats parallel to the X axis.</dd>
+<dt>screw(s: Screw, length: Length, socket: bool = true, threaded: bool = false) → Solid</dt><dd>Socket head cap screw. The underside of the head lies on z = 0: the head grows upwards and the shank downwards, so the screw drops into a hole. threaded: true models the ISO thread (slower); otherwise the shank is plain.</dd>
+<dt>nut(s: Screw, threaded: bool = false) → Solid</dt><dd>Hex nut standing on z = 0, with the corners chamfered on both faces. threaded: true cuts the ISO thread in the hole.</dd>
+<dt>washer(s: Screw) → Solid</dt><dd>Flat washer standing on z = 0.</dd>
+<dt>hole(s: Screw, depth: Length, kind: string = "clearance") → Solid</dt><dd>A hole to subtract, with its top on z = 0 going down `depth`: "clearance" (the screw passes), "tap" (pilot hole for the thread), "insert" (heat-set insert), "counterbore" (clearance with room for the head) or "countersink" (for flat heads).</dd>
+<dt>nutTrap(s: Screw, depth: Length, clearance: Length = …) → Solid</dt><dd>A pocket to trap a nut, from z = 0 going down `depth` (with a little clearance).</dd>
+<dt>M2, M2_5, M3, M4, M5, M6, M8: Screw</dt><dd></dd>
+</dl></section>
+<section><h2>import threads;</h2><dl>
+<dt>toothHeight(pitch: Length) → Length</dt><dd>Height of the thread tooth for a pitch (from the minor to the major diameter).</dd>
+<dt>threadedRod(d: Length, pitch: Length, length: Length, chamfer: bool = true, left: bool = false) → Solid</dt><dd>A threaded rod of nominal diameter `d` standing on z = 0, with the ends chamfered (chamfer: false leaves them square).</dd>
+<dt>tappedHole(d: Length, pitch: Length, depth: Length, clearance: Length = …) → Solid</dt><dd>A tool to subtract for an internal thread that a `d` screw fits, from z = 0 going down `depth`. `clearance` widens it for printed parts.</dd>
+</dl></section>
+<section><h2>import gears;</h2><dl>
+<dt>pitchDiameter(m: Length, teeth: int) → Length</dt><dd></dd>
+<dt>outsideDiameter(m: Length, teeth: int) → Length</dt><dd></dd>
+<dt>rootDiameter(m: Length, teeth: int) → Length</dt><dd></dd>
+<dt>centerDistance(m: Length, teeth1: int, teeth2: int) → Length</dt><dd></dd>
+<dt>involute(rb: Length, r: Length) → double</dt><dd>Angle of the involute of a circle of radius rb at radius r.</dd>
+<dt>gearProfile(m: Length, teeth: int, pressure: Angle = …, backlash: Length = …, steps: int = 6) → Profile</dt><dd>The outline of a spur gear centred on the origin, a tooth on +X. backlash thins the teeth (measured on the pitch circle) so that printed gears do not bind.</dd>
+<dt>spurGear(m: Length, teeth: int, thickness: Length, bore: Length = …, pressure: Angle = …, backlash: Length = …) → Solid</dt><dd>A spur gear standing on z = 0, with an optional bore.</dd>
+<dt>rack(m: Length, teeth: int, thickness: Length, base: Length = …, pressure: Angle = …) → Solid</dt><dd>A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0.</dd>
+</dl></section>
+<section><h2>import hinges;</h2><dl>
+<dt>struct Hinge(fixed: Solid, moving: Solid)</dt><dd>The two leaves of a hinge, printed in place: they come out of the printer already joined and turn around the X axis.</dd>
+<dt>hinge(length: Length = …, width: Length = …, thickness: Length = …, knuckles: int = 5, clearance: Length = …) → Hinge</dt><dd>A print-in-place hinge along X, centred on the origin, leaves lying flat on z = 0 and the axis at z = thickness. `knuckles` alternate between the leaves (odd numbers keep it symmetric).</dd>
+</dl></section>
+<section><h2>import snaps;</h2><dl>
+<dt>snapHook(length: Length = …, thickness: Length = …, width: Length = …, overhang: Length = …, lead: Angle = …) → Solid</dt><dd>A hook: a flexible beam `length` long with a barb `overhang` deep at the top. `lead` is the slope that pushes it aside when inserting.</dd>
+<dt>snapSlot(thickness: Length = …, width: Length = …, overhang: Length = …, wall: Length = …, clearance: Length = …) → Solid</dt><dd>The slot a hook clicks into, to subtract from the mating wall: a window `clearance` larger than the barb.</dd>
+</dl></section>
+<section><h2>import enclosures;</h2><dl>
+<dt>roundedBox(x: Length, y: Length, z: Length, r: Length = …) → Solid</dt><dd>A box centred in X and Y on z = 0, with vertical edges rounded by `r`.</dd>
+<dt>tray(x: Length, y: Length, z: Length, wall: Length = …, r: Length = …) → Solid</dt><dd>An open box: walls `wall` thick, open on top.</dd>
+<dt>struct Enclosure(base: Solid, lid: Solid)</dt><dd>A base and a lid that fit together, both standing on z = 0.</dd>
+<dt>enclosure(inner: Vec3, wall: Length = …, r: Length = …, lidHeight: Length = …, screw: Screw = …, clearance: Length = …) → Enclosure</dt><dd>An enclosure with `inner` free space (x, y, z), a lid with a lip that fits inside the base, and a screw post in each corner.</dd>
+</dl></section>
+</main></body></html>

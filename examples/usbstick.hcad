@@ -1,0 +1,110 @@
+// A simple USB flash drive: plastic body, USB-A plug and keyring hole.
+module usbstick;
+
+import std.shapes;
+
+@param("Body length", min: 25.mm, max: 70.mm)
+immutable bodyLength = 40.mm;
+
+@param("Body width", min: 14.mm, max: 25.mm)
+immutable bodyWidth = 17.mm;
+
+@param("Body thickness", min: 6.mm, max: 12.mm)
+immutable bodyThickness = 8.mm;
+
+@param("Keyring hole diameter", min: 2.mm, max: 6.mm)
+immutable ringHole = 3.5.mm;
+
+@param("Label on the side (empty for none)")
+immutable label = "HCAD 32GB";
+
+@param("Label height", min: 2.mm, max: 5.mm)
+immutable labelSize = 3.5.mm;
+
+@param("Label depth", min: 0.1.mm, max: 1.mm)
+immutable labelDepth = 0.4.mm;
+
+// USB-A plug (standard dimensions)
+immutable plugWidth = 12.mm;
+immutable plugHeight = 4.5.mm;
+immutable plugLength = 12.mm;
+immutable sheet = 0.3.mm;
+
+@part("#2b2b33")
+Solid body()
+{
+    auto b = box(bodyLength, bodyWidth, bodyThickness)
+        .fillet(edges.parallel(Z), r: 3.mm)
+        .fillet(edges.perpendicular(Z), r: 1.5.mm);
+
+    // keyring hole near the back end
+    b -= cylinder(d: ringHole, h: 3 * bodyThickness, center: true)
+        .move(x: -bodyLength / 2 + 4.mm);
+
+    // shallow grip recess on the top face
+    b -= box(bodyLength * 0.45, bodyWidth * 0.6, 0.6.mm)
+        .fillet(edges.parallel(Z), r: 2.mm)
+        .move(x: -2.mm, z: bodyThickness - 0.6.mm);
+
+    // the label, engraved and centred on the side face (local X along the
+    // stick, local Y upwards)
+    if (label.length)
+        b = b.cut(text(label, size: labelSize).centered, on: b.frame(faces.front), depth: labelDepth);
+
+    return b.move(x: bodyLength / 2);
+}
+
+@part("silver")
+Solid plug()
+{
+    auto shell = box(plugLength, plugWidth, plugHeight)
+        .shell(open: faces.right, thickness: sheet);
+
+    // the two latch windows on top and bottom
+    foreach (sy; [-1, 1])
+        shell -= box(2.mm, 2.5.mm, 2 * plugHeight, center: true)
+            .move(x: plugLength / 2 - 3.5.mm, y: sy * 3.mm, z: plugHeight / 2);
+
+    // a short sleeve hidden inside the body holds the plug
+    return shell.move(x: plugLength / 2 + bodyLength - 0.01.mm,
+                      z: (bodyThickness - plugHeight) / 2);
+}
+
+@part("white")
+Solid tongue()
+{
+    // plastic tongue in the upper half, contacts facing down
+    immutable t = 1.8.mm;
+    auto tg = box(plugLength - 0.5.mm, plugWidth - 2 * sheet, t);
+    return tg.move(x: bodyLength + (plugLength - 0.5.mm) / 2,
+                   z: (bodyThickness + plugHeight) / 2 - sheet - t);
+}
+
+@part("gold")
+Solid contacts()
+{
+    // four contacts under the tongue
+    auto c = Solid.init;
+    foreach (i; 0 .. 4)
+        c += box(4.mm, 1.mm, 0.1.mm)
+            .move(x: bodyLength + plugLength - 3.mm, y: (i - 1.5) * 2.mm,
+                  z: (bodyThickness + plugHeight) / 2 - sheet - 1.8.mm - 0.1.mm);
+    return c;
+}
+
+unittest
+{
+    assert(plug.bbox.size.y == plugWidth, "USB-A plug must be 12 mm wide");
+    writeln("total length: ", (body.bbox.size.x + plugLength) / 1.mm, " mm");
+}
+
+@drawing
+Drawing drawingSheet()
+{
+    auto d = drawing(title: "USB stick: $(label)", material: "PLA body, steel plug");
+    auto stick = body + plug;
+    d.standardViews(stick);
+    // lengthwise section through the middle, to show the hollow plug
+    d.section(stick, XZ, label: "A");
+    return d;
+}

@@ -1,0 +1,51 @@
+module hackerscad.geom.vec;
+
+import std.math : sqrt;
+
+struct Vec3
+{
+    double x = 0, y = 0, z = 0;
+
+    Vec3 opBinary(string op)(Vec3 o) const if (op == "+" || op == "-")
+    {
+        return Vec3(mixin("x" ~ op ~ "o.x"), mixin("y" ~ op ~ "o.y"), mixin("z" ~ op ~ "o.z"));
+    }
+
+    Vec3 opBinary(string op)(double k) const if (op == "*" || op == "/")
+    {
+        return Vec3(mixin("x" ~ op ~ "k"), mixin("y" ~ op ~ "k"), mixin("z" ~ op ~ "k"));
+    }
+
+    Vec3 opBinaryRight(string op : "*")(double k) const => this * k;
+
+    Vec3 opUnary(string op : "-")() const => Vec3(-x, -y, -z);
+
+    double dot(Vec3 o) const => x * o.x + y * o.y + z * o.z;
+
+    Vec3 cross(Vec3 o) const => Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x);
+
+    double length() const => sqrt(dot(this));
+
+    Vec3 normalized() const
+    {
+        immutable l = length;
+        return l > 0 ? this / l : this;
+    }
+}
+
+struct BBox
+{
+    Vec3 min, max;
+
+    Vec3 size() const => max - min;
+    Vec3 center() const => (min + max) / 2;
+}
+
+unittest
+{
+    auto a = Vec3(1, 2, 3);
+    assert(a + Vec3(1, 1, 1) == Vec3(2, 3, 4));
+    assert(2 * a == Vec3(2, 4, 6));
+    assert(Vec3(1, 0, 0).cross(Vec3(0, 1, 0)) == Vec3(0, 0, 1));
+    assert(BBox(Vec3(0, 0, 0), Vec3(2, 4, 6)).center == Vec3(1, 2, 3));
+}

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=hackerscad
+GenericName=Parametric CAD
+Comment=Parametric CAD: models written in a small language, edited with the mouse too
+Exec=hscad-gui %f
+Icon=it.andreafontana.hackerscad.gui
+Terminal=false
+Categories=Graphics;3DGraphics;Engineering;
+MimeType=text/x-hcad;
+Keywords=CAD;3D;OpenSCAD;parametric;STEP;STL;3MF;

@@ -1,0 +1,159 @@
+// A clip for bags of biscuits: fold the top of the
+// bag and push it into the wavy slot, the teeth hold
+// it. Prints flat, as it is.
+// - drag the sliders in Parameters;
+// - edit the code: the view updates as you type;
+// - right-click a face or an edge for fillets,
+//   holes, pockets...
+// More in docs/TUTORIAL.md and in the examples.
+module bagclip;
+
+import std.shapes;
+
+@param("Height", min: 5.mm, max: 40.mm)
+@preset("small", 10.mm) @preset("large", 20.mm)
+immutable height = 15.mm;
+
+@param("Teeth per jaw", min: 1, max: 8)
+@preset("small", 2) @preset("large", 5)
+immutable teeth = 3;
+
+@param("Tooth radius", min: 1.mm, max: 5.mm)
+immutable toothR = 2.5.mm;
+
+@param("Gap for the bag", min: 0.5.mm, max: 6.mm)
+immutable gap = 2.9.mm;
+
+@param("Jaw thickness", min: 2.mm, max: 10.mm)
+immutable jaw = 5.mm;
+
+@param("Back thickness", min: 2.mm, max: 10.mm)
+immutable back = 5.4.mm;
+
+@param("Mouth opening", min: 0.deg, max: 5.deg)
+immutable mouth = 1.5.deg;
+
+@param("Keyring eye")
+immutable eye = true;
+
+// the outline leans: the clip slides onto the bag
+immutable lean = 17.deg;
+immutable corner = 2.5.mm;
+
+// a tooth up and a tooth down
+immutable pitch = 4 * toothR;
+// the rows of tooth centres, above and below y = 0
+immutable axis = toothR + gap / 2;
+immutable top = axis + toothR + jaw;
+// along y = 0: where the slot ends, and the back
+immutable slotEnd = 0.mm;
+immutable left = slotEnd - back;
+
+/// x of a leaning side that crosses y = 0 at x0.
+Length leaning(Length x0, Length y) => x0 - y * tan(lean);
+
+// the rows start at the end of the slot; the lower one
+// tilts down by the mouth angle, so the slot opens up
+immutable upperStart = vec(leaning(slotEnd, axis), axis);
+immutable lowerStart = vec(leaning(slotEnd, -axis), -axis);
+immutable along = vec(cos(mouth), -sin(mouth));
+
+/// Centre of the k-th round of a row: pockets (even k) and
+/// teeth (odd k) alternate, touching each other; the first
+/// pocket touches the leaning end of the slot.
+Vec2 upper(int k) => upperStart + vec(toothR / cos(lean) + 2 * toothR * k, 0.mm);
+/// ditto
+Vec2 lower(int k) => lowerStart + along * (toothR / cos(lean + mouth) + 2 * toothR * k);
+
+// the tip of each jaw leans like the back and touches its last
+// tooth: where the tooth faces the tip
+immutable facing = vec(cos(lean), sin(lean));
+// where the first pockets touch the end of the slot
+immutable upperEnd = upper(0) - facing * toothR;
+immutable lowerEnd = lower(0) - facing * toothR;
+immutable upperTouch = upper(2 * teeth - 1) + facing * toothR;
+immutable lowerTouch = lower(2 * teeth - 1) + facing * toothR;
+// where the tips cross y = 0 (the step between them is in the slot)
+immutable upperTip = upperTouch.x + upperTouch.y * tan(lean);
+immutable lowerTip = lowerTouch.x + lowerTouch.y * tan(lean);
+immutable right = max(upperTip, lowerTip);
+
+/// How much the lower jaw drops at x.
+Length drop(Length x) => (x - lowerStart.x) * tan(mouth);
+
+// the eye: centred on the top edge, touching the leaning back
+immutable eyeR = 5.mm;
+immutable eyeAt = vec(leaning(left, top) + eyeR / cos(lean), top);
+
+/// The outline without the slot: a leaning block, its
+/// lower side following the jaw, with the eye.
+Profile block()
+{
+    immutable bottom = -top;
+    immutable tip = leaning(lowerTip, bottom);
+    auto corners = [
+        vec(leaning(left, bottom), bottom),
+        vec(tip, bottom - drop(tip)),
+        vec(lowerTip, 0.mm),
+        vec(upperTip, 0.mm),
+        vec(leaning(upperTip, top), top),
+    ];
+    // with the eye, the outline goes along the top to the eye's
+    // centre, then to where the eye touches the back
+    if (eye)
+        corners ~= [eyeAt, eyeAt - facing * eyeR];
+    else
+        corners ~= vec(leaning(left, top), top);
+    auto p = polygon(corners);
+    if (eye)
+        p += circle(r: eyeR).move(eyeAt);
+    // round the inner corners (grow, shrink back), then the outer
+    // ones (shrink, grow back)
+    return p
+        .offset(1.5.mm).offset(-1.5.mm)
+        .offset(-corner).offset(corner);
+}
+
+/// A round tooth (or pocket) centred at c.
+Profile tooth(Vec2 c) => circle(r: toothR).move(c);
+
+/// The slot: a band between the two rows of tooth
+/// centres, the pockets of each jaw added, the
+/// teeth of each jaw taken away.
+Profile slot()
+{
+    // between the rows of tooth centres, from the points where
+    // the first pockets touch the end of the slot to those where
+    // the tips touch the last teeth: everything meets smoothly
+    immutable far = right + 2 * pitch;
+    auto s = polygon([
+        lowerEnd,
+        lower(0),
+        lower(2 * teeth - 1),
+        lowerTouch,
+        vec(far, lowerTouch.y),
+        vec(far, upperTouch.y),
+        upperTouch,
+        upper(2 * teeth - 1),
+        upper(0),
+        upperEnd,
+    ]);
+    foreach (k; 0 .. 2 * teeth)
+    {
+        auto rounds = tooth(upper(k)) + tooth(lower(k));
+        if (k % 2 == 0)
+            s += rounds;    // pockets
+        else
+            s -= rounds;    // teeth
+    }
+    return s;
+}
+
+@part
+Solid clip()
+{
+    auto p = block() - slot();
+    if (eye)
+        p -= circle(d: 3.8.mm).move(eyeAt);
+    return p.extrude(height);
+}

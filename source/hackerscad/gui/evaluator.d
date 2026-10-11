@@ -1,0 +1,326 @@
+/// Runs model evaluations on a worker thread. One evaluation at a time: a
+/// new request cancels the running one, and only the latest result is
+/// delivered, on the GTK main thread.
+module hackerscad.gui.evaluator;
+
+import core.atomic : atomicStore;
+import core.thread : Thread;
+import std.datetime.stopwatch : StopWatch, AutoStart;
+import std.path : dirName, absolutePath;
+import std.format : format;
+
+import glib.global : idleAdd;
+import glib.types : PRIORITY_DEFAULT;
+
+import hackerscad.geom.mesh;
+import hackerscad.geom.vec;
+import hackerscad.kernel.brep;
+import hackerscad.kernel.occt.backend;
+import hackerscad.kernel.cache;
+import hackerscad.lang.errors;
+import hackerscad.lang.interp;
+import hackerscad.render.raster : featureEdges;
+import hackerscad.lang.sketchval : SketchView, SketchVal;
+import hackerscad.lang.value : SolidVal;
+import hackerscad.geom.color;
+
+struct Request
+{
+    string source;
+    string path;
+    string[string] overrides;
+    string preset;
+    double tolerance = 0.02;
+    ulong generation;
+}
+
+/// GPU-ready geometry of one part.
+struct PartMesh
+{
+    string name;
+    uint rgb;
+    bool export_ = true;   /// false for reference parts
+    float[] vertices;   /// x y z nx ny nz per vertex
+    uint[] indices;
+    uint[] faceStart;   /// B-rep face i owns triangles faceStart[i] .. faceStart[i + 1]
+    uint[] creators;    /// per face: feature id (Outcome.features[id - 1])
+    float[] edges;      /// x y z pairs (feature edges)
+    Mesh welded;        /// for picking and export
+    Span span;
+    BBox bbox;
+    double volume;
+    Brep brep;          /// exact solid, for STEP export
+    BrepKernel kernel;
+    EdgeInfo[] edgeInfo;    /// B-rep edges, for picking edges
+    int[2][] edgeFaces;     /// the two faces of every edge
+}
+
+struct Outcome
+{
+    ulong generation;
+    bool ok;
+    bool cancelled;
+    PartMesh[] parts;
+    ParamInfo[] params;
+    string[] presets;
+    FeatureInfo[] features;
+    SketchView[] sketches;
+    LogLine[] log;
+    Diagnostic[] diagnostics;
+    string[string] sources;   /// module path → source, to render diagnostics
+    long milliseconds;
+    size_t cacheHits, cacheMisses;
+}
+
+final class Evaluator
+{
+    void delegate(Outcome) onResult;
+    /// What the running evaluation is doing ("part 3 of 12: gear"), on the GTK thread.
+    void delegate(string) onProgress;
+
+    private Request pending;
+    private bool hasPending;
+    private void delegate()[] jobs;   /// worker tasks waiting for the kernel
+    private bool running;
+    private ulong generation;
+    private shared bool cancelFlag;
+    // only the worker thread touches these, one evaluation at a time
+    private CachingKernel kernel;
+    private PartMesh[Brep] prepared;
+
+    /// An evaluation is running or queued.
+    bool busy() const => running || hasPending;
+
+    void request(Request r)
+    {
+        r.generation = ++generation;
+        pending = r;
+        hasPending = true;
+        if (running)
+            atomicStore(cancelFlag, true);
+        else
+            startNext();
+    }
+
+    /// Abandons the running evaluation and any queued one.
+    void cancel()
+    {
+        hasPending = false;
+        if (running)
+            atomicStore(cancelFlag, true);
+    }
+
+    /// Tessellates the solid left by a feature (for rollback views) on the
+    /// worker thread; `done` runs on the GTK thread.
+    void prepareFeature(FeatureInfo f, string name, void delegate(PartMesh) done)
+    {
+        if (f.result is null || f.result.brep is null || f.result.path)
+            return;
+        jobs ~= () {
+            PartResult p;
+            p.name = name;
+            p.solid = f.result;
+            p.rgb = f.result.hasColor ? f.result.rgb : defaultPartColor;
+            p.span = f.span;
+            PartMesh m;
+            bool ok;
+            try
+            {
+                m = prepare(kernel, p, 0.02);
+                ok = true;
+            }
+            catch (Exception)
+            {
+            }
+            idleAdd(PRIORITY_DEFAULT, () {
+                if (ok)
+                    done(m);
+                running = false;
+                if (hasPending || jobs.length)
+                    startNext();
+                return false;
+            });
+        };
+        if (!running)
+            startNext();
+    }
+
+    private void startNext()
+    {
+        if (!hasPending && jobs.length)
+        {
+            auto job = jobs[0];
+            jobs = jobs[1 .. $];
+            running = true;
+            auto t = new Thread({
+                if (kernel is null)
+                    kernel = new CachingKernel(new OcctKernel);
+                job();
+            });
+            t.isDaemon = true;
+            t.start();
+            return;
+        }
+        auto req = pending;
+        hasPending = false;
+        running = true;
+        atomicStore(cancelFlag, false);
+        auto flag = &cancelFlag;
+        void progress(string what)
+        {
+            idleAdd(PRIORITY_DEFAULT, () {
+                if (running && onProgress !is null)
+                    onProgress(what);
+                return false;
+            });
+        }
+
+        auto t = new Thread({
+            if (kernel is null)
+                kernel = new CachingKernel(new OcctKernel);
+            auto o = evaluate(req, flag, kernel, prepared, &progress);
+            idleAdd(PRIORITY_DEFAULT, () { finished(o); return false; });
+        });
+        t.isDaemon = true;
+        t.start();
+    }
+
+    private void finished(Outcome o)
+    {
+        running = false;
+        if (!o.cancelled && o.generation == generation && onResult !is null)
+            onResult(o);
+        if (hasPending || jobs.length)
+            startNext();
+    }
+}
+
+/// Evaluates on a kernel cache shared with previous evaluations: only what
+/// the edit changed is computed again. `prepared` keeps the GPU meshes of
+/// solids that did not change.
+Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref PartMesh[Brep] prepared,
+    void delegate(string) stage = null)
+{
+    Outcome o;
+    o.generation = req.generation;
+    auto sw = StopWatch(AutoStart.yes);
+    kernel.beginRun();
+    scope (exit)
+        kernel.endRun();
+    auto it = new Interp(kernel);
+    it.root = dirName(absolutePath(req.path));
+    it.overrides = req.overrides;
+    it.preset = req.preset;
+    it.cancel = cancel;
+    it.onStage = stage;
+    try
+    {
+        auto r = it.runSource(req.source, absolutePath(req.path));
+        PartMesh[Brep] still;
+        foreach (i, p; r.parts)
+        {
+            // an unchanged solid keeps its mesh; name, colour and provenance may differ
+            PartMesh m;
+            if (auto old = p.solid.brep in prepared)
+            {
+                m = *old;
+                m.name = p.name;
+                m.rgb = p.rgb;
+                m.export_ = p.export_;
+                m.span = p.span;
+                m.creators = p.solid.creators;
+            }
+            else
+            {
+                if (stage !is null)
+                    stage(format("meshing %d of %d: %s", i + 1, r.parts.length, p.name));
+                m = prepare(kernel, p, req.tolerance);
+            }
+            still[p.solid.brep] = m;
+            o.parts ~= m;
+        }
+        prepared = still;
+        o.params = r.params;
+        o.presets = r.presets;
+        o.features = r.features;
+        o.log = r.log;
+        o.diagnostics = r.diagnostics;
+        o.ok = true;
+    }
+    catch (HcadError e)
+    {
+        if (e.msg == "evaluation cancelled")
+            o.cancelled = true;
+        o.diagnostics = [e.diag];
+        o.params = it.params;
+        o.presets = it.presetNames;
+        o.log = it.log;
+    }
+    catch (KernelException e)
+        o.diagnostics = [Diagnostic(Severity.error, Code.kernel, e.msg, Span(req.path))];
+    // sketches are shown even when the evaluation failed (e.g. conflicting constraints)
+    foreach (sk; it.sketches)
+        if (auto sv = cast(SketchVal) sk)
+            if (sv.span.file == absolutePath(req.path))
+            {
+                try
+                    o.sketches ~= sv.view();
+                catch (Exception)
+                {
+                }
+            }
+    foreach (path, m; it.modules)
+        o.sources[path] = m.source;
+    o.milliseconds = sw.peek.total!"msecs";
+    o.cacheHits = kernel.hits;
+    o.cacheMisses = kernel.misses;
+    return o;
+}
+
+/// Tessellates a part: smooth normals inside each B-rep face (the kernel
+/// emits separate vertices per face), sharp edges between faces.
+PartMesh prepare(BrepKernel k, PartResult p, double tolerance)
+{
+    PartMesh m;
+    m.name = p.name;
+    m.rgb = p.rgb;
+    m.export_ = p.export_;
+    m.span = p.span;
+    m.bbox = k.bbox(p.solid.brep);
+    m.volume = k.volume(p.solid.brep);
+    m.brep = p.solid.brep;
+    // exports run on the GTK thread: give them the uncached kernel
+    auto cached = cast(CachingKernel) k;
+    m.kernel = cached ? cached.inner : k;
+
+    auto raw = k.tessellate(p.solid.brep, tolerance, 0.25);
+    auto normals = new Vec3[raw.vertexCount];
+    foreach (t; 0 .. raw.triangleCount)
+    {
+        auto ia = raw.tris[t * 3], ib = raw.tris[t * 3 + 1], ic = raw.tris[t * 3 + 2];
+        auto a = raw.vertex(ia), b = raw.vertex(ib), c = raw.vertex(ic);
+        auto n = (b - a).cross(c - a); // area weighted
+        normals[ia] = normals[ia] + n;
+        normals[ib] = normals[ib] + n;
+        normals[ic] = normals[ic] + n;
+    }
+    m.vertices = new float[raw.vertexCount * 6];
+    foreach (i; 0 .. raw.vertexCount)
+    {
+        auto n = normals[i].normalized;
+        m.vertices[i * 6 .. i * 6 + 6] = [raw.verts[i * 3], raw.verts[i * 3 + 1], raw.verts[i * 3 + 2],
+            cast(float) n.x, cast(float) n.y, cast(float) n.z];
+    }
+    m.indices = raw.tris;
+    m.faceStart = raw.faceStart;
+    m.creators = p.solid.creators;
+
+    m.edgeInfo = k.edges(p.solid.brep);
+    m.edgeFaces = k.edgeFaces(p.solid.brep);
+
+    m.welded = raw.welded;
+    foreach (e; featureEdges(m.welded, 25))
+        foreach (v; e)
+            m.edges ~= m.welded.verts[v * 3 .. v * 3 + 3];
+    return m;
+}

@@ -1,0 +1,28 @@
+// The hackerscad logo in 3D: a hollow block (a shell) with a round hole in
+// its top; a little lower than the flat logo, so the floor shows through the hole.
+module logo;
+
+import std.shapes;
+
+@param("Size", min: 10.mm, max: 150.mm)
+immutable size = 40.mm;
+
+@param("Edge chamfer", min: 0.mm, max: 2.mm)
+immutable bevel = 0.6.mm;
+
+immutable height = size * 0.45;
+immutable wall = size * 0.07;
+immutable holeD = size * 0.78;
+
+@part
+Solid logo()
+{
+    auto cavity = box(size - 2 * wall, size - 2 * wall, height - 2 * wall).move(z: wall);
+    // the outside edges chamfered, the inside sharp as in the flat logo
+    auto outside = box(size, size, height);
+    if (bevel > 0.mm)
+        outside = outside.chamfer(edges, d: bevel);
+    return outside
+        - cavity
+        - cylinder(d: holeD, h: wall).move(z: height - wall);
+}

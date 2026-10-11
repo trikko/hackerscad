@@ -1,0 +1,997 @@
+/// Language test suite: runs .hcad snippets and checks output, errors and
+/// geometry. Snippets passed to `output` run inside a unittest block.
+module hackerscad.lang.tests;
+
+version (unittest):
+
+import std.algorithm : map, canFind;
+import std.array : array, join;
+import std.format : format;
+import std.math : isClose, PI, sqrt;
+import std.file : tempDir, mkdirRecurse, write, rmdirRecurse;
+import std.path : buildPath;
+
+import hackerscad.lang.interp;
+import hackerscad.lang.errors;
+import hackerscad.lang.value : Value, Dim;
+import hackerscad.geom.color;
+import hackerscad.kernel.occt.backend;
+import hackerscad.kernel.brep : BoolOp, Vec3;
+
+private:
+
+__gshared OcctKernel kernel;
+
+Interp make()
+{
+    if (kernel is null)
+        kernel = new OcctKernel;
+    return new Interp(kernel);
+}
+
+EvalResult runModel(string src, Interp it = null)
+{
+    if (it is null)
+        it = make();
+    return it.runSource(src, buildPath(tempDir, "hcad-test.hcad"));
+}
+
+/// Runs `code` inside a unittest block and returns what writeln printed.
+string output(string code, string decls = "")
+{
+    auto r = runModel(decls ~ "\nunittest {\n" ~ code ~ "\n}\n");
+    foreach (d; r.diagnostics)
+        if (d.severity == Severity.error)
+            assert(0, format("unexpected error %s: %s (line %d)\n%s", d.code, d.message, d.span.line, code));
+    return r.log.map!(l => l.text).join("\n");
+}
+
+/// The first error raised by a model (thrown or from a failed unittest).
+Diagnostic error(string src, Interp it = null)
+{
+    try
+    {
+        auto r = runModel(src, it);
+        foreach (d; r.diagnostics)
+            if (d.severity == Severity.error)
+                return d;
+    }
+    catch (HcadError e)
+        return e.diag;
+    assert(0, "expected an error:\n" ~ src);
+}
+
+Diagnostic errorIn(string code, string decls = "") => error(decls ~ "\nunittest {\n" ~ code ~ "\n}\n");
+
+void expectOut(string code, string expected, string decls = "", size_t line = __LINE__)
+{
+    auto got = output(code, decls);
+    assert(got == expected, format("line %d: expected\n%s\ngot\n%s", line, expected, got));
+}
+
+void expectErr(string code, string errCode, string decls = "", size_t line = __LINE__)
+{
+    auto d = errorIn(code, decls);
+    assert(d.code == errCode, format("line %d: expected %s, got %s: %s", line, errCode, d.code, d.message));
+}
+
+double partVolume(EvalResult r, string name)
+{
+    foreach (p; r.parts)
+        if (p.name == name)
+            return kernel.volume(p.solid.brep);
+    assert(0, "no part " ~ name);
+}
+
+// ---------------------------------------------------------------- expressions
+
+unittest
+{
+    expectOut("writeln(7 / 2, \" \", 7.0 / 2, \" \", 7 % 3, \" \", -7 / 2);", "3 3.5 1 -3");
+    expectOut("writeln(1 + 2 * 3, \" \", (1 + 2) * 3, \" \", -2 ^^ 2, \" \", 2 ^^ 3 ^^ 2);", "7 9 -4 512");
+    expectOut("writeln(3 > 2 && 2 > 1, \" \", !true || false, \" \", 1 == 1.0, \" \", 5 & 3, \" \", 5 | 3);",
+        "true false true 1 7");
+    expectOut("writeln(true ? \"yes\" : \"no\", \" \", 1 > 2 ? 1 : 2);", "yes 2");
+    expectOut("auto x = 5; x += 2; x *= 3; x -= 1; x /= 4; writeln(x); x++; ++x; x--; writeln(x);", "5\n6");
+    expectOut("writeln(0xFF, \" \", 1_000, \" \", 2.5e3);", "255 1000 2500");
+}
+
+// ---------------------------------------------------------------- units
+
+unittest
+{
+    expectOut("writeln(60.mm, \" \", 2.5.cm, \" \", 1.inch, \" \", 45.deg);", "60 mm 25 mm 25.4 mm 45°");
+    expectOut("writeln(2 * 60.mm, \" \", 60.mm / 2, \" \", 1.cm == 10.mm, \" \", 3.mm < 1.cm);", "120 mm 30 mm true true");
+    expectOut("writeln(10.mm * 10.mm, \" \", sqrt(16.mm * 1.mm), \" \", 1.cm ^^ 3);", "100 mm^2 4 mm 1000 mm^3");
+    expectOut("writeln(sin(30.deg), \" \", 60.mm / 1.cm, \" \", atan2(1.mm, 1.mm));", "0.5 6 45°");
+    expectOut("Length f(Length x) => x * 2; writeln(f(5), \" \", f(5.mm));", "10 mm 10 mm");
+    expectErr("auto x = 60.mm + 5;", Code.units);
+    expectErr("auto x = 60.mm + 45.deg;", Code.units);
+    expectErr("auto x = 3.mm < 2;", Code.units);
+    expectErr("auto x = sin(3.mm);", Code.units);
+    expectErr("auto x = 3.mm.mm;", Code.units);
+    expectErr("Length f(Length x) => x; auto y = f(3.deg);", Code.units);
+}
+
+unittest
+{
+    // @unit(inch): bare lengths in this file are inches
+    auto r = runModel("@unit(inch) module m;\n@part Solid p() { return box(1, 1, 1); }\nunittest { writeln(box(1, 2, 3).bbox.size.y); }");
+    assert(isClose(partVolume(r, "p"), 25.4 ^^ 3, 1e-9));
+    assert(r.log[0].text == "50.8 mm");
+    assert(error("@unit(deg) module m;").code == Code.type);
+}
+
+// ---------------------------------------------------------------- strings
+
+unittest
+{
+    expectOut(`writeln("a" ~ "b", " ", 1 ~ "-" ~ 2.mm, " ", format("%d|%.2f|%s|%5.1f", 42, 3.14159, 2.mm, 2.mm));`,
+        "ab 1-2 mm 42|3.14|2 mm|  2.0");
+    // "…" interpolates $(expr); \$ is a literal dollar; backticks are WYSIWYG as in D
+    expectOut(`immutable w = 20.mm; writeln("w = $(w), twice $(w * 2), $("q" ~ "r") \$(w)");`, "w = 20 mm, twice 40 mm, qr $(w)");
+    expectOut("writeln(`raw $(x) \\n`);", `raw $(x) \n`);
+    expectOut(`writeln("a\tb".length, " ", "line $(1 + 1)\n".length);`, "3 7");
+    expectErr(`auto s = "a $(1 +";`, Code.lex);
+    expectErr(`auto s = "a $(nope)";`, Code.undefined);
+    expectErr(`auto s = text(1, "-");`, Code.type);
+    expectOut(`writeln(to!string(3) ~ "!", " ", "42".to!int + 1, " ", "abc".length, " ", "abc"[1], " ", "hello"[1 .. $ - 1]);`,
+        "3! 43 3 b ell");
+    expectOut("writeln(\"a\\tb\" == `a\tb`, \" \", r\"\\n\".length);", "true 2");
+    expectOut(`writeln("a" ~ 1 ~ true);`, "a1true");   // a string joins anything
+    expectErr(`auto s = 2.5.to!int;`, Code.type);
+}
+
+// ---------------------------------------------------------------- arrays and associative arrays
+
+unittest
+{
+    expectOut("auto a = [1, 2, 3]; a ~= 4; writeln(a, \" \", a.length, \" \", a[$ - 1], \" \", a[1 .. 3], \" \", a ~ [5]);",
+        "[1, 2, 3, 4] 4 4 [2, 3] [1, 2, 3, 4, 5]");
+    // value semantics: copies do not alias
+    expectOut("auto a = [1, 2]; auto b = a; b[0] = 9; writeln(a, \" \", b);", "[1, 2] [9, 2]");
+    expectOut("int[] a; a ~= 1; Length[] l = [1, 2]; writeln(a, \" \", l);", "[1] [1 mm, 2 mm]");
+    expectOut("auto m = [\"a\": 1, \"b\": 2]; m[\"c\"] = 3; writeln(\"b\" in m, \" \", \"z\" in m, \" \", m[\"c\"], \" \", m.length);",
+        "true false 3 3");
+    expectOut("auto g = [[1, 2], [3, 4]]; g[1][0] = 7; writeln(g);", "[[1, 2], [7, 4]]");
+    expectErr("auto a = [1, 2]; auto x = a[5];", Code.index);
+    expectErr("auto a = [1, 2]; auto x = a[1 .. 5];", Code.index);
+    expectErr("auto m = [\"a\": 1]; auto x = m[\"b\"];", Code.index);
+    expectErr("int[] a = [1, \"x\"];", Code.type);
+}
+
+// ---------------------------------------------------------------- control flow
+
+unittest
+{
+    expectOut("int s; foreach (i; 0 .. 5) s += i; writeln(s);", "10");
+    expectOut("string r; foreach (i, x; [\"a\", \"b\"]) r ~= \"$(i)$(x)\"; writeln(r);", "0a1b");
+    expectOut("int[] r; foreach_reverse (i; 0 .. 3) r ~= i; writeln(r);", "[2, 1, 0]");
+    expectOut("int s; foreach (k, v; [\"a\": 1, \"b\": 2]) s += v; writeln(s);", "3");
+    expectOut("int s; for (int i = 0; i < 10; i++) { if (i == 2) continue; if (i == 5) break; s += i; } writeln(s);", "8");
+    expectOut("int i; while (i < 3) i++; writeln(i);", "3");
+    expectOut("foreach (x; [1, 2, 3]) switch (x) { case 1: writeln(\"one\"); break; case 2, 3: writeln(\"many\"); break; default: writeln(\"?\"); }",
+        "one\nmany\nmany");
+    expectOut("if (1 > 2) writeln(\"a\"); else if (2 > 1) writeln(\"b\"); else writeln(\"c\");", "b");
+    expectErr("switch (3) { case 1: break; }", Code.type);
+    expectErr("assert(1 > 2, \"no\");", Code.assertion);
+}
+
+// ---------------------------------------------------------------- functions
+
+unittest
+{
+    enum decls = q{
+        int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }
+        double area(double w, double h = 2) => w * h;
+        int twice(int x) => x * 2;
+        auto adder(int k) { return (int x) => x + k; }
+    };
+    expectOut("writeln(fact(10), \" \", area(3), \" \", area(h: 4, w: 2), \" \", adder(3)(4));", "3628800 6 8 7", decls);
+    expectOut("int sq(int x) { return x * x; } writeln(sq(4), \" \", 4.sq, \" \", [1, 2].map(&twice));", "16 16 [2, 4]", decls);
+    expectErr("auto x = [1].map!(x => x);", Code.syntax);   // functions are normal arguments
+    expectOut("auto f = &twice; writeln(f(5), \" \", ((a, b) => a * b)(3, 4), \" \", ((x) { return x + 1; })(1));", "10 12 2", decls);
+    expectErr("auto x = area(1, 2, 3);", Code.arity, decls);
+    expectErr("auto x = area(h: 1);", Code.missingArg, decls);
+    auto d = errorIn("auto x = area(1, hh: 2);", decls);
+    assert(d.code == Code.unknownArg && d.suggestion == "did you mean 'h'?");
+    expectErr("auto x = twice(\"a\");", Code.type, decls);
+    expectErr("auto x = twice(2.5);", Code.type, decls);
+    expectErr("int loop(int n) => loop(n + 1); auto x = loop(0);", Code.limit);
+    expectErr("void f() { return 1; } f();", Code.type);
+    expectErr("int f() { } auto x = f();", Code.type);
+}
+
+unittest
+{
+    // paren-less calls of declared functions, as in D
+    expectOut("writeln(answer + 1, \" \", answer.twice);", "43 84", "int answer() => 42; int twice(int x) => x * 2;");
+    // closures capture their scope
+    expectOut("int k = 10; auto f = (int x) => x + k; writeln(f(1));", "11");
+}
+
+// ---------------------------------------------------------------- structs
+
+unittest
+{
+    enum decls = q{
+        struct Screw
+        {
+            string name;
+            Length d;
+            Length head = 5.mm;
+            Length clearance() => d + 0.4.mm;
+            Length scaled(double k) => d * k;
+        }
+    };
+    expectOut("auto s = Screw(\"M3\", 3); writeln(s.d, \" \", s.head, \" \", s.clearance, \" \", s.scaled(2));",
+        "3 mm 5 mm 3.4 mm 6 mm", decls);
+    expectOut("auto s = Screw(d: 4.mm, name: \"M4\"); s.head = 7; writeln(s);", "Screw(name: M4, d: 4 mm, head: 7 mm)", decls);
+    expectOut("Screw s; writeln(s.d, \" \", Screw.init.head);", "0 mm 5 mm", decls);
+    expectOut("auto a = Screw(\"a\", 1); auto b = a; b.d = 2; writeln(a.d, \" \", b.d, \" \", a == Screw(\"a\", 1));", "1 mm 2 mm true", decls);
+    expectErr("auto s = Screw(\"a\", 1, 2, 3);", Code.arity, decls);
+    auto d = errorIn("auto s = Screw(diam: 3);", decls);
+    assert(d.code == Code.unknownArg);
+    expectErr("auto s = Screw(\"a\", \"b\");", Code.type, decls);
+    expectErr("auto s = Screw(\"a\", 1); auto x = s.weight;", Code.undefined, decls);
+}
+
+// ---------------------------------------------------------------- algorithms
+
+unittest
+{
+    expectOut("auto a = [3, 1, 2]; writeln(a.sort, \" \", a.sort((x, y) => x > y), \" \", a.reverse, \" \", a);",
+        "[1, 2, 3] [3, 2, 1] [2, 1, 3] [3, 1, 2]");
+    expectOut("auto a = iota(1, 6); writeln(a.filter(x => x % 2).map(x => x * 10), \" \", a.sum, \" \", a.fold((s, x) => s * x), \" \", a.fold((s, x) => s + x, 100));",
+        "[10, 30, 50] 15 120 115");
+    expectOut("writeln([1, 2].any(x => x > 1), [1, 2].all(x => x > 1), \" \", [1, 2, 3].count(x => x > 1), \" \", [1, 2].canFind(2), [1, 2].canFind(x => x > 5));",
+        "truefalse 2 truefalse");
+    expectOut("writeln(cartesianProduct([1, 2], [3, 4]), \" \", zip([1, 2], [\"a\", \"b\"]), \" \", [\"x\"].enumerate);",
+        `[[1, 3], [1, 4], [2, 3], [2, 4]] [[1, "a"], [2, "b"]] [[0, "x"]]`);
+    expectOut("writeln(iota(0.mm, 3.mm), \" \", iota(0, 1, 0.25), \" \", min(3, 1, 2), \" \", [2.mm, 5.mm].maxElement, \" \", clamp(15, 0, 10));",
+        "[0 mm, 1 mm, 2 mm] [0, 0.25, 0.5, 0.75] 1 5 mm 10");
+    expectOut("writeln([\"a\", \"b\"].join(\"-\"), \" \", vec(1, 2, 3) + vec(1, 1, 1), \" \", vec(3.mm, 4).length, \" \", dot(X, Y), \" \", cross(X, Y));",
+        "a-b [2, 3, 4] 5 mm 0 [0, 0, 1]");
+    expectErr("auto x = [1].map(2);", Code.arity);
+    expectErr("auto x = iota(0, 1, 0);", Code.type);
+}
+
+// ---------------------------------------------------------------- module scope
+
+unittest
+{
+    // order independent globals, like D module scope
+    expectOut("writeln(b);", "3", "immutable b = a + 1; immutable a = 2;");
+    expectErr("", Code.redefined, "immutable a = b; immutable b = a; @part Solid p() { return box(a, a, a); }");
+    expectErr("a = 3;", Code.immutable_, "immutable a = 2;");
+    expectErr("a = 3;", Code.immutable_, "auto a = 2;");
+    expectErr("immutable x = 1; x = 2;", Code.immutable_);
+    expectErr("auto x = 1; auto x = 2;", Code.redefined);
+    expectErr("", Code.redefined, "immutable a = 1; immutable a = 2;");
+    auto d = errorIn("auto x = lenght;", "immutable length_ = 1; immutable lenghts = 2;");
+    assert(d.code == Code.undefined && d.span.line == 3 && d.span.col == 10);
+    assert(error("writeln(1);").code == Code.syntax);  // statements are not allowed at module level
+    assert(error("class Foo {}").code == Code.syntax);
+}
+
+// ---------------------------------------------------------------- params, presets, parts
+
+unittest
+{
+    enum model = q{
+        @param("Width", min: 10.mm, max: 100.mm) @preset("big", 80.mm) @preset("small", 15) immutable w = 20.mm;
+        @param(choices: ["a", "b"]) @preset("big", "b") immutable variant = "a";
+        @part("red") Solid p() { writeln("p evaluated"); return box(w, 10, 10); }
+        @part Solid q() { return box(1, 1, 1).nextTo(p, X, gap: 5) .color("#00FF00"); }
+    };
+    auto r = runModel(model);
+    assert(r.params.length == 2 && r.params[0].doc == "Width" && r.params[1].choices.length == 2);
+    assert(r.presets == ["big", "small"]);
+    assert(r.params[0].presets["small"] == Value.number(15, Dim.length) && r.params[1].presets["big"] == Value.of("b"));
+    assert(r.parts.length == 2 && r.parts[0].rgb == 0xFF0000 && r.parts[1].rgb == 0x00FF00);
+    assert(r.log.length == 1, "a @part is evaluated once even when referenced");
+    assert(isClose(partVolume(r, "p"), 2000));
+    assert(isClose(kernel.bbox(r.parts[1].solid.brep).min.x, 15.0, 1e-6));
+
+    // transparency and reference parts
+    r = runModel(q{
+        @part("#FF000080") Solid a() => box(1, 1, 1);
+        @part("slategray", alpha: 0.25, export: false) Solid b() => box(1, 1, 1);
+        @part Solid c() => box(1, 1, 1).color(rgb(0, 0, 255, alpha: 1));
+        @part Solid d() => box(1, 1, 1);
+    });
+    assert(rgbPart(r.parts[0].rgb) == 0xFF0000 && isClose(alphaOf(r.parts[0].rgb), 128 / 255.0, 1e-9));
+    assert(isClose(alphaOf(r.parts[1].rgb), 0.25, 0.01) && !r.parts[1].export_ && r.parts[0].export_);
+    assert(r.parts[2].rgb == 0x0000FF && r.parts[3].rgb == defaultPartColor);
+    assert(hexColor(r.parts[0].rgb) == "#FF000080" && hexColor(r.parts[2].rgb) == "#0000FF");
+
+    auto it = make();
+    it.overrides["w"] = "50";      // bare number: model unit
+    assert(isClose(partVolume(runModel(model, it), "p"), 5000));
+    it = make();
+    it.preset = "big";
+    assert(isClose(partVolume(runModel(model, it), "p"), 8000));
+    it = make();
+    it.overrides["w"] = "500.mm";
+    assert(error(model, it).code == Code.type);
+    it = make();
+    it.overrides["variant"] = `"c"`;
+    assert(error(model, it).code == Code.type);
+    it = make();
+    it.overrides["ww"] = "1";
+    auto d = error(model, it);
+    assert(d.code == Code.undefined && d.suggestion == "did you mean 'w'?");
+    it = make();
+    it.preset = "huge";
+    assert(error(model, it).code == Code.undefined);
+
+    assert(error("@part Solid p() { return 3; }").code == Code.type);
+    assert(error("@part Solid p(int x) { return box(1, 1, 1); }").code == Code.arity);
+    assert(runModel("immutable a = 1;").diagnostics[0].severity == Severity.warning);
+    assert(error("enum a = 1;").code == Code.syntax);
+    assert(error("@param(max: 5) @preset(\"x\", 9) immutable a = 1;").code == Code.type);   // presets are checked too
+    assert(error("@preset(\"x\", 9) immutable a = 1;").code == Code.syntax);
+    assert(error("@prams immutable a = 1;").suggestion == "did you mean 'param'?");
+    assert(error("@param @preset(9) immutable a = 1;").code == Code.syntax);
+
+    // a failed unittest is reported but the geometry is kept
+    auto f = runModel("@part Solid p() { return box(1, 1, 1); }\nunittest { assert(p.volume > 2.mm ^^ 3, \"too small\"); }");
+    assert(f.parts.length == 1 && f.diagnostics[0].code == Code.assertion && f.diagnostics[0].message == "too small");
+}
+
+// ---------------------------------------------------------------- imports and sandbox
+
+unittest
+{
+    expectOut("writeln(M3.d, \" \", M3.tap);", "3 mm 2.5 mm", "import hardware : M3;");
+    expectOut("writeln(hw.M4.clearance);", "4.5 mm", "import hw = hardware;");
+    expectOut("writeln(PI > 3);", "true", "import std.math; import std.algorithm;");
+    assert(error("import std.nope;").code == Code.import_);
+    assert(error("import hardware : M99;").code == Code.import_);
+    assert(error("import lib.missing;").code == Code.import_);
+
+    // project modules, with private symbols
+    auto dir = buildPath(tempDir, "hcad-import-test");
+    mkdirRecurse(buildPath(dir, "lib"));
+    scope (exit)
+        rmdirRecurse(dir);
+    write(buildPath(dir, "lib", "parts.hcad"), "module lib.parts;\nLength twice(Length x) => x * 2;\nprivate immutable secret = 1;\n");
+    auto it = make();
+    it.root = dir;
+    auto r = it.runSource("import lib.parts;\nimport p = lib.parts;\nunittest { writeln(twice(2), \" \", p.twice(3.mm)); }",
+        buildPath(dir, "main.hcad"));
+    assert(r.log[0].text == "4 mm 6 mm");
+    it = make();
+    it.root = dir;
+    assert(error("import p = lib.parts;\nunittest { auto x = p.secret; }", it).code == Code.undefined);
+}
+
+unittest
+{
+    // libraries: a folder with package.hcad re-exporting its modules, found
+    // in a library folder; the project comes first
+    auto base = buildPath(tempDir, "hcad-library-test");
+    auto lib = buildPath(base, "lib"), project = buildPath(base, "project");
+    mkdirRecurse(buildPath(lib, "pizza"));
+    mkdirRecurse(project);
+    scope (exit)
+        rmdirRecurse(base);
+    write(buildPath(lib, "pizza", "package.hcad"), "module pizza;\npublic import pizza.base, pizza.toppings;\n");
+    write(buildPath(lib, "pizza", "base.hcad"), "module pizza.base;\nLength crust(Length d) => d / 20;\n");
+    write(buildPath(lib, "pizza", "toppings.hcad"),
+        "module pizza.toppings;\nimport pizza.base;\ndouble slices(Length d) => floor(crust(d) / 1.mm) * 2;\n");
+    write(buildPath(lib, "olive.hcad"), "module olive;\nimmutable from = \"library\";\n");
+    write(buildPath(project, "olive.hcad"), "module olive;\nimmutable from = \"project\";\n");
+
+    Interp at(string dir)
+    {
+        auto it = make();
+        it.root = dir;
+        it.libraryDirs = [lib];
+        return it;
+    }
+
+    auto r = at(project).runSource("import pizza;\nimport p = pizza;\nimport pizza : slices;\nimport olive;\n"
+        ~ "unittest { writeln(crust(300.mm), \" \", p.slices(300.mm), \" \", slices(100.mm), \" \", from); }",
+        buildPath(project, "main.hcad"));
+    assert(r.log[0].text == "15 mm 30 10 project", r.log[0].text);
+
+    // not found: the message lists where it looked
+    auto e = error("import calzone;", at(project));
+    assert(e.code == Code.import_ && e.message.canFind("calzone/package.hcad") && e.message.canFind(lib));
+}
+
+unittest
+{
+    // resource limits stop runaway models
+    auto it = make();
+    it.limits.steps = 10_000;
+    assert(error("unittest { while (true) {} }", it).code == Code.limit);
+}
+
+// ---------------------------------------------------------------- geometry
+
+unittest
+{
+    auto r = runModel(q{
+        @part Solid a() { return box(10, 20, 30); }
+        @part Solid b() { return cylinder(d: 10, h: 10) - cylinder(r: 2, h: 10); }
+        @part Solid c() { return sphere(5).move(x: 100) + box(2, 2, 2, center: true).move(vec(100, 0, 0)); }
+        @part Solid d() { return box(10, 10, 10) & box(10, 10, 10).move(x: 5); }
+        @part Solid e() { return box(10, 20, 30).rotate(z: 90); }
+        @part Solid f() { return Solid.init + box(1, 1, 1) - nothing; }
+    });
+    assert(isClose(partVolume(r, "a"), 6000));
+    auto ba = kernel.bbox(r.parts[0].solid.brep);
+    assert(isClose(ba.min.x, -5.0) && isClose(ba.min.z, 0.0, 0, 1e-9) && isClose(ba.max.z, 30.0));
+    assert(isClose(partVolume(r, "b"), PI * (25 - 4) * 10, 1e-6));
+    assert(isClose(partVolume(r, "c"), 4.0 / 3 * PI * 125, 1e-6));
+    assert(isClose(partVolume(r, "d"), 500));
+    auto be = kernel.bbox(r.parts[4].solid.brep);
+    assert(isClose(be.size.x, 20.0, 1e-6) && isClose(be.size.y, 10.0, 1e-6));
+    assert(isClose(partVolume(r, "f"), 1));
+}
+
+unittest
+{
+    // features with selectors, as in the example box
+    auto r = runModel(q{
+        @part Solid filleted() { return box(40, 30, 20).fillet(edges.filter(e => e.isParallel(Z)), r: 5); }
+        @part Solid same() { return box(40, 30, 20).fillet(edges.parallel(Z), r: 5); }
+        @part Solid hollow() { return box(40, 30, 20).shell(open: faces.top, thickness: 2); }
+        @part Solid chamfered() { return box(10, 10, 10).chamfer(edges.filter(e => e.mid.z > 5.mm), d: 1); }
+        unittest
+        {
+            writeln(hollow.bbox.size.z, " ", filleted.volume < 24000.mm ^^ 3);
+        }
+    });
+    immutable filletVol = 24_000 - 4 * (25 - PI * 25 / 4) * 20;
+    assert(isClose(partVolume(r, "filleted"), filletVol, 1e-6));
+    assert(isClose(partVolume(r, "same"), filletVol, 1e-6));
+    assert(isClose(partVolume(r, "hollow"), 24_000 - 36 * 26 * 18, 1e-6));
+    // the chamfered top is a frustum: 10x10 at the base of the chamfer, 8x8 on top
+    assert(isClose(partVolume(r, "chamfered"), 1000 - (100 - (64 + 100 + 80) / 3.0), 1e-6));
+    assert(r.log[0].text == "20 mm true");
+
+    assert(error("@part Solid p() { return box(1, 1, 1).fillet(edges.filter(e => e.length > 5.mm), r: 0.1); }").code == Code.kernel);
+    assert(error("@part Solid p() { return box(1, 1, 1).fillet(faces.top, r: 0.1); }").code == Code.type);
+    assert(error("@part Solid p() { return box(1, 1, 1).fillet(edges!(e => e.isLine), r: 0.1); }").code == Code.syntax);
+    assert(error("@part Solid p() { return box(1, 1, 1).fillet(edges, r: 5); }").code == Code.kernel);
+    assert(error("@part Solid p() { return box(-1, 1, 1); }").code == Code.type);
+    assert(error("@part Solid p() { return cylinder(r: 1, d: 2, h: 1); }").code == Code.unknownArg);
+    assert(error("@part Solid p() { return box(1, 1, 1) + 3; }").code == Code.type);
+    assert(error("@part Solid p() { return box(1, 1, 1).color(\"blu\"); }").suggestion == "did you mean 'blue'?");
+}
+
+unittest
+{
+    // the shipped example evaluates with the expected parts and checks
+    import std.file : thisExePath, exists;
+    import std.path : dirName;
+
+    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "examples", "box.hcad");
+    assert(exists(path), path);
+    auto it = make();
+    auto r = it.run(path);
+    assert(r.parts.map!(p => p.name).array == ["body", "lid"]);
+    assert(r.params.length == 5 && r.presets == ["small", "large"]);
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(kernel.isValid(r.parts[0].solid.brep) && kernel.isValid(r.parts[1].solid.brep));
+}
+
+unittest
+{
+    // hardware library: a screw and a nut are valid, non-empty solids
+    auto r = runModel(q{
+        import hardware : M3, M8, screw, nut;
+        @part Solid s() => screw(M3, 50.mm);
+        @part Solid n() => nut(M8);
+    });
+    auto bs = kernel.bbox(r.parts[0].solid.brep);
+    assert(isClose(bs.max.z, 3.0, 1e-6) && isClose(bs.min.z, -50.0, 1e-6), "head above z = 0, shank below");
+    assert(kernel.isValid(r.parts[0].solid.brep) && kernel.isValid(r.parts[1].solid.brep));
+    immutable hexArea = 13.0 * 13.0 * 3 / (2 * 1.7320508); // across flats 13 mm
+    assert(partVolume(r, "n") < hexArea * 6.8 && partVolume(r, "n") > 0.6 * hexArea * 6.8);
+}
+
+unittest
+{
+    // provenance selectors: round the top rim of holes cut with a pattern
+    auto r = runModel(q{
+        immutable hole = cylinder(d: 4, h: 20, center: true).move(x: -15);
+        immutable holes = hole.linearPattern(4, step: vec(10, 0, 0));
+        @part Solid plate()
+        {
+            auto p = box(50, 20, 5) - holes;
+            return p.fillet(edges.between(faces.from(holes), faces.top), r: 0.5);
+        }
+        @part Solid ring() => cylinder(d: 4, h: 2).move(x: 20).circularPattern(6);
+        @part Solid wedge() => box(10, 10, 10).draft(faces.filter(f => f.isParallel(Z)), angle: 5.deg);
+        @part Solid snug() => box(5, 5, 5).align(plate, x: "max", y: "min", z: "max");
+        unittest
+        {
+            writeln(holes.volume > 0.mm ^^ 3, " ", distance(box(1, 1, 1), box(1, 1, 1).move(x: 4)));
+        }
+    });
+    import std.math : PI;
+    immutable plain = 50.0 * 20 * 5 - 4 * PI * 4 * 5;
+    assert(partVolume(r, "plate") < plain && partVolume(r, "plate") > plain - 20, "rims rounded");
+    assert(isClose(partVolume(r, "ring"), 6 * PI * 4 * 2, 1e-6));
+    // drafted side faces: the top shrinks, the bottom (neutral plane) stays
+    assert(partVolume(r, "wedge") < 1000 && kernel.isValid(r.parts[2].solid.brep));
+    auto bs = kernel.bbox(r.parts[3].solid.brep);
+    assert(isClose(bs.max.x, 25.0, 1e-6) && isClose(bs.min.y, -10.0, 1e-6) && isClose(bs.max.z, 5.0, 1e-6));
+    assert(r.log[0].text == "true 3 mm");
+
+    // creators: every face of the plate knows its feature
+    auto plate = r.parts[0].solid;
+    assert(plate.creators.length == kernel.faces(plate.brep).length);
+    foreach (c; plate.creators)
+        assert(c > 0);
+    import std.algorithm : map, canFind;
+    auto kinds = plate.creators.map!(c => r.features[c - 1].kind).array;
+    assert(kinds.canFind("box") && kinds.canFind("cylinder") && kinds.canFind("fillet"));
+
+    assert(error("@part Solid p() => box(1, 1, 1).align(box(2, 2, 2), x: \"middle\");").suggestion == "did you mean 'center'?");
+    assert(error("@part Solid p() => box(1, 1, 1).linearPattern(0, step: vec(1, 0, 0));").code == Code.type);
+}
+
+unittest
+{
+    // planes, split and pieces
+    auto r = runModel(q{
+        immutable block = box(40, 20, 30);
+        immutable halves = block.split(block.plane(faces.top).offset(-10));
+        @part Solid above() => halves.above;
+        @part Solid below() => halves.below;
+        @part Solid tilted() => box(10, 10, 10).split(plane(origin: vec(0, 0, 5), normal: vec(1, 0, 1))).below;
+        immutable sides = (cylinder(d: 30, h: 6) - cylinder(d: 20, h: 6) - box(3, 40, 20)).pieces;
+        @part Solid left() => sides[0];
+        unittest
+        {
+            writeln(XY.normal, " ", XY.offset(5.mm).origin, " ", XY.flip.normal, " ", sides.length);
+        }
+    });
+    assert(isClose(partVolume(r, "above"), 40 * 20 * 10.0, 1e-6));
+    assert(isClose(partVolume(r, "below"), 40 * 20 * 20.0, 1e-6));
+    assert(isClose(partVolume(r, "tilted"), 500, 1e-6));
+    assert(kernel.bbox(r.parts[3].solid.brep).center.x < 0, "pieces are ordered along X");
+    assert(r.log[0].text == "[0, 0, 1] [0 mm, 0 mm, 5 mm] [0, 0, -1] 2");
+
+    // the faces made by the cut belong to the split feature
+    import std.algorithm : map, canFind;
+    auto kinds = r.parts[0].solid.creators.map!(c => r.features[c - 1].kind).array;
+    assert(kinds.canFind("split") && kinds.canFind("box"));
+
+    assert(error("@part Solid p() => box(1, 1, 1).split(Z).above;").code == Code.type);
+    assert(error("@part Solid p() => box(1, 1, 1).plane(faces.normal(X).filter(f => false));").code == Code.kernel);
+}
+
+unittest
+{
+    // frames: build on faces and planes
+    auto r = runModel(q{
+        immutable body = box(40, 20, 10);
+        immutable top = body.frame(faces.top);
+        @part Solid boss() => cylinder(d: 4, h: 5).placeOn(top.at(x: 10));
+        @part Solid side() => box(2, 2, 3).placeOn(body.frame(faces.right));
+        @part Solid pocketed() => body - box(10, 10, 3).move(z: -3).placeOn(top);
+
+        // a face tilted by 30°: a peg placed on it touches it without overlapping
+        immutable tilted = box(30, 30, 10).rotate(y: 30);
+        immutable peg = cylinder(d: 6, h: 8).placeOn(tilted.frame(faces.filter(f => f.normal.z > 0.8)));
+        @part Solid both() => tilted + peg;
+        unittest
+        {
+            writeln(top.origin, " ", top.z, " ", top.turn(90.deg).x, " ", XY.frame(origin: vec(5, 5, 7)).origin);
+            writeln(distance(tilted, peg), " ", isClose((tilted + peg).volume, tilted.volume + peg.volume));
+        }
+        bool isClose(Volume a, Volume b) => abs(a - b) < 1e-3.mm ^^ 3;
+    });
+    auto bb = kernel.bbox(r.parts[0].solid.brep);
+    assert(isClose(bb.min.z, 10.0, 1e-6) && isClose(bb.center.x, 10.0, 1e-6));
+    auto bs = kernel.bbox(r.parts[1].solid.brep);
+    assert(isClose(bs.min.x, 20.0, 1e-6) && isClose(bs.max.x, 23.0, 1e-6));
+    assert(isClose(partVolume(r, "pocketed"), 40 * 20 * 10 - 300.0, 1e-6));
+    assert(r.log[0].text == "[0 mm, 0 mm, 10 mm] [0, 0, 1] [0, 1, 0] [5 mm, 5 mm, 0 mm]", r.log[0].text);
+    assert(r.log[1].text == "0 mm true", r.log[1].text);
+
+    assert(error("@part Solid p() => box(1, 1, 1).placeOn(X);").code == Code.type);
+    assert(error("immutable f = XY.frame(x: Z);\n@part Solid p() => box(1, 1, 1).placeOn(f);").code == Code.type);
+}
+
+unittest
+{
+    // axes, plane constructors, mirroring across planes
+    auto r = runModel(q{
+        immutable cube = box(2, 2, 2, center: true);
+        @part Solid turned() => cube.rotate(180.deg, axis: axis(origin: vec(10, 0, 0), direction: Z));
+        @part Solid mirrored() => cube.mirror(plane(origin: vec(10, 0, 0), normal: X));
+        immutable plate = box(40, 40, 4) - cylinder(d: 6, h: 10, center: true).move(x: 10, y: 5);
+        immutable holeAxis = plate.axis(edges.filter(e => e.isCircle && e.radius == 3.mm && e.mid.z > 2.mm));
+        @part Solid pegs() => cylinder(d: 2, h: 3).move(x: 15, y: 5).circularPattern(4, axis: holeAxis);
+        unittest
+        {
+            writeln(plane(vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0)).normal, " ",
+                    plane(axis(origin: vec(0, 0, 0), direction: X), vec(0, 0, 5)).normal, " ",
+                    holeAxis.origin, " ", abs(holeAxis.direction.z), " ",
+                    axis(vec(0, 0, 0), vec(0, 3, 0)).direction, " ", World.at(z: 5).axis(X).origin);
+        }
+    });
+    auto bt = kernel.bbox(r.parts[0].solid.brep);
+    assert(isClose(bt.center.x, 20.0, 1e-6) && isClose(bt.center.y, 0.0, 1e-6, 1e-9));
+    auto bm = kernel.bbox(r.parts[1].solid.brep);
+    assert(isClose(bm.center.x, 20.0, 1e-6));
+    // four pegs around the hole at (10, 5): the pattern spans 10 ± 5 + 1 in X and Y
+    auto bp = kernel.bbox(r.parts[2].solid.brep);
+    assert(isClose(bp.min.x, 4.0, 1e-6) && isClose(bp.max.x, 16.0, 1e-6) && isClose(bp.min.y, -1.0, 1e-6));
+    assert(r.log[0].text == "[0, 0, 1] [0, -1, 0] [10 mm, 5 mm, 4 mm] 1 [0, 1, 0] [0 mm, 0 mm, 5 mm]", r.log[0].text);
+
+    assert(error("immutable p = plane(vec(0, 0, 0), vec(1, 0, 0), vec(2, 0, 0));\n@part Solid s() => box(1, 1, 1).mirror(p);").code == Code.type);
+    assert(error("@part Solid s() => box(1, 1, 1).rotate(10, axis: \"z\");").code == Code.type);
+    assert(error("@part Solid s() => box(1, 1, 1).fillet(edges.filter(e => e.radius > 1.mm), r: 0.1);").code == Code.type);
+}
+
+unittest
+{
+    // planes from faces mirror and carry drawings too
+    auto r = runModel(q{
+        immutable body = box(20, 10, 10);
+        @part Solid twin() => sphere(2).move(x: 3).mirror(body.plane(faces.right));
+        @part Solid onCut() => cylinder(d: 2, h: 4).placeOn(body.plane(faces.top).offset(5.mm));
+    });
+    auto bt = kernel.bbox(r.parts[0].solid.brep);
+    assert(isClose(bt.center.x, 17.0, 1e-6), "mirrored across x = 10");
+    auto bc = kernel.bbox(r.parts[1].solid.brep);
+    assert(isClose(bc.min.z, 15.0, 1e-6) && isClose(bc.max.z, 19.0, 1e-6));
+}
+
+unittest
+{
+    // profiles and what turns them into solids
+    auto r = runModel(q{
+        immutable body = box(40, 30, 10);
+        immutable top = body.frame(faces.top);
+        @part Solid plain() => rect(10, 20).extrude(5);
+        @part Solid holed() => (rect(20, 20) - circle(d: 10)).extrude(2);
+        @part Solid tapered() => rect(10, 10).extrude(10, taper: 5.deg);
+        @part Solid centred() => circle(r: 2).extrude(6, symmetric: true);
+        @part Solid ring() => rect(5, 10).move(x: 7.5).revolve(axis: Y);
+        @part Solid added() => body.extrude(circle(d: 6), on: top, depth: 4);
+        @part Solid pocket() => body.cut(rect(5, 5), on: top.at(x: 10), depth: 2);
+        @part Solid through() => body.cut(slot(20, 6), on: top, through: true);
+        unittest
+        {
+            writeln(format("%.3f %.3f %.3f %.3f %.3f", rect(20, 10).round(3).area / 1.mm ^^ 2,
+                rect(10, 10).offset(2).area / 1.mm ^^ 2, regularPolygon(6, d: 10).area / 1.mm ^^ 2,
+                slot(30, 10).area / 1.mm ^^ 2, rect(10, 10).offset(-2).area / 1.mm ^^ 2));
+            writeln(text("Hi", size: 10).area > 10 * 1.mm ^^ 2, " ", (rect(4, 4) + circle(d: 2).move(x: 2)).area > 16 * 1.mm ^^ 2);
+        }
+    });
+    import std.math : PI, sqrt;
+    assert(isClose(partVolume(r, "plain"), 1000, 1e-9));
+    assert(isClose(partVolume(r, "holed"), (400 - 25 * PI) * 2, 1e-9));
+    assert(partVolume(r, "tapered") < 1000 && partVolume(r, "tapered") > 500);
+    auto bc = kernel.bbox(r.parts[3].solid.brep);
+    assert(isClose(bc.min.z, -3.0, 1e-6) && isClose(bc.max.z, 3.0, 1e-6));
+    assert(isClose(partVolume(r, "ring"), PI * (100 - 25) * 10, 1e-6));
+    assert(isClose(partVolume(r, "added"), 12_000 + PI * 9 * 4, 1e-6));
+    assert(isClose(partVolume(r, "pocket"), 12_000 - 50.0, 1e-6));
+    assert(isClose(partVolume(r, "through"), 12_000 - (14 * 6 + PI * 9) * 10, 1e-6));
+    assert(r.log[0].text == format("%.3f %.3f %.3f %.3f %.3f", 200 - (4 - PI) * 9, 196 - (4 - PI) * 4,
+        3 * sqrt(3.0) / 2 * 25, 200 + PI * 25, 36.0), r.log[0].text);
+    assert(r.log.length > 1 && r.log[1].text == "true true", r.log.length > 1 ? r.log[1].text : "missing line");
+
+    assert(error("@part Solid p() => rect(10, 10);").code == Code.type);
+    assert(error("@part Solid p() => box(1, 1, 1) + rect(1, 1);").code == Code.type);
+    assert(error("@part Solid p() => rect(10, 10).rotate(x: 90).extrude(5);").code == Code.type);
+    assert(error("@part Solid p() => box(1, 1, 1).extrude(3);").code == Code.type);
+    assert(error("@part Solid p() => polygon([vec(0, 0), vec(1, 0)]).extrude(1);").code == Code.type);
+}
+
+unittest
+{
+    // largest picks among the faces selected so far
+    auto r = runModel(q{
+        immutable l = box(40, 30, 5) + box(5, 30, 40).move(x: -17.5);
+        unittest { writeln(l.plane(faces.normal(X).largest).origin.x); }
+    });
+    assert(r.log.length && r.log[0].text == "-15 mm", r.log.length ? r.log[0].text : "no output");
+}
+
+unittest
+{
+    // load(): STL / OBJ meshes and STEP files become solids to work on
+    import hackerscad.io.stl : toStl;
+    import std.file : write, mkdirRecurse, rmdirRecurse;
+
+    auto dir = buildPath(tempDir, "hcad-load-test");
+    mkdirRecurse(dir);
+    scope (exit)
+        rmdirRecurse(dir);
+    auto cube = kernel.boolean(kernel.box(20, 20, 20), kernel.translate(kernel.cylinder(4, 30), Vec3(10, 10, -5)), BoolOp.cut);
+    write(buildPath(dir, "cube.stl"), toStl(kernel.tessellate(cube, 0.01, 0.1).welded));
+    kernel.writeStep(cube, buildPath(dir, "cube.step"));
+    write(buildPath(dir, "tri.obj"), "v 0 0 0\nv 10 0 0\nv 0 10 0\nv 0 0 10\nf 1 3 2\nf 1 2 4\nf 1 4 3\nf 2 3 4\n");
+    write(buildPath(dir, "open.obj"), "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+
+    auto it = make();
+    it.root = dir;
+    auto r = it.runSource(q{
+        immutable mesh = load("cube.stl");
+        @part Solid fromStl() => mesh - cylinder(d: 2, h: 50, center: true).move(x: 3, y: 3);
+        @part Solid rounded() => mesh.fillet(edges.parallel(Z).filter(e => e.mid.x > 15.mm && e.mid.y > 15.mm), r: 2);
+        @part Solid fromStep() => load("cube.step", scale: 2);
+        @part Solid fromObj() => load("tri.obj");
+        unittest { writeln(mesh.plane(faces.top).origin.z, " ", mesh.centered.bbox.center); }
+    }, buildPath(dir, "main.hcad"));
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.math : PI;
+    immutable cubeVol = 8000 - PI * 16 * 20;
+    // the STL facets the hole wall, so the volume is close but not exact
+    assert(isClose(partVolume(r, "fromStl"), cubeVol - PI * 1 * 20, 2e-3));
+    assert(partVolume(r, "rounded") < partVolume(r, "fromStl") + PI * 20, "fillet on an imported part");
+    assert(isClose(partVolume(r, "fromStep"), cubeVol * 8, 1e-6));
+    assert(isClose(partVolume(r, "fromObj"), 1000.0 / 6, 1e-6));
+    assert(r.log[0].text == "20 mm [0 mm, 0 mm, 0 mm]", r.log[0].text);
+
+    // coplanar triangles merge into real faces: the top of the cube is one face
+    size_t tops;
+    foreach (f; kernel.faces(r.parts[0].solid.brep))
+        tops += f.normal.z > 0.999;
+    assert(tops == 1);
+
+    // errors, evaluated as a model in the same directory
+    string errorAt(string src)
+    {
+        auto i = make();
+        i.root = dir;
+        try
+            i.runSource(src, buildPath(dir, "main.hcad"));
+        catch (HcadError e)
+            return e.diag.code;
+        return null;
+    }
+
+    assert(errorAt(`@part Solid p() => load("../secret.stl");`) == Code.sandbox);
+    assert(errorAt(`@part Solid p() => load("open.obj");`) == Code.kernel);
+    assert(errorAt(`@part Solid p() => load("missing.stl");`) == Code.import_);
+    assert(errorAt(`@part Solid p() => load("cube.dxf");`) == Code.import_);
+}
+
+unittest
+{
+    // 2D booleans give one face per region: the extrusion is one body, and
+    // fillets work on its outline (docs/BUG_PROFILI_UNITI.md)
+    auto r = runModel(q{
+        immutable h = 8.mm;
+        Solid top(Solid s) => s.fillet(edges.filter(e => e.mid.z < 0.1.mm || e.mid.z > h - 0.1.mm), r: 1.mm);
+        @part Solid joined() => top((circle(r: 20.mm) + rect(30.mm, 30.mm).move(y: 15.mm)).extrude(h));
+        @part Solid u() => ((circle(r: 20.mm) + rect(40.mm, 20.mm).move(y: 10.mm))
+            - (circle(r: 10.mm) + rect(20.mm, 30.mm).move(y: 15.mm))).extrude(h);
+        @part Solid s() => top(slot(40.mm, 20.mm).extrude(h));
+        @part Solid c() => cylinder(r: 10.mm, h: 5.mm).fillet(edges.perpendicular(Z), r: 1.mm);
+        unittest {
+            writeln((circle(r: 20.mm) + rect(30.mm, 30.mm).move(y: 15.mm)).extrude(h).pieces.length);
+            writeln(slot(40.mm, 20.mm).extrude(h).pieces.length, " ", u.pieces.length);
+            // a clockwise polygon merges with a circle too
+            auto cw = polygon([vec(-8, -1), vec(8, -1), vec(12, -78), vec(-12, -78)]) + circle(d: 24).move(y: -78);
+            writeln(cw.extrude(1).pieces.length, " ", cw.offset(2).offset(-2).round(1).extrude(1).pieces.length, " ",
+                polygon([vec(0, 0), vec(0, 10), vec(10, 0)]).extrude(1).volume);
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(r.log[0].text == "1", r.log[0].text);
+    assert(r.log[1].text == "1 1", r.log[1].text);
+    assert(r.log[2].text == "1 1 50 mm^3", r.log[2].text);
+    import std.math : PI;
+    // slot area: rectangle + full circle, times the height (before the fillet the area is exact)
+    auto slotSolid = kernel.extrude(kernel.boolean(kernel.boolean(kernel.rect(20, 20),
+        kernel.translate(kernel.circle(10), Vec3(-10, 0, 0)), BoolOp.fuse), kernel.translate(kernel.circle(10), Vec3(10, 0, 0)), BoolOp.fuse), 8, 0);
+    immutable area = 2 * (400 + PI * 100) + 8 * (40 + 2 * PI * 10);
+    assert(isClose(kernel.area(slotSolid), area, 1e-6));
+}
+
+unittest
+{
+    // paths, sweeps and lofts
+
+    auto r = runModel(q{
+        @part Solid pipe() => (circle(d: 8) - circle(d: 6)).sweep(path([vec(0, 0, 0), vec(0, 0, 30)]));
+        @part Solid bent() => circle(d: 4).sweep(path([vec(0, 0, 0), vec(0, 0, 20), vec(20, 0, 20)]));
+        @part Solid spring() => circle(d: 1).sweep(helix(r: 5, pitch: 3, height: 9), frenet: true);
+        @part Solid frustum() => loft([circle(r: 10), circle(r: 5).move(z: 10)], ruled: true);
+        @part Solid hollow() => loft([rect(20) - rect(10), (rect(20) - rect(10)).move(z: 10)]);
+        unittest { writeln(helix(r: 5, pitch: 3, height: 9), " ", path([vec(0, 0), vec(1, 1)])); }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(isClose(partVolume(r, "pipe"), PI * (16 - 9) * 30, 1e-6));
+    assert(partVolume(r, "bent") > PI * 4 * 38 && partVolume(r, "bent") < PI * 4 * 42);
+    // three turns of a 1 mm wire: length ≈ 3 · √((2π·5)² + 3²)
+    immutable wire = 3 * sqrt((2 * PI * 5) ^^ 2 + 9.0);
+    assert(isClose(partVolume(r, "spring"), PI * 0.25 * wire, 1e-2));
+    assert(isClose(partVolume(r, "frustum"), PI * 10 / 3 * (100 + 50 + 25), 1e-6));
+    assert(isClose(partVolume(r, "hollow"), 300 * 10, 1e-6));
+    assert(r.log[0].text == "Path Path");
+
+    assert(error(`@part Solid p() => helix(r: 5, pitch: 1, height: 5);`).code == Code.type);
+    assert(error(`@part Solid p() => box(1, 1, 1) + path([vec(0, 0), vec(1, 1)]);`).code == Code.type);
+    assert(error(`@part Solid p() => circle(d: 1).sweep(box(1, 1, 1));`).code == Code.type);
+}
+
+unittest
+{
+    // constrained sketches
+    auto r = runModel(q{
+        Profile triangle(bool tall)
+        {
+            auto s = sketch();
+            auto a = s.point(0, 0, fixed: true);
+            auto b = s.point(25, 3);
+            auto c = s.point(2, 35);
+            auto ab = s.line(a, b), bc = s.line(b, c), ca = s.line(c, a);
+            s.horizontal(ab);
+            s.vertical(ca);
+            s.length(ab, 30.mm);
+            if (tall)
+                s.length(ca, 40.mm);
+            return s.profile;
+        }
+        @part Solid tri() => triangle(true).extrude(1);
+        @part Solid loose() => triangle(false).extrude(1).move(x: 50);
+        @part Solid plate()
+        {
+            auto s = sketch();
+            auto o = s.point(0, 0, fixed: true);
+            auto pts = s.polyline([vec(0, 0), vec(40, 1), vec(41, 20), vec(-1, 21)]);
+            s.coincident(o, pts[0].start);
+            s.horizontal(pts[0]);
+            s.vertical(pts[1]);
+            s.horizontal(pts[2]);
+            s.vertical(pts[3]);
+            s.length(pts[0], 40.mm);
+            s.length(pts[1], 20.mm);
+            s.fillet(pts[2].start, 5.mm);
+            auto c = s.circle(s.point(20, 10), d: 6.mm);
+            s.midpoint(c.center, s.line(pts[0].start, pts[1].end, construction: true));
+            writeln(s.dof, " ", pts[1].end.pos, " ", c.radius);
+            return s.profile.extrude(2);
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.math : PI;
+    assert(isClose(partVolume(r, "tri"), 600, 1e-6));
+    assert(isClose(partVolume(r, "plate"), (800 - (25 - PI * 25 / 4) - PI * 9) * 2, 1e-6));
+    assert(r.log[0].text == "0 [40 mm, 20 mm] 3 mm", r.log[0].text);
+    // the loose triangle solves but warns, naming the line of the free point
+    auto w = r.diagnostics.map!(d => d.message).join("\n");
+    assert(w.canFind("1 degree of freedom left (free points at line 7)"), w);
+
+    // conflicting constraints and open outlines are errors pointing at the source
+    auto e = error(q{
+        @part Solid p()
+        {
+            auto s = sketch();
+            auto a = s.point(0, 0, fixed: true), b = s.point(10, 0);
+            auto l = s.line(a, b);
+            s.length(l, 10.mm);
+            s.length(l, 20.mm);
+            return s.profile.extrude(1);
+        }
+    });
+    assert(e.code == Code.sketch && e.message.canFind("conflict"), e.message);
+    e = error(q{
+        @part Solid p()
+        {
+            auto s = sketch();
+            s.line(s.point(0, 0), s.point(10, 0));
+            s.line(s.point(10, 0), s.point(10, 10));
+            return s.profile.extrude(1);
+        }
+    });
+    assert(e.code == Code.sketch && e.message.canFind("open"), e.message);
+}
+
+unittest
+{
+    // built-in libraries
+    auto r = runModel(q{
+        import hardware;
+        import std.threads : threadedRod;
+        import gears;
+        import hinges : hinge;
+        import snaps : snapHook;
+        import enclosures : enclosure, roundedBox;
+
+        @part Solid rod() => threadedRod(6.mm, 1.mm, 8.mm);
+        @part Solid gear() => spurGear(1.mm, 24, 5.mm);
+        @part Solid fixed() => hinge(length: 30.mm).fixed;
+        @part Solid moving() => hinge(length: 30.mm).moving;
+        @part Solid hook() => snapHook();
+        @part Solid base() => enclosure(vec(30.mm, 20.mm, 15.mm)).base;
+        @part Solid plate() => roundedBox(20.mm, 20.mm, 2.mm) - hole(M3, 2.mm, "countersink").move(z: 2.mm);
+        unittest
+        {
+            writeln(centerDistance(1.mm, 24, 12), " ", M3.pitch, " ", abs(gear.bbox.size.x - 26.mm) < 0.1.mm);
+            assert(distance(fixed, moving) > 0.1.mm, "the hinge leaves must not touch");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.math : PI;
+    // the thread lies between the minor and the major cylinder
+    immutable minor = 6 - 2 * 0.5413;
+    assert(partVolume(r, "rod") > PI * (minor / 2) ^^ 2 * 8 && partVolume(r, "rod") < PI * 9 * 8);
+    assert(r.log[0].text == "18 mm 0.5 mm true", r.log[0].text);
+    foreach (p; r.parts)
+        assert(kernel.isValid(p.solid.brep) && kernel.solids(p.solid.brep).length == 1, p.name);
+}
+
+unittest
+{
+    // cut/extrude on a face of the same solid, at a point
+    auto r = runModel(q{
+        @part Solid a() => box(20, 20, 10).cut(circle(d: 4), on: faces.top, at: vec(5, 5, 0), depth: 3.mm);
+        @part Solid b() => box(20, 20, 10).extrude(rect(4), on: faces.right, depth: 2.mm);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.math : PI;
+    assert(isClose(partVolume(r, "a"), 4000 - PI * 4 * 3, 1e-6));
+    assert(isClose(partVolume(r, "b"), 4000 + 32, 1e-6));
+    auto bb = kernel.bbox(r.parts[0].solid.brep);
+    assert(isClose(bb.max.z, 10));
+}
+
+unittest
+{
+    // shell where the kernel's own offset fails (an open face next to fillets, a hole):
+    // the result must be a valid, smaller solid, never a broken one shown as if nothing happened
+    auto r = runModel(q{
+        immutable size = 30.mm;
+        @part Solid a() => box(size, size, size / 2).fillet(edges.parallel(Z), r: size / 6)
+            .shell(open: faces.front, thickness: 2.mm);
+        @part Solid b() => (box(size, size, size / 2).fillet(edges.parallel(Z), r: size / 6)
+            - cylinder(d: size / 2, h: size)).shell(open: faces.front, thickness: 2.mm);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    foreach (p; r.parts)
+    {
+        assert(kernel.isValid(p.solid.brep), p.name);
+        assert(partVolume(r, p.name) < 30.0 * 30 * 15 * 0.7, p.name);
+    }
+}
+
+unittest
+{
+    // selectors combine like solids: + union, - difference, & intersection
+    auto r = runModel(q{
+        @part Solid a() => box(20, 20, 10).shell(open: faces.left + faces.top, thickness: 2.mm);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    // walls 2 mm, open on two faces: outer minus a cavity 18 (x, open) × 16 × 8 (open on top)
+    assert(isClose(partVolume(r, "a"), 4000 - 18 * 16 * 8, 1e-6), format("%s", partVolume(r, "a")));
+    auto e = error(`@part Solid p() => box(5, 5, 5).fillet(edges.parallel(Z) + faces.top, r: 1);`);
+    assert(e.code == Code.type, e.message);
+}
+
+unittest
+{
+    // every name of the prelude is described for completion and the cheatsheet
+    import hackerscad.lang.reference : lookupRef;
+    import std.algorithm : sort;
+    auto it = make();
+    string[] missing;
+    foreach (name; it.preludeNames)
+        if (lookupRef(name).length == 0)
+            missing ~= name;
+    missing.sort;
+    assert(missing.length == 0, "not in lang/reference.d: " ~ missing.join(", "));
+}

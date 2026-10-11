@@ -1,0 +1,48 @@
+module enclosures;
+
+import hardware : Screw, M3, hole;
+
+/// Boxes with rounded corners and enclosures with lids.
+
+/// A box centred in X and Y on z = 0, with vertical edges rounded by `r`.
+Solid roundedBox(Length x, Length y, Length z, Length r = 3.mm) =>
+    box(x, y, z).fillet(edges.parallel(Z), r: r);
+
+/// An open box: walls `wall` thick, open on top.
+Solid tray(Length x, Length y, Length z, Length wall = 2.mm, Length r = 3.mm) =>
+    roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+
+/// A base and a lid that fit together, both standing on z = 0.
+struct Enclosure
+{
+    Solid base;
+    Solid lid;
+}
+
+/// An enclosure with `inner` free space (x, y, z), a lid with a lip that
+/// fits inside the base, and a screw post in each corner.
+Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidHeight = 4.mm,
+    Screw screw = M3, Length clearance = 0.2.mm)
+{
+    immutable ox = inner.x + 2 * wall, oy = inner.y + 2 * wall;
+    auto base = tray(ox, oy, inner.z + wall, wall, r);
+    auto lid = roundedBox(ox, oy, wall, r);
+    // the lip: a thin ring that slides into the base
+    immutable lx = inner.x - 2 * clearance, ly = inner.y - 2 * clearance;
+    auto lip = roundedBox(lx, ly, lidHeight, max(r - wall, 0.5.mm)) - roundedBox(lx - 2 * wall, ly - 2 * wall, lidHeight * 3,
+        max(r - 2 * wall, 0.5.mm)).move(z: -lidHeight);
+    lid += lip.move(z: wall);
+
+    // posts: tapped for the screw in the base, clearance holes in the lid
+    immutable px = inner.x / 2 - screw.d * 1.2, py = inner.y / 2 - screw.d * 1.2;
+    foreach (sx; [-1, 1])
+        foreach (sy; [-1, 1])
+        {
+            auto post = cylinder(d: screw.d * 2.4, h: inner.z + wall - lidHeight - clearance);
+            base += post.move(x: sx * px, y: sy * py);
+            base -= hole(screw, inner.z, "tap").move(x: sx * px, y: sy * py, z: inner.z + wall - lidHeight - clearance);
+            lid -= cylinder(d: screw.clearance, h: 10 * wall, center: true).move(x: sx * px, y: sy * py);
+            lid -= cylinder(d: screw.d * 2.4 + 2 * clearance, h: lidHeight * 2).move(x: sx * px, y: sy * py, z: wall);
+        }
+    return Enclosure(base, lid);
+}
