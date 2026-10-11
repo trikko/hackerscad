@@ -1,0 +1,96 @@
+# Opens the packages of a release on Linux, Windows and macOS, on the startup
+# example, and saves a screenshot of each as an artifact of the run. Started
+# by hand (Actions > screenshots > Run workflow), on the latest release or on
+# a tag, drafts included.
+name: screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty: the latest release)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # draft releases are visible only with write access
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  TAG: ${{ inputs.tag }}
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download
+        run: gh release download $TAG -R "$GITHUB_REPOSITORY" -p '*.AppImage' -D dist
+      - name: Screenshot
+        timeout-minutes: 5
+        # mutter (GNOME's window manager) draws the window decorations
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb mutter imagemagick dbus-x11 libgl1-mesa-dri
+          chmod +x dist/*.AppImage
+          # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
+          export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
+          xvfb-run -a -s "-screen 0 1440x900x24" bash -c \
+            "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-linux
+          path: "*-linux.png"
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download
+        shell: bash
+        run: gh release download $TAG -R "$GITHUB_REPOSITORY" -p '*windows*.zip' -D dist
+      # the runner has no OpenGL 3.3: Mesa's software renderer, next to the exe
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          install: unzip
+          pacboy: mesa:p
+      - name: Unpack
+        shell: msys2 {0}
+        run: |
+          unzip -q dist/*.zip -d out
+          cp $MINGW_PREFIX/bin/opengl32.dll $MINGW_PREFIX/bin/libgallium_wgl.dll out/hackerscad/bin/
+          for dll in $(ldd $MINGW_PREFIX/bin/libgallium_wgl.dll | awk '{print $3}' | grep -i "^$MINGW_PREFIX/bin/"); do
+            cp -n "$dll" out/hackerscad/bin/
+          done
+      - name: Screenshot
+        timeout-minutes: 5
+        shell: msys2 {0}
+        # the runner's screen is 1024x768: the same size as on Linux.
+        # llvmpipe: Mesa's default here (D3D12 on top of WARP) does not work
+        run: |
+          powershell -NoProfile -Command "Set-DisplayResolution -Width 1440 -Height 900 -Force" || true
+          GALLIUM_DRIVER=llvmpipe tests/screenshot.sh windows out/hackerscad/bin/hscad-gui.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-windows
+          path: "*-windows.png"
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download
+        run: |
+          gh release download $TAG -R "$GITHUB_REPOSITORY" -p '*macos*.zip' -D dist
+          ditto -x -k dist/*.zip out
+      - name: Screenshot
+        timeout-minutes: 5
+        run: tests/screenshot.sh macos out/hackerscad.app/Contents/MacOS/hackerscad
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-macos
+          path: "*-macos.png"

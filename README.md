@@ -158,16 +158,6 @@ hackerscad is built on [Open CASCADE Technology](https://dev.opencascade.org),
 [bindbc-opengl](https://github.com/BindBC/bindbc-opengl). `hscad --version` and
 the About window list them with their licences.
 
-## Screenshots from CI
-
-Taken by the automated build: on every push to `main` the
-[build workflow](.github/workflows/build.yml) builds hackerscad on each system,
-opens the application on its startup example and captures the screen.
-
-| Linux | macOS | Windows |
-|---|---|---|
-| ![](https://github.com/trikko/hackerscad/raw/screenshots/screen-linux.png) | ![](https://github.com/trikko/hackerscad/raw/screenshots/screen-macos.png) | ![](https://github.com/trikko/hackerscad/raw/screenshots/screen-windows.png) |
-
 ## License
 
 hackerscad is free software: © 2026 Andrea Fontana, licensed under the

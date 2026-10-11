@@ -1,7 +1,6 @@
-# Builds, tests and packs hackerscad on Linux, Windows and macOS, takes a
-# screenshot of the application on each, and publishes the screenshots on the
-# "screenshots" branch (shown in the README). Tags (v*) attach the packages to
-# a release draft.
+# Builds, tests and packs hackerscad on Linux, Windows and macOS. Tags (v*)
+# attach the packages to a release draft. Screenshots of a release are taken
+# on demand by the screenshots workflow.
 name: build
 
 on:
@@ -67,26 +66,10 @@ jobs:
           VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/linux/build-appimage.sh
           sudo chown -R "$USER" ~/dub-cache
 
-      - name: Screenshot
-        timeout-minutes: 3
-        # mutter (GNOME's window manager) draws the window decorations
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb mutter imagemagick dbus-x11 libgl1-mesa-dri
-          # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
-          export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
-          xvfb-run -a -s "-screen 0 1440x900x24" bash -c \
-            "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage"
-
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: dist/*.AppImage
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshot-linux
-          path: "*-linux.png"
 
   # Windows is cross-built on Linux (llvm-mingw, LDC, MSYS2 CLANG64 packages)
   # and tried with Wine, as on a developer's machine
@@ -130,7 +113,7 @@ jobs:
           name: windows
           path: dist/*.zip
 
-  # the zip on a real Windows machine: the examples, and a screenshot
+  # the zip on a real Windows machine: the examples
   windows-test:
     needs: windows
     runs-on: windows-latest
@@ -142,33 +125,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: windows
-      # the runner has no OpenGL 3.3: Mesa's software renderer, next to the exe
       - uses: msys2/setup-msys2@v2
         with:
           msystem: CLANG64
           install: unzip
-          pacboy: mesa:p
       - name: Unpack
-        run: |
-          unzip -q *.zip -d out
-          cp $MINGW_PREFIX/bin/opengl32.dll $MINGW_PREFIX/bin/libgallium_wgl.dll out/hackerscad/bin/
-          for dll in $(ldd $MINGW_PREFIX/bin/libgallium_wgl.dll | awk '{print $3}' | grep -i "^$MINGW_PREFIX/bin/"); do
-            cp -n "$dll" out/hackerscad/bin/
-          done
+        run: unzip -q *.zip -d out
       - name: Check the examples
         run: for f in examples/*.hcad; do out/hackerscad/bin/hscad.exe check "$f" || exit 1; done
-      - name: Screenshot
-        timeout-minutes: 3
-        # the runner's screen is 1024x768: the same size as on Linux.
-        # llvmpipe: Mesa's default here (D3D12 on top of WARP) does not work
-        run: |
-          powershell -NoProfile -Command "Set-DisplayResolution -Width 1440 -Height 900 -Force" || true
-          GALLIUM_DRIVER=llvmpipe tests/screenshot.sh windows out/hackerscad/bin/hscad-gui.exe
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshot-windows
-          path: "*-windows.png"
 
   # macOS minutes cost ten times the Linux ones: not on pull requests
   macos:
@@ -200,9 +164,13 @@ jobs:
           for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done
       - name: Package
         run: VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/macos/package.sh
-      - name: Screenshot
-        timeout-minutes: 3
-        run: tests/screenshot.sh macos dist/hackerscad.app/Contents/MacOS/hackerscad
+      # the bundle is only tried here, by no one else: open it, unpacked from
+      # the zip just made, and keep a screenshot
+      - name: Try the package
+        timeout-minutes: 5
+        run: |
+          ditto -x -k dist/*.zip try
+          tests/screenshot.sh macos try/hackerscad.app/Contents/MacOS/hackerscad
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -212,32 +180,6 @@ jobs:
         with:
           name: screenshot-macos
           path: "*-macos.png"
-
-  # Screenshots are published on the "screenshots" branch, shown in the README
-  screenshots:
-    needs: [linux, windows-test, macos]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: screenshot-*
-          merge-multiple: true
-          path: screenshots
-      - name: Push to the screenshots branch
-        working-directory: screenshots
-        run: |
-          # if the OS could not capture the screen, use the one taken by hackerscad
-          for os in linux macos windows; do
-            [ -f screen-$os.png ] || [ ! -f window-$os.png ] || cp window-$os.png screen-$os.png
-          done
-          git init -q -b screenshots
-          git add .
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -q -m "Screenshots from ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" screenshots
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
