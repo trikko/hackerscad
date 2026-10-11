@@ -2,6 +2,8 @@
 # glibc 2.39) so the AppImage runs on current distributions, with OpenCascade
 # built from source (Ubuntu ships 7.6) and the official LDC binaries.
 FROM ubuntu:24.04
+# links the image on GHCR to the repository, so the CI can pull it
+LABEL org.opencontainers.image.source=https://github.com/trikko/hackerscad
 
 ARG LDC_VERSION=1.42.0
 ARG OCCT_TAG=V7_9_3
