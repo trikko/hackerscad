@@ -1,8 +1,10 @@
 # Opens the packages of a release on Linux, Windows and macOS, on the startup
-# example, and saves a screenshot of each as an artifact of the run. Started
-# by hand (Actions > screenshots > Run workflow) on a release: the tag typed
-# in the form, or the tag chosen as "Use workflow from", or else the most
-# recent release (pre-releases such as nightly included), drafts included.
+# example, and saves a screenshot of each as an artifact of the run. When a
+# release is published the screenshots also go to the "screenshots" branch,
+# shown in the README. By hand (Actions > screenshots > Run workflow): the
+# tag typed in the form, or the tag chosen as "Use workflow from", or else
+# the most recent release (pre-releases such as nightly included); "publish"
+# puts them in the README too.
 name: screenshots
 
 on:
@@ -12,13 +14,19 @@ on:
         description: "Release tag: nightly, v0.3.1… (empty: the tag chosen above, or the most recent release)"
         required: false
         default: ""
+      publish:
+        description: "Also show them in the README (the screenshots branch)"
+        type: boolean
+        default: false
+  release:
+    types: [published]
 
 permissions:
   contents: write   # draft releases are visible only with write access
 
 env:
   GH_TOKEN: ${{ github.token }}
-  TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
+  TAG: ${{ inputs.tag || github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name || '') }}
 
 jobs:
   # the release to try, for the three jobs below
@@ -132,3 +140,25 @@ jobs:
         with:
           name: screenshot-macos
           path: "*-macos.png"
+
+  # the README shows the screenshots from the "screenshots" branch
+  publish:
+    needs: [release, linux, windows, macos]
+    if: github.event_name == 'release' || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: screenshot-*
+          merge-multiple: true
+          path: screenshots
+      - name: Push to the screenshots branch
+        working-directory: screenshots
+        run: |
+          tag="${{ needs.release.outputs.tag }}"
+          printf 'Screenshots of hackerscad %s, taken by the screenshots workflow.\n' "$tag" > README.md
+          git init -q -b screenshots
+          git add screen-*.png README.md
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Screenshots of $tag"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" screenshots
