@@ -43,23 +43,26 @@ jobs:
         run: gh release download "${{ needs.release.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p '*.AppImage' -D dist
       - name: Screenshot
         timeout-minutes: 5
-        # no window manager (GTK draws the title bar itself): Ubuntu's
-        # wallpaper on the screen, the window moved to the middle
+        # mutter (GNOME's window manager) composes the window
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb imagemagick dbus-x11 libgl1-mesa-dri \
-            feh xdotool ubuntu-wallpapers-noble
-          ls /usr/share/backgrounds
-          wall="$(ls -S /usr/share/backgrounds/*Numbat*.png 2>/dev/null | head -1)"
-          [ -n "$wall" ] || wall=/usr/share/backgrounds/warty-final-ubuntu.png
-          echo "wallpaper: $wall"
+          sudo apt-get install -y --no-install-recommends xvfb mutter imagemagick dbus-x11 libgl1-mesa-dri \
+            ubuntu-wallpapers-noble
           chmod +x dist/*.AppImage
           # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
-          export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx WALL="$wall"
-          xvfb-run -a -s "-screen 0 1920x1080x24" bash -c '
-            feh --no-fehbg --bg-fill "$WALL"
-            (xdotool search --sync --onlyvisible --name "hcad" windowmove 240 100) &
-            dbus-run-session tests/screenshot.sh linux dist/hackerscad-*.AppImage'
+          export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
+          xvfb-run -a -s "-screen 0 1920x1080x24" bash -c \
+            "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage"
+      # mutter alone draws no wallpaper: the screen image is the window taken
+      # by hackerscad, in the middle of Ubuntu's wallpaper, with a shadow
+      - name: On the wallpaper
+        run: |
+          wall="$(ls -S /usr/share/backgrounds/*Numbat*light*.png /usr/share/backgrounds/*Numbat*.png 2>/dev/null | head -1)"
+          echo "wallpaper: $wall"
+          convert "$wall" -resize 1920x1080^ -gravity center -extent 1920x1080 \
+            \( window-linux.png \( +clone -background black -shadow 50x18+0+12 \) +swap \
+               -background none -layers merge +repage \) \
+            -gravity center -composite screen-linux.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
