@@ -158,6 +158,16 @@ int main(string[] args)
             // Pango reads it with the C runtime's getenv, which keeps its own copy
             _putenv_s("PANGOCAIRO_BACKEND", "fc");
         }
+        // GLib follows XDG_DATA_DIRS when set (MSYS2 and other tools export
+        // theirs): our share/ goes first, for the icons, the GtkSourceView
+        // files and the settings schemas
+        import std.file : thisExePath;
+        import std.path : buildPath, dirName;
+        import std.string : toStringz;
+        auto share = buildPath(dirName(dirName(thisExePath())), "share");
+        auto dirs = environment.get("XDG_DATA_DIRS");
+        _putenv_s("XDG_DATA_DIRS", toStringz(dirs.length ? share ~ ";" ~ dirs : share));
+        _putenv_s("GSETTINGS_SCHEMA_DIR", toStringz(buildPath(share, "glib-2.0", "schemas")));
     }
     version (linux)
         installDesktopEntry();

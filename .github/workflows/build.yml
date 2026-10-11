@@ -159,8 +159,11 @@ jobs:
         run: for f in examples/*.hcad; do out/hackerscad/bin/hscad.exe check "$f" || exit 1; done
       - name: Screenshot
         timeout-minutes: 3
+        # the runner's screen is 1024x768: the same size as on Linux.
         # llvmpipe: Mesa's default here (D3D12 on top of WARP) does not work
-        run: GALLIUM_DRIVER=llvmpipe tests/screenshot.sh windows out/hackerscad/bin/hscad-gui.exe
+        run: |
+          powershell -NoProfile -Command "Set-DisplayResolution -Width 1440 -Height 900 -Force" || true
+          GALLIUM_DRIVER=llvmpipe tests/screenshot.sh windows out/hackerscad/bin/hscad-gui.exe
       - uses: actions/upload-artifact@v4
         if: always()
         with:
