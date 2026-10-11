@@ -73,6 +73,7 @@ done
 # hackerscad's own data, examples and documentation
 cp -r data/icons data/language-specs "$out/share/hackerscad/"
 cp -r examples docs "$out/share/hackerscad/"
+cp LICENSE MODEL-EXCEPTION.md "$out/"
 
 cd "$root/dist"
 rm -f "hackerscad-$version-windows-x86_64.zip"

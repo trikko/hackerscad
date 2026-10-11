@@ -17,7 +17,7 @@ mkdir -p "$app/usr/bin" "$app/usr/share/hackerscad" "$app/usr/share/applications
     "$app/usr/share/icons/hicolor/scalable/apps" "$app/usr/share/mime/packages" "$app/apprun-hooks"
 cp bin/hscad bin/hscad-gui "$app/usr/bin/"
 cp -r data/icons data/language-specs "$app/usr/share/hackerscad/"
-cp -r examples docs "$app/usr/share/hackerscad/"
+cp -r examples docs LICENSE MODEL-EXCEPTION.md "$app/usr/share/hackerscad/"
 cp packaging/linux/it.andreafontana.hackerscad.gui.desktop "$app/usr/share/applications/"
 cp packaging/linux/hcad-mime.xml "$app/usr/share/mime/packages/hackerscad.xml"
 cp data/logo/it.andreafontana.hackerscad.gui.svg "$app/usr/share/icons/hicolor/scalable/apps/"

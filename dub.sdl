@@ -1,8 +1,8 @@
 name "hackerscad"
 description "Parametric CAD with a small functional language"
-authors "andrea"
-copyright "Copyright © 2026, andrea"
-license "proprietary"
+authors "Andrea Fontana"
+copyright "Copyright © 2026, Andrea Fontana"
+license "GPL-3.0-only WITH LicenseRef-hackerscad-model-exception"
 
 targetType "executable"
 targetName "hscad"

@@ -44,6 +44,7 @@ int main(string[] args)
         import hackerscad.about;
         writeln(appName, " ", appVersion, " - ", appSummary);
         writeln(appCopyright, " - ", appWebsite);
+        writeln("license: ", appLicense);
         writeln("\nbuilt with:");
         write(componentList());
         return 0;

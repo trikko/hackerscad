@@ -34,7 +34,7 @@ cp -r "$brew/share/glib-2.0/schemas" "$share/glib-2.0/"
 glib-compile-schemas "$share/glib-2.0/schemas"
 cp -r "$brew/share/icons/Adwaita" "$brew/share/icons/hicolor" "$share/icons/"
 cp -r "$brew/share/gtksourceview-5" "$share/"
-cp -r data/icons data/language-specs examples docs "$share/hackerscad/"
+cp -r data/icons data/language-specs examples docs LICENSE MODEL-EXCEPTION.md "$share/hackerscad/"
 
 cp packaging/macos/Info.plist "$app/Contents/"
 sed -i '' "s/@VERSION@/$version/" "$app/Contents/Info.plist"

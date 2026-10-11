@@ -9,6 +9,12 @@ enum string appWebsite = "https://github.com/trikko/hackerscad";
 enum string appIssues = "https://github.com/trikko/hackerscad/issues";
 enum string appAuthor = "Andrea Fontana";
 enum string appCopyright = "© 2026 Andrea Fontana";
+/// GPL-3.0, with an exception for models and what hackerscad makes of them
+/// (MODEL-EXCEPTION.md)
+enum string appLicense = "GPL-3.0-only WITH LicenseRef-hackerscad-model-exception";
+enum string appModelException = "The models you write and what hackerscad makes from them (STL, 3MF, "
+    ~ "STEP, images, drawings) are yours, under terms of your choice, even when they use the libraries "
+    ~ "that come with hackerscad: see the hackerscad Model Exception (MODEL-EXCEPTION.md).";
 
 /// A library hackerscad is built with, and its licence.
 struct Component

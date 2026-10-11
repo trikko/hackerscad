@@ -170,4 +170,10 @@ opens the application on its startup example and captures the screen.
 
 ## License
 
-© 2026 Andrea Fontana. All rights reserved.
+hackerscad is free software: © 2026 Andrea Fontana, licensed under the
+[GNU General Public License version 3](LICENSE).
+
+The [hackerscad Model Exception](MODEL-EXCEPTION.md) keeps the license out of
+your work: the models you write, and what hackerscad makes from them (STL,
+3MF, STEP, images, drawings), are yours under terms of your choice, even when
+they use the libraries that come with hackerscad.

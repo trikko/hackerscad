@@ -693,8 +693,8 @@ private:
             ~ "edited with the mouse too, driven by AI agents through MCP.");
         d.setWebsite(appWebsite);
         d.setIssueUrl(appIssues);
-        d.setLicenseType(License.Custom);
-        d.setLicense("All rights reserved.");
+        d.setLicenseType(License.Gpl30Only);
+        d.addLegalSection("Models and their output", null, License.Custom, appModelException);
         d.addCreditSection("Built with", components.map!(c => c.name ~ " " ~ c.url).array);
         foreach (c; components)
         {
