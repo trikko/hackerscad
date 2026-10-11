@@ -182,7 +182,7 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: |
-          brew install ldc dub opencascade tbb gtk4 libadwaita gtksourceview5 cmake ninja dylibbundler librsvg imagemagick
+          brew install ldc dub opencascade tbb gtk4 libadwaita gtksourceview5 adwaita-icon-theme cmake ninja dylibbundler librsvg imagemagick
           brew list --versions ldc opencascade tbb > brew-versions.txt
       - uses: actions/cache@v4
         with:

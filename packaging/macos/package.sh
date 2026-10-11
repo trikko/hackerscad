@@ -2,7 +2,8 @@
 # Builds dist/hackerscad-<version>-macos-<arch>.zip with hackerscad.app,
 # from Homebrew's libraries: dylibbundler copies the libraries the
 # executables and GTK need into the bundle, and the launcher points gid and
-# GTK at them.
+# GTK at them. Needs the Homebrew formulae installed by the CI (see
+# .github/workflows/build.yml), adwaita-icon-theme included.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 brew="$(brew --prefix)"
