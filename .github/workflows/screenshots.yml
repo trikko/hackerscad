@@ -43,15 +43,23 @@ jobs:
         run: gh release download "${{ needs.release.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p '*.AppImage' -D dist
       - name: Screenshot
         timeout-minutes: 5
-        # mutter (GNOME's window manager) draws the window decorations
+        # no window manager (GTK draws the title bar itself): Ubuntu's
+        # wallpaper on the screen, the window moved to the middle
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb mutter imagemagick dbus-x11 libgl1-mesa-dri
+          sudo apt-get install -y --no-install-recommends xvfb imagemagick dbus-x11 libgl1-mesa-dri \
+            feh xdotool ubuntu-wallpapers-noble
+          ls /usr/share/backgrounds
+          wall="$(ls -S /usr/share/backgrounds/*Numbat*.png 2>/dev/null | head -1)"
+          [ -n "$wall" ] || wall=/usr/share/backgrounds/warty-final-ubuntu.png
+          echo "wallpaper: $wall"
           chmod +x dist/*.AppImage
           # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
-          export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
-          xvfb-run -a -s "-screen 0 1920x1080x24" bash -c \
-            "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage"
+          export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx WALL="$wall"
+          xvfb-run -a -s "-screen 0 1920x1080x24" bash -c '
+            feh --no-fehbg --bg-fill "$WALL"
+            (xdotool search --sync --onlyvisible --name "hcad" windowmove 240 100) &
+            dbus-run-session tests/screenshot.sh linux dist/hackerscad-*.AppImage'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -103,6 +111,16 @@ jobs:
         run: |
           gh release download "${{ needs.release.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p '*macos*.zip' -D dist
           ditto -x -k dist/*.zip out
+      # the runner's desktop is black: one of the system's wallpapers
+      - name: Wallpaper
+        continue-on-error: true
+        run: |
+          ls "/System/Library/Desktop Pictures" || true
+          wall="$(ls "/System/Library/Desktop Pictures"/*Sonoma*.heic 2>/dev/null | head -1)"
+          [ -n "$wall" ] || wall="$(ls "/System/Library/Desktop Pictures"/*.heic | head -1)"
+          echo "wallpaper: $wall"
+          osascript -e "tell application \"System Events\" to tell every desktop to set picture to \"$wall\""
+          sleep 2
       - name: Screenshot
         timeout-minutes: 5
         run: tests/screenshot.sh macos out/hackerscad.app/Contents/MacOS/hackerscad
