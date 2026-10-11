@@ -50,7 +50,7 @@ jobs:
           chmod +x dist/*.AppImage
           # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
           export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
-          xvfb-run -a -s "-screen 0 1440x900x24" bash -c \
+          xvfb-run -a -s "-screen 0 1920x1080x24" bash -c \
             "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -83,10 +83,10 @@ jobs:
       - name: Screenshot
         timeout-minutes: 5
         shell: msys2 {0}
-        # the runner's screen is 1024x768: the same size as on Linux.
+        # the runner's screen is 1024x768: 1920x1080, as on Linux and macOS.
         # llvmpipe: Mesa's default here (D3D12 on top of WARP) does not work
         run: |
-          powershell -NoProfile -Command "Set-DisplayResolution -Width 1440 -Height 900 -Force" || true
+          powershell -NoProfile -Command "Set-DisplayResolution -Width 1920 -Height 1080 -Force" || true
           GALLIUM_DRIVER=llvmpipe tests/screenshot.sh windows out/hackerscad/bin/hscad-gui.exe
       - uses: actions/upload-artifact@v4
         if: always()
