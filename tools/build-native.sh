@@ -14,6 +14,10 @@ mkdir -p "$out"
 
 target="${1:-native}"
 
+# The content of a step's inputs: a step runs again when it changes, not when
+# a file is newer (files restored from a CI cache are older than a checkout).
+stamp() { cat "$@" | cksum | cut -d' ' -f1; }
+
 # --- Manifold sources (pinned) ------------------------------------------------
 msrc="$root/third_party/manifold"
 if ! [ -d "$msrc" ]; then
@@ -40,9 +44,12 @@ if [ -z "$occt_inc" ]; then
         if [ -f "$d/Standard.hxx" ]; then occt_inc="$d"; break; fi
     done
 fi
-if ! [ -f "$lib" ] || [ "$src/shim.cpp" -nt "$lib" ] || [ "$src/shim.h" -nt "$lib" ]; then
+sum="$(stamp "$src/shim.cpp" "$src/shim.h")"
+if ! [ -f "$lib" ] || [ "$(cat "$lib.stamp" 2>/dev/null)" != "$sum" ]; then
     ${CXX:-g++} -std=c++17 -O2 -fPIC -I"$occt_inc" -c "$src/shim.cpp" -o "$out/shim.o"
+    rm -f "$lib"
     ar rcs "$lib" "$out/shim.o"
+    echo "$sum" > "$lib.stamp"
 fi
 
 # --- Manifold ---------------------------------------------------------------
@@ -59,7 +66,8 @@ fi
 # match the pinned header.
 di="$out/import/hackerscad/kernel/manifold/c.di"
 header="$msrc/bindings/c/include/manifold/manifoldc.h"
-if ! [ -f "$di" ] || [ "$header" -nt "$di" ]; then
+sum="$(stamp "$msrc"/bindings/c/include/manifold/*.h "$0")"
+if ! [ -f "$di" ] || [ "$(cat "$di.stamp" 2>/dev/null)" != "$sum" ]; then
     dmd="$(command -v dmd || command -v ldmd2)"
     mkdir -p "$(dirname "$di")" "$out/cstub"
     # minimal libc headers: the real ones drag in macros D cannot express
@@ -70,5 +78,9 @@ if ! [ -f "$di" ] || [ "$header" -nt "$di" ]; then
     "$dmd" -c -o- -P-nostdinc -P-I"$out/cstub" -P-I"$msrc/bindings/c/include" "$out/manifoldc.c" -Hf="$out/manifoldc.di"
     # the .di generator drops opaque struct typedefs: declare them again
     opaque="$(sed -nE 's/^typedef struct (\w+) \1;$/extern (C) struct \1;/p' "$msrc/bindings/c/include/manifold/types.h")"
-    { echo "module hackerscad.kernel.manifold.c;"; echo "$opaque"; cat "$out/manifoldc.di"; } > "$di"
+    # and drop the compiler's own macros (__FLT_DENORM_MIN__ and the like):
+    # some are numbers D cannot represent
+    { echo "module hackerscad.kernel.manifold.c;"; echo "$opaque"
+      grep -vE '^\s*enum [^=]*\b__[A-Za-z0-9_]+__ =' "$out/manifoldc.di"; } > "$di"
+    echo "$sum" > "$di.stamp"
 fi

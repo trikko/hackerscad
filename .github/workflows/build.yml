@@ -11,36 +11,61 @@ on:
   pull_request:
   workflow_dispatch:
 
+# a new push to a branch stops the run still going on it
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   linux:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
-      # Ubuntu 24.04 with OpenCascade built from source: the layers are cached,
-      # so OpenCascade is compiled again only when the Containerfile changes
-      - uses: docker/setup-buildx-action@v3
+      # Ubuntu 24.04 with OpenCascade built from source, kept as an image on
+      # GHCR under the hash of the Containerfile: built (for most of an hour)
+      # only when the Containerfile changes, pulled in a minute otherwise
       - name: Build environment
-        uses: docker/build-push-action@v6
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-env:$(sha256sum packaging/linux/Containerfile | cut -c1-16)"
+          echo "${{ github.token }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if ! docker pull -q "$image"; then
+            docker build -t "$image" -f packaging/linux/Containerfile packaging/linux
+            [ "${{ github.event_name }}" = pull_request ] || docker push -q "$image"
+          fi
+          docker tag "$image" hackerscad-appimage
+
+      # dub's packages and objects (gid is most of the build), Manifold and
+      # the OpenCascade shim (rebuilt when their sources change)
+      - uses: actions/cache@v4
         with:
-          context: packaging/linux
-          file: packaging/linux/Containerfile
-          tags: hackerscad-appimage
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          path: |
+            ~/dub-cache
+            build/native
+            build/manifold
+            third_party/manifold
+          key: linux-${{ hashFiles('packaging/linux/Containerfile', 'dub.selections.json', 'tools/build-native.sh') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*') }}
+          restore-keys: linux-${{ hashFiles('packaging/linux/Containerfile', 'dub.selections.json', 'tools/build-native.sh') }}-
 
       - name: Test
         run: |
-          docker run --rm -v "$PWD:/src" -w /src hackerscad-appimage sh -c '
+          mkdir -p ~/dub-cache
+          docker run --rm -v "$PWD:/src" -v "$HOME/dub-cache:/root/.dub" -w /src hackerscad-appimage sh -c '
             git config --global --add safe.directory "*"
             dub test :core --compiler=ldc2 &&
             dub build --compiler=ldc2 &&
             for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done'
-          sudo rm -rf build bin .dub
+          sudo rm -rf bin .dub
+          sudo chown -R "$USER" build third_party ~/dub-cache
 
       - name: AppImage
-        run: ENGINE=docker SKIP_IMAGE_BUILD=1 VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/linux/build-appimage.sh
+        run: |
+          export ENGINE=docker SKIP_IMAGE_BUILD=1 KEEP_NATIVE=1 DUB_CACHE="$HOME/dub-cache"
+          VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/linux/build-appimage.sh
+          sudo chown -R "$USER" ~/dub-cache
 
       - name: Screenshot
         timeout-minutes: 3
@@ -81,6 +106,17 @@ jobs:
           key: win-downloads-${{ hashFiles('tools/setup-win-cross.sh') }}
       - name: Toolchain and libraries
         run: ./tools/setup-win-cross.sh
+      # dub's packages and objects, Manifold and the native DLL; the DLL is
+      # rebuilt when the shim changes, all of it when the MSYS2 packages do
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.dub
+            build/win/manifold
+            build/win/native
+            third_party/manifold
+          key: win-${{ hashFiles('build/win/pkgs.txt', 'tools/setup-win-cross.sh', 'tools/build-native*.sh', 'dub.selections.json') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*', 'data/logo/*.svg') }}
+          restore-keys: win-${{ hashFiles('build/win/pkgs.txt', 'tools/setup-win-cross.sh', 'tools/build-native*.sh', 'dub.selections.json') }}-
       - name: Package
         run: |
           export PATH="$(ls -d $PWD/build/win/ldc2-*-linux-x86_64)/bin:$PATH"
@@ -138,7 +174,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Dependencies
-        run: brew install ldc dub opencascade tbb gtk4 libadwaita gtksourceview5 cmake ninja dylibbundler librsvg imagemagick
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: |
+          brew install ldc dub opencascade tbb gtk4 libadwaita gtksourceview5 cmake ninja dylibbundler librsvg imagemagick
+          brew list --versions ldc opencascade tbb > brew-versions.txt
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.dub
+            build/native
+            build/manifold
+            third_party/manifold
+          key: macos-${{ hashFiles('brew-versions.txt', 'dub.selections.json', 'tools/build-native.sh') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*') }}
+          restore-keys: macos-${{ hashFiles('brew-versions.txt', 'dub.selections.json', 'tools/build-native.sh') }}-
       - name: Test
         run: |
           dub test :core --compiler=ldc2

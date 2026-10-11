@@ -39,7 +39,9 @@ fi
 # --- the DLL ---------------------------------------------------------------
 src="$root/source/hackerscad/kernel/occt"
 dll="$out/hcad_native.dll"
-if ! [ -f "$dll" ] || [ "$src/shim.cpp" -nt "$dll" ] || [ "$src/shim.h" -nt "$dll" ]; then
+# rebuilt when the shim's content changes (see stamp in build-native.sh)
+sum="$(cat "$src/shim.cpp" "$src/shim.h" | cksum | cut -d' ' -f1)"
+if ! [ -f "$dll" ] || [ "$(cat "$dll.stamp" 2>/dev/null)" != "$sum" ]; then
     "$cxx" -std=c++17 -O2 -D_USE_MATH_DEFINES -I"$sys/include/opencascade" -c "$src/shim.cpp" -o "$out/shim.o"
     occt="TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKBO TKBool TKFillet \
         TKOffset TKFeat TKShHealing TKMesh TKV3d TKService TKXSBase TKDE TKDESTEP TKHLR"
@@ -48,4 +50,5 @@ if ! [ -f "$dll" ] || [ "$src/shim.cpp" -nt "$dll" ] || [ "$src/shim.h" -nt "$dl
         "$mb/src/libmanifold.a" "$mb/_deps/clipper2-build/libClipper2.a" \
         -L"$sys/lib" $(for l in $occt; do printf -- '-l%s ' "$l"; done) \
         -Wl,--export-all-symbols -Wl,--out-implib,"$out/hcad_native.lib"
+    echo "$sum" > "$dll.stamp"
 fi

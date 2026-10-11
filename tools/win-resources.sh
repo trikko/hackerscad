@@ -15,7 +15,9 @@ esac
 for s in 16 24 32 48 64 128 256; do
     rsvg-convert -w $s -h $s "$svg" -o "$out/icon-$s.png"
 done
-magick "$out"/icon-16.png "$out"/icon-24.png "$out"/icon-32.png "$out"/icon-48.png \
+# ImageMagick 7 is magick, 6 (Ubuntu) is convert
+im="$(command -v magick || command -v convert)"
+"$im" "$out"/icon-16.png "$out"/icon-24.png "$out"/icon-32.png "$out"/icon-48.png \
     "$out"/icon-64.png "$out"/icon-128.png "$out"/icon-256.png "$out/hscad-gui.ico"
 rm -f "$out"/icon-*.png
 printf '1 ICON "hscad-gui.ico"\n' > "$out/hscad-gui.rc"

@@ -9,4 +9,8 @@ image=hackerscad-appimage
 # the CI builds the image beforehand, with a cache of its layers
 [ -n "${SKIP_IMAGE_BUILD:-}" ] || "$engine" build -t "$image" -f "$root/packaging/linux/Containerfile" "$root/packaging/linux"
 mkdir -p "$root/dist"
-"$engine" run --rm -e VERSION -v "$root:/src:ro" -v "$root/dist:/dist" "$image" sh /src/packaging/linux/appimage-inside.sh
+# DUB_CACHE: a directory kept between builds for dub's packages and objects
+cache=""
+[ -z "${DUB_CACHE:-}" ] || { mkdir -p "$DUB_CACHE"; cache="-v $DUB_CACHE:/root/.dub"; }
+"$engine" run --rm -e VERSION -e KEEP_NATIVE $cache -v "$root:/src:ro" -v "$root/dist:/dist" "$image" \
+    sh /src/packaging/linux/appimage-inside.sh
