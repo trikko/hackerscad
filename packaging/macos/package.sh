@@ -19,14 +19,37 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/bin" "$app/Contents/Fram
     "$app/Contents/Resources/share/hackerscad"
 cp bin/hscad bin/hscad-gui "$app/Contents/Resources/bin/"
 
-# GTK is opened at run time: bundle it together with the executables
-for lib in libgtk-4.1.dylib libadwaita-1.0.dylib libgtksourceview-5.0.dylib; do
-    cp "$brew/lib/$lib" "$app/Contents/Frameworks/"
+# gid opens GTK and the libraries below it at run time (they are not linked
+# to the executables): bundle them, and what they need, with dylibbundler
+fw="$app/Contents/Frameworks"
+gidlibs="libgtk-4.1.dylib libadwaita-1.0.dylib libgtksourceview-5.0.dylib libgobject-2.0.0.dylib
+    libglib-2.0.0.dylib libgio-2.0.0.dylib libgmodule-2.0.0.dylib libgraphene-1.0.0.dylib
+    libpango-1.0.0.dylib libpangocairo-1.0.0.dylib libcairo.2.dylib libcairo-gobject.2.dylib
+    libharfbuzz.0.dylib libharfbuzz-gobject.0.dylib libgdk_pixbuf-2.0.0.dylib"
+for lib in $gidlibs; do
+    cp "$brew/lib/$lib" "$fw/"
+    chmod u+w "$fw/$lib"
 done
-dylibbundler -of -cd -b -p @executable_path/../../Frameworks/ -d "$app/Contents/Frameworks/" \
+dylibbundler -of -cd -b -p @executable_path/../../Frameworks/ -d "$fw/" \
     -x "$app/Contents/Resources/bin/hscad" -x "$app/Contents/Resources/bin/hscad-gui" \
-    -x "$app/Contents/Frameworks/libgtk-4.1.dylib" -x "$app/Contents/Frameworks/libadwaita-1.0.dylib" \
-    -x "$app/Contents/Frameworks/libgtksourceview-5.0.dylib"
+    $(for lib in $gidlibs; do printf -- '-x %s ' "$fw/$lib"; done)
+
+# gid (0.9.13) looks the functions of a pair of libraries (gobject and glib,
+# cairo-gobject and cairo, harfbuzz-gobject and harfbuzz) up in the first one
+# only, and dlsym on macOS does not search its dependencies. The first one
+# becomes a library re-exporting both; the real one is renamed. The other
+# libraries load it under the old name and still find every symbol.
+echo > /tmp/hcad-empty.c
+reexport() {   # reexport FIRST SECOND
+    real="${1%.dylib}.real.dylib"
+    mv "$fw/$1" "$fw/$real"
+    install_name_tool -id "@executable_path/../../Frameworks/$real" "$fw/$real"
+    cc -dynamiclib /tmp/hcad-empty.c -o "$fw/$1" -install_name "@executable_path/../../Frameworks/$1" \
+        -Wl,-reexport_library,"$fw/$real" -Wl,-reexport_library,"$fw/$2"
+}
+reexport libgobject-2.0.0.dylib libglib-2.0.0.dylib
+reexport libcairo-gobject.2.dylib libcairo.2.dylib
+reexport libharfbuzz-gobject.0.dylib libharfbuzz.0.dylib
 
 # GTK runtime data
 share="$app/Contents/Resources/share"
