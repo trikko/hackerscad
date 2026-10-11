@@ -135,56 +135,6 @@ jobs:
       - name: Check the examples
         run: for f in examples/*.hcad; do out/hackerscad/bin/hscad.exe check "$f" || exit 1; done
 
-  # Experiment: the Windows build on Windows (MSYS2 CLANG64 and LDC), with no
-  # cross-compiler, Wine or second job, to compare with the two jobs above
-  windows-native:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    env:
-      LDC: 1.42.0
-    steps:
-      - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: CLANG64
-          update: false
-          cache: true
-          install: git zip unzip
-          pacboy: >-
-            toolchain:p cmake:p ninja:p opencascade:p gtk4:p libadwaita:p gtksourceview5:p
-            librsvg:p adwaita-icon-theme:p imagemagick:p
-      - name: LDC
-        shell: pwsh
-        run: |
-          $dir = "$env:RUNNER_TEMP\ldc"
-          if (!(Test-Path "$dir\ldc2-$env:LDC-windows-multilib")) {
-            Invoke-WebRequest "https://github.com/ldc-developers/ldc/releases/download/v$env:LDC/ldc2-$env:LDC-windows-multilib.7z" -OutFile "$env:RUNNER_TEMP\ldc.7z"
-            7z x -y "-o$dir" "$env:RUNNER_TEMP\ldc.7z" | Out-Null
-          }
-      - name: Versions
-        run: pacman -Q > msys-versions.txt
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/AppData/Local/dub
-            build/win/manifold
-            build/win/native
-            third_party/manifold
-          key: winnative-${{ hashFiles('msys-versions.txt', 'tools/build-native*.sh', 'dub.selections.json') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*', 'data/logo/*.svg') }}
-          restore-keys: winnative-${{ hashFiles('msys-versions.txt', 'tools/build-native*.sh', 'dub.selections.json') }}-
-      - name: Package
-        run: |
-          export PATH="$(cygpath "$RUNNER_TEMP")/ldc/ldc2-$LDC-windows-multilib/bin:$PATH"
-          VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/windows/package.sh
-      - name: Check the examples
-        run: for f in examples/*.hcad; do dist/hackerscad/bin/hscad.exe check "$f" || exit 1; done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-native
-          path: dist/*.zip
-
   # macOS minutes cost ten times the Linux ones: not on pull requests
   macos:
     if: github.event_name != 'pull_request'
@@ -218,10 +168,15 @@ jobs:
       # the bundle is only tried here, by no one else: open it, unpacked from
       # the zip just made, and keep a screenshot
       - name: Try the package
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
           ditto -x -k dist/*.zip try
           tests/screenshot.sh macos try/hackerscad.app/Contents/MacOS/hackerscad
+          # experiment: the same with each GTK renderer (a strip of the 3D
+          # view is not drawn on screen)
+          for r in ngl gl cairo; do
+            GSK_RENDERER=$r tests/screenshot.sh macos-$r try/hackerscad.app/Contents/MacOS/hackerscad || true
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -230,7 +185,7 @@ jobs:
         if: always()
         with:
           name: screenshot-macos
-          path: "*-macos.png"
+          path: "*-macos*.png"
 
   # every push to main replaces the "nightly" pre-release with its packages
   nightly:
