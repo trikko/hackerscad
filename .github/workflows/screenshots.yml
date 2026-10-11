@@ -1,14 +1,15 @@
 # Opens the packages of a release on Linux, Windows and macOS, on the startup
 # example, and saves a screenshot of each as an artifact of the run. Started
-# by hand (Actions > screenshots > Run workflow), on the latest release or on
-# a tag (nightly for the latest build of main), drafts included.
+# by hand (Actions > screenshots > Run workflow) on a release: the tag typed
+# in the form, or the tag chosen as "Use workflow from", or else the most
+# recent release (pre-releases such as nightly included), drafts included.
 name: screenshots
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag: nightly, v0.3.1… (empty: the latest release)"
+        description: "Release tag: nightly, v0.3.1… (empty: the tag chosen above, or the most recent release)"
         required: false
         default: ""
 
@@ -17,15 +18,29 @@ permissions:
 
 env:
   GH_TOKEN: ${{ github.token }}
-  TAG: ${{ inputs.tag }}
+  TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
 
 jobs:
+  # the release to try, for the three jobs below
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+    steps:
+      - id: pick
+        run: |
+          tag="${TAG:-$(gh release list -R "$GITHUB_REPOSITORY" -L 1 --json tagName -q '.[0].tagName')}"
+          [ -n "$tag" ] || { echo "no release to try" >&2; exit 1; }
+          echo "Trying release $tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   linux:
+    needs: release
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Download
-        run: gh release download $TAG -R "$GITHUB_REPOSITORY" -p '*.AppImage' -D dist
+        run: gh release download "${{ needs.release.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p '*.AppImage' -D dist
       - name: Screenshot
         timeout-minutes: 5
         # mutter (GNOME's window manager) draws the window decorations
@@ -44,12 +59,13 @@ jobs:
           path: "*-linux.png"
 
   windows:
+    needs: release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Download
         shell: bash
-        run: gh release download $TAG -R "$GITHUB_REPOSITORY" -p '*windows*.zip' -D dist
+        run: gh release download "${{ needs.release.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p '*windows*.zip' -D dist
       # the runner has no OpenGL 3.3: Mesa's software renderer, next to the exe
       - uses: msys2/setup-msys2@v2
         with:
@@ -79,12 +95,13 @@ jobs:
           path: "*-windows.png"
 
   macos:
+    needs: release
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - name: Download
         run: |
-          gh release download $TAG -R "$GITHUB_REPOSITORY" -p '*macos*.zip' -D dist
+          gh release download "${{ needs.release.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p '*macos*.zip' -D dist
           ditto -x -k dist/*.zip out
       - name: Screenshot
         timeout-minutes: 5
