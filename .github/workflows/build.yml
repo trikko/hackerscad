@@ -1,6 +1,7 @@
-# Builds, tests and packs hackerscad on Linux, Windows and macOS. Tags (v*)
-# attach the packages to a release draft. Screenshots of a release are taken
-# on demand by the screenshots workflow.
+# Builds, tests and packs hackerscad on Linux, Windows and macOS. Pushes to
+# main replace the "nightly" pre-release; tags (v*) attach the packages to a
+# release draft. Screenshots of a release are taken on demand by the
+# screenshots workflow.
 name: build
 
 on:
@@ -180,6 +181,28 @@ jobs:
         with:
           name: screenshot-macos
           path: "*-macos.png"
+
+  # every push to main replaces the "nightly" pre-release with its packages
+  nightly:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [linux, windows-test, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "{linux,windows,macos}"
+          path: dist
+          merge-multiple: true
+      - name: Replace the nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly -R "$GITHUB_REPOSITORY" -y --cleanup-tag || true
+          gh release create nightly dist/* -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Nightly build" \
+            --notes "Built from ${GITHUB_SHA::7} on $(date -u +%Y-%m-%d). Replaced at every push to main: for trying the latest changes, not for keeping."
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

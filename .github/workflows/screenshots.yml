@@ -1,14 +1,14 @@
 # Opens the packages of a release on Linux, Windows and macOS, on the startup
 # example, and saves a screenshot of each as an artifact of the run. Started
 # by hand (Actions > screenshots > Run workflow), on the latest release or on
-# a tag, drafts included.
+# a tag (nightly for the latest build of main), drafts included.
 name: screenshots
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (empty: the latest release)"
+        description: "Release tag: nightly, v0.3.1… (empty: the latest release)"
         required: false
         default: ""
 
