@@ -59,8 +59,14 @@ jobs:
           chmod +x dist/*.AppImage
           # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
           export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
-          xvfb-run -a -s "-screen 0 1920x1080x24" bash -c \
-            "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage"
+          # the virtual session sometimes fails to start: up to three tries
+          for try in 1 2 3; do
+            xvfb-run -a -s "-screen 0 1920x1080x24" bash -c \
+              "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage" || true
+            [ -f window-linux.png ] && break
+            echo "no screenshot, trying again"
+          done
+          [ -f window-linux.png ]
       # mutter alone draws no wallpaper: the screen image is the window taken
       # by hackerscad, in the middle of Ubuntu's wallpaper, with a shadow
       - name: On the wallpaper
