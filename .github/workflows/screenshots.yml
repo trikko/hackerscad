@@ -47,7 +47,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb mutter imagemagick dbus-x11 libgl1-mesa-dri \
-            ubuntu-wallpapers-noble
+            ubuntu-wallpapers
           chmod +x dist/*.AppImage
           # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
           export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
@@ -57,8 +57,8 @@ jobs:
       # by hackerscad, in the middle of Ubuntu's wallpaper, with a shadow
       - name: On the wallpaper
         run: |
-          wall="$(ls -S /usr/share/backgrounds/*Numbat*light*.png /usr/share/backgrounds/*Numbat*.png 2>/dev/null | head -1)"
-          echo "wallpaper: $wall"
+          wall=/usr/share/backgrounds/warty-final-ubuntu.png   # the release's default
+          ls -l "$wall"
           convert "$wall" -resize 1920x1080^ -gravity center -extent 1920x1080 \
             \( window-linux.png \( +clone -background black -shadow 50x18+0+12 \) +swap \
                -background none -layers merge +repage \) \
