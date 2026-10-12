@@ -699,9 +699,9 @@ private:
     {
         import std.stdio : stderr;
         area.makeCurrent();
-        if (auto e = area.getError())
+        if (auto e = glError())
         {
-            stderr.writeln("3D view: no OpenGL context: ", e.msg);
+            stderr.writeln("3D view: no OpenGL context: ", e);
             explain();
             return;
         }
@@ -725,6 +725,18 @@ private:
         glGenVertexArrays(1, &gridVao);
         glGenBuffers(1, &gridVbo);
         glReady = true;
+    }
+
+    /// The GLArea's error, if any. Not through gid's area.getError(): its
+    /// wrapper frees the error it does not own (gid 0.9.13), and GTK frees it
+    /// again when the view goes, corrupting the heap.
+    string glError()
+    {
+        import gtk.c.functions : gtk_gl_area_get_error;
+        import gtk.c.types : GtkGLArea;
+        import std.string : fromStringz;
+        auto e = gtk_gl_area_get_error(cast(GtkGLArea*) area._cPtr);
+        return e is null ? null : (e.message ? e.message.fromStringz.idup : "unknown error");
     }
 
     /// Hands glHelp, when known, to whoever shows it: later, outside the
@@ -793,7 +805,7 @@ private:
         if (!glReady)
             return null;
         area.makeCurrent();
-        if (area.getError() !is null)
+        if (glError() !is null)
             return null;
         int previous;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
