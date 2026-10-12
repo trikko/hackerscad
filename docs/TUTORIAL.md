@@ -27,9 +27,10 @@ full reference is [LANGUAGE.md](LANGUAGE.md) (or the cheatsheet, F1).
   executable (`chmod +x`) and run it. The same file also contains the command
   line tool: `./hackerscad.AppImage hscad check model.hcad`.
 - **Windows:** unzip `hackerscad-<version>-windows-x86_64.zip` anywhere and
-  run `hackerscad\bin\hscad-gui.exe` (the command line tool is `hscad.exe`
-  next to it). It is not signed: if SmartScreen stops it, choose "More info"
-  and then "Run anyway".
+  run `hackerscad.exe` in the `hackerscad` folder (the command line tool is
+  `bin\hscad.exe`). Without a recent enough OpenGL (virtual machines without
+  3D acceleration) it draws with the software OpenGL it ships with. It is not
+  signed: if SmartScreen stops it, choose "More info" and then "Run anyway".
 - **macOS** (Apple Silicon): unzip `hackerscad-<version>-macos-arm64.zip`,
   move `hackerscad.app` to Applications and clear the attributes macOS puts on
   downloaded files (the quarantine), or it says the app is damaged (it is not signed by an

@@ -45,8 +45,10 @@ chmod +x hackerscad-*-x86_64.AppImage
 ./hackerscad-*-x86_64.AppImage hscad check model.hcad  # the command line tool
 ```
 
-**Windows:** unzip it anywhere and run `hackerscad\bin\hscad-gui.exe` (the
-command line tool is `hscad.exe` next to it). The program is not signed: if
+**Windows:** unzip it anywhere and run `hackerscad.exe` in the `hackerscad`
+folder (the command line tool is `bin\hscad.exe`). On machines without a
+recent enough OpenGL, such as virtual machines without 3D acceleration, it
+draws with the software OpenGL it ships with. The program is not signed: if
 SmartScreen stops it, choose "More info" and then "Run anyway".
 
 **macOS** (Apple Silicon): unzip it, move `hackerscad.app` to Applications
