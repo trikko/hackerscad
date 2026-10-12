@@ -677,6 +677,22 @@ unittest
     auto bc = kernel.bbox(r.parts[3].solid.brep);
     assert(isClose(bc.min.z, -3.0, 1e-6) && isClose(bc.max.z, 3.0, 1e-6));
     assert(isClose(partVolume(r, "ring"), PI * (100 - 25) * 10, 1e-6));
+    // lofts between sections that start elsewhere or turn the other way, or
+    // have different numbers of edges, do not twist
+    {
+        auto lr = runModel(q{
+            @part Solid turned() => loft([polygon([vec(0, 0), vec(10, 0), vec(10, 10), vec(0, 10)]),
+                polygon([vec(10, 0), vec(0, 0), vec(0, 10), vec(10, 10)]).move(z: 10)], ruled: true);
+            @part Solid inset() => loft([rect(40, 20).round(4), rect(40, 20).offset(-3).move(z: 15)]);
+        });
+        assert(isClose(partVolume(lr, "turned"), 1000, 1e-6), "a loft of the same square, listed otherwise");
+        foreach (p; lr.parts)
+            if (p.name == "inset")
+            {
+                auto bi = kernel.bbox(p.solid.brep);
+                assert(bi.max.x - bi.min.x < 41 && bi.max.z - bi.min.z < 15.5, "an inset loft stays within its sections");
+            }
+    }
     // without an axis it stands up: the profile's y is the height along Z
     foreach (p; r.parts)
         if (p.name == "upright")

@@ -73,6 +73,7 @@
 #include <Geom2d_Line.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
 #include <BRepAdaptor_CompCurve.hxx>
+#include <GCPnts_UniformAbscissa.hxx>
 #include <algorithm>
 #include <cmath>
 #include <LocOpe_DPrism.hxx>
@@ -1356,9 +1357,140 @@ static std::vector<TopoDS_Wire> align_seams(const std::vector<TopoDS_Wire> &sect
     return out;
 }
 
+// Sections start wherever an offset or a boolean left them, and turn either
+// way: turn them all as the first one and start each at the vertex in the
+// direction where the previous one starts, seen from its centre, or the loft
+// twists through itself (the matching of vertices pairs them in order). The
+// edges are only reordered, so arcs (an offset's corners) stay arcs.
+static std::vector<TopoDS_Wire> align_starts(const std::vector<TopoDS_Wire> &sections)
+{
+    std::vector<TopoDS_Wire> out;
+    bool have = false;
+    gp_Vec prevStart, prevNormal;
+    for (auto &w : sections) {
+        std::vector<TopoDS_Edge> edges;
+        std::vector<gp_Pnt> pts;   // the start of each edge, in order
+        for (BRepTools_WireExplorer ex(w); ex.More(); ex.Next()) {
+            edges.push_back(ex.Current());
+            pts.push_back(BRep_Tool::Pnt(ex.CurrentVertex()));
+        }
+        const size_t n = edges.size();
+        if (n < 2) {   // a circle: align_seams turns it
+            out.push_back(w);
+            continue;
+        }
+        gp_XYZ centre(0, 0, 0);
+        gp_Vec normal(0, 0, 0);   // Newell's: its sign is the way the section turns
+        for (size_t i = 0; i < n; i++) {
+            const gp_Pnt &p = pts[i], &q = pts[(i + 1) % n];
+            centre += p.XYZ();
+            normal += gp_Vec((p.Y() - q.Y()) * (p.Z() + q.Z()), (p.Z() - q.Z()) * (p.X() + q.X()),
+                             (p.X() - q.X()) * (p.Y() + q.Y()));
+        }
+        centre /= double(n);
+        if (normal.Magnitude() < 1e-12) {
+            out.push_back(w);
+            continue;
+        }
+        const gp_Vec axis = normal.Normalized();
+        if (have && normal.Dot(prevNormal) < 0) {
+            // the other way round: the edges backwards, each reversed; the
+            // start of each is now the end it had
+            std::vector<TopoDS_Edge> back;
+            std::vector<gp_Pnt> starts;
+            for (size_t i = n; i-- > 0;) {
+                back.push_back(TopoDS::Edge(edges[i].Reversed()));
+                starts.push_back(pts[(i + 1) % n]);
+            }
+            edges = back;
+            pts = starts;
+            normal.Reverse();
+        }
+        auto across = [&](const gp_Pnt &p) {
+            gp_Vec d(gp_Pnt(centre), p);
+            d -= axis * d.Dot(axis);
+            return d;
+        };
+        size_t start = 0;
+        if (have) {
+            double best = -2;
+            for (size_t i = 0; i < n; i++) {
+                gp_Vec d = across(pts[i]);
+                if (d.Magnitude() < 1e-12)
+                    continue;
+                const double c = d.Normalized().Dot(prevStart);
+                if (c > best) {
+                    best = c;
+                    start = i;
+                }
+            }
+        }
+        BRepBuilderAPI_MakeWire mk;
+        for (size_t i = 0; i < n; i++)
+            mk.Add(edges[(start + i) % n]);
+        out.push_back(mk.IsDone() ? mk.Wire() : w);
+        gp_Vec d = across(pts[start]);
+        if (d.Magnitude() > 1e-12)
+            prevStart = d.Normalized();
+        prevNormal = normal;
+        have = true;
+    }
+    return out;
+}
+
+// Sections with different numbers of edges (an offset's corners fall in
+// different places at each height) cannot be paired edge to edge: then each
+// becomes a polygon of the same number of points, evenly spaced along it from
+// its (aligned) start.
+static std::vector<TopoDS_Wire> same_edge_count(const std::vector<TopoDS_Wire> &sections)
+{
+    int most = 0, least = INT_MAX;
+    for (auto &w : sections) {
+        int n = 0;
+        for (BRepTools_WireExplorer ex(w); ex.More(); ex.Next())
+            n++;
+        most = std::max(most, n);
+        least = std::min(least, n);
+    }
+    if (most == least || least < 2)
+        return sections;   // they pair already (or a circle is among them)
+    const int points = std::clamp(2 * most, 16, 400);
+    std::vector<TopoDS_Wire> out;
+    for (auto &w : sections) {
+        BRepAdaptor_CompCurve c(w);
+        GCPnts_UniformAbscissa u(c, points + 1);   // + 1: the last point is the first again
+        if (!u.IsDone() || u.NbPoints() < 3)
+            return sections;
+        BRepBuilderAPI_MakePolygon poly;
+        for (int i = 1; i < u.NbPoints(); i++)
+            poly.Add(c.Value(u.Parameter(i)));
+        poly.Close();
+        if (!poly.IsDone())
+            return sections;
+        out.push_back(poly.Wire());
+    }
+    return out;
+}
+
+static double diagonal(const TopoDS_Shape &s)
+{
+    Bnd_Box b;
+    BRepBndLib::Add(s, b);
+    return b.IsVoid() ? 0 : std::sqrt(b.SquareExtent());
+}
+
 static TopoDS_Shape solid_through(const std::vector<TopoDS_Wire> &given, bool ruled)
 {
-    std::vector<TopoDS_Wire> sections = align_seams(given);
+    std::vector<TopoDS_Wire> sections = align_seams(same_edge_count(align_starts(given)));
+    // a loft stays near its sections: much larger, it twisted through itself
+    // (sections that do not match), and every operation on it would crawl
+    TopoDS_Compound all;
+    BRep_Builder bb;
+    bb.MakeCompound(all);
+    for (auto &w : sections)
+        bb.Add(all, w);
+    const double span = diagonal(all);
+    bool twisted = false;
     // matching the vertices of the sections first gives better results, but
     // the matching itself sometimes fails: then loft them as they are
     for (bool check : {true, false}) {
@@ -1368,11 +1500,17 @@ static TopoDS_Shape solid_through(const std::vector<TopoDS_Wire> &given, bool ru
             for (auto &w : sections)
                 mk.AddWire(w);
             mk.Build();
-            if (mk.IsDone() && BRepCheck_Analyzer(mk.Shape()).IsValid())
-                return mk.Shape();
+            if (mk.IsDone() && BRepCheck_Analyzer(mk.Shape()).IsValid()) {
+                if (diagonal(mk.Shape()) <= 1.5 * span + 1e-6)
+                    return mk.Shape();
+                twisted = true;
+            }
         } catch (const Standard_Failure &) {
         }
     }
+    if (twisted)
+        throw Standard_Failure("loft twisted through itself: its profiles do not match (different shapes, "
+                               "or outlines that start in different places)");
     throw Standard_Failure("loft failed (are the profiles compatible?)");
 }
 
