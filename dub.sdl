@@ -28,6 +28,8 @@ subPackage {
 	// Windows: the logo as the executable's icon
 	preBuildCommands "sh \"$PACKAGE_DIR/tools/win-resources.sh\"" platform="windows"
 	lflags "$PACKAGE_DIR/build/win/native/hscad-gui.res" platform="windows"
+	// a windowed program: no console window opens with it
+	lflags "/SUBSYSTEM:WINDOWS" "/ENTRY:wmainCRTStartup" platform="windows"
 }
 
 subPackage {

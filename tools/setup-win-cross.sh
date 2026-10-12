@@ -42,7 +42,7 @@ for d in os.listdir('db'):
     pk[sec['NAME'][0]] = sec
     for p in sec.get('PROVIDES', []):
         prov[re.split('[<>=]', p)[0]] = sec['NAME'][0]
-want = [P + x for x in ['opencascade', 'gtk4', 'libadwaita', 'gtksourceview5', 'librsvg',
+want = [P + x for x in ['opencascade', 'gtk4', 'libadwaita', 'gtksourceview5', 'librsvg', 'mesa',
                         'adwaita-icon-theme', 'libc++', 'libunwind', 'freetype', 'fontconfig']]
 seen, stack = set(), want
 while stack:

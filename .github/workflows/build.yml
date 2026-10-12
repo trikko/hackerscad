@@ -17,7 +17,7 @@ on:
         options: [all, linux, windows, macos]
         default: all
       try:
-        description: "Open the macOS package and keep screenshots (for trying a fix)"
+        description: "Open the Windows and macOS packages and keep screenshots (for trying a fix)"
         type: boolean
         default: false
 
@@ -146,6 +146,19 @@ jobs:
         run: unzip -q *.zip -d out
       - name: Check the examples
         run: for f in examples/*.hcad; do out/hackerscad/bin/hscad.exe check "$f" || exit 1; done
+      # on request, the package is opened through hackerscad.exe, as a user
+      # would: the runner has no graphics card, so it is Mesa's OpenGL
+      - name: Try the package
+        if: inputs.try
+        timeout-minutes: 5
+        run: |
+          powershell -NoProfile -Command "Set-DisplayResolution -Width 1920 -Height 1080 -Force" || true
+          tests/screenshot.sh windows out/hackerscad/hackerscad.exe
+      - uses: actions/upload-artifact@v4
+        if: inputs.try
+        with:
+          name: screenshot-windows
+          path: "*-windows.png"
 
   # macOS minutes cost ten times the Linux ones: not on pull requests
   macos:

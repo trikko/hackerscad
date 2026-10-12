@@ -13,12 +13,15 @@ case "$(uname -s)" in
 MINGW*|MSYS*|CLANG*)
     sys="${MINGW_PREFIX:-/clang64}"
     readobj=llvm-readobj
+    ldcbin=ldc2
     build() { dub build -b release --compiler=ldc2 "$@"; }
     ;;
 *)
     sys="$root/build/win/msys/clang64"
-    readobj="$(ls -d "$root"/build/win/llvm-mingw-*/ | head -1)bin/llvm-readobj"
+    tc="$(ls -d "$root"/build/win/llvm-mingw-*/ | head -1)"
+    readobj="${tc}bin/llvm-readobj"
     ldc="$(ls -d "$root"/build/win/ldc2-*-linux-x86_64/ | head -1)bin/ldc2"
+    ldcbin="$ldc"
     build() { dub build -b release --compiler="$ldc" --arch=x86_64-windows-msvc "$@"; }
     ;;
 esac
@@ -30,6 +33,10 @@ out="$root/dist/hackerscad"
 rm -rf "$out"
 mkdir -p "$out/bin" "$out/share/hackerscad" "$out/lib/gdk-pixbuf-2.0" "$out/etc"
 cp bin/hscad.exe bin/hscad-gui.exe build/win/native/hcad_native.dll "$out/bin/"
+# hackerscad.exe at the top: starts bin\hscad-gui.exe, with the logo as its icon
+"$ldcbin" -betterC -O -mtriple=x86_64-windows-msvc -of="$out/hackerscad.exe" -od=build/win/native \
+    packaging/windows/launcher.d -L"$root/build/win/native/hscad-gui.res" \
+    -L/SUBSYSTEM:WINDOWS -L/ENTRY:wWinMainCRTStartup -L user32.lib -L gdi32.lib -L opengl32.lib
 sh tools/win-forwarders.sh "$sys/bin" "$out/bin"
 
 # GTK data
@@ -58,6 +65,9 @@ while [ -n "$todo" ]; do
     next=""
     for f in $todo; do
         for dll in $("$readobj" --coff-imports "$f" | sed -n 's/^ *Name: \(.*\.dll\)$/\1/p' | sort -u); do
+            # never Mesa's opengl32.dll next to the program: it would replace
+            # the graphics card's OpenGL for everyone
+            case "$dll" in [Oo][Pp][Ee][Nn][Gg][Ll]32.[Dd][Ll][Ll]) continue ;; esac
             if [ -f "$sys/bin/$dll" ] && ! [ -f "$out/bin/$dll" ]; then
                 cp "$sys/bin/$dll" "$out/bin/"
                 next="$next $out/bin/$dll"
@@ -68,6 +78,25 @@ while [ -n "$todo" ]; do
 done
 for dll in libgtk-4-1.dll libadwaita-1-0.dll libgtksourceview-5-0.dll; do
     [ -f "$out/bin/$dll" ] || cp "$sys/bin/$dll" "$out/bin/"
+done
+
+# Mesa's software OpenGL, for machines whose OpenGL is too old for GTK (see
+# packaging/windows/launcher.d): in bin\mesa with what only it needs, never
+# next to the program, where it would replace the graphics card's OpenGL
+mkdir -p "$out/bin/mesa"
+cp "$sys/bin/opengl32.dll" "$sys/bin/libgallium_wgl.dll" "$out/bin/mesa/"
+todo="$out/bin/mesa/opengl32.dll $out/bin/mesa/libgallium_wgl.dll"
+while [ -n "$todo" ]; do
+    next=""
+    for f in $todo; do
+        for dll in $("$readobj" --coff-imports "$f" | sed -n 's/^ *Name: \(.*\.dll\)$/\1/p' | sort -u); do
+            if [ -f "$sys/bin/$dll" ] && ! [ -f "$out/bin/$dll" ] && ! [ -f "$out/bin/mesa/$dll" ]; then
+                cp "$sys/bin/$dll" "$out/bin/mesa/"
+                next="$next $out/bin/mesa/$dll"
+            fi
+        done
+    done
+    todo="$next"
 done
 
 # hackerscad's own data, examples and documentation

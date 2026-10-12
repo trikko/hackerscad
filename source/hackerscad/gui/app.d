@@ -143,10 +143,52 @@ version (linux) void installDesktopEntry()
 version (Windows)
     extern (C) private int _putenv_s(const(char)* name, const(char)* value) nothrow @nogc;
 
+version (Windows)
+{
+    /// HCAD_GL=software (set by hackerscad.exe when the machine's OpenGL is
+    /// too old for GTK, as in many virtual machines): use Mesa's software
+    /// OpenGL from bin\mesa. GTK loads opengl32.dll as soon as it is loaded,
+    /// before main, so the folder is chosen here, when the C runtime starts.
+    pragma(crt_constructor)
+    extern (C) private void hcadSoftwareGl() nothrow @nogc
+    {
+        import core.sys.windows.windows : GetEnvironmentVariableW, GetModuleFileNameW, MAX_PATH,
+            SetDllDirectoryW, SetEnvironmentVariableW;
+        wchar[16] v;
+        if (GetEnvironmentVariableW("HCAD_GL"w.ptr, v.ptr, cast(uint) v.length) != 8 || v[0 .. 8] != "software"w)
+            return;
+        wchar[MAX_PATH + 8] dir;
+        auto n = GetModuleFileNameW(null, dir.ptr, MAX_PATH);
+        while (n > 0 && dir[n - 1] != '\\')
+            n--;
+        dir[n .. n + 5] = "mesa\0"w;
+        SetDllDirectoryW(dir.ptr);
+        // Mesa's default on Windows (D3D12 on top of WARP) does not draw
+        SetEnvironmentVariableW("GALLIUM_DRIVER"w.ptr, "llvmpipe"w.ptr);
+        _putenv_s("GALLIUM_DRIVER", "llvmpipe");
+    }
+}
+
 int main(string[] args)
 {
     version (Windows)
     {
+        // a windowed program has no console: started from a terminal it
+        // writes there, otherwise its messages go nowhere instead of failing
+        {
+            import core.sys.windows.wincon : AttachConsole, ATTACH_PARENT_PROCESS;
+            import std.stdio : stdout, stderr;
+            if (AttachConsole(ATTACH_PARENT_PROCESS))
+            {
+                stdout.reopen("CONOUT$", "w");
+                stderr.reopen("CONOUT$", "w");
+            }
+            else
+            {
+                stdout.reopen("NUL", "w");
+                stderr.reopen("NUL", "w");
+            }
+        }
         // under Wine, Pango's DirectWrite backend draws the wrong glyphs:
         // use fontconfig (the Windows build is tested with Wine on Linux)
         import core.sys.windows.windows : GetModuleHandleA, GetProcAddress;
