@@ -103,6 +103,8 @@ unittest
 hscad render cup.hcad -o cup.3mf -o cup-views.png -D diameter=60.mm
 ```
 
+<p align="center"><img alt="The cup, drawn by hscad render" src="docs/cup.png" width="420"></p>
+
 ## Using hackerscad with an AI agent
 
 hackerscad is new, so it is not in the training data of the models: a model
