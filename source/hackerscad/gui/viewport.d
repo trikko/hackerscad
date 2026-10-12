@@ -549,6 +549,13 @@ final class Viewport
         fit();
     }
 
+    /// Moves the camera away (factor > 1) or closer, keeping what it looks at.
+    void zoom(double factor)
+    {
+        distance *= factor;
+        area.queueRender();
+    }
+
 private:
 
     struct Gpu

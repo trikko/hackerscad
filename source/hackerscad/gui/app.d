@@ -2033,7 +2033,11 @@ private:
         case "view":
             {
                 import std.conv : to;
-                viewport.setView(arg("preset").to!ViewPreset);
+                if (arg("preset") !is null)
+                    viewport.setView(arg("preset").to!ViewPreset);
+                // zoom: > 1 moves away, < 1 closer
+                if ("zoom" in p)
+                    viewport.zoom(p["zoom"].type == JSONType.integer ? p["zoom"].integer : p["zoom"].floating);
                 whenIdle(() => reply(state(), null));
                 return;
             }

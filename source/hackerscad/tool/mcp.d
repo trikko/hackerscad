@@ -162,8 +162,9 @@ JSONValue[] toolList()
             ~ "face is highlighted and the editor jumps to the feature that created it. Returns part, face and a selector expression for that face (e.g. faces.top) to use in code.",
             `"x": {"type": "number"}, "y": {"type": "number"}, "shift": {"type": "boolean", "description": `
             ~ `"add to the selection (or remove from it), like Shift+click"}`, `["x", "y"]`),
-        tool("hcad_gui_view", "Set the user's 3D view: iso, front, top or right (framed on the model).",
-            `"preset": {"type": "string", "enum": ["iso", "front", "top", "right"]}`, `["preset"]`),
+        tool("hcad_gui_view", "Set the user's 3D view: iso, front, top or right (framed on the model); zoom moves the "
+            ~ "camera away (2 = twice as far) or closer (0.5).",
+            `"preset": {"type": "string", "enum": ["iso", "front", "top", "right"]}, "zoom": {"type": "number"}`, `[]`),
         tool("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size) and add a feature there, "
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face).",
