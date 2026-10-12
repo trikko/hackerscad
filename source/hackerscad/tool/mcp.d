@@ -640,8 +640,8 @@ JSONValue[] toolList()
             ~ "to centre) and size (mm across the view), orbit [yaw, pitch] in degrees (like "
             ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
-            ~ "stays still). hidden lists the parts to hide (the others are shown); console and params show or hide "
-            ~ "those panels. hcad_gui_state gives the camera.",
+            ~ "stays still). hidden lists the parts to hide (the others are shown); code, console, view and params "
+            ~ "show or hide those panels. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
             ~ `"look_at": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"size": {"type": "number"}, `
@@ -650,7 +650,8 @@ JSONValue[] toolList()
             ~ `"zoom": {"type": "number"}, `
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
-            ~ `"console": {"type": "boolean"}, "params": {"type": "boolean"}`, `[]`),
+            ~ `"code": {"type": "boolean"}, "console": {"type": "boolean"}, "view": {"type": "boolean"}, `
+            ~ `"params": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face).",

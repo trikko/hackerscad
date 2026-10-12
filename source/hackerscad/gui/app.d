@@ -17,7 +17,6 @@ import adw.application_window : ApplicationWindow;
 import adw.header_bar : HeaderBar;
 import adw.toolbar_view : ToolbarView;
 import adw.window_title : WindowTitle;
-import adw.overlay_split_view : OverlaySplitView;
 import gtk.toggle_button : ToggleButton;
 import gio.types : ApplicationFlags;
 import gio.simple_action : SimpleAction;
@@ -38,7 +37,7 @@ import gtk.text_view : TextView;
 import gtk.text_iter : TextIter;
 import gtk.text_tag : TextTag;
 import gtk.file_dialog : FileDialog;
-import gtk.types : Orientation, Align, WrapMode, PackType, Justification;
+import gtk.types : Orientation, Align, WrapMode, Justification;
 import gtksource.view : SourceView = View;
 import gtksource.buffer : SourceBuffer = Buffer;
 import gtksource.language_manager : LanguageManager;
@@ -368,7 +367,7 @@ final class MainWindow
     import gtk.spinner : Spinner;
     Spinner busyIndicator;
     string statusText;   /// the latest program message (for the control socket)
-    ToggleButton paramsToggle, consoleToggle, rotateMode, panMode, sketchToggle, sectionToggle, inspectToggle;
+    ToggleButton paramsToggle, consoleToggle, codeToggle, viewToggle, rotateMode, panMode, sketchToggle, sectionToggle, inspectToggle;
     Box sectionBar, viewBar;
     DropDown sectionPlane;
     Scale sectionSlider;
@@ -417,8 +416,12 @@ final class MainWindow
         busyIndicator.setVisible(false);
         consoleToggle = toggle("utilities-terminal-symbolic", "Show console (Ctrl+J)", true);
         paramsToggle = toggle("sidebar-show-right-symbolic", "Show parameters (F9)", true);
+        codeToggle = toggle("sidebar-show-symbolic", "Show code (F7)", true);
+        viewToggle = toggle("hcad-view-symbolic", "Show the 3D view (F8)", true);
         header.packEnd(mainMenu());
         header.packEnd(paramsToggle);
+        header.packEnd(viewToggle);
+        header.packEnd(codeToggle);
         header.packEnd(consoleToggle);
         header.packEnd(busyIndicator);
         windowName = new Button;
@@ -650,7 +653,6 @@ final class MainWindow
         consolePane.append(consoleTitle);
         consolePane.append(consoleOverlay);
         consolePane.setSizeRequest(-1, 70);
-        consoleToggle.connectToggled(() => consolePane.setVisible(consoleToggle.getActive()));
         editorScroll.setSizeRequest(300, 200);
 
         auto left = new Paned(Orientation.Vertical);
@@ -754,16 +756,46 @@ final class MainWindow
         info("");
         overlay.setVexpand(true);
 
-        auto right = new OverlaySplitView;
-        right.setContent(overlay);
-        right.setSidebar(sidebar);
-        right.setSidebarPosition(PackType.End);
-        right.setMinSidebarWidth(220);
-        right.setMaxSidebarWidth(420);
-        right.setSidebarWidthFraction(0.22);
-        right.setEnableShowGesture(false);
-        right.setShowSidebar(true);
-        paramsToggle.connectToggled(() => right.setShowSidebar(paramsToggle.getActive()));
+        // the parameters and features column: drag its edge to make it wider
+        auto right = new Paned(Orientation.Horizontal);
+        right.setStartChild(overlay);
+        right.setEndChild(sidebar);
+        right.setResizeStartChild(true);
+        right.setResizeEndChild(false);   // a wider window widens the view, not the column
+        right.setShrinkStartChild(false);
+        right.setShrinkEndChild(true);    // narrower than its widgets would like: they are clipped
+        right.setWideHandle(true);
+        sidebar.setSizeRequest(220, -1);
+        bool placed;
+        right.connectNotify("max-position", () {
+            // the column starts 300 px wide, once the window has a size
+            if (placed || right.maxPosition < 600)
+                return;
+            placed = true;
+            right.setPosition(right.maxPosition - 300);
+        });
+        // code, console, view and parameters each have a button; what is left fills the window
+        void updatePanes(ToggleButton changed)
+        {
+            editorScroll.setVisible(codeToggle.getActive());
+            consolePane.setVisible(consoleToggle.getActive());
+            overlay.setVisible(viewToggle.getActive());
+            sidebar.setVisible(paramsToggle.getActive());
+            immutable leftShown = codeToggle.getActive() || consoleToggle.getActive();
+            immutable rightShown = viewToggle.getActive() || paramsToggle.getActive();
+            if (!leftShown && !rightShown)
+            {
+                changed.setActive(true);   // the last pane stays
+                return;
+            }
+            left.setVisible(leftShown);
+            right.setVisible(rightShown);
+        }
+        foreach (t; [codeToggle, consoleToggle, viewToggle, paramsToggle])
+        {
+            auto b = t;
+            b.connectToggled(() => updatePanes(b));
+        }
         viewport.area.setSizeRequest(320, 240);
 
         auto main = new Paned(Orientation.Horizontal);
@@ -791,6 +823,8 @@ final class MainWindow
         action(app, "fit", ["F5"], () => viewport.fit());
         action(app, "params", ["F9"], () => paramsToggle.setActive(!paramsToggle.getActive()));
         action(app, "console", ["<Control>j"], () => consoleToggle.setActive(!consoleToggle.getActive()));
+        action(app, "code", ["F7"], () => codeToggle.setActive(!codeToggle.getActive()));
+        action(app, "view", ["F8"], () => viewToggle.setActive(!viewToggle.getActive()));
         action(app, "inspect", ["<Control>i"], () {
             TextIter s, e;
             if (buffer.getSelectionBounds(s, e) && e.getLine() > s.getLine())
@@ -807,6 +841,15 @@ final class MainWindow
         evaluator.onResult = &showOutcome;
         evaluator.onProgress = (string what) { stage = what; };
 
+        // started on a file that is not a model: an empty model next to it, and why
+        string refused, why;
+        if (exists(path) && (why = notAModel(path)) !is null)
+        {
+            refused = path;
+            path = this.path = buildPath(dirName(path), "untitled.hcad");
+            updateTitle();
+            idleAdd(PRIORITY_DEFAULT, () { refuseFile(refused, why); return false; });
+        }
         buffer.setText(exists(path) ? readText(path) : newModelTemplate);
         modified = false;
         updateTitle();
@@ -2713,18 +2756,135 @@ private:
 
     void chooseFile()
     {
+        import gtk.file_filter : FileFilter;
+        import gio.list_store : ListStore;
+
         auto d = new FileDialog;
+        d.setTitle("Open a hackerscad model");
+        auto filters = new ListStore(FileFilter._getGType());
+        auto models = new FileFilter;
+        models.setName("hackerscad models (*.hcad)");
+        models.addSuffix("hcad");
+        filters.append(models);
+        auto meshes = new FileFilter;
+        meshes.setName("Meshes and CAD files, to use with load() in a model (*.stl, *.obj, *.3mf, *.step)");
+        foreach (ext; importable)
+            meshes.addSuffix(ext[1 .. $]);
+        filters.append(meshes);
+        auto all = new FileFilter;
+        all.setName("All files");
+        all.addPattern("*");
+        filters.append(all);
+        d.setFilters(filters);
+        d.setDefaultFilter(models);
         d.open(window, null, (ObjectWrap src, AsyncResult res) {
             try
             {
                 auto f = d.openFinish(res);
                 if (f !is null)
-                    load(f.getPath());
+                    openModel(f.getPath());
             }
             catch (ErrorWrap)
             {
             }
         });
+    }
+
+    /// Files a model can use with load(), not open as a model.
+    static immutable importable = [".stl", ".obj", ".3mf", ".step", ".stp"];
+
+    /// Why `file` is not a model hackerscad can open (null if it is one).
+    static string notAModel(string file)
+    {
+        import std.uni : toLower;
+
+        immutable ext = extension(file).toLower;
+        if (importable.canFind(ext))
+            return format("“%s” is a %s file, not a hackerscad model. hackerscad opens models written as code "
+                ~ "(.hcad); a model can use this file with load(\"%s\").", baseName(file), ext[1 .. $].toUpper,
+                baseName(file));
+        if (ext != ".hcad")
+            return format("hackerscad opens only its models, .hcad files written as code: “%s” is not one%s.",
+                baseName(file), ext.length ? format(" (%s files are not supported)", ext) : "");
+        // a .hcad that is not text (a binary renamed, a broken download)
+        try
+        {
+            import std.stdio : File;
+            ubyte[4096] head;
+            auto got = File(file, "rb").rawRead(head[]);
+            if (got.canFind(0))
+                return format("“%s” is not a text file: a hackerscad model is code.", baseName(file));
+        }
+        catch (Exception e)
+            return format("“%s” cannot be read: %s", baseName(file), e.msg);
+        return null;
+    }
+
+    /// Opens `file` if it is a model, else says why not (and for a mesh or
+    /// CAD file, offers a new model that loads it).
+    void openModel(string file)
+    {
+        if (auto why = notAModel(file))
+            return refuseFile(file, why);
+        load(file);
+    }
+
+    void refuseFile(string file, string why)
+    {
+        import adw.alert_dialog : AlertDialog;
+        import adw.types : ResponseAppearance;
+        import std.uni : toLower;
+
+        immutable canLoad = importable.canFind(extension(file).toLower);
+        auto d = new AlertDialog("Not a hackerscad model", why);
+        if (canLoad)
+        {
+            d.addResponse("cancel", "_Cancel");
+            d.addResponse("new", "_New model that loads it");
+            d.setResponseAppearance("new", ResponseAppearance.Suggested);
+            d.setDefaultResponse("new");
+            d.setCloseResponse("cancel");
+            d.connectResponse(null, (string response) {
+                if (response == "new")
+                    confirmDiscard(() => newModelLoading(file));
+            });
+        }
+        else
+        {
+            d.addResponse("ok", "_OK");
+            d.setCloseResponse("ok");
+        }
+        d.present(window);
+    }
+
+    /// A new, unsaved model next to `file` that loads it as a part.
+    void newModelLoading(string file)
+    {
+        import std.uni : isAlphaNum;
+        import std.path : stripExtension;
+
+        auto stem = baseName(stripExtension(file));
+        string name;
+        foreach (dchar c; stem)
+            name ~= c.isAlphaNum && c < 128 ? c : '_';
+        if (name.length == 0 || (name[0] >= '0' && name[0] <= '9'))
+            name = "model_" ~ name;
+        auto target = buildPath(dirName(file), name ~ ".hcad");
+        for (int k = 2; exists(target); k++)
+            target = buildPath(dirName(file), format("%s_%d.hcad", name, k));
+        agentText = null;
+        path = target;
+        params.overrides = null;
+        params.preset = null;
+        params.invalidate();
+        firstResult = true;
+        viewport.showAll();
+        buffer.setText(format("module %s;\n\nimport std.shapes;\n\n"
+            ~ "// %s, from the same folder as this model: cut it, add to it, measure it\n"
+            ~ "@part\nSolid imported() => load(\"%s\");\n", name, baseName(file), baseName(file)));
+        diskTime = 0;
+        modified = true;
+        updateTitle();
     }
 
     void load(string file)
@@ -3037,6 +3197,8 @@ private:
                 auto file = absolutePath(arg("path"));
                 if (!exists(file))
                     return reply(JSONValue.init, "file not found: " ~ file);
+                if (auto why = notAModel(file))
+                    return reply(JSONValue.init, why ~ " To use a mesh or CAD file, write a model that calls load() on it.");
                 if (modified && !("force" in p && p["force"].type == JSONType.true_))
                     return reply(JSONValue.init, "the user has unsaved changes in " ~ baseName(path)
                         ~ ": ask them to save, or pass force: true to discard them");
@@ -3139,6 +3301,10 @@ private:
                     consoleToggle.setActive(p["console"].type == JSONType.true_);
                 if (has("params"))
                     paramsToggle.setActive(p["params"].type == JSONType.true_);
+                if (has("code"))
+                    codeToggle.setActive(p["code"].type == JSONType.true_);
+                if (has("view"))
+                    viewToggle.setActive(p["view"].type == JSONType.true_);
                 whenIdle(() => reply(state(), null));
                 return;
             }
