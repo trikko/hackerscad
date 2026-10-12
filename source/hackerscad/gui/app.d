@@ -278,6 +278,15 @@ final class MainWindow
         import gtk.icon_theme : IconTheme;
         import gdk.display : Display;
         IconTheme.getForDisplay(Display.getDefault()).addSearchPath(dataDir("icons"));
+        version (OSX)
+        {
+            // laid out by fontconfig (see the bundle's launcher), the system
+            // font is asked for by a name only CoreText knows: name a Mac font
+            import std.process : environment;
+            import gtk.settings : Settings;
+            if (environment.get("PANGOCAIRO_BACKEND") == "fc")
+                Settings.getDefault().gtkFontName = "Helvetica Neue 13";
+        }
         {
             // the logo, for the taskbar and the window switcher
             import gtk.window : Window;

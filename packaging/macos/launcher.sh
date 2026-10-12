@@ -13,4 +13,5 @@ export GSK_RENDERER="${GSK_RENDERER:-cairo}"
 # entries and labels: lay it out with fontconfig, configured from the bundle
 export PANGOCAIRO_BACKEND="${PANGOCAIRO_BACKEND:-fc}"
 export FONTCONFIG_FILE="${FONTCONFIG_FILE:-$here/Resources/etc/fonts/fonts.conf}"
+export FONTCONFIG_PATH="${FONTCONFIG_PATH:-$here/Resources/etc/fonts}"   # where its conf.d is
 exec "$here/Resources/bin/hackerscad" "$@"
