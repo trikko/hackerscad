@@ -61,6 +61,10 @@ cp -r "$brew/share/glib-2.0/schemas" "$share/glib-2.0/"
 glib-compile-schemas "$share/glib-2.0/schemas"
 cp -r "$brew/share/icons/Adwaita" "$brew/share/icons/hicolor" "$share/icons/"
 cp -r "$brew/share/gtksourceview-5" "$share/"
+# fontconfig's configuration (the launcher points Pango at it): -L copies the
+# files conf.d links to, which live elsewhere in Homebrew
+mkdir -p "$app/Contents/Resources/etc"
+cp -RL "$brew/etc/fonts" "$app/Contents/Resources/etc/"
 cp -r data/icons data/language-specs examples docs LICENSE MODEL-EXCEPTION.md "$share/hackerscad/"
 
 cp packaging/macos/Info.plist "$app/Contents/"

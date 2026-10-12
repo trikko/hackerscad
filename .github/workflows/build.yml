@@ -184,7 +184,8 @@ jobs:
         timeout-minutes: 10
         run: |
           ditto -x -k dist/*.zip try
-          for v in "cairo" "cairo-fc PANGOCAIRO_BACKEND=fc" "ngl GSK_RENDERER=ngl"; do
+          grep -h "<dir" try/hackerscad.app/Contents/Resources/etc/fonts/fonts.conf || true
+          for v in "default"; do
             name=${v%% *}; vars=${v#"$name"}
             env $vars tests/screenshot.sh macos-$name try/hackerscad.app/Contents/MacOS/hackerscad || true
           done

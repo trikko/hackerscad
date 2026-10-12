@@ -9,4 +9,8 @@ export GSETTINGS_SCHEMA_DIR="$here/Resources/share/glib-2.0/schemas"
 # of the 3D view, a corner of the console): compose it with cairo. The 3D
 # view itself still draws with OpenGL.
 export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+# with cairo, text laid out by CoreText loses the top of its letters in
+# entries and labels: lay it out with fontconfig, configured from the bundle
+export PANGOCAIRO_BACKEND="${PANGOCAIRO_BACKEND:-fc}"
+export FONTCONFIG_FILE="${FONTCONFIG_FILE:-$here/Resources/etc/fonts/fonts.conf}"
 exec "$here/Resources/bin/hackerscad" "$@"
