@@ -69,6 +69,7 @@ import hackerscad.gui.params;
 import hackerscad.gui.control;
 import hackerscad.gui.features;
 import hackerscad.gui.menu;
+import hackerscad.gui.measure : Item;
 import hackerscad.tool.codegen;
 import hackerscad.about;
 import hackerscad.gui.completion;
@@ -748,6 +749,7 @@ final class MainWindow
         modified = false;
         updateTitle();
         buffer.connectChanged(() {
+            revision++;
             modified = true;
             updateTitle();
             scheduleEvaluation(250);
@@ -755,6 +757,13 @@ final class MainWindow
         scheduleEvaluation(0);
 
         // external control (MCP server, scripts), under a name agents can tell apart
+        try
+        {
+            exeAtStart = thisExePath;
+            exeTimeAtStart = mtimeOf(exeAtStart);
+        }
+        catch (Exception)
+            exeAtStart = null;
         control = new ControlServer;
         if (control.start(&handleControl))
             showWindowName();
@@ -1572,16 +1581,35 @@ private:
         }
 
         // measurements: values on the right, a click copies them
-        MenuEntry[] measure;
+        MenuEntry[] measures;
         if (ne == 1 && selEdges[0] < part.edgeInfo.length)
         {
             auto e = part.edgeInfo[selEdges[0]];
             string v = e.kind == EdgeKind.circle ? format("R %.4g mm", e.radius) : format("%.4g mm", (e.end - e.start).length);
-            measure ~= I(e.kind == EdgeKind.circle ? "Edge radius" : "Edge length", () => copy(v), v);
+            measures ~= I(e.kind == EdgeKind.circle ? "Edge radius" : "Edge length", () => copy(v), v);
             if (e.kind == EdgeKind.circle)
             {
                 auto dia = format("⌀ %.4g mm", 2 * e.radius);
-                measure ~= I("Edge diameter", () => copy(dia), dia);
+                measures ~= I("Edge diameter", () => copy(dia), dia);
+            }
+        }
+        if (sel.length == 2)
+        {
+            // between the two selected items
+            import hackerscad.gui.measure : measure, faceItem, edgeItem;
+            Item item(Hit h) => h.edge >= 0 ? edgeItem(part, h.edge) : faceItem(part, h.face);
+            auto m = measure(item(sel[0]), item(sel[1]));
+            auto dv = format("%.4g mm", m.distance);
+            measures ~= I("Distance", () => copy(dv), dv);
+            if (m.gap == m.gap)
+            {
+                auto gv = format("%.4g mm", m.gap);
+                measures ~= I("Gap between planes", () => copy(gv), gv);
+            }
+            if (m.angle == m.angle)
+            {
+                auto av = format("%.4g°", m.angle);
+                measures ~= I("Angle", () => copy(av), av);
             }
         }
         if (nf)
@@ -1590,16 +1618,16 @@ private:
             foreach (f; selFaces)
                 a += faceArea(part, f);
             auto av = format("%.4g mm²", a);
-            measure ~= I(nf == 1 ? "Face area" : "Faces area", () => copy(av), av);
+            measures ~= I(nf == 1 ? "Face area" : "Faces area", () => copy(av), av);
         }
         auto sz = part.bbox.size;
         auto size = format("%.4g × %.4g × %.4g", sz.x, sz.y, sz.z);
-        measure ~= I("Part size", () => copy(size), size);
+        measures ~= I("Part size", () => copy(size), size);
         auto vol = format("%.5g mm³", part.volume);
-        measure ~= I("Part volume", () => copy(vol), vol);
+        measures ~= I("Part volume", () => copy(vol), vol);
         auto pt = hit.point;
         auto point = format("vec(%.4g.mm, %.4g.mm, %.4g.mm)", pt.x, pt.y, pt.z);
-        measure ~= I("Point", () => copy(point), format("%.4g, %.4g, %.4g", pt.x, pt.y, pt.z));
+        measures ~= I("Point", () => copy(point), format("%.4g, %.4g, %.4g", pt.x, pt.y, pt.z));
 
         MenuEntry[] copies;
         if (nf)
@@ -1646,7 +1674,7 @@ private:
         });
 
         entries ~= S();
-        entries ~= G("Measure", measure);
+        entries ~= G("Measure", measures);
         if (copies.length)
             entries ~= G("Copy as code", copies);
         entries ~= G("View", view);
@@ -2108,6 +2136,7 @@ private:
 
     void load(string file)
     {
+        agentText = null;
         path = file;
         params.overrides = null;
         params.preset = null;
@@ -2179,9 +2208,234 @@ private:
         });
     }
 
+    /// The code as the agent last saw it (after its previous request): what
+    /// the user changed since then is reported in the state.
+    string agentText;
+    JSONValue userChange;
+    ulong revision;     /// goes up at every change of the code
+
     void handleControl(string method, JSONValue p, void delegate(JSONValue, string) reply)
     {
+        if (agentText !is null)
+            userChange = changedLines(agentText, text());
+        dispatchControl(method, p, (JSONValue r, string e) {
+            agentText = text();
+            userChange = JSONValue.init;
+            reply(r, e);
+        });
+    }
+
+    /// The lines of `after` that differ from `before` (null when equal).
+    static JSONValue changedLines(string before, string after)
+    {
+        import std.string : splitLines;
+        if (before == after)
+            return JSONValue(null);
+        auto a = before.splitLines, b = after.splitLines;
+        size_t head, tail;
+        while (head < a.length && head < b.length && a[head] == b[head])
+            head++;
+        while (tail < a.length - head && tail < b.length - head && a[$ - 1 - tail] == b[$ - 1 - tail])
+            tail++;
+        JSONValue j = ["from": head + 1, "to": b.length - tail, "replaced_lines": a.length - tail - head];
+        return j;
+    }
+
+    /// The window point a request aims at: "point" [x, y, z] in model mm, or
+    /// "x" and "y" as fractions of the view. Null, or what is wrong.
+    string screenPoint(JSONValue p, out double x, out double y)
+    {
+        if ("point" in p && p["point"].type == JSONType.array)
+        {
+            auto v = vec3Of(p["point"]);
+            double fx, fy;
+            bool visible;
+            if (!viewport.fractionOf(v, fx, fy, visible))
+                return "that point is behind the camera";
+            if (fx < 0 || fx > 1 || fy < 0 || fy > 1)
+                return format("that point is outside the view (at %.2f, %.2f): move the view first", fx, fy);
+            if (!visible)
+                return "that point is hidden by another surface from this view: turn the view, or use a section";
+            x = fx * viewport.width;
+            y = fy * viewport.height;
+            return null;
+        }
+        x = ("x" in p ? numberOf(p["x"]) : 0.5) * viewport.width;
+        y = ("y" in p ? numberOf(p["y"]) : 0.5) * viewport.height;
+        return null;
+    }
+
+    static double numberOf(JSONValue v) => v.type == JSONType.integer ? v.integer : v.type == JSONType.uinteger
+        ? v.uinteger : v.floating;
+    static Vec3 vec3Of(JSONValue v) => Vec3(numberOf(v[0]), numberOf(v[1]), v.array.length > 2 ? numberOf(v[2]) : 0);
+    static JSONValue jsonOf(Vec3 v) => JSONValue([v.x, v.y, v.z]);
+
+    /// Index of the part named `name`; without a name, the only part. -1, with `problem` set, otherwise.
+    int partIndex(string name, out string problem)
+    {
+        foreach (i, pm; last.parts)
+            if (pm.name == name || (name.length == 0 && last.parts.length == 1))
+                return cast(int) i;
+        import std.algorithm : map;
+        problem = (name.length ? "no part '" ~ name ~ "'" : "several parts: pass part") ~ "; parts: "
+            ~ last.parts.map!(pm => pm.name).join(", ");
+        return -1;
+    }
+
+    /// What the view shows under window point (x, y), with a selector for it.
+    JSONValue hitJson(Hit hit)
+    {
+        JSONValue r = ["part": hit.part >= 0 ? JSONValue(last.parts[hit.part].name) : JSONValue(null)];
+        if (hit.part < 0)
+            return r;
+        r["face"] = hit.face;
+        r["point"] = jsonOf(hit.point);
+        r["normal"] = jsonOf(hit.normal);
+        if (hit.face >= 0)
+        {
+            auto part = last.parts[hit.part];
+            auto it = new Interp(part.kernel);
+            auto sv = new SolidVal(part.brep, Span.init);
+            sv.creators = part.creators;
+            try
+                r["selector"] = faceSelector(it, sv, hit.face);
+            catch (Exception)
+            {
+            }
+        }
+        return r;
+    }
+
+    /// The selected faces and edges, with selectors and sizes.
+    JSONValue selectionJson()
+    {
+        JSONValue[] items;
+        foreach (h; viewport.selection())
+        {
+            if (h.part < 0 || h.part >= last.parts.length)
+                continue;
+            auto part = last.parts[h.part];
+            auto it = new Interp(part.kernel);
+            auto sv = new SolidVal(part.brep, Span.init);
+            sv.creators = part.creators;
+            JSONValue j = ["part": part.name];
+            try
+            {
+                if (h.edge >= 0)
+                {
+                    auto e = part.edgeInfo[h.edge];
+                    j["kind"] = "edge";
+                    j["index"] = h.edge;
+                    j["selector"] = edgeSelector(it, sv, h.edge);
+                    j["shape"] = e.kind == EdgeKind.line ? "line" : e.kind == EdgeKind.circle ? "circle" : "curve";
+                    j["start"] = jsonOf(e.start);
+                    j["end"] = jsonOf(e.end);
+                    if (e.kind == EdgeKind.line)
+                        j["length"] = (e.end - e.start).length;
+                    if (e.kind == EdgeKind.circle)
+                    {
+                        j["radius"] = e.radius;
+                        j["center"] = jsonOf(e.center);
+                    }
+                }
+                else if (h.face >= 0)
+                {
+                    auto f = part.kernel.faces(part.brep)[h.face];
+                    j["kind"] = "face";
+                    j["index"] = h.face;
+                    j["selector"] = faceSelector(it, sv, h.face);
+                    j["center"] = jsonOf(f.center);
+                    j["normal"] = jsonOf(f.normal);
+                    j["area"] = f.area;
+                }
+            }
+            catch (Exception e)
+                j["problem"] = e.msg;
+            items ~= j;
+        }
+        return JSONValue(["selection": JSONValue(items)]);
+    }
+
+    /// A measured item: a part name, a point [x, y, z], or (null) the next selected item.
+    string measureItem(JSONValue v, ref size_t nextSelected, out Item item, out int wholePart)
+    {
+        import hackerscad.gui.measure : faceItem, edgeItem, pointItem;
+        wholePart = -1;
+        if (v.type == JSONType.array)
+        {
+            item = pointItem(vec3Of(v));
+            return null;
+        }
+        if (v.type == JSONType.string)
+        {
+            string problem;
+            immutable i = partIndex(v.str, problem);
+            if (i < 0)
+                return problem;
+            wholePart = i;
+            auto pm = last.parts[i];
+            foreach (f; 0 .. cast(int) pm.faceStart.length - 1)
+            {
+                auto fi = faceItem(pm, f);
+                item.triangles ~= fi.triangles;
+                item.points ~= fi.points;
+            }
+            return null;
+        }
+        auto sel = viewport.selection();
+        if (nextSelected >= sel.length)
+            return "select two items first (hcad_gui_selection or Shift+click), or pass a and b";
+        auto h = sel[nextSelected++];
+        item = h.edge >= 0 ? edgeItem(last.parts[h.part], h.edge) : faceItem(last.parts[h.part], h.face);
+        return null;
+    }
+
+    /// A menu as JSON: entries with their label, value and sub-entries; headings as titles.
+    static JSONValue menuJson(MenuEntry[] entries)
+    {
+        JSONValue[] r;
+        foreach (e; entries)
+        {
+            final switch (e.kind)
+            {
+            case MenuEntry.Kind.separator:
+                continue;
+            case MenuEntry.Kind.heading:
+                r ~= JSONValue(["heading": e.label ~ (e.detail.length ? " · " ~ e.detail : "")]);
+                continue;
+            case MenuEntry.Kind.item, MenuEntry.Kind.group:
+                break;
+            }
+            JSONValue j = ["label": e.label];
+            if (e.detail.length)
+                j["value"] = e.detail;
+            if (!e.enabled)
+                j["enabled"] = false;
+            if (e.kind == MenuEntry.Kind.group)
+                j["entries"] = menuJson(e.children);
+            r ~= j;
+        }
+        return JSONValue(r);
+    }
+
+    /// The executable on disk is not the one running (rebuilt or updated).
+    bool exeChanged()
+    {
+        if (exeAtStart.length == 0)
+            return false;
+        try
+            return mtimeOf(exeAtStart) != exeTimeAtStart;
+        catch (Exception)
+            return false;
+    }
+
+    string exeAtStart;
+    long exeTimeAtStart;
+
+    void dispatchControl(string method, JSONValue p, void delegate(JSONValue, string) reply)
+    {
         string arg(string k) => k in p && p[k].type == JSONType.string ? p[k].str : null;
+        bool has(string k) => k in p && p[k].type != JSONType.null_;
         switch (method)
         {
         case "open":
@@ -2215,35 +2469,34 @@ private:
         case "state":
             // after the running evaluation, or right away with "now": true
             // (then "evaluating" and "stage" tell how far it is)
-            if ("now" in p && p["now"].type == JSONType.true_)
-                reply(state(), null);
-            else
-                whenIdle(() => reply(state(), null));
-            return;
+            {
+                immutable withSource = "source" in p && p["source"].type == JSONType.true_;
+                JSONValue full()
+                {
+                    auto j = state();
+                    if (withSource)
+                        j["source"] = text();
+                    return j;
+                }
+                if ("now" in p && p["now"].type == JSONType.true_)
+                    reply(full(), null);
+                else
+                    whenIdle(() => reply(full(), null));
+                return;
+            }
         case "pick":
             {
-                // click in the 3D view; x and y are fractions of its size (0..1)
-                immutable fx = "x" in p ? p["x"].get!double : 0.5, fy = "y" in p ? p["y"].get!double : 0.5;
+                // click in the 3D view: at x, y (fractions of its size) or at a model point
                 immutable shiftPick = "shift" in p && p["shift"].type == JSONType.true_;
                 whenIdle(() {
-                    auto hit = viewport.pickAt(fx * viewport.width, fy * viewport.height);
+                    double x, y;
+                    if (auto problem = screenPoint(p, x, y))
+                        return reply(JSONValue.init, problem);
+                    auto hit = viewport.pickAt(x, y);
                     hit.shift = shiftPick;   // add to the selection, as Shift+click
                     picked(hit);
-                    JSONValue r = ["status": infoLabel.getLabel()];
-                    r["part"] = hit.part >= 0 ? last.parts[hit.part].name : null;
-                    r["face"] = hit.face;
-                    if (hit.part >= 0 && hit.face >= 0)
-                    {
-                        auto part = last.parts[hit.part];
-                        auto it = new Interp(part.kernel);
-                        auto sv = new SolidVal(part.brep, Span.init);
-                        sv.creators = part.creators;
-                        try
-                            r["selector"] = faceSelector(it, sv, hit.face);
-                        catch (Exception)
-                        {
-                        }
-                    }
+                    auto r = hitJson(hit);
+                    r["status"] = infoLabel.getLabel();
                     reply(r, null);
                 });
                 return;
@@ -2251,8 +2504,7 @@ private:
         case "view":
             {
                 import std.conv : to;
-                double num(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
-                bool has(string k) => k in p && p[k].type != JSONType.null_;
+                alias num = numberOf;
                 // in the order a user would: frame, turn, move, zoom
                 if (auto v = arg("preset"))
                 {
@@ -2261,6 +2513,10 @@ private:
                     else
                         viewport.setView(v.to!ViewPreset);
                 }
+                // centred on a model point, `size` mm across the view
+                if (has("look_at") || has("size"))
+                    viewport.centerOn(has("look_at") ? vec3Of(p["look_at"]) : viewport.camera().target,
+                        has("size") ? num(p["size"]) : 0);
                 if (has("orbit"))
                     viewport.orbit(num(p["orbit"][0]), num(p["orbit"][1]));
                 if (has("pan"))
@@ -2292,10 +2548,11 @@ private:
         case "feature":
             {
                 // {"x": 0.5, "y": 0.4, "action": "fillet-edge", "value": "2.mm"}: what the context menu does
-                immutable fx = "x" in p ? p["x"].get!double : 0.5, fy = "y" in p ? p["y"].get!double : 0.5;
                 auto act = arg("action"), value = arg("value");
                 whenIdle(() {
-                    immutable x = fx * viewport.width, y = fy * viewport.height;
+                    double x, y;
+                    if (auto problem = screenPoint(p, x, y))
+                        return reply(JSONValue.init, problem);
                     auto hit = viewport.pickAt(x, y);
                     if (hit.part < 0)
                         return reply(JSONValue.init, "nothing under that point");
@@ -2315,11 +2572,12 @@ private:
             }
         case "context":
             {
-                // {"x": 0.5, "y": 0.5}: opens the right-click menu there
-                immutable fx = "x" in p ? p["x"].get!double : 0.5, fy = "y" in p ? p["y"].get!double : 0.5;
+                // {"x": 0.5, "y": 0.5} or {"point": [x, y, z]}: opens the right-click menu there
                 auto file = arg("path");
                 whenIdle(() {
-                    immutable x = fx * viewport.width, y = fy * viewport.height;
+                    double x, y;
+                    if (auto problem = screenPoint(p, x, y))
+                        return reply(JSONValue.init, problem);
                     contextMenu(viewport.pickAt(x, y), x, y);
                     if (file.length && contextPopover !is null)
                         timeoutAdd(PRIORITY_DEFAULT, 400, () {
@@ -2342,15 +2600,26 @@ private:
         case "menu":
             {
                 // {"x": 0.5, "y": 0.5, "path": ["Hole at point", "Clearance", "M3"]}: the right-click menu there,
-                // then its entries clicked in order
-                immutable fx = "x" in p ? p["x"].get!double : 0.5, fy = "y" in p ? p["y"].get!double : 0.5;
+                // then its entries clicked in order; without path, the entries it has there
                 string[] path;
                 if ("path" in p && p["path"].type == JSONType.array)
                     foreach (v; p["path"].array)
                         path ~= v.str;
+                immutable list = !("path" in p) || path.length == 0;
                 whenIdle(() {
-                    immutable x = fx * viewport.width, y = fy * viewport.height;
-                    contextMenu(viewport.pickAt(x, y), x, y);
+                    double x, y;
+                    if (auto problem = screenPoint(p, x, y))
+                        return reply(JSONValue.init, problem);
+                    auto hit = viewport.pickAt(x, y);
+                    if (hit.part < 0)
+                        return reply(JSONValue.init, "nothing under that point: the menu opens on a part");
+                    contextMenu(hit, x, y);
+                    if (list)
+                    {
+                        auto entries = lastMenuEntries();
+                        closeLastMenu();
+                        return reply(JSONValue(["entries": menuJson(entries)]), null);
+                    }
                     if (auto problem = activateMenuPath(path))
                         return reply(JSONValue.init, problem);
                     whenIdle(() => reply(state(), null));
@@ -2507,6 +2776,227 @@ private:
                 note("saved " ~ path);
                 return reply(state(), null);
             }
+        case "edit":
+            {
+                // a change of the code, as the user would type it (it can be undone):
+                // {"old": "…", "new": "…"} | {"lines": [from, to], "text": "…"} | {"insert": line, "text": "…"}
+                import std.string : indexOf;
+                import std.utf : count;
+                auto src = text();
+                TextIter a, b;
+                string with_;
+                immutable lineCount = buffer.getLineCount();
+                if (has("old"))
+                {
+                    auto old = arg("old");
+                    auto at = src.indexOf(old);
+                    if (old.length == 0 || at < 0)
+                        return reply(JSONValue.init, "'old' is not in the code (hcad_gui_state with source: true shows it)");
+                    if (src[at + old.length .. $].indexOf(old) >= 0)
+                        return reply(JSONValue.init, "'old' appears more than once: include more of the code around it");
+                    buffer.getIterAtOffset(a, cast(int) count(src[0 .. at]));
+                    buffer.getIterAtOffset(b, cast(int) count(src[0 .. at + old.length]));
+                    with_ = arg("new");
+                }
+                else if (has("lines") || has("insert"))
+                {
+                    immutable from = cast(int) numberOf(has("lines") ? p["lines"][0] : p["insert"]);
+                    immutable to = has("lines") ? cast(int) numberOf(p["lines"][1]) : from - 1;
+                    if (from < 1 || from > lineCount + 1 || to < from - 1 || to > lineCount)
+                        return reply(JSONValue.init, format("lines out of range: the code has %d lines", lineCount));
+                    with_ = arg("text");
+                    if (from > lineCount)
+                        buffer.getEndIter(a);
+                    else
+                        buffer.getIterAtLine(a, from - 1);
+                    if (to >= lineCount)
+                    {
+                        buffer.getEndIter(b);
+                        // appending after a last line without newline
+                        if (from > lineCount && src.length && src[$ - 1] != '\n')
+                            with_ = "\n" ~ with_;
+                    }
+                    else
+                    {
+                        buffer.getIterAtLine(b, to);
+                        if (with_.length && with_[$ - 1] != '\n')
+                            with_ ~= "\n";
+                    }
+                }
+                else
+                    return reply(JSONValue.init, "pass old and new, lines and text, or insert and text");
+                immutable startOffset = a.getOffset();
+                buffer.beginUserAction();
+                buffer.delete_(a, b);
+                buffer.getIterAtOffset(a, startOffset);
+                buffer.insert(a, with_);
+                buffer.endUserAction();
+                // show the new code where it is
+                TextIter s, e;
+                buffer.getIterAtOffset(s, startOffset);
+                buffer.getIterAtOffset(e, startOffset + cast(int) count(with_));
+                immutable first = s.getLine() + 1, lastLine = e.getLine() + (e.getLineOffset() == 0 && e.getOffset() > s.getOffset() ? 0 : 1);
+                TextIter all0, all1;
+                buffer.getBounds(all0, all1);
+                buffer.removeTagByName("picked", all0, all1);
+                buffer.applyTagByName("picked", s, e);
+                buffer.placeCursor(s);
+                editor.scrollToIter(s, 0.1, true, 0, 0.3);
+                whenIdle(() {
+                    auto r = state();
+                    r["lines"] = [first, max(first, lastLine)];
+                    reply(r, null);
+                });
+                return;
+            }
+        case "undo":
+            {
+                // {"redo": true} redoes; "steps" repeats
+                immutable redo = "redo" in p && p["redo"].type == JSONType.true_;
+                immutable steps = has("steps") ? cast(int) numberOf(p["steps"]) : 1;
+                int done;
+                foreach (i; 0 .. steps)
+                {
+                    if (redo ? !buffer.getCanRedo() : !buffer.getCanUndo())
+                        break;
+                    if (redo)
+                        buffer.redo();
+                    else
+                        buffer.undo();
+                    done++;
+                }
+                if (done == 0)
+                    return reply(JSONValue.init, redo ? "nothing to redo" : "nothing to undo");
+                whenIdle(() {
+                    auto r = state();
+                    r[redo ? "redone" : "undone"] = done;
+                    reply(r, null);
+                });
+                return;
+            }
+        case "project":
+            {
+                // model points to view fractions ("points"), view fractions to what is there ("screen")
+                whenIdle(() {
+                    JSONValue r = JSONValue((JSONValue[string]).init);
+                    if (has("points"))
+                    {
+                        JSONValue[] out_;
+                        foreach (v; p["points"].array)
+                        {
+                            double fx, fy;
+                            bool visible;
+                            if (viewport.fractionOf(vec3Of(v), fx, fy, visible))
+                            {
+                                JSONValue j = ["x": fx, "y": fy];
+                                j["visible"] = visible && fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1;
+                                out_ ~= j;
+                            }
+                            else
+                                out_ ~= JSONValue(["behind_camera": true]);
+                        }
+                        r["points"] = out_;
+                    }
+                    if (has("screen"))
+                    {
+                        JSONValue[] out_;
+                        foreach (v; p["screen"].array)
+                            out_ ~= hitJson(viewport.pickAt(numberOf(v[0]) * viewport.width, numberOf(v[1]) * viewport.height));
+                        r["screen"] = out_;
+                    }
+                    reply(r, null);
+                });
+                return;
+            }
+        case "selection":
+            {
+                // {"selector": "faces.top", "part": "lid"} selects, {"clear": true} empties; always the selection back
+                whenIdle(() {
+                    if ("clear" in p && p["clear"].type == JSONType.true_)
+                        viewport.setSelection(null);
+                    if (auto expr = arg("selector"))
+                    {
+                        string problem;
+                        immutable pi = partIndex(arg("part"), problem);
+                        if (pi < 0)
+                            return reply(JSONValue.init, problem);
+                        auto part = last.parts[pi];
+                        auto it = new Interp(part.kernel);
+                        auto sv = new SolidVal(part.brep, Span.init);
+                        sv.creators = part.creators;
+                        bool faces;
+                        int[] found;
+                        try
+                            found = it.trySelector(expr, sv, faces);
+                        catch (Exception e)
+                            return reply(JSONValue.init, e.msg);
+                        if (found.length == 0)
+                            return reply(JSONValue.init, expr ~ " selects nothing on " ~ part.name);
+                        auto infos = faces ? part.kernel.faces(part.brep) : null;
+                        Hit[] hits;
+                        foreach (i; found)
+                        {
+                            Hit h;
+                            h.part = pi;
+                            if (faces)
+                            {
+                                h.face = i;
+                                h.point = infos[i].center;
+                                h.normal = infos[i].normal;
+                            }
+                            else
+                            {
+                                h.edge = i;
+                                h.point = part.edgeInfo[i].mid;
+                            }
+                            hits ~= h;
+                        }
+                        viewport.setSelection(hits);
+                        info(format("%s · %d %s%s selected by the agent", part.name, hits.length, faces ? "face" : "edge",
+                            hits.length == 1 ? "" : "s"));
+                    }
+                    reply(selectionJson(), null);
+                });
+                return;
+            }
+        case "measure":
+            {
+                // between a and b (part names or points [x, y, z]), or the two selected items
+                whenIdle(() {
+                    import hackerscad.gui.measure : measure;
+                    size_t next;
+                    Item ia, ib;
+                    int pa, pb;
+                    if (auto problem = measureItem(has("a") ? p["a"] : JSONValue(null), next, ia, pa))
+                        return reply(JSONValue.init, problem);
+                    if (auto problem = measureItem(has("b") ? p["b"] : JSONValue(null), next, ib, pb))
+                        return reply(JSONValue.init, problem);
+                    JSONValue r;
+                    if (pa >= 0 && pb >= 0)
+                    {
+                        // two parts: exact, on the solids
+                        Vec3 onA, onB;
+                        auto d = last.parts[pa].kernel.distance(last.parts[pa].brep, last.parts[pb].brep, onA, onB);
+                        r = JSONValue(["distance": d]);
+                        r["on_a"] = jsonOf(onA);
+                        r["on_b"] = jsonOf(onB);
+                    }
+                    else
+                    {
+                        auto m = measure(ia, ib);
+                        r = JSONValue(["distance": m.distance]);
+                        r["on_a"] = jsonOf(m.onA);
+                        r["on_b"] = jsonOf(m.onB);
+                        if (m.angle == m.angle)
+                            r["angle_deg"] = m.angle;
+                        if (m.gap == m.gap)
+                            r["gap"] = m.gap;
+                        r["note"] = "from the displayed mesh: curved surfaces are approximated";
+                    }
+                    reply(r, null);
+                });
+                return;
+            }
         case "stop":
             {
                 immutable was = evaluator.busy;
@@ -2543,6 +3033,13 @@ private:
     {
         JSONValue j = ["path": path, "status": statusText];
         j["window"] = control ? control.name : null;
+        j["version"] = appVersion;
+        if (exeChanged())
+            j["outdated"] = "hackerscad was rebuilt or updated after this window started: ask the user to restart it "
+                ~ "to get the newest tools";
+        j["revision"] = revision;
+        if (userChange.type != JSONType.null_)
+            j["user_changed"] = userChange;
         j["evaluating"] = evaluator.busy;
         if (evaluator.busy)
         {

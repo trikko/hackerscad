@@ -173,7 +173,13 @@ JSONValue guiRequest(string window, string method, JSONValue params)
     }
     auto resp = parseJSON(buf[0 .. buf.indexOf('\n')]);
     if (auto e = "error" in resp)
+    {
+        // a window started before its program was updated lacks the newest tools
+        if (e.str == "unknown method: " ~ method)
+            throw new Exception(format("the hackerscad window '%s' runs an older version without '%s': ask the user "
+                ~ "to restart it", window, method));
         throw new Exception(e.str);
+    }
     return resp["result"];
 }
 

@@ -57,6 +57,15 @@ Popover popupMenu(Widget parent, double x, double y, MenuEntry[] entries)
 
 private Menu lastMenu;
 
+/// The entries of the last menu shown (null if none), and closing it.
+MenuEntry[] lastMenuEntries() => lastMenu is null ? null : lastMenu.root;
+
+void closeLastMenu()
+{
+    if (lastMenu !is null)
+        lastMenu.pop.popdown();
+}
+
 /// Clicks the entries of the last menu shown, one label per level (for
 /// scripts and agents): ["Hole at point", "Clearance", "M3"]. Returns null,
 /// or what went wrong with the entries that were available.
@@ -89,9 +98,11 @@ private final class Menu
     int pageCount;
     void delegate()[string][string] actions;   /// page name → label → what clicking it does
     string current = "main";          /// the page shown
+    MenuEntry[] root;
 
     this(MenuEntry[] entries)
     {
+        root = entries;
         pop = new Popover;
         pop.addCssClass("hcad-menu");
         pop.setHasArrow(false);

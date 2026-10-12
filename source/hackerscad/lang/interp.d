@@ -1802,12 +1802,20 @@ final class Interp
     /// to turn clicks in the GUI into selector code.
     int[] trySelector(string expr, SolidVal s)
     {
+        bool faces;
+        return trySelector(expr, s, faces);
+    }
+
+    /// The same, telling whether the indices are of faces or of edges.
+    int[] trySelector(string expr, SolidVal s, out bool faces)
+    {
         import hackerscad.lang.parser : parseExpression;
         import hackerscad.lang.builtins : resolveSelector;
 
         auto v = eval(parseExpression(expr, "<selector>"), new Env(prelude, null));
         if (v.kind != Kind.selector)
             throw new HcadError(Code.type, expr ~ " is not a selector", Span.init);
+        faces = v.sel.faces;
         return resolveSelector(this, v.sel, s, Span.init, true);
     }
 

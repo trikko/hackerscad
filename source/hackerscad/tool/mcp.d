@@ -15,6 +15,7 @@ import std.json;
 import std.path : buildPath;
 import std.stdio : stdin, stdout, stderr;
 import std.string : strip;
+import core.atomic : atomicLoad, atomicOp;
 
 import hackerscad.render.raster : View;
 import hackerscad.tool.docs : reference;
@@ -42,18 +43,95 @@ void serve()
         import core.sys.posix.signal : signal, SIGPIPE, SIG_IGN;
         signal(SIGPIPE, SIG_IGN);
     }
+    import std.process : environment;
     auto worker = new Worker;
+    recordExe();
+    // started again by an older server whose program was rebuilt or updated:
+    // the client is told the tools may have changed, and gets the answer to
+    // the message that server had just read
+    auto replay = environment.get("HSCAD_MCP_REPLAY");
+    if (environment.get("HSCAD_MCP_RESTARTED"))
+    {
+        environment.remove("HSCAD_MCP_RESTARTED");
+        environment.remove("HSCAD_MCP_REPLAY");
+        sendLine(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`);
+    }
+    version (Posix)
+    {
+        // unbuffered, so that a new program started in place reads what this one did not
+        import core.stdc.stdio : setvbuf, _IONBF;
+        setvbuf(stdin.getFP, null, _IONBF, 0);
+    }
+    if (replay.length)
+        process(replay, worker);
     foreach (line; stdin.byLineCopy)
     {
+        if (exeUpdated() && worker.idle && atomicLoad(guiCalls) == 0)
+            restart(line, worker);
+        process(line, worker);
+    }
+    worker.stop();
+}
+
+/// The executable, as it was when the server started.
+private __gshared string exePath;
+private __gshared long exeStamp;
+
+private void recordExe()
+{
+    import std.file : thisExePath;
+    exePath = thisExePath;
+    exeStamp = exeTime();
+}
+
+private long exeTime()
+{
+    import std.file : timeLastModified;
+    try
+        return timeLastModified(exePath).stdTime;
+    catch (Exception)
+        return 0;
+}
+
+/// The program on disk is not the one running: rebuilt or updated.
+private bool exeUpdated() => exePath.length && exeStamp && exeTime() != exeStamp;
+
+/// Runs the new program in place of this one, with the same stdin and
+/// stdout; it answers `line` first. Only POSIX can replace a process.
+private void restart(string line, Worker worker)
+{
+    version (Posix)
+    {
+        import core.sys.posix.unistd : execv;
+        import std.process : environment;
+        import std.string : toStringz;
+        worker.stop();
+        environment["HSCAD_MCP_RESTARTED"] = "1";
+        environment["HSCAD_MCP_REPLAY"] = line;
+        stdout.flush();
+        const(char)*[3] argv = [exePath.toStringz, "mcp".toStringz, null];
+        execv(argv[0], argv.ptr);
+        // could not: keep serving with this program
+        environment.remove("HSCAD_MCP_RESTARTED");
+        environment.remove("HSCAD_MCP_REPLAY");
+        exeStamp = exeTime();
+    }
+}
+
+private shared int guiCalls;    // GUI tool calls still running in the background
+
+private void process(string line, Worker worker)
+{
+    {
         if (line.strip.length == 0)
-            continue;
+            return;
         JSONValue msg;
         try
             msg = parseJSON(line);
         catch (JSONException)
         {
             send(errorResponse(JSONValue(null), -32700, "parse error"));
-            continue;
+            return;
         }
         immutable method = "method" in msg && msg["method"].type == JSONType.string ? msg["method"].str : "";
         auto params = "params" in msg ? msg["params"] : JSONValue(null);
@@ -71,7 +149,6 @@ void serve()
                 send(response);
         }
     }
-    worker.stop();
 }
 
 /// The worker process: evaluates the tool calls the server forwards, one at a
@@ -140,7 +217,8 @@ JSONValue handle(JSONValue msg)
             {
                 auto requested = "protocolVersion" in params ? params["protocolVersion"].str : "2025-06-18";
                 JSONValue r = ["protocolVersion": requested];
-                r["capabilities"] = ["tools": JSONValue((JSONValue[string]).init)];
+                // the tools change when the program is rebuilt or updated (see restart)
+                r["capabilities"] = ["tools": JSONValue(["listChanged": true])];
                 r["serverInfo"] = ["name": "hackerscad", "version": serverVersion];
                 r["instructions"] = instructions;
                 return result(id, r);
@@ -193,7 +271,10 @@ bool evaluates(string tool) =>
 void background(JSONValue msg)
 {
     import core.thread : Thread;
+    atomicOp!"+="(guiCalls, 1);
     auto t = new Thread({
+        scope (exit)
+            atomicOp!"-="(guiCalls, 1);
         auto response = handle(msg);
         if (response.type != JSONType.null_)
             send(response);
@@ -271,6 +352,13 @@ final class Worker
                 kill(Stop.none);
     }
 
+    /// Nothing evaluating, nothing in line.
+    bool idle()
+    {
+        synchronized (state)
+            return current is null && waiting.length == 0;
+    }
+
 private:
 
     void call(JSONValue id, string key, string line)
@@ -343,7 +431,8 @@ private:
         import std.process : pipeProcess, Redirect;
         if (running)
             return;
-        proc = pipeProcess([thisExePath, "mcp", "--worker"], Redirect.stdin | Redirect.stdout);
+        // the program the server started from: once rebuilt, thisExePath names a deleted file
+        proc = pipeProcess([exePath.length ? exePath : thisExePath, "mcp", "--worker"], Redirect.stdin | Redirect.stdout);
         running = true;
     }
 
@@ -541,34 +630,41 @@ JSONValue[] toolList()
         gui("hcad_gui_set", "Change the model shown in the user's window: replace its source, set parameter "
             ~ "overrides or a preset. The window re-evaluates and shows the result.",
             `"source": {"type": "string"}, "params": {"type": "object"}, "preset": {"type": "string"}`),
-        gui("hcad_gui_pick", "Click in the user's 3D view at a point given as fractions of its size (0..1): the "
-            ~ "face is highlighted and the editor jumps to the feature that created it. Returns part, face and a selector expression for that face (e.g. faces.top) to use in code.",
-            `"x": {"type": "number"}, "y": {"type": "number"}, "shift": {"type": "boolean", "description": `
-            ~ `"add to the selection (or remove from it), like Shift+click"}`, `["x", "y"]`),
+        gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: the "
+            ~ "face is highlighted and the editor jumps to the feature that created it. Returns part, face, the point and "
+            ~ "normal hit, and a selector expression for that face (e.g. faces.top) to use in code.",
+            `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
+            ~ `"shift": {"type": "boolean", "description": "add to the selection (or remove from it), like Shift+click"}`, `[]`),
         gui("hcad_gui_view", "Move the user's 3D view as they do with the mouse, in this order: preset (iso, front, "
-            ~ "top, right: framed on the model; fit: frame it from where it is now), orbit [yaw, pitch] in degrees (like "
+            ~ "top, right: framed on the model; fit: frame it from where it is now), look_at [x, y, z] (a model point in mm "
+            ~ "to centre) and size (mm across the view), orbit [yaw, pitch] in degrees (like "
             ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
             ~ "stays still). hidden lists the parts to hide (the others are shown); console and params show or hide "
             ~ "those panels. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
+            ~ `"look_at": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
+            ~ `"size": {"type": "number"}, `
             ~ `"orbit": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"pan": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"zoom": {"type": "number"}, `
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
             ~ `"console": {"type": "boolean"}, "params": {"type": "boolean"}`, `[]`),
-        gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size) and add a feature there, "
+        gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face).",
-            `"x": {"type": "number"}, "y": {"type": "number"}, "action": {"type": "string", "enum": ["fillet-edge", `
+            `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
+            ~ `"action": {"type": "string", "enum": ["fillet-edge", `
             ~ `"chamfer-edge", "fillet-face", "chamfer-face", "shell"]}, "value": {"type": "string", "description": `
-            ~ `"radius, distance or thickness, e.g. 2.mm"}`, `["x", "y", "action"]`),
-        gui("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) and choose entries of the "
-            ~ "menu in order, e.g. [\"Hole at point\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: what the user would do "
-            ~ "with the mouse. Entries that write code append it to the part in the editor.",
-            `"x": {"type": "number"}, "y": {"type": "number"}, "path": {"type": "array", "items": {"type": "string"}}`,
-            `["x", "y", "path"]`),
+            ~ `"radius, distance or thickness, e.g. 2.mm"}`, `["action"]`),
+        gui("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) or at a model point and "
+            ~ "choose entries of the menu in order, e.g. [\"Hole at point\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: "
+            ~ "what the user would do with the mouse. Entries that write code append it to the part in the editor. "
+            ~ "Without path, returns the entries the menu has there (with sub-entries and the values it shows) and "
+            ~ "chooses nothing.",
+            `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
+            ~ `"path": {"type": "array", "items": {"type": "string"}}`, `[]`),
         gui("hcad_gui_section", "Cut the user's 3D view with a plane: parallel to xy, xz or yz, or to the selected face "
             ~ "(face; clicking another face moves it there); at is the position from 0 to 1 across the model; flip inverts the "
             ~ "plane normal (shows the other side); cut solids are shown filled and hatched; on: false removes it.",
@@ -591,6 +687,30 @@ JSONValue[] toolList()
         gui("hcad_gui_cheatsheet", "Opens the cheatsheet window in the user's GUI (every function and object in "
             ~ "one line, and \"how do I…\" recipes), filtered by query when given: to show the user where to look.",
             `"query": {"type": "string"}`, `[]`),
+        gui("hcad_gui_edit", "Change the code in the user's editor like typing does (Ctrl+Z undoes it, and the window "
+            ~ "re-evaluates): old and new replace text that appears exactly once; lines [from, to] and text replace those "
+            ~ "lines (1-based, inclusive); insert (a line number) and text insert before that line (one more than the "
+            ~ "line count appends). Returns the state and the lines of the new text.",
+            `"old": {"type": "string"}, "new": {"type": "string"}, `
+            ~ `"lines": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}, `
+            ~ `"insert": {"type": "integer"}, "text": {"type": "string"}`, `[]`),
+        gui("hcad_gui_undo", "Undo the last change of the code in the user's editor (theirs or yours), or redo with "
+            ~ "redo: true; steps repeats it.", `"redo": {"type": "boolean"}, "steps": {"type": "integer"}`, `[]`),
+        gui("hcad_gui_project", "Convert between the model and the user's 3D view: points (model points in mm) give "
+            ~ "where they appear as fractions of the view and whether they are visible; screen ([x, y] fractions) gives "
+            ~ "what is there: part, face, point, normal and a selector. Use it to aim pick, menu and feature, or to frame.",
+            `"points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}, `
+            ~ `"screen": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}`, `[]`),
+        gui("hcad_gui_selection", "The faces or edges selected in the user's 3D view, with their selectors and sizes "
+            ~ "(area, centre and normal of a face; length or radius of an edge): what the user means by \"this edge\". "
+            ~ "With selector (e.g. faces.top, edges.of(faces.top)) on part, selects what it picks, to show the user "
+            ~ "which faces or edges you mean; the right-click menu then acts on them. clear: true empties it.",
+            `"selector": {"type": "string"}, "part": {"type": "string", "description": "needed with several parts"}, `
+            ~ `"clear": {"type": "boolean"}`, `[]`),
+        gui("hcad_gui_measure", "Measure in the user's window: the distance between a and b (part names, or points "
+            ~ "[x, y, z]), with the closest points; without a and b, between the two selected items, with the angle "
+            ~ "between them and, for parallel flat faces, the gap between their planes (a wall's thickness).",
+            `"a": {"type": ["string", "array"]}, "b": {"type": ["string", "array"]}`, `[]`),
         gui("hcad_gui_save", "Save the model in the user's window to its file, or to path (the window then works on "
             ~ "that file, like Save As). Refused when path exists, unless force is true (ask the user first).",
             `"path": {"type": "string"}, "force": {"type": "boolean"}`, `[]`),
@@ -598,9 +718,11 @@ JSONValue[] toolList()
             ~ "running and at which stage); it runs again at the next edit.", ``),
         gui("hcad_gui_about", "Open the About window of the user's hackerscad (version, credits, licences).", ``),
         gui("hcad_gui_screenshot", "Picture of the user's hackerscad window, after the current evaluation finishes.", ``),
-        gui("hcad_gui_state", "State of the user's window: file, parameters, parts, problems. It waits for the running "
-            ~ "evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) and seconds.",
-            `"now": {"type": "boolean"}`, `[]`),
+        gui("hcad_gui_state", "State of the user's window: file, parameters, parts, camera, problems, version; "
+            ~ "user_changed tells which lines the user changed since your previous hcad_gui_* call. It waits for the "
+            ~ "running evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) "
+            ~ "and seconds; with source: true it includes the code as it is in the editor (maybe not saved).",
+            `"now": {"type": "boolean"}, "source": {"type": "boolean"}`, `[]`),
     ];
 }
 
@@ -694,7 +816,8 @@ JSONValue callTool(string name, JSONValue args)
             break;
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
-            "hcad_gui_rollback", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export", "hcad_gui_complete", "hcad_gui_cheatsheet":
+            "hcad_gui_rollback", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
+            "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet":
         {
             auto method = name["hcad_gui_".length .. $];
             auto r = guiRequest(arg("window"), method, args.type == JSONType.object ? args : JSONValue((JSONValue[string]).init));
@@ -711,7 +834,7 @@ JSONValue callTool(string name, JSONValue args)
                 {
                     auto st = guiRequest(w, "state", now);
                     JSONValue e = ["name": w];
-                    foreach (k; ["path", "modified", "evaluating"])
+                    foreach (k; ["path", "modified", "evaluating", "version", "outdated"])
                         if (k in st)
                             e[k] = st[k];
                     list ~= e;

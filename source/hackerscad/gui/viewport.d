@@ -261,6 +261,14 @@ final class Viewport
     /// Everything selected, in picking order (all on one part).
     Hit[] selection() => selected.part >= 0 ? others ~ selected : null;
 
+    /// Replaces the selection (items of one part; the last is the main one).
+    void setSelection(Hit[] items)
+    {
+        selected = items.length ? items[$ - 1] : Hit.init;
+        others = items.length ? items[0 .. $ - 1].dup : null;
+        area.queueRender();
+    }
+
     void setHidden(size_t part, bool hide)
     {
         if (part < hidden.length)
@@ -592,6 +600,38 @@ final class Viewport
     void zoomAtFraction(double fx, double fy, double factor)
     {
         zoomAt(fx * area.getWidth(), fy * area.getHeight(), factor);
+    }
+
+    /// Looks at model point `p` from the current direction; `size` (mm, if
+    /// > 0) is how much of the model fits across the narrower side of the view.
+    void centerOn(Vec3 p, double size)
+    {
+        fitPending = false;
+        target = p;
+        if (size > 0)
+        {
+            immutable w = max(1, area.getWidth()), h = max(1, area.getHeight());
+            immutable fov = min(fovy, 2 * atan(tan(fovy / 2) * w / h));
+            distance = size / 2 / tan(fov / 2);
+        }
+        area.queueRender();
+    }
+
+    /// Where model point `p` appears, as fractions of the view's size;
+    /// `visible` is false when it is behind the camera or hidden by a surface.
+    bool fractionOf(Vec3 p, out double fx, out double fy, out bool visible)
+    {
+        double x, y;
+        if (!project(p, x, y))
+            return false;
+        fx = x / max(1, area.getWidth());
+        fy = y / max(1, area.getHeight());
+        auto h = pick(x, y);
+        immutable tol = max(0.05, distance * 0.002);
+        // nothing in front of it: no surface hit, or the hit is the point itself or behind it
+        visible = h.part < 0 || (h.point - p).length < tol
+            || (h.point - basis().eye).length > (p - basis().eye).length - tol;
+        return true;
     }
 
     /// The camera: angles in degrees, distance and target in mm.
@@ -1409,8 +1449,8 @@ double intersect(Vec3 o, Vec3 d, Vec3 a, Vec3 b, Vec3 c)
     return e2.dot(q) * inv;
 }
 
-/// Points along a B-rep edge, for drawing and picking it.
-Vec3[] edgePolyline(EdgeInfo e)
+/// Points along a B-rep edge, for drawing, picking and measuring it.
+public Vec3[] edgePolyline(EdgeInfo e)
 {
     if (e.kind == EdgeKind.line)
         return [e.start, e.end];
