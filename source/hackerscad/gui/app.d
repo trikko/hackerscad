@@ -47,6 +47,7 @@ import pango.types : Underline, EllipsizeMode;
 import adw.view_stack : ViewStack;
 import adw.view_switcher : ViewSwitcher;
 import adw.types : ViewSwitcherPolicy;
+import gtk.menu_button : MenuButton;
 import gtk.overlay : Overlay;
 import gtk.popover : Popover;
 import gtk.entry : Entry;
@@ -78,7 +79,7 @@ import hackerscad.tool.codegen;
 import hackerscad.about;
 import hackerscad.gui.completion;
 import hackerscad.gui.cheatsheet;
-import hackerscad.lang.interp : Interp, TraceEntry, FunctionInfo;
+import hackerscad.lang.interp : Interp, TraceEntry, FunctionInfo, callsOf;
 import hackerscad.lang.value : SolidVal;
 import hackerscad.lang.sketchval : SketchView;
 import hackerscad.tool.guiclient : toOverrides;
@@ -541,6 +542,11 @@ final class MainWindow
         viewBar.append(separator());
         viewBar.append(modes);
         viewBar.append(separator());
+        partsMenu = new MenuButton;   // its list is added once the parameters panel exists
+        partsMenu.setIconName("view-reveal-symbolic");
+        partsMenu.setTooltipText("Parts shown in the view");
+        partsMenu.addCssClass("flat");
+        viewBar.append(partsMenu);
         viewBar.append(sectionToggle);
         viewBar.append(inspectToggle);
         viewBar.append(sketchToggle);
@@ -593,6 +599,8 @@ final class MainWindow
         editor.setInsertSpacesInsteadOfTabs(true);
         editor.setHighlightCurrentLine(true);
         editor.setTopMargin(6);
+        // room under the last line: the overlay scrollbar would sit on it
+        editor.setBottomMargin(28);
         // completion, call signatures and help on names
         completion = new EditorCompletion(editor, buffer);
         completion.path = () => path;
@@ -682,8 +690,16 @@ final class MainWindow
             overlay.addOverlay(card);
         };
         features = new FeaturesPanel;
-        features.onSelect = &rollTo;
+        features.onSelect = &showFeature;
         features.onFinal = () => showFinal();
+        features.onValue = (TraceEntry[] made) {
+            if (made.length == 0)
+                return;
+            jumpTo(made[0].site, "");
+            inspectQuery = InspectQuery.init;   // a feature row: back to the final model after a run
+            showInspected(distinct(made), format("line %d · %s", made[0].site.line,
+                made[0].decl.file.length ? made[0].fn ~ "()" : made[0].fn), false);
+        };
         features.onReturns = (FunctionInfo fn) {
             jumpTo(fn.nameSpan, "");
             inspectFunction(fn);
@@ -700,6 +716,7 @@ final class MainWindow
             viewport.area.addController(keys);
         }
         params = new ParamsPanel;
+        partsMenu.setPopover(partsPopover());
         params.onChange = () => scheduleEvaluation(0);
         params.onVisibility = (size_t part, bool visible) => viewport.setHidden(part, !visible);
         auto paramsScroll = new ScrolledWindow;
@@ -1079,15 +1096,15 @@ private:
         last = o;
         hadResult = true;
         params.update(o.params, o.presets);
-        features.update(o.features, o.trace, o.functions, path);
+        {
+            import std.string : splitLines;
+            features.update(o.features, o.trace, o.functions, path, text().splitLines);
+        }
         // Inspect shows what the same lines make now
         if (viewport.inInspect && !o.cancelled)
             reinspect();
         if (viewport.inRollback)
-        {
-            viewport.clearRollback();
-            features.clearSelection();
-        }
+            showFinal();
         viewport.setSketches(o.sketches);
         if (sectionToggle.getActive())
             updateSection(false);
@@ -1612,9 +1629,114 @@ private:
         jumpTo(f.span, format("rollback · line %d · %s (computing…)", f.span.line, f.kind));
         evaluator.prepareFeature(f, f.kind, (PartMesh m) {
             viewport.showRollback(m, id);
-            info(format("rollback · line %d · %s · its new faces in orange", f.span.line, f.kind));
-            showModeBar(format("Model as it was after line %d (%s)", f.span.line, f.kind));
+            info(format("rollback · line %d · %s%s · its new faces in orange", f.span.line, f.kind, f.moved ? " (moved)" : ""));
+            showModeBar(format("Model after line %d (%s%s)", f.span.line, f.kind, f.moved ? ", moved" : ""));
         });
+    }
+
+    /// A row of the feature tree: every run of that line of code. One run of
+    /// a feature rolls back to it; many runs show what they all made; a union,
+    /// difference or intersection shows its two operands in two colours.
+    void showFeature(uint[] ids)
+    {
+        import std.algorithm : filter;
+        import std.array : array;
+
+        ids = ids.filter!(id => id > 0 && id <= last.features.length).array;
+        if (ids.length == 0)
+            return;
+        auto f = last.features[ids[$ - 1] - 1];
+        immutable boolean = f.operands.length == 2;
+        if (ids.length == 1 && !boolean)
+            return rollTo(ids[0]);
+
+        immutable request = ++inspectRequest;
+        immutable runs = ids.length > 1 ? format(" ×%d", ids.length) : "";
+        jumpTo(f.span, format("line %d · %s%s (computing…)", f.span.line, f.kind, runs));
+        SolidVal[] vals;
+        Vec3[] colors;
+        string legend;
+        if (boolean)
+        {
+            immutable first = Vec3(0.25, 0.5, 0.86);
+            immutable second = f.kind == "difference" ? Vec3(0.86, 0.22, 0.18)
+                : f.kind == "union" ? Vec3(0.2, 0.66, 0.32) : Vec3(0.56, 0.36, 0.82);
+            bool[void*] seen;   // identical runs are shown once (and counted)
+            foreach (id; ids)
+            {
+                auto g = last.features[id - 1];
+                if (g.operands.length != 2)
+                    continue;
+                foreach (k, op; g.operands)
+                {
+                    if (op is null || cast(void*) op.brep in seen)
+                        continue;
+                    seen[cast(void*) op.brep] = true;
+                    vals ~= op;
+                    colors ~= k == 0 ? first : second;
+                }
+            }
+            string sq(Vec3 c) => format(`<span foreground="#%02X%02X%02X">■</span>`,
+                cast(int)(c.x * 255), cast(int)(c.y * 255), cast(int)(c.z * 255));
+            immutable what = f.kind == "difference" ? "taken away" : f.kind == "union" ? "added" : "intersected";
+            legend = format("%s first operand · %s second operand (%s)", sq(first), sq(second), what);
+        }
+        else
+        {
+            bool[void*] seen;
+            foreach (id; ids)
+            {
+                auto r = last.features[id - 1].result;
+                if (r is null || cast(void*) r.brep in seen)
+                    continue;
+                seen[cast(void*) r.brep] = true;
+                vals ~= r;
+            }
+        }
+        // the same words as a function's "returns": identical runs are shown once
+        immutable different = boolean ? 0 : vals.length;
+        immutable shown = ids.length > 1 && !boolean && different < ids.length
+            ? format(" · %d different result%s shown", different, different == 1 ? "" : "s") : "";
+        evaluator.prepareSolids(vals, (PartMesh[] ms) {
+            if (request != inspectRequest)
+                return;
+            if (viewport.inRollback)
+                viewport.clearRollback();
+            viewport.showInspect(ms, colors);
+            inspectQuery = InspectQuery.init;   // a feature row: not asked again after a run
+            inspectShown = null;
+            immutable where = format("Line %d · %s%s%s", f.span.line, f.kind, runs, shown);
+            info(where ~ (boolean ? " · its operands" : " · every run"));
+            showModeBar(boolean ? where ~ ": " ~ legend : where ~ ": what every run made", boolean);
+        });
+    }
+
+    MenuButton partsMenu;   /// the eye of the view bar
+
+    /// What the eye opens: the parts with a check each.
+    Popover partsPopover()
+    {
+        auto box = new Box(Orientation.Vertical, 6);
+        box.append(params.partsWidget);
+        auto all = new Button;
+        all.setLabel("Show all");
+        all.connectClicked(() {
+            foreach (i; 0 .. last.parts.length)
+                viewport.setHidden(i, false);
+            refreshPartList();
+        });
+        box.append(all);
+        auto pop = new Popover;
+        pop.setChild(box);
+        return pop;
+    }
+
+    void refreshPartList()
+    {
+        params.refreshParts();
+        import std.algorithm : map;
+        import std.array : array;
+        params.updateParts(last.parts.map!(p => p.name).array, last.parts.map!(p => p.rgb).array, &viewport.isHidden);
     }
 
     // ---- the bar that tells the view is not showing the final model
@@ -1646,11 +1768,45 @@ private:
         modeBar.setVisible(false);
     }
 
-    /// Shows the bar with `text`, or hides it (null).
-    void showModeBar(string text)
+    /// Shows the bar with `text` (Pango markup when `markup`), or hides it (null).
+    void showModeBar(string text, bool markup = false)
     {
-        modeText.setLabel(text);
+        if (markup)
+            modeText.setMarkup(text);
+        else
+            modeText.setLabel(text);
         modeBar.setVisible(text.length > 0);
+        showingStep(text.length > 0);
+    }
+
+    bool inStep;
+    bool[string] hiddenBeforeStep;   /// the parts hidden before a step was shown, by name
+
+    /// A step of the model (rollback, a feature row, Inspect) is shown alone:
+    /// the final parts are hidden, their eyes can show them again; back to
+    /// the final model, the parts are shown or hidden as they were.
+    void showingStep(bool on)
+    {
+        if (on == inStep)
+            return;
+        inStep = on;
+        if (on)
+        {
+            hiddenBeforeStep = null;
+            foreach (i, part; last.parts)
+            {
+                if (viewport.isHidden(i))
+                    hiddenBeforeStep[part.name] = true;
+                viewport.setHidden(i, true);
+            }
+        }
+        else
+            foreach (i, part; last.parts)
+                viewport.setHidden(i, (part.name in hiddenBeforeStep) !is null);
+        params.refreshParts();
+        import std.algorithm : map;
+        import std.array : array;
+        params.updateParts(last.parts.map!(p => p.name).array, last.parts.map!(p => p.rgb).array, &viewport.isHidden);
     }
 
     /// Back to the final model: closes Inspect and rollback.
@@ -1718,11 +1874,12 @@ private:
         foreach (e; last.trace)
             if (e.decl.file == file && e.decl.line == fn.nameSpan.line && e.decl.col == fn.nameSpan.col)
                 made ~= e;
+        immutable calls = callsOf(made);   // before identical results are merged
         made = distinct(made);
         if (made.length == 0)
             return false;
         inspectQuery = InspectQuery(0, 0, -1, fn.name);
-        showInspected(made, format("line %d · %s returns", fn.nameSpan.line, fn.name), true);
+        showInspected(made, format("line %d · %s returns", fn.nameSpan.line, fn.name), true, calls);
         return true;
     }
 
@@ -1754,7 +1911,7 @@ private:
     }
 
     /// Tessellates the values (on the evaluator's thread) and shows them.
-    void showInspected(TraceEntry[] made, string where, bool returns)
+    void showInspected(TraceEntry[] made, string where, bool returns, uint calls = 0)
     {
         enum maxShown = 64;
         if (made.length > maxShown)
@@ -1764,7 +1921,7 @@ private:
         {
             inspectRequest++;   // a request still on its way is not needed
             inspectShown = made;
-            info(inspectSummary(where, made, inspectMeshes, returns));
+            info(inspectSummary(where, made, inspectMeshes, returns, calls));
             return;
         }
         immutable request = ++inspectRequest;
@@ -1783,7 +1940,7 @@ private:
             inspectShown = made;
             inspectMeshes = ms;
             viewport.showInspect(ms);
-            info(inspectSummary(where, made, ms, returns));
+            info(inspectSummary(where, made, ms, returns, calls));
             showModeBar("Inspecting " ~ where ~ ": in orange what it makes");
         });
     }
@@ -1799,7 +1956,8 @@ private:
     }
 
     /// "line 73 · polygon → Profile 2D · 32 × 18 mm"
-    static string inspectSummary(string where, TraceEntry[] made, PartMesh[] ms, bool returns)
+    /// `calls`: how many times a function ran, when `returns` (0: count `made`).
+    static string inspectSummary(string where, TraceEntry[] made, PartMesh[] ms, bool returns, uint calls = 0)
     {
         string[] what;
         foreach (e; made)
@@ -1810,6 +1968,16 @@ private:
                 what ~= w;
         }
         auto list = what.length > 3 ? what[0 .. 3].join(", ") ~ format(" and %d more", what.length - 3) : what.join(", ");
+        if (returns)
+        {
+            // a function called many times: every call is shown, say how many
+            if (calls == 0)
+                calls = callsOf(made);
+            // identical results (the same geometry again) are shown once
+            if (calls > 1)
+                list ~= made.length < calls ? format(" · called %d times, %d different result%s shown", calls,
+                    made.length, made.length == 1 ? "" : "s") : format(" · called %d times, all shown", calls);
+        }
         bool any, allFlat = true, anyFlat;
         Vec3 lo, hi;
         foreach (m; ms)
@@ -1853,6 +2021,8 @@ private:
         }
         else if (inspectQuery.from > 0)
             inspectLines(inspectQuery.from, inspectQuery.to, inspectQuery.col);
+        else
+            showFinal();   // a feature row: its runs are gone with the old model, like a rollback
     }
 
     void stopInspect()
@@ -1909,7 +2079,27 @@ private:
 
     void contextMenu(Hit hit, double x, double y)
     {
-        if (hit.part < 0 || hit.part >= last.parts.length || viewport.inRollback)
+        if (hit.part < 0 || hit.part >= last.parts.length)
+        {
+            // on empty space: the hidden parts can come back
+            MenuEntry[] back;
+            foreach (i, part; last.parts)
+                if (viewport.isHidden(i))
+                {
+                    immutable index = i;
+                    back ~= MenuEntry.item("Show " ~ part.name, () => setPartVisible(index, true));
+                }
+            if (back.length == 0)
+                return;
+            if (back.length > 1)
+                back ~= MenuEntry.item("Show all parts", () {
+                    foreach (i; 0 .. last.parts.length)
+                        setPartVisible(i, true);
+                });
+            contextPopover = popupMenu(viewport.area, x, y, MenuEntry.heading("HIDDEN PARTS") ~ back);
+            return;
+        }
+        if (viewport.inRollback)
             return;
         hit.edge = viewport.nearestEdge(hit.part, hit.face, x, y, 12);
         // right-clicking inside a Shift selection keeps it; elsewhere selects what is under the pointer
@@ -2057,23 +2247,29 @@ private:
                 if (viewport.selectedPlane(p, n))
                     viewport.lookAlong(n);
             });
-            view ~= S();
         }
-        view ~= I("Hide part", () => setPartVisible(contextHit.part, false));
-        view ~= I("Show only this part", () {
-            foreach (i; 0 .. last.parts.length)
-                setPartVisible(i, i == contextHit.part);
-        });
-        view ~= I("Show all parts", () {
-            foreach (i; 0 .. last.parts.length)
-                setPartVisible(i, true);
-        });
 
+        entries ~= S();
+        entries ~= I("Hide " ~ part.name, () => setPartVisible(contextHit.part, false));
+        if (last.parts.length > 1)
+            entries ~= I("Show only " ~ part.name, () {
+                foreach (i; 0 .. last.parts.length)
+                    setPartVisible(i, i == contextHit.part);
+            });
+        bool anyHidden;
+        foreach (i; 0 .. last.parts.length)
+            anyHidden = anyHidden || viewport.isHidden(i);
+        if (anyHidden)
+            entries ~= I("Show all parts", () {
+                foreach (i; 0 .. last.parts.length)
+                    setPartVisible(i, true);
+            });
         entries ~= S();
         entries ~= G("Measure", measures);
         if (copies.length)
             entries ~= G("Copy as code", copies);
-        entries ~= G("View", view);
+        if (view.length)
+            entries ~= G("View", view);
         contextPopover = popupMenu(viewport.area, x, y, entries);
     }
 
@@ -2873,7 +3069,10 @@ private:
                 {
                     auto j = state();
                     if (withSource)
+                    {
                         j["source"] = text();
+                        j["feature_tree"] = features.rowsText();   // the Features panel, row by row
+                    }
                     return j;
                 }
                 if ("now" in p && p["now"].type == JSONType.true_)
@@ -2927,7 +3126,7 @@ private:
                     else
                         viewport.zoom(num(p["zoom"]));
                 }
-                // the parts hidden with their eye in the parameters panel
+                // the parts hidden with the eye of the view bar
                 if (has("hidden"))
                 {
                     bool[string] hide;
@@ -3103,8 +3302,7 @@ private:
                 // {"line": 12}: the model right after the feature on that line; no line: the final model
                 if ("line" !in p)
                 {
-                    viewport.clearRollback();
-                    features.clearSelection();
+                    showFinal();
                     whenIdle(() => reply(state(), null));
                     return;
                 }
@@ -3611,6 +3809,7 @@ private:
     void exportTo(string out_)
     {
         import std.algorithm : filter;
+        import std.array : array;
         import std.array : array;
         // reference parts (export: false) only appear in pictures
         if (last.parts.length == 0)

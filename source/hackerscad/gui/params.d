@@ -30,6 +30,7 @@ final class ParamsPanel
     string preset;
 
     private Box rows, partRows;
+    Box partsWidget;   /// the parts with a check to show or hide each (shown by the view bar's eye)
     private string partSignature;
     private Label[] swatches;
     private string signature;   /// names and types: rebuild only when they change
@@ -60,16 +61,20 @@ final class ParamsPanel
         });
         widget.append(reset);
 
-        auto partsTitle = new Label("Parts");
+        partsWidget = new Box(Orientation.Vertical, 4);
+        partsWidget.setMarginTop(6);
+        partsWidget.setMarginBottom(6);
+        partsWidget.setMarginStart(6);
+        partsWidget.setMarginEnd(6);
+        auto partsTitle = new Label("Parts shown");
         partsTitle.addCssClass("heading");
         partsTitle.setHalign(Align.Start);
-        partsTitle.setMarginTop(12);
-        widget.append(partsTitle);
+        partsWidget.append(partsTitle);
         partRows = new Box(Orientation.Vertical, 2);
-        widget.append(partRows);
+        partsWidget.append(partRows);
     }
 
-    /// One row per part with a show/hide toggle.
+    /// One row per part with a check to show or hide it.
     void updateParts(string[] names, uint[] colors, bool delegate(size_t) isHidden)
     {
         import std.array : join;
@@ -91,21 +96,18 @@ final class ParamsPanel
             partRows.append(partRow(i, name, colors[i], !isHidden(i)));
     }
 
-    /// A row with the show/hide toggle of one part. Built in its own function
-    /// so that each toggle's delegate captures its own index and button (in a
-    /// loop body they would all share the last ones).
+    /// A row with the show/hide check of one part. Built in its own function
+    /// so that each check's delegate captures its own index (in a loop body
+    /// they would all share the last one).
     private Box partRow(size_t index, string name, uint color, bool visible)
     {
-        import gtk.toggle_button : ToggleButton;
+        import gtk.check_button : CheckButton;
 
         auto row = new Box(Orientation.Horizontal, 6);
-        auto eye = new ToggleButton;
-        eye.addCssClass("flat");
-        eye.setActive(visible);
-        eye.setIconName(visible ? "view-reveal-symbolic" : "view-conceal-symbolic");
-        eye.setTooltipText("Show or hide this part in the view (export is not affected)");
-        eye.connectToggled((ToggleButton b) {
-            b.setIconName(b.getActive() ? "view-reveal-symbolic" : "view-conceal-symbolic");
+        auto check = new CheckButton;
+        check.setActive(visible);
+        check.setTooltipText("Show or hide this part in the view (export is not affected)");
+        check.connectToggled((CheckButton b) {
             if (onVisibility)
                 onVisibility(index, b.getActive());
         });
@@ -114,7 +116,7 @@ final class ParamsPanel
         swatch.setMarkup(format(`<span foreground="#%06X">●</span>`, color));
         auto label = new Label(name);
         label.setHalign(Align.Start);
-        row.append(eye);
+        row.append(check);
         row.append(swatch);
         row.append(label);
         return row;

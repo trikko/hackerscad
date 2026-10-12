@@ -49,6 +49,9 @@ struct FeatureInfo
     string kind;
     Span span;
     SolidVal result;   /// the solid right after the feature (for rollback views)
+    bool moved;        /// result is the solid moved, turned or mirrored right after it was made
+    SolidVal[] operands;   /// of a union, difference or intersection: the two solids it combined
+    Object frame;      /// the function call it ran in (Interp.callFrame)
 }
 
 /// A solid, profile or path a call in the evaluated file produced (the
@@ -61,6 +64,24 @@ struct TraceEntry
     string kind;    /// Solid, Profile or Path
     SolidVal value;
     uint calls;     /// how many times the site ran (only the first ones and the last are kept)
+    uint after;     /// how many features were made before it: its place among them
+    uint seq;       /// the order of the entries made between the same two features
+}
+
+/// How many times the calls that made `entries` ran, each call site counted once.
+uint callsOf(const TraceEntry[] entries)
+{
+    uint total;
+    Span[] seen;
+    foreach (e; entries)
+    {
+        import std.algorithm : canFind;
+        if (seen.canFind(e.site))
+            continue;
+        seen ~= e.site;
+        total += e.calls;
+    }
+    return total;
 }
 
 /// A function declared in a file and the lines it covers (up to the next
@@ -1544,6 +1565,9 @@ final class Interp
     }
 
     ModuleVal currentModule;
+    /// One object per running call of a declared function (null at module
+    /// level): a feature is moved with its solid only within its own call.
+    Object callFrame;
 
     private Value callClosure(Closure c, ref CallArgs args, Span span)
     {
@@ -1569,11 +1593,14 @@ final class Interp
         if (++depth > limits.depth)
             throw new HcadError(Code.limit, format("recursion deeper than %d calls", limits.depth), span);
         auto savedModule = currentModule;
+        auto savedFrame = callFrame;
         currentModule = c.mod;
+        callFrame = new Object;
         scope (exit)
         {
             depth--;
             currentModule = savedModule;
+            callFrame = savedFrame;
         }
 
         auto env = new Env(c.env, c.mod);
@@ -1660,7 +1687,8 @@ final class Interp
         return result;
     }
 
-    private enum maxTraceCalls = 8;     /// runs of one call site kept in the trace
+    private uint traceSeq;
+    private enum maxTraceCalls = 64;    /// runs of one call site kept in the trace
     private enum maxTrace = 3000;       /// entries in the whole trace
 
     private struct TraceSite
@@ -1708,7 +1736,8 @@ final class Interp
             s = site in traceSites;
         }
         s.calls++;
-        TraceEntry entry(SolidVal sv) => TraceEntry(site, decl, fn, sv.path ? "Path" : sv.flat ? "Profile" : "Solid", sv);
+        TraceEntry entry(SolidVal sv) => TraceEntry(site, decl, fn, sv.path ? "Path" : sv.flat ? "Profile" : "Solid", sv, 0,
+            cast(uint) features.length, ++traceSeq);
         if (s.calls > maxTraceCalls)
         {
             // the latest run takes the place of the previous last one
@@ -2002,6 +2031,7 @@ final class Interp
     uint addFeature(string kind, Span span)
     {
         features ~= FeatureInfo(kind, span);
+        features[$ - 1].frame = callFrame;
         return cast(uint) features.length;
     }
 

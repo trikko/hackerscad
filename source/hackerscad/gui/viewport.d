@@ -85,6 +85,7 @@ final class Viewport
     // inspect: what some lines of code made, the final parts as ghosts
     private bool inspecting;
     private PartMesh[] inspectItems;
+    private Vec3[] inspectColors;   /// one per item, or none: all orange
     private Gpu[] inspectGpu;
     private bool inspectDirty;
 
@@ -326,15 +327,20 @@ final class Viewport
     /// orange, the final parts as ghosts. Profiles are filled and outlined
     /// where they are in their own coordinates; paths are lines. The view
     /// moves to them when they are not all in sight, keeping its direction.
-    void showInspect(PartMesh[] items)
+    /// Shows `items` in orange, or each in its colour from `colors` (then
+    /// see-through, so that overlapping operands both show).
+    void showInspect(PartMesh[] items, Vec3[] colors = null)
     {
         inspecting = true;
         rollback = false;
         inspectItems = null;
-        foreach (m; items)
+        inspectColors = null;
+        foreach (i, m; items)
         {
             if (m.vertices.length == 0 && m.edgeInfo.length == 0)
                 continue;
+            if (colors.length)
+                inspectColors ~= i < colors.length ? colors[i] : Vec3(1.0, 0.62, 0.1);
             // profiles and paths: the exact B-rep edges as their outline
             if (m.flat || m.path)
             {
@@ -359,6 +365,7 @@ final class Viewport
     {
         inspecting = false;
         inspectItems = null;
+        inspectColors = null;
         inspectDirty = true;
         area.queueRender();
     }
@@ -1259,19 +1266,36 @@ private:
             inspectDirty = false;
         }
         immutable orange = Vec3(1.0, 0.62, 0.1), outline = Vec3(0.8, 0.33, 0.0);
+        immutable coloured = inspectColors.length == inspectItems.length && inspectItems.length;
         void color(Vec3 c) => glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
+        Vec3 fill(size_t i) => coloured ? inspectColors[i] : orange;
+        Vec3 line(size_t i) => coloured ? inspectColors[i] * 0.7 : outline;
 
-        // solids, pushed back so their edges draw on top
+        // solids, pushed back so their edges draw on top; in colours they are
+        // see-through, so that one operand inside the other shows
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(1, 1);
         glUniform1i(uFlat, 0);
-        color(orange);
+        if (coloured)
+        {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            glUniform1f(uAlpha, 0.45);
+        }
         foreach (i, m; inspectItems)
             if (!m.flat && !m.path)
             {
+                color(fill(i));
                 glBindVertexArray(inspectGpu[i].vao);
                 glDrawElements(GL_TRIANGLES, inspectGpu[i].indexCount, GL_UNSIGNED_INT, null);
             }
+        if (coloured)
+        {
+            glDisable(GL_BLEND);
+            glDepthMask(GL_TRUE);
+            glUniform1f(uAlpha, 1);
+        }
         glDisable(GL_POLYGON_OFFSET_FILL);
         glUniform1i(uFlat, 1);
         glUniform3f(uColor, 0.13f, 0.14f, 0.16f);
@@ -1289,10 +1313,10 @@ private:
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(-2, -2);
         glUniform1f(uAlpha, 0.45);
-        color(orange);
         foreach (i, m; inspectItems)
             if (m.flat)
             {
+                color(fill(i));
                 glBindVertexArray(inspectGpu[i].vao);
                 glDrawElements(GL_TRIANGLES, inspectGpu[i].indexCount, GL_UNSIGNED_INT, null);
             }
@@ -1304,10 +1328,10 @@ private:
         // outlines of profiles and paths, over everything
         glDisable(GL_DEPTH_TEST);
         glLineWidth(3);
-        color(outline);
         foreach (i, m; inspectItems)
             if (m.flat || m.path)
             {
+                color(line(i));
                 glBindVertexArray(inspectGpu[i].edgeVao);
                 glDrawArrays(GL_LINES, 0, inspectGpu[i].edgeCount);
             }

@@ -1054,7 +1054,7 @@ unittest
         return false;
     }
     assert(returned("p", 1, true) && returned("s", 2, false));
-    // a loop: the first runs and the last are kept, with the count
+    // a loop: every run is kept (up to 64), with the count
     size_t kept;
     foreach (e; r.trace)
         if (e.site.line == 7 && e.fn == "+")
@@ -1062,7 +1062,7 @@ unittest
             kept++;
             assert(e.calls == 20);
         }
-    assert(kept == 8, format("%d", kept));
+    assert(kept == 20, format("%d", kept));
     // the last entry of the loop is the final union
     auto many = r.parts[1].solid;
     bool lastKept;
