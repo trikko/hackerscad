@@ -1,0 +1,77 @@
+// The plant pot of docs/TUTORIAL.md, step 7: ribs.
+module pot;
+
+import std.shapes;
+
+@param("Bottom diameter", min: 40.mm, max: 200.mm)
+immutable bottom = 80.mm;
+
+@param("Top diameter", min: 40.mm, max: 250.mm)
+immutable top = 110.mm;
+
+@param("Height", min: 30.mm, max: 250.mm)
+immutable height = 90.mm;
+
+@param("Wall", min: 1.mm, max: 5.mm)
+immutable wall = 2.mm;
+
+@param("Ribs", min: 0, max: 24)
+immutable ribs = 8;
+
+// the rim: how far it stands out, and how tall it is
+immutable lip = 3.mm;
+immutable band = 8.mm;
+
+/// The pot's shape, full: its side profile turned around the axis.
+Solid block()
+{
+    // half of the side, drawn on XY: x is the radius, y the height
+    auto side = polygon([
+        vec(0.mm, 0.mm),
+        vec(bottom / 2, 0.mm),
+        vec(top / 2, height - band),
+        vec(top / 2 + lip, height - band),
+        vec(top / 2 + lip, height),
+        vec(0.mm, height),
+    ]);
+    return side
+        .revolve()
+        .fillet(edges.of(faces.bottom), r: 8.mm);
+}
+
+@part("#c96f4a")
+Solid pot()
+{
+    auto body = block()
+        .shell(open: faces.top, thickness: wall);
+    // ribs on the outside, leaning like the side
+    if (ribs > 0)
+    {
+        // slim cones sunk in the wall, from above the rounded bottom: hidden
+        // at first, they come out little by little up to the rim
+        immutable slope = atan((top - bottom) / 2 / (height - band));
+        immutable start = 8.mm;
+        auto rib = cone(d1: 0.5.mm, d2: 6.mm, h: (height - band - start) / cos(slope))
+            .rotate(y: slope)
+            .move(x: bottom / 2 + start * tan(slope) - 1.2.mm, z: start);
+        // what would show inside the pot is cut away again
+        auto inside = block() - body;
+        body = body + rib.circularPattern(ribs, axis: Z) - inside;
+    }
+    // drainage: one hole in the middle and five around it
+    auto hole = cylinder(d: 6.mm, h: 3 * wall)
+        .move(z: -wall);
+    auto holes = hole + hole
+        .move(x: bottom / 4)
+        .circularPattern(5, axis: Z);
+    return body - holes;
+}
+
+@part("#a9553a")
+Solid saucer()
+{
+    return cylinder(d: bottom + 24.mm, h: 12.mm)
+        .fillet(edges.of(faces.bottom), r: 4.mm)
+        .shell(open: faces.top, thickness: wall)
+        .nextTo(pot, X, gap: 15.mm);
+}

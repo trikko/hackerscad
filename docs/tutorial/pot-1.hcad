@@ -1,0 +1,19 @@
+// The plant pot of docs/TUTORIAL.md, step 1: a first shape.
+module pot;
+
+import std.shapes;
+
+@part
+Solid pot()
+{
+    // half of the pot's side, drawn on XY: x is the radius, y the height
+    auto side = polygon([
+        vec(0.mm, 0.mm),
+        vec(40.mm, 0.mm),
+        vec(55.mm, 90.mm),
+        vec(0.mm, 90.mm),
+    ]);
+    // turned around the axis: x is the radius, y the height
+    return side
+        .revolve();
+}

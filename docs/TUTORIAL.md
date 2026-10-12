@@ -6,28 +6,20 @@ You can also work with the mouse: select a face, pick "Fillet" or "Hole at point
 from the menu, and hackerscad writes the code for you. The file stays the only
 source of truth, so it diffs, versions and reviews like any other code.
 
-This tutorial goes from the first model to drawings and AI agents. Every
-example is a complete model: paste it into a new file and it runs. The full
-reference is [LANGUAGE.md](LANGUAGE.md).
+This tutorial builds one object from nothing: a plant pot with its saucer. It
+starts from a rough shape and adds one idea at a time, until the pot is ready
+to print. Each step's whole model is in [tutorial/](tutorial), so you can open
+any step and carry on from there. The other tools come after the pot, and the
+full reference is [LANGUAGE.md](LANGUAGE.md) (or the cheatsheet, F1).
 
 1. [Getting started](#1-getting-started)
 2. [The window](#2-the-window)
-3. [The first model, line by line](#3-the-first-model-line-by-line)
-4. [Working with the mouse](#4-working-with-the-mouse)
-5. [Parameters and presets](#5-parameters-and-presets)
-6. [Solids, booleans and placement](#6-solids-booleans-and-placement)
-7. [Selecting faces and edges](#7-selecting-faces-and-edges)
-8. [Fillets, chamfers, shells and drafts](#8-fillets-chamfers-shells-and-drafts)
-9. [Profiles and sketches](#9-profiles-and-sketches)
-10. [Sweeps and lofts](#10-sweeps-and-lofts)
-11. [Libraries: screws, threads, gears, enclosures](#11-libraries-screws-threads-gears-enclosures)
-12. [Colours, transparency and reference parts](#12-colours-transparency-and-reference-parts)
-13. [Design checks](#13-design-checks)
-14. [Looking inside: sections and rollback](#14-looking-inside-sections-and-rollback)
-15. [Drawings](#15-drawings)
-16. [Exporting and the command line](#16-exporting-and-the-command-line)
-17. [AI agents](#17-ai-agents)
-18. [When something goes wrong](#18-when-something-goes-wrong)
+3. [A plant pot, step by step](#3-a-plant-pot-step-by-step)
+4. [With the mouse](#4-with-the-mouse)
+5. [Going further](#5-going-further)
+6. [The command line](#6-the-command-line)
+7. [AI agents](#7-ai-agents)
+8. [When something goes wrong](#8-when-something-goes-wrong)
 
 ## 1. Getting started
 
@@ -77,7 +69,7 @@ first.
   - right drag rotates, middle drag (or Ctrl + right drag) pans, the wheel
     zooms; left drag rotates or pans, as set by the buttons over the view;
   - Fit (F5), Iso, Top, Front and Right set the camera;
-  - the section button opens the section plane (see §14).
+  - the section button opens the section plane (see [Looking inside](#looking-inside-sections-and-rollback)).
 - **Parameters** (right): a field for every parameter, the preset menu, and the
   list of parts with their colours, where the eye button hides a part.
 - **Features** (right, second tab): the operations of the model, in order.
@@ -89,101 +81,340 @@ Shortcuts: Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Shift+S save as, Ctrl+E
 export, F9 parameters panel, Ctrl+Q quit. hackerscad asks before discarding
 unsaved changes, and reloads the file when another program changes it.
 
-## 3. The first model, line by line
+## 3. A plant pot, step by step
 
-A USB stick with its name on the side (a fuller one, with a technical
-drawing, is [examples/usbstick.hcad](../examples/usbstick.hcad)):
+Make a new file (Ctrl+N), delete the example and follow along. The view
+redraws at every change; when the code has an error, the last good model stays
+and a banner says what is wrong.
+
+### Step 1: a first shape
+
+A pot is round, so draw half of its side and turn it around the axis. A
+profile is a flat shape on XY: here `x` is the radius and `y` the height. In
+the pictures, the profile (orange) stands where it turns, next to the axis,
+inside the pot it makes (see-through):
+
+<p align="center"><img alt="The profile and the pot it makes" src="tutorial/pot-1-profile.png" width="360">
+<img alt="The same, from the front" src="tutorial/pot-1-profile-front.png" width="360"></p>
 
 ```d
-module usbstick;
+module pot;
 
 import std.shapes;
 
-@param("Length", min: 25.mm, max: 70.mm)
-@preset("short", 30.mm) @preset("long", 55.mm)
-immutable length = 40.mm;
-
-@param("Width", min: 14.mm, max: 25.mm)
-immutable width = 17.mm;
-
-@param("Thickness", min: 6.mm, max: 12.mm)
-immutable thickness = 8.mm;
-
-@param("Label")
-immutable label = "hackerscad";
-
-@param("Label height", min: 2.mm, max: 5.mm)
-immutable labelSize = 3.5.mm;
-
-immutable plugWidth = 12.mm;
-immutable plugHeight = 4.5.mm;
-immutable plugLength = 12.mm;
-
 @part
-Solid body()
+Solid pot()
 {
-    return box(length, width, thickness)
-        .fillet(edges.parallel(Z), r: 3.mm)
-        .fillet(edges.perpendicular(Z), r: 1.5.mm)
-        - cylinder(d: 3.5.mm, h: thickness)
-            .move(x: -length / 2 + 4.mm);
-}
-
-@part("white")
-Solid lettering()
-{
-    return text(label, size: labelSize)
-        .centered
-        .extrude(0.4.mm)
-        .placeOn(body.frame(faces.front));
-}
-
-@part("silver")
-Solid plug()
-{
-    immutable sheet = 0.3.mm;
-    auto sleeve = box(plugLength, plugWidth, plugHeight)
-        - box(plugLength, plugWidth - 2 * sheet, plugHeight - 2 * sheet)
-            .move(x: sheet, z: sheet);
-    return sleeve.move(x: (length + plugLength) / 2, z: (thickness - plugHeight) / 2);
-}
-
-unittest
-{
-    assert(labelSize < thickness - 2.mm, "the label is taller than the side");
-    writeln("total length: $(length + plugLength)");
+    // half of the pot's side, drawn on XY: x is the radius, y the height
+    auto side = polygon([
+        vec(0.mm, 0.mm),
+        vec(40.mm, 0.mm),
+        vec(55.mm, 90.mm),
+        vec(0.mm, 90.mm),
+    ]);
+    // turned around the axis: x is the radius, y the height
+    return side
+        .revolve();
 }
 ```
 
-What it says:
+- `module pot;` names the file, `import std.shapes;` brings boxes, cylinders,
+  profiles and the rest.
+- `@part` marks a function whose solid is shown and exported: one object in a
+  3MF file.
+- Lengths have units (`40.mm`, `9.cm`, `1.in`), angles too (`90.deg`).
+- `.revolve()` turns the profile all the way round its Y axis and stands the
+  result up: the profile's x becomes the radius, its y the height along Z.
+  With an axis, `.revolve(axis: X)` turns around that one and leaves the
+  result where it is.
+- Calls chain with a dot, one per line: each line is one operation.
 
-- `module usbstick;` names the model, and `import std.shapes;` brings in
-  boxes, cylinders, profiles and the rest.
-- **Units are part of the value.** `40.mm`, `2.5.cm`, `1.inch` and `30.deg` are
-  numbers with a dimension. Adding a length to an angle is an error, while a
-  length times a length is an area. Bare numbers given to geometry are
-  millimetres.
-- **`@param`** turns a constant into a parameter: it gets a field in the panel,
-  and `min:`/`max:` are checked. **`@preset`** gives it a value in a named set
-  (here "short" and "long").
-- **`@part`** marks a function returning a `Solid` as a body to show and
-  export. Each part is a separate object in 3MF, with its colour. Parts may use
-  each other: `lettering` stands on a face of `body`.
-- **Primitives stand on the XY plane**, centred in X and Y: `box(40, 17, 8)`
-  goes from z = 0 to z = 8.
-- **Calls chain.** `box(…).fillet(…)` is `fillet(box(…), …)`, as in D (UFCS).
-  Long chains break before each dot.
-- **Booleans are operators:** `a + b` union, `a - b` difference, `a & b`
-  intersection.
-- **`edges.parallel(Z)`** selects edges by what they are, not by number, so the
-  selection survives changes upstream (see §7).
-- **`unittest`** blocks run after every evaluation: `assert` reports a broken
-  design rule, `writeln` prints to the console.
+<p align="center"><img alt="Step 1" src="tutorial/pot-1.png" width="420"></p>
 
-Try it: change `length` with its field, pick the "long" preset, type another
-label, or set `r: 3.mm` to `r: 6.mm` in the code.
+[The whole model](tutorial/pot-1.hcad) ·
+[the model of the pictures above](tutorial/pot-1-profile.hcad)
 
-## 4. Working with the mouse
+### Step 2: parameters
+
+Numbers written in the code are hard to change. Give them names and mark them
+`@param`: each gets a field in the side panel, with its limits.
+
+```d
+@param("Bottom diameter", min: 40.mm, max: 200.mm)
+immutable bottom = 80.mm;
+
+@param("Top diameter", min: 40.mm, max: 250.mm)
+immutable top = 110.mm;
+
+@param("Height", min: 30.mm, max: 250.mm)
+immutable height = 90.mm;
+
+@part
+Solid pot()
+{
+    auto side = polygon([
+        vec(0.mm, 0.mm),
+        vec(bottom / 2, 0.mm),
+        vec(top / 2, height),
+        vec(0.mm, height),
+    ]);
+    return side
+        .revolve();
+}
+```
+
+The pot looks the same, but now drag the "Height" slider: the pot follows.
+`immutable` is a value that never changes; values are never modified in
+hackerscad, every operation gives a new one.
+
+[The whole model](tutorial/pot-2.hcad)
+
+### Step 3: hollow, with a rounded bottom
+
+Split the pot in two functions. `block()` is the full shape, `pot()` the part
+that hollows it. A function without `@part` is a helper: it is not shown, but
+other code can use it.
+
+```d
+@param("Wall", min: 1.mm, max: 5.mm)
+immutable wall = 2.mm;
+
+/// The pot's shape, full: its side profile turned around the axis.
+Solid block()
+{
+    // half of the side, drawn on XY: x is the radius, y the height
+    auto side = polygon([…]);
+    return side
+        .revolve()
+        .fillet(edges.of(faces.bottom), r: 8.mm);
+}
+
+@part
+Solid pot()
+{
+    return block()
+        .shell(open: faces.top, thickness: wall);
+}
+```
+
+- `faces.bottom` and `faces.top` pick faces by where they look, and
+  `edges.of(…)` the edges around them: no face numbers that change when the
+  model changes.
+- `fillet` rounds the edge around the bottom, `shell` empties the solid,
+  leaving walls `wall` thick, open at the top.
+- Round first, then hollow: the shell follows the rounded edge, inside too.
+
+<p align="center"><img alt="Step 3" src="tutorial/pot-3.png" width="420"></p>
+
+[The whole model](tutorial/pot-3.hcad)
+
+### Step 4: a rim
+
+A rim makes the pot stronger and easier to hold. It is part of the side, so
+it goes into the profile: two more points make a step at the top.
+
+```d
+// the rim: how far it stands out, and how tall it is
+immutable lip = 3.mm;
+immutable band = 8.mm;
+
+    auto side = polygon([
+        vec(0.mm, 0.mm),
+        vec(bottom / 2, 0.mm),
+        vec(top / 2, height - band),
+        vec(top / 2 + lip, height - band),
+        vec(top / 2 + lip, height),
+        vec(0.mm, height),
+    ]);
+```
+
+`lip` and `band` have no `@param`: they are names for numbers, fixed but
+readable.
+
+<p align="center"><img alt="Step 4" src="tutorial/pot-4.png" width="420"></p>
+
+[The whole model](tutorial/pot-4.hcad)
+
+### Step 5: drainage holes
+
+Make one hole as a cylinder, copy it around the axis, and subtract them all:
+`-` takes one solid away from another (`+` joins them, `&` keeps what they
+share).
+
+```d
+@part
+Solid pot()
+{
+    auto body = block()
+        .shell(open: faces.top, thickness: wall);
+    // drainage: one hole in the middle and five around it
+    auto hole = cylinder(d: 6.mm, h: 3 * wall)
+        .move(z: -wall);
+    auto holes = hole + hole
+        .move(x: bottom / 4)
+        .circularPattern(5, axis: Z);
+    return body - holes;
+}
+```
+
+- `auto` names a value inside a function; its type comes from what it holds.
+- The cylinder starts below the bottom and ends above it, so the cut goes
+  right through.
+- `circularPattern(5, axis: Z)` makes five copies evenly around the Z axis.
+
+From above, inside the pot:
+
+<p align="center"><img alt="Step 5, from above" src="tutorial/pot-5-top.png" width="420"></p>
+
+[The whole model](tutorial/pot-5.hcad)
+
+### Step 6: the saucer, and colours
+
+A second `@part` is a second object: the saucer. The colour goes in `@part`.
+
+```d
+@part("#c96f4a")
+Solid pot()
+{
+    …
+}
+
+@part("#a9553a")
+Solid saucer()
+{
+    return cylinder(d: bottom + 24.mm, h: 12.mm)
+        .fillet(edges.of(faces.bottom), r: 4.mm)
+        .shell(open: faces.top, thickness: wall)
+        .nextTo(pot, X, gap: 15.mm);
+}
+```
+
+- Colours are CSS names (`"orange"`), `"#RRGGBB"` or `rgb(r, g, b)`. Without
+  one a part is mint.
+- `.nextTo(pot, X, gap: 15.mm)` puts the saucer beside the pot, 15 mm away
+  along X: both print in one go. `pot` here is the pot part.
+- The saucer is sized from the pot's `bottom`: change the pot and the saucer
+  follows.
+- A 3MF export keeps the two objects apart, with their colours.
+
+<p align="center"><img alt="Step 6" src="tutorial/pot-6.png" width="420"></p>
+
+[The whole model](tutorial/pot-6.hcad)
+
+### Step 7: ribs
+
+Ribs on the outside, leaning like the side. Each rib is a slim cone, sunk in
+the wall: hidden at the bottom, it comes out little by little up to the rim.
+
+```d
+@param("Ribs", min: 0, max: 24)
+immutable ribs = 8;
+
+@part("#c96f4a")
+Solid pot()
+{
+    auto body = block()
+        .shell(open: faces.top, thickness: wall);
+    // ribs on the outside, leaning like the side
+    if (ribs > 0)
+    {
+        // slim cones sunk in the wall, from above the rounded bottom: hidden
+        // at first, they come out little by little up to the rim
+        immutable slope = atan((top - bottom) / 2 / (height - band));
+        immutable start = 8.mm;
+        auto rib = cone(d1: 0.5.mm, d2: 6.mm, h: (height - band - start) / cos(slope))
+            .rotate(y: slope)
+            .move(x: bottom / 2 + start * tan(slope) - 1.2.mm, z: start);
+        // what would show inside the pot is cut away again
+        auto inside = block() - body;
+        body = body + rib.circularPattern(ribs, axis: Z) - inside;
+    }
+    // drainage: one hole in the middle and five around it
+    …
+    return body - holes;
+}
+```
+
+- `if` works as in D, and so do `foreach`, functions and arrays.
+- `atan`, `cos` and `tan` take and give angles; dividing two lengths gives a
+  plain number.
+- A rib is thicker than the wall near the rim, so it would show inside the
+  pot. `block() - body` is exactly the inside of the pot: taking it away again
+  keeps the inside smooth.
+- `ribs` is a whole number: its slider moves in steps of one, and 0 turns the
+  ribs off.
+
+<p align="center"><img alt="Step 7" src="tutorial/pot-7.png" width="420"></p>
+
+[The whole model](tutorial/pot-7.hcad)
+
+### Step 8: checks
+
+Some values make no sense: a 0.8 mm wall breaks, a pot narrower at the top
+never lets its plant out. `unittest` blocks write such requirements next to the
+model. They run after every change; when one fails, the console says which.
+
+```d
+// the design's requirements, checked after every change
+unittest
+{
+    assert(wall >= 1.2.mm, "walls under 1.2 mm break when printed");
+    assert(top >= bottom, "a pot narrower at the top keeps its plant forever");
+    // the soil it holds: the full shape minus the pot
+    immutable soil = block.volume - pot.volume;
+    writeln("soil: $(format("%.2f", soil / (10.cm) ^^ 3)) l");
+}
+```
+
+- A failed `assert` keeps the model in the view and shows its message in the
+  console (and to `hscad check`, and to AI agents).
+- Solids can be measured: `.volume`, `.bbox.size`. The console shows
+  `soil: 0.60 l`.
+
+[The whole model](tutorial/pot-8.hcad)
+
+### Step 9: presets
+
+A preset is a named set of values: "small", "large". Each parameter says its
+value in each preset; the side panel gets a menu to switch.
+
+```d
+@param("Bottom diameter", min: 40.mm, max: 200.mm)
+@preset("small", 60.mm) @preset("large", 120.mm)
+immutable bottom = 80.mm;
+
+@param("Top diameter", min: 40.mm, max: 250.mm)
+@preset("small", 80.mm) @preset("large", 160.mm)
+immutable top = 110.mm;
+
+@param("Height", min: 30.mm, max: 250.mm)
+@preset("small", 65.mm) @preset("large", 130.mm)
+immutable height = 90.mm;
+
+@param("Ribs", min: 0, max: 24)
+@preset("small", 0) @preset("large", 12)
+immutable ribs = 8;
+```
+
+A parameter without a value for a preset keeps its own: the wall stays 2 mm
+in all three.
+
+<p align="center"><img alt="The finished pot" src="tutorial/pot-9.png" width="420"></p>
+
+[The finished pot](tutorial/pot-9.hcad)
+
+### Printing it
+
+Ctrl+E exports: the dialog lists 3MF (one object per part, with its colour),
+STL, STEP and PNG. For the printer, 3MF keeps the pot and the saucer as two
+objects, ready to be placed and coloured in the slicer. The same from the
+command line, with a preset:
+
+```bash
+hscad render pot.hcad -o pot.3mf --preset large
+```
+
+## 4. With the mouse
 
 Click a face or an edge in the view to select it. The selection's details show
 at the bottom of the view, and the editor jumps to the line that created it.
@@ -218,189 +449,12 @@ Solid block()
 
 Undo (Ctrl+Z) takes the code back as for any edit.
 
-## 5. Parameters and presets
+## 5. Going further
 
-```d
-module bracket;
+The pot used profiles, features and patterns. Here are the other tools,
+each with a complete example to paste into a new file.
 
-import std.shapes;
-
-@param("Width", min: 10.mm, max: 100.mm)
-@preset("small", 20.mm) @preset("large", 60.mm)
-immutable width = 40.mm;
-
-@param("Holes", min: 1, max: 6)
-@preset("large", 4)
-immutable holes = 2;
-
-@param("Material", choices: ["PLA", "PETG"])
-immutable material = "PLA";
-
-@param("Countersunk")
-immutable countersunk = false;
-
-@part
-Solid plate()
-{
-    auto p = box(width, 15.mm, material == "PETG" ? 4.mm : 3.mm);
-    foreach (i; 0 .. holes)
-        p -= cylinder(d: countersunk ? 3.4.mm : 3.mm, h: 10.mm)
-            .move(x: -width / 2 + (i + 0.5) * width / holes);
-    return p;
-}
-```
-
-- A parameter's type follows its default: lengths and angles get a field with
-  their unit, numbers a number field, strings a text field, `choices:` a menu,
-  booleans a switch.
-- Presets are rows of a table where the parameters are the columns. A
-  parameter without a value for a preset keeps its default.
-- The panel's values are temporary overrides. The file changes only when you
-  edit the default in the code.
-- From the command line: `hscad render bracket.hcad -o b.stl -D width=80.mm
-  --preset large`.
-
-## 6. Solids, booleans and placement
-
-```d
-module placement;
-
-import std.shapes;
-
-@part
-Solid base() => box(60.mm, 40.mm, 5.mm);
-
-@part("orange")
-Solid post()
-{
-    // on the top face of the base, 15 mm to the right of its centre
-    return cylinder(d: 8.mm, h: 20.mm)
-        .placeOn(base.frame(faces.top).at(x: 15.mm));
-}
-
-@part("steelblue")
-Solid side() => box(10.mm, 40.mm, 10.mm).nextTo(base, X, gap: 5.mm);
-
-@part("gold")
-Solid washers()
-{
-    // six washers around the Z axis, on the base
-    return (cylinder(d: 8.mm, h: 2.mm) - cylinder(d: 4.mm, h: 2.mm))
-        .move(x: 12.mm)
-        .circularPattern(6, axis: Z)
-        .move(x: -12.mm, z: 5.mm);
-}
-```
-
-- `move(x:, y:, z:)`, `rotate(x:, y:, z:)` (degrees), `mirror(X)` and `scale(k)`
-  transform a solid.
-- `a.nextTo(b, X, gap:)` puts a beside b, and `a.align(b, x: "center", z: "min")`
-  aligns their bounding boxes.
-- `body.frame(faces.top)` is a coordinate frame on a face: the origin at its
-  centre, Z along the outward normal. `placeOn(frame)` moves a solid built on XY
-  onto it, and `frame.at(x:, y:)` shifts the origin on the face.
-- `linearPattern(n, step: vec(…))` and `circularPattern(n, axis:)` copy a solid.
-  Subtract the result to cut all the copies at once.
-- `s.bbox`, `s.volume`, `s.area` and `distance(a, b)` measure.
-
-## 7. Selecting faces and edges
-
-Features take selectors, which are resolved on the solid they apply to:
-
-- **By direction:** `faces.top`, `faces.front`, `faces.normal(X)`,
-  `edges.parallel(Z)`, `edges.perpendicular(Z)`.
-- **By kind or size:** `edges.circles`, `edges.lines`, `faces.largest`.
-- **By adjacency:** `edges.of(faces.top)` (the edges around the top face),
-  `edges.between(faces.top, faces.front)`.
-- **By provenance:** `faces.from(holes)` (the walls cut by a tool),
-  `edges.from(holes)`.
-- **By predicate:** `edges.filter(e => e.isCircle && e.radius == 3.mm)`,
-  `faces.filter(f => f.center.z > 10.mm)`.
-- **Combined:** `faces.top + faces.front` (either), `edges.circles - edges.of(faces.bottom)`
-  (but not), `a & b` (both).
-
-```d
-module selectors;
-
-import std.shapes;
-
-@part
-Solid plate()
-{
-    auto holes = cylinder(d: 6.mm, h: 10.mm)
-        .linearPattern(3, step: vec(15.mm, 0.mm, 0.mm))
-        .move(x: -15.mm);
-    return (box(60.mm, 30.mm, 6.mm) - holes)
-        .fillet(edges.parallel(Z) - edges.from(holes), r: 4.mm)
-        .chamfer(edges.between(faces.from(holes), faces.top), d: 0.8.mm);
-}
-```
-
-Since a selector describes what it wants ("the vertical edges that are not hole
-walls"), it keeps working when the plate grows or gets more holes. Right-click
-→ Copy as code gives the selector for what you selected in the view.
-
-## 8. Fillets, chamfers, shells and drafts
-
-```d
-module features;
-
-import std.shapes;
-
-@part
-Solid cup()
-{
-    return box(50.mm, 35.mm, 30.mm)
-        .fillet(edges.parallel(Z), r: 8.mm)
-        .fillet(edges.of(faces.bottom), r: 3.mm)
-        .shell(open: faces.top, thickness: 2.mm);
-}
-
-@part("orange")
-Solid mould()
-{
-    return box(30.mm, 30.mm, 20.mm)
-        .draft(faces.normal(X) + faces.normal(-X), angle: 3.deg)
-        .move(x: 60.mm);
-}
-```
-
-- `fillet(edges, r:)` and `chamfer(edges, d:)` round or bevel edges.
-- `shell(open: faces, thickness:)` hollows a solid, leaving the given faces
-  open. Open several faces in **one** shell (`open: faces.top + faces.left`): a
-  second shell would offset the first one's walls again and round their inner
-  corners.
-- A fillet radius must be larger than the shell thickness that follows it,
-  otherwise the inner offset of the corner is degenerate.
-- `draft(faces, angle:, pull: Z)` tapers faces so a part leaves a mould.
-- When a feature fails, the error says which feature and suggests a fix
-  (a smaller radius, fewer edges at a time).
-
-## 9. Profiles and sketches
-
-Profiles are 2D shapes on XY: `rect`, `circle`, `polygon`, `slot`,
-`regularPolygon`, `text`. They combine with `+ - &`, round their corners with
-`.round(r)`, and become solids with `.extrude(h)` or `.revolve(axis:)`.
-
-```d
-module profiles;
-
-import std.shapes;
-
-@part
-Solid plate() => (rect(60.mm, 40.mm).round(6.mm) - slot(20.mm, 6.mm)).extrude(4.mm);
-
-@part("orange")
-Solid knob()
-{
-    // a half outline in XY, turned around the Y axis
-    auto half = polygon([vec(0.mm, 0.mm), vec(12.mm, 0.mm), vec(10.mm, 14.mm), vec(0.mm, 14.mm)]);
-    return half
-        .revolve(axis: Y)
-        .rotate(x: 90.deg)
-        .move(x: 50.mm);
-}
-```
+### Constrained sketches
 
 For shapes defined by relations rather than coordinates, use a **constrained
 sketch**. Add points, lines, arcs and circles, then the
@@ -437,39 +491,56 @@ conflicting constraints are an error pointing at them. In the view the pencil
 button shows the sketch with its dimensions, and clicking a dimension edits it
 in the code.
 
-## 10. Sweeps and lofts
+
+### Sweeps and lofts
+
+A loft passes smoothly through outlines placed at different heights; a sweep
+moves an outline along a path. Together, a jug and its handle:
 
 ```d
-module sweeps;
+module jug;
 
 import std.shapes;
 
-// a handle: a profile moved along a smooth curve
-@part
-Solid handle()
-{
-    auto p = spline([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 30.mm), vec(30.mm, 0.mm, 45.mm), vec(60.mm, 0.mm, 30.mm), vec(60.mm, 0.mm, 0.mm)]);
-    return circle(d: 8.mm).sweep(p);
-}
-
-// a vase: a smooth solid through profiles at different heights
-@part("orange")
-Solid vase()
+// a vase: a smooth solid through outlines at three heights, hollowed
+Solid body()
 {
     return loft([
         circle(r: 20.mm),
-        regularPolygon(6, r: 24.mm).rotate(z: 30.deg).move(z: 40.mm),
+        circle(r: 26.mm).move(z: 40.mm),
         circle(r: 12.mm).move(z: 80.mm),
-    ]).move(x: 100.mm);
+    ]);
+}
+
+@part("orange")
+Solid jug()
+{
+    auto vase = body()
+        .shell(open: faces.top, thickness: 2.mm);
+    // a handle: a circle moved along a smooth curve, from the neck to the belly
+    auto curve = spline([
+        vec(12.mm, 0.mm, 72.mm),
+        vec(30.mm, 0.mm, 74.mm),
+        vec(40.mm, 0.mm, 52.mm),
+        vec(24.mm, 0.mm, 30.mm),
+    ]);
+    auto handle = circle(d: 7.mm).sweep(curve);
+    // its ends go into the wall: what would show inside is cut away
+    return vase + handle - (body() - vase);
 }
 ```
 
-- `path([…])` has straight segments, `spline([…])` passes smoothly through its
-  points, `helix(r:, pitch:, height:)` is for springs and threads (sweep with
-  `frenet: true`).
-- `loft(profiles, ruled: true)` gives flat sides instead of smooth ones.
+- `loft([…])` goes through the circles in order; `ruled: true` gives flat
+  sides instead of smooth ones.
+- `spline([…])` is a smooth curve through its points; `path([…])` has straight
+  segments, and `helix(r:, pitch:, height:)` is for springs and threads (sweep
+  with `frenet: true`).
+- The outline is drawn on XY around the origin: the sweep carries it along the
+  curve, square to it.
+- The ends of the handle go into the wall; `body() - vase` is the inside of
+  the jug, and taking it away keeps the inside smooth, as for the pot's ribs.
 
-## 11. Libraries: screws, threads, gears, enclosures
+### Libraries: screws, threads, gears, enclosures
 
 ```d
 module fixings;
@@ -483,14 +554,20 @@ Solid lid()
 {
     auto l = box(50.mm, 50.mm, 6.mm);
     // tools to subtract: their top is on z = 0, going down
-    l -= hole(M3, 6.mm, "countersink").move(x: -15.mm, z: 6.mm);
+    l -= hole(M3, 6.mm, "counterbore").move(x: -15.mm, z: 6.mm);
     l -= hole(M3, 6.mm, "insert").move(x: 15.mm, z: 6.mm);
     l -= nutTrap(M3, 3.mm).move(y: 15.mm, z: 6.mm);
     return l;
 }
 
+// in its hole: the head sits on the floor of the counterbore
 @part("silver")
-Solid bolt() => screw(M3, 12.mm).move(x: -15.mm, z: 20.mm);
+Solid bolt()
+{
+    // a plain shank: threaded: true also models the thread (slower)
+    return screw(M3, 12.mm)
+        .move(x: -15.mm, z: 6.mm - M3.headHeight - 0.2.mm);
+}
 
 @part("orange")
 Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);
@@ -514,7 +591,7 @@ Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);
   `public import pizza.base, pizza.toppings;`: then `import pizza;` is
   enough.
 
-## 12. Colours, transparency and reference parts
+### Transparency and reference parts
 
 ```d
 module colours;
@@ -537,8 +614,6 @@ Solid bottle() => cylinder(d: 13.6.mm, h: 60.mm).move(z: 4.mm);
 Solid cap() => cylinder(d: 18.mm, h: 6.mm).move(x: 40.mm);
 ```
 
-- Colours are CSS names, `"#RRGGBB"`, `"#RRGGBBAA"` or `rgb(r, g, b, alpha:)`.
-  Without a colour a part is mint.
 - `alpha:` below 1 makes a part see-through in the view and in pictures.
 - `export: false` makes a reference part. It is drawn so you can check the fit
   (a shaft, a circuit board, the phone a stand holds), but STL, 3MF and STEP
@@ -547,33 +622,7 @@ Solid cap() => cylinder(d: 18.mm, h: 6.mm).move(x: 40.mm);
 [examples/knob.hcad](../examples/knob.hcad) puts these together: a fluted knob,
 printable without supports, on a see-through potentiometer shaft.
 
-## 13. Design checks
-
-```d
-module checks;
-
-import std.shapes;
-
-@param("Wall", min: 0.4.mm, max: 5.mm)
-immutable wall = 1.2.mm;
-
-@part
-Solid box1() => box(40.mm, 40.mm, 20.mm).shell(open: faces.top, thickness: wall);
-
-unittest
-{
-    assert(wall >= 0.8.mm, "walls under 0.8 mm do not print well");
-    assert(box1.bbox.size.z <= 25.mm, "must fit in the drawer");
-    writeln("volume: $(format("%.1f", box1.volume / 1.cm ^^ 3)) cm³");
-}
-```
-
-`unittest` blocks are the model's requirements, written next to it. A failing
-`assert` keeps the geometry but shows the message in the console, in the CLI
-output and to agents. An `assert` inside a function stops the evaluation with
-its message, which is useful when the parameters make no sense together.
-
-## 14. Looking inside: sections and rollback
+### Looking inside: sections and rollback
 
 - **Section view:** the section button over the view opens a bar with the
   plane (XY, XZ, YZ or the selected face), a slider to move it and a button to
@@ -583,7 +632,7 @@ its message, which is useful when the parameters make no sense together.
   was right after it, with the later material as a ghost. Click it again to
   return to the full model.
 
-## 15. Drawings
+### Drawings
 
 A function marked `@drawing` describes a technical sheet:
 
@@ -618,22 +667,22 @@ standard scale, and adds the overall dimensions and the hole callouts
 ("4× ⌀6"). `section` adds a hatched cut. Export with `hscad render sheet.hcad
 -o flange.pdf` (or `.svg`, `.dxf`).
 
-## 16. Exporting and the command line
+## 6. The command line
 
-From the application, Ctrl+E exports 3MF (one object per part, with colours),
-STL, STEP or PNG. The command line tool does the same without a window:
+The command line tool does what the application does, without a window:
 
 ```bash
 hscad render model.hcad -o model.3mf -o model.step      # several outputs at once
 hscad render model.hcad -o shot.png                      # iso picture
 hscad render model.hcad -o shot-views.png                # iso, front, top, right
+hscad render model.hcad -o shot-top.png                  # one view: top, front, right…
 hscad render model.hcad -o model.stl -D width=80.mm --preset large
 hscad check model.hcad                                    # parts, sizes, checks
 hscad check model.hcad --json                             # the same for scripts
 hscad docs                                                # the language reference
 ```
 
-## 17. AI agents
+## 7. AI agents
 
 `hscad mcp` is a Model Context Protocol server: an agent such as Claude Code
 can write models, check them, look at pictures of the result and export,
@@ -652,7 +701,7 @@ set parameters, select faces, run the context menu, move the section plane,
 take screenshots. You see the agent work in the window, and the agent sees
 what you see.
 
-## 18. When something goes wrong
+## 8. When something goes wrong
 
 - **Red underline and a banner over the view:** a syntax or evaluation error.
   The message names the problem and often suggests the fix ("did you mean

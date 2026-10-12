@@ -1,0 +1,38 @@
+// The plant pot of docs/TUTORIAL.md, step 3: hollow, with a rounded bottom.
+module pot;
+
+import std.shapes;
+
+@param("Bottom diameter", min: 40.mm, max: 200.mm)
+immutable bottom = 80.mm;
+
+@param("Top diameter", min: 40.mm, max: 250.mm)
+immutable top = 110.mm;
+
+@param("Height", min: 30.mm, max: 250.mm)
+immutable height = 90.mm;
+
+@param("Wall", min: 1.mm, max: 5.mm)
+immutable wall = 2.mm;
+
+/// The pot's shape, full: its side profile turned around the axis.
+Solid block()
+{
+    // half of the side, drawn on XY: x is the radius, y the height
+    auto side = polygon([
+        vec(0.mm, 0.mm),
+        vec(bottom / 2, 0.mm),
+        vec(top / 2, height),
+        vec(0.mm, height),
+    ]);
+    return side
+        .revolve()
+        .fillet(edges.of(faces.bottom), r: 8.mm);
+}
+
+@part
+Solid pot()
+{
+    return block()
+        .shell(open: faces.top, thickness: wall);
+}
