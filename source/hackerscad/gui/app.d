@@ -2109,6 +2109,7 @@ private:
             params.preset = null;
             params.invalidate();
             firstResult = true;
+            viewport.showAll();
             buffer.setText(newModelTemplate);
             diskTime = 0;
             modified = false;
@@ -2142,6 +2143,7 @@ private:
         params.preset = null;
         params.invalidate();
         firstResult = true;
+        viewport.showAll();
         buffer.setText(readText(path));
         diskTime = mtimeOf(path);
         modified = false;

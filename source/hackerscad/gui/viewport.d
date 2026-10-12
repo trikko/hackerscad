@@ -209,8 +209,15 @@ final class Viewport
     /// Replaces the displayed parts; `fitView` frames them.
     void setParts(PartMesh[] p, bool fitView)
     {
+        // a part keeps its visibility by name, wherever it moves in the list
+        bool[string] was;
+        foreach (i, q; parts)
+            if (i < hidden.length && hidden[i])
+                was[q.name] = true;
         parts = p;
-        hidden.length = parts.length;
+        hidden = new bool[parts.length];
+        foreach (i, q; parts)
+            hidden[i] = (q.name in was) !is null;
         dirty = true;
         if (selected.part >= cast(int) parts.length)
             selected = Hit.init;
@@ -277,6 +284,13 @@ final class Viewport
     }
 
     bool isHidden(size_t part) => part < hidden.length && hidden[part];
+
+    /// Shows every part again (another model was opened).
+    void showAll()
+    {
+        hidden[] = false;
+        area.queueRender();
+    }
 
     /// What a click at view coordinates (x, y) would pick.
     Hit pickAt(double x, double y) => pick(x, y);

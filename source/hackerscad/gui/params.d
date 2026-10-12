@@ -73,9 +73,6 @@ final class ParamsPanel
     void updateParts(string[] names, uint[] colors, bool delegate(size_t) isHidden)
     {
         import std.array : join;
-        import gtk.toggle_button : ToggleButton;
-
-        import std.format : format;
 
         auto sig = names.join("\n");
         if (sig == partSignature)
@@ -91,30 +88,36 @@ final class ParamsPanel
         for (auto c = partRows.getFirstChild(); c !is null; c = partRows.getFirstChild())
             partRows.remove(c);
         foreach (i, name; names)
-        {
-            auto row = new Box(Orientation.Horizontal, 6);
-            auto eye = new ToggleButton;
-            eye.addCssClass("flat");
-            immutable visible = !isHidden(i);
-            eye.setActive(visible);
-            eye.setIconName(visible ? "view-reveal-symbolic" : "view-conceal-symbolic");
-            eye.setTooltipText("Show or hide this part in the view (export is not affected)");
-            immutable index = i;
-            eye.connectToggled(() {
-                eye.setIconName(eye.getActive() ? "view-reveal-symbolic" : "view-conceal-symbolic");
-                if (onVisibility)
-                    onVisibility(index, eye.getActive());
-            });
-            auto swatch = new Label("●");
-            swatches ~= swatch;
-            swatch.setMarkup(format(`<span foreground="#%06X">●</span>`, colors[i]));
-            auto label = new Label(name);
-            label.setHalign(Align.Start);
-            row.append(eye);
-            row.append(swatch);
-            row.append(label);
-            partRows.append(row);
-        }
+            partRows.append(partRow(i, name, colors[i], !isHidden(i)));
+    }
+
+    /// A row with the show/hide toggle of one part. Built in its own function
+    /// so that each toggle's delegate captures its own index and button (in a
+    /// loop body they would all share the last ones).
+    private Box partRow(size_t index, string name, uint color, bool visible)
+    {
+        import gtk.toggle_button : ToggleButton;
+
+        auto row = new Box(Orientation.Horizontal, 6);
+        auto eye = new ToggleButton;
+        eye.addCssClass("flat");
+        eye.setActive(visible);
+        eye.setIconName(visible ? "view-reveal-symbolic" : "view-conceal-symbolic");
+        eye.setTooltipText("Show or hide this part in the view (export is not affected)");
+        eye.connectToggled((ToggleButton b) {
+            b.setIconName(b.getActive() ? "view-reveal-symbolic" : "view-conceal-symbolic");
+            if (onVisibility)
+                onVisibility(index, b.getActive());
+        });
+        auto swatch = new Label("●");
+        swatches ~= swatch;
+        swatch.setMarkup(format(`<span foreground="#%06X">●</span>`, color));
+        auto label = new Label(name);
+        label.setHalign(Align.Start);
+        row.append(eye);
+        row.append(swatch);
+        row.append(label);
+        return row;
     }
 
     /// Rebuilds the part list at the next updateParts (visibility changed from outside).
