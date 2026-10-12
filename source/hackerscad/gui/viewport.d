@@ -1,6 +1,6 @@
-/// 3D view: shaded parts with outlined edges, a ground grid, Onshape-style
-/// navigation (right drag rotates, middle drag pans, the wheel zooms towards
-/// the pointer) and face picking.
+/// 3D view: shaded parts with outlined edges, a ground grid, the navigation
+/// of CAD programs (right drag rotates, middle drag pans, the wheel zooms
+/// towards the pointer) and face picking.
 module hackerscad.gui.viewport;
 
 import std.math : sin, cos, tan, atan, PI, abs, pow, sqrt;
@@ -125,7 +125,7 @@ final class Viewport
             immutable button = g.getCurrentButton();
             immutable mods = g.getCurrentEventState();
             immutable shift = (mods & ModifierType.ShiftMask) != 0, ctrl = (mods & ModifierType.ControlMask) != 0;
-            // Onshape: right rotates, middle (or ctrl + right) pans; left follows the chosen mode
+            // right rotates, middle (or ctrl + right) pans; left follows the chosen mode
             if (button == 2)
                 dragPan = true;
             else if (button == 3)
@@ -1036,7 +1036,7 @@ private:
         glUniform3f(uColor, 0.55f, 0.6f, 0.7f);
         glDrawArrays(GL_LINES, sketchRanges[0], sketchRanges[1] - sketchRanges[0]);
         glPointSize(8);
-        // Onshape colours: blue points can still move, black ones are fully constrained
+        // blue points can still move, black ones are fully constrained
         glUniform3f(uColor, 0.15f, 0.45f, 0.95f);
         glDrawArrays(GL_POINTS, sketchRanges[1], sketchRanges[2] - sketchRanges[1]);
         glUniform3f(uColor, 0.05f, 0.05f, 0.08f);

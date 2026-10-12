@@ -500,7 +500,7 @@ struct SketchView
     struct Point
     {
         Vec3 pos;
-        bool free;          /// can still move: drawn in blue, as in Onshape
+        bool free;          /// can still move: drawn in blue (black when fixed)
         Span span;
         bool construction;
     }

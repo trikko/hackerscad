@@ -403,7 +403,7 @@ Solid knob()
 ```
 
 For shapes defined by relations rather than coordinates, use a **constrained
-sketch**, as in Onshape. Add points, lines, arcs and circles, then the
+sketch**. Add points, lines, arcs and circles, then the
 constraints, and hackerscad's solver finds the positions:
 
 ```d
