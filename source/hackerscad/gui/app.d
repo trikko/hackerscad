@@ -145,9 +145,9 @@ version (Windows)
 
 version (Windows)
 {
-    /// HCAD_GL=software (set by hackerscad.exe when the machine's OpenGL is
+    /// HCAD_GL=software (set by relaunchWithMesa when the machine's OpenGL is
     /// too old for GTK, as in many virtual machines): use Mesa's software
-    /// OpenGL from bin\mesa. GTK loads opengl32.dll as soon as it is loaded,
+    /// OpenGL from bin\mesa. GTK loads opengl32.dll as soon as gid loads GTK,
     /// before main, so the folder is chosen here, when the C runtime starts.
     pragma(crt_constructor)
     extern (C) private void hcadSoftwareGl() nothrow @nogc
@@ -169,10 +169,99 @@ version (Windows)
     }
 }
 
+    /// Whether the system's OpenGL can run GTK: version 3.2 at least, and not
+    /// Windows' own software one ("GDI Generic"). opengl32.dll is loaded here
+    /// by hand: linked to the program, Windows would load the system's before
+    /// hcadSoftwareGl could choose Mesa's.
+    private bool hardwareGl()
+    {
+        import core.sys.windows.windows;
+        import std.algorithm : canFind;
+        import std.array : split;
+        import std.conv : to;
+        import std.string : fromStringz;
+        enum uint GL_RENDERER = 0x1F01, GL_VERSION = 0x1F02;
+        auto lib = LoadLibraryW("opengl32.dll"w.ptr);
+        if (lib is null)
+            return false;
+        alias Create = extern (Windows) HGLRC function(HDC) nothrow @nogc;
+        alias MakeCurrent = extern (Windows) BOOL function(HDC, HGLRC) nothrow @nogc;
+        alias Delete = extern (Windows) BOOL function(HGLRC) nothrow @nogc;
+        alias GetString = extern (Windows) const(char)* function(uint) nothrow @nogc;
+        auto create = cast(Create) GetProcAddress(lib, "wglCreateContext");
+        auto makeCurrent = cast(MakeCurrent) GetProcAddress(lib, "wglMakeCurrent");
+        auto remove = cast(Delete) GetProcAddress(lib, "wglDeleteContext");
+        auto getString = cast(GetString) GetProcAddress(lib, "glGetString");
+        if (!create || !makeCurrent || !remove || !getString)
+            return false;
+        bool ok;
+        auto w = CreateWindowExW(0, "STATIC"w.ptr, ""w.ptr, WS_POPUP, 0, 0, 1, 1, null, null, null, null);
+        auto dc = w ? GetDC(w) : null;
+        if (dc)
+        {
+            PIXELFORMATDESCRIPTOR pfd;
+            pfd.nSize = pfd.sizeof;
+            pfd.nVersion = 1;
+            pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+            pfd.iPixelType = PFD_TYPE_RGBA;
+            pfd.cColorBits = 32;
+            immutable format = ChoosePixelFormat(dc, &pfd);
+            auto gl = format && SetPixelFormat(dc, format, &pfd) ? create(dc) : null;
+            if (gl && makeCurrent(dc, gl))
+            {
+                // "4.6.0 NVIDIA 555.85": major and minor come first
+                try
+                {
+                    auto v = getString(GL_VERSION).fromStringz.split(" ")[0].split(".");
+                    immutable major = v[0].to!int, minor = v.length > 1 ? v[1].to!int : 0;
+                    ok = (major > 3 || (major == 3 && minor >= 2))
+                        && !getString(GL_RENDERER).fromStringz.canFind("GDI Generic");
+                }
+                catch (Exception)
+                {
+                }
+                makeCurrent(null, null);
+            }
+            if (gl)
+                remove(gl);
+            ReleaseDC(w, dc);
+        }
+        if (w)
+            DestroyWindow(w);
+        return ok;
+    }
+
+    /// When the machine's OpenGL is too old for GTK and Mesa is next to the
+    /// program, starts the program again with HCAD_GL=software and says so:
+    /// the new process loads Mesa's OpenGL from the start (this one already
+    /// holds the system's).
+    private bool relaunchWithMesa(string[] args)
+    {
+        import std.file : exists, thisExePath;
+        import std.path : buildPath, dirName;
+        import std.process : environment, spawnProcess;
+        if (environment.get("HCAD_GL") !is null
+            || !exists(buildPath(dirName(thisExePath), "mesa", "opengl32.dll")) || hardwareGl())
+            return false;
+        auto env = environment.toAA();
+        env["HCAD_GL"] = "software";
+        try
+        {
+            spawnProcess([thisExePath] ~ args[1 .. $], env);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
 int main(string[] args)
 {
     version (Windows)
     {
+        if (relaunchWithMesa(args))
+            return 0;
         // a windowed program has no console: started from a terminal it
         // writes there, otherwise its messages go nowhere instead of failing
         {

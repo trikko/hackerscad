@@ -36,7 +36,7 @@ cp bin/hscad.exe bin/hscad-gui.exe build/win/native/hcad_native.dll "$out/bin/"
 # hackerscad.exe at the top: starts bin\hscad-gui.exe, with the logo as its icon
 "$ldcbin" -betterC -O -mtriple=x86_64-windows-msvc -of="$out/hackerscad.exe" -od=build/win/native \
     packaging/windows/launcher.d -L"$root/build/win/native/hscad-gui.res" \
-    -L/SUBSYSTEM:WINDOWS -L/ENTRY:wWinMainCRTStartup -L user32.lib -L gdi32.lib -L opengl32.lib
+    -L/SUBSYSTEM:WINDOWS -L/ENTRY:wWinMainCRTStartup -L user32.lib
 sh tools/win-forwarders.sh "$sys/bin" "$out/bin"
 
 # GTK data
@@ -81,7 +81,7 @@ for dll in libgtk-4-1.dll libadwaita-1-0.dll libgtksourceview-5-0.dll; do
 done
 
 # Mesa's software OpenGL, for machines whose OpenGL is too old for GTK (see
-# packaging/windows/launcher.d): in bin\mesa with what only it needs, never
+# hcadSoftwareGl in gui/app.d): in bin\mesa with what only it needs, never
 # next to the program, where it would replace the graphics card's OpenGL
 mkdir -p "$out/bin/mesa"
 cp "$sys/bin/opengl32.dll" "$sys/bin/libgallium_wgl.dll" "$out/bin/mesa/"

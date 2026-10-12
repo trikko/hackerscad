@@ -15,8 +15,9 @@ HCAD_SCREENSHOT_WAIT=4 "$@" --screenshot="$PWD/window-$name.png" "$work/new.hcad
 pid=$!
 
 # hackerscad saves its screenshot after the first evaluation, then stays open for 4 more seconds
+# (not until the process ends: on Windows it may start another and exit)
 for i in $(seq 1 300); do
-    [ -f "window-$name.png" ] || ! kill -0 $pid 2>/dev/null && break
+    [ -f "window-$name.png" ] && break
     sleep 0.2
 done
 
