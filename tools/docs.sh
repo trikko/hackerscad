@@ -2,8 +2,8 @@
 # Regenerates the documentation for AI agents in docs/ from the hscad binary,
 # so it always matches the language: AGENTS.md, SKILL.md (AGENTS.md with the
 # front matter of a skill), llms.txt (overview), llms-full.txt (the whole
-# reference), the cheatsheet, docs/cup.png from the cup in the README and the
-# pictures of the tutorial's steps (docs/tutorial).
+# reference), the cheatsheet and the pictures of the tutorial's steps
+# (docs/tutorial); it also checks the cup in the README.
 # docs/LANGUAGE.md and docs/TUTORIAL.md are written by hand.
 # Usage: tools/docs.sh
 set -e
@@ -16,10 +16,10 @@ bin/hscad docs > docs/llms-full.txt
 bin/hscad docs --cheatsheet > docs/CHEATSHEET.md
 bin/hscad docs --cheatsheet-html > docs/cheatsheet.html
 cp data/logo/it.andreafontana.hackerscad.gui.svg docs/logo.svg
-# the cup of the README, from its own code: checked, and drawn as docs/cup.png
+# the cup of the README, from its own code: it must check (docs/cup.png is a
+# screenshot of the application, taken by hand)
 awk '/^## A model/{f=1} f&&/^```d/{g=1;next} g&&/^```/{exit} g' README.md > build/readme-cup.hcad
 bin/hscad check build/readme-cup.hcad >/dev/null
-bin/hscad render build/readme-cup.hcad -o docs/cup.png >/dev/null
 # the tutorial's pot, one model and one picture per step
 for f in docs/tutorial/pot-*.hcad; do
     bin/hscad check "$f" >/dev/null

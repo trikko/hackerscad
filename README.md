@@ -80,13 +80,19 @@ immutable diameter = 80.mm;
 @param("Wall", min: 1.mm, max: 4.mm)
 immutable wall = 2.mm;
 
+/// The cup's shape, full.
+Solid body()
+{
+    // selectors pick edges and faces by what they are, not by number
+    return cylinder(d: diameter, h: diameter * 1.1)
+        .fillet(edges.of(faces.bottom), r: 6.mm);
+}
+
 // @part: a body to show and export (one object in 3MF)
 @part
 Solid cup()
 {
-    // selectors pick edges and faces by what they are, not by number
-    return cylinder(d: diameter, h: diameter * 1.1)
-        .fillet(edges.of(faces.bottom), r: 6.mm)
+    return body()
         .shell(open: faces.top, thickness: wall)
         .chamfer(edges.of(faces.top), d: 0.5.mm);
 }
@@ -95,7 +101,8 @@ Solid cup()
 unittest
 {
     assert(wall >= 1.2.mm, "walls under 1.2 mm leak");
-    writeln("volume: $(format("%.0f", cup.volume / 1.cm ^^ 3)) cm³");
+    // what it holds: the full shape minus the cup
+    writeln("holds: $(format("%.0f", (body.volume - cup.volume) / 1.cm ^^ 3)) ml");
 }
 ```
 
@@ -103,7 +110,10 @@ unittest
 hscad render cup.hcad -o cup.3mf -o cup-views.png -D diameter=60.mm
 ```
 
-<p align="center"><img alt="The cup, drawn by hscad render" src="docs/cup.png" width="420"></p>
+<p align="center"><img alt="The cup open in hackerscad, with the espresso preset" src="docs/cup.png" width="760"><br>
+<em>The cup in hackerscad, with the "espresso" preset chosen in the side panel: the
+diameter becomes 50 mm, the view follows, and the console shows what the cup holds,
+printed by the <code>unittest</code>.</em></p>
 
 ## Using hackerscad with an AI agent
 
