@@ -156,7 +156,9 @@ jobs:
         run: |
           powershell -NoProfile -Command "Set-DisplayResolution -Width 1920 -Height 1080 -Force" || true
           tests/screenshot.sh windows out/hackerscad/hackerscad.exe
-          # and without Mesa's zip: the 3D view should say what to download
+          # and without Mesa's zip, once the first has closed: the 3D view
+          # should say what to download
+          sleep 8
           for z in *.zip; do case "$z" in *-mesa.zip) ;; *) unzip -q -o "$z" -d plain ;; esac; done
           tests/screenshot.sh windows-nomesa plain/hackerscad/hackerscad.exe
       - uses: actions/upload-artifact@v4

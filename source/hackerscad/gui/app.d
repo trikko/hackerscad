@@ -38,7 +38,7 @@ import gtk.text_view : TextView;
 import gtk.text_iter : TextIter;
 import gtk.text_tag : TextTag;
 import gtk.file_dialog : FileDialog;
-import gtk.types : Orientation, Align, WrapMode, PackType;
+import gtk.types : Orientation, Align, WrapMode, PackType, Justification;
 import gtksource.view : SourceView = View;
 import gtksource.buffer : SourceBuffer = Buffer;
 import gtksource.language_manager : LanguageManager;
@@ -244,18 +244,17 @@ version (Windows)
         import std.process : environment, spawnProcess;
         import hackerscad.about : appVersion;
         import hackerscad.gui.viewport : Viewport;
-        if (environment.get("HCAD_GL") !is null || hardwareGl())
-            return false;
-        if (!exists(buildPath(dirName(thisExePath), "mesa", "opengl32.dll")))
-        {
+        // the help is ready whenever Mesa is missing: shown only if OpenGL fails
+        immutable hasMesa = exists(buildPath(dirName(thisExePath), "mesa", "opengl32.dll"));
+        if (!hasMesa)
             Viewport.glHelp = "This computer's OpenGL is too old for the 3D view: it happens in virtual "
                 ~ "machines without 3D acceleration, and without a graphics driver.\n\n"
                 ~ "Download hackerscad-" ~ appVersion ~ "-windows-mesa.zip from the page of hackerscad's "
                 ~ "releases and unzip it into the folder that holds hackerscad.exe, then start hackerscad "
                 ~ "again: it draws with a software OpenGL.\n\n"
                 ~ "Or install the graphics driver, or turn on 3D acceleration in the virtual machine.";
+        if (environment.get("HCAD_GL") !is null || !hasMesa || hardwareGl())
             return false;
-        }
         auto env = environment.toAA();
         env["HCAD_GL"] = "software";
         try
@@ -444,6 +443,7 @@ final class MainWindow
             css.loadFromString("button.hcad-dimension { padding: 1px 5px; min-height: 0; min-width: 0; font-size: 0.85em;"
                 ~ " border-radius: 4px; }"
                 ~ " .hcad-progress { padding: 10px 10px 10px 16px; }"
+                ~ " .hcad-gl-help { padding: 18px 22px; margin: 24px; }"
                 ~ " popover.hcad-completion > contents { padding: 0; }"
                 ~ " .hcad-completion-list row { padding: 1px 0; min-height: 0; }"
                 ~ " .hcad-completion-doc { padding: 8px 10px; border-left: 1px solid alpha(currentColor, 0.12);"
@@ -628,6 +628,18 @@ final class MainWindow
         };
         overlay = new Overlay;
         overlay.setChild(viewport.area);
+        // no usable OpenGL, and the application knows what to do: say it
+        viewport.onGlFailed = (string help) {
+            auto card = new Label(help);
+            card.setWrap(true);
+            card.setMaxWidthChars(56);
+            card.setJustify(Justification.Left);
+            card.setHalign(Align.Center);
+            card.setValign(Align.Center);
+            card.addCssClass("card");
+            card.addCssClass("hcad-gl-help");
+            overlay.addOverlay(card);
+        };
         features = new FeaturesPanel;
         features.onSelect = &rollTo;
         features.onFinal = () {

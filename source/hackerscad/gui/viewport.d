@@ -56,6 +56,8 @@ final class Viewport
     /// What to say in the view when the machine's OpenGL cannot draw it and
     /// the application knows why (set before the view is made).
     static string glHelp;
+    /// Called, once the view has failed to get its OpenGL, with glHelp.
+    void delegate(string help) onGlFailed;
 
     GLArea area;
     DragMode leftMode = DragMode.rotate;
@@ -725,12 +727,14 @@ private:
         glReady = true;
     }
 
-    /// Puts glHelp, when known, where GTK writes its OpenGL error.
+    /// Hands glHelp, when known, to whoever shows it: later, outside the
+    /// realize signal (the view itself is left to GTK, which shows its error).
     void explain()
     {
-        import glib.error : ErrorWrap;
-        if (glHelp.length)
-            area.setError(new ErrorWrap(0, 0, glHelp));
+        import glib.global : idleAdd;
+        import glib.types : PRIORITY_DEFAULT_IDLE;
+        if (glHelp.length && onGlFailed !is null)
+            idleAdd(PRIORITY_DEFAULT_IDLE, () { onGlFailed(glHelp); return false; });
     }
 
     /// A part with a colour like "#RRGGBBAA" or alpha: below 1.
