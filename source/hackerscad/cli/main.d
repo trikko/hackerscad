@@ -9,7 +9,7 @@ import hackerscad.lang.errors;
 import hackerscad.kernel.brep : KernelException;
 import hackerscad.tool.runner;
 import hackerscad.tool.docs : reference, agentsText, skillText, summaryText;
-import hackerscad.tool.mcp : serve;
+import hackerscad.tool.mcp : serve, serveWorker;
 
 enum usage = `hackerscad — parametric CAD with a D-like language
 
@@ -27,7 +27,10 @@ usage:
       --cheatsheet-html), --agents AGENTS.md, --skill SKILL.md, --summary
       llms.txt
   hscad mcp
-      Model Context Protocol server on stdio, for AI agents
+      Model Context Protocol server on stdio, for AI agents; models are
+      evaluated in a worker process that is killed when an evaluation is
+      cancelled or exceeds HSCAD_MCP_TIMEOUT (seconds, default 900) and may use
+      HSCAD_MCP_MEMORY_MB (default half of the RAM); 0 disables either limit
   hscad --version
       version, and the libraries hackerscad is built with
 
@@ -61,7 +64,10 @@ int main(string[] args)
     switch (command)
     {
     case "mcp":
-        serve();
+        if (args.length > 1 && args[1] == "--worker")
+            serveWorker();
+        else
+            serve();
         return 0;
     case "docs":
         {

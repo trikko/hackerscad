@@ -4,7 +4,7 @@
 module hackerscad.tool.mcp;
 
 import hackerscad.about : appVersion;
-import std.algorithm : map, canFind;
+import std.algorithm : map, canFind, startsWith;
 import std.array : array;
 import std.base64 : Base64;
 import std.conv : to;
@@ -30,9 +30,19 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "until the model matches the request, then hcad_export. If the user has hackerscad open, "
     ~ "hcad_gui_* tools show your work in their window.";
 
-/// Runs the server until stdin closes.
+/// Runs the server until stdin closes. Models are evaluated in a worker
+/// process (`hscad mcp --worker`): a cancelled or timed out evaluation, or one
+/// that crashes the kernel, kills the worker and gives all its memory back,
+/// and the next evaluation starts a new one.
 void serve()
 {
+    version (Posix)
+    {
+        // a dead worker must not take the server down while we write to it
+        import core.sys.posix.signal : signal, SIGPIPE, SIG_IGN;
+        signal(SIGPIPE, SIG_IGN);
+    }
+    auto worker = new Worker;
     foreach (line; stdin.byLineCopy)
     {
         if (line.strip.length == 0)
@@ -45,9 +55,72 @@ void serve()
             send(errorResponse(JSONValue(null), -32700, "parse error"));
             continue;
         }
-        auto response = handle(msg);
+        immutable method = "method" in msg && msg["method"].type == JSONType.string ? msg["method"].str : "";
+        auto params = "params" in msg ? msg["params"] : JSONValue(null);
+        if (method == "notifications/cancelled" && params.type == JSONType.object && "requestId" in params)
+            worker.cancel(params["requestId"]);
+        else if (method == "tools/call" && "id" in msg && params.type == JSONType.object && "name" in params
+            && evaluates(params["name"].str))
+            worker.start(msg["id"], line);
+        else if (method == "tools/call")
+            background(msg);    // the GUI tools can wait for the window
+        else
+        {
+            auto response = handle(msg);
+            if (response.type != JSONType.null_)
+                send(response);
+        }
+    }
+    worker.stop();
+}
+
+/// The worker process: evaluates the tool calls the server forwards, one at a
+/// time, and exits as soon as the server goes away, even in the middle of an
+/// evaluation.
+void serveWorker()
+{
+    import core.sync.condition : Condition;
+    import core.sync.mutex : Mutex;
+    import core.thread : Thread;
+
+    limitMemory(memoryLimit());
+
+    auto lock = new Mutex;
+    auto ready = new Condition(lock);
+    string[] queue;
+    auto reader = new Thread({
+        foreach (line; stdin.byLineCopy)
+            synchronized (lock)
+            {
+                queue ~= line;
+                ready.notify();
+            }
+        // the server closed the pipe (it exited, crashed or was killed):
+        // leave now, without waiting for the evaluation or the runtime
+        import core.stdc.stdlib : _Exit;
+        _Exit(0);
+    });
+    reader.isDaemon = true;
+    reader.start();
+
+    while (true)
+    {
+        string line;
+        synchronized (lock)
+        {
+            while (queue.length == 0)
+                ready.wait();
+            line = queue[0];
+            queue = queue[1 .. $];
+        }
+        JSONValue response;
+        try
+            response = handle(parseJSON(line));
+        catch (JSONException)
+            response = errorResponse(JSONValue(null), -32700, "parse error");
         if (response.type != JSONType.null_)
             send(response);
+        releaseMemory();
     }
 }
 
@@ -94,9 +167,311 @@ private:
 
 void send(JSONValue v)
 {
-    stdout.writeln(v.toString(JSONOptions.doNotEscapeSlashes));
-    stdout.flush();
+    sendLine(v.toString(JSONOptions.doNotEscapeSlashes));
 }
+
+void sendLine(string line)
+{
+    synchronized
+    {
+        stdout.writeln(line);
+        stdout.flush();
+    }
+}
+
+JSONValue toolError(string message)
+{
+    JSONValue r = ["content": [JSONValue(["type": "text", "text": message])]];
+    r["isError"] = true;
+    return r;
+}
+
+/// Tools that evaluate a model, in the worker process.
+bool evaluates(string tool) =>
+    ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure"].canFind(tool);
+
+void background(JSONValue msg)
+{
+    import core.thread : Thread;
+    auto t = new Thread({
+        auto response = handle(msg);
+        if (response.type != JSONType.null_)
+            send(response);
+    });
+    t.isDaemon = true;
+    t.start();
+}
+
+// ---------------------------------------------------------------- worker process
+
+/// The worker process seen from the server: forwards evaluations to it one at
+/// a time, and kills it when an evaluation is cancelled or takes too long.
+final class Worker
+{
+    import core.sync.mutex : Mutex;
+    import core.time : MonoTime, Duration, seconds, msecs;
+    import std.process : ProcessPipes;
+
+    enum Stop { none, cancelled, timedOut }
+
+    private Mutex turn;            // one evaluation at a time
+    private Mutex state;           // guards what follows
+    private ProcessPipes proc;
+    private bool running;
+    private string current;        // id of the request being evaluated
+    private bool[string] waiting;  // ids of the requests in line
+    private bool[string] dropped;  // ids cancelled while in line
+    private MonoTime deadline;
+    private Stop stopped;
+    private Duration timeout;
+
+    this()
+    {
+        turn = new Mutex;
+        state = new Mutex;
+        timeout = evaluationTimeout();
+        if (timeout > Duration.zero)
+        {
+            import core.thread : Thread;
+            auto t = new Thread(&watch);
+            t.isDaemon = true;
+            t.start();
+        }
+    }
+
+    /// Evaluates a tools/call in the background; the response is sent from there.
+    void start(JSONValue id, string line)
+    {
+        import core.thread : Thread;
+        immutable key = id.toString;
+        synchronized (state)
+            waiting[key] = true;
+        auto t = new Thread({ call(id, key, line); });
+        t.isDaemon = true;
+        t.start();
+    }
+
+    /// A cancelled request gets no response (as the protocol asks).
+    void cancel(JSONValue id)
+    {
+        immutable key = id.toString;
+        synchronized (state)
+        {
+            if (running && key == current)
+                kill(Stop.cancelled);
+            else if (key in waiting)
+                dropped[key] = true;
+        }
+    }
+
+    void stop()
+    {
+        synchronized (state)
+            if (running)
+                kill(Stop.none);
+    }
+
+private:
+
+    void call(JSONValue id, string key, string line)
+    {
+        turn.lock();
+        scope (exit)
+            turn.unlock();
+        synchronized (state)
+        {
+            waiting.remove(key);
+            if (key in dropped)
+            {
+                dropped.remove(key);
+                return;
+            }
+            try
+                launch();
+            catch (Exception e)
+            {
+                send(result(id, toolError("cannot start the evaluation worker: " ~ e.msg)));
+                return;
+            }
+            current = key;
+            stopped = Stop.none;
+            deadline = MonoTime.currTime + timeout;
+        }
+
+        string reply;
+        try
+        {
+            proc.stdin.writeln(line);
+            proc.stdin.flush();
+            // the kernel may print on stdout: only JSON lines are responses
+            while ((reply = proc.stdout.readln()) !is null && !reply.strip.startsWith("{"))
+                stderr.write(reply);
+        }
+        catch (Exception)
+            reply = null;    // the worker is gone
+
+        Stop why;
+        synchronized (state)
+        {
+            current = null;
+            why = stopped;
+            if (reply is null && running)
+                kill(Stop.none);
+        }
+        if (reply !is null)
+            return sendLine(reply.strip);
+
+        final switch (why)
+        {
+        case Stop.cancelled:
+            return;
+        case Stop.timedOut:
+            return send(result(id, toolError(format("evaluation stopped after %s s: the model takes too long (the limit "
+                ~ "is HSCAD_MCP_TIMEOUT, in seconds, 0 for none). Simplify it, or check it in parts.", timeout.total!"seconds"))));
+        case Stop.none:
+            immutable limit = memoryLimit();
+            return send(result(id, toolError("the evaluation worker stopped without answering"
+                ~ (limit ? format(": the model probably needs more than the %s MB it may use (HSCAD_MCP_MEMORY_MB, "
+                    ~ "0 for no limit), or it crashed the geometry kernel", limit >> 20) : ": it crashed the geometry kernel")
+                ~ ". Simplify the model, or check it in parts.")));
+        }
+    }
+
+    void launch()
+    {
+        import std.file : thisExePath;
+        import std.process : pipeProcess, Redirect;
+        if (running)
+            return;
+        proc = pipeProcess([thisExePath, "mcp", "--worker"], Redirect.stdin | Redirect.stdout);
+        running = true;
+    }
+
+    /// With `state` locked.
+    void kill(Stop why)
+    {
+        import std.process : kill, wait;
+        stopped = why;
+        running = false;
+        try
+        {
+            version (Posix)
+            {
+                import core.sys.posix.signal : SIGKILL;
+                kill(proc.pid, SIGKILL);
+            }
+            else
+                kill(proc.pid);
+            proc.stdin.close();
+        }
+        catch (Exception)
+        {
+        }
+        wait(proc.pid);
+    }
+
+    void watch()
+    {
+        import core.thread : Thread;
+        while (true)
+        {
+            Thread.sleep(500.msecs);
+            synchronized (state)
+                if (running && current !is null && MonoTime.currTime > deadline)
+                    kill(Stop.timedOut);
+        }
+    }
+}
+
+/// Seconds an evaluation may take: HSCAD_MCP_TIMEOUT, default 15 minutes.
+auto evaluationTimeout()
+{
+    import core.time : seconds;
+    import std.process : environment;
+    return environment.get("HSCAD_MCP_TIMEOUT", "900").strip.to!long.seconds;
+}
+
+/// Bytes the worker may use: HSCAD_MCP_MEMORY_MB, default half of the RAM
+/// (0 for no limit), so that a runaway model does not starve the system.
+ulong memoryLimit()
+{
+    import std.process : environment;
+    if (auto mb = environment.get("HSCAD_MCP_MEMORY_MB"))
+        return mb.strip.to!ulong << 20;
+    version (OSX)
+    {
+        ulong bytes;
+        size_t size = bytes.sizeof;
+        return sysctlbyname("hw.memsize", &bytes, &size, null, 0) == 0 ? bytes / 2 : 0;
+    }
+    else version (Posix)
+    {
+        import core.sys.posix.unistd : sysconf, _SC_PHYS_PAGES, _SC_PAGE_SIZE;
+        immutable pages = sysconf(_SC_PHYS_PAGES), size = sysconf(_SC_PAGE_SIZE);
+        return pages > 0 && size > 0 ? cast(ulong) pages * size / 2 : 0;
+    }
+    else version (Windows)
+    {
+        import core.sys.windows.winbase : MEMORYSTATUSEX, GlobalMemoryStatusEx;
+        MEMORYSTATUSEX m;
+        m.dwLength = m.sizeof;
+        return GlobalMemoryStatusEx(&m) ? m.ullTotalPhys / 2 : 0;
+    }
+    else
+        return 0;
+}
+
+/// Caps the memory of this process: allocations beyond it fail.
+void limitMemory(ulong bytes)
+{
+    if (bytes == 0)
+        return;
+    version (linux)
+    {
+        // RLIMIT_DATA counts the heap and the private mappings, not the code
+        import core.sys.posix.sys.resource : rlimit, setrlimit, RLIMIT_DATA;
+        auto r = rlimit(bytes, bytes);
+        setrlimit(RLIMIT_DATA, &r);
+    }
+    else version (Posix)
+    {
+        import core.sys.posix.sys.resource : rlimit, setrlimit, RLIMIT_AS;
+        auto r = rlimit(bytes, bytes);
+        setrlimit(RLIMIT_AS, &r);
+    }
+    else version (Windows)
+    {
+        import core.sys.windows.winbase : CreateJobObjectW, SetInformationJobObject, AssignProcessToJobObject,
+            GetCurrentProcess;
+        import core.sys.windows.winnt : JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+            JOBOBJECTINFOCLASS;
+        auto job = CreateJobObjectW(null, null);
+        if (job is null)
+            return;
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info;
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+        info.ProcessMemoryLimit = cast(size_t) bytes;
+        if (SetInformationJobObject(job, JOBOBJECTINFOCLASS.JobObjectExtendedLimitInformation, &info, info.sizeof))
+            AssignProcessToJobObject(job, GetCurrentProcess());
+    }
+}
+
+/// After a call: frees the solids nobody uses any more (their OpenCascade
+/// shapes are released by the finalizers, which the GC runs only when its
+/// own small heap fills up) and gives the freed memory back to the system.
+void releaseMemory()
+{
+    import core.memory : GC;
+    GC.collect();
+    GC.minimize();
+    version (CRuntime_Glibc)
+        malloc_trim(0);
+}
+
+version (CRuntime_Glibc)
+    extern (C) int malloc_trim(size_t pad) nothrow @nogc;
+version (OSX)
+    extern (C) int sysctlbyname(const(char)* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen) nothrow @nogc;
 
 JSONValue result(JSONValue id, JSONValue r)
 {
