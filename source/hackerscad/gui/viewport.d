@@ -53,6 +53,10 @@ struct Hit
 
 final class Viewport
 {
+    /// What to say in the view when the machine's OpenGL cannot draw it and
+    /// the application knows why (set before the view is made).
+    static string glHelp;
+
     GLArea area;
     DragMode leftMode = DragMode.rotate;
     void delegate(Hit hit) onPick;    /// part -1 when clicking the background
@@ -696,6 +700,7 @@ private:
         if (auto e = area.getError())
         {
             stderr.writeln("3D view: no OpenGL context: ", e.msg);
+            explain();
             return;
         }
         auto support = loadOpenGL();
@@ -704,6 +709,7 @@ private:
             stderr.writeln("3D view: OpenGL 3.3 is needed, found ", support,
                 support == GLSupport.noLibrary ? " (no libGL)" : "",
                 support == GLSupport.noContext ? " (on X11, try GDK_DEBUG=gl-glx)" : "");
+            explain();
             return;
         }
         program = buildProgram();
@@ -717,6 +723,14 @@ private:
         glGenVertexArrays(1, &gridVao);
         glGenBuffers(1, &gridVbo);
         glReady = true;
+    }
+
+    /// Puts glHelp, when known, where GTK writes its OpenGL error.
+    void explain()
+    {
+        import glib.error : ErrorWrap;
+        if (glHelp.length)
+            area.setError(new ErrorWrap(0, 0, glHelp));
     }
 
     /// A part with a colour like "#RRGGBBAA" or alpha: below 1.

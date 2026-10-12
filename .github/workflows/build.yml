@@ -143,7 +143,9 @@ jobs:
           msystem: CLANG64
           install: unzip
       - name: Unpack
-        run: unzip -q *.zip -d out
+        # both zips (Mesa's lands in the same folder): the runner has no
+        # graphics card
+        run: for z in *.zip; do unzip -q -o "$z" -d out; done
       - name: Check the examples
         run: for f in examples/*.hcad; do out/hackerscad/bin/hscad.exe check "$f" || exit 1; done
       # on request, the package is opened through hackerscad.exe, as a user
@@ -154,11 +156,14 @@ jobs:
         run: |
           powershell -NoProfile -Command "Set-DisplayResolution -Width 1920 -Height 1080 -Force" || true
           tests/screenshot.sh windows out/hackerscad/hackerscad.exe
+          # and without Mesa's zip: the 3D view should say what to download
+          for z in *.zip; do case "$z" in *-mesa.zip) ;; *) unzip -q -o "$z" -d plain ;; esac; done
+          tests/screenshot.sh windows-nomesa plain/hackerscad/hackerscad.exe
       - uses: actions/upload-artifact@v4
         if: inputs.try
         with:
           name: screenshot-windows
-          path: "*-windows.png"
+          path: "*-windows*.png"
 
   # macOS minutes cost ten times the Linux ones: not on pull requests
   macos:

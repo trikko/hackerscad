@@ -86,18 +86,22 @@ for dll in libgtk-4-1.dll libadwaita-1-0.dll libgtksourceview-5-0.dll; do
 done
 
 # Mesa's software OpenGL, for machines whose OpenGL is too old for GTK (see
-# hcadSoftwareGl in gui/app.d): in bin\mesa with what only it needs, never
-# next to the program, where it would replace the graphics card's OpenGL
-mkdir -p "$out/bin/mesa"
-cp "$sys/bin/opengl32.dll" "$sys/bin/libgallium_wgl.dll" "$out/bin/mesa/"
-todo="$out/bin/mesa/opengl32.dll $out/bin/mesa/libgallium_wgl.dll"
+# hcadSoftwareGl in gui/app.d), in a zip of its own (few need it, it weighs
+# 180 MB): unzipped into the same folder, it lands in bin\mesa with what only
+# it needs, never next to the program, where it would replace the graphics
+# card's OpenGL
+mesa="$root/dist/mesa/hackerscad/bin/mesa"
+rm -rf "$root/dist/mesa"
+mkdir -p "$mesa"
+cp "$sys/bin/opengl32.dll" "$sys/bin/libgallium_wgl.dll" "$mesa/"
+todo="$mesa/opengl32.dll $mesa/libgallium_wgl.dll"
 while [ -n "$todo" ]; do
     next=""
     for f in $todo; do
         for dll in $("$readobj" --coff-imports "$f" | sed -n 's/^ *Name: \(.*\.dll\)$/\1/p' | sort -u); do
-            if [ -f "$sys/bin/$dll" ] && ! [ -f "$out/bin/$dll" ] && ! [ -f "$out/bin/mesa/$dll" ]; then
-                cp "$sys/bin/$dll" "$out/bin/mesa/"
-                next="$next $out/bin/mesa/$dll"
+            if [ -f "$sys/bin/$dll" ] && ! [ -f "$out/bin/$dll" ] && ! [ -f "$mesa/$dll" ]; then
+                cp "$sys/bin/$dll" "$mesa/"
+                next="$next $mesa/$dll"
             fi
         done
     done
@@ -109,11 +113,14 @@ cp -r data/icons data/language-specs "$out/share/hackerscad/"
 cp -r examples docs "$out/share/hackerscad/"
 cp LICENSE MODEL-EXCEPTION.md "$out/"
 
-cd "$root/dist"
-rm -f "hackerscad-$version-windows-x86_64.zip"
-if command -v zip >/dev/null; then
-    zip -qr "hackerscad-$version-windows-x86_64.zip" hackerscad
-else
-    bsdtar -a -cf "hackerscad-$version-windows-x86_64.zip" hackerscad
-fi
-echo "dist/hackerscad-$version-windows-x86_64.zip"
+pack() {   # pack ZIP DIR: the hackerscad folder inside DIR
+    rm -f "$root/dist/$1"
+    if command -v zip >/dev/null; then
+        (cd "$2" && zip -qr "$root/dist/$1" hackerscad)
+    else
+        (cd "$2" && bsdtar -a -cf "$root/dist/$1" hackerscad)
+    fi
+    echo "dist/$1"
+}
+pack "hackerscad-$version-windows-x86_64.zip" "$root/dist"
+pack "hackerscad-$version-windows-mesa.zip" "$root/dist/mesa"

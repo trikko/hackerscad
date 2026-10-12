@@ -97,7 +97,9 @@ jobs:
           install: unzip
       - name: Unpack
         shell: msys2 {0}
-        run: unzip -q dist/*.zip -d out
+        # both zips (Mesa's lands in the same folder): the runner has no
+        # graphics card
+        run: for z in dist/*.zip; do unzip -q -o "$z" -d out; done
       # started as a user would; the runner has no graphics card, so the
       # application picks the Mesa OpenGL it ships with
       - name: Screenshot

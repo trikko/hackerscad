@@ -233,18 +233,29 @@ version (Windows)
         return ok;
     }
 
-    /// When the machine's OpenGL is too old for GTK and Mesa is next to the
-    /// program, starts the program again with HCAD_GL=software and says so:
-    /// the new process loads Mesa's OpenGL from the start (this one already
-    /// holds the system's).
+    /// When the machine's OpenGL is too old for GTK, starts the program again
+    /// with Mesa's (HCAD_GL=software) and says so: the new process loads it
+    /// from the start, this one already holds the system's. Without Mesa
+    /// (a separate download), the 3D view explains what to do.
     private bool relaunchWithMesa(string[] args)
     {
         import std.file : exists, thisExePath;
         import std.path : buildPath, dirName;
         import std.process : environment, spawnProcess;
-        if (environment.get("HCAD_GL") !is null
-            || !exists(buildPath(dirName(thisExePath), "mesa", "opengl32.dll")) || hardwareGl())
+        import hackerscad.about : appVersion;
+        import hackerscad.gui.viewport : Viewport;
+        if (environment.get("HCAD_GL") !is null || hardwareGl())
             return false;
+        if (!exists(buildPath(dirName(thisExePath), "mesa", "opengl32.dll")))
+        {
+            Viewport.glHelp = "This computer's OpenGL is too old for the 3D view: it happens in virtual "
+                ~ "machines without 3D acceleration, and without a graphics driver.\n\n"
+                ~ "Download hackerscad-" ~ appVersion ~ "-windows-mesa.zip from the page of hackerscad's "
+                ~ "releases and unzip it into the folder that holds hackerscad.exe, then start hackerscad "
+                ~ "again: it draws with a software OpenGL.\n\n"
+                ~ "Or install the graphics driver, or turn on 3D acceleration in the virtual machine.";
+            return false;
+        }
         auto env = environment.toAA();
         env["HCAD_GL"] = "software";
         try
