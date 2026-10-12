@@ -184,7 +184,8 @@ jobs:
         timeout-minutes: 10
         run: |
           ditto -x -k dist/*.zip try
-          grep -h "<dir" try/hackerscad.app/Contents/Resources/etc/fonts/fonts.conf || true
+          grep -h "<dir\|<include\|cachedir" try/hackerscad.app/Contents/Resources/etc/fonts/fonts.conf || true
+          ls try/hackerscad.app/Contents/Resources/etc/fonts/conf.d | head -50
           for v in "default"; do
             name=${v%% *}; vars=${v#"$name"}
             env $vars tests/screenshot.sh macos-$name try/hackerscad.app/Contents/MacOS/hackerscad || true

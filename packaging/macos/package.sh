@@ -65,6 +65,10 @@ cp -r "$brew/share/gtksourceview-5" "$share/"
 # files conf.d links to, which live elsewhere in Homebrew
 mkdir -p "$app/Contents/Resources/etc"
 cp -RL "$brew/etc/fonts" "$app/Contents/Resources/etc/"
+fonts="$app/Contents/Resources/etc/fonts"
+# conf.d from the bundle, not from Homebrew's prefix; and the Mac's own fonts
+sed -i '' "s|<include ignore_missing=\"yes\">$brew/etc/fonts/conf.d</include>|<include ignore_missing=\"yes\" prefix=\"relative\">conf.d</include>|" "$fonts/fonts.conf"
+cp packaging/macos/fonts-macos.conf "$fonts/conf.d/45-hackerscad-macos.conf"
 cp -r data/icons data/language-specs examples docs LICENSE MODEL-EXCEPTION.md "$share/hackerscad/"
 
 cp packaging/macos/Info.plist "$app/Contents/"
