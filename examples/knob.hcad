@@ -55,8 +55,7 @@ Solid body()
         vec(0.mm, height),
     ]);
     return profile
-        .revolve(axis: Y)
-        .rotate(x: 90.deg);
+        .revolve();
 }
 
 // @part marks a body to show and export; without a colour it is mint

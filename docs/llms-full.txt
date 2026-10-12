@@ -152,13 +152,13 @@ model in milliseconds.
   - `rect(w, h)` and `circle(r | d)` centred on the origin; `polygon([vec(0, 0), vec(30, 0), vec(0, 20)])`; `regularPolygon(6, d: 10.mm)` (d/r through the corners); `slot(length, width)` (a stadium along X); `text("text", size: 10.mm, font: "Sans")` (starting at the origin on the baseline).
   - Combine with `+ - &`, move/rotate/mirror like solids; `.round(r)` rounds the corners; `.offset(d)` grows (d > 0) or shrinks it; `.area`.
   - `.extrude(h)` makes a solid along +Z (negative h goes down); options `taper: 3.deg` (sides narrow towards the top), `symmetric: true`. Extrude while the profile lies on XY, then place the solid.
-  - `.revolve(axis: Y, angle: 360.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`).
+  - `.revolve()`: turned around the axis, standing up: the profile's x is the radius and its y the height along Z (pots, bottles, knobs). `.revolve(axis: X, angle: 180.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`), without standing up; `angle:` turns less than all the way.
   - On a face or plane, add or remove material in one step: `body.extrude(profile, on: frame, depth: 5.mm)` grows outwards along the frame's Z; `body.cut(profile, on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. Both accept `taper:`.
 - **Paths, sweeps and lofts:**
   - Paths (type `Path`): `path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)])` (straight segments, mitred corners; `closed: true`), `spline([…])` (a smooth curve through the points), `helix(r | d, pitch:, height:, left: false)` (around +Z, starting at (r, 0, 0)). Paths move, rotate and mirror like solids.
   - `profile.sweep(path)`: the profile, drawn on XY around the origin, starts at the beginning of the path, normal to it, with its +Y kept towards world +Z (towards +Y when the path starts vertically). `frenet: true` follows the curvature (use it for helices: springs, threads). Holes in the profile give tubes.
   - `loft([circle(r: 20), rect(30).move(z: 40), circle(r: 10).move(z: 80)])`: a smooth solid through profiles placed in space; `ruled: true` gives flat sides. Profiles with holes are lofted as tubes when every profile has the same number of holes.
-- **Constrained sketches** (2D on XY, like Onshape sketches): `auto s = sketch();` then add geometry and constraints and take `s.profile`.
+- **Constrained sketches** (2D on XY): `auto s = sketch();` then add geometry and constraints and take `s.profile`.
   - Geometry: `s.point(x, y)` (where it starts: constraints move it; `fixed: true` pins it there), `s.line(p, q)`, `s.arc(center, start, end)` (counter-clockwise), `s.circle(center, r: | d:)` (without r/d the radius is left to the constraints), `s.polyline([p1, p2, vec(…)], closed: true)` (returns the lines; vectors become new points). `construction: true` geometry helps constraining but is not part of the outline.
   - Constraints: `coincident(p, q)`, `fix(p)`, `horizontal(line | p, q)`, `vertical(…)`, `length(line, v)`, `distance(p, q, v)`, `distance(p, q, v, along: X | Y)`, `distance(p, line, v)`, `on(p, line | circle | arc)`, `parallel(a, b)`, `perpendicular(a, b)`, `angle(a, b, v)` (between the line directions, start → end), `equal(a, b)` (lengths or radii), `radius(c, v)`, `diameter(c, v)`, `tangent(line | circle, circle | line)`, `midpoint(p, line)`, `symmetric(p, q, line)`.
   - `s.fillet(p, r)` rounds the corner where two lines meet at p.
@@ -354,8 +354,7 @@ Solid body()
         vec(0.mm, height),
     ]);
     return profile
-        .revolve(axis: Y)
-        .rotate(x: 90.deg);
+        .revolve();
 }
 
 // @part marks a body to show and export; without a colour it is mint

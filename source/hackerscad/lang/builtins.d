@@ -767,14 +767,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return onFace(it, a, true);
     });
     def("revolve", (ref CallArgs a) {
-        // profile.revolve(axis: Y, angle: 360.deg): the axis lies in the profile's plane
+        // profile.revolve(axis: Y, angle: 360.deg): the axis lies in the profile's plane.
+        // Without an axis it turns around Y and stands up: the profile's x is
+        // the radius and its y the height along Z (pots, bottles, knobs).
         auto x = Args(it, a, "revolve", ["profile", "axis", "angle"]);
         auto p = profileArg(x, "profile");
         Vec3 o, d = Vec3(0, 1, 0);
-        if (x.has("axis"))
+        immutable upright = !x.has("axis");
+        if (!upright)
             axisArg(x, "axis", o, d);
         immutable ang = x.angleOr("angle", 2 * PI);
-        auto sv = derived(it, k.revolve(nonEmpty(p, a.span), o, d, ang), [p], "revolve", a.span);
+        auto b = k.revolve(nonEmpty(p, a.span), o, d, ang);
+        if (upright)
+            b = k.rotate(b, Vec3(1, 0, 0), PI / 2);
+        auto sv = derived(it, b, [p], "revolve", a.span);
         sv.flat = false;
         return Value.of(sv);
     });

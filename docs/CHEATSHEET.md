@@ -140,7 +140,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `p.round(r: Length) → Profile` — Rounds the (convex) corners.
 - `p.offset(distance: Length) → Profile` — Grows (d > 0) or shrinks the outline; on a plane, the parallel plane.
 - `p.extrude(height: Length, taper: Angle, symmetric: bool) → Solid` — A solid along +Z from the profile.
-- `p.revolve(axis: Axis, angle: Angle) → Solid` — Turns the profile around an axis in its plane.
+- `p.revolve(axis: Axis, angle: Angle) → Solid` — Turns the profile around an axis in its plane; without one, x is the radius and y the height along Z.
 - `p.sweep(path: Path, frenet: bool) → Solid` — Moves the profile along a path.
 - `loft(profiles: Profile[], ruled: bool) → Solid` — A solid through profiles placed in space.
 - `s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid` — Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).

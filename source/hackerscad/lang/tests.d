@@ -658,6 +658,7 @@ unittest
         @part Solid tapered() => rect(10, 10).extrude(10, taper: 5.deg);
         @part Solid centred() => circle(r: 2).extrude(6, symmetric: true);
         @part Solid ring() => rect(5, 10).move(x: 7.5).revolve(axis: Y);
+        @part Solid upright() => rect(5, 10).move(x: 7.5, y: 5).revolve();
         @part Solid added() => body.extrude(circle(d: 6), on: top, depth: 4);
         @part Solid pocket() => body.cut(rect(5, 5), on: top.at(x: 10), depth: 2);
         @part Solid through() => body.cut(slot(20, 6), on: top, through: true);
@@ -676,6 +677,16 @@ unittest
     auto bc = kernel.bbox(r.parts[3].solid.brep);
     assert(isClose(bc.min.z, -3.0, 1e-6) && isClose(bc.max.z, 3.0, 1e-6));
     assert(isClose(partVolume(r, "ring"), PI * (100 - 25) * 10, 1e-6));
+    // without an axis it stands up: the profile's y is the height along Z
+    foreach (p; r.parts)
+        if (p.name == "upright")
+        {
+            auto bu = kernel.bbox(p.solid.brep);
+            import std.math : abs;
+            assert(abs(bu.min.z) < 1e-6 && abs(bu.max.z - 10) < 1e-6, "revolve() stands up");
+            assert(abs(bu.max.x - 10) < 1e-6 && abs(bu.max.y - 10) < 1e-6);
+        }
+    assert(isClose(partVolume(r, "upright"), PI * (100 - 25) * 10, 1e-6));
     assert(isClose(partVolume(r, "added"), 12_000 + PI * 9 * 4, 1e-6));
     assert(isClose(partVolume(r, "pocket"), 12_000 - 50.0, 1e-6));
     assert(isClose(partVolume(r, "through"), 12_000 - (14 * 6 + PI * 9) * 10, 1e-6));

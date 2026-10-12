@@ -70,7 +70,7 @@ model in milliseconds.
   - `rect(w, h)` and `circle(r | d)` centred on the origin; `polygon([vec(0, 0), vec(30, 0), vec(0, 20)])`; `regularPolygon(6, d: 10.mm)` (d/r through the corners); `slot(length, width)` (a stadium along X); `text("text", size: 10.mm, font: "Sans")` (starting at the origin on the baseline).
   - Combine with `+ - &`, move/rotate/mirror like solids; `.round(r)` rounds the corners; `.offset(d)` grows (d > 0) or shrinks it; `.area`.
   - `.extrude(h)` makes a solid along +Z (negative h goes down); options `taper: 3.deg` (sides narrow towards the top), `symmetric: true`. Extrude while the profile lies on XY, then place the solid.
-  - `.revolve(axis: Y, angle: 360.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`).
+  - `.revolve()`: turned around the axis, standing up: the profile's x is the radius and its y the height along Z (pots, bottles, knobs). `.revolve(axis: X, angle: 180.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`), without standing up; `angle:` turns less than all the way.
   - On a face or plane, add or remove material in one step: `body.extrude(profile, on: frame, depth: 5.mm)` grows outwards along the frame's Z; `body.cut(profile, on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. Both accept `taper:`.
 - **Paths, sweeps and lofts:**
   - Paths (type `Path`): `path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)])` (straight segments, mitred corners; `closed: true`), `spline([…])` (a smooth curve through the points), `helix(r | d, pitch:, height:, left: false)` (around +Z, starting at (r, 0, 0)). Paths move, rotate and mirror like solids.
