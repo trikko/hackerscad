@@ -2,7 +2,7 @@
 /// GPU, so the CLI, CI and agents get deterministic images of a model.
 module hackerscad.render.raster;
 
-import std.algorithm : min, max;
+import std.algorithm : clamp, min, max;
 import std.math : abs, floor, ceil, sqrt;
 
 import hackerscad.geom.vec;
@@ -100,37 +100,47 @@ Image render(const Shaded[] items, View view, uint width, uint height)
 
     // opaque parts first, then the see-through ones blended over them
     immutable edgeTolerance = 0.004 * max(z1 - z0, 1e-6);
+    Edges[] opaqueEdges;
     foreach (see; [false, true])
-    foreach (it; items)
     {
-        immutable alpha = alphaOf(it.rgb);
-        if ((alpha < 0.999) != see)
-            continue;
-        immutable base = Vec3((it.rgb >> 16) & 0xFF, (it.rgb >> 8) & 0xFF, it.rgb & 0xFF);
-        auto m = it.mesh;
-        Vec3 light(Vec3 n) => viewLighting(n, cam.eye, base);
-        if (it.faces.triangleCount)
+        if (see && opaqueEdges.length)
+            c.drawEdges(opaqueEdges, &toScreen, ss * 1.1, edgeTolerance, ss);
+        foreach (it; items)
         {
-            // smooth inside each face, as in the 3D view
-            auto f = it.faces;
-            auto normals = vertexNormals(f);
-            foreach (t; 0 .. f.triangleCount)
+            immutable alpha = alphaOf(it.rgb);
+            if ((alpha < 0.999) != see)
+                continue;
+            immutable base = Vec3((it.rgb >> 16) & 0xFF, (it.rgb >> 8) & 0xFF, it.rgb & 0xFF);
+            auto m = it.mesh;
+            Vec3 light(Vec3 n) => viewLighting(n, cam.eye, base);
+            if (it.faces.triangleCount)
             {
-                auto ia = f.tris[t * 3], ib = f.tris[t * 3 + 1], ic = f.tris[t * 3 + 2];
-                c.triangle(toScreen(f.vertex(ia)), toScreen(f.vertex(ib)), toScreen(f.vertex(ic)),
-                    normals[ia], normals[ib], normals[ic], &light, alpha);
+                // smooth inside each face, as in the 3D view
+                auto f = it.faces;
+                auto normals = vertexNormals(f);
+                foreach (t; 0 .. f.triangleCount)
+                {
+                    auto ia = f.tris[t * 3], ib = f.tris[t * 3 + 1], ic = f.tris[t * 3 + 2];
+                    c.triangle(toScreen(f.vertex(ia)), toScreen(f.vertex(ib)), toScreen(f.vertex(ic)),
+                        normals[ia], normals[ib], normals[ic], &light, alpha);
+                }
             }
+            else
+                foreach (t; 0 .. m.triangleCount)
+                {
+                    auto a = m.vertex(m.tris[t * 3]), b = m.vertex(m.tris[t * 3 + 1]), d = m.vertex(m.tris[t * 3 + 2]);
+                    auto n = (b - a).cross(d - a).normalized;
+                    c.triangle(toScreen(a), toScreen(b), toScreen(d), n, n, n, &light, alpha);
+                }
+            // the opaque parts' edges go to a mask, drawn once all their faces
+            // are in the depth buffer; see-through parts draw theirs faintly
+            if (see)
+                foreach (e; featureEdges(m, 25))
+                    c.line(toScreen(m.vertex(e[0])), toScreen(m.vertex(e[1])), edgeColour, ss * 1.1, edgeTolerance,
+                        0.15);   // a thick line blends each pixel several times
+            else
+                opaqueEdges ~= Edges(m, featureEdges(m, 25));
         }
-        else
-            foreach (t; 0 .. m.triangleCount)
-            {
-                auto a = m.vertex(m.tris[t * 3]), b = m.vertex(m.tris[t * 3 + 1]), d = m.vertex(m.tris[t * 3 + 2]);
-                auto n = (b - a).cross(d - a).normalized;
-                c.triangle(toScreen(a), toScreen(b), toScreen(d), n, n, n, &light, alpha);
-            }
-        foreach (e; featureEdges(m, 25))
-            c.line(toScreen(m.vertex(e[0])), toScreen(m.vertex(e[1])), Vec3(35, 35, 40), ss * 1.1, edgeTolerance,
-                alpha < 0.999 ? 0.15 : 1);   // a thick line blends each pixel several times
     }
 
     return c.downsample(ss);
@@ -151,6 +161,15 @@ Image renderSheet(const Shaded[] items, const View[] views, uint cell, uint colu
                 img.rgb[y * cell * 3 .. (y + 1) * cell * 3];
     }
     return sheet;
+}
+
+private immutable edgeColour = Vec3(35, 35, 40);
+
+/// The feature edges of one mesh.
+private struct Edges
+{
+    const(Mesh) mesh;
+    uint[2][] pairs;
 }
 
 /// Edges on the boundary or between faces bent more than `angleDeg`.
@@ -212,6 +231,7 @@ struct Canvas
     uint w, h;
     float[] color; // rgb
     float[] depth;
+    float[] mask;  // edge coverage, before it is laid over the colours
 
     this(uint w, uint h)
     {
@@ -286,8 +306,50 @@ struct Canvas
             }
     }
 
+    /// The opaque parts' edges, laid over the image where they are sparse and
+    /// faded where they crowd (a thread seen from afar would turn black): the
+    /// fade follows how much of the area around (`ss` subpixels per pixel)
+    /// is covered by edges.
+    void drawEdges(Edges[] edges, Vec3 delegate(Vec3) toScreen, double width, double tolerance, uint ss)
+    {
+        mask = new float[w * h];
+        mask[] = 0;
+        foreach (ref e; edges)
+            foreach (p; e.pairs)
+                line(toScreen(e.mesh.vertex(p[0])), toScreen(e.mesh.vertex(p[1])), edgeColour, width, tolerance,
+                    1, true);
+        // coverage around each pixel, from a summed-area table
+        immutable r = 4 * ss;
+        auto sum = new double[(w + 1) * (h + 1)];
+        sum[] = 0;
+        foreach (y; 0 .. h)
+        {
+            double row = 0;
+            foreach (x; 0 .. w)
+            {
+                row += mask[y * w + x];
+                sum[(y + 1) * (w + 1) + x + 1] = sum[y * (w + 1) + x + 1] + row;
+            }
+        }
+        foreach (y; 0 .. h)
+            foreach (x; 0 .. w)
+            {
+                immutable i = y * w + x;
+                if (mask[i] <= 0)
+                    continue;
+                immutable x0 = max(0, cast(int) x - cast(int) r), x1 = min(w, x + r + 1);
+                immutable y0 = max(0, cast(int) y - cast(int) r), y1 = min(h, y + r + 1);
+                immutable covered = (sum[y1 * (w + 1) + x1] - sum[y0 * (w + 1) + x1] - sum[y1 * (w + 1) + x0]
+                    + sum[y0 * (w + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+                // full strength up to 30% of the area, a faint hatching from 65%
+                immutable fade = clamp(1 - (covered - 0.3) / 0.35, 0.18, 1.0);
+                put(i, edgeColour, mask[i] * fade);
+            }
+    }
+
     /// Depth-tested thick line; `tolerance` keeps edges on top of their faces.
-    void line(Vec3 a, Vec3 b, Vec3 rgb, double width, double tolerance, double alpha = 1)
+    /// `toMask` records the coverage in `mask` instead of colouring.
+    void line(Vec3 a, Vec3 b, Vec3 rgb, double width, double tolerance, double alpha = 1, bool toMask = false)
     {
         immutable len = sqrt((b.x - a.x) ^^ 2 + (b.y - a.y) ^^ 2);
         immutable steps = max(1, cast(int)(len * 2));
@@ -304,7 +366,10 @@ struct Canvas
                     immutable i = yy * w + xx;
                     if (z < depth[i] - tolerance)
                         continue;
-                    put(i, rgb, alpha);
+                    if (toMask)
+                        mask[i] = 1;
+                    else
+                        put(i, rgb, alpha);
                 }
         }
     }

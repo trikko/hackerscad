@@ -4,7 +4,7 @@
 module hackerscad.gui.viewport;
 
 import std.math : sin, cos, tan, atan, PI, abs, pow, sqrt;
-import std.algorithm : min, max;
+import std.algorithm : clamp, min, max;
 import std.string : toStringz;
 
 import bindbc.opengl;
@@ -555,6 +555,9 @@ private:
     {
         uint vao, vbo, ebo, edgeVao, edgeVbo;
         int indexCount, edgeCount;
+        /// total edge length and the two largest sizes (mm): how crowded the
+        /// edges get on screen at a given zoom
+        double edgeLength = 0, spanA = 1, spanB = 1;
     }
 
     struct Basis
@@ -833,6 +836,18 @@ private:
         return rgb;
     }
 
+    /// How strong a part's edges are drawn: 1 while they are sparse on
+    /// screen, down to a faint hatching where they would cover the part. The
+    /// estimate (edge length over the part's two largest sizes) runs higher
+    /// than the PNG renderer's per-pixel coverage: plain parts stay under 1,
+    /// threads seen from afar go past 2.
+    double edgeFade(ref const Gpu g)
+    {
+        immutable pxPerMm = max(1, area.getHeight()) / (2 * distance * tan(fovy / 2));
+        immutable covered = g.edgeLength / (pxPerMm * g.spanA * g.spanB * max(1, area.getScaleFactor()));
+        return clamp(1 - (covered - 1.5) / 3, 0.3, 1.0);
+    }
+
     bool render()
     {
         if (!glReady)
@@ -933,13 +948,15 @@ private:
                 glUniform3f(uColor, 0.75f, 0.45f, 0.0f);
             else
                 glUniform3f(uColor, 0.13f, 0.14f, 0.16f);
-            // the edges of a see-through part fade with it
-            immutable faded = !ghost && transparent(i);
+            // the edges of a see-through part fade with it; crowded edges (a
+            // thread seen from afar) fade too, or the part turns black
+            immutable crowd = edgeFade(g);
+            immutable faded = !ghost && (transparent(i) || crowd < 1);
             if (faded)
             {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glUniform1f(uAlpha, cast(float) min(1.0, alphaOf(parts[i].rgb) + 0.25));
+                glUniform1f(uAlpha, cast(float)(transparent(i) ? min(1.0, alphaOf(parts[i].rgb) + 0.25) * crowd : crowd));
             }
             glBindVertexArray(g.edgeVao);
             glDrawArrays(GL_LINES, 0, g.edgeCount);
@@ -1184,6 +1201,26 @@ private:
             glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
             glVertexAttrib3f(1, 0, 0, 1);
             g.edgeCount = cast(int)(p.edges.length / 3);
+            {
+                double lo0 = double.max, lo1 = double.max, lo2 = double.max;
+                double hi0 = -double.max, hi1 = -double.max, hi2 = -double.max;
+                for (size_t j = 0; j + 5 < p.edges.length; j += 6)
+                {
+                    g.edgeLength += sqrt((p.edges[j + 3] - p.edges[j]) ^^ 2 + (p.edges[j + 4] - p.edges[j + 1]) ^^ 2
+                        + (p.edges[j + 5] - p.edges[j + 2]) ^^ 2);
+                    foreach (o; [0, 3])
+                    {
+                        lo0 = min(lo0, p.edges[j + o]); hi0 = max(hi0, p.edges[j + o]);
+                        lo1 = min(lo1, p.edges[j + o + 1]); hi1 = max(hi1, p.edges[j + o + 1]);
+                        lo2 = min(lo2, p.edges[j + o + 2]); hi2 = max(hi2, p.edges[j + o + 2]);
+                    }
+                }
+                double[3] d = [max(hi0 - lo0, 0.1), max(hi1 - lo1, 0.1), max(hi2 - lo2, 0.1)];
+                import std.algorithm : sort;
+                d[].sort!"a > b";
+                g.spanA = d[0];
+                g.spanB = d[1];
+            }
             glBindVertexArray(0);
             return g;
         }
