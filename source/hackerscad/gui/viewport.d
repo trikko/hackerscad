@@ -529,7 +529,12 @@ final class Viewport
     /// Frames the parts; computed at the next frame, when the size is known.
     void fit()
     {
-        fitPending = true;
+        // framed now when the view has a size, so that a zoom or pan right
+        // after it starts from the framed camera
+        if (area.getWidth() > 0 && area.getHeight() > 0)
+            applyFit(cast(double) area.getWidth() / area.getHeight());
+        else
+            fitPending = true;
         area.queueRender();
     }
 
@@ -558,9 +563,45 @@ final class Viewport
     /// Moves the camera away (factor > 1) or closer, keeping what it looks at.
     void zoom(double factor)
     {
-        distance *= factor;
+        distance = max(1e-3, distance * factor);
         area.queueRender();
     }
+
+    /// Turns the camera around what it looks at, like a drag: yaw around
+    /// the vertical, pitch up or down (degrees).
+    void orbit(double yawDeg, double pitchDeg)
+    {
+        yaw -= yawDeg * PI / 180;
+        pitch = max(-PI / 2 + 0.01, min(PI / 2 - 0.01, pitch + pitchDeg * PI / 180));
+        area.queueRender();
+    }
+
+    /// Moves the model on screen by fractions of the view's size, like a
+    /// pan drag (x to the right, y down).
+    void pan(double fx, double fy)
+    {
+        auto c = basis();
+        immutable h = max(1, area.getHeight());
+        immutable k = 2 * distance * tan(fovy / 2) / h;
+        target = target - c.right * (fx * area.getWidth() * k) + c.up * (fy * h * k);
+        area.queueRender();
+    }
+
+    /// Zooms like the mouse wheel at a point of the view (fractions of its
+    /// size): what is under it stays still.
+    void zoomAtFraction(double fx, double fy, double factor)
+    {
+        zoomAt(fx * area.getWidth(), fy * area.getHeight(), factor);
+    }
+
+    /// The camera: angles in degrees, distance and target in mm.
+    struct Camera
+    {
+        double yaw, pitch, distance;
+        Vec3 target;
+    }
+
+    Camera camera() => Camera(yaw * 180 / PI, pitch * 180 / PI, distance, target);
 
 private:
 

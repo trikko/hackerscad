@@ -698,9 +698,13 @@ bottom". The agent reads the reference (`hcad_docs`), writes the model, checks
 it (`hcad_check`), looks at renders (`hcad_render`) and fixes it.
 
 When the application is open, the `hcad_gui_*` tools drive it: open a file,
-set parameters, select faces, run the context menu, move the section plane,
-take screenshots. You see the agent work in the window, and the agent sees
-what you see.
+set parameters, turn, pan and zoom the view, select faces, run the context
+menu, move the section plane, save, take screenshots. You see the agent work
+in the window, and the agent sees what you see.
+
+Each window has a name in its header bar, random at start (say `blue-otter`):
+click it to choose your own. With several windows open, tell the agent which
+one to use: "add a 3 mm fillet to the lid in blue-otter".
 
 ## 8. When something goes wrong
 

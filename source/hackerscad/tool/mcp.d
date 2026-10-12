@@ -510,6 +510,12 @@ JSONValue[] toolList()
         return t;
     }
 
+    // every GUI tool can name the window, when several are open
+    JSONValue gui(string name, string description, string properties, string required = "[]") =>
+        tool(name, description, `"window": {"type": "string", "description": "Name of the hackerscad window (shown in `
+            ~ `its header bar; hcad_gui_windows lists them). Needed only when several are open."}`
+            ~ (properties.length ? ", " ~ properties : ""), required);
+
     return [
         tool("hcad_docs", "Reference of the .hcad language, the geometry API, conventions and examples. "
             ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware') for a short excerpt.",
@@ -527,57 +533,72 @@ JSONValue[] toolList()
             modelProps ~ `, "drawing": {"type": "string", "description": "Name of the @drawing function; default the first."}`),
         tool("hcad_measure", "Minimum distance between two parts of a model (by @part name), with the closest "
             ~ "points; 0 when they touch or overlap.", modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}`, `["a", "b"]`),
-        tool("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
+        tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
+            ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
+        gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
             ~ "user has unsaved changes, unless force is true (which discards them: ask the user first).",
             `"path": {"type": "string"}, "force": {"type": "boolean"}`, `["path"]`),
-        tool("hcad_gui_set", "Change the model shown in the user's window: replace its source, set parameter "
+        gui("hcad_gui_set", "Change the model shown in the user's window: replace its source, set parameter "
             ~ "overrides or a preset. The window re-evaluates and shows the result.",
             `"source": {"type": "string"}, "params": {"type": "object"}, "preset": {"type": "string"}`),
-        tool("hcad_gui_pick", "Click in the user's 3D view at a point given as fractions of its size (0..1): the "
+        gui("hcad_gui_pick", "Click in the user's 3D view at a point given as fractions of its size (0..1): the "
             ~ "face is highlighted and the editor jumps to the feature that created it. Returns part, face and a selector expression for that face (e.g. faces.top) to use in code.",
             `"x": {"type": "number"}, "y": {"type": "number"}, "shift": {"type": "boolean", "description": `
             ~ `"add to the selection (or remove from it), like Shift+click"}`, `["x", "y"]`),
-        tool("hcad_gui_view", "Set the user's 3D view: iso, front, top or right (framed on the model); zoom moves the "
-            ~ "camera away (2 = twice as far) or closer (0.5).",
-            `"preset": {"type": "string", "enum": ["iso", "front", "top", "right"]}, "zoom": {"type": "number"}`, `[]`),
-        tool("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size) and add a feature there, "
+        gui("hcad_gui_view", "Move the user's 3D view as they do with the mouse, in this order: preset (iso, front, "
+            ~ "top, right: framed on the model; fit: frame it from where it is now), orbit [yaw, pitch] in degrees (like "
+            ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
+            ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
+            ~ "stays still). hidden lists the parts to hide (the others are shown); console and params show or hide "
+            ~ "those panels. hcad_gui_state gives the camera.",
+            `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
+            ~ `"orbit": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
+            ~ `"pan": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
+            ~ `"zoom": {"type": "number"}, `
+            ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
+            ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
+            ~ `"console": {"type": "boolean"}, "params": {"type": "boolean"}`, `[]`),
+        gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size) and add a feature there, "
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face).",
             `"x": {"type": "number"}, "y": {"type": "number"}, "action": {"type": "string", "enum": ["fillet-edge", `
             ~ `"chamfer-edge", "fillet-face", "chamfer-face", "shell"]}, "value": {"type": "string", "description": `
             ~ `"radius, distance or thickness, e.g. 2.mm"}`, `["x", "y", "action"]`),
-        tool("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) and choose entries of the "
+        gui("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) and choose entries of the "
             ~ "menu in order, e.g. [\"Hole at point\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: what the user would do "
             ~ "with the mouse. Entries that write code append it to the part in the editor.",
             `"x": {"type": "number"}, "y": {"type": "number"}, "path": {"type": "array", "items": {"type": "string"}}`,
             `["x", "y", "path"]`),
-        tool("hcad_gui_section", "Cut the user's 3D view with a plane: parallel to xy, xz or yz, or to the selected face "
+        gui("hcad_gui_section", "Cut the user's 3D view with a plane: parallel to xy, xz or yz, or to the selected face "
             ~ "(face; clicking another face moves it there); at is the position from 0 to 1 across the model; flip inverts the "
             ~ "plane normal (shows the other side); cut solids are shown filled and hatched; on: false removes it.",
             `"plane": {"type": "string", "enum": ["xy", "xz", "yz", "face"]}, "at": {"type": "number"}, `
             ~ `"flip": {"type": "boolean"}, "on": {"type": "boolean"}`, `[]`),
-        tool("hcad_gui_sketch", "Show (on: true) or hide the sketches in the user's 3D view, with their dimensions and the "
+        gui("hcad_gui_sketch", "Show (on: true) or hide the sketches in the user's 3D view, with their dimensions and the "
             ~ "points that can still move in blue.", `"on": {"type": "boolean"}`, `[]`),
-        tool("hcad_gui_rollback", "Show the user's model as it was right after the feature on a line of code (its new "
+        gui("hcad_gui_rollback", "Show the user's model as it was right after the feature on a line of code (its new "
             ~ "faces in orange, the final parts as ghosts); without line, back to the final model.",
             `"line": {"type": "integer"}`, `[]`),
-        tool("hcad_gui_export", "Export the model open in the user's window, with the parameters and preset set "
+        gui("hcad_gui_export", "Export the model open in the user's window, with the parameters and preset set "
             ~ "there, to 'path': .3mf (one object per part, colours), .stl, .step or .png.",
             `"path": {"type": "string"}`, `["path"]`),
-        tool("hcad_gui_complete", "What the editor's completion offers in the user's window: at the cursor, or at "
+        gui("hcad_gui_complete", "What the editor's completion offers in the user's window: at the cursor, or at "
             ~ "line and col (1-based). Gives the proposals with their signature and documentation, and inside a call "
             ~ "the callee's signature and the argument the cursor is on.",
             `"line": {"type": "integer"}, "col": {"type": "integer"}, `
             ~ `"show": {"type": "boolean", "description": "also move the cursor there and open the list in the window"}, `
             ~ `"select": {"type": "string", "description": "with show, the entry to select in the list"}`, `[]`),
-        tool("hcad_gui_cheatsheet", "Opens the cheatsheet window in the user's GUI (every function and object in "
+        gui("hcad_gui_cheatsheet", "Opens the cheatsheet window in the user's GUI (every function and object in "
             ~ "one line, and \"how do I…\" recipes), filtered by query when given: to show the user where to look.",
             `"query": {"type": "string"}`, `[]`),
-        tool("hcad_gui_stop", "Stop the evaluation running in the user's window (hcad_gui_state tells whether one is "
+        gui("hcad_gui_save", "Save the model in the user's window to its file, or to path (the window then works on "
+            ~ "that file, like Save As). Refused when path exists, unless force is true (ask the user first).",
+            `"path": {"type": "string"}, "force": {"type": "boolean"}`, `[]`),
+        gui("hcad_gui_stop", "Stop the evaluation running in the user's window (hcad_gui_state tells whether one is "
             ~ "running and at which stage); it runs again at the next edit.", ``),
-        tool("hcad_gui_about", "Open the About window of the user's hackerscad (version, credits, licences).", ``),
-        tool("hcad_gui_screenshot", "Picture of the user's hackerscad window, after the current evaluation finishes.", ``),
-        tool("hcad_gui_state", "State of the user's window: file, parameters, parts, problems. It waits for the running "
+        gui("hcad_gui_about", "Open the About window of the user's hackerscad (version, credits, licences).", ``),
+        gui("hcad_gui_screenshot", "Picture of the user's hackerscad window, after the current evaluation finishes.", ``),
+        gui("hcad_gui_state", "State of the user's window: file, parameters, parts, problems. It waits for the running "
             ~ "evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) and seconds.",
             `"now": {"type": "boolean"}`, `[]`),
     ];
@@ -673,18 +694,41 @@ JSONValue callTool(string name, JSONValue args)
             break;
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
-            "hcad_gui_rollback", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_export", "hcad_gui_complete", "hcad_gui_cheatsheet":
+            "hcad_gui_rollback", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export", "hcad_gui_complete", "hcad_gui_cheatsheet":
         {
             auto method = name["hcad_gui_".length .. $];
-            auto r = guiRequest(method, args.type == JSONType.object ? args : JSONValue((JSONValue[string]).init));
+            auto r = guiRequest(arg("window"), method, args.type == JSONType.object ? args : JSONValue((JSONValue[string]).init));
             text(r.toPrettyString(JSONOptions.doNotEscapeSlashes));
+            break;
+        }
+    case "hcad_gui_windows":
+        {
+            JSONValue[] list;
+            foreach (w; openWindows())
+            {
+                JSONValue now = ["now": true];
+                try
+                {
+                    auto st = guiRequest(w, "state", now);
+                    JSONValue e = ["name": w];
+                    foreach (k; ["path", "modified", "evaluating"])
+                        if (k in st)
+                            e[k] = st[k];
+                    list ~= e;
+                }
+                catch (Exception)
+                {
+                }
+            }
+            text(list.length ? JSONValue(list).toPrettyString(JSONOptions.doNotEscapeSlashes)
+                : "no hackerscad window is open: the user can start one with `hscad-gui model.hcad`");
             break;
         }
     case "hcad_gui_screenshot":
         {
             auto file = buildPath(tempDir, format("hackerscad-shot-%s.png", randomName()));
             JSONValue p = ["path": file];
-            auto r = guiRequest("screenshot", p);
+            auto r = guiRequest(arg("window"), "screenshot", p);
             if (exists(file))
             {
                 image(cast(ubyte[]) read(file));

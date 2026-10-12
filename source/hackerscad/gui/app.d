@@ -370,6 +370,8 @@ final class MainWindow
     bool positionQueued;
     Evaluator evaluator;
     ControlServer control;
+    Button windowName;   /// the name agents use for this window
+    Label windowNameLabel;
 
     string path;
     bool modified;
@@ -400,6 +402,19 @@ final class MainWindow
         header.packEnd(paramsToggle);
         header.packEnd(consoleToggle);
         header.packEnd(busyIndicator);
+        windowName = new Button;
+        windowName.addCssClass("flat");
+        {
+            import gtk.image : Image;
+            auto content = new Box(Orientation.Horizontal, 6);
+            content.append(Image.newFromIconName("hcad-agent-symbolic"));
+            windowNameLabel = new Label("");
+            content.append(windowNameLabel);
+            windowName.setChild(content);
+        }
+        windowName.setVisible(false);
+        windowName.connectClicked(&renameWindow);
+        header.packEnd(windowName);
 
         // ---- toolbar above the 3D view: views, navigation, section, sketches
         viewBar = new Box(Orientation.Horizontal, 6);
@@ -739,9 +754,11 @@ final class MainWindow
         });
         scheduleEvaluation(0);
 
-        // external control (MCP server, scripts): one window owns the socket
+        // external control (MCP server, scripts), under a name agents can tell apart
         control = new ControlServer;
-        if (!control.start(&handleControl))
+        if (control.start(&handleControl))
+            showWindowName();
+        else
             control = null;
         window.connectCloseRequest(() {
             // unsaved changes: ask first, and close again once answered
@@ -2104,6 +2121,50 @@ private:
 
     // ---- external control
 
+    void showWindowName()
+    {
+        windowNameLabel.setLabel(control.name);
+        windowName.setTooltipText("This window's name for AI agents (the 'window' of the hcad_gui_* tools). "
+            ~ "Click to rename it.");
+        windowName.setVisible(true);
+    }
+
+    void renameWindow()
+    {
+        auto pop = new Popover;
+        pop.setParent(windowName);
+        pop.connectClosed(() {
+            idleAdd(PRIORITY_DEFAULT, () { pop.unparent(); return false; });
+        });
+        auto box = new Box(Orientation.Vertical, 6);
+        auto hint = new Label("Name for AI agents");
+        hint.addCssClass("dim-label");
+        hint.setXalign(0);
+        auto entry = new Entry;
+        entry.setText(control.name);
+        entry.setWidthChars(20);
+        auto problem = new Label("");
+        problem.addCssClass("error");
+        problem.setXalign(0);
+        problem.setVisible(false);
+        entry.connectActivate(() {
+            if (auto why = control.rename(entry.getText()))
+            {
+                problem.setLabel(why);
+                problem.setVisible(true);
+                return;
+            }
+            showWindowName();
+            pop.popdown();
+        });
+        box.append(hint);
+        box.append(entry);
+        box.append(problem);
+        pop.setChild(box);
+        pop.popup();
+        entry.grabFocus();
+    }
+
     bool busy() => debounce != 0 || evaluator.busy || !hadResult;
     bool hadResult;   /// the first evaluation has been shown
 
@@ -2190,11 +2251,41 @@ private:
         case "view":
             {
                 import std.conv : to;
-                if (arg("preset") !is null)
-                    viewport.setView(arg("preset").to!ViewPreset);
-                // zoom: > 1 moves away, < 1 closer
-                if ("zoom" in p)
-                    viewport.zoom(p["zoom"].type == JSONType.integer ? p["zoom"].integer : p["zoom"].floating);
+                double num(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
+                bool has(string k) => k in p && p[k].type != JSONType.null_;
+                // in the order a user would: frame, turn, move, zoom
+                if (auto v = arg("preset"))
+                {
+                    if (v == "fit")
+                        viewport.fit();
+                    else
+                        viewport.setView(v.to!ViewPreset);
+                }
+                if (has("orbit"))
+                    viewport.orbit(num(p["orbit"][0]), num(p["orbit"][1]));
+                if (has("pan"))
+                    viewport.pan(num(p["pan"][0]), num(p["pan"][1]));
+                // zoom: > 1 moves away, < 1 closer; at a point like the wheel
+                if (has("zoom"))
+                {
+                    if (has("at"))
+                        viewport.zoomAtFraction(num(p["at"][0]), num(p["at"][1]), num(p["zoom"]));
+                    else
+                        viewport.zoom(num(p["zoom"]));
+                }
+                // the parts hidden with their eye in the parameters panel
+                if (has("hidden"))
+                {
+                    bool[string] hide;
+                    foreach (n; p["hidden"].array)
+                        hide[n.str] = true;
+                    foreach (i, pm; last.parts)
+                        setPartVisible(i, (pm.name in hide) is null);
+                }
+                if (has("console"))
+                    consoleToggle.setActive(p["console"].type == JSONType.true_);
+                if (has("params"))
+                    paramsToggle.setActive(p["params"].type == JSONType.true_);
                 whenIdle(() => reply(state(), null));
                 return;
             }
@@ -2397,6 +2488,25 @@ private:
                 cheatsheet.search(q);
             reply(JSONValue(["opened": true]), null);
             return;
+        case "save":
+            {
+                // to the window's file, or to path (then the window follows it, like Save As)
+                auto target = arg("path").length ? absolutePath(arg("path")) : path;
+                if (baseName(target) == "untitled.hcad" && !exists(target))
+                    return reply(JSONValue.init, "the model has no file yet: pass path");
+                if (target != path && exists(target) && !("force" in p && p["force"].type == JSONType.true_))
+                    return reply(JSONValue.init, target ~ " exists: pass force: true to overwrite it (ask the user first)");
+                try
+                    write(target, text());
+                catch (Exception e)
+                    return reply(JSONValue.init, "cannot save: " ~ e.msg);
+                path = target;
+                diskTime = mtimeOf(path);
+                modified = false;
+                updateTitle();
+                note("saved " ~ path);
+                return reply(state(), null);
+            }
         case "stop":
             {
                 immutable was = evaluator.busy;
@@ -2432,6 +2542,7 @@ private:
     JSONValue state()
     {
         JSONValue j = ["path": path, "status": statusText];
+        j["window"] = control ? control.name : null;
         j["evaluating"] = evaluator.busy;
         if (evaluator.busy)
         {
@@ -2451,6 +2562,7 @@ private:
             jp["size"] = [pm.bbox.size.x, pm.bbox.size.y, pm.bbox.size.z];
             jp["volume_mm3"] = pm.volume;
             jp["line"] = pm.span.line;
+            jp["hidden"] = viewport.isHidden(parts.length);
             parts ~= jp;
         }
         j["parts"] = parts;
@@ -2464,6 +2576,10 @@ private:
         }
         j["params"] = ps;
         j["presets"] = last.presets;
+        auto cam = viewport.camera();
+        JSONValue jc = ["yaw": cam.yaw, "pitch": cam.pitch, "distance": cam.distance];
+        jc["target"] = [cam.target.x, cam.target.y, cam.target.z];
+        j["camera"] = jc;
         string problems;
         foreach (d; last.diagnostics)
             problems ~= render(d, last.sources.get(d.span.file, ""));

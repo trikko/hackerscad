@@ -112,8 +112,11 @@ reference first and follow the rules below.
   column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
   views: look at them), hcad_measure, hcad_export (.3mf .stl .step .png),
   hcad_drawing (.pdf .svg .dxf). When the user has the application open, the
-  hcad_gui_* tools drive it (open, set parameters, pick faces, context menu,
-  section plane, rollback, screenshot, state), so they see what you do.
+  hcad_gui_* tools drive it (open, set parameters, move the view, pick faces,
+  context menu, section plane, rollback, save, screenshot, state), so they see
+  what you do. Each
+  window has a name in its header bar; with several open, hcad_gui_windows
+  lists them and the user may tell you which one ("work in blue-otter").
 - **With the command line:** `hscad docs` prints the whole reference
   (`hscad docs fillet` one topic); `hscad check model.hcad --json` reports
   errors, parts and sizes; `hscad render model.hcad -o model-views.png`
