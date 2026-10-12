@@ -1,4 +1,4 @@
-/// Model Context Protocol server over stdio (`hscad mcp`): lets AI agents
+/// Model Context Protocol server over stdio (`hcad mcp`): lets AI agents
 /// read the reference, evaluate and render models, export them and drive an
 /// open hackerscad window.
 module hackerscad.tool.mcp;
@@ -32,7 +32,7 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "hcad_gui_* tools show your work in their window.";
 
 /// Runs the server until stdin closes. Models are evaluated in a worker
-/// process (`hscad mcp --worker`): a cancelled or timed out evaluation, or one
+/// process (`hcad mcp --worker`): a cancelled or timed out evaluation, or one
 /// that crashes the kernel, kills the worker and gives all its memory back,
 /// and the next evaluation starts a new one.
 void serve()
@@ -49,11 +49,11 @@ void serve()
     // started again by an older server whose program was rebuilt or updated:
     // the client is told the tools may have changed, and gets the answer to
     // the message that server had just read
-    auto replay = environment.get("HSCAD_MCP_REPLAY");
-    if (environment.get("HSCAD_MCP_RESTARTED"))
+    auto replay = environment.get("HCAD_MCP_REPLAY");
+    if (environment.get("HCAD_MCP_RESTARTED"))
     {
-        environment.remove("HSCAD_MCP_RESTARTED");
-        environment.remove("HSCAD_MCP_REPLAY");
+        environment.remove("HCAD_MCP_RESTARTED");
+        environment.remove("HCAD_MCP_REPLAY");
         sendLine(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`);
     }
     version (Posix)
@@ -106,14 +106,14 @@ private void restart(string line, Worker worker)
         import std.process : environment;
         import std.string : toStringz;
         worker.stop();
-        environment["HSCAD_MCP_RESTARTED"] = "1";
-        environment["HSCAD_MCP_REPLAY"] = line;
+        environment["HCAD_MCP_RESTARTED"] = "1";
+        environment["HCAD_MCP_REPLAY"] = line;
         stdout.flush();
         const(char)*[3] argv = [exePath.toStringz, "mcp".toStringz, null];
         execv(argv[0], argv.ptr);
         // could not: keep serving with this program
-        environment.remove("HSCAD_MCP_RESTARTED");
-        environment.remove("HSCAD_MCP_REPLAY");
+        environment.remove("HCAD_MCP_RESTARTED");
+        environment.remove("HCAD_MCP_REPLAY");
         exeStamp = exeTime();
     }
 }
@@ -415,11 +415,11 @@ private:
             return;
         case Stop.timedOut:
             return send(result(id, toolError(format("evaluation stopped after %s s: the model takes too long (the limit "
-                ~ "is HSCAD_MCP_TIMEOUT, in seconds, 0 for none). Simplify it, or check it in parts.", timeout.total!"seconds"))));
+                ~ "is HCAD_MCP_TIMEOUT, in seconds, 0 for none). Simplify it, or check it in parts.", timeout.total!"seconds"))));
         case Stop.none:
             immutable limit = memoryLimit();
             return send(result(id, toolError("the evaluation worker stopped without answering"
-                ~ (limit ? format(": the model probably needs more than the %s MB it may use (HSCAD_MCP_MEMORY_MB, "
+                ~ (limit ? format(": the model probably needs more than the %s MB it may use (HCAD_MCP_MEMORY_MB, "
                     ~ "0 for no limit), or it crashed the geometry kernel", limit >> 20) : ": it crashed the geometry kernel")
                 ~ ". Simplify the model, or check it in parts.")));
         }
@@ -472,20 +472,20 @@ private:
     }
 }
 
-/// Seconds an evaluation may take: HSCAD_MCP_TIMEOUT, default 15 minutes.
+/// Seconds an evaluation may take: HCAD_MCP_TIMEOUT, default 15 minutes.
 auto evaluationTimeout()
 {
     import core.time : seconds;
     import std.process : environment;
-    return environment.get("HSCAD_MCP_TIMEOUT", "900").strip.to!long.seconds;
+    return environment.get("HCAD_MCP_TIMEOUT", "900").strip.to!long.seconds;
 }
 
-/// Bytes the worker may use: HSCAD_MCP_MEMORY_MB, default half of the RAM
+/// Bytes the worker may use: HCAD_MCP_MEMORY_MB, default half of the RAM
 /// (0 for no limit), so that a runaway model does not starve the system.
 ulong memoryLimit()
 {
     import std.process : environment;
-    if (auto mb = environment.get("HSCAD_MCP_MEMORY_MB"))
+    if (auto mb = environment.get("HCAD_MCP_MEMORY_MB"))
         return mb.strip.to!ulong << 20;
     version (OSX)
     {
@@ -854,7 +854,7 @@ JSONValue callTool(string name, JSONValue args)
                 }
             }
             text(list.length ? JSONValue(list).toPrettyString(JSONOptions.doNotEscapeSlashes)
-                : "no hackerscad window is open: the user can start one with `hscad-gui model.hcad`");
+                : "no hackerscad window is open: the user can start one with `hackerscad model.hcad`");
             break;
         }
     case "hcad_gui_screenshot":

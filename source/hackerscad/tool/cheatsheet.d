@@ -1,6 +1,6 @@
 /// The cheatsheet: every function, method and property of the language with
 /// one line each, by section, plus "how do I…" recipes. Generated from
-/// lang/reference.d as Markdown (hscad docs --cheatsheet) or as a printable
+/// lang/reference.d as Markdown (hcad docs --cheatsheet) or as a printable
 /// HTML page (docs/cheatsheet.html).
 module hackerscad.tool.cheatsheet;
 
@@ -112,7 +112,7 @@ LibLine[][string] libraryLines(out string[] order)
     return r;
 }
 
-/// Markdown, for hscad docs --cheatsheet.
+/// Markdown, for hcad docs --cheatsheet.
 string cheatsheetMarkdown()
 {
     auto o = appender!string;

@@ -68,7 +68,7 @@ jobs:
             git config --global --add safe.directory "*"
             dub test :core --compiler=ldc2 &&
             dub build --compiler=ldc2 &&
-            for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done'
+            for f in examples/*.hcad; do bin/hcad check "$f" || exit 1; done'
           sudo rm -rf bin .dub
           sudo chown -R "$USER" build third_party ~/dub-cache
 
@@ -120,7 +120,7 @@ jobs:
       - name: Try it with Wine
         run: |
           export WINEPREFIX=$PWD/build/win/prefix WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=-all
-          for f in examples/*.hcad; do wine dist/hackerscad/bin/hscad.exe check "$f" || exit 1; done
+          for f in examples/*.hcad; do wine dist/hackerscad/bin/hcad.exe check "$f" || exit 1; done
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -147,7 +147,7 @@ jobs:
         # graphics card
         run: for z in *.zip; do unzip -q -o "$z" -d out; done
       - name: Check the examples
-        run: for f in examples/*.hcad; do out/hackerscad/bin/hscad.exe check "$f" || exit 1; done
+        run: for f in examples/*.hcad; do out/hackerscad/bin/hcad.exe check "$f" || exit 1; done
       # on request, the package is opened through hackerscad.exe, as a user
       # would: the runner has no graphics card, so it is Mesa's OpenGL
       - name: Try the package
@@ -161,7 +161,7 @@ jobs:
           sleep 8
           for z in *.zip; do case "$z" in *-mesa.zip) ;; *) unzip -q -o "$z" -d plain ;; esac; done
           # the program itself (its messages land in this log); no Mesa: no relaunch
-          tests/screenshot.sh windows-nomesa plain/hackerscad/bin/hscad-gui.exe
+          tests/screenshot.sh windows-nomesa plain/hackerscad/bin/hackerscad.exe
       - uses: actions/upload-artifact@v4
         if: inputs.try
         with:
@@ -195,7 +195,7 @@ jobs:
         run: |
           dub test :core --compiler=ldc2
           dub build --compiler=ldc2
-          for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done
+          for f in examples/*.hcad; do bin/hcad check "$f" || exit 1; done
       - name: Package
         run: VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/macos/package.sh
       # on request, the package just made is opened and kept as screenshots

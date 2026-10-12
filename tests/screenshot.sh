@@ -1,7 +1,7 @@
 #!/bin/bash
 # Used by the CI: starts the application on the startup example and, once it
 # is drawn, captures the whole screen.
-# Usage: tests/screenshot.sh <name> <hscad-gui command…>
+# Usage: tests/screenshot.sh <name> <hackerscad command…>
 #   -> window-<name>.png (from hackerscad) and screen-<name>.png (from the OS)
 name=$1
 shift

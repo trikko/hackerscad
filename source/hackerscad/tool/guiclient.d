@@ -1,6 +1,6 @@
 /// Control channel of the desktop application: a Unix socket (on Windows a
 /// TCP port on 127.0.0.1, written in a file) speaking one JSON object per
-/// line. `hscad-gui` listens; the MCP server and scripts connect.
+/// line. `hackerscad` listens; the MCP server and scripts connect.
 module hackerscad.tool.guiclient;
 
 import std.conv : to;
@@ -132,7 +132,7 @@ JSONValue guiRequest(string window, string method, JSONValue params)
 {
     import std.array : join;
     import std.algorithm : canFind;
-    enum notRunning = "hackerscad is not running: start it with `hscad-gui model.hcad`";
+    enum notRunning = "hackerscad is not running: start it with `hackerscad model.hcad`";
     auto open = openWindows();
     if (window.length == 0)
     {

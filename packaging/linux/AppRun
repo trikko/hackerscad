@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # AppRun of the hackerscad AppImage: the environment of the GTK plugin and
 # ours, then the GUI, or the command line tool when called as
-# `hackerscad.AppImage hscad …` (or through a symlink named hscad).
+# `hackerscad.AppImage hcad …` (or through a symlink named hcad; hscad, its
+# name up to 0.3, works too).
 set -e
 this_dir="$(readlink -f "$(dirname "$0")")"
 export APPDIR="${APPDIR:-$this_dir}"
 for hook in "$this_dir"/apprun-hooks/*.sh; do
     source "$hook"
 done
-if [ "$(basename "${ARGV0:-$0}")" = "hscad" ]; then
-    exec "$this_dir/usr/bin/hscad" "$@"
-fi
-if [ "${1:-}" = "hscad" ]; then
+case "$(basename "${ARGV0:-$0}")" in hcad | hscad)
+    exec "$this_dir/usr/bin/hcad" "$@" ;;
+esac
+case "${1:-}" in hcad | hscad)
     shift
-    exec "$this_dir/usr/bin/hscad" "$@"
-fi
-exec "$this_dir/usr/bin/hscad-gui" "$@"
+    exec "$this_dir/usr/bin/hcad" "$@" ;;
+esac
+exec "$this_dir/usr/bin/hackerscad" "$@"

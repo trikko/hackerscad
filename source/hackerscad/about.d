@@ -1,5 +1,5 @@
 /// What hackerscad is, its version and what it is built with: shown by
-/// `hscad --version` and the About window.
+/// `hcad --version` and the About window.
 module hackerscad.about;
 
 enum string appName = "hackerscad";
@@ -49,7 +49,7 @@ immutable Component[] components = [
         "LicenseRef-Microsoft-VC-Redistributable", "https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files"),
 ];
 
-/// One line per component, for `hscad --version`.
+/// One line per component, for `hcad --version`.
 string componentList()
 {
     import std.format : format;

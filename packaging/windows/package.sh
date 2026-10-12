@@ -3,7 +3,7 @@
 # native DLL, every DLL they need and the GTK data (schemas, icons, pixbuf
 # loaders, GtkSourceView styles, fontconfig). Runs in an MSYS2 CLANG64 shell,
 # or on Linux after tools/setup-win-cross.sh (then it can be tried with
-# Wine: wine dist/hackerscad/bin/hscad-gui.exe).
+# Wine: wine dist/hackerscad/bin/hackerscad.exe).
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 version="${VERSION:-$(sed -n 's/.*appVersion = "\(.*\)";/\1/p' "$root/source/hackerscad/about.d")}"
@@ -32,15 +32,15 @@ build :gui
 out="$root/dist/hackerscad"
 rm -rf "$out"
 mkdir -p "$out/bin" "$out/share/hackerscad" "$out/lib/gdk-pixbuf-2.0" "$out/etc"
-cp bin/hscad.exe bin/hscad-gui.exe build/win/native/hcad_native.dll "$out/bin/"
+cp bin/hcad.exe bin/hackerscad.exe build/win/native/hcad_native.dll "$out/bin/"
 # Microsoft's C runtime of the D programs: a fresh Windows may lack it
 case "$(uname -s)" in
 MINGW*|MSYS*|CLANG*) cp "$(cygpath -u "$SYSTEMROOT")/System32/vcruntime140.dll" "$out/bin/" ;;
 *) cp "$root/build/win/vcruntime/vcruntime140.dll" "$out/bin/" ;;
 esac
-# hackerscad.exe at the top: starts bin\hscad-gui.exe, with the logo as its icon
+# hackerscad.exe at the top: starts bin\hackerscad.exe, with the logo as its icon
 "$ldcbin" -betterC -O -release -boundscheck=off -mtriple=x86_64-windows-msvc -of="$out/hackerscad.exe" -od=build/win/native \
-    packaging/windows/launcher.d -L"$root/build/win/native/hscad-gui.res" \
+    packaging/windows/launcher.d -L"$root/build/win/native/hackerscad.res" \
     -L/SUBSYSTEM:WINDOWS -L/ENTRY:start -L/NODEFAULTLIB -L kernel32.lib -L user32.lib
 sh tools/win-forwarders.sh "$sys/bin" "$out/bin"
 
@@ -61,7 +61,7 @@ fi
 
 # every DLL the executables, GTK (opened at run time) and the pixbuf loaders
 # import, followed recursively; system DLLs are not in $sys/bin
-seeds="$out/bin/hscad.exe $out/bin/hscad-gui.exe $out/bin/hcad_native.dll $out/bin/gobject-2.0-0.dll
+seeds="$out/bin/hcad.exe $out/bin/hackerscad.exe $out/bin/hcad_native.dll $out/bin/gobject-2.0-0.dll
     $out/bin/cairo-gobject-2.dll $out/bin/harfbuzz-gobject-0.dll
     $sys/bin/libgtk-4-1.dll $sys/bin/libadwaita-1-0.dll $sys/bin/libgtksourceview-5-0.dll
     $(ls "$out"/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll)"

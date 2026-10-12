@@ -14,24 +14,24 @@ import hackerscad.tool.mcp : serve, serveWorker;
 enum usage = `hackerscad — parametric CAD with a D-like language
 
 usage:
-  hscad render FILE.hcad -o OUT [-o OUT…] [-D name=value…] [--preset NAME]
+  hcad render FILE.hcad -o OUT [-o OUT…] [-D name=value…] [--preset NAME]
       OUT can be .3mf (one object per part), .stl, .step or .png (iso view;
       name-views.png gives iso/front/top/right, name-top.png only the top,
       and so on for front, back, bottom, left, right), or .svg, .pdf, .dxf for a
       @drawing (the first one, or --drawing NAME)
-  hscad check FILE.hcad [--json] [-D name=value…] [--preset NAME]
+  hcad check FILE.hcad [--json] [-D name=value…] [--preset NAME]
       evaluates the model and reports parts, parameters, output and problems
-  hscad docs [TOPIC | --cheatsheet | --agents | --skill | --summary]
+  hcad docs [TOPIC | --cheatsheet | --agents | --skill | --summary]
       language reference and agent guide (without a topic: the full text,
       llms-full.txt); --cheatsheet every function in one line each (also
       --cheatsheet-html), --agents AGENTS.md, --skill SKILL.md, --summary
       llms.txt
-  hscad mcp
+  hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
-      cancelled or exceeds HSCAD_MCP_TIMEOUT (seconds, default 900) and may use
-      HSCAD_MCP_MEMORY_MB (default half of the RAM); 0 disables either limit
-  hscad --version
+      cancelled or exceeds HCAD_MCP_TIMEOUT (seconds, default 900) and may use
+      HCAD_MCP_MEMORY_MB (default half of the RAM); 0 disables either limit
+  hcad --version
       version, and the libraries hackerscad is built with
 
 options:

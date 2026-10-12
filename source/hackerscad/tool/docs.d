@@ -1,4 +1,4 @@
-/// Reference documentation for people and AI agents (`hscad docs`,
+/// Reference documentation for people and AI agents (`hcad docs`,
 /// `hcad_docs`, llms.txt). Everything is embedded in the binary.
 module hackerscad.tool.docs;
 
@@ -107,7 +107,7 @@ reference first and follow the rules below.
 
 ## How to work
 
-- **With the MCP server** (best): `claude mcp add hscad -- hscad mcp`. Tools:
+- **With the MCP server** (best): `claude mcp add -s user hcad -- hcad mcp`. Tools:
   hcad_docs (the reference, or one topic), hcad_check (errors with line,
   column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
   views: look at them), hcad_measure, hcad_export (.3mf .stl .step .png),
@@ -119,9 +119,9 @@ reference first and follow the rules below.
   model millimetres (hcad_gui_project converts them). Each window has a name
   in its header bar; with several open, hcad_gui_windows lists them and the
   user may tell you which one ("work in blue-otter").
-- **With the command line:** `hscad docs` prints the whole reference
-  (`hscad docs fillet` one topic); `hscad check model.hcad --json` reports
-  errors, parts and sizes; `hscad render model.hcad -o model-views.png`
+- **With the command line:** `hcad docs` prints the whole reference
+  (`hcad docs fillet` one topic); `hcad check model.hcad --json` reports
+  errors, parts and sizes; `hcad render model.hcad -o model-views.png`
   draws iso/front/top/right (look at it); `-o model.3mf`, `.step`, `.stl`;
   `-D width=80.mm` and `--preset name` change parameters.
 - The loop: write the model, check it, render and look, compare sizes and
@@ -130,15 +130,15 @@ reference first and follow the rules below.
 
 INTRO";
 
-/// AGENTS.md: the intro and the rules (`hscad docs --agents`).
+/// AGENTS.md: the intro and the rules (`hcad docs --agents`).
 string agentsText()
 {
     import std.string : indexOf;
     immutable rules = agentGuide[agentGuide.indexOf("## Rules")  .. $];
-    return agentsIntro ~ rules ~ "\nThe full reference: `hscad docs` (llms-full.txt).\n";
+    return agentsIntro ~ rules ~ "\nThe full reference: `hcad docs` (llms-full.txt).\n";
 }
 
-/// SKILL.md: AGENTS.md with the front matter of an installable skill (`hscad docs --skill`).
+/// SKILL.md: AGENTS.md with the front matter of an installable skill (`hcad docs --skill`).
 string skillText()
 {
     return "---\nname: hackerscad\n"
@@ -148,7 +148,7 @@ string skillText()
         ~ agentsText();
 }
 
-/// llms.txt: a page of overview (`hscad docs --summary`).
+/// llms.txt: a page of overview (`hcad docs --summary`).
 string summaryText()
 {
     import std.string : indexOf;
@@ -157,7 +157,7 @@ string summaryText()
         .replace("follow the rules below", "follow the rules in AGENTS.md")
         ~ "## Documentation\n\n"
         ~ "- AGENTS.md / SKILL.md: how to work with hackerscad and the rules that avoid most mistakes\n"
-        ~ "- llms-full.txt: the whole reference (language, libraries, examples), also `hscad docs`\n"
+        ~ "- llms-full.txt: the whole reference (language, libraries, examples), also `hcad docs`\n"
         ~ "- docs/TUTORIAL.md: a tutorial for people\n";
 }
 

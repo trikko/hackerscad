@@ -13,5 +13,5 @@ reference first and follow the rules in AGENTS.md.
 ## Documentation
 
 - AGENTS.md / SKILL.md: how to work with hackerscad and the rules that avoid most mistakes
-- llms-full.txt: the whole reference (language, libraries, examples), also `hscad docs`
+- llms-full.txt: the whole reference (language, libraries, examples), also `hcad docs`
 - docs/TUTORIAL.md: a tutorial for people

@@ -17,10 +17,7 @@ app="$root/dist/hackerscad.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/bin" "$app/Contents/Frameworks" \
     "$app/Contents/Resources/share/hackerscad"
-# the GUI is named hackerscad in the bundle: macOS shows the name of the
-# running executable in the menu bar
-cp bin/hscad "$app/Contents/Resources/bin/"
-cp bin/hscad-gui "$app/Contents/Resources/bin/hackerscad"
+cp bin/hcad bin/hackerscad "$app/Contents/Resources/bin/"
 
 # gid opens GTK and the libraries below it at run time (they are not linked
 # to the executables): bundle them, and what they need, with dylibbundler
@@ -34,7 +31,7 @@ for lib in $gidlibs; do
     chmod u+w "$fw/$lib"
 done
 dylibbundler -of -cd -b -p @executable_path/../../Frameworks/ -d "$fw/" \
-    -x "$app/Contents/Resources/bin/hscad" -x "$app/Contents/Resources/bin/hackerscad" \
+    -x "$app/Contents/Resources/bin/hcad" -x "$app/Contents/Resources/bin/hackerscad" \
     $(for lib in $gidlibs; do printf -- '-x %s ' "$fw/$lib"; done)
 
 # gid (0.9.13) looks the functions of a pair of libraries (gobject and glib,

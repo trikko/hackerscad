@@ -1,4 +1,4 @@
-/* hackerscad.exe, at the top of the Windows folder: starts bin\hscad-gui.exe
+/* hackerscad.exe, at the top of the Windows folder: starts bin\hackerscad.exe
  * with the same arguments, so users need not look for it in bin (the program
  * has to stay next to its DLLs, and a shortcut would break when the folder is
  * moved). Built with -betterC and without the C runtime (its entry point is
@@ -58,7 +58,7 @@ uint run(const(wchar)* args) nothrow @nogc
     dir[n] = 0;
     size_t e;
     append(exe, e, dir.ptr);
-    append(exe, e, "bin\\hscad-gui.exe"w.ptr);
+    append(exe, e, "bin\\hackerscad.exe"w.ptr);
     size_t l;
     append(line, l, "\""w.ptr);
     append(line, l, exe.ptr);
@@ -71,7 +71,7 @@ uint run(const(wchar)* args) nothrow @nogc
     zero(pi);
     if (!CreateProcessW(exe.ptr, line.ptr, null, null, FALSE, 0, null, null, &si, &pi))
     {
-        MessageBoxW(null, "bin\\hscad-gui.exe could not be started."w.ptr, "hackerscad"w.ptr, MB_ICONERROR);
+        MessageBoxW(null, "bin\\hackerscad.exe could not be started."w.ptr, "hackerscad"w.ptr, MB_ICONERROR);
         return 1;
     }
     CloseHandle(pi.hThread);

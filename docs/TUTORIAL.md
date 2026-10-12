@@ -25,31 +25,31 @@ full reference is [LANGUAGE.md](LANGUAGE.md) (or the cheatsheet, F1).
 
 - **Linux:** download `hackerscad-<version>-x86_64.AppImage`, make it
   executable (`chmod +x`) and run it. The same file also contains the command
-  line tool: `./hackerscad.AppImage hscad check model.hcad`.
+  line tool: `./hackerscad.AppImage hcad check model.hcad`.
 - **Windows:** unzip `hackerscad-<version>-windows-x86_64.zip` anywhere and
   run `hackerscad.exe` in the `hackerscad` folder (the command line tool is
-  `bin\hscad.exe`). Without a recent enough OpenGL (virtual machines without
+  `bin\hcad.exe`). Without a recent enough OpenGL (virtual machines without
   3D acceleration) it draws with the software OpenGL it ships with. It is not
   signed: if SmartScreen stops it, choose "More info" and then "Run anyway".
 - **macOS** (Apple Silicon): unzip `hackerscad-<version>-macos-arm64.zip`,
   move `hackerscad.app` to Applications and clear the attributes macOS puts on
   downloaded files (the quarantine), or it says the app is damaged (it is not signed by an
   Apple developer): `xattr -cr /Applications/hackerscad.app`.
-  The command line tool is `hackerscad.app/Contents/Resources/bin/hscad`.
+  The command line tool is `hackerscad.app/Contents/Resources/bin/hcad`.
 - **From source** (Linux, macOS): install a D compiler (LDC), dub,
   OpenCascade 7.9, GTK 4, libadwaita, GtkSourceView 5, TBB, CMake and Ninja,
   then:
 
 ```bash
-dub build            # bin/hscad, the command line tool
-dub build :gui       # bin/hscad-gui, the desktop application
+dub build            # bin/hcad, the command line tool
+dub build :gui       # bin/hackerscad, the desktop application
 ```
 
 The Windows version is built on Linux and can be tried there with Wine:
 `tools/setup-win-cross.sh` downloads the toolchain and the libraries once,
 then `packaging/windows/package.sh` builds the zip.
 
-Start the application with a file (`hscad-gui model.hcad`) or without one. A
+Start the application with a file (`hackerscad model.hcad`) or without one. A
 new file starts from a small example: a clip that keeps bags of biscuits
 closed ([examples/bagclip.hcad](../examples/bagclip.hcad)). Try its sliders
 first.
@@ -372,7 +372,7 @@ unittest
 ```
 
 - A failed `assert` keeps the model in the view and shows its message in the
-  console (and to `hscad check`, and to AI agents).
+  console (and to `hcad check`, and to AI agents).
 - Solids can be measured: `.volume`, `.bbox.size`. The console shows
   `soil: 0.60 l`.
 
@@ -416,7 +416,7 @@ objects, ready to be placed and coloured in the slicer. The same from the
 command line, with a preset:
 
 ```bash
-hscad render pot.hcad -o pot.3mf --preset large
+hcad render pot.hcad -o pot.3mf --preset large
 ```
 
 ## 4. With the mouse
@@ -672,7 +672,7 @@ Drawing flangeSheet()
 
 `standardViews` lays out front, top, side and isometric views, picks a
 standard scale, and adds the overall dimensions and the hole callouts
-("4× ⌀6"). `section` adds a hatched cut. Export with `hscad render sheet.hcad
+("4× ⌀6"). `section` adds a hatched cut. Export with `hcad render sheet.hcad
 -o flange.pdf` (or `.svg`, `.dxf`).
 
 ## 6. The command line
@@ -680,25 +680,30 @@ standard scale, and adds the overall dimensions and the hole callouts
 The command line tool does what the application does, without a window:
 
 ```bash
-hscad render model.hcad -o model.3mf -o model.step      # several outputs at once
-hscad render model.hcad -o shot.png                      # iso picture
-hscad render model.hcad -o shot-views.png                # iso, front, top, right
-hscad render model.hcad -o shot-top.png                  # one view: top, front, right…
-hscad render model.hcad -o model.stl -D width=80.mm --preset large
-hscad check model.hcad                                    # parts, sizes, checks
-hscad check model.hcad --json                             # the same for scripts
-hscad docs                                                # the language reference
+hcad render model.hcad -o model.3mf -o model.step      # several outputs at once
+hcad render model.hcad -o shot.png                      # iso picture
+hcad render model.hcad -o shot-views.png                # iso, front, top, right
+hcad render model.hcad -o shot-top.png                  # one view: top, front, right…
+hcad render model.hcad -o model.stl -D width=80.mm --preset large
+hcad check model.hcad                                    # parts, sizes, checks
+hcad check model.hcad --json                             # the same for scripts
+hcad docs                                                # the language reference
 ```
 
 ## 7. AI agents
 
-`hscad mcp` is a Model Context Protocol server: an agent such as Claude Code
+`hcad mcp` is a Model Context Protocol server: an agent such as Claude Code
 can write models, check them, look at pictures of the result and export,
 without guessing the language.
 
 ```bash
-claude mcp add hscad -- hscad mcp
+claude mcp add -s user hcad -- hcad mcp   # Claude Code
+codex mcp add hcad -- hcad mcp            # Codex
+agy mcp add hcad hcad mcp                 # Antigravity (CLI and IDE)
 ```
+
+When `hcad` is not in your `PATH`, write its full path in place of the
+`hcad` before `mcp`: the README tells where it is on each system.
 
 Then ask, for example, "a hexagonal pen holder, 10 cm tall, with a rounded
 bottom". The agent reads the reference (`hcad_docs`), writes the model, checks
@@ -727,4 +732,4 @@ one to use: "add a 3 mm fillet to the lid in blue-otter".
   edges take the longest. hackerscad caches every operation, so changing a
   parameter recomputes only what depends on it.
 - **"Unknown argument":** the error lists the arguments the function takes.
-  `hscad docs fillet` prints the reference of one function.
+  `hcad docs fillet` prints the reference of one function.

@@ -42,11 +42,11 @@ Download the package for your system from the releases.
 ```sh
 chmod +x hackerscad-*-x86_64.AppImage
 ./hackerscad-*-x86_64.AppImage                       # the application
-./hackerscad-*-x86_64.AppImage hscad check model.hcad  # the command line tool
+./hackerscad-*-x86_64.AppImage hcad check model.hcad  # the command line tool
 ```
 
 **Windows:** unzip it anywhere and run `hackerscad.exe` in the `hackerscad`
-folder (the command line tool is `bin\hscad.exe`). On machines without a
+folder (the command line tool is `bin\hcad.exe`). On machines without a
 recent enough OpenGL, such as virtual machines without 3D acceleration, it
 draws with the software OpenGL it ships with. The program is not signed: if
 SmartScreen stops it, choose "More info" and then "Run anyway".
@@ -59,7 +59,7 @@ damaged or cannot be opened:
 ```sh
 xattr -cr /Applications/hackerscad.app
 open /Applications/hackerscad.app                                    # the application
-/Applications/hackerscad.app/Contents/Resources/bin/hscad check model.hcad  # the command line tool
+/Applications/hackerscad.app/Contents/Resources/bin/hcad check model.hcad  # the command line tool
 ```
 
 A new file starts from a small example: a clip that keeps bags of biscuits
@@ -116,27 +116,68 @@ printed by the <code>unittest</code>.</em></p>
 ## Using hackerscad with an AI agent
 
 hackerscad is new, so it is not in the training data of the models: a model
-left to guess writes OpenSCAD or CadQuery instead. Give it the tools and the
-reference:
+left to guess writes OpenSCAD or CadQuery instead. Give it the MCP server
+(best: the agent checks models, looks at renders, measures, exports and drives
+the open application) or, for agents without MCP, the skill.
 
-* **The MCP server** (best): the agent checks models, looks at renders,
-  measures, exports, and drives the open application.
+### 1. Find `hcad`
 
-  ```sh
-  claude mcp add hscad -- hscad mcp
-  ```
+Both run `hcad`, the command line tool, and the agent starts it by itself from
+any folder. `hcad --version` tells whether it is in your `PATH`. If it is not,
+either put it there or use its full path in the commands below:
 
-* **The skill**, for agents that work with the command line: the rules that
-  avoid most mistakes ([SKILL.md](docs/SKILL.md), or [AGENTS.md](docs/AGENTS.md)
-  for tools that want a rules file) and the whole reference
-  ([llms-full.txt](docs/llms-full.txt); [llms.txt](docs/llms.txt) is a short
-  overview). `hscad` prints them, so they always match the installed version:
+| System | Full path of `hcad` | To put it in the `PATH` |
+|---|---|---|
+| Linux (AppImage) | `/path/to/hackerscad-…-x86_64.AppImage hcad` (the AppImage, then the word `hcad`) | `ln -s /path/to/hackerscad-…-x86_64.AppImage ~/.local/bin/hcad`: a link named `hcad` runs the command line tool |
+| Windows | `C:\path\to\hackerscad\bin\hcad.exe` | add `C:\path\to\hackerscad\bin` to the `Path` variable |
+| macOS | `/Applications/hackerscad.app/Contents/Resources/bin/hcad` | in `~/.zshrc`: `export PATH="/Applications/hackerscad.app/Contents/Resources/bin:$PATH"` |
+| Built from source | `/path/to/hackerscad/bin/hcad` | add `/path/to/hackerscad/bin` to the `PATH` |
 
-  ```sh
-  mkdir -p ~/.claude/skills/hackerscad
-  hscad docs --skill > ~/.claude/skills/hackerscad/SKILL.md
-  hscad docs > ~/.claude/skills/hackerscad/llms-full.txt
-  ```
+### 2. Add the MCP server
+
+One command, for all your projects; then restart the agent.
+
+| Agent | With `hcad` in the `PATH` | Check |
+|---|---|---|
+| Claude Code | `claude mcp add -s user hcad -- hcad mcp` | `claude mcp list` |
+| Codex | `codex mcp add hcad -- hcad mcp` | `codex mcp list` |
+| Antigravity (CLI and IDE) | `agy mcp add hcad hcad mcp` | `agy mcp list` |
+
+Without `hcad` in the `PATH`, the full path takes the place of the second
+`hcad`, the one before `mcp`. For example, with the AppImage in `~/Apps`:
+
+```sh
+claude mcp add -s user hcad -- ~/Apps/hackerscad-0.3.1-x86_64.AppImage hcad mcp
+codex mcp add hcad -- ~/Apps/hackerscad-0.3.1-x86_64.AppImage hcad mcp
+agy mcp add hcad ~/Apps/hackerscad-0.3.1-x86_64.AppImage hcad mcp
+```
+
+(the name of the AppImage changes with every version: the link of step 1
+does not), or on Windows:
+
+```bat
+claude mcp add -s user hcad -- C:\path\to\hackerscad\bin\hcad.exe mcp
+```
+
+Other tools take the same server in their MCP settings: the command (`hcad`,
+or its full path) with the argument `mcp`.
+
+### 3. Or the skill
+
+For agents that work with the command line: the rules that avoid most
+mistakes ([SKILL.md](docs/SKILL.md), or [AGENTS.md](docs/AGENTS.md) for tools
+that want a rules file) and the whole reference
+([llms-full.txt](docs/llms-full.txt); [llms.txt](docs/llms.txt) is a short
+overview). `hcad` prints them, so they always match the installed version; in
+Claude Code, for example:
+
+```sh
+mkdir -p ~/.claude/skills/hackerscad
+hcad docs --skill > ~/.claude/skills/hackerscad/SKILL.md
+hcad docs > ~/.claude/skills/hackerscad/llms-full.txt
+```
+
+The folder for each agent:
 
 | Tool | For all projects | For one project |
 |---|---|---|
@@ -155,8 +196,8 @@ Linux and macOS: install LDC and dub, OpenCascade 7.9, GTK 4, libadwaita,
 GtkSourceView 5, TBB, CMake and Ninja, then:
 
 ```sh
-dub build          # bin/hscad, the command line tool
-dub build :gui     # bin/hscad-gui, the application
+dub build          # bin/hcad, the command line tool
+dub build :gui     # bin/hackerscad, the application
 dub test :core     # the tests
 ```
 
@@ -180,7 +221,7 @@ hackerscad is built on [Open CASCADE Technology](https://dev.opencascade.org),
 [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/),
 [GtkSourceView](https://wiki.gnome.org/Projects/GtkSourceView),
 [giD](https://github.com/Kymorphia/gid) and
-[bindbc-opengl](https://github.com/BindBC/bindbc-opengl). `hscad --version` and
+[bindbc-opengl](https://github.com/BindBC/bindbc-opengl). `hcad --version` and
 the About window list them with their licences. The Windows package also
 ships [Mesa](https://mesa3d.org)'s software OpenGL and Microsoft's Visual C++
 runtime (`vcruntime140.dll`), redistributed under their licences.

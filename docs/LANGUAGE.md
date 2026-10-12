@@ -121,7 +121,7 @@ model in milliseconds.
   - `d.view(solid, "front" | "back" | "top" | "bottom" | "right" | "left" | "iso", at: vec(x, y), scale:)` (without `at:` the layout places it; `at:` is in paper mm from the bottom-left corner);
   - `d.section(solid, plane, label: "A")`: the solid cut by the plane, seen from the side the normal points to, cut faces hatched;
   - `d.dimension(view, from: vec(…), to: vec(…), offset: 8.mm, text:)` between two model points, on a view returned by `view`/`standardViews`; `d.note("text", at: vec(x, y), size: 3.5.mm)`.
-  - `hscad render model.hcad -o sheet.pdf` exports the first drawing, `--drawing name` another one.
+  - `hcad render model.hcad -o sheet.pdf` exports the first drawing, `--drawing name` another one.
 - **Standard algorithms** (eager, Phobos names, functions as normal arguments): `map`, `filter`, `fold`, `sum`, `any`, `all`, `count`, `canFind`, `sort`, `reverse`, `iota`, `cartesianProduct`, `zip`, `enumerate`, `join`, `min`, `max`, `minElement`, `maxElement`, `clamp`, `to!T`, `format`.
 
 ## Style
