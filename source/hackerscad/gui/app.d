@@ -3880,11 +3880,40 @@ private:
                     return reply(JSONValue.init, "missing 'path'");
                 // the cheatsheet window, when asked for and open
                 auto other = arg("window") == "cheatsheet" && cheatsheet !is null ? cheatsheet.widget : null;
-                whenIdle(() {
+                // after a change GTK draws the window at its next frame, which
+                // the compositor holds back while the window is hidden or
+                // covered: wait for it a while, then fall back on the 3D view
+                // alone, which OpenGL draws off screen
+                int tries;
+                bool attempt()
+                {
                     if (screenshot(file, other))
+                    {
                         reply(JSONValue(["path": file]), null);
-                    else
+                        return false;
+                    }
+                    if (++tries < 10)
+                    {
+                        (other !is null ? other : window).queueDraw();
+                        return true;
+                    }
+                    immutable w = max(640, viewport.area.getWidth()), h = max(480, viewport.area.getHeight());
+                    auto pixels = other is null ? viewport.renderImage(w, h) : null;
+                    if (pixels is null)
+                    {
                         reply(JSONValue.init, "the window has not been drawn: is the screen locked?");
+                        return false;
+                    }
+                    write(file, encodePng(pixels, w, h));
+                    auto r = JSONValue(["path": file]);
+                    r["note"] = "the window is hidden or covered, so it has not been drawn since the latest change: "
+                        ~ "this is the 3D view alone";
+                    reply(r, null);
+                    return false;
+                }
+                whenIdle(() {
+                    if (attempt())
+                        timeoutAdd(PRIORITY_DEFAULT, 100, &attempt);
                 });
                 return;
             }
