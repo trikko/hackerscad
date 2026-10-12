@@ -629,9 +629,12 @@ printable without supports, on a see-through potentiometer shaft.
   plane (XY, XZ, YZ or the selected face), a slider to move it and a button to
   flip its side. Cut solids show their inside filled and hatched. In face mode,
   clicking another face moves the plane there.
-- **Rollback:** in the Features tab, click an operation to see the model as it
-  was right after it, with the later material as a ghost. Click it again to
-  return to the full model.
+- **Steps:** the Steps tab lists how the model is built, in the order the code
+  runs, grouped by function: operations, calls of your functions, moves, and
+  what each function returns. Select a step to see what it made (a union or a
+  difference shows its two operands in two colours, a loop all its runs); the
+  bar over the view says you are not looking at the final model, and "Show
+  final model" or Esc goes back.
 
 ### Drawings
 

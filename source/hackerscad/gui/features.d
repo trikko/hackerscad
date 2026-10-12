@@ -63,12 +63,12 @@ final class FeaturesPanel
         widget.setMarginBottom(8);
         widget.setMarginStart(10);
         widget.setMarginEnd(10);
-        auto title = new Label("Features");
+        auto title = new Label("Steps");
         title.addCssClass("heading");
         title.setHalign(Align.Start);
         widget.append(title);
-        auto hint = new Label("Select a feature to see the model as it was right after it, "
-            ~ "or what a function returns.");
+        auto hint = new Label("How the model is built, step by step, in the order the code runs: "
+            ~ "select a step to see what it made, or what a function returns.");
         hint.addCssClass("dim-label");
         hint.setWrap(true);
         hint.setXalign(0);

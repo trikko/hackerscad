@@ -730,7 +730,7 @@ final class MainWindow
         stack.addTitledWithIcon(paramsScroll, "params", "Parameters", "preferences-other-symbolic");
         auto featuresScroll = new ScrolledWindow;
         featuresScroll.setChild(features.widget);
-        stack.addTitledWithIcon(featuresScroll, "features", "Features", "view-list-symbolic");
+        stack.addTitledWithIcon(featuresScroll, "features", "Steps", "view-list-symbolic");
         stack.setVexpand(true);
         auto switcher = new ViewSwitcher;
         switcher.setMarginTop(6);
@@ -3233,7 +3233,7 @@ private:
                     if (withSource)
                     {
                         j["source"] = text();
-                        j["feature_tree"] = features.rowsText();   // the Features panel, row by row
+                        j["steps"] = features.rowsText();   // the Steps panel, row by row
                     }
                     return j;
                 }
