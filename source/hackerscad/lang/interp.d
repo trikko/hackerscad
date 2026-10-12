@@ -51,6 +51,27 @@ struct FeatureInfo
     SolidVal result;   /// the solid right after the feature (for rollback views)
 }
 
+/// A solid, profile or path a call in the evaluated file produced (the
+/// GUI's Inspect shows them): recorded only with Interp.recordTrace.
+struct TraceEntry
+{
+    Span site;      /// the call or operator that produced it
+    Span decl;      /// for what a function returned: the function's name, else empty
+    string fn;      /// the function called, or the operator
+    string kind;    /// Solid, Profile or Path
+    SolidVal value;
+    uint calls;     /// how many times the site ran (only the first ones and the last are kept)
+}
+
+/// A function declared in a file and the lines it covers (up to the next
+/// declaration), for the GUI's feature tree and Inspect.
+struct FunctionInfo
+{
+    string name;       /// "Struct.method" for methods
+    Span nameSpan;     /// what TraceEntry.decl points at
+    uint first, last;  /// lines, attributes included; last is uint.max for the last one
+}
+
 /// A @drawing function and the drawing it returned (rendered on export).
 struct DrawingResult
 {
@@ -66,6 +87,7 @@ struct EvalResult
     ParamInfo[] params;
     string[] presets;
     FeatureInfo[] features;   /// features[id - 1] for SolidVal.creators ids
+    TraceEntry[] trace;       /// with Interp.recordTrace: the geometry each call made
     LogLine[] log;
     Diagnostic[] diagnostics;   /// warnings and failed unittests
 }
@@ -104,6 +126,10 @@ final class Interp
     string[] presetNames;
     FeatureInfo[] features;
     ObjectVal[] sketches;     /// sketches created by the run, for the GUI
+    /// Records in `trace` the geometry the calls of the evaluated file make
+    /// (the GUI's Inspect); off by default, it costs time and memory.
+    bool recordTrace;
+    TraceEntry[] trace;
 
     Env prelude;
     ModuleVal[string] modules;
@@ -114,6 +140,8 @@ final class Interp
     private Value returnValue;
     private Value[FuncDecl] partCache;
     private bool[FuncDecl] partsInProgress;
+    private string traceFile;              /// the evaluated file: only its calls are traced
+    private TraceSite[Span] traceSites;
 
     this(BrepKernel kernel)
     {
@@ -139,6 +167,7 @@ final class Interp
     {
         if (root is null)
             root = dirName(absolutePath(path));
+        traceFile = path;
         auto mod = loadModule(source, path, baseName(path));
         EvalResult r;
 
@@ -241,12 +270,76 @@ final class Interp
         r.params = params;
         r.presets = presetNames;
         r.features = features;
+        finishTrace();
+        r.trace = trace;
         r.log = log;
         r.diagnostics = diagnostics;
         return r;
     }
 
     // ------------------------------------------------------------ modules
+
+    /// The functions and struct methods declared in a file evaluated (or
+    /// imported) by this run, in source order.
+    FunctionInfo[] functionsOf(string path)
+    {
+        auto mod = path in modules;
+        if (mod is null || mod.program is null)
+            return null;
+        static uint startOf(Stmt d, Attribute[] attrs)
+        {
+            uint l = d.span.line;
+            foreach (a; attrs)
+                if (a.span.line > 0 && a.span.line < l)
+                    l = a.span.line;
+            return l;
+        }
+        // every declaration starts a range: the functions' ones are kept
+        struct Start
+        {
+            uint line;
+            string name;
+            FuncDecl f;
+        }
+        Start[] starts;
+        void walk(Stmt[] decls)
+        {
+            foreach (d; decls)
+            {
+                if (auto b = cast(Block) d)
+                    walk(b.stmts);
+                else if (auto f = cast(FuncDecl) d)
+                    starts ~= Start(startOf(f, f.attrs), f.name, f);
+                else if (auto st = cast(StructDecl) d)
+                {
+                    starts ~= Start(st.span.line, st.name, null);
+                    foreach (m; st.methods)
+                        starts ~= Start(startOf(m, m.attrs), st.name ~ "." ~ m.name, m);
+                }
+                else if (auto v = cast(VarDecl) d)
+                    starts ~= Start(startOf(v, v.attrs), v.name, null);
+                else if (d !is null)
+                    starts ~= Start(d.span.line, null, null);
+            }
+        }
+        walk(mod.program.decls);
+        import std.algorithm : sort;
+        starts.sort!((a, b) => a.line < b.line);
+        FunctionInfo[] r;
+        foreach (i, st; starts)
+            if (st.f !is null)
+            {
+                uint last = uint.max;
+                foreach (nx; starts[i + 1 .. $])
+                    if (nx.line > st.line)
+                    {
+                        last = nx.line - 1;
+                        break;
+                    }
+                r ~= FunctionInfo(st.name, st.f.nameSpan, st.line, last);
+            }
+        return r;
+    }
 
     /// The names the prelude defines (built-ins, units, constants).
     string[] preludeNames() => prelude.vars.keys;
@@ -1131,14 +1224,18 @@ final class Interp
                 throw new HcadError(Code.type, format("cannot combine a Path with '%s': sweep a profile along it first", opText(op)), span);
             if (l.solid.flat != r.solid.flat && l.solid.brep !is null && r.solid.brep !is null)
                 throw new HcadError(Code.type, format("cannot combine a %s and a %s: extrude the profile first", l.typeName, r.typeName), span);
+            Value v;
             switch (op)
             {
-            case Tok.plus: return solidBoolean(this, l.solid, r.solid, BoolOp.fuse, span);
-            case Tok.minus: return solidBoolean(this, l.solid, r.solid, BoolOp.cut, span);
-            case Tok.amp: return solidBoolean(this, l.solid, r.solid, BoolOp.common, span);
+            case Tok.plus: v = solidBoolean(this, l.solid, r.solid, BoolOp.fuse, span); break;
+            case Tok.minus: v = solidBoolean(this, l.solid, r.solid, BoolOp.cut, span); break;
+            case Tok.amp: v = solidBoolean(this, l.solid, r.solid, BoolOp.common, span); break;
             default:
                 throw new HcadError(Code.type, format("'%s' is not defined for solids (use + - &)", opText(op)), span);
             }
+            if (recordTrace)
+                traceCall(v, span, opText(op), Span.init);
+            return v;
         }
 
         if (op == Tok.tilde)
@@ -1419,10 +1516,16 @@ final class Interp
                 return callValue(f.bound.func, inner, span);
             }
         case Kind.builtin:
-            try
-                return f.bi.impl(args);
-            catch (KernelException e)
-                throw new HcadError(Code.kernel, e.msg, args.span);
+            {
+                Value r;
+                try
+                    r = f.bi.impl(args);
+                catch (KernelException e)
+                    throw new HcadError(Code.kernel, e.msg, args.span);
+                if (recordTrace)
+                    traceCall(r, span, f.bi.name, Span.init);
+                return r;
+            }
         case Kind.func:
             return callClosure(f.fn, args, span);
         case Kind.type:
@@ -1551,7 +1654,84 @@ final class Interp
                 result = coerce(result, c.returnType, c.mod, c.span, "return value of '" ~ c.name ~ "'");
             }
         }
+        // what a declared function returns (a lambda's result is its caller's)
+        if (recordTrace && c.decl !is null)
+            traceCall(result, span, c.name, c.decl.nameSpan);
         return result;
+    }
+
+    private enum maxTraceCalls = 8;     /// runs of one call site kept in the trace
+    private enum maxTrace = 3000;       /// entries in the whole trace
+
+    private struct TraceSite
+    {
+        uint calls;
+        size_t start, length;   /// the entries of the latest run kept
+    }
+
+    /// Records the solids, profiles and paths in `v` (also inside arrays and
+    /// structs, up to 16) as made by the call at `site`, when the call or the
+    /// function `decl` is in the evaluated file. A site that runs many times
+    /// (a loop) keeps its first runs and the last one.
+    private void traceCall(Value v, Span site, string fn, Span decl)
+    {
+        if (v.kind != Kind.solid && v.kind != Kind.array && v.kind != Kind.struct_)
+            return;
+        if (site.file != traceFile && decl.file != traceFile)
+            return;
+        SolidVal[16] found;
+        size_t n, budget = 256;   // values looked at: a long array of numbers is not walked
+        void collect(ref Value x)
+        {
+            if (n == found.length || budget == 0)
+                return;
+            budget--;
+            if (x.kind == Kind.solid)
+            {
+                if (x.solid !is null && x.solid.brep !is null)
+                    found[n++] = x.solid;
+            }
+            else if (x.kind == Kind.array)
+                foreach (ref e; x.arr)
+                    collect(e);
+            else if (x.kind == Kind.struct_)
+                foreach (ref e; x.st.fields)
+                    collect(e);
+        }
+        collect(v);
+        if (n == 0)
+            return;
+        auto s = site in traceSites;
+        if (s is null)
+        {
+            traceSites[site] = TraceSite.init;
+            s = site in traceSites;
+        }
+        s.calls++;
+        TraceEntry entry(SolidVal sv) => TraceEntry(site, decl, fn, sv.path ? "Path" : sv.flat ? "Profile" : "Solid", sv);
+        if (s.calls > maxTraceCalls)
+        {
+            // the latest run takes the place of the previous last one
+            if (s.length == n)
+                foreach (i; 0 .. n)
+                    trace[s.start + i] = entry(found[i]);
+            return;
+        }
+        if (trace.length + n > maxTrace)
+            return;
+        s.start = trace.length;
+        s.length = n;
+        foreach (i; 0 .. n)
+            trace ~= entry(found[i]);
+    }
+
+    /// Tells every trace entry how many times its site ran (at the end of a
+    /// run, or after a failed one).
+    void finishTrace()
+    {
+        foreach (ref e; trace)
+            if (auto s = e.site in traceSites)
+                e.calls = s.calls;
     }
 
     private Value callPart(FuncDecl f, ModuleVal mod)

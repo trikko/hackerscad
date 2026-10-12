@@ -24,7 +24,8 @@ reference first and follow the rules below.
   hcad_drawing (.pdf .svg .dxf). When the user has the application open, the
   hcad_gui_* tools drive it (open, edit the code, set parameters, move the
   view, pick faces, select and measure, context menu, section plane, rollback,
-  save, screenshot, state), so they see what you do. Points can be given in
+  inspect (the solids and 2D profiles a line or function makes), save,
+  screenshot, state), so they see what you do. Points can be given in
   model millimetres (hcad_gui_project converts them). Each window has a name
   in its header bar; with several open, hcad_gui_windows lists them and the
   user may tell you which one ("work in blue-otter").

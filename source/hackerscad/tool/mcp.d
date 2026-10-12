@@ -675,6 +675,12 @@ JSONValue[] toolList()
         gui("hcad_gui_rollback", "Show the user's model as it was right after the feature on a line of code (its new "
             ~ "faces in orange, the final parts as ghosts); without line, back to the final model.",
             `"line": {"type": "integer"}`, `[]`),
+        gui("hcad_gui_inspect", "Show in the user's 3D view what a line of code made (Inspect): the solids, 2D profiles "
+            ~ "(where they were drawn, before being extruded or placed) and paths of its calls in orange, the final parts "
+            ~ "as ghosts. line to to_line covers several lines; function shows what that function returns. On the line "
+            ~ "declaring a function, what it returns. Without arguments, back to the final model. Returns the state, "
+            ~ "whose inspect lists the items shown (line, function, kind, calls, bounding box).",
+            `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "function": {"type": "string"}`, `[]`),
         gui("hcad_gui_export", "Export the model open in the user's window, with the parameters and preset set "
             ~ "there, to 'path': .3mf (one object per part, colours), .stl, .step or .png.",
             `"path": {"type": "string"}`, `["path"]`),
@@ -816,7 +822,7 @@ JSONValue callTool(string name, JSONValue args)
             break;
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
-            "hcad_gui_rollback", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
+            "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
             "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet":
         {
             auto method = name["hcad_gui_".length .. $];

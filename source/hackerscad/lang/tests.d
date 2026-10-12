@@ -1022,3 +1022,55 @@ unittest
     missing.sort;
     assert(missing.length == 0, "not in lang/reference.d: " ~ missing.join(", "));
 }
+
+unittest
+{
+    // the trace (the GUI's Inspect): the geometry each call of the file made
+    enum src = "Profile p() => rect(10, 5) + circle(3);\n"
+        ~ "@part Solid s() => p.extrude(4).move(x: 10);\n"
+        ~ "@part Solid many()\n{\n    auto a = box(1, 1, 1);\n"
+        ~ "    foreach (i; 0 .. 20)\n        a = a + box(1, 1, 1).move(x: i);\n    return a;\n}\n";
+    assert(runModel(src).trace.length == 0);   // off unless asked for
+    auto it = make();
+    it.recordTrace = true;
+    auto r = runModel(src, it);
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    bool has(uint line, string fn, string kind)
+    {
+        foreach (e; r.trace)
+            if (e.site.line == line && e.fn == fn && e.kind == kind && e.decl == Span.init)
+                return true;
+        return false;
+    }
+    assert(has(1, "rect", "Profile") && has(1, "circle", "Profile") && has(1, "+", "Profile"));
+    assert(has(2, "extrude", "Solid") && has(2, "move", "Solid"));
+    // what p and s return, by their declarations
+    bool returned(string fn, uint declLine, bool flat)
+    {
+        foreach (e; r.trace)
+            if (e.fn == fn && e.decl.line == declLine && e.value.flat == flat)
+                return true;
+        return false;
+    }
+    assert(returned("p", 1, true) && returned("s", 2, false));
+    // a loop: the first runs and the last are kept, with the count
+    size_t kept;
+    foreach (e; r.trace)
+        if (e.site.line == 7 && e.fn == "+")
+        {
+            kept++;
+            assert(e.calls == 20);
+        }
+    assert(kept == 8, format("%d", kept));
+    // the last entry of the loop is the final union
+    auto many = r.parts[1].solid;
+    bool lastKept;
+    foreach (e; r.trace)
+        lastKept = lastKept || (e.site.line == 7 && e.fn == "+" && e.value is many);
+    assert(lastKept);
+    // the functions of the file and their lines, for the feature tree
+    auto fs = it.functionsOf(buildPath(tempDir, "hcad-test.hcad"));
+    assert(fs.length == 3 && fs[0].name == "p" && fs[1].name == "s" && fs[2].name == "many", format("%s", fs));
+    assert(fs[0].first == 1 && fs[0].last == 1 && fs[1].first == 2 && fs[1].last == 2 && fs[2].first == 3);
+}

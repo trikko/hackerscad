@@ -53,6 +53,8 @@ struct PartMesh
     BrepKernel kernel;
     EdgeInfo[] edgeInfo;    /// B-rep edges, for picking edges
     int[2][] edgeFaces;     /// the two faces of every edge
+    bool flat;              /// a 2D profile (Inspect draws it filled, with its outline)
+    bool path;              /// a curve: only edgeInfo and bbox are set
 }
 
 struct Outcome
@@ -64,6 +66,8 @@ struct Outcome
     ParamInfo[] params;
     string[] presets;
     FeatureInfo[] features;
+    TraceEntry[] trace;       /// the geometry each call made (Inspect)
+    FunctionInfo[] functions; /// of the model's file, for the feature tree (empty if it did not parse)
     SketchView[] sketches;
     LogLine[] log;
     Diagnostic[] diagnostics;
@@ -87,6 +91,7 @@ final class Evaluator
     // only the worker thread touches these, one evaluation at a time
     private CachingKernel kernel;
     private PartMesh[Brep] prepared;
+    private PartMesh[Brep] inspected;   /// meshes made by prepareSolids
 
     /// An evaluation is running or queued.
     bool busy() const => running || hasPending;
@@ -116,25 +121,61 @@ final class Evaluator
     {
         if (f.result is null || f.result.brep is null || f.result.path)
             return;
+        prepareSolids([f.result], (PartMesh[] ms) {
+            if (ms[0].vertices.length == 0)
+                return;
+            auto m = ms[0];
+            m.name = name;
+            m.span = f.span;
+            done(m);
+        });
+    }
+
+    /// Tessellates solids and profiles, and outlines paths (for Inspect), on
+    /// the worker thread; `done` gets one mesh per value, in order, on the GTK
+    /// thread (empty when it could not be made).
+    void prepareSolids(SolidVal[] vals, void delegate(PartMesh[]) done)
+    {
         jobs ~= () {
-            PartResult p;
-            p.name = name;
-            p.solid = f.result;
-            p.rgb = f.result.hasColor ? f.result.rgb : defaultPartColor;
-            p.span = f.span;
-            PartMesh m;
-            bool ok;
-            try
+            auto ms = new PartMesh[vals.length];
+            // a few hundred values are kept: Inspect goes back and forth on the same lines
+            if (inspected.length > 400)
+                inspected = null;
+            foreach (i, v; vals)
             {
-                m = prepare(kernel, p, 0.02);
-                ok = true;
-            }
-            catch (Exception)
-            {
+                if (v is null || v.brep is null)
+                    continue;
+                if (auto old = v.brep in inspected)
+                {
+                    ms[i] = *old;
+                    continue;
+                }
+                PartResult p;
+                p.solid = v;
+                p.rgb = v.hasColor ? v.rgb : defaultPartColor;
+                p.span = v.origin;
+                try
+                {
+                    if (v.path)
+                    {
+                        ms[i].bbox = kernel.bbox(v.brep);
+                        ms[i].edgeInfo = kernel.edges(v.brep);
+                        ms[i].brep = v.brep;
+                    }
+                    else if (auto old = v.brep in prepared)
+                        ms[i] = *old;
+                    else
+                        ms[i] = prepare(kernel, p, 0.02);
+                    ms[i].flat = v.flat;
+                    ms[i].path = v.path;
+                    inspected[v.brep] = ms[i];
+                }
+                catch (Exception)
+                {
+                }
             }
             idleAdd(PRIORITY_DEFAULT, () {
-                if (ok)
-                    done(m);
+                done(ms);
                 running = false;
                 if (hasPending || jobs.length)
                     startNext();
@@ -213,6 +254,7 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     it.preset = req.preset;
     it.cancel = cancel;
     it.onStage = stage;
+    it.recordTrace = true;
     try
     {
         auto r = it.runSource(req.source, absolutePath(req.path));
@@ -243,6 +285,7 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
         o.params = r.params;
         o.presets = r.presets;
         o.features = r.features;
+        o.trace = r.trace;
         o.log = r.log;
         o.diagnostics = r.diagnostics;
         o.ok = true;
@@ -255,9 +298,13 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
         o.params = it.params;
         o.presets = it.presetNames;
         o.log = it.log;
+        // what ran before the error, to inspect where it went wrong
+        it.finishTrace();
+        o.trace = it.trace;
     }
     catch (KernelException e)
         o.diagnostics = [Diagnostic(Severity.error, Code.kernel, e.msg, Span(req.path))];
+    o.functions = it.functionsOf(absolutePath(req.path));
     // sketches are shown even when the evaluation failed (e.g. conflicting constraints)
     foreach (sk; it.sketches)
         if (auto sv = cast(SketchVal) sk)

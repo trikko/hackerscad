@@ -82,6 +82,12 @@ final class Viewport
     private bool rollbackDirty;
     private uint rollbackFeature;
 
+    // inspect: what some lines of code made, the final parts as ghosts
+    private bool inspecting;
+    private PartMesh[] inspectItems;
+    private Gpu[] inspectGpu;
+    private bool inspectDirty;
+
     // sketches drawn over the model
     private SketchView[] sketches;
     private bool sketchMode;
@@ -300,6 +306,8 @@ final class Viewport
     void showRollback(PartMesh m, uint feature)
     {
         rollback = true;
+        inspecting = false;   // one or the other
+        inspectDirty = true;
         rollbackMesh = m;
         rollbackFeature = feature;
         rollbackDirty = true;
@@ -313,6 +321,84 @@ final class Viewport
     }
 
     bool inRollback() const => rollback;
+
+    /// Shows solids, 2D profiles and paths (what a line of code made) in
+    /// orange, the final parts as ghosts. Profiles are filled and outlined
+    /// where they are in their own coordinates; paths are lines. The view
+    /// moves to them when they are not all in sight, keeping its direction.
+    void showInspect(PartMesh[] items)
+    {
+        inspecting = true;
+        rollback = false;
+        inspectItems = null;
+        foreach (m; items)
+        {
+            if (m.vertices.length == 0 && m.edgeInfo.length == 0)
+                continue;
+            // profiles and paths: the exact B-rep edges as their outline
+            if (m.flat || m.path)
+            {
+                m.edges = null;
+                foreach (e; m.edgeInfo)
+                {
+                    auto pts = edgePolyline(e);
+                    foreach (k; 0 .. pts.length - 1)
+                        foreach (q; [pts[k], pts[k + 1]])
+                            m.edges ~= [cast(float) q.x, cast(float) q.y, cast(float) q.z];
+                }
+            }
+            inspectItems ~= m;
+        }
+        inspectDirty = true;
+        if (inspectItems.length)
+            frameIfOutside(inspectItems);
+        area.queueRender();
+    }
+
+    void clearInspect()
+    {
+        inspecting = false;
+        inspectItems = null;
+        inspectDirty = true;
+        area.queueRender();
+    }
+
+    bool inInspect() const => inspecting;
+
+    /// Centres the view on the items when a corner of their box is out of
+    /// sight (or they are a speck), from the same direction.
+    private void frameIfOutside(PartMesh[] items)
+    {
+        Vec3 lo = items[0].bbox.min, hi = items[0].bbox.max;
+        foreach (m; items[1 .. $])
+        {
+            lo = Vec3(min(lo.x, m.bbox.min.x), min(lo.y, m.bbox.min.y), min(lo.z, m.bbox.min.z));
+            hi = Vec3(max(hi.x, m.bbox.max.x), max(hi.y, m.bbox.max.y), max(hi.z, m.bbox.max.z));
+        }
+        immutable w = area.getWidth(), h = area.getHeight();
+        if (w <= 0 || h <= 0)
+            return;
+        double x0 = double.max, y0 = double.max, x1 = -double.max, y1 = -double.max;
+        bool outside;
+        foreach (k; 0 .. 8)
+        {
+            auto c = Vec3(k & 1 ? hi.x : lo.x, k & 2 ? hi.y : lo.y, k & 4 ? hi.z : lo.z);
+            double x, y;
+            if (!project(c, x, y))
+            {
+                outside = true;
+                break;
+            }
+            x0 = min(x0, x);
+            y0 = min(y0, y);
+            x1 = max(x1, x);
+            y1 = max(y1, y);
+        }
+        outside = outside || x0 < 0 || y0 < 0 || x1 > w || y1 > h;
+        immutable speck = max(x1 - x0, y1 - y0) < 12;
+        if (outside || speck)
+            centerOn((lo + hi) / 2, max(1.0, (hi - lo).length * 1.3));
+    }
 
     /// Cuts the view with the plane dot(p, normal) = offset, hiding what lies on the normal's side.
     void setSection(bool on, Vec3 normal, double offset)
@@ -1023,9 +1109,20 @@ private:
         glUniform4f(uClip, cast(float) sectionNormal.x, cast(float) sectionNormal.y, cast(float) sectionNormal.z,
             cast(float) sectionOffset);
 
-        if (rollback)
+        if (inspectDirty && !inspecting)
         {
-            renderRollback();
+            // Inspect was closed: its meshes leave the GPU
+            foreach (ref g; inspectGpu)
+                freeGpu(g);
+            inspectGpu = null;
+            inspectDirty = false;
+        }
+        if (rollback || inspecting)
+        {
+            if (rollback)
+                renderRollback();
+            else
+                renderInspect();
             renderSketches();
             glBindVertexArray(0);
             if (onFrame !is null)
@@ -1145,8 +1242,83 @@ private:
         glUniform3f(uColor, 0.13f, 0.14f, 0.16f);
         glBindVertexArray(rollbackGpu.edgeVao);
         glDrawArrays(GL_LINES, 0, rollbackGpu.edgeCount);
+        renderGhosts();
+    }
 
-        // the final parts as faint ghosts
+    /// What Inspect shows: solids in orange with their edges, profiles
+    /// filled see-through with a strong outline, paths as lines.
+    void renderInspect()
+    {
+        if (inspectDirty)
+        {
+            foreach (ref g; inspectGpu)
+                freeGpu(g);
+            inspectGpu = null;
+            foreach (m; inspectItems)
+                inspectGpu ~= uploadMesh(m);
+            inspectDirty = false;
+        }
+        immutable orange = Vec3(1.0, 0.62, 0.1), outline = Vec3(0.8, 0.33, 0.0);
+        void color(Vec3 c) => glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
+
+        // solids, pushed back so their edges draw on top
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(1, 1);
+        glUniform1i(uFlat, 0);
+        color(orange);
+        foreach (i, m; inspectItems)
+            if (!m.flat && !m.path)
+            {
+                glBindVertexArray(inspectGpu[i].vao);
+                glDrawElements(GL_TRIANGLES, inspectGpu[i].indexCount, GL_UNSIGNED_INT, null);
+            }
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        glUniform1i(uFlat, 1);
+        glUniform3f(uColor, 0.13f, 0.14f, 0.16f);
+        foreach (i, m; inspectItems)
+            if (!m.flat && !m.path)
+            {
+                glBindVertexArray(inspectGpu[i].edgeVao);
+                glDrawArrays(GL_LINES, 0, inspectGpu[i].edgeCount);
+            }
+
+        // profiles: see-through, lifted over faces they lie on
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(-2, -2);
+        glUniform1f(uAlpha, 0.45);
+        color(orange);
+        foreach (i, m; inspectItems)
+            if (m.flat)
+            {
+                glBindVertexArray(inspectGpu[i].vao);
+                glDrawElements(GL_TRIANGLES, inspectGpu[i].indexCount, GL_UNSIGNED_INT, null);
+            }
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glUniform1f(uAlpha, 1);
+
+        // outlines of profiles and paths, over everything
+        glDisable(GL_DEPTH_TEST);
+        glLineWidth(3);
+        color(outline);
+        foreach (i, m; inspectItems)
+            if (m.flat || m.path)
+            {
+                glBindVertexArray(inspectGpu[i].edgeVao);
+                glDrawArrays(GL_LINES, 0, inspectGpu[i].edgeCount);
+            }
+        glLineWidth(1);
+        glEnable(GL_DEPTH_TEST);
+        renderGhosts();
+    }
+
+    /// The final parts as faint ghosts (rollback and Inspect).
+    void renderGhosts()
+    {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);

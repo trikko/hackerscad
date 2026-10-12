@@ -53,6 +53,10 @@ import gtk.entry : Entry;
 import gdk.rectangle : Rectangle;
 import gtk.drop_down : DropDown;
 import gtk.scale : Scale;
+import gtk.gesture_click : GestureClick;
+import gtk.event_controller_key : EventControllerKey;
+import gtk.event_controller_motion : EventControllerMotion;
+import gdk.types : ModifierType, KEY_Escape, KEY_Control_L, KEY_Control_R;
 import hackerscad.geom.vec : Vec3;
 import glib.global : idleAdd;
 
@@ -74,7 +78,7 @@ import hackerscad.tool.codegen;
 import hackerscad.about;
 import hackerscad.gui.completion;
 import hackerscad.gui.cheatsheet;
-import hackerscad.lang.interp : Interp;
+import hackerscad.lang.interp : Interp, TraceEntry, FunctionInfo;
 import hackerscad.lang.value : SolidVal;
 import hackerscad.lang.sketchval : SketchView;
 import hackerscad.tool.guiclient : toOverrides;
@@ -340,6 +344,14 @@ struct ExportFormat
     string ext, label, what;
 }
 
+/// What Inspect shows: the lines from..to, or what a function returns.
+struct InspectQuery
+{
+    uint from, to;      /// lines (1-based); 0 when a function is shown
+    int col = -1;       /// cursor column on a single line (1-based), -1 for none
+    string function_;   /// a function's name: what it returns
+}
+
 final class MainWindow
 {
     ApplicationWindow window;
@@ -355,7 +367,7 @@ final class MainWindow
     import gtk.spinner : Spinner;
     Spinner busyIndicator;
     string statusText;   /// the latest program message (for the control socket)
-    ToggleButton paramsToggle, consoleToggle, rotateMode, panMode, sketchToggle, sectionToggle;
+    ToggleButton paramsToggle, consoleToggle, rotateMode, panMode, sketchToggle, sectionToggle, inspectToggle;
     Box sectionBar, viewBar;
     DropDown sectionPlane;
     Scale sectionSlider;
@@ -365,6 +377,11 @@ final class MainWindow
     ToggleButton sectionFlip;
     double sectionFace = 0;   /// position of the selected face along its normal
     FeaturesPanel features;
+    // Inspect: the solids and profiles a line of code made
+    InspectQuery inspectQuery;   /// what is shown, asked again after each evaluation
+    TraceEntry[] inspectShown;
+    PartMesh[] inspectMeshes;    /// one per inspectShown entry (empty when it could not be made)
+    uint inspectRequest;         /// goes up at every request: late meshes are dropped
     Overlay overlay;
     Button[] dimButtons;
     SketchView.Dimension[] dims;
@@ -434,6 +451,9 @@ final class MainWindow
             sectionBar.setVisible(sectionToggle.getActive());
             updateSection(true);
         });
+        inspectToggle = toggle("edit-find-symbolic", "Inspect (Ctrl+I): click a line of code to see the solids and "
+            ~ "2D profiles it makes, or a function's name to see what it returns; Ctrl+click a line does the same", false);
+        inspectToggle.connectToggled(() => updateEditorCursor(false));
         // left-drag mode: rotate or pan (right drag always rotates, middle pans)
         import gtk.icon_theme : IconTheme;
         import gdk.display : Display;
@@ -478,6 +498,10 @@ final class MainWindow
                 ~ " .hcad-viewbar separator { margin: 4px 2px; }"
                 ~ " .hcad-sectionbar { padding: 2px 8px 4px 8px; border-top: 1px solid alpha(currentColor, 0.10); }"
                 ~ " .hcad-sectionbar label { font-size: 0.9em; }"
+                ~ " .hcad-modebar { padding: 4px 6px 4px 10px; border-top: 1px solid alpha(currentColor, 0.10);"
+                ~ " background: alpha(@accent_bg_color, 0.14); border-radius: 0 0 9px 9px; }"
+                ~ " .hcad-modebar label { font-size: 0.9em; font-weight: bold; }"
+                ~ " .hcad-modebar button { min-height: 24px; padding: 1px 10px; }"
                 ~ " popover.hcad-menu > contents { padding: 4px 0; min-width: 210px; border-radius: 6px; }"
                 ~ " popover.hcad-menu button { min-height: 0; padding: 3px 14px; border-radius: 0; font-weight: normal;"
                 ~ " font-size: 0.93em; }"
@@ -518,8 +542,9 @@ final class MainWindow
         viewBar.append(modes);
         viewBar.append(separator());
         viewBar.append(sectionToggle);
+        viewBar.append(inspectToggle);
         viewBar.append(sketchToggle);
-        foreach (b; [rotateMode, panMode, sectionToggle, sketchToggle])
+        foreach (b; [rotateMode, panMode, sectionToggle, inspectToggle, sketchToggle])
             b.addCssClass("flat");
 
         // ---- editor
@@ -658,10 +683,22 @@ final class MainWindow
         };
         features = new FeaturesPanel;
         features.onSelect = &rollTo;
-        features.onFinal = () {
-            viewport.clearRollback();
-            info("");
+        features.onFinal = () => showFinal();
+        features.onReturns = (FunctionInfo fn) {
+            jumpTo(fn.nameSpan, "");
+            inspectFunction(fn);
         };
+        // Esc in the view closes Inspect
+        {
+            auto keys = new EventControllerKey;
+            keys.connectKeyPressed((uint key, uint code, ModifierType state) {
+                if (key != KEY_Escape || !(viewport.inInspect || viewport.inRollback))
+                    return false;
+                showFinal();
+                return true;
+            });
+            viewport.area.addController(keys);
+        }
         params = new ParamsPanel;
         params.onChange = () => scheduleEvaluation(0);
         params.onVisibility = (size_t part, bool visible) => viewport.setHidden(part, !visible);
@@ -695,6 +732,7 @@ final class MainWindow
         tools.setMarginTop(8);
         tools.append(viewBar);
         tools.append(sectionBar);
+        tools.append(modeBar);
         overlay.addOverlay(tools);
         info("");
         overlay.setVexpand(true);
@@ -736,6 +774,13 @@ final class MainWindow
         action(app, "fit", ["F5"], () => viewport.fit());
         action(app, "params", ["F9"], () => paramsToggle.setActive(!paramsToggle.getActive()));
         action(app, "console", ["<Control>j"], () => consoleToggle.setActive(!consoleToggle.getActive()));
+        action(app, "inspect", ["<Control>i"], () {
+            TextIter s, e;
+            if (buffer.getSelectionBounds(s, e) && e.getLine() > s.getLine())
+                inspectCursor();
+            else
+                inspectToggle.setActive(!inspectToggle.getActive());
+        });
         action(app, "about", [], &showAbout);
         action(app, "cheatsheet", ["F1"], &showCheatsheet);
         action(app, "tutorial", [], () => openUri(appWebsite ~ "/blob/main/docs/TUTORIAL.md"));
@@ -755,6 +800,54 @@ final class MainWindow
             scheduleEvaluation(250);
         });
         scheduleEvaluation(0);
+
+        // Inspect: a click with the lens armed, or a Ctrl+click, shows what that line makes
+        {
+            auto click = new GestureClick;
+            click.connectReleased((int n, double x, double y, GestureClick g) {
+                immutable ctrl = (g.getCurrentEventState() & ModifierType.ControlMask) != 0;
+                if (!ctrl && !inspectToggle.getActive())
+                    return;
+                TextIter s, e;
+                if (buffer.getSelectionBounds(s, e) && e.getLine() > s.getLine())
+                    inspectCursor();   // dragged over several lines
+                else
+                {
+                    import gtk.types : TextWindowType;
+                    int bx, by;
+                    editor.windowToBufferCoords(TextWindowType.Widget, cast(int) x, cast(int) y, bx, by);
+                    TextIter it;
+                    if (editor.getIterAtLocation(it, bx, by))
+                        inspectLines(it.getLine() + 1, it.getLine() + 1, it.getLineOffset() + 1);
+                }
+                inspectToggle.setActive(false);   // one shot: the lens goes back to a text cursor
+            });
+            editor.addController(click);
+
+            // the lens cursor while Ctrl is held over the code
+            auto keys = new EventControllerKey;
+            keys.connectKeyPressed((uint key, uint code, ModifierType state) {
+                if (key == KEY_Control_L || key == KEY_Control_R)
+                    updateEditorCursor(true);
+                else if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback))
+                {
+                    showFinal();
+                    return true;
+                }
+                return false;
+            });
+            keys.connectKeyReleased((uint key, uint code, ModifierType state) {
+                if (key == KEY_Control_L || key == KEY_Control_R)
+                    updateEditorCursor(false);
+            });
+            editor.addController(keys);
+            auto motion = new EventControllerMotion;
+            motion.connectMotion((double x, double y, EventControllerMotion m) {
+                updateEditorCursor((m.getCurrentEventState() & ModifierType.ControlMask) != 0);
+            });
+            motion.connectLeave(() => updateEditorCursor(false));
+            editor.addController(motion);
+        }
 
         // external control (MCP server, scripts), under a name agents can tell apart
         try
@@ -977,10 +1070,19 @@ private:
         // also what Export saves
         if (!o.ok)
             o.parts = last.parts;
+        // Inspect keeps what it had when the run stopped before making anything,
+        // and the feature groups when the code does not parse
+        if (!o.ok && o.trace.length == 0)
+            o.trace = last.trace;
+        if (o.functions.length == 0)
+            o.functions = last.functions;
         last = o;
         hadResult = true;
         params.update(o.params, o.presets);
-        features.update(o.features, path);
+        features.update(o.features, o.trace, o.functions, path);
+        // Inspect shows what the same lines make now
+        if (viewport.inInspect && !o.cancelled)
+            reinspect();
         if (viewport.inRollback)
         {
             viewport.clearRollback();
@@ -1317,6 +1419,9 @@ private:
                         return;
                     }
                 }
+        // a click on nothing closes Inspect
+        if (hit.part < 0 && viewport.inInspect)
+            stopInspect();
         if (hit.part >= 0 && hit.edge < 0)
             hit.edge = viewport.nearestEdge(hit.part, hit.face, hit.x, hit.y, 6);
         if (hit.shift && hit.part >= 0)
@@ -1391,6 +1496,7 @@ private:
 
     void buildSectionBar()
     {
+        buildModeBar();
         sectionBar = new Box(Orientation.Horizontal, 8);
         sectionBar.addCssClass("hcad-sectionbar");
         auto title = new Label("Section");
@@ -1502,11 +1608,301 @@ private:
         if (id == 0 || id > last.features.length)
             return;
         auto f = last.features[id - 1];
+        inspectRequest++;   // an Inspect on its way would replace the rollback
         jumpTo(f.span, format("rollback · line %d · %s (computing…)", f.span.line, f.kind));
         evaluator.prepareFeature(f, f.kind, (PartMesh m) {
             viewport.showRollback(m, id);
             info(format("rollback · line %d · %s · its new faces in orange", f.span.line, f.kind));
+            showModeBar(format("Model as it was after line %d (%s)", f.span.line, f.kind));
         });
+    }
+
+    // ---- the bar that tells the view is not showing the final model
+
+    Box modeBar;
+    Label modeText;
+
+    void buildModeBar()
+    {
+        import gtk.image : Image;
+
+        modeBar = new Box(Orientation.Horizontal, 8);
+        modeBar.addCssClass("hcad-modebar");
+        auto icon = new Image;
+        icon.setFromIconName("edit-find-symbolic");
+        modeBar.append(icon);
+        modeText = new Label("");
+        modeText.setEllipsize(EllipsizeMode.End);
+        modeText.setMaxWidthChars(48);
+        modeText.setXalign(0);
+        modeText.setHexpand(true);
+        modeBar.append(modeText);
+        auto back = new Button;
+        back.setLabel("Show final model");
+        back.setTooltipText("Back to the parts as the model makes them (Esc)");
+        back.addCssClass("suggested-action");
+        back.connectClicked(() => showFinal());
+        modeBar.append(back);
+        modeBar.setVisible(false);
+    }
+
+    /// Shows the bar with `text`, or hides it (null).
+    void showModeBar(string text)
+    {
+        modeText.setLabel(text);
+        modeBar.setVisible(text.length > 0);
+    }
+
+    /// Back to the final model: closes Inspect and rollback.
+    void showFinal()
+    {
+        viewport.clearRollback();
+        if (viewport.inInspect)
+            stopInspect();
+        features.clearSelection();
+        info("");
+        showModeBar(null);
+    }
+
+    /// The editor's pointer: a lens while a click would inspect (Ctrl held, or the lens armed).
+    void updateEditorCursor(bool ctrl)
+    {
+        editor.setCursorFromName(ctrl || inspectToggle.getActive() ? "zoom-in" : "text");
+    }
+
+    // ---- Inspect: from the code to the geometry it makes
+
+    /// Inspects the code at the cursor, or the selected lines.
+    void inspectCursor()
+    {
+        TextIter s, e;
+        if (buffer.getSelectionBounds(s, e) && e.getLine() > s.getLine())
+        {
+            // a selection ending at the start of a line does not take that line
+            immutable to = e.getLineOffset() == 0 ? e.getLine() : e.getLine() + 1;
+            inspectLines(s.getLine() + 1, max(s.getLine() + 1, to), -1);
+            return;
+        }
+        TextIter it;
+        buffer.getIterAtMark(it, buffer.getInsert());
+        inspectLines(it.getLine() + 1, it.getLine() + 1, it.getLineOffset() + 1);
+    }
+
+    /// Shows what lines from..to made. On the declaration of a function, with
+    /// the cursor on or before its name (or a line made nothing), what the
+    /// function returns. False, and the view as it was, when nothing is found.
+    bool inspectLines(uint from, uint to, int col)
+    {
+        if (from == to)
+            foreach (fn; last.functions)
+                if (from >= fn.first && from <= fn.nameSpan.line)
+                {
+                    immutable onName = from < fn.nameSpan.line || (col > 0 && col <= fn.nameSpan.col + fn.nameSpan.length);
+                    if (onName || entriesOn(from, to).length == 0)
+                        return inspectFunction(fn);
+                    break;
+                }
+        auto made = entriesOn(from, to);
+        if (made.length == 0)
+            return false;
+        inspectQuery = InspectQuery(from, to, col, null);
+        showInspected(made, from == to ? format("line %d", from) : format("lines %d–%d", from, to), false);
+        return true;
+    }
+
+    /// Shows what a function returned (every call of it, up to the trace's limits).
+    bool inspectFunction(FunctionInfo fn)
+    {
+        immutable file = absolutePath(path);
+        TraceEntry[] made;
+        foreach (e; last.trace)
+            if (e.decl.file == file && e.decl.line == fn.nameSpan.line && e.decl.col == fn.nameSpan.col)
+                made ~= e;
+        made = distinct(made);
+        if (made.length == 0)
+            return false;
+        inspectQuery = InspectQuery(0, 0, -1, fn.name);
+        showInspected(made, format("line %d · %s returns", fn.nameSpan.line, fn.name), true);
+        return true;
+    }
+
+    /// The trace entries made on lines from..to of the model's file.
+    TraceEntry[] entriesOn(uint from, uint to)
+    {
+        immutable file = absolutePath(path);
+        TraceEntry[] r;
+        foreach (e; last.trace)
+            if (e.site.line >= from && e.site.line <= to && e.site.file == file)
+                r ~= e;
+        return distinct(r);
+    }
+
+    /// Without the values met twice (a call and the function it returned from).
+    static TraceEntry[] distinct(TraceEntry[] es)
+    {
+        bool[void*] seen;
+        TraceEntry[] r;
+        foreach (e; es)
+        {
+            auto key = cast(void*) e.value.brep;
+            if (key in seen)
+                continue;
+            seen[key] = true;
+            r ~= e;
+        }
+        return r;
+    }
+
+    /// Tessellates the values (on the evaluator's thread) and shows them.
+    void showInspected(TraceEntry[] made, string where, bool returns)
+    {
+        enum maxShown = 64;
+        if (made.length > maxShown)
+            made = made[0 .. maxShown];
+        // the cursor moved within the same code (typing): nothing new to show
+        if (viewport.inInspect && sameValues(made, inspectShown))
+        {
+            inspectRequest++;   // a request still on its way is not needed
+            inspectShown = made;
+            info(inspectSummary(where, made, inspectMeshes, returns));
+            return;
+        }
+        immutable request = ++inspectRequest;
+        if (viewport.inRollback)
+        {
+            viewport.clearRollback();
+            features.clearSelection();
+        }
+        info(where ~ " (computing…)");
+        SolidVal[] vals;
+        foreach (e; made)
+            vals ~= e.value;
+        evaluator.prepareSolids(vals, (PartMesh[] ms) {
+            if (request != inspectRequest)
+                return;   // a newer request, or Inspect was closed
+            inspectShown = made;
+            inspectMeshes = ms;
+            viewport.showInspect(ms);
+            info(inspectSummary(where, made, ms, returns));
+            showModeBar("Inspecting " ~ where ~ ": in orange what it makes");
+        });
+    }
+
+    static bool sameValues(TraceEntry[] a, TraceEntry[] b)
+    {
+        if (a.length != b.length)
+            return false;
+        foreach (i; 0 .. a.length)
+            if (a[i].value !is b[i].value)
+                return false;
+        return true;
+    }
+
+    /// "line 73 · polygon → Profile 2D · 32 × 18 mm"
+    static string inspectSummary(string where, TraceEntry[] made, PartMesh[] ms, bool returns)
+    {
+        string[] what;
+        foreach (e; made)
+        {
+            auto kind = e.kind == "Profile" ? "Profile 2D" : e.kind;
+            auto w = returns ? kind : format("%s%s → %s", e.fn, e.calls > 1 ? format(" ×%d", e.calls) : "", kind);
+            if (!what.canFind(w))
+                what ~= w;
+        }
+        auto list = what.length > 3 ? what[0 .. 3].join(", ") ~ format(" and %d more", what.length - 3) : what.join(", ");
+        bool any, allFlat = true, anyFlat;
+        Vec3 lo, hi;
+        foreach (m; ms)
+        {
+            if (m.vertices.length == 0 && m.edgeInfo.length == 0)
+                continue;
+            lo = any ? Vec3(min(lo.x, m.bbox.min.x), min(lo.y, m.bbox.min.y), min(lo.z, m.bbox.min.z)) : m.bbox.min;
+            hi = any ? Vec3(max(hi.x, m.bbox.max.x), max(hi.y, m.bbox.max.y), max(hi.z, m.bbox.max.z)) : m.bbox.max;
+            any = true;
+            allFlat = allFlat && m.flat;
+            anyFlat = anyFlat || m.flat;
+        }
+        if (!any)
+            return format("%s · %s · could not be shown", where, list);
+        auto d = hi - lo;
+        string size;
+        if (allFlat)
+        {
+            // the two sides of the profile's plane, wherever it lies
+            double[3] a = [d.x, d.y, d.z];
+            import std.algorithm : sort;
+            a[].sort!"a > b";
+            size = format("%.1f × %.1f mm", a[0], a[1]);
+        }
+        else
+            size = format("%.1f × %.1f × %.1f mm", d.x, d.y, d.z);
+        return format("%s · %s · %s%s", where, list, size, anyFlat ? " · profiles in their own coordinates" : "");
+    }
+
+    /// Shows the same lines (or function) again, on a new evaluation.
+    void reinspect()
+    {
+        if (inspectQuery.function_.length)
+        {
+            foreach (fn; last.functions)
+                if (fn.name == inspectQuery.function_)
+                {
+                    inspectFunction(fn);
+                    return;
+                }
+        }
+        else if (inspectQuery.from > 0)
+            inspectLines(inspectQuery.from, inspectQuery.to, inspectQuery.col);
+    }
+
+    void stopInspect()
+    {
+        inspectRequest++;
+        immutable was = viewport.inInspect;
+        inspectQuery = InspectQuery.init;
+        inspectShown = null;
+        inspectMeshes = null;
+        viewport.clearInspect();
+        if (was)
+        {
+            features.clearSelection();
+            info("");
+        }
+        if (!viewport.inRollback)
+            showModeBar(null);
+    }
+
+    /// What Inspect shows, for agents (null when it is off).
+    JSONValue inspectJson()
+    {
+        if (!viewport.inInspect)
+            return JSONValue(null);
+        JSONValue j = ["status": infoLabel !is null ? infoLabel.getLabel() : ""];
+        if (inspectQuery.function_.length)
+            j["function"] = inspectQuery.function_;
+        else
+            j["lines"] = [inspectQuery.from, inspectQuery.to];
+        JSONValue[] items;
+        foreach (i, e; inspectShown)
+        {
+            JSONValue it = ["line": e.site.line];
+            it["function"] = e.fn;
+            it["kind"] = e.kind;
+            it["calls"] = e.calls;
+            if (e.decl.line > 0)
+                it["returned_by_line"] = e.decl.line;
+            if (e.site.file != absolutePath(path))
+                it["file"] = e.site.file;
+            if (i < inspectMeshes.length && (inspectMeshes[i].vertices.length || inspectMeshes[i].edgeInfo.length))
+            {
+                auto b = inspectMeshes[i].bbox;
+                it["min"] = [b.min.x, b.min.y, b.min.z];
+                it["max"] = [b.max.x, b.max.y, b.max.z];
+            }
+            items ~= it;
+        }
+        j["items"] = items;
+        return j;
     }
 
     // ---- context menu: features written into the code
@@ -2666,6 +3062,42 @@ private:
             sketchToggle.setActive("on" !in p || p["on"].type != JSONType.false_);
             whenIdle(() => reply(state(), null));
             return;
+        case "inspect":
+            {
+                // {"line": 12, "to_line": 20} or {"function": "lever"}: what that code made; nothing: back to the model
+                if (!has("line") && !has("function"))
+                {
+                    stopInspect();
+                    whenIdle(() => reply(state(), null));
+                    return;
+                }
+                whenIdle(() {
+                    // on the latest evaluation
+                    if (auto name = arg("function"))
+                    {
+                        string[] names;
+                        foreach (fn; last.functions)
+                        {
+                            if (fn.name == name)
+                            {
+                                if (!inspectFunction(fn))
+                                    return reply(JSONValue.init, format("'%s' returned no solid, profile or path", name));
+                                return whenIdle(() => reply(state(), null));
+                            }
+                            names ~= fn.name;
+                        }
+                        return reply(JSONValue.init, format("no function '%s' in the model (there are: %s)", name,
+                            names.join(", ")));
+                    }
+                    immutable from = cast(uint) p["line"].get!long;
+                    immutable to = has("to_line") ? cast(uint) p["to_line"].get!long : from;
+                    if (!inspectLines(from, max(from, to), -1))
+                        return reply(JSONValue.init, from == to ? format("line %d made no solid, profile or path", from)
+                            : format("lines %d–%d made no solid, profile or path", from, to));
+                    whenIdle(() => reply(state(), null));
+                });
+                return;
+            }
         case "rollback":
             {
                 // {"line": 12}: the model right after the feature on that line; no line: the final model
@@ -3075,6 +3507,7 @@ private:
         }
         j["params"] = ps;
         j["presets"] = last.presets;
+        j["inspect"] = inspectJson();
         auto cam = viewport.camera();
         JSONValue jc = ["yaw": cam.yaw, "pitch": cam.pitch, "distance": cam.distance];
         jc["target"] = [cam.target.x, cam.target.y, cam.target.z];
