@@ -169,6 +169,8 @@ version (Windows)
     }
 }
 
+version (Windows)
+{
     /// Whether the system's OpenGL can run GTK: version 3.2 at least, and not
     /// Windows' own software one ("GDI Generic"). opengl32.dll is loaded here
     /// by hand: linked to the program, Windows would load the system's before
@@ -255,6 +257,7 @@ version (Windows)
             return false;
         }
     }
+}
 
 int main(string[] args)
 {
