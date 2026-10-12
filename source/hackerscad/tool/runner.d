@@ -164,7 +164,7 @@ final class Run
             kernel.writeStep(acc, file);
             break;
         case ".png":
-            write(file, png(file.endsWith("-views.png") ? [View.iso, View.front, View.top, View.right] : [View.iso]));
+            write(file, png(pngViews(file)));
             break;
         default:
             throw new HcadError(Code.import_, format("unsupported output format '%s' (use .3mf, .stl, .step, .png, .svg, .pdf or .dxf)",
@@ -173,6 +173,21 @@ final class Run
     }
 
     /// PNG of the parts: one view at 1000×700, or a 2-column sheet.
+    /// The views a PNG's name asks for: name-views.png the four, name-top.png
+    /// (front, back, bottom, left, right, iso) that one, else the iso view.
+    static View[] pngViews(string file)
+    {
+        import std.algorithm : endsWith;
+        import std.conv : to;
+        import std.traits : EnumMembers;
+        if (file.endsWith("-views.png"))
+            return [View.iso, View.front, View.top, View.right];
+        foreach (v; EnumMembers!View)
+            if (file.endsWith("-" ~ v.to!string ~ ".png"))
+                return [v];
+        return [View.iso];
+    }
+
     ubyte[] png(const View[] views, uint cell = 450)
     {
         Shaded[] shaded;

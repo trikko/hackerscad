@@ -16,7 +16,8 @@ enum usage = `hackerscad — parametric CAD with a D-like language
 usage:
   hscad render FILE.hcad -o OUT [-o OUT…] [-D name=value…] [--preset NAME]
       OUT can be .3mf (one object per part), .stl, .step or .png (iso view;
-      name-views.png gives iso/front/top/right), or .svg, .pdf, .dxf for a
+      name-views.png gives iso/front/top/right, name-top.png only the top,
+      and so on for front, back, bottom, left, right), or .svg, .pdf, .dxf for a
       @drawing (the first one, or --drawing NAME)
   hscad check FILE.hcad [--json] [-D name=value…] [--preset NAME]
       evaluates the model and reports parts, parameters, output and problems
