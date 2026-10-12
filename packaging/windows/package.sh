@@ -33,10 +33,15 @@ out="$root/dist/hackerscad"
 rm -rf "$out"
 mkdir -p "$out/bin" "$out/share/hackerscad" "$out/lib/gdk-pixbuf-2.0" "$out/etc"
 cp bin/hscad.exe bin/hscad-gui.exe build/win/native/hcad_native.dll "$out/bin/"
+# Microsoft's C runtime of the D programs: a fresh Windows may lack it
+case "$(uname -s)" in
+MINGW*|MSYS*|CLANG*) cp "$(cygpath -u "$SYSTEMROOT")/System32/vcruntime140.dll" "$out/bin/" ;;
+*) cp "$root/build/win/vcruntime/vcruntime140.dll" "$out/bin/" ;;
+esac
 # hackerscad.exe at the top: starts bin\hscad-gui.exe, with the logo as its icon
-"$ldcbin" -betterC -O -mtriple=x86_64-windows-msvc -of="$out/hackerscad.exe" -od=build/win/native \
+"$ldcbin" -betterC -O -release -boundscheck=off -mtriple=x86_64-windows-msvc -of="$out/hackerscad.exe" -od=build/win/native \
     packaging/windows/launcher.d -L"$root/build/win/native/hscad-gui.res" \
-    -L/SUBSYSTEM:WINDOWS -L/ENTRY:wWinMainCRTStartup -L user32.lib
+    -L/SUBSYSTEM:WINDOWS -L/ENTRY:start -L/NODEFAULTLIB -L kernel32.lib -L user32.lib
 sh tools/win-forwarders.sh "$sys/bin" "$out/bin"
 
 # GTK data

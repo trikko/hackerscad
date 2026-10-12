@@ -60,6 +60,33 @@ while read -r f; do
     bsdtar -xf "dl/pkgs/$f" -C msys --exclude .PKGINFO --exclude .BUILDINFO --exclude .MTREE --exclude .INSTALL
 done < pkgs.txt
 
+# Microsoft's C runtime of the D programs (vcruntime140.dll), from the official
+# Visual C++ Redistributable, shipped next to them: a fresh Windows may lack it.
+# The installer holds cabinets, and cabinets inside them: the DLL is looked up
+# by name
+get vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
+if ! [ -f vcruntime/vcruntime140.dll ]; then
+    rm -rf vcredist && mkdir -p vcredist vcruntime
+    python3 - <<'PY'
+import re
+data = open('dl/vc_redist.x64.exe', 'rb').read()
+for i, m in enumerate(re.finditer(b'MSCF\0\0\0\0', data)):
+    size = int.from_bytes(data[m.start() + 8:m.start() + 12], 'little')
+    if 0 < size <= len(data) - m.start():
+        open(f'vcredist/outer{i}.cab', 'wb').write(data[m.start():m.start() + size])
+PY
+    for c in vcredist/outer*.cab; do 7z x -y -ovcredist/inner "$c" >/dev/null; done
+    for f in vcredist/inner/*; do
+        if 7z l "$f" 2>/dev/null | grep -q "vcruntime140.dll_amd64"; then
+            7z e -y -ovcredist "$f" vcruntime140.dll_amd64 >/dev/null
+            cp vcredist/vcruntime140.dll_amd64 vcruntime/vcruntime140.dll
+            break
+        fi
+    done
+    rm -rf vcredist
+    [ -f vcruntime/vcruntime140.dll ] || { echo "vcruntime140.dll not found in vc_redist.x64.exe" >&2; exit 1; }
+fi
+
 # what the packages' install scripts would do
 sys="$win/msys/clang64"
 glib-compile-schemas "$sys/share/glib-2.0/schemas"

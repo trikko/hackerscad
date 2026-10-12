@@ -181,7 +181,9 @@ hackerscad is built on [Open CASCADE Technology](https://dev.opencascade.org),
 [GtkSourceView](https://wiki.gnome.org/Projects/GtkSourceView),
 [giD](https://github.com/Kymorphia/gid) and
 [bindbc-opengl](https://github.com/BindBC/bindbc-opengl). `hscad --version` and
-the About window list them with their licences.
+the About window list them with their licences. The Windows package also
+ships [Mesa](https://mesa3d.org)'s software OpenGL and Microsoft's Visual C++
+runtime (`vcruntime140.dll`), redistributed under their licences.
 
 It is inspired by [OpenSCAD](https://openscad.org), where a solid is a small
 program, and by [Onshape](https://www.onshape.com), with its features,

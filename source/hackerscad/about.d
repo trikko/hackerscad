@@ -43,6 +43,10 @@ immutable Component[] components = [
         "https://github.com/BindBC/bindbc-opengl"),
     Component("oneTBB", "parallel loops (in Manifold, Linux and macOS)", "© Intel Corporation", "Apache-2.0",
         "https://github.com/uxlfoundation/oneTBB"),
+    Component("Mesa", "software OpenGL where the machine has none (Windows package)", "© The Mesa authors", "MIT",
+        "https://mesa3d.org"),
+    Component("Visual C++ runtime", "vcruntime140.dll (Windows package)", "© Microsoft Corporation",
+        "LicenseRef-Microsoft-VC-Redistributable", "https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files"),
 ];
 
 /// One line per component, for `hscad --version`.

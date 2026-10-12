@@ -1,7 +1,8 @@
 /* hackerscad.exe, at the top of the Windows folder: starts bin\hscad-gui.exe
  * with the same arguments, so users need not look for it in bin (the program
  * has to stay next to its DLLs, and a shortcut would break when the folder is
- * moved). Built with -betterC by packaging/windows/package.sh. */
+ * moved). Built with -betterC and without the C runtime (its entry point is
+ * start), so it needs nothing next to it: see packaging/windows/package.sh. */
 module launcher;
 
 import core.sys.windows.windows;
@@ -23,9 +24,34 @@ void append(wchar[] buf, ref size_t n, const(wchar)* s) nothrow @nogc
 
 __gshared wchar[32_768] line;   // the longest command line Windows takes
 
-extern (Windows) int wWinMain(HINSTANCE, HINSTANCE, LPWSTR args, int)
+/// The arguments after the program's own name in Windows' command line.
+const(wchar)* arguments() nothrow @nogc
 {
-    wchar[MAX_PATH + 32] dir, exe;
+    auto p = GetCommandLineW();
+    if (*p == '"')
+    {
+        for (p++; *p && *p != '"'; p++)
+        {
+        }
+        if (*p)
+            p++;
+    }
+    else
+        while (*p && *p != ' ' && *p != '\t')
+            p++;
+    while (*p == ' ' || *p == '\t')
+        p++;
+    return p;
+}
+
+extern (Windows) void start()
+{
+    ExitProcess(run(arguments()));
+}
+
+uint run(const(wchar)* args) nothrow @nogc
+{
+    wchar[MAX_PATH + 32] dir = void, exe = void;
     auto n = GetModuleFileNameW(null, dir.ptr, MAX_PATH);
     while (n > 0 && dir[n - 1] != '\\')
         n--;
