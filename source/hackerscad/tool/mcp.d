@@ -640,8 +640,9 @@ JSONValue[] toolList()
             ~ "to centre) and size (mm across the view), orbit [yaw, pitch] in degrees (like "
             ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
-            ~ "stays still). hidden lists the parts to hide (the others are shown); code, console, view and params "
-            ~ "show or hide those panels. hcad_gui_state gives the camera.",
+            ~ "stays still). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
+            ~ "faint); projection is perspective or orthographic. hidden lists the parts to hide (the others are "
+            ~ "shown); code, console, view and params show or hide those panels. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
             ~ `"look_at": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"size": {"type": "number"}, `
@@ -649,6 +650,8 @@ JSONValue[] toolList()
             ~ `"pan": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"zoom": {"type": "number"}, `
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
+            ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe"]}, `
+            ~ `"projection": {"type": "string", "enum": ["perspective", "orthographic"]}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
             ~ `"code": {"type": "boolean"}, "console": {"type": "boolean"}, "view": {"type": "boolean"}, `
             ~ `"params": {"type": "boolean"}`, `[]`),

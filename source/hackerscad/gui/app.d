@@ -550,6 +550,12 @@ final class MainWindow
         partsMenu.setTooltipText("Parts shown in the view");
         partsMenu.addCssClass("flat");
         viewBar.append(partsMenu);
+        auto displayMenu = new MenuButton;
+        displayMenu.setIconName("hcad-display-symbolic");
+        displayMenu.setTooltipText("How the view draws the parts: edges, wireframe, perspective or orthographic");
+        displayMenu.addCssClass("flat");
+        displayMenu.setPopover(displayPopover());
+        viewBar.append(displayMenu);
         viewBar.append(sectionToggle);
         viewBar.append(inspectToggle);
         viewBar.append(sketchToggle);
@@ -1755,6 +1761,58 @@ private:
     }
 
     MenuButton partsMenu;   /// the eye of the view bar
+    import gtk.check_button : CheckButton;
+    CheckButton[Shading] shadingChoice;
+    CheckButton perspectiveChoice, orthographicChoice;
+
+    /// What the cube of the view bar opens: how the parts are drawn and the projection.
+    Popover displayPopover()
+    {
+        auto box = new Box(Orientation.Vertical, 2);
+        void heading(string text)
+        {
+            auto l = new Label(text);
+            l.setXalign(0);
+            l.addCssClass("heading");
+            box.append(l);
+        }
+        CheckButton choice(string label, string tooltip, CheckButton group, void delegate() chosen)
+        {
+            auto b = new CheckButton;
+            b.setLabel(label);
+            b.setTooltipText(tooltip);
+            if (group !is null)
+                b.setGroup(group);
+            b.connectToggled(() {
+                if (b.getActive() && viewport !is null)
+                    chosen();
+            });
+            box.append(b);
+            return b;
+        }
+        void style(Shading sh, string label, string tooltip)
+        {
+            auto group = Shading.edges in shadingChoice;
+            shadingChoice[sh] = choice(label, tooltip, group ? *group : null, () => viewport.setShading(sh));
+        }
+        heading("Style");
+        style(Shading.edges, "Shaded with edges", "Surfaces with their edges outlined");
+        style(Shading.shaded, "Shaded", "Surfaces only, without edges");
+        style(Shading.wireframe, "Wireframe", "Edges only, the hidden ones faint");
+        // built before the view: its defaults
+        shadingChoice[Shading.edges].setActive(true);
+        import gtk.separator : Separator;
+        box.append(new Separator(Orientation.Horizontal));
+        heading("Projection");
+        perspectiveChoice = choice("Perspective", "Far things look smaller, as in a photo", null,
+            () => viewport.setOrthographic(false));
+        orthographicChoice = choice("Orthographic", "Parallel lines stay parallel: sizes do not change with depth",
+            perspectiveChoice, () => viewport.setOrthographic(true));
+        perspectiveChoice.setActive(true);
+        auto pop = new Popover;
+        pop.setChild(box);
+        return pop;
+    }
 
     /// What the eye opens: the parts with a check each.
     Popover partsPopover()
@@ -3288,6 +3346,14 @@ private:
                     else
                         viewport.zoom(num(p["zoom"]));
                 }
+                // drawing style and projection, as the cube of the view bar
+                if (auto v = arg("style"))
+                {
+                    auto sh = v == "wireframe" ? Shading.wireframe : v == "shaded" ? Shading.shaded : Shading.edges;
+                    shadingChoice[sh].setActive(true);
+                }
+                if (auto v = arg("projection"))
+                    (v == "orthographic" ? orthographicChoice : perspectiveChoice).setActive(true);
                 // the parts hidden with the eye of the view bar
                 if (has("hidden"))
                 {
@@ -3875,6 +3941,9 @@ private:
         auto cam = viewport.camera();
         JSONValue jc = ["yaw": cam.yaw, "pitch": cam.pitch, "distance": cam.distance];
         jc["target"] = [cam.target.x, cam.target.y, cam.target.z];
+        jc["projection"] = cam.orthographic ? "orthographic" : "perspective";
+        jc["style"] = viewport.shading == Shading.wireframe ? "wireframe"
+            : viewport.shading == Shading.shaded ? "shaded" : "edges";
         j["camera"] = jc;
         string problems;
         foreach (d; last.diagnostics)

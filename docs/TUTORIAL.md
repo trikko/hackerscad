@@ -70,6 +70,10 @@ first.
   - right drag rotates, middle drag (or Ctrl + right drag) pans, the wheel
     zooms; left drag rotates or pans, as set by the buttons over the view;
   - Fit (F5), Iso, Top, Front and Right set the camera;
+  - the cube button chooses how the parts are drawn (shaded with edges,
+    shaded, or wireframe: edges and outlines only, the hidden ones faint) and
+    the projection (perspective, or orthographic, where sizes do not change
+    with depth: true front, top and right views);
   - the section button opens the section plane (see [Looking inside](#looking-inside-sections-and-rollback)).
 - **Parameters** (right): a field for every parameter, the preset menu, and the
   list of parts with their colours, where the eye button hides a part.

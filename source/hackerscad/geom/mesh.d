@@ -50,11 +50,24 @@ struct Mesh
             }
         }
         r.tris.reserve(tris.length);
+        // the faces keep their triangles, less the ones that collapse
+        size_t face;
+        immutable faced = faceStart.length >= 2;
         foreach (t; 0 .. triangleCount)
         {
+            while (faced && face < faceStart.length && faceStart[face] <= t)
+            {
+                r.faceStart ~= cast(uint) r.triangleCount;
+                face++;
+            }
             immutable a = remap[tris[t * 3]], b = remap[tris[t * 3 + 1]], c = remap[tris[t * 3 + 2]];
             if (a != b && b != c && a != c)
                 r.tris ~= [a, b, c];
+        }
+        while (faced && face < faceStart.length)
+        {
+            r.faceStart ~= cast(uint) r.triangleCount;
+            face++;
         }
         return r;
     }

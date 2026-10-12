@@ -31,6 +31,14 @@ enum ViewPreset
     right,
 }
 
+/// How the parts are drawn.
+enum Shading
+{
+    edges,      /// shaded, with their edges outlined
+    shaded,     /// shaded, without edges
+    wireframe,  /// edges only, the hidden ones faint
+}
+
 /// What a left-button drag does (right always rotates, middle always pans).
 enum DragMode
 {
@@ -61,6 +69,9 @@ final class Viewport
 
     GLArea area;
     DragMode leftMode = DragMode.rotate;
+    Shading shading = Shading.edges;
+    /// Parallel projection: sizes do not shrink with the distance.
+    bool orthographic;
     void delegate(Hit hit) onPick;    /// part -1 when clicking the background
     void delegate(Hit hit, double x, double y) onContext;   /// right click without dragging
     void delegate() onFrame;          /// after every frame (to move overlay labels)
@@ -163,7 +174,7 @@ final class Viewport
             if (dragPan)
             {
                 auto c = basis();
-                immutable k = 2 * distance * tan(fovy / 2) / max(1, area.getHeight());
+                immutable k = mmPerPixel();
                 target = startTarget - c.right * (dx * k) + c.up * (dy * k);
             }
             else
@@ -601,9 +612,10 @@ final class Viewport
         if (z <= 1e-9)
             return false;
         immutable w = max(1, area.getWidth()), h = max(1, area.getHeight());
-        immutable t = tan(fovy / 2);
-        x = (d.dot(b.right) / (z * t * w / h) + 1) * w / 2;
-        y = (1 - d.dot(b.up) / (z * t)) * h / 2;
+        // half the height of the view, in mm, at the depth of p
+        immutable half = orthographic ? distance * tan(fovy / 2) : z * tan(fovy / 2);
+        x = (d.dot(b.right) / (half * w / h) + 1) * w / 2;
+        y = (1 - d.dot(b.up) / half) * h / 2;
         return true;
     }
 
@@ -697,7 +709,7 @@ final class Viewport
     {
         auto c = basis();
         immutable h = max(1, area.getHeight());
-        immutable k = 2 * distance * tan(fovy / 2) / h;
+        immutable k = mmPerPixel();
         target = target - c.right * (fx * area.getWidth() * k) + c.up * (fy * h * k);
         area.queueRender();
     }
@@ -736,8 +748,7 @@ final class Viewport
         auto h = pick(x, y);
         immutable tol = max(0.05, distance * 0.002);
         // nothing in front of it: no surface hit, or the hit is the point itself or behind it
-        visible = h.part < 0 || (h.point - p).length < tol
-            || (h.point - basis().eye).length > (p - basis().eye).length - tol;
+        visible = h.part < 0 || (h.point - p).length < tol || (h.point - p).dot(basis().forward) > -tol;
         return true;
     }
 
@@ -746,9 +757,23 @@ final class Viewport
     {
         double yaw, pitch, distance;
         Vec3 target;
+        bool orthographic;
     }
 
-    Camera camera() => Camera(yaw * 180 / PI, pitch * 180 / PI, distance, target);
+    Camera camera() => Camera(yaw * 180 / PI, pitch * 180 / PI, distance, target, orthographic);
+
+    void setShading(Shading s)
+    {
+        shading = s;
+        area.queueRender();
+    }
+
+    /// Switches projection; what lies on the plane of the target keeps its size.
+    void setOrthographic(bool on)
+    {
+        orthographic = on;
+        area.queueRender();
+    }
 
 private:
 
@@ -756,6 +781,9 @@ private:
     {
         uint vao, vbo, ebo, edgeVao, edgeVbo;
         int indexCount, edgeCount;
+        int tangentCount;   /// after the edges in their buffer: drawn in wireframe
+        uint outlineVao, outlineVbo;   /// the outline of curved surfaces (wireframe), from the latest frame
+        int outlineCount;
         /// total edge length and the two largest sizes (mm): how crowded the
         /// edges get on screen at a given zoom
         double edgeLength = 0, spanA = 1, spanB = 1;
@@ -769,21 +797,46 @@ private:
     Basis basis()
     {
         Basis b;
-        b.eye = target + Vec3(cos(pitch) * cos(yaw), cos(pitch) * sin(yaw), sin(pitch)) * distance;
+        b.eye = target + Vec3(cos(pitch) * cos(yaw), cos(pitch) * sin(yaw), sin(pitch)) * eyeDistance();
         b.forward = (target - b.eye).normalized;
         b.right = b.forward.cross(Vec3(0, 0, 1)).normalized;
         b.up = b.right.cross(b.forward);
         return b;
     }
 
-    /// Direction of the ray through window point (x, y).
-    Vec3 ray(double x, double y)
+    /// How far the eye is from the target: the camera distance in
+    /// perspective; in orthographic, where zooming does not move the eye,
+    /// out of everything at any zoom.
+    double eyeDistance()
+    {
+        if (!orthographic)
+            return distance;
+        double r = 50;
+        foreach (p; parts)
+            r = max(r, p.bbox.min.length, p.bbox.max.length);
+        // the grid reaches 1.3 times the parts, and more around the origin
+        return distance + 2 * (target.length + 2 * (r * 1.3 + 50));
+    }
+
+    /// Millimetres per pixel on the plane through the target facing the camera.
+    double mmPerPixel() => 2 * distance * tan(fovy / 2) / max(1, area.getHeight());
+
+    /// The ray through window point (x, y): from the eye in perspective,
+    /// from that point of the near side in orthographic, where all go straight ahead.
+    void ray(double x, double y, out Vec3 origin, out Vec3 dir)
     {
         auto b = basis();
         immutable w = max(1, area.getWidth()), h = max(1, area.getHeight());
         immutable t = tan(fovy / 2);
         immutable nx = 2 * x / w - 1, ny = 1 - 2 * y / h;
-        return (b.forward + b.right * (nx * t * w / h) + b.up * (ny * t)).normalized;
+        origin = b.eye;
+        if (orthographic)
+        {
+            origin = b.eye + b.right * (nx * distance * t * w / h) + b.up * (ny * distance * t);
+            dir = b.forward;
+        }
+        else
+            dir = (b.forward + b.right * (nx * t * w / h) + b.up * (ny * t)).normalized;
     }
 
     /// Zooms by `factor` keeping the point under the pointer still: the
@@ -798,9 +851,10 @@ private:
             p = hit.point;
         else
         {
-            auto d = ray(x, y);
+            Vec3 o, d;
+            ray(x, y, o, d);
             immutable denom = d.dot(b.forward);
-            p = abs(denom) > 1e-9 ? b.eye + d * ((target - b.eye).dot(b.forward) / denom) : target;
+            p = abs(denom) > 1e-9 ? o + d * ((target - o).dot(b.forward) / denom) : target;
         }
         // scaling the camera about p keeps p at the same place on screen
         target = p + (target - p) * factor;
@@ -831,11 +885,13 @@ private:
         if (n.length < 0.5)
             return;
         // face the viewer
-        if (n.dot(basis().eye - hover.point) < 0)
+        if (n.dot(basis().forward) > 0)
             n = n * -1;
         auto u = (abs(n.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(n).normalized;
         auto v = n.cross(u);
-        immutable r = (basis().eye - hover.point).length * tan(fovy / 2) * 2 * 7 / max(1, area.getHeight());
+        auto b = basis();
+        immutable depth = orthographic ? distance : (hover.point - b.eye).dot(b.forward);
+        immutable r = depth * tan(fovy / 2) * 2 * 7 / max(1, area.getHeight());
         Vec3[] ring;
         foreach (k; 0 .. 25)
         {
@@ -880,7 +936,9 @@ private:
         immutable radius = max(1.0, (hi - lo).length / 2);
         // the narrower of the vertical and horizontal fields of view
         immutable fov = min(fovy, 2 * atan(tan(fovy / 2) * aspect));
-        distance = radius / sin(fov / 2) * 1.02;
+        // perspective: the sphere around the parts in the cone of sight;
+        // orthographic: in the view's half height or width
+        distance = radius / (orthographic ? tan(fov / 2) : sin(fov / 2)) * 1.02;
     }
 
     void realize()
@@ -1089,7 +1147,10 @@ private:
         if (fitPending)
             applyFit(aspect);
         auto b = basis();
-        auto proj = perspective(fovy, aspect, distance * 0.01, distance * 100);
+        immutable eyeDist = eyeDistance();
+        immutable halfH = distance * tan(fovy / 2);
+        auto proj = orthographic ? orthographicMatrix(halfH * aspect, halfH, eyeDist * 0.01, eyeDist * 2)
+            : perspective(fovy, aspect, distance * 0.01, distance * 100);
         auto view = lookAt(b.eye, target, Vec3(0, 0, 1));
         auto mvp = multiply(proj, view);
 
@@ -1147,17 +1208,28 @@ private:
             glUniform1f(uAlpha, 0.25);
         }
 
-        // shaded parts, pushed back so their edges and the picked face draw on top
+        // shaded parts, pushed back so their edges and the picked face draw
+        // on top; in wireframe only their depth, which tells the hidden edges
+        immutable wire = shading == Shading.wireframe;
         glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(1, 1);
+        // in wireframe further back: the outline of a concave surface lies on
+        // a visible part of it, and would come and go with the depth
+        if (wire)
+            glPolygonOffset(4, 16);
+        else
+            glPolygonOffset(1, 1);
         glUniform1i(uFlat, 0);
+        if (wire)
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
         foreach (i, g; gpu)
-            if (!isHidden(i) && (ghost || !transparent(i)))
+            if (!isHidden(i) && (ghost || wire || !transparent(i)))
                 drawShaded(i);
+        if (wire)
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         glDisable(GL_POLYGON_OFFSET_FILL);
-        if (section)
+        if (section && !wire)
             capSection();
-        if (!ghost)
+        if (!ghost && !wire)
             renderTransparent();
 
         // the picked faces, in highlight colour (an item near an edge is the edge)
@@ -1176,9 +1248,35 @@ private:
         }
 
         glUniform1i(uFlat, 1);
+        if (wire)
+        {
+            foreach (i, ref g; gpu)
+                if (!isHidden(i))
+                    uploadOutline(i, g);
+            // every edge faint, then the visible ones over them
+            glDisable(GL_DEPTH_TEST);
+            glDepthMask(GL_FALSE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glUniform1f(uAlpha, 0.85);
+            glUniform3f(uColor, 0.2f, 0.42f, 0.9f);   // blue: not to be taken for the grid
+            foreach (i, g; gpu)
+                if (!isHidden(i))
+                {
+                    glBindVertexArray(g.edgeVao);
+                    glDrawArrays(GL_LINES, 0, g.edgeCount + g.tangentCount);
+                    glBindVertexArray(g.outlineVao);
+                    glDrawArrays(GL_LINES, 0, g.outlineCount);
+                }
+            glDisable(GL_BLEND);
+            glUniform1f(uAlpha, 1);
+            if (!ghost)
+                glDepthMask(GL_TRUE);
+            glEnable(GL_DEPTH_TEST);
+        }
         foreach (i, g; gpu)
         {
-            if (isHidden(i))
+            if (isHidden(i) || shading == Shading.shaded)
                 continue;
             if (i == selected.part)
                 glUniform3f(uColor, 0.75f, 0.45f, 0.0f);
@@ -1195,7 +1293,12 @@ private:
                 glUniform1f(uAlpha, cast(float)(transparent(i) ? min(1.0, alphaOf(parts[i].rgb) + 0.25) * crowd : crowd));
             }
             glBindVertexArray(g.edgeVao);
-            glDrawArrays(GL_LINES, 0, g.edgeCount);
+            glDrawArrays(GL_LINES, 0, wire ? g.edgeCount + g.tangentCount : g.edgeCount);
+            if (wire)
+            {
+                glBindVertexArray(g.outlineVao);
+                glDrawArrays(GL_LINES, 0, g.outlineCount);
+            }
             if (faded)
             {
                 glDisable(GL_BLEND);
@@ -1487,6 +1590,11 @@ private:
         glDeleteBuffers(1, &g.vbo);
         glDeleteBuffers(1, &g.ebo);
         glDeleteBuffers(1, &g.edgeVbo);
+        if (g.outlineVao)
+        {
+            glDeleteVertexArrays(1, &g.outlineVao);
+            glDeleteBuffers(1, &g.outlineVbo);
+        }
         g = Gpu.init;
     }
 
@@ -1524,11 +1632,13 @@ private:
             glBindVertexArray(g.edgeVao);
             glGenBuffers(1, &g.edgeVbo);
             glBindBuffer(GL_ARRAY_BUFFER, g.edgeVbo);
-            glBufferData(GL_ARRAY_BUFFER, p.edges.length * float.sizeof, p.edges.ptr, GL_STATIC_DRAW);
+            auto lines = p.edges ~ p.tangentEdges;
+            glBufferData(GL_ARRAY_BUFFER, lines.length * float.sizeof, lines.ptr, GL_STATIC_DRAW);
             glEnableVertexAttribArray(0);
             glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
             glVertexAttrib3f(1, 0, 0, 1);
             g.edgeCount = cast(int)(p.edges.length / 3);
+            g.tangentCount = cast(int)(p.tangentEdges.length / 3);
             {
                 double lo0 = double.max, lo1 = double.max, lo2 = double.max;
                 double hi0 = -double.max, hi1 = -double.max, hi2 = -double.max;
@@ -1552,6 +1662,51 @@ private:
             glBindVertexArray(0);
             return g;
         }
+    }
+
+    private float[] outlineScratch;
+
+    /// The outline of part i's curved surfaces as seen now: in each of
+    /// their triangles, where the normal (interpolated between its corners)
+    /// is square to the line of sight.
+    void uploadOutline(size_t i, ref Gpu g)
+    {
+        auto b = basis();
+        auto c = parts[i].contour;
+        outlineScratch.length = 0;
+        outlineScratch.assumeSafeAppend();
+        for (size_t j = 0; j + 17 < c.length; j += 18)
+        {
+            Vec3[3] p;
+            double[3] f;   // > 0: facing the eye
+            foreach (k; 0 .. 3)
+            {
+                p[k] = Vec3(c[j + k * 3], c[j + k * 3 + 1], c[j + k * 3 + 2]);
+                auto n = Vec3(c[j + 9 + k * 3], c[j + 10 + k * 3], c[j + 11 + k * 3]);
+                f[k] = n.dot(orthographic ? b.forward * -1 : b.eye - p[k]);
+            }
+            foreach (k; 0 .. 3)
+            {
+                immutable l = (k + 1) % 3;
+                if ((f[k] > 0) == (f[l] > 0))
+                    continue;
+                auto q = p[k] + (p[l] - p[k]) * (f[k] / (f[k] - f[l]));
+                outlineScratch ~= [cast(float) q.x, cast(float) q.y, cast(float) q.z];
+            }
+        }
+        if (g.outlineVao == 0)
+        {
+            glGenVertexArrays(1, &g.outlineVao);
+            glGenBuffers(1, &g.outlineVbo);
+            glBindVertexArray(g.outlineVao);
+            glBindBuffer(GL_ARRAY_BUFFER, g.outlineVbo);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
+            glVertexAttrib3f(1, 0, 0, 1);
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, g.outlineVbo);
+        glBufferData(GL_ARRAY_BUFFER, outlineScratch.length * float.sizeof, outlineScratch.ptr, GL_STREAM_DRAW);
+        g.outlineCount = cast(int)(outlineScratch.length / 3);
     }
 
     void updateGrid()
@@ -1589,8 +1744,8 @@ private:
     /// Part and face under window point (x, y) (ray cast on the CPU).
     Hit pick(double x, double y)
     {
-        auto eye = basis().eye;
-        auto dir = ray(x, y);
+        Vec3 eye, dir;
+        ray(x, y, eye, dir);
         Hit best;
         foreach (pi, p; parts)
         {
@@ -1713,6 +1868,17 @@ float[16] perspective(double fov, double aspect, double near, double far)
     m[10] = cast(float)((far + near) / (near - far));
     m[11] = -1;
     m[14] = cast(float)(2 * far * near / (near - far));
+    return m;
+}
+
+float[16] orthographicMatrix(double halfW, double halfH, double near, double far)
+{
+    float[16] m = 0;
+    m[0] = cast(float)(1 / halfW);
+    m[5] = cast(float)(1 / halfH);
+    m[10] = cast(float)(-2 / (far - near));
+    m[14] = cast(float)(-(far + near) / (far - near));
+    m[15] = 1;
     return m;
 }
 

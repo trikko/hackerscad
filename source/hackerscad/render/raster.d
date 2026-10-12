@@ -175,15 +175,23 @@ private struct Edges
 /// Edges on the boundary or between faces bent more than `angleDeg`.
 uint[2][] featureEdges(const Mesh m, double angleDeg)
 {
+    uint[2][] sharp, tangent;
+    edgeSets(m, angleDeg, sharp, tangent);
+    return sharp;
+}
+
+/// The feature edges (as featureEdges), and `tangent`: the others between
+/// two B-rep faces (when the mesh knows its faces), a fillet meeting a flat
+/// face, a hole grazing a curve. A solid made from a mesh (an STL loaded)
+/// has a face per facet: there they show its facets, as the file has them.
+void edgeSets(const Mesh m, double angleDeg, out uint[2][] sharp, out uint[2][] tangent)
+{
     import std.math : cos, PI;
 
     immutable limit = cos(angleDeg * PI / 180);
-    Vec3[] normals = new Vec3[m.triangleCount];
-    foreach (t; 0 .. m.triangleCount)
-    {
-        auto a = m.vertex(m.tris[t * 3]), b = m.vertex(m.tris[t * 3 + 1]), c = m.vertex(m.tris[t * 3 + 2]);
-        normals[t] = (b - a).cross(c - a).normalized;
-    }
+    auto normals = triangleNormals(m);
+    foreach (ref n; normals)
+        n = n.normalized;
     size_t[][ulong] faces;
     foreach (t; 0 .. m.triangleCount)
         foreach (k; 0 .. 3)
@@ -191,10 +199,75 @@ uint[2][] featureEdges(const Mesh m, double angleDeg)
             ulong a = m.tris[t * 3 + k], b = m.tris[t * 3 + (k + 1) % 3];
             faces[min(a, b) << 32 | max(a, b)] ~= t;
         }
-    uint[2][] r;
     foreach (key, ts; faces)
+    {
+        immutable a = cast(uint)(key >> 32), b = cast(uint)(key & 0xffff_ffff);
         if (ts.length != 2 || normals[ts[0]].dot(normals[ts[1]]) < limit)
-            r ~= [cast(uint)(key >> 32), cast(uint)(key & 0xffff_ffff)];
+            sharp ~= [a, b];
+        else
+        {
+            immutable f0 = m.faceOf(ts[0]), f1 = m.faceOf(ts[1]);
+            if (f0 != f1 && f0 >= 0 && f1 >= 0)
+                tangent ~= [a, b];
+        }
+    }
+}
+
+/// The triangles of curved surfaces, 18 floats each: their three corners,
+/// then a normal per corner, averaged over the triangles around it that
+/// meet its own one at less than `angleDeg` (larger ones weigh more). The
+/// outline of a curved surface crosses a triangle where the normal, between
+/// its corners, turns from facing the eye to facing away: interpolated so,
+/// it is one line, however the surface was cut into triangles. Flat
+/// triangles (one normal at every corner) are left out.
+float[] contourTriangles(const Mesh m, double angleDeg)
+{
+    import std.math : cos, PI;
+
+    immutable limit = cos(angleDeg * PI / 180);
+    auto area = triangleNormals(m);   // length: twice the area
+    auto unit = new Vec3[area.length];
+    foreach (t, n; area)
+        unit[t] = n.normalized;
+    auto around = new uint[][m.vertexCount];
+    foreach (t; 0 .. m.triangleCount)
+        foreach (k; 0 .. 3)
+            around[m.tris[t * 3 + k]] ~= cast(uint) t;
+    float[] r;
+    foreach (t; 0 .. m.triangleCount)
+    {
+        Vec3[3] n;
+        foreach (k; 0 .. 3)
+        {
+            Vec3 sum;
+            foreach (o; around[m.tris[t * 3 + k]])
+                if (unit[o].dot(unit[t]) >= limit)
+                    sum = sum + area[o];
+            n[k] = sum.normalized;
+        }
+        // flat here: no outline can cross it
+        if (n[0].dot(n[1]) > 0.99995 && n[0].dot(n[2]) > 0.99995)
+            continue;
+        foreach (k; 0 .. 3)
+        {
+            auto p = m.vertex(m.tris[t * 3 + k]);
+            r ~= [cast(float) p.x, cast(float) p.y, cast(float) p.z];
+        }
+        foreach (k; 0 .. 3)
+            r ~= [cast(float) n[k].x, cast(float) n[k].y, cast(float) n[k].z];
+    }
+    return r;
+}
+
+/// The normal of every triangle, as long as twice its area.
+private Vec3[] triangleNormals(const Mesh m)
+{
+    auto r = new Vec3[m.triangleCount];
+    foreach (t; 0 .. m.triangleCount)
+    {
+        auto a = m.vertex(m.tris[t * 3]), b = m.vertex(m.tris[t * 3 + 1]), c = m.vertex(m.tris[t * 3 + 2]);
+        r[t] = (b - a).cross(c - a);
+    }
     return r;
 }
 

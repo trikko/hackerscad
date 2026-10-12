@@ -19,7 +19,7 @@ import hackerscad.kernel.occt.backend;
 import hackerscad.kernel.cache;
 import hackerscad.lang.errors;
 import hackerscad.lang.interp;
-import hackerscad.render.raster : featureEdges;
+import hackerscad.render.raster : featureEdges, edgeSets, contourTriangles;
 import hackerscad.lang.sketchval : SketchView, SketchVal;
 import hackerscad.lang.value : SolidVal;
 import hackerscad.geom.color;
@@ -45,6 +45,11 @@ struct PartMesh
     uint[] faceStart;   /// B-rep face i owns triangles faceStart[i] .. faceStart[i + 1]
     uint[] creators;    /// per face: feature id (Outcome.features[id - 1])
     float[] edges;      /// x y z pairs (feature edges)
+    /// x y z pairs: where two faces meet without a corner (wireframe)
+    float[] tangentEdges;
+    /// the triangles of curved surfaces with a normal per corner (18 floats
+    /// each, raster.contourTriangles): where the outline lies (wireframe)
+    float[] contour;
     Mesh welded;        /// for picking and export
     Span span;
     BBox bbox;
@@ -366,8 +371,14 @@ PartMesh prepare(BrepKernel k, PartResult p, double tolerance)
     m.edgeFaces = k.edgeFaces(p.solid.brep);
 
     m.welded = raw.welded;
-    foreach (e; featureEdges(m.welded, 25))
+    uint[2][] sharp, tangent;
+    edgeSets(m.welded, 25, sharp, tangent);
+    foreach (e; sharp)
         foreach (v; e)
             m.edges ~= m.welded.verts[v * 3 .. v * 3 + 3];
+    foreach (e; tangent)
+        foreach (v; e)
+            m.tangentEdges ~= m.welded.verts[v * 3 .. v * 3 + 3];
+    m.contour = contourTriangles(m.welded, 25);
     return m;
 }
