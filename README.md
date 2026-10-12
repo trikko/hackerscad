@@ -106,10 +106,6 @@ unittest
 }
 ```
 
-```sh
-hscad render cup.hcad -o cup.3mf -o cup-views.png -D diameter=60.mm
-```
-
 <p align="center"><img alt="The cup open in hackerscad, with the espresso preset" src="docs/cup.png" width="760"><br>
 <em>The cup in hackerscad, with the "espresso" preset chosen in the side panel: the
 diameter becomes 50 mm, the view follows, and the console shows what the cup holds,
