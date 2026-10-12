@@ -160,8 +160,12 @@ jobs:
           # should say what to download
           sleep 8
           for z in *.zip; do case "$z" in *-mesa.zip) ;; *) unzip -q -o "$z" -d plain ;; esac; done
-          # the program itself (its messages land in this log); no Mesa: no relaunch
-          tests/screenshot.sh windows-nomesa plain/hackerscad/bin/hscad-gui.exe
+          # the program itself under gdb (its messages and where it stops land
+          # in this log); no Mesa: no relaunch
+          pacman -S --noconfirm --needed mingw-w64-clang-x86_64-gdb >/dev/null
+          (sleep 40; taskkill //F //IM hscad-gui.exe >/dev/null 2>&1) &
+          gdb -batch -ex run -ex bt -ex "info sharedlibrary" --args plain/hackerscad/bin/hscad-gui.exe \
+            --screenshot="$PWD/window-windows-nomesa.png" examples/bagclip.hcad 2>&1 | tail -60 || true
       - uses: actions/upload-artifact@v4
         if: inputs.try
         with:
