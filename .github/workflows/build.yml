@@ -177,24 +177,18 @@ jobs:
           for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done
       - name: Package
         run: VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/macos/package.sh
-      # on request, the package just made is opened, with a few settings to
-      # compare (variant=VAR=value: the variant's name, then its environment)
+      # on request, the package just made is opened and kept as screenshots
       - name: Try the package
         if: inputs.try
-        timeout-minutes: 10
+        timeout-minutes: 5
         run: |
           ditto -x -k dist/*.zip try
-          grep -h "<dir\|<include\|cachedir" try/hackerscad.app/Contents/Resources/etc/fonts/fonts.conf || true
-          ls try/hackerscad.app/Contents/Resources/etc/fonts/conf.d | head -50
-          for v in "default"; do
-            name=${v%% *}; vars=${v#"$name"}
-            env $vars tests/screenshot.sh macos-$name try/hackerscad.app/Contents/MacOS/hackerscad || true
-          done
+          tests/screenshot.sh macos try/hackerscad.app/Contents/MacOS/hackerscad
       - uses: actions/upload-artifact@v4
         if: inputs.try
         with:
           name: screenshot-macos
-          path: "*-macos-*.png"
+          path: "*-macos.png"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
