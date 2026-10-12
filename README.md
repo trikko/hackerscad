@@ -175,6 +175,10 @@ hackerscad is built on [Open CASCADE Technology](https://dev.opencascade.org),
 [bindbc-opengl](https://github.com/BindBC/bindbc-opengl). `hscad --version` and
 the About window list them with their licences.
 
+It is inspired by [OpenSCAD](https://openscad.org), where a solid is a small
+program, and by [Onshape](https://www.onshape.com), with its features,
+constrained sketches and fillets picked on the model.
+
 ## Screenshots
 
 The startup example on each system, taken by the CI from the packages of the

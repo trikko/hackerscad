@@ -706,6 +706,7 @@ private:
         d.setLicenseType(License.Gpl30Only);
         d.addLegalSection("Models and their output", null, License.Custom, appModelException);
         d.addCreditSection("Built with", components.map!(c => c.name ~ " " ~ c.url).array);
+        d.addCreditSection("Inspired by", ["OpenSCAD https://openscad.org", "Onshape https://www.onshape.com"]);
         foreach (c; components)
         {
             License t;
