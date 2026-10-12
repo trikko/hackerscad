@@ -16,6 +16,10 @@ on:
         type: choice
         options: [all, linux, windows, macos]
         default: all
+      try:
+        description: "Open the macOS package and keep screenshots (for trying a fix)"
+        type: boolean
+        default: false
 
 # a new push to a branch stops the run still going on it
 concurrency:
@@ -173,6 +177,22 @@ jobs:
           for f in examples/*.hcad; do bin/hscad check "$f" || exit 1; done
       - name: Package
         run: VERSION="$([ "$GITHUB_REF_TYPE" = tag ] && echo "${GITHUB_REF_NAME#v}")" ./packaging/macos/package.sh
+      # on request, the package just made is opened, with a few settings to
+      # compare (variant=VAR=value: the variant's name, then its environment)
+      - name: Try the package
+        if: inputs.try
+        timeout-minutes: 10
+        run: |
+          ditto -x -k dist/*.zip try
+          for v in "cairo" "cairo-fc PANGOCAIRO_BACKEND=fc" "ngl GSK_RENDERER=ngl"; do
+            name=${v%% *}; vars=${v#"$name"}
+            env $vars tests/screenshot.sh macos-$name try/hackerscad.app/Contents/MacOS/hackerscad || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: inputs.try
+        with:
+          name: screenshot-macos
+          path: "*-macos-*.png"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
