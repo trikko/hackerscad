@@ -759,6 +759,53 @@ int hc_edge_info(const hc_shape *s, int index, double out[17])
     });
 }
 
+// Whether face `index` lies on a cylinder: then its axis (a point, a unit
+// direction), radius, extent along the axis (from, to, from the point), the
+// angle it spans around the axis, and 1 when its outside faces away from
+// the axis (a shaft) or 0 when towards it (a hole). Returns 1, 0 when the
+// face is not cylindrical, -1 on error.
+// 1 when the point is inside the solid (on its surface counts as outside),
+// 0 when outside, -1 on error.
+int hc_point_inside(const hc_shape *s, double x, double y, double z)
+{
+    return guarded<>(-1, [&]() -> int {
+        BRepClass3d_SolidClassifier c(s->shape, gp_Pnt(x, y, z), 1e-7);
+        return c.State() == TopAbs_IN ? 1 : 0;
+    });
+}
+
+int hc_face_cylinder(const hc_shape *s, int index, double out[11])
+{
+    return guarded<>(-1, [&]() -> int {
+        const auto &m = map_of(s, TopAbs_FACE);
+        if (index < 0 || index >= m.Extent())
+            throw Standard_Failure("no such face");
+        const TopoDS_Face f = TopoDS::Face(m(index + 1));
+        BRepAdaptor_Surface surf(f);
+        if (surf.GetType() != GeomAbs_Cylinder)
+            return 0;
+        const gp_Cylinder c = surf.Cylinder();
+        double u0, u1, v0, v1;
+        BRepTools::UVBounds(f, u0, u1, v0, v1);
+        const gp_Ax1 ax = c.Axis();
+        out[0] = ax.Location().X();
+        out[1] = ax.Location().Y();
+        out[2] = ax.Location().Z();
+        out[3] = ax.Direction().X();
+        out[4] = ax.Direction().Y();
+        out[5] = ax.Direction().Z();
+        out[6] = c.Radius();
+        out[7] = v0;
+        out[8] = v1;
+        out[9] = u1 - u0;
+        // the surface's own normal points away from the axis when its frame
+        // is right-handed; a reversed face turns it round
+        const bool direct = c.Position().Direct();
+        out[10] = (direct == (f.Orientation() != TopAbs_REVERSED)) ? 1 : 0;
+        return 1;
+    });
+}
+
 int hc_face_info(const hc_shape *s, int index, double out[7])
 {
     return guarded<>(-1, [&]() -> int {

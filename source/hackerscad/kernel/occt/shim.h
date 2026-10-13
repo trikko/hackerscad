@@ -92,6 +92,8 @@ int hc_edge_faces(const hc_shape *s, int *out);
 
 hc_shape *hc_fillet(const hc_shape *s, const int *edges, int nedges, double r);
 hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d);
+int hc_point_inside(const hc_shape *s, double x, double y, double z);
+int hc_face_cylinder(const hc_shape *s, int index, double out[11]);
 hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, double vz);
 hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thickness);
 /* Tilts faces by `angle` around their intersection with the neutral plane

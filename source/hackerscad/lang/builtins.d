@@ -819,6 +819,11 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             return transformed(it, a.span, sv, b => k.translate(b, Vec3(0, 0, -h / 2)));
         return Value.of(sv);
     });
+    def("thread", (ref CallArgs a) {
+        // body.thread(faces.…, "M8"): an ISO metric thread on a cylindrical face, outside a shaft
+        // or inside a hole; length:, turns:, pitch:, starts:, left:, clearance:, chamfer:, flip:
+        return threadFace(it, a);
+    });
     def("cut", (ref CallArgs a) {
         // body.cut(profile, on: frame, depth: 3.mm) or through: true
         return pushesFace(a) ? pushFace(it, a, true) : onFace(it, a, true);
@@ -2231,6 +2236,224 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
     tool.flat = false;
     // the faces beside the pushed one stay whole: a box pulled up is a taller box
     return solidBoolean(it, body, tool, outwards ? BoolOp.fuse : BoolOp.cut, a.span, true);
+}
+
+/// ISO metric coarse threads (ISO 261): nominal diameter and pitch, mm.
+immutable double[2][] isoCoarse = [[1, 0.25], [1.2, 0.25], [1.4, 0.3], [1.6, 0.35], [2, 0.4], [2.5, 0.45], [3, 0.5],
+    [3.5, 0.6], [4, 0.7], [5, 0.8], [6, 1], [7, 1], [8, 1.25], [10, 1.5], [12, 1.75], [14, 2], [16, 2], [18, 2.5],
+    [20, 2.5], [22, 2.5], [24, 3], [27, 3], [30, 3.5], [33, 3.5], [36, 4]];
+
+/// "M8" (coarse pitch) or "M8x1" (a fine one): the diameter and the pitch.
+bool metricSize(string s, out double d, out double pitch)
+{
+    import std.string : toLower, indexOf;
+    auto t = s.toLower;
+    if (t.length < 2 || t[0] != 'm')
+        return false;
+    t = t[1 .. $];
+    try
+    {
+        auto x = t.indexOf('x');
+        d = (x < 0 ? t : t[0 .. x]).to!double;
+        if (x >= 0)
+        {
+            pitch = t[x + 1 .. $].to!double;
+            return d > 0 && pitch > 0;
+        }
+    }
+    catch (Exception)
+        return false;
+    foreach (row; isoCoarse)
+        if (abs(row[0] - d) < 1e-9)
+        {
+            pitch = row[1];
+            return true;
+        }
+    return false;
+}
+
+/// An ISO metric thread along +Z from z = 0 to `len`: the core and the
+/// teeth, `starts` of them, longer than `len` at both ends (trim it).
+Brep threadedCore(BrepKernel k, double d, double pitch, double len, int starts, bool left)
+{
+    immutable h = 0.5413 * pitch, minor = d - 2 * h, lead = pitch * starts;
+    immutable overlap = 0.1 * pitch;   // the tooth sinks into the core so that they fuse
+    // swept along the helix with frenet: the profile's +x points to the axis, +y along it
+    auto tooth = k.polygon([overlap, -0.375 * pitch, -h, -pitch / 16, -h, pitch / 16, overlap, 0.375 * pitch]);
+    auto ridge = k.translate(k.sweep(tooth, k.helix(minor / 2, lead, len + 2 * lead, left), true), Vec3(0, 0, -lead));
+    Brep[] all = [k.translate(k.cylinder(minor / 2 + 0.01, len + 4 * lead), Vec3(0, 0, -2 * lead)), ridge];
+    // more starts: the same ridge turned, which along a helix is the same as moved a pitch up
+    foreach (s; 1 .. starts)
+        all ~= k.rotate(ridge, Vec3(0, 0, 1), 2 * PI * s / starts);
+    return k.fuseAll(all);
+}
+
+/// body.thread(faces.…, "M8", …): see def("thread").
+Value threadFace(Interp it, ref CallArgs a)
+{
+    import hackerscad.lang.convex : turnFromZ;
+    auto k = it.kernel;
+    auto x = Args(it, a, "thread", ["solid", "face", "size", "pitch", "length", "turns", "starts", "left", "clearance",
+        "chamfer", "flip"]);
+    auto body = x.solid("solid");
+    if (body.flat || body.path)
+        throw new HcadError(Code.type, "thread() goes on a cylindrical face of a solid", a.span);
+    auto b = nonEmpty(body, a.span);
+    auto idx = resolveSelector(it, x.selector("face", true), body, x.spanOf("face"));
+    if (idx.length == 0)
+        throw new HcadError(Code.type, "the selector matched no faces", x.spanOf("face"));
+    // the faces of one cylinder (a boolean can split it in parts): their extent along the axis
+    CylinderInfo c;
+    double from = double.infinity, to = -double.infinity, span = 0;
+    foreach (n, f; idx)
+    {
+        CylinderInfo ci;
+        if (!k.faceCylinder(b, f, ci))
+            throw new HcadError(Code.type, "a thread goes on a cylindrical face: the outside of a shaft or the wall of a hole",
+                x.spanOf("face"));
+        if (n == 0)
+            c = ci;
+        else
+        {
+            // the same cylinder: same axis line and radius
+            immutable off = ci.origin - c.origin;
+            if (abs(abs(ci.axis.dot(c.axis)) - 1) > 1e-6 || (off - c.axis * off.dot(c.axis)).length > 1e-6
+                || abs(ci.radius - c.radius) > 1e-6)
+                throw new HcadError(Code.type, "the faces are not one cylinder: thread them one at a time", x.spanOf("face"));
+            if (ci.axis.dot(c.axis) < 0)
+            {
+                immutable t = -ci.to;
+                ci.to = -ci.from;
+                ci.from = t;
+            }
+            ci.from += off.dot(c.axis);
+            ci.to += off.dot(c.axis);
+        }
+        from = min(from, ci.from);
+        to = max(to, ci.to);
+        span += ci.span;
+    }
+    if (span < 2 * PI - 1e-6)
+        throw new HcadError(Code.type, "the face is only part of a cylinder: a thread needs it all around", x.spanOf("face"));
+
+    // the size: "M8", "M8x1", or a pitch alone on the cylinder's own diameter
+    double d = 0, pitch = 0;
+    if (x.has("size"))
+    {
+        auto sv = x.get("size");
+        if (sv.kind != Kind.str || !metricSize(sv.s, d, pitch))
+            throw new HcadError(Code.type, "the size is an ISO metric thread: \"M8\" (coarse) or \"M8x1\" (fine pitch)",
+                x.spanOf("size"));
+    }
+    if (x.has("pitch"))
+    {
+        pitch = x.len("pitch");
+        if (!(pitch > 0))
+            throw new HcadError(Code.type, "the pitch must be positive", x.spanOf("pitch"));
+    }
+    if (pitch == 0)
+        throw new HcadError(Code.type, "say which thread: thread(face, \"M8\"), or pitch: 1.25.mm on the cylinder's diameter",
+            a.span);
+    immutable h = 0.5413 * pitch;
+    immutable outside = c.outside;
+    if (d == 0)   // the cylinder's diameter: the outside of a shaft, or for a hole the screw that fits it
+        d = outside ? 2 * c.radius : 2 * c.radius + 2 * h;
+    // the cylinder must suit the thread: a shaft about the nominal size, a hole about its minor diameter
+    if (outside && abs(2 * c.radius - d) > 0.25 * pitch + 0.1)
+        throw new HcadError(Code.type, format("the shaft is ⌀%g mm: an M%g thread wants ⌀%g mm", 2 * c.radius, d, d),
+            x.spanOf("face"));
+    if (!outside && (2 * c.radius > d - 0.5 * h || 2 * c.radius < d - 2 * h - 0.3 * pitch))
+        throw new HcadError(Code.type, format("the hole is ⌀%g mm: an M%g thread wants a hole of about ⌀%g mm (the tap drill)",
+            2 * c.radius, d, d - pitch), x.spanOf("face"));
+
+    immutable starts = x.has("starts") ? count(x, "starts") : 1;
+    immutable left = x.flag("left", false);
+    immutable clearance = x.has("clearance") ? x.len("clearance") : outside ? 0 : 0.15;
+    immutable lead = pitch * starts;
+    // which end it starts from: the free one, where the axis leaves the material (the tip of a
+    // shaft, the opening of a hole); flip: true for the other
+    immutable faceLen = to - from;
+    bool freeAtTo;
+    {
+        immutable probe = outside ? 0.5 * c.radius : 0;
+        auto side = c.axis.cross(abs(c.axis.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).normalized;
+        bool solidAt(double t) => k.inside(b, c.origin + c.axis * t + side * probe);
+        immutable beyondTo = solidAt(to + 0.01), beyondFrom = solidAt(from - 0.01);
+        freeAtTo = beyondTo != beyondFrom ? !beyondTo : true;
+    }
+    if (x.flag("flip", false))
+        freeAtTo = !freeAtTo;
+    double len = faceLen;
+    if (x.has("length") && x.has("turns"))
+        throw new HcadError(Code.type, "give the thread a length or a number of turns, not both", x.spanOf("turns"));
+    if (x.has("length"))
+        len = x.len("length");
+    if (x.has("turns"))
+        len = x.num("turns") * lead;
+    if (!(len > 0) || len > faceLen + 1e-6)
+        throw new HcadError(Code.type, format("the thread must be between 0 and the face's %g mm", faceLen),
+            x.spanOf(x.has("turns") ? "turns" : "length"));
+    immutable chamfer = x.flag("chamfer", true);
+
+    // built along +Z from 0 (the fixed end) to len (the free end), then placed
+    Brep tool;
+    try
+    {
+        if (outside)
+        {
+            // what the grooves take away: around the cylinder, less the threaded rod
+            immutable dd = d - 2 * clearance;
+            auto rod = threadedCore(k, dd, pitch, len, starts, left);
+            auto keep = k.cylinder(dd / 2 + 0.01, len);
+            if (chamfer)   // the tip's crest bevelled at 45°, a tooth high
+            {
+                auto ed = k.edges(keep);
+                int[] top;
+                foreach (i, e; ed)
+                    if (e.kind == EdgeKind.circle && e.center.z > len - 1e-6)
+                        top ~= cast(int) i;
+                keep = k.chamfer(keep, top, h);
+            }
+            tool = k.boolean(rod, keep, BoolOp.common);
+        }
+        else
+        {
+            // the screw that fits, cut into the wall
+            immutable dd = d + 2 * clearance;
+            tool = k.boolean(threadedCore(k, dd, pitch, len, starts, left), k.cylinder(dd, len), BoolOp.common);
+            if (chamfer)   // the opening countersunk at 45°, to start the screw
+                tool = k.boolean(tool, k.translate(k.cone(dd / 2 - h, dd / 2 + 0.01, h + 0.01), Vec3(0, 0, len - h)),
+                    BoolOp.fuse);
+        }
+    }
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
+    // +Z onto the axis, pointing to the free end; z = 0 at len before it
+    immutable dir = freeAtTo ? c.axis : -c.axis;
+    immutable start = c.origin + c.axis * (freeAtTo ? to - len : from + len);
+    Vec3 ax;
+    double angle;
+    turnFromZ(dir, ax, angle);
+    Brep placed(Brep t)
+    {
+        if (angle > 1e-12)
+            t = k.rotate(t, ax, angle);
+        return k.translate(t, start);
+    }
+    auto sv = derived(it, placed(tool), [body], "thread", a.span);
+    sv.flat = false;
+    if (!outside)
+        return solidBoolean(it, body, sv, BoolOp.cut, a.span);
+    // a shaft: its plain length taken away and the threaded one put in its place (cutting the
+    // grooves out of it would lay the crests exactly on its surface, which booleans handle badly)
+    SolidVal plain;
+    try
+        plain = derived(it, placed(k.cylinder(c.radius + 0.02, len)), [body], "thread", a.span);
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
+    plain.flat = false;
+    auto bare = solidBoolean(it, body, plain, BoolOp.cut, a.span);
+    return solidBoolean(it, bare.solid, sv, BoolOp.fuse, a.span);
 }
 
 int count(ref Args x, string n)

@@ -1548,3 +1548,35 @@ unittest
         assert(d.severity != Severity.error, d.message);
     assert(error("@part Solid p() => rect(5, 5).extrude(5, twist: 30.deg, taper: 2.deg);").message.canFind("not both"));
 }
+
+unittest
+{
+    // threads on cylindrical faces: a bolt's shaft, a nut's hole
+    auto r = runModel(q{
+        import std.math;
+        immutable blank = cylinder(d: 13, h: 5) + cylinder(d: 8, h: 30).move(z: 5);
+        immutable shaft = faces.filter(f => f.center.z > 10.mm && f.center.z < 30.mm);
+        @part Solid bolt() => blank.thread(shaft, "M8");
+        @part Solid part() => blank.thread(shaft, "M8", turns: 8, left: true);
+        @part Solid nut() => (box(20, 20, 8) - cylinder(d: 6.8, h: 20, center: true))
+            .thread(faces.filter(f => f.area > 165 * 1.mm ^^ 2 && f.area < 200 * 1.mm ^^ 2), "M8");
+        unittest
+        {
+            immutable mm3 = 1.mm ^^ 3, head = PI * 6.5 ^^ 2 * 5;
+            // the threaded length of an M8 is about 1220 mm³ over 30 mm (40.6 a mm)
+            assert(abs(bolt.volume / mm3 - head - 1219.6) < 2, "bolt");
+            // 8 turns are 10 mm threaded, the other 20 mm stay plain: the thread is about 42.7 mm³ a
+            // millimetre, less some 60 mm³ for the bevel at the tip (in the bolt too)
+            assert(abs(part.volume / mm3 - head - PI * 16 * 20 - (10 * 42.7 - 60.6)) < 3, "part");
+            // the nut loses a little more than its plain hole
+            assert(nut.volume < 3200 * mm3 - PI * 3.4 ^^ 2 * 8 * mm3 - 40 * mm3, "nut");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error(`@part Solid p() => cylinder(d: 8, h: 20).thread(faces.filter(f => f.center.z > 5.mm `
+        ~ `&& f.center.z < 15.mm), "M10");`).message.canFind("wants ⌀10"));
+    assert(error(`@part Solid p() => (box(20, 20, 8) - cylinder(d: 8, h: 20, center: true))`
+        ~ `.thread(faces.filter(f => f.area > 165 * 1.mm ^^ 2 && f.area < 220 * 1.mm ^^ 2), "M8");`).message.canFind("tap drill"));
+    assert(error(`@part Solid p() => box(10, 10, 10).thread(faces.top, "M8");`).message.canFind("cylindrical"));
+}

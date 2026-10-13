@@ -219,6 +219,9 @@ immutable Ref[] reference =
         "a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex."),
     F("cut", "Solid", ["profile: Profile", "on: Frame", "depth: Length", "through: bool", "taper: Angle"], "Solid",
         "Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm)."),
+    F("thread", "Solid", ["face: Faces", "size: string", "pitch: Length", "length: Length", "turns: number", "starts: int",
+        "left: bool", "clearance: Length", "chamfer: bool", "flip: bool"], "Solid",
+        "An ISO metric thread on a cylindrical face: outside a shaft, or inside a hole (made at the tap drill size): body.thread(faces.…, \"M8\")."),
     F("extrude", "Solid", ["faces: Selector", "depth: Length", "along: Vec3"], "Solid",
         "Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in."),
     ]) ~

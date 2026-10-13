@@ -59,6 +59,17 @@ struct FaceInfo
     double area;
 }
 
+/// A face lying on a cylinder: its axis, radius, extent along the axis
+/// (from `from` to `to`, measured from `origin` along `axis`), the angle it
+/// spans around it, and whether it is the outside of a shaft (true) or the
+/// wall of a hole (false).
+struct CylinderInfo
+{
+    Vec3 origin, axis;
+    double radius = 0, from = 0, to = 0, span = 0;
+    bool outside;
+}
+
 class KernelException : Exception
 {
     this(string msg, string file = __FILE__, size_t line = __LINE__) @safe pure nothrow
@@ -160,6 +171,10 @@ interface BrepKernel
 
     Brep fillet(Brep s, const(int)[] edges, double r);
     Brep chamfer(Brep s, const(int)[] edges, double d);
+    /// Whether point `p` lies inside the solid (not on its surface).
+    bool inside(Brep s, Vec3 p);
+    /// Whether face `face` lies on a cylinder, and which.
+    bool faceCylinder(Brep s, int face, out CylinderInfo info);
     /// The flat face `face` swept by the vector `v`: what pushing or
     /// pulling it adds or removes.
     Brep facePrism(Brep s, int face, Vec3 v);

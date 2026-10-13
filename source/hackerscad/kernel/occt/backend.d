@@ -244,6 +244,24 @@ final class OcctKernel : BrepKernel
     Brep chamfer(Brep s, const(int)[] edges, double d) =>
         wrap(hc_chamfer(h(s), edges.ptr, cast(int) edges.length, d), "chamfer");
 
+    bool inside(Brep s, Vec3 p)
+    {
+        immutable r = hc_point_inside(h(s), p.x, p.y, p.z);
+        check(r >= 0, "point classification");
+        return r == 1;
+    }
+
+    bool faceCylinder(Brep s, int face, out CylinderInfo info)
+    {
+        double[11] v;
+        immutable r = hc_face_cylinder(h(s), face, v);
+        check(r >= 0, "face query");
+        if (r == 0)
+            return false;
+        info = CylinderInfo(Vec3(v[0], v[1], v[2]), Vec3(v[3], v[4], v[5]), v[6], v[7], v[8], v[9], v[10] != 0);
+        return true;
+    }
+
     Brep facePrism(Brep s, int face, Vec3 v) => wrap(hc_face_prism(h(s), face, v.x, v.y, v.z), "push/pull");
 
     Brep shell(Brep s, const(int)[] faces, double thickness) =>
