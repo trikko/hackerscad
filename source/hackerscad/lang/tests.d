@@ -1554,6 +1554,51 @@ unittest
 
 unittest
 {
+    // tapered extrusions: as tall as asked, the sides flat and meeting at
+    // sharp edges, the outline and the holes leaning opposite ways
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable mm2 = 1.mm ^^ 2, mm3 = 1.mm ^^ 3;
+            immutable g = 5 * tan(10.deg);
+            // a frustum of a square of side a to b, and of a cone r to s, 5 tall
+            double square(double a, double b) => 5.0 / 3 * (a * a + b * b + a * b);
+            double cone(double r, double s) => PI * 5.0 / 3 * (r * r + s * s + r * s);
+            immutable plate = rect(20, 20) - circle(r: 5);
+            immutable outward = plate.extrude(5, taper: -10.deg);
+            assert(abs(outward.bbox.size.z / 1.mm - 5) < 1e-6, "outward: as tall as asked");
+            assert(abs(outward.volume / mm3 - (square(20, 20 + 2 * g) - cone(5, 5 - g))) < 1e-3, "outward");
+            immutable outTop = outward.section(XY.offset(5.mm - 1e-6.mm));
+            assert(abs(outTop.bbox.size.x / 1.mm - (20 + 2 * g)) < 1e-3, "outward: the outline grows, sharp");
+            assert(abs(outTop.area / mm2 - ((20 + 2 * g) ^^ 2 - PI * (5 - g) ^^ 2)) < 1e-2, "outward: the hole shrinks");
+            immutable inward = plate.extrude(5, taper: 10.deg);
+            assert(abs(inward.volume / mm3 - (square(20, 20 - 2 * g) - cone(5, 5 + g))) < 1e-3, "inward");
+            immutable down = plate.extrude(-5, taper: 10.deg);
+            assert(abs(down.bbox.min.z / 1.mm + 5) < 1e-6 && abs(down.bbox.max.z / 1.mm) < 1e-6, "downwards");
+            assert(abs(down.volume / mm3 - inward.volume / mm3) < 1e-3, "downwards: the same solid");
+            // a profile shrunk and tapered back out as far: the roundings of
+            // its hole's corners close up just at the top, which is the profile
+            immutable frame = rect(30, 20) - rect(10, 6);
+            immutable foot = frame.offset(-1).extrude(1, taper: -45.deg);
+            assert(abs(foot.bbox.size.z / 1.mm - 1) < 1e-6, "foot: as tall as asked");
+            assert(abs(foot.section(XY.offset(1.mm - 1e-6.mm)).area / mm2 - frame.area / mm2) < 0.2, "foot: the top");
+            // and it fuses with what stands on it
+            immutable stand = foot + frame.extrude(10).move(z: 0.7);
+            assert(abs(stand.bbox.size.z / 1.mm - 10.7) < 1e-6, "foot and stand");
+            assert(stand.volume > frame.extrude(10).volume + foot.volume * 0.5, "foot and stand: one solid");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    // a feature that closes up on the way is an error, not a crash
+    immutable closes = error("@part Solid p() => (rect(30, 20) - rect(10, 6)).offset(-1).extrude(1.5, taper: -45.deg);");
+    assert(closes.message.canFind("closes up"), closes.message);
+}
+
+unittest
+{
     // threads on cylindrical faces: a bolt's shaft, a nut's hole
     auto r = runModel(q{
         import std.math;
