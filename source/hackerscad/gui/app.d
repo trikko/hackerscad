@@ -80,7 +80,7 @@ import hackerscad.about;
 import hackerscad.gui.completion;
 import hackerscad.gui.cheatsheet;
 import hackerscad.lang.interp : Interp, TraceEntry, FunctionInfo, callsOf;
-import hackerscad.lang.value : SolidVal;
+import hackerscad.lang.value : Kind, SolidVal;
 import hackerscad.lang.sketchval : SketchView;
 import hackerscad.tool.guiclient : toOverrides;
 import std.json;
@@ -3020,20 +3020,21 @@ private:
         updateTitle();
     }
 
-    void newFile()
+    void newFile() => confirmDiscard(&startNew);
+
+    /// A new model from the template (New, Ctrl+N, the control socket).
+    void startNew()
     {
-        confirmDiscard(() {
-            path = buildPath(dirName(path), "untitled.hcad");
-            params.overrides = null;
-            params.preset = null;
-            params.invalidate();
-            firstResult = true;
-            resetInterface();
-            buffer.setText(newModelTemplate);
-            diskTime = 0;
-            modified = false;
-            updateTitle();
-        });
+        path = buildPath(dirName(path), "untitled.hcad");
+        params.overrides = null;
+        params.preset = null;
+        params.invalidate();
+        firstResult = true;
+        resetInterface();
+        buffer.setText(newModelTemplate);
+        diskTime = 0;
+        modified = false;
+        updateTitle();
     }
 
     void openFile() => confirmDiscard(&chooseFile);
@@ -3582,6 +3583,16 @@ private:
                 }
                 if (auto v = arg("projection"))
                     (v == "orthographic" ? orthographicChoice : perspectiveChoice).setActive(true);
+                // light or dark, for this run (the menu's choice is kept, this is not)
+                if (auto v = arg("theme"))
+                {
+                    if (!["system", "light", "dark"].canFind(v))
+                        return reply(JSONValue.init, "theme must be system, light or dark");
+                    StyleManager.getDefault().setColorScheme(schemeFor(v));
+                }
+                // what a left drag does, as the two buttons of the view bar
+                if (auto v = arg("drag"))
+                    (v == "pan" ? panMode : rotateMode).setActive(true);
                 // the parts hidden with the eye of the view bar
                 if (has("hidden"))
                 {
@@ -3656,31 +3667,21 @@ private:
                 });
                 return;
             }
-        case "context":
+        case "new":
+            // a new model from the template, as New; unsaved changes need force
+            if (modified && !("force" in p && p["force"].type == JSONType.true_))
+                return reply(JSONValue.init, "the model has unsaved changes: save it, or pass force: true to discard "
+                    ~ "them (ask the user first)");
+            startNew();
+            whenIdle(() => reply(state(), null));
+            return;
+        case "rename":
             {
-                // {"x": 0.5, "y": 0.5} or {"point": [x, y, z]}: opens the right-click menu there
-                auto file = arg("path");
-                whenIdle(() {
-                    double x, y;
-                    if (auto problem = screenPoint(p, x, y))
-                        return reply(JSONValue.init, problem);
-                    contextMenu(viewport.pickAt(x, y), x, y);
-                    if (file.length && contextPopover !is null)
-                        timeoutAdd(PRIORITY_DEFAULT, 400, () {
-                            // the menu is a surface of its own: render it alone
-                            import gtk.widget_paintable : WidgetPaintable;
-                            import gtk.snapshot : Snapshot;
-                            auto paintable = new WidgetPaintable(contextPopover);
-                            auto snap = new Snapshot;
-                            paintable.snapshot(snap, contextPopover.getWidth() + 40, contextPopover.getHeight() + 40);
-                            if (auto node = snap.toNode())
-                                contextPopover.getNative().getRenderer().renderTexture(node, null).saveToPng(file);
-                            reply(state(), null);
-                            return false;
-                        });
-                    else
-                        reply(state(), null);
-                });
+                // the window's name, as clicking it in the header bar
+                if (auto why = control.rename(arg("name")))
+                    return reply(JSONValue.init, why);
+                showWindowName();
+                reply(state(), null);
                 return;
             }
         case "menu":
@@ -4148,7 +4149,9 @@ private:
                 if (file is null)
                     return reply(JSONValue.init, "missing 'path'");
                 // the cheatsheet window, when asked for and open
-                auto other = arg("window") == "cheatsheet" && cheatsheet !is null ? cheatsheet.widget : null;
+                if (arg("target") == "cheatsheet" && cheatsheet is null)
+                    return reply(JSONValue.init, "the cheatsheet is not open: open it with the cheatsheet method first");
+                auto other = arg("target") == "cheatsheet" ? cheatsheet.widget : null;
                 // after a change GTK draws the window at its next frame, which
                 // the compositor holds back while the window is hidden or
                 // covered: wait for it a while, then fall back on the 3D view
@@ -4223,6 +4226,10 @@ private:
             jp["volume_mm3"] = pm.volume;
             jp["line"] = pm.span.line;
             jp["hidden"] = viewport.isHidden(parts.length);
+            if (pm.label != pm.name)
+                jp["export_name"] = pm.label;
+            if (!pm.export_)
+                jp["export"] = false;
             parts ~= jp;
         }
         j["parts"] = parts;
@@ -4230,8 +4237,21 @@ private:
         foreach (pi; last.params)
         {
             JSONValue jp = ["name": pi.name, "value": pi.value.toString];
+            jp["default"] = pi.defaultValue.toString;
+            jp["type"] = pi.value.typeName;
             if (pi.doc.length)
                 jp["doc"] = pi.doc;
+            // the limits and steps of the panel's field, the entries of its menu
+            foreach (key, v; ["min": pi.min, "max": pi.max, "step": pi.step])
+                if (v.kind != Kind.void_)
+                    jp[key] = v.toString;
+            if (pi.choices.length)
+            {
+                JSONValue[] cs;
+                foreach (c; pi.choices)
+                    cs ~= JSONValue(c.toString);
+                jp["choices"] = cs;
+            }
             ps ~= jp;
         }
         j["params"] = ps;
@@ -4390,9 +4410,19 @@ private:
         {
         case ".png":
             {
-                // the 3D view as it is, drawn by OpenGL at twice its size
+                // the 3D view as it is, drawn by OpenGL at twice its size;
+                // parts asked for by name alone, the others hidden meanwhile
                 immutable w = max(640, viewport.area.getWidth() * 2), h = max(480, viewport.area.getHeight() * 2);
+                bool[] wasHidden;
+                if (only.length)
+                    foreach (i, pm; last.parts)
+                    {
+                        wasHidden ~= viewport.isHidden(i);
+                        viewport.setHidden(i, !parts.canFind!(q => q.name == pm.name));
+                    }
                 auto pixels = viewport.renderImage(w, h);
+                foreach (i, hide; wasHidden)
+                    viewport.setHidden(i, hide);
                 if (pixels !is null)
                 {
                     write(out_, encodePng(pixels, w, h));

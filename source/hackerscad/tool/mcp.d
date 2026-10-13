@@ -658,7 +658,8 @@ JSONValue[] toolList()
             ~ "faint); projection is perspective or orthographic; menu opens the parts (eye) or display (cube) "
             ~ "menu of the view bar for a screenshot, none closes them; sidebar shows the params or steps tab; "
             ~ "cursor puts the editor's cursor at the start of a line and scrolls there; code_width sets how wide "
-            ~ "the code is (pixels). "
+            ~ "the code is (pixels); theme draws the window light or dark for this run (the user's own choice, in the "
+            ~ "main menu, stays); drag is what a left drag does, rotate or pan. "
             ~ "hidden lists the parts to hide (the others are shown); code, console, view and params show or hide "
             ~ "those panels. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
@@ -675,7 +676,14 @@ JSONValue[] toolList()
             ~ `"cursor": {"type": "integer"}, "code_width": {"type": "integer"}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
             ~ `"code": {"type": "boolean"}, "console": {"type": "boolean"}, "view": {"type": "boolean"}, `
-            ~ `"params": {"type": "boolean"}`, `[]`),
+            ~ `"params": {"type": "boolean"}, `
+            ~ `"theme": {"type": "string", "enum": ["system", "light", "dark"]}, `
+            ~ `"drag": {"type": "string", "enum": ["rotate", "pan"]}`, `[]`),
+        gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (a cube with two "
+            ~ "holes), parameters and view reset. Refused when the user has unsaved changes, unless force is true "
+            ~ "(which discards them: ask the user first).", `"force": {"type": "boolean"}`, `[]`),
+        gui("hcad_gui_rename", "Rename the user's window (the name in its header bar, which the user and the "
+            ~ "'window' argument use): letters, digits and dashes.", `"name": {"type": "string"}`, `["name"]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face).",
@@ -710,7 +718,8 @@ JSONValue[] toolList()
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "function": {"type": "string"}`, `[]`),
         gui("hcad_gui_export", "Export the model open in the user's window, with the parameters and preset set "
             ~ "there, to 'path': .3mf (one object per part, colours), .stl (one part), .zip (one STL per part), "
-            ~ ".step (one named body per part) or .png.",
+            ~ ".step (one named body per part) or .png (the 3D view as shown; with 'parts', those alone). Drawings "
+            ~ "(.svg, .pdf, .dxf) are made by hcad_export on the file.",
             `"path": {"type": "string"}, ` ~ partsProp, `["path"]`),
         gui("hcad_gui_complete", "What the editor's completion offers in the user's window: at the cursor, or at "
             ~ "line and col (1-based). Gives the proposals with their signature and documentation, and inside a call "
@@ -751,11 +760,15 @@ JSONValue[] toolList()
         gui("hcad_gui_stop", "Stop the evaluation running in the user's window (hcad_gui_state tells whether one is "
             ~ "running and at which stage); it runs again at the next edit.", ``),
         gui("hcad_gui_about", "Open the About window of the user's hackerscad (version, credits, licences).", ``),
-        gui("hcad_gui_screenshot", "Picture of the user's hackerscad window, after the current evaluation finishes.", ``),
+        gui("hcad_gui_screenshot", "Picture of the user's hackerscad window, after the current evaluation finishes; "
+            ~ "target cheatsheet pictures the cheatsheet window instead (open it with hcad_gui_cheatsheet).",
+            `"target": {"type": "string", "enum": ["window", "cheatsheet"]}`, `[]`),
         gui("hcad_gui_state", "State of the user's window: file, parameters, parts, camera, problems, version; "
             ~ "user_changed tells which lines the user changed since your previous hcad_gui_* call. It waits for the "
             ~ "running evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) "
-            ~ "and seconds; with source: true it includes the code as it is in the editor (maybe not saved).",
+            ~ "and seconds; with source: true it includes the code as it is in the editor (maybe not saved) and steps, "
+            ~ "the Steps panel row by row. params give value, default, type, min, max, step and choices; revision "
+            ~ "counts the evaluations, log is what the model printed, outdated says the window should be restarted.",
             `"now": {"type": "boolean"}, "source": {"type": "boolean"}`, `[]`),
     ];
 }
@@ -881,7 +894,7 @@ JSONValue callTool(string name, JSONValue args)
             break;
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
-            "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
+            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
             "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet":
         {
             auto method = name["hcad_gui_".length .. $];
@@ -916,6 +929,8 @@ JSONValue callTool(string name, JSONValue args)
         {
             auto file = buildPath(tempDir, format("hackerscad-shot-%s.png", randomName()));
             JSONValue p = ["path": file];
+            if (auto t = arg("target"))
+                p["target"] = t;
             auto r = guiRequest(arg("window"), "screenshot", p);
             if (exists(file))
             {
