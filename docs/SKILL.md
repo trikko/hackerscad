@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-c45e28db`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-3afe7bb8`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-c45e28db`:** this text is up to date.
+- **It prints `0.3.1-3afe7bb8`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -62,7 +62,12 @@ format stamp):
   screenshot, state), so they see what you do. Points can be given in
   model millimetres (hcad_gui_project converts them). Each window has a name
   in its header bar; with several open, hcad_gui_windows lists them and the
-  user may tell you which one ("work in blue-otter").
+  user may tell you which one ("work in blue-otter"). While a window shows a
+  model, change its code with hcad_gui_edit, never by writing its .hcad file:
+  the user may have unsaved changes (moving a part with the mouse edits the
+  code), and a file rewritten under them makes the window ask which to keep.
+  For the command line tools, save a copy elsewhere (hcad_gui_state with
+  source: true gives the code) instead of moving the window to a file.
 - **With the command line:** `hcad docs` prints the whole reference
   (`hcad docs fillet` one topic); `hcad check model.hcad --json` reports
   errors, parts and sizes; `hcad render model.hcad -o model-views.png`
