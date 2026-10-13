@@ -1179,3 +1179,13 @@ unittest
     expectOut(`int[double] m; m[1000000] = 1; m[1000001] = 2; m[1.0000001] = 3; m[1.0000002] = 4; writeln(m.length);`, "4");
     expectOut(`int[string] p, q; p["a"] = 1; q["a"] = 1; writeln(p == q); q["b"] = 2; writeln(p == q);`, "true\nfalse");
 }
+
+unittest
+{
+    // an edge's length is along the curve: a full circle is 2πr, not 0
+    auto r = runModel(q{
+        @part Solid c() => cylinder(r: 10, h: 5).chamfer(edges.filter(e => e.isCircle && e.length > 1.mm), d: 1.mm);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

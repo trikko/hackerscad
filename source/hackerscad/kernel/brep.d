@@ -31,6 +31,7 @@ struct EdgeInfo
     Vec3 start, end, mid;
     Vec3 center, axis;   /// circles only
     double radius = 0;   /// circles only
+    double length = 0;   /// along the curve
 
     Vec3 direction() const => (end - start).normalized;
 }

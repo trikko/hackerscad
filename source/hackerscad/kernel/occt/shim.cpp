@@ -19,6 +19,7 @@
 #include <TopLoc_Location.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepAdaptor_Curve.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
@@ -563,7 +564,7 @@ int hc_edge_count(const hc_shape *s) { return map_of(s, TopAbs_EDGE).Extent(); }
 
 int hc_face_count(const hc_shape *s) { return map_of(s, TopAbs_FACE).Extent(); }
 
-int hc_edge_info(const hc_shape *s, int index, double out[16])
+int hc_edge_info(const hc_shape *s, int index, double out[17])
 {
     return guarded<>(-1, [&]() -> int {
         const auto &m = map_of(s, TopAbs_EDGE);
@@ -579,7 +580,7 @@ int hc_edge_info(const hc_shape *s, int index, double out[16])
             out[i * 3 + 1] = p[i].Y();
             out[i * 3 + 2] = p[i].Z();
         }
-        for (int i = 9; i < 16; i++)
+        for (int i = 9; i < 17; i++)
             out[i] = 0;
         if (c.GetType() == GeomAbs_Circle) {
             gp_Circ circ = c.Circle();
@@ -588,6 +589,12 @@ int hc_edge_info(const hc_shape *s, int index, double out[16])
             double v[7] = {ctr.X(), ctr.Y(), ctr.Z(), ax.X(), ax.Y(), ax.Z(), circ.Radius()};
             for (int i = 0; i < 7; i++)
                 out[9 + i] = v[i];
+        }
+        // the length along the curve, not the chord (a circle's is 2πr)
+        switch (c.GetType()) {
+        case GeomAbs_Line: out[16] = p[0].Distance(p[1]); break;
+        case GeomAbs_Circle: out[16] = c.Circle().Radius() * std::abs(u1 - u0); break;
+        default: out[16] = GCPnts_AbscissaPoint::Length(c, u0, u1, 1e-6); break;
         }
         switch (c.GetType()) {
         case GeomAbs_Line: return HC_EDGE_LINE;

@@ -1456,7 +1456,7 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
             case "end": result = vec3(e.end); return true;
             case "mid": result = vec3(e.mid); return true;
             case "direction": result = vec3(e.direction, Dim.none); return true;
-            case "length": result = len((e.end - e.start).length); return true;
+            case "length": result = len(e.length); return true;
             case "isLine": result = Value.of(e.kind == EdgeKind.line); return true;
             case "center", "axis", "radius":
                 if (e.kind != EdgeKind.circle)

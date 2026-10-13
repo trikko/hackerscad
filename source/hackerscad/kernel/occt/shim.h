@@ -77,7 +77,7 @@ int hc_edge_count(const hc_shape *s);
 int hc_face_count(const hc_shape *s);
 /* out: start xyz, end xyz, mid xyz, then for circles centre xyz, axis xyz
  * and radius; returns HC_EDGE_* or -1 */
-int hc_edge_info(const hc_shape *s, int index, double out[16]);
+int hc_edge_info(const hc_shape *s, int index, double out[17]);
 /* out: centre of mass xyz, normal at centre xyz, area */
 int hc_face_info(const hc_shape *s, int index, double out[7]);
 

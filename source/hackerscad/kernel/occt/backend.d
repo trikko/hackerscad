@@ -140,7 +140,7 @@ final class OcctKernel : BrepKernel
         auto r = new EdgeInfo[hc_edge_count(h(s))];
         foreach (i, ref e; r)
         {
-            double[16] v;
+            double[17] v;
             immutable kind = hc_edge_info(h(s), cast(int) i, v);
             check(kind >= 0, "edge query");
             e.kind = kind == HC_EDGE_LINE ? EdgeKind.line : kind == HC_EDGE_CIRCLE ? EdgeKind.circle : EdgeKind.other;
@@ -150,6 +150,7 @@ final class OcctKernel : BrepKernel
             e.center = Vec3(v[9], v[10], v[11]);
             e.axis = Vec3(v[12], v[13], v[14]);
             e.radius = v[15];
+            e.length = v[16];
         }
         return r;
     }
