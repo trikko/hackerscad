@@ -27,6 +27,10 @@ usage:
       llms-full.txt); --cheatsheet every function in one line each (also
       --cheatsheet-html), --agents AGENTS.md, --skill SKILL.md, --summary
       llms.txt
+  hcad features FILE [--part NAME] [--json]
+      what a mesh (.stl .obj .3mf), a STEP file or a model is made of, to
+      remodel it: flat faces, holes and shafts, cones, spheres, roundings,
+      patterns of holes, with plausible sizes
   hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
@@ -99,6 +103,39 @@ int main(string[] args)
             write(topic == "--agents" ? agentsText() : topic == "--skill" ? skillText()
                 : topic == "--summary" ? summaryText() : topic == "--cheatsheet" ? cheatsheetMarkdown()
                 : reference(topic));
+            return 0;
+        }
+    case "features":
+        {
+            string part;
+            bool asJson;
+            try
+                getopt(args, "part", &part, "json", &asJson);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            import hackerscad.tool.features : meshOf, featuresJson;
+            import hackerscad.geom.meshfeatures : analyse, report;
+            try
+            {
+                auto a = analyse(meshOf(args[1], part));
+                if (asJson)
+                    writeln(featuresJson(a).toPrettyString(JSONOptions.doNotEscapeSlashes));
+                else
+                    write(report(a));
+            }
+            catch (Exception e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
             return 0;
         }
     case "render", "check":

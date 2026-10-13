@@ -967,6 +967,18 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
 
     // ---- mass properties: density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04)
+    // ---- remodelling: what a mesh is made of
+    def("features", (ref CallArgs a) {
+        // writeln(load("part.stl").features): its flat faces, holes, shafts, cones, spheres, roundings
+        // and patterns of holes, one a line, with plausible sizes
+        auto x = Args(it, a, "features", ["solid"]);
+        auto s = x.solid("solid");
+        if (s.flat || s.path)
+            throw new HcadError(Code.type, "features are of solids", a.span);
+        import hackerscad.geom.meshfeatures : analyse, report;
+        return Value.of(report(analyse(k.tessellate(nonEmpty(s, a.span), 0.01, 0.1))));
+    });
+
     // ---- printing: what a printer will find hard
     def("overhangs", (ref CallArgs a) {
         // s.overhangs(45.deg): the area facing down more steeply than the angle from a wall, off the bed

@@ -1615,3 +1615,20 @@ unittest
     assert(error(`@part Solid p() => cylinder(d: 8, h: 20).thread(faces.filter(f => f.center.z > 5.mm `
         ~ `&& f.center.z < 15.mm), "Z9");`).message.canFind("names a thread"));
 }
+
+unittest
+{
+    // what a solid is made of: a plate with a circle of holes, read back from its triangles
+    auto r = runModel(q{
+        immutable plate = box(40, 40, 5)
+            - cylinder(d: 3.4, h: 20, center: true).move(x: 12).circularPattern(6, axis: Z)
+            - cylinder(d: 10, h: 20, center: true);
+        @part Solid p() => plate;
+        unittest { writeln(plate.features); }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    immutable report = r.log[0].text;
+    assert(report.canFind("hole ⌀10 ") && report.canFind("hole ⌀3.4 = M3 clearance"), report);
+    assert(report.canFind("pattern: 6× hole ⌀3.4 on a circle of radius 12") && report.canFind("60° apart"), report);
+}

@@ -244,6 +244,8 @@ immutable Ref[] reference =
     P("centroid", "Solid", "Vec3", "The centre of mass (of a uniform solid)."),
     F("section", "Solid", ["plane: Plane"], "Profile", "The cut of the solid by a plane: a profile in that plane."),
     F("projection", "Solid", ["plane: Plane"], "Profile", "The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY."),
+    P("features", "Solid", "string",
+        "What the solid is made of, one surface a line: flat faces, holes and shafts (with the ISO size they match), cones, spheres, roundings, patterns of holes; to remodel a loaded mesh: writeln(load(\"x.stl\").features)."),
     F("overhangs", "Solid", ["angle: Angle"], "Area",
         "The area facing down more steeply than the angle from a wall (45° by default), off the bed: what needs supports."),
     F("thinWalls", "Solid", ["min: Length"], "Area",

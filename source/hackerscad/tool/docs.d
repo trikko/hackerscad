@@ -127,6 +127,9 @@ reference first and follow the rules below.
   draws iso/front/top/right (look at it); `-o model.3mf`, `.step`, `.zip`
   (one STL per part), `.stl` (one part: `--part name`);
   `-D width=80.mm` and `--preset name` change parameters.
+  `hcad features part.stl` lists what a mesh is made of (planes, holes,
+  shafts, cones, roundings, hole patterns, with plausible sizes): the start
+  for remodelling a part given as STL (hcad_features with the server).
   `--printability` adds per part the overhangs needing supports and the
   walls too thin to print (marked in the pictures: red stripes, violet
   hatching); with the window, `hcad_gui_view` style `printability`.

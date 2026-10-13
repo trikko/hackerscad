@@ -266,7 +266,7 @@ JSONValue toolError(string message)
 
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
-    ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure"].canFind(tool);
+    ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -638,6 +638,13 @@ JSONValue[] toolList()
             modelProps ~ `, "drawing": {"type": "string", "description": "Name of the @drawing function; default the first."}`),
         tool("hcad_measure", "Minimum distance between two parts of a model (by function name or @part(name:)), with "
             ~ "the closest points; 0 when they touch or overlap.", modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}`, `["a", "b"]`),
+        tool("hcad_features", "What a part given as a mesh is made of, to remodel it exactly: flat faces (normal, "
+            ~ "offset), holes and shafts (diameter, axis, length, ISO clearance or tap drill they match), cones "
+            ~ "(countersinks), spheres, roundings (radius, angle), and holes repeated on a circle or in a row, with "
+            ~ "plausible rounded sizes and the measured ones. 'path' is an .stl, .obj, .3mf or .step file (or an "
+            ~ ".hcad model, 'part' one of its parts). Load the mesh as a see-through reference part "
+            ~ "(@part(\"slategray\", alpha: 0.3, export: false) Solid original() => load(\"x.stl\");) to compare.",
+            `"path": {"type": "string"}, "part": {"type": "string"}`, `["path"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -894,6 +901,22 @@ JSONValue callTool(string name, JSONValue args)
             }
             else
                 text(run.renderedDiagnostics());
+            break;
+        }
+    case "hcad_features":
+        {
+            import hackerscad.tool.features : meshOf, featuresJson;
+            import hackerscad.geom.meshfeatures : analyse, report;
+            try
+            {
+                auto a = analyse(meshOf(arg("path"), arg("part")));
+                text(report(a) ~ "\n" ~ featuresJson(a).toPrettyString(JSONOptions.doNotEscapeSlashes));
+            }
+            catch (Exception e)
+            {
+                isError = true;
+                text(e.msg);
+            }
             break;
         }
     case "hcad_measure":
