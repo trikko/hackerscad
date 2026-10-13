@@ -4187,7 +4187,8 @@ private:
         JSONValue[] parts;
         foreach (pm; last.parts)
         {
-            JSONValue jp = ["name": pm.name, "color": format("#%06X", pm.rgb)];
+            import hackerscad.geom.color : hexColor;
+            JSONValue jp = ["name": pm.name, "color": hexColor(pm.rgb)];
             jp["size"] = [pm.bbox.size.x, pm.bbox.size.y, pm.bbox.size.z];
             jp["volume_mm3"] = pm.volume;
             jp["line"] = pm.span.line;
