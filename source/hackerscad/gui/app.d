@@ -106,7 +106,9 @@ else
 enum startModel = import("bagclip.hcad");
 
 /// What New starts with: a part in a few lines, to change into one's own.
-enum newModelTemplate = `import std.shapes;
+enum newModelTemplate = `// An example: replace what is inside body() with your own.
+
+import std.shapes;
 
 @part
 Solid body()
