@@ -308,6 +308,10 @@ version (Windows)
     }
 }
 
+/// The garbage collector marks on one thread: marking in parallel spent
+/// most of its time spinning on locks, against OCCT's own threads.
+extern (C) __gshared string[] rt_options = ["gcopt=parallel:0"];
+
 int main(string[] args)
 {
     version (Windows)

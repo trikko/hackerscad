@@ -44,6 +44,10 @@ options:
   --tolerance MM    mesh chord tolerance (default 0.02)
   --json            machine-readable output (for scripts and agents)`;
 
+/// The garbage collector marks on one thread: marking in parallel spent
+/// most of its time spinning on locks, against OCCT's own threads.
+extern (C) __gshared string[] rt_options = ["gcopt=parallel:0"];
+
 int main(string[] args)
 {
     if (args.length >= 2 && (args[1] == "--version" || args[1] == "version"))
