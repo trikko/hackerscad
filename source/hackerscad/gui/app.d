@@ -2849,6 +2849,42 @@ private:
         }
     }
 
+    /// The sketches of the model, for the control socket: whether each is
+    /// solved, how many points can still move, and its dimensions with the
+    /// place of their value in the code (to change it with "dimension").
+    JSONValue sketchesJson()
+    {
+        JSONValue[] r;
+        foreach (sk; last.sketches)
+        {
+            JSONValue js = ["line": JSONValue(sk.span.line), "solved": JSONValue(sk.solved)];
+            js["degrees_of_freedom"] = sk.dof;
+            size_t free;
+            foreach (pt; sk.points)
+                free += pt.free;
+            js["free_points"] = free;
+            JSONValue[] ds;
+            foreach (d; sk.dimensions)
+            {
+                JSONValue jd = ["label": JSONValue(d.label), "line": JSONValue(d.value.line), "col": JSONValue(d.value.col)];
+                if (d.value.file != absolutePath(path))
+                    jd["file"] = d.value.file;
+                else
+                    try
+                        jd["value"] = argumentText(text(), path, d.value.line, d.value.col);
+                    catch (Exception)
+                    {
+                    }
+                if (d.conflicting)
+                    jd["conflicting"] = true;
+                ds ~= jd;
+            }
+            js["dimensions"] = ds;
+            r ~= js;
+        }
+        return JSONValue(r);
+    }
+
     /// Edits the value of a dimension in place: the source is rewritten.
     void editDimension(Button b, SketchView.Dimension d)
     {
@@ -3774,10 +3810,35 @@ private:
                 return;
             }
         case "sketch":
-            // {"on": true}: show the sketches with their dimensions
+            // {"on": true}: show the sketches with their dimensions; the reply lists them
             sketchToggle.setActive("on" !in p || p["on"].type != JSONType.false_);
-            whenIdle(() => reply(state(), null));
+            whenIdle(() {
+                auto r = state();
+                r["sketches"] = sketchesJson();
+                reply(r, null);
+            });
             return;
+        case "dimension":
+            {
+                // {"line": 12, "col": 30, "value": "40.mm"}: a sketch dimension changed, as clicking it
+                if (!has("line") || !has("col") || arg("value").length == 0)
+                    return reply(JSONValue.init, "give line and col of the dimension (hcad_gui_sketch lists them) and "
+                        ~ "the new value");
+                try
+                {
+                    auto e = replaceArgument(text(), path, cast(uint) p["line"].get!long, cast(uint) p["col"].get!long,
+                        arg("value"));
+                    applyEdit(e);
+                }
+                catch (Exception ex)
+                    return reply(JSONValue.init, ex.msg);
+                whenIdle(() {
+                    auto r = state();
+                    r["sketches"] = sketchesJson();
+                    reply(r, null);
+                });
+                return;
+            }
         case "inspect":
             {
                 // {"line": 12, "to_line": 20} or {"function": "lever"}: what that code made; nothing: back to the model

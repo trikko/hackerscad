@@ -364,8 +364,10 @@ string wrapCall(string line, string indent, size_t width = 80)
     return r ~ cur;
 }
 
-/// Replaces the expression starting at line/col (an argument) with `text`.
-/// The expression ends at the first ',' or ')' outside brackets.
+/// Replaces the argument expression at line/col with `text`. The position
+/// may fall anywhere in it (a value like 45.mm is known by its ".mm"): the
+/// argument runs from the ',' or '(' before it to the ',' or ')' after it,
+/// outside brackets.
 Edit replaceArgument(string source, string file, uint line, uint col, string text)
 {
     auto toks = lex(source, file);
@@ -374,6 +376,21 @@ Edit replaceArgument(string source, string file, uint line, uint col, string tex
         first++;
     if (first >= toks.length || toks[first].span.line != line || toks[first].span.col != col)
         throw new CodegenException("the value is no longer where it was: evaluate again");
+    // back to the start of the argument
+    {
+        int depth;
+        while (first > 0)
+        {
+            immutable k = toks[first - 1].kind;
+            if (depth == 0 && (k == Tok.comma || k == Tok.lparen || k == Tok.lbracket || k == Tok.semicolon))
+                break;
+            if (k == Tok.rparen || k == Tok.rbracket || k == Tok.rbrace)
+                depth++;
+            else if (k == Tok.lparen || k == Tok.lbracket || k == Tok.lbrace)
+                depth--;
+            first--;
+        }
+    }
     // a named argument: skip "name:"
     if (first + 1 < toks.length && toks[first].kind == Tok.ident && toks[first + 1].kind == Tok.colon)
         first += 2;
@@ -397,6 +414,17 @@ Edit replaceArgument(string source, string file, uint line, uint col, string tex
     e.selectOffset = start;
     e.selectLength = text.length;
     return e;
+}
+
+unittest
+{
+    // from anywhere in the argument: its start, its ".mm", a named one
+    immutable src = "s.length(back, 45.mm);\ns.distance(a, b, value: f(2) * 3.mm);\n";
+    assert(argumentText(src, "t", 1, 16) == "45.mm");
+    assert(argumentText(src, "t", 1, 18) == "45.mm");
+    assert(argumentText(src, "t", 2, 33) == "f(2) * 3.mm");
+    assert(argumentText(src, "t", 2, 18) == "f(2) * 3.mm");
+    assert(replaceArgument(src, "t", 1, 18, "50.mm").apply(src).canFind("s.length(back, 50.mm);"));
 }
 
 /// The source text of the argument expression at line/col.
