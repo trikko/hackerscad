@@ -2734,7 +2734,10 @@ private:
         import gobject.value : Value;
         window.getClipboard().set(new Value(text));
         info("copied: " ~ text);
+        lastCopied = text;
     }
+
+    string lastCopied;   /// what the latest copy put on the clipboard, for the control socket
 
     void appendFeature(PartMesh part, string call, string placeholder)
     {
@@ -3704,8 +3707,13 @@ private:
                     if (auto problem = screenPoint(p, x, y))
                         return reply(JSONValue.init, problem);
                     auto hit = viewport.pickAt(x, y);
-                    if (hit.part < 0)
-                        return reply(JSONValue.init, "nothing under that point: the menu opens on a part");
+                    // on empty space the menu lists the hidden parts, when there are some
+                    bool anyHidden;
+                    foreach (i; 0 .. last.parts.length)
+                        anyHidden = anyHidden || viewport.isHidden(i);
+                    if (hit.part < 0 && !anyHidden)
+                        return reply(JSONValue.init, "nothing under that point: the menu opens on a part (or, on empty "
+                            ~ "space, lists the hidden parts: none is hidden)");
                     contextMenu(hit, x, y);
                     if (list)
                     {
@@ -3714,9 +3722,16 @@ private:
                             closeLastMenu();
                         return reply(JSONValue(["entries": menuJson(entries)]), null);
                     }
+                    lastCopied = null;
                     if (auto problem = activateMenuPath(path))
                         return reply(JSONValue.init, problem);
-                    whenIdle(() => reply(state(), null));
+                    whenIdle(() {
+                        // an entry that copies (Measure, Copy as code): the text too
+                        auto r = state();
+                        if (lastCopied !is null)
+                            r["copied"] = lastCopied;
+                        reply(r, null);
+                    });
                 });
                 return;
             }

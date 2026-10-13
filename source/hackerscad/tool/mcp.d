@@ -702,7 +702,8 @@ JSONValue[] toolList()
             ~ "what the user would do with the mouse. Entries that write code append it to the part in the editor. "
             ~ "Without path, returns the entries the menu has there (with sub-entries and the values it shows) and "
             ~ "chooses nothing. With open: true the menu stays open (path: only groups to open), to show it in "
-            ~ "hcad_gui_screenshot.",
+            ~ "hcad_gui_screenshot. On empty space the menu lists the hidden parts. Entries that copy (Measure, "
+            ~ "Copy as code) also return the text as copied.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"path": {"type": "array", "items": {"type": "string"}}, "open": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_section", "Cut the user's 3D view with a plane: parallel to xy, xz or yz, or to the selected face "
