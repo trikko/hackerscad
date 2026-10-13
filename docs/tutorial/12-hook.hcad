@@ -8,10 +8,10 @@ import std.shapes;
 Solid hook()
 {
     auto plate = box(30.mm, 4.mm, 60.mm);
-    auto arm = box(30.mm, 20.mm, 6.mm).move(y: -12.mm, z: 44.mm);
+    auto arm = box(30.mm, 20.mm, 6.mm).move(y: -12.mm, z: 30.mm);
     return (plate + arm)
         .cut(teardrop(d: 4.5.mm), on: faces.back,
-            at: vec(0.mm, 0.mm, 12.mm), through: true)
+            at: vec(0.mm, 0.mm, 48.mm), through: true)
         .extrude(faces.front, depth: 10.mm)
         .chamfer(edges.between(faces.normal(-Z).largest, faces.normal(-Y).largest),
             d: 26.mm);

@@ -25,9 +25,12 @@ from the original.
 
 ## A hook, ready to print
 
-A hook for the wall: a plate with a hole for a screw, and an arm. It is a
-simplified hook, to show the tools: printed like this, with a 4 mm plate and a
-6 mm arm, it would probably break the first time you hang something on it.
+A hook for the wall: a plate with a hole for a screw, and an arm. The screw
+goes above the arm: what hangs on the arm pulls the top of the plate away
+from the wall, and the screw holds it there. As it starts, with nothing under
+the arm, it is weak: the joint between arm and plate would bend or break the
+first time you hung something heavy on it. A support under the arm, added
+below, takes care of that.
 
 ```d
 module hook;
@@ -40,10 +43,10 @@ import std.shapes;
 Solid hook()
 {
     auto plate = box(30.mm, 4.mm, 60.mm);
-    auto arm = box(30.mm, 20.mm, 6.mm).move(y: -12.mm, z: 44.mm);
+    auto arm = box(30.mm, 20.mm, 6.mm).move(y: -12.mm, z: 30.mm);
     return (plate + arm)
         .cut(circle(d: 4.5.mm), on: faces.back,
-            at: vec(0.mm, 0.mm, 12.mm), through: true);
+            at: vec(0.mm, 0.mm, 48.mm), through: true);
 }
 ```
 
@@ -80,31 +83,33 @@ Turn the view to see the hook from below:
 The whole underside of the arm hangs in the air, and so does the top of the
 screw hole.
 
-The quickest fix is to print it another way round. Add `.rotate(y: 90)` at
+The quickest fix is to print it another way round. Add `.rotate(x: -90)` at
 the end of the chain, after the `.extrude(…)` (move the `;` there): the hook
-lies on its side, the L of plate and arm flat on the bed, and everything else
-grows straight up. Nothing hangs any more, but for the top of the small hole,
-which a printer manages anyway. It is also stronger this way: the layers
-follow the L, instead of crossing the joint between plate and arm, where it
-would break.
+lies on its back, the side that goes against the wall flat on the bed, and
+the arm grows straight up. Nothing hangs any more, and the screw hole stands
+upright, round as it is. The layers now cross the arm where it meets the
+plate, though: that joint is where it would break.
 
-![On its side: only the screw hole is left](img/12-hook-side.png)
+![On its back: nothing overhangs](img/12-hook-back.png)
 
 The slicer can turn a model too, so this is a choice for when you print.
-Take the `.rotate(y: 90)` away again: here the hook stays upright, and two
+Take the `.rotate(x: -90)` away again: here the hook stays upright, and two
 changes to its shape make it printable that way as well.
 
-- **A slope under the arm.** Right-click the edge where the arm meets the
+- **A support under the arm.** Right-click the edge where the arm meets the
   plate, below, and choose **Chamfer edge…**: type `26.mm`. An edge that
-  turns inwards gets material added, here a 45° slope that holds the arm up
-  as it prints.
+  turns inwards gets material added, here a 45° slope as wide as the arm (a
+  gusset): it holds the arm up as it prints, and once the hook hangs it
+  carries the weight down into the plate, which makes the hook much
+  stronger. Two narrow gussets, one at each side, would do the same with
+  less plastic.
 - **A pointed hole.** In the code, write `teardrop` in place of `circle`:
   the hole gets a point at the top, two 45° sides that print without
   supports. The screw does not notice.
 
 ```d
         .cut(teardrop(d: 4.5.mm), on: faces.back,
-            at: vec(0.mm, 0.mm, 12.mm), through: true)
+            at: vec(0.mm, 0.mm, 48.mm), through: true)
         .extrude(faces.front, depth: 10.mm)
         .chamfer(edges.between(faces.normal(-Z).largest, faces.normal(-Y).largest),
             d: 26.mm);

@@ -270,7 +270,7 @@ void page12()
     open(hook);
     view(`{"preset": "iso", "style": "edges"}`);
     shot("12-hook");
-    menu([0, -22, 47], ["Extrude face…"]);
+    menu([0, -22, 33], ["Extrude face…"]);
     type("depth: 5.mm", "depth: 10.mm");
     clearSelection();
     view(`{"preset": "iso"}`);
@@ -278,17 +278,17 @@ void page12()
     // seen from below, in the printability style
     view(`{"style": "printability", "orbit": [0, -50]}`);
     shot("12-hook-print");
-    // laid on its side, then back upright
-    type("        .extrude(faces.front, depth: 10.mm);", "        .extrude(faces.front, depth: 10.mm)\n        .rotate(y: 90);");
+    // laid on its back, then upright again
+    type("        .extrude(faces.front, depth: 10.mm);", "        .extrude(faces.front, depth: 10.mm)\n        .rotate(x: -90);");
     view(`{"preset": "iso"}`);
-    shot("12-hook-side", lineOf(".rotate("));
-    type("        .extrude(faces.front, depth: 10.mm)\n        .rotate(y: 90);", "        .extrude(faces.front, depth: 10.mm);");
+    shot("12-hook-back", lineOf(".rotate("));
+    type("        .extrude(faces.front, depth: 10.mm)\n        .rotate(x: -90);", "        .extrude(faces.front, depth: 10.mm);");
     view(`{"preset": "iso", "orbit": [0, -50]}`);
-    menu([0, -2, 44], ["Chamfer edge…"]);
+    menu([0, -2, 30], ["Chamfer edge…"]);
     type("d: 0.5.mm", "d: 26.mm");
     clearSelection();
     type("circle(d: 4.5.mm)", "teardrop(d: 4.5.mm)");
-    view(`{"preset": "iso", "orbit": [0, -50]}`);
+    view(`{"preset": "iso", "orbit": [0, -25]}`);
     shot("12-hook-final", lineOf(".chamfer("));
     view(`{"preset": "iso", "style": "edges"}`);
     write(buildPath(docs, "12-hook.hcad"), source());
