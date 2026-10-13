@@ -18,7 +18,8 @@ reference first and follow the rules below.
 ## How to work
 
 - **With the MCP server** (best): `claude mcp add -s user hcad -- hcad mcp`. Tools:
-  hcad_docs (the reference, or one topic), hcad_check (errors with line,
+  hcad_docs (the reference, one topic, or format: cheatsheet for every
+  function in one line), hcad_check (errors with line,
   column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
   views: look at them), hcad_measure, hcad_export (.3mf, .stl for one part,
   .zip for one STL per part, .step, .png; 'parts' picks some),

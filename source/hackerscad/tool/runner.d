@@ -100,6 +100,29 @@ final class Run
         return r;
     }
 
+    /// The parts named in `only` (by function name or @part(name:)), in
+    /// that order; without names, every part but the reference ones
+    /// (export: false), which pictures include.
+    size_t[] partIndices(const string[] only, bool picture)
+    {
+        import std.algorithm : countUntil;
+        size_t[] kept;
+        if (only.length)
+            foreach (want; only)
+            {
+                auto i = result.parts.countUntil!(p => p.name == want || p.label == want);
+                if (i < 0)
+                    throw new HcadError(Code.undefined, format("no @part named '%s'", want), Span(path),
+                        Interp.suggest(want, result.parts.map!(p => p.name).array));
+                kept ~= i;
+            }
+        else
+            foreach (i, p; result.parts)
+                if (p.export_ || picture)
+                    kept ~= i;
+        return kept;
+    }
+
     /// The sheet of a @drawing (the first when no name is given).
     Sheet drawingSheet(string name = null)
     {
@@ -141,22 +164,7 @@ final class Run
             throw new HcadError(Code.undefined, "nothing to export: the model has no @part", Span.init);
         auto ms = partMeshes();
         immutable picture = extension(file).toLower == ".png";
-        size_t[] kept;
-        if (only.length)
-            foreach (want; only)
-            {
-                import std.algorithm : countUntil;
-                auto i = result.parts.countUntil!(p => p.name == want || p.label == want);
-                if (i < 0)
-                    throw new HcadError(Code.undefined, format("no @part named '%s'", want), Span(path),
-                        Interp.suggest(want, result.parts.map!(p => p.name).array));
-                kept ~= i;
-            }
-        else
-            // reference parts (@part(export: false)) appear only in pictures
-            foreach (i, p; result.parts)
-                if (p.export_ || picture)
-                    kept ~= i;
+        auto kept = partIndices(only, picture);
         if (kept.length == 0)
             throw new HcadError(Code.undefined, "nothing to export: every @part has export: false", Span.init);
         if (picture)

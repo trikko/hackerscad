@@ -18,7 +18,7 @@ import std.string : strip;
 import core.atomic : atomicLoad, atomicOp;
 
 import hackerscad.render.raster : View;
-import hackerscad.tool.docs : reference;
+import hackerscad.tool.docs : agentsText, reference, skillText, summaryText;
 import hackerscad.tool.runner;
 import hackerscad.tool.guiclient;
 import hackerscad.kernel.cache : CachingKernel;
@@ -611,23 +611,28 @@ JSONValue[] toolList()
 
     return [
         tool("hcad_docs", "Reference of the .hcad language, the geometry API, conventions and examples. "
-            ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware') for a short excerpt.",
-            `"topic": {"type": "string"}`),
+            ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware') for a short excerpt. format: "
+            ~ "cheatsheet gives every function in one line each (compact), summary the short index (llms.txt), agents "
+            ~ "and skill the agent guides.",
+            `"topic": {"type": "string"}, "format": {"type": "string", "enum": ["reference", "cheatsheet", "summary", "agents", "skill"]}`),
         tool("hcad_check", "Evaluate a model: parts with bounding boxes and volumes, parameters, presets, "
             ~ "writeln output, errors with line/column/suggestion and failed unittest checks.", modelProps),
         tool("hcad_render", "Evaluate a model and return the same report as hcad_check plus a PNG of the parts "
-            ~ "(default views: iso, front, top, right). Use it to verify the result visually.",
-            modelProps ~ `, "views": {"type": "array", "items": {"type": "string", "enum": ["iso", "front", "back", "top", "bottom", "left", "right"]}}`),
-        tool("hcad_export", "Evaluate a model and write it to 'output': .3mf (one object per part, with colours), "
-            ~ ".stl (one part), .zip (one STL per part), .step (one named body per part) or .png; .svg, .pdf or .dxf "
-            ~ "write a @drawing (the first, or the one named by 'drawing').",
-            modelProps ~ `, "output": {"type": "string"}, "drawing": {"type": "string"}, `
+            ~ "(default views: iso, front, top, right; 'parts' draws only some). Use it to verify the result visually.",
+            modelProps ~ `, "views": {"type": "array", "items": {"type": "string", "enum": ["iso", "front", "back", "top", "bottom", "left", "right"]}}, `
+            ~ partsProp),
+        tool("hcad_export", "Evaluate a model and write it to 'output' (a path, or several to write from one "
+            ~ "evaluation): .3mf (one object per part, with colours), .stl (one part), .zip (one STL per part), .step or "
+            ~ ".stp (one named body per part), or .png (name.png the iso view, name-views.png iso/front/top/right, "
+            ~ "name-top.png and so on one view); .svg, .pdf or .dxf write a @drawing (the first, or the one named by "
+            ~ "'drawing').",
+            modelProps ~ `, "output": {"type": ["string", "array"], "items": {"type": "string"}}, "drawing": {"type": "string"}, `
             ~ partsProp, `["output"]`),
         tool("hcad_drawing", "Evaluate a model and return a @drawing as SVG text (views with hidden lines, sections, "
             ~ "dimensions, title block), to check it before exporting it as PDF or DXF.",
             modelProps ~ `, "drawing": {"type": "string", "description": "Name of the @drawing function; default the first."}`),
-        tool("hcad_measure", "Minimum distance between two parts of a model (by @part name), with the closest "
-            ~ "points; 0 when they touch or overlap.", modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}`, `["a", "b"]`),
+        tool("hcad_measure", "Minimum distance between two parts of a model (by function name or @part(name:)), with "
+            ~ "the closest points; 0 when they touch or overlap.", modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}`, `["a", "b"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -778,29 +783,49 @@ JSONValue callTool(string name, JSONValue args)
     switch (name)
     {
     case "hcad_docs":
-        text(reference(arg("topic")));
-        break;
+        {
+            import hackerscad.tool.cheatsheet : cheatsheetMarkdown;
+            switch (arg("format"))
+            {
+            case "cheatsheet": text(cheatsheetMarkdown()); break;
+            case "summary": text(summaryText()); break;
+            case "agents": text(agentsText()); break;
+            case "skill": text(skillText()); break;
+            case null, "reference": text(reference(arg("topic"))); break;
+            default: throw new Exception("format must be reference, cheatsheet, summary, agents or skill");
+            }
+            break;
+        }
     case "hcad_check", "hcad_render", "hcad_export":
         {
             auto run = evaluateModel(options(args));
             isError = run.hasErrors;
+            string[] only;
+            if (args.type == JSONType.object && "parts" in args && args["parts"].type == JSONType.array)
+                foreach (v; args["parts"].array)
+                    only ~= v.str;
             if (name == "hcad_export" && run.ok)
             {
-                auto output = arg("output");
-                enforce(output.length, "missing 'output'");
-                string[] only;
-                if (args.type == JSONType.object && "parts" in args && args["parts"].type == JSONType.array)
-                    foreach (v; args["parts"].array)
-                        only ~= v.str;
-                run.exportTo(output, only);
-                text("written " ~ output);
+                // one file, or several from one evaluation
+                string[] outputs;
+                if (args.type == JSONType.object && "output" in args && args["output"].type == JSONType.array)
+                    foreach (v; args["output"].array)
+                        outputs ~= v.str;
+                else if (arg("output").length)
+                    outputs = [arg("output")];
+                enforce(outputs.length, "missing 'output'");
+                foreach (output; outputs)
+                {
+                    run.exportTo(output, only);
+                    text("written " ~ output);
+                }
             }
             text(run.report().toPrettyString(JSONOptions.doNotEscapeSlashes));
             auto diags = run.renderedDiagnostics();
             if (diags.length)
                 text(diags);
             if (name == "hcad_render" && run.ok && run.result.parts.length)
-                image(run.png(views(args)));
+                image(run.png(views(args), 450, only.length ? run.partIndices(only, true) : null));
             break;
         }
     case "hcad_drawing":
@@ -830,15 +855,22 @@ JSONValue callTool(string name, JSONValue args)
             if (run.ok)
             {
                 import hackerscad.geom.vec : Vec3;
-                auto find(string n)
+                import hackerscad.lang.errors : HcadError;
+                import hackerscad.kernel.brep : Brep;
+                Brep a, b;
+                try
                 {
-                    foreach (p; run.result.parts)
-                        if (p.name == n)
-                            return p.solid.brep;
-                    throw new Exception(format("no @part named '%s'", n));
+                    a = run.result.parts[run.partIndices([arg("a")], true)[0]].solid.brep;
+                    b = run.result.parts[run.partIndices([arg("b")], true)[0]].solid.brep;
+                }
+                catch (HcadError e)
+                {
+                    isError = true;
+                    text(e.msg ~ (e.diag.suggestion.length ? " (" ~ e.diag.suggestion ~ ")" : ""));
+                    break;
                 }
                 Vec3 pa, pb;
-                immutable d = run.kernel.distance(find(arg("a")), find(arg("b")), pa, pb);
+                immutable d = run.kernel.distance(a, b, pa, pb);
                 JSONValue j = ["distance_mm": d];
                 j["point_a"] = [pa.x, pa.y, pa.z];
                 j["point_b"] = [pb.x, pb.y, pb.z];
