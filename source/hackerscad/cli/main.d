@@ -42,6 +42,9 @@ usage:
       cuts all along an axis: each hole and pocket met with its shape (circle,
       rectangle, hexagon, teardrop, slot…) and where it starts and ends, and
       the outside outline's changes
+  hcad diff FILE.hcad --a PART --b PART [--resolution MM]
+      where part a (a copy) differs from part b (the original): the pieces
+      of material a lacks and has too much of, with their boxes and volumes
   hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
@@ -239,6 +242,39 @@ int main(string[] args)
             try
                 write(scanReport(args[1], part, axis, step));
             catch (Exception e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
+            return 0;
+        }
+    case "diff":
+        {
+            string pa, pb;
+            double res = 0;
+            try
+                getopt(args, "a", &pa, "b", &pb, "resolution", &res);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2 || pa.length == 0 || pb.length == 0)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            RunOptions ro;
+            ro.path = args[1];
+            auto run = evaluateModel(ro);
+            if (!run.ok)
+            {
+                stderr.write(run.renderedDiagnostics());
+                return 1;
+            }
+            try
+                write(run.differences(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], res));
+            catch (HcadError e)
             {
                 stderr.writeln("error: ", e.msg);
                 return 1;

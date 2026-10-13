@@ -267,7 +267,7 @@ JSONValue toolError(string message)
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
     ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
-        "hcad_compare", "hcad_scan"].canFind(tool);
+        "hcad_compare", "hcad_scan", "hcad_diff"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -666,6 +666,12 @@ JSONValue[] toolList()
             ~ "to see the part as the operations it was made with; then hcad_section at a level for exact outlines.",
             `"path": {"type": "string"}, "part": {"type": "string"}, "axis": {"type": "string", "enum": ["x", "y", "z"]}, `
             ~ `"step": {"type": "number", "description": "mm between cuts (default: the length / 200, at least 0.25)"}`, `["path", "axis"]`),
+        tool("hcad_diff", "Where a part of a model (a copy) differs from another (the original, e.g. a mesh loaded as a "
+            ~ "see-through reference part), as pieces of material: what the copy lacks (to add) and what it has too much "
+            ~ "of (to cut), largest first, each with its box, volume, centre of mass and how much of its box it fills (a "
+            ~ "full box is a box() to add or cut). Both are filled into cubes of 'resolution' mm (default: the size / "
+            ~ "250); differences thinner than two cubes are left out.",
+            modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "resolution": {"type": "number"}`, `["a", "b"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -997,6 +1003,29 @@ JSONValue callTool(string name, JSONValue args)
                     st is null ? 0 : st.type == JSONType.integer ? st.integer : st.floating));
             }
             catch (Exception e)
+            {
+                isError = true;
+                text(e.msg);
+            }
+            break;
+        }
+    case "hcad_diff":
+        {
+            auto run = evaluateModel(options(args));
+            isError = !run.ok;
+            if (!run.ok)
+            {
+                text(run.renderedDiagnostics());
+                break;
+            }
+            import hackerscad.lang.errors : HcadError;
+            try
+            {
+                auto res = "resolution" in args;
+                text(run.differences(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0],
+                    res is null ? 0 : res.type == JSONType.integer ? res.integer : res.floating));
+            }
+            catch (HcadError e)
             {
                 isError = true;
                 text(e.msg);
