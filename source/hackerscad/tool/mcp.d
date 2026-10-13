@@ -267,7 +267,7 @@ JSONValue toolError(string message)
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
     ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
-        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit", "hcad_match"].canFind(tool);
+        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit", "hcad_match", "hcad_lines"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -670,6 +670,14 @@ JSONValue[] toolList()
             ~ "to see the part as the operations it was made with; then hcad_section at a level for exact outlines.",
             `"path": {"type": "string"}, "part": {"type": "string"}, "axis": {"type": "string", "enum": ["x", "y", "z"]}, `
             ~ `"step": {"type": "number", "description": "mm between cuts (default: the length / 200, at least 0.25)"}`, `["path", "axis"]`),
+        tool("hcad_lines", "Compare a copy and its original as drawings, as the eye does: parts 'a' (the copy) and "
+            ~ "'b' (the original) drawn as lines (sharp edges and outlines, hidden lines removed) from 62 directions "
+            ~ "around them and 42 peeled ones (cut a quarter, half and three quarters deep, to see inside). Lists the "
+            ~ "lines only one has as places on the part, the most seen and longest first (a chamfer, a countersink, a "
+            ~ "notch, a lettering: small in volume, long as lines), and pictures of the 'views' (12) directions that "
+            ~ "show most of them: grey in common, red only in the original, blue only in the copy. Use it after "
+            ~ "hcad_compare: what it lists is what a person sees first.",
+            modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "views": {"type": "integer"}`, `["a", "b"]`),
         tool("hcad_diff", "Where a part of a model (a copy) differs from another (the original, e.g. a mesh loaded as a "
             ~ "see-through reference part), as pieces of material: what the copy lacks (to add) and what it has too much "
             ~ "of (to cut), largest first, each with its box, volume, centre of mass and how much of its box it fills (a "
@@ -1036,6 +1044,31 @@ JSONValue callTool(string name, JSONValue args)
                     st is null ? 0 : st.type == JSONType.integer ? st.integer : st.floating));
             }
             catch (Exception e)
+            {
+                isError = true;
+                text(e.msg);
+            }
+            break;
+        }
+    case "hcad_lines":
+        {
+            auto run = evaluateModel(options(args));
+            isError = !run.ok;
+            if (!run.ok)
+            {
+                text(run.renderedDiagnostics());
+                break;
+            }
+            import hackerscad.lang.errors : HcadError;
+            try
+            {
+                auto v = "views" in args;
+                ubyte[] png;
+                text(run.lines(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0],
+                    v is null ? 12 : cast(size_t) v.integer, png));
+                image(png);
+            }
+            catch (HcadError e)
             {
                 isError = true;
                 text(e.msg);

@@ -339,6 +339,70 @@ final class Run
         return s;
     }
 
+    /// The drawings of part `a` (a copy) and part `b` (the original) compared
+    /// from many directions around them (and, peeled like an onion, cut a
+    /// quarter, half and three quarters deep): the lines one has and the
+    /// other has not, as strokes on the part, the most seen and longest
+    /// first; `picture` the `shown` views that show most of them.
+    string lines(size_t a, size_t b, size_t shown, out ubyte[] picture)
+    {
+        import hackerscad.render.linediff : lineDiff, orbit, peeled, sheet, telling;
+        import hackerscad.geom.meshfeatures : plausible;
+        partMeshes();
+        auto d = lineDiff(meshes[a], meshes[b], orbit() ~ peeled(), 300);
+        string mm(double v)
+        {
+            immutable p = plausible(v);
+            return format("%g", p == 0 ? 0.0 : p);
+        }
+        auto views = telling(d, shown);
+        auto img = sheet(d, views);
+        picture = encodePng(img.rgb, img.width, img.height);
+        string s = format("%s against %s, drawn as lines from %d directions (%d of them peeled), lines within %s mm "
+            ~ "taken as the same:\n", result.parts[a].name, result.parts[b].name, d.directions.length,
+            peeled().length, mm(d.tolerance));
+        if (d.strokes.length == 0)
+            s ~= "  the drawings match\n";
+        size_t lacks, extra;
+        foreach (st; d.strokes)
+            (st.missing ? lacks : extra)++;
+        if (d.strokes.length)
+            s ~= format("  %d groups of lines of %s that %s lacks, %d of %s that %s has not; the most seen:\n", lacks,
+                result.parts[b].name, result.parts[a].name, extra, result.parts[a].name, result.parts[b].name);
+        // where to look: the first picture that shows it, else one direction that does
+        string inPicture(const size_t[] seen)
+        {
+            foreach (i, v; views)
+                foreach (w; seen)
+                    if (v == w)
+                        return format("in picture %d", i + 1);
+            return format("e.g. from %s", d.directions[seen[0]]);
+        }
+        foreach (i, st; d.strokes)
+        {
+            if (i == 30)
+            {
+                s ~= format("  and %d less seen\n", d.strokes.length - 30);
+                break;
+            }
+            auto size = st.hi - st.lo;
+            size_t inside;
+            foreach (v; st.seenFrom)
+                inside += d.directions[v].peel > 0;
+            s ~= format("  %s: about %s mm of lines from (%s, %s, %s) to (%s, %s, %s), %s × %s × %s, seen from %d "
+                ~ "directions%s, %s\n", st.missing ? "only in " ~ result.parts[b].name : "only in "
+                ~ result.parts[a].name, mm(st.length), mm(st.lo.x), mm(st.lo.y), mm(st.lo.z), mm(st.hi.x), mm(st.hi.y),
+                mm(st.hi.z), mm(size.x), mm(size.y), mm(size.z), st.seenFrom.length,
+                inside == st.seenFrom.length ? " (only once peeled: inside)" : inside ? format(" (%d peeled)", inside) : "",
+                inPicture(st.seenFrom));
+        }
+        s ~= format("the picture: %d views, left to right and top to bottom (grey the lines in common, red only in %s, "
+            ~ "blue only in %s):\n", views.length, result.parts[b].name, result.parts[a].name);
+        foreach (i, v; views)
+            s ~= format("  %d. %s\n", i + 1, d.directions[v]);
+        return s;
+    }
+
     /// Machine-readable summary for scripts and agents.
     JSONValue report()
     {

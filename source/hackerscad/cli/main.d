@@ -40,6 +40,12 @@ usage:
       how far part a is from part b (a remodelled part from the mesh it
       copies, loaded as a reference part): distances both ways, and a
       picture of a coloured green, yellow, red by its distance from b
+  hcad lines FILE.hcad --a PART --b PART [--views N] [-o OUT.png]
+      parts a (a copy) and b (the original) drawn as lines (sharp edges and
+      outlines) from 62 directions around them and 42 peeled ones (cut a
+      quarter, half, three quarters deep): the lines only one has, as
+      places on the part, the most seen first; OUT.png the N views (12)
+      showing most of them, grey in common, red only in b, blue only in a
   hcad scan FILE --axis x|y|z [--step MM] [--part NAME]
       cuts all along an axis: each hole and pocket met with its shape (circle,
       rectangle, hexagon, teardrop, slot…) and where it starts and ends, and
@@ -254,6 +260,47 @@ int main(string[] args)
                 }
                 patches(format("surface of %s (the original) the copy does not follow:", pb), j["b_surface_not_matched"]);
                 patches(format("surface of %s (the copy) the original does not have:", pa), j["a_surface_not_matched"]);
+                if (out_.length)
+                {
+                    import std.file : write;
+                    write(out_, png);
+                }
+            }
+            catch (HcadError e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
+            return 0;
+        }
+    case "lines":
+        {
+            string pa, pb, out_;
+            size_t views = 12;
+            try
+                getopt(args, "a", &pa, "b", &pb, "views", &views, "o|output", &out_);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2 || pa.length == 0 || pb.length == 0)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            RunOptions ro;
+            ro.path = args[1];
+            auto run = evaluateModel(ro);
+            if (!run.ok)
+            {
+                stderr.write(run.renderedDiagnostics());
+                return 1;
+            }
+            try
+            {
+                ubyte[] png;
+                write(run.lines(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], views, png));
                 if (out_.length)
                 {
                     import std.file : write;
