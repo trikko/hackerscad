@@ -1678,3 +1678,21 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    // a block tilted and moved anyhow, set straight: on its largest face, longest along X, centred
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable s = box(40, 10, 20).rotate(x: 33).rotate(y: -20).rotate(z: 71).move(x: 40, y: -12, z: 9).aligned;
+            immutable size = s.bbox.size;
+            assert(abs(size.x / 1.mm - 40) < 1e-3 && abs(size.y / 1.mm - 20) < 1e-3 && abs(size.z / 1.mm - 10) < 1e-3, "size");
+            assert(abs(s.bbox.min.z / 1.mm) < 1e-3 && abs(s.bbox.center.x / 1.mm) < 1e-3, "placed");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

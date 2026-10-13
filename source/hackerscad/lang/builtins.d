@@ -979,6 +979,96 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return Value.of(report(analyse(k.tessellate(nonEmpty(s, a.span), 0.01, 0.1))));
     });
 
+    def("aligned", (ref CallArgs a) {
+        // load("x.stl").aligned: lying on its largest flat face, its longest extent along X, centred in
+        // X and Y on z = 0; a part without flat faces lies along its principal axes
+        auto x = Args(it, a, "aligned", ["solid"]);
+        auto s = x.solid("solid");
+        if (s.flat || s.path)
+            throw new HcadError(Code.type, "aligned is for solids", a.span);
+        import hackerscad.geom.meshfeatures : analyse, Surface, smallestEigenvector;
+        import hackerscad.lang.convex : turnFromZ;
+        auto b = nonEmpty(s, a.span);
+        auto m = k.tessellate(b, 0.05, 0.3);
+        // the face to lie on: the largest flat one, or across the direction the part is thinnest in
+        Vec3 down;
+        bool found;
+        foreach (f; analyse(m).features)
+            if (f.kind == Surface.plane)
+            {
+                down = f.normal;
+                found = true;
+                break;
+            }
+        // the triangles' centres, weighted by their areas
+        Vec3[] centres;
+        double[] weights;
+        void sample(const Mesh mm)
+        {
+            centres = null;
+            weights = null;
+            foreach (t; 0 .. mm.triangleCount)
+            {
+                auto p0 = mm.vertex(mm.tris[3 * t]), p1 = mm.vertex(mm.tris[3 * t + 1]), p2 = mm.vertex(mm.tris[3 * t + 2]);
+                centres ~= (p0 + p1 + p2) / 3;
+                weights ~= (p1 - p0).cross(p2 - p0).length / 2;
+            }
+        }
+        if (!found)
+        {
+            sample(m);
+            Vec3 mean;
+            double total = 0;
+            foreach (i, c; centres)
+            {
+                mean = mean + c * weights[i];
+                total += weights[i];
+            }
+            mean = mean / total;
+            double[3][3] cov = 0;
+            foreach (i, c; centres)
+            {
+                auto d = c - mean;
+                immutable double[3] v = [d.x, d.y, d.z];
+                foreach (r; 0 .. 3)
+                    foreach (q; 0 .. 3)
+                        cov[r][q] += weights[i] * v[r] * v[q];
+            }
+            down = smallestEigenvector(cov);
+        }
+        // that direction turned to -Z
+        Vec3 ax;
+        double angle;
+        turnFromZ(-down, ax, angle);
+        if (angle > 1e-9)
+            b = k.rotate(b, ax, -angle);
+        // turned about Z: the main direction of what it covers along X
+        sample(k.tessellate(b, 0.05, 0.3));
+        {
+            double sx = 0, sy = 0, total = 0;
+            foreach (i, c; centres)
+            {
+                sx += c.x * weights[i];
+                sy += c.y * weights[i];
+                total += weights[i];
+            }
+            sx /= total;
+            sy /= total;
+            double cxx = 0, cyy = 0, cxy = 0;
+            foreach (i, c; centres)
+            {
+                cxx += weights[i] * (c.x - sx) ^^ 2;
+                cyy += weights[i] * (c.y - sy) ^^ 2;
+                cxy += weights[i] * (c.x - sx) * (c.y - sy);
+            }
+            immutable theta = 0.5 * atan2(2 * cxy, cxx - cyy);
+            if (abs(theta) > 1e-9)
+                b = k.rotate(b, Vec3(0, 0, 1), -theta);
+        }
+        auto bb = k.bbox(b);
+        b = k.translate(b, Vec3(-bb.center.x, -bb.center.y, -bb.min.z));
+        return Value.of(derived(it, b, [s], "aligned", a.span));
+    });
     def("deviation", (ref CallArgs a) {
         // clone.deviation(original): how far apart their surfaces are at most, both ways
         auto x = Args(it, a, "deviation", ["a", "b"]);
