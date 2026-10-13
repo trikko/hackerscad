@@ -72,35 +72,54 @@ across it.
 ## A model
 
 ```d
-/+ A cup. Comments are the usual D ones: // to the end of the line,
-   /* blocks */, and /+ nested +/ blocks like this one. +/
+/+ A cup. Comments are the usual D ones: // to the
+   end of the line, /* blocks */, and /+ nested +/
+   blocks like this one. +/
 module cup;
 
 import std.shapes;
 
-// @param puts a field in the side panel; @preset is a named set of values
-@param("Diameter", min: 30.mm, max: 120.mm)
-@preset("espresso", 50.mm)
+// @param puts a field in the side panel;
+// @preset is a named set of values
+@param("Diameter", min: 50.mm, max: 100.mm)
+@preset("espresso", 60.mm)
 immutable diameter = 80.mm;
 
 @param("Wall", min: 1.mm, max: 4.mm)
 immutable wall = 2.mm;
 
-/// The cup's shape, full.
+immutable height = diameter * 0.85;
+
+/// The cup's shape, full: narrow at the foot, round below.
 Solid body()
 {
-    // selectors pick edges and faces by what they are, not by number
-    return cylinder(d: diameter, h: diameter * 1.1)
-        .fillet(edges.of(faces.bottom), r: 6.mm);
+    auto foot = circle(d: diameter * 0.7);
+    auto rim = circle(d: diameter).move(z: height);
+    // selectors pick edges and faces by what they are
+    return loft([foot, rim])
+        .fillet(edges.of(faces.bottom), r: diameter * 0.12);
+}
+
+/// The handle: a ring standing on its side, round edges.
+Solid handle()
+{
+    immutable d = height * 0.6;
+    auto ring = cylinder(d: d, h: 8.mm, center: true)
+        - cylinder(d: d - 16.mm, h: 8.mm, center: true);
+    return ring
+        .fillet(edges.circles, r: 2.mm)
+        .rotate(x: 90)
+        .move(x: diameter * 0.45, z: height * 0.55);
 }
 
 // @part: a body to show and export (one object in 3MF)
 @part
 Solid cup()
 {
+    // the handle stops at the wall, not inside
     return body()
         .shell(open: faces.top, thickness: wall)
-        .chamfer(edges.of(faces.top), d: 0.5.mm);
+        + (handle() - body());
 }
 
 // the design's requirements, checked after every change
@@ -108,13 +127,14 @@ unittest
 {
     assert(wall >= 1.2.mm, "walls under 1.2 mm leak");
     // what it holds: the full shape minus the cup
-    writeln("holds: $(format("%.0f", (body.volume - cup.volume) / 1.cm ^^ 3)) ml");
+    immutable ml = (body.volume - cup.volume) / 1.cm ^^ 3;
+    writeln("holds: $(format("%.0f", ml)) ml");
 }
 ```
 
 <p align="center"><img alt="The cup open in hackerscad, with the espresso preset" src="docs/cup.png" width="760"><br>
 <em>The cup in hackerscad, with the "espresso" preset chosen in the side panel: the
-diameter becomes 50 mm, the view follows, and the console shows what the cup holds,
+diameter becomes 60 mm, the view follows, and the console shows what the cup holds,
 printed by the <code>unittest</code>.</em></p>
 
 ## Using hackerscad with an AI agent
