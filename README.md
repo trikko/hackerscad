@@ -103,11 +103,13 @@ Solid body()
 /// The handle: a ring standing on its side, round edges.
 Solid handle()
 {
-    immutable d = height * 0.6;
-    auto ring = cylinder(d: d, h: 8.mm, center: true)
-        - cylinder(d: d - 16.mm, h: 8.mm, center: true);
+    // its sizes follow the cup's
+    immutable d = height * 0.6, band = diameter * 0.07;
+    immutable thick = diameter * 0.08;
+    auto ring = cylinder(d: d, h: thick, center: true)
+        - cylinder(d: d - 2 * band, h: thick, center: true);
     return ring
-        .fillet(edges.circles, r: 2.mm)
+        .fillet(edges.circles, r: diameter * 0.02)
         .rotate(x: 90)
         .move(x: diameter * 0.45, z: height * 0.55);
 }
@@ -127,7 +129,7 @@ unittest
 {
     assert(wall >= 1.2.mm, "walls under 1.2 mm leak");
     // what it holds: the full shape minus the cup
-    immutable ml = (body.volume - cup.volume) / 1.cm ^^ 3;
+    immutable ml = (body - cup).volume / 1.cm ^^ 3;
     writeln("holds: $(format("%.0f", ml)) ml");
 }
 ```
