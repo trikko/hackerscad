@@ -101,7 +101,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `cylinder(r: Length, h: Length, d: Length, center: bool) → Solid` — A cylinder along Z standing on XY; give r or d, and h.
 - `cone(r1: Length, r2: Length, h: Length, d1: Length, d2: Length, center: bool) → Solid` — A cone (or truncated cone) along Z.
 - `sphere(r: Length, d: Length) → Solid` — A sphere centred on the origin.
-- `load(path: string, scale: number) → Solid` — A part from an STL, OBJ, 3MF or STEP file in the project.
+- `load(path: string, scale: number) → Solid` — A part from an STL, OBJ, 3MF or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm).
 
 ## Transforms
 
@@ -136,6 +136,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `polygon(points: Vec[]) → Profile` — A polygon through the points.
 - `regularPolygon(n: int, r: Length, d: Length) → Profile` — regularPolygon(6, d: 10.mm): d/r through the corners.
 - `slot(length: Length, width: Length) → Profile` — A stadium along X.
+- `teardrop(r | d: Length, angle: Angle, flat: bool) → Profile` — A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.
 - `text(text: string, size: Length, font: string) → Profile` — A text outline starting at the origin on the baseline.
 - `p.round(r: Length) → Profile` — Rounds the (convex) corners.
 - `p.offset(distance: Length) → Profile` — Grows (d > 0) or shrinks the outline; on a plane, the parallel plane.
@@ -147,6 +148,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `hull(shapes…) → Solid` — The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.
 - `minkowski(a, b) → Solid` — a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.
 - `s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid` — Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).
+- `s.extrude(faces: Selector, depth: Length, along: Vec3) → Solid` — Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in.
 
 ## Paths, sweeps and lofts
 
@@ -169,7 +171,9 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.volume → Volume` — The volume.
 - `s.centroid → Vec3` — The centre of mass (of a uniform solid).
 - `s.section(plane: Plane) → Profile` — The cut of the solid by a plane: a profile in that plane.
-- `s.projection() → Profile` — The solid's shadow seen from above: a profile on XY (turn the solid first for another side).
+- `s.projection(plane: Plane) → Profile` — The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY.
+- `s.overhangs(angle: Angle) → Area` — The area facing down more steeply than the angle from a wall (45° by default), off the bed: what needs supports.
+- `s.thinWalls(min: Length) → Area` — The surface over walls thinner than min (0.8 mm by default): 0 when every wall prints.
 - `s.mass(density: number) → number` — Grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85.
 - `s.inertia(density: number) → Vec3` — The principal moments of inertia about the centre of mass, ascending, in g·mm².
 - `s.area → Area` — The surface area (of a profile: its area).
@@ -202,6 +206,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `faces.right → Faces` — The face(s) facing +X.
 - `faces.largest → Faces` — The largest face.
 - `faces.normal(dir: Direction) → Faces` — The faces with that normal: faces.normal(X).
+- `faces.overhanging(angle: Angle) → Faces` — The faces (or parts of them) facing down more steeply than the angle from a wall (45° by default), off the bed: where a printer needs supports.
 - `faces.from(tool: Solid) → Faces` — The faces created by a tool or feature: faces.from(holes).
 - `edges.parallel(axis: Direction) → Edges` — The straight edges along an axis: edges.parallel(Z).
 - `edges.perpendicular(axis: Direction) → Edges` — The edges at right angles to an axis.

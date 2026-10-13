@@ -38,7 +38,8 @@ without supports.
 10. [Print it](tutorial/10-print-it.md): export, slice, put it together.
 11. [Let an AI agent help](tutorial/11-ai-agents.md): ask an agent, and watch
     it work in the window.
-12. [Going further](tutorial/12-going-further.md): sketches, sweeps, libraries,
+12. [Going further](tutorial/12-going-further.md): the examples, a hook made
+    ready to print, a label from a drawing, sketches, sweeps, libraries,
     drawings, the command line, and what to do when something goes wrong.
 
 Each page ends with a picture of how the window should look, and with the

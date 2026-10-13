@@ -1,0 +1,15 @@
+module hook;
+
+import std.shapes;
+
+/// A hook for the wall: a plate with a hole for a screw, and an arm to
+/// hang things on.
+@part("steelblue")
+Solid hook()
+{
+    auto plate = box(30.mm, 4.mm, 60.mm);
+    auto arm = box(30.mm, 20.mm, 6.mm).move(y: -12.mm, z: 44.mm);
+    return (plate + arm)
+        .cut(circle(d: 4.5.mm), on: faces.back,
+            at: vec(0.mm, 0.mm, 12.mm), through: true);
+}

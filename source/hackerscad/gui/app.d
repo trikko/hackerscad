@@ -113,8 +113,8 @@ struct Example
 
 static immutable Example[] examples = [
     Example("bagclip", "Bag clip", "the model hackerscad starts with: a print-in-place clip", import("bagclip.hcad")),
-    Example("jug", "Jug with a handle", "a loft, a shell and a swept handle (the tutorial's last chapter)",
-        import("jug.hcad")),
+    Example("cup", "Espresso cup", "the README's cup: parameters, a preset, a loft, a handle, a check",
+        import("cup.hcad")),
     Example("planter", "Planter", "the tutorial's planter: parameters, presets, drafts, text, checks",
         import("tutorial/planter-11.hcad")),
     Example("language", "Language tour", "if, for, while, switch, functions, structs, arrays: each with what it shows",
@@ -3783,6 +3783,8 @@ private:
         return m;
     }
 
+    MenuButton examplesButton, exportButton;   /// in the header bar
+
     /// The Examples button: models to open and try, as unsaved new models.
     Widget examplesMenu()
     {
@@ -3794,6 +3796,7 @@ private:
         b.setAlwaysShowArrow(true);
         b.setTooltipText("Open an example model, to try and change");
         b.setMenuModel(m);
+        examplesButton = b;
         return b;
     }
 
@@ -3834,6 +3837,7 @@ private:
         b.setAlwaysShowArrow(true);
         b.setTooltipText("Export: 3MF, STL, STEP or PNG (" ~ shortcutKey ~ "+E repeats the last format)");
         b.setMenuModel(exportModel());
+        exportButton = b;
         return b;
     }
 

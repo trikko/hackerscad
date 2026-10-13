@@ -662,7 +662,7 @@ JSONValue[] toolList()
             ~ "stays still). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
             ~ "faint), or printability: overhangs needing supports in red, walls under min_wall in violet (then "
             ~ "hcad_gui_state has their areas per part); projection is perspective or orthographic; menu opens the parts (eye) or display (cube) "
-            ~ "menu of the view bar for a screenshot, none closes them; sidebar shows the params or steps tab; "
+            ~ "menu of the view bar, or the header bar's examples or export menu, for a screenshot, none closes them; sidebar shows the params or steps tab; "
             ~ "cursor puts the editor's cursor at the start of a line and scrolls there; code_width sets how wide "
             ~ "the code is (pixels); theme draws the window light or dark for this run (the user's own choice, in the "
             ~ "main menu, stays); drag is what a left drag does, rotate or pan; antialias turns the smoothing of "
@@ -680,7 +680,7 @@ JSONValue[] toolList()
             ~ `"overhang_angle": {"type": "number", "description": "printability: degrees from a wall (45)"}, `
             ~ `"min_wall": {"type": "number", "description": "printability: thinnest wall in mm (0.8)"}, `
             ~ `"projection": {"type": "string", "enum": ["perspective", "orthographic"]}, `
-            ~ `"menu": {"type": "string", "enum": ["parts", "display", "none"]}, `
+            ~ `"menu": {"type": "string", "enum": ["parts", "display", "examples", "export", "none"]}, `
             ~ `"sidebar": {"type": "string", "enum": ["params", "steps"]}, `
             ~ `"cursor": {"type": "integer"}, "code_width": {"type": "integer"}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
@@ -689,10 +689,10 @@ JSONValue[] toolList()
             ~ `"theme": {"type": "string", "enum": ["system", "light", "dark"]}, `
             ~ `"drag": {"type": "string", "enum": ["rotate", "pan"]}, "antialias": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (a cube with two "
-            ~ "holes), parameters and view reset; with example, one of the Examples menu instead (bagclip, jug, "
+            ~ "holes), parameters and view reset; with example, one of the Examples menu instead (bagclip, cup, "
             ~ "planter, language: a commented tour of the language), unsaved. Refused when the user has unsaved "
             ~ "changes, unless force is true (which discards them: ask the user first).",
-            `"force": {"type": "boolean"}, "example": {"type": "string", "enum": ["bagclip", "jug", "planter", "language"]}`, `[]`),
+            `"force": {"type": "boolean"}, "example": {"type": "string", "enum": ["bagclip", "cup", "planter", "language"]}`, `[]`),
         gui("hcad_gui_rename", "Rename the user's window (the name in its header bar, which the user and the "
             ~ "'window' argument use): letters, digits and dashes.", `"name": {"type": "string"}`, `["name"]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "

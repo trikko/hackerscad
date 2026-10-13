@@ -1,0 +1,60 @@
+/+ A cup. Comments are the usual D ones: // to the
+   end of the line, /* blocks */, and /+ nested +/
+   blocks like this one. +/
+module cup;
+
+import std.shapes;
+
+// @param puts a field in the side panel;
+// @preset is a named set of values
+@param("Diameter", min: 50.mm, max: 100.mm)
+@preset("espresso", 60.mm)
+immutable diameter = 80.mm;
+
+@param("Wall", min: 1.mm, max: 4.mm)
+immutable wall = 2.mm;
+
+immutable height = diameter * 0.85;
+
+/// The cup's shape, full: narrow at the foot, round below.
+Solid body()
+{
+    auto foot = circle(d: diameter * 0.7);
+    auto rim = circle(d: diameter).move(z: height);
+    // selectors pick edges and faces by what they are
+    return loft([foot, rim])
+        .fillet(edges.of(faces.bottom), r: diameter * 0.12);
+}
+
+/// The handle: a ring standing on its side, round edges.
+Solid handle()
+{
+    // its sizes follow the cup's
+    immutable d = height * 0.6, band = diameter * 0.07;
+    immutable thick = diameter * 0.08;
+    auto ring = cylinder(d: d, h: thick, center: true)
+        - cylinder(d: d - 2 * band, h: thick, center: true);
+    return ring
+        .fillet(edges.circles, r: diameter * 0.02)
+        .rotate(x: 90)
+        .move(x: diameter * 0.45, z: height * 0.55);
+}
+
+// @part: a body to show and export (one object in 3MF)
+@part
+Solid cup()
+{
+    // the handle stops at the wall, not inside
+    return body()
+        .shell(open: faces.top, thickness: wall)
+        + (handle() - body());
+}
+
+// the design's requirements, checked after every change
+unittest
+{
+    assert(wall >= 1.2.mm, "walls under 1.2 mm leak");
+    // what it holds: the full shape minus the cup
+    immutable ml = (body - cup).volume / 1.cm ^^ 3;
+    writeln("holds: $(format("%.0f", ml)) ml");
+}

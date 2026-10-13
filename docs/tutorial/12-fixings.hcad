@@ -1,0 +1,19 @@
+module fixings;
+
+import std.shapes;
+import hardware;
+import gears : spurGear;
+
+@part
+Solid lid()
+{
+    auto l = box(50.mm, 50.mm, 6.mm);
+    // tools to take away: their top is on z = 0, going down
+    l -= hole(M3, 6.mm, "counterbore").move(x: -15.mm, z: 6.mm);
+    l -= hole(M3, 6.mm, "insert").move(x: 15.mm, z: 6.mm);
+    l -= nutTrap(M3, 3.mm).move(y: 15.mm, z: 6.mm);
+    return l;
+}
+
+@part("orange")
+Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);

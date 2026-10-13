@@ -166,7 +166,7 @@ mixin template ControlMethods()
                 // a menu of the view bar opened, for a screenshot ("none" closes them)
                 if (auto m = arg("menu"))
                 {
-                    foreach (b; [partsMenu, displayMenu])
+                    foreach (b; [partsMenu, displayMenu, examplesButton, exportButton])
                         b.popdown();
                     if (contextPopover !is null)
                         contextPopover.popdown();
@@ -174,6 +174,10 @@ mixin template ControlMethods()
                         partsMenu.popup();
                     else if (m == "display")
                         displayMenu.popup();
+                    else if (m == "examples")
+                        examplesButton.popup();
+                    else if (m == "export")
+                        exportButton.popup();
                 }
                 if (has("console"))
                     consoleToggle.setActive(p["console"].type == JSONType.true_);
@@ -226,7 +230,7 @@ mixin template ControlMethods()
             if (auto ex = arg("example"))
             {
                 if (!startExample(ex))
-                    return reply(JSONValue.init, "no example named '" ~ ex ~ "': bagclip, jug, planter or language");
+                    return reply(JSONValue.init, "no example named '" ~ ex ~ "': bagclip, cup, planter or language");
             }
             else
                 startNew();

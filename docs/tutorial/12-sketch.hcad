@@ -1,0 +1,25 @@
+module sketched;
+
+import std.shapes;
+
+/// A bracket whose outline is given by its sides: the corners are worked
+/// out from the constraints.
+@part("goldenrod")
+Solid bracket()
+{
+    auto s = sketch();
+    auto a = s.point(0, 0, fixed: true);
+    auto b = s.point(40, 0);
+    auto c = s.point(40, 30);
+    auto d = s.point(0, 10);
+    auto bottom = s.line(a, b), right = s.line(b, c);
+    auto top = s.line(c, d), left = s.line(d, a);
+    s.horizontal(bottom);
+    s.vertical(right);
+    s.vertical(left);
+    s.length(bottom, 50.mm);
+    s.length(right, 30.mm);
+    s.length(left, 12.mm);
+    s.fillet(c, 4.mm);
+    return s.profile.extrude(8.mm);
+}

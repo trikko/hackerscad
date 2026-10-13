@@ -49,7 +49,7 @@ void main(string[] args)
     start(buildPath(dir, "untitled.hcad"));
     scope (exit)
         stop();
-    auto pages = [&page1, &page2, &page3, &page4, &page5, &page6, &page7, &page8, &page9, &page10, &page11];
+    auto pages = [&page1, &page2, &page3, &page4, &page5, &page6, &page7, &page8, &page9, &page10, &page11, &page12];
     if (args.length > 1)
         foreach (n; args[1 .. $])
             pages[n.to!int - 1]();
@@ -253,6 +253,50 @@ void page11()
     view(`{"preset": "iso"}`);
     shot("11-final", lineOf("Solid tank()"));
     save(11);
+}
+
+void page12()
+{
+    import std.file : copy;
+    auto dir = buildPath(tempDir, "tutorial");
+    // the language tour, from the Examples menu
+    req("new", `{"example": "language", "force": true}`);
+    view(`{"preset": "iso"}`);
+    shot("12-examples");
+
+    // the hook: made longer with the mouse, then made printable
+    auto hook = buildPath(dir, "hook.hcad");
+    copy(buildPath(docs, "12-hook-1.hcad"), hook);
+    open(hook);
+    view(`{"preset": "iso", "style": "edges"}`);
+    shot("12-hook");
+    menu([0, -22, 47], ["Extrude face…"]);
+    type("depth: 5.mm", "depth: 10.mm");
+    clearSelection();
+    view(`{"preset": "iso"}`);
+    shot("12-hook-longer", lineOf(".extrude("));
+    // seen from below, in the printability style
+    view(`{"style": "printability", "orbit": [0, -50]}`);
+    shot("12-hook-print");
+    menu([0, -2, 44], ["Chamfer edge…"]);
+    type("d: 0.5.mm", "d: 26.mm");
+    clearSelection();
+    type("circle(d: 4.5.mm)", "teardrop(d: 4.5.mm)");
+    view(`{"preset": "iso", "orbit": [0, -50]}`);
+    shot("12-hook-final", lineOf(".chamfer("));
+    view(`{"preset": "iso", "style": "edges"}`);
+    write(buildPath(docs, "12-hook.hcad"), source());
+
+    // a label from a drawing, and the models of the other sections
+    copy(buildPath(docs, "leaf.svg"), buildPath(dir, "leaf.svg"));
+    foreach (name; ["label", "sketch", "jug", "fixings"])
+    {
+        auto file = buildPath(dir, name ~ ".hcad");
+        copy(buildPath(docs, "12-" ~ name ~ ".hcad"), file);
+        open(file);
+        view(`{"preset": "iso"}`);
+        shot("12-" ~ name);
+    }
 }
 
 // ---------------------------------------------------------------- the code the reader writes

@@ -127,7 +127,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>cylinder(r: Length, h: Length, d: Length, center: bool) → Solid</dt><dd>A cylinder along Z standing on XY; give r or d, and h.</dd>
 <dt>cone(r1: Length, r2: Length, h: Length, d1: Length, d2: Length, center: bool) → Solid</dt><dd>A cone (or truncated cone) along Z.</dd>
 <dt>sphere(r: Length, d: Length) → Solid</dt><dd>A sphere centred on the origin.</dd>
-<dt>load(path: string, scale: number) → Solid</dt><dd>A part from an STL, OBJ, 3MF or STEP file in the project.</dd>
+<dt>load(path: string, scale: number) → Solid</dt><dd>A part from an STL, OBJ, 3MF or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm).</dd>
 </dl></section>
 <section><h2>Transforms</h2><dl>
 <dt>s.move(v: Vec, x: Length, y: Length, z: Length)</dt><dd>Moves: move(x: 10.mm) or move(vec(…)).</dd>
@@ -158,6 +158,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>polygon(points: Vec[]) → Profile</dt><dd>A polygon through the points.</dd>
 <dt>regularPolygon(n: int, r: Length, d: Length) → Profile</dt><dd>regularPolygon(6, d: 10.mm): d/r through the corners.</dd>
 <dt>slot(length: Length, width: Length) → Profile</dt><dd>A stadium along X.</dd>
+<dt>teardrop(r | d: Length, angle: Angle, flat: bool) → Profile</dt><dd>A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.</dd>
 <dt>text(text: string, size: Length, font: string) → Profile</dt><dd>A text outline starting at the origin on the baseline.</dd>
 <dt>p.round(r: Length) → Profile</dt><dd>Rounds the (convex) corners.</dd>
 <dt>p.offset(distance: Length) → Profile</dt><dd>Grows (d &gt; 0) or shrinks the outline; on a plane, the parallel plane.</dd>
@@ -169,6 +170,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>hull(shapes…) → Solid</dt><dd>The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.</dd>
 <dt>minkowski(a, b) → Solid</dt><dd>a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.</dd>
 <dt>s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid</dt><dd>Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).</dd>
+<dt>s.extrude(faces: Selector, depth: Length, along: Vec3) → Solid</dt><dd>Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in.</dd>
 </dl></section>
 <section><h2>Paths, sweeps and lofts</h2><dl>
 <dt>path(points: Vec[], closed: bool) → Path</dt><dd>Straight segments through the points.</dd>
@@ -188,7 +190,9 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.volume → Volume</dt><dd>The volume.</dd>
 <dt>s.centroid → Vec3</dt><dd>The centre of mass (of a uniform solid).</dd>
 <dt>s.section(plane: Plane) → Profile</dt><dd>The cut of the solid by a plane: a profile in that plane.</dd>
-<dt>s.projection() → Profile</dt><dd>The solid's shadow seen from above: a profile on XY (turn the solid first for another side).</dd>
+<dt>s.projection(plane: Plane) → Profile</dt><dd>The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY.</dd>
+<dt>s.overhangs(angle: Angle) → Area</dt><dd>The area facing down more steeply than the angle from a wall (45° by default), off the bed: what needs supports.</dd>
+<dt>s.thinWalls(min: Length) → Area</dt><dd>The surface over walls thinner than min (0.8 mm by default): 0 when every wall prints.</dd>
 <dt>s.mass(density: number) → number</dt><dd>Grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85.</dd>
 <dt>s.inertia(density: number) → Vec3</dt><dd>The principal moments of inertia about the centre of mass, ascending, in g·mm².</dd>
 <dt>s.area → Area</dt><dd>The surface area (of a profile: its area).</dd>
@@ -220,6 +224,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>faces.right → Faces</dt><dd>The face(s) facing +X.</dd>
 <dt>faces.largest → Faces</dt><dd>The largest face.</dd>
 <dt>faces.normal(dir: Direction) → Faces</dt><dd>The faces with that normal: faces.normal(X).</dd>
+<dt>faces.overhanging(angle: Angle) → Faces</dt><dd>The faces (or parts of them) facing down more steeply than the angle from a wall (45° by default), off the bed: where a printer needs supports.</dd>
 <dt>faces.from(tool: Solid) → Faces</dt><dd>The faces created by a tool or feature: faces.from(holes).</dd>
 <dt>edges.parallel(axis: Direction) → Edges</dt><dd>The straight edges along an axis: edges.parallel(Z).</dd>
 <dt>edges.perpendicular(axis: Direction) → Edges</dt><dd>The edges at right angles to an axis.</dd>

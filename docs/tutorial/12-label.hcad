@@ -1,0 +1,16 @@
+module label;
+
+import std.shapes;
+
+/// A label to push into the soil of the planter: a leaf drawn in a drawing
+/// program, a stake, and the name of the plant.
+@part("forestgreen")
+Solid label()
+{
+    // the outline of the drawing, a flat shape like a rectangle or a circle
+    auto leaf = load("leaf.svg").centered;
+    auto stake = rect(5.mm, 50.mm).move(y: -30.mm);
+    auto name = text("BASIL", size: 6.mm, font: "Sans Bold").centered;
+    return (leaf + stake).extrude(2.mm)
+        + name.extrude(1.mm).move(z: 2.mm);
+}

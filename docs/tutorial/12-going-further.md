@@ -2,23 +2,152 @@
 
 # 12. Going further
 
-The planter used boxes, the mouse, profiles, loops and checks. hackerscad has
-more; here is a short tour, each part with an example to paste into a new
-file. The [language reference](../LANGUAGE.md) describes everything, and the
-[examples](../../examples) are complete models to open and change.
+The planter used boxes, the mouse, profiles, loops and checks. This page is a
+tour of what else hackerscad does, one small model at a time: a hook made
+ready to print, a label for the planter cut from a drawing, and shorter
+stops on sketches, curved shapes, libraries and technical drawings. Each
+model is complete: press **New**, select all the code (Ctrl+A), paste the
+model over it, and change it as you like.
+
+## Start from an example
+
+**Examples**, next to Export, opens ready models: the bag clip, the
+espresso cup of the README, the planter of this tutorial, and a **tour of
+the language**. The tour uses each thing the language has once (`if`, `for`,
+`while`, `switch`, functions, structs, lists) and says in a comment what
+each one makes appear in the view or in the console. Change a number and
+watch.
+
+![The language tour](img/12-examples.png)
+
+An example opens as a new model, not saved yet: nothing you change is lost
+from the original.
+
+## A hook, ready to print
+
+A hook for the wall: a plate with a hole for a screw, and an arm.
+
+```d
+module hook;
+
+import std.shapes;
+
+/// A hook for the wall: a plate with a hole for a screw, and an arm to
+/// hang things on.
+@part("steelblue")
+Solid hook()
+{
+    auto plate = box(30.mm, 4.mm, 60.mm);
+    auto arm = box(30.mm, 20.mm, 6.mm).move(y: -12.mm, z: 44.mm);
+    return (plate + arm)
+        .cut(circle(d: 4.5.mm), on: faces.back,
+            at: vec(0.mm, 0.mm, 12.mm), through: true);
+}
+```
+
+![The hook](img/12-hook.png)
+
+### Pull a face
+
+The arm is a little short. Right-click its end, the small face in front,
+and choose **Extrude face…**: type `10.mm` over the value. The face moves
+10 mm out and the arm grows with it, its sides still one face each.
+**Push face in…** does the opposite, into the material.
+
+![The arm, 10 mm longer](img/12-hook-longer.png)
+
+```d
+        .extrude(faces.front, depth: 10.mm);
+```
+
+### Will it print?
+
+A printer builds a model in layers, from the bottom up. Each layer must rest
+on the one below: a surface that faces down, with nothing under it, droops.
+Up to about 45° from a wall a layer still rests on the one before; past
+that, the slicer adds supports, which you cut away afterwards. Walls thinner
+than two lines of the nozzle (0.8 mm for a 0.4 mm nozzle) do not print
+well either.
+
+The cube in the view bar, **Printability**: what overhangs is striped red,
+thin walls are cross-hatched violet, and the status line gives their areas.
+Turn the view to see the hook from below:
+
+![The underside of the arm and the top of the hole, in red](img/12-hook-print.png)
+
+The whole underside of the arm hangs in the air, and so does the top of the
+screw hole. Two changes fix them.
+
+- **A slope under the arm.** Right-click the edge where the arm meets the
+  plate, below, and choose **Chamfer edge…**: type `26.mm`. An edge that
+  turns inwards gets material added, here a 45° slope that holds the arm up
+  as it prints.
+- **A pointed hole.** In the code, write `teardrop` in place of `circle`:
+  the hole gets a point at the top, two 45° sides that print without
+  supports. The screw does not notice.
+
+```d
+        .cut(teardrop(d: 4.5.mm), on: faces.back,
+            at: vec(0.mm, 0.mm, 12.mm), through: true)
+        .extrude(faces.front, depth: 10.mm)
+        .chamfer(edges.between(faces.normal(-Z).largest, faces.normal(-Y).largest),
+            d: 26.mm);
+```
+
+![Ready to print](img/12-hook-final.png)
+
+What stays red is the 4 mm at the end of the arm: a printer bridges such
+short gaps without supports. To keep a model printable as it changes, write
+it as a check: `assert(hook.overhangs < 150.mm ^^ 2);` in a `unittest`
+(`thinWalls` measures the thin walls). The fields under Printability change
+the angle and the thinnest wall, for your printer.
+
+## A label from a drawing
+
+A label to push into the soil of the planter. The leaf is drawn in a drawing
+program (Inkscape, Illustrator, or any that saves SVG), and saved as
+[leaf.svg](leaf.svg) next to the model; `load` reads its outline as a flat
+shape, like a rectangle or a circle. DXF files, from other CAD programs, work
+the same way.
+
+```d
+module label;
+
+import std.shapes;
+
+/// A label to push into the soil of the planter: a leaf drawn in a drawing
+/// program, a stake, and the name of the plant.
+@part("forestgreen")
+Solid label()
+{
+    // the outline of the drawing, a flat shape like a rectangle or a circle
+    auto leaf = load("leaf.svg").centered;
+    auto stake = rect(5.mm, 50.mm).move(y: -30.mm);
+    auto name = text("BASIL", size: 6.mm, font: "Sans Bold").centered;
+    return (leaf + stake).extrude(2.mm)
+        + name.extrude(1.mm).move(z: 2.mm);
+}
+```
+
+![The label](img/12-label.png)
+
+The size comes from the drawing: a leaf 34 mm wide in the drawing program is
+34 mm here. An outline inside another is a hole.
 
 ## Constrained sketches
 
-For outlines defined by relations rather than coordinates ("this side is
-vertical, that one 30 mm long"), draw a **sketch**: points and lines, then the
-constraints, and hackerscad works out the positions.
+For outlines given by their sides rather than by coordinates ("this side is
+vertical, that one 30 mm long"), draw a **sketch**: points and lines, then
+the constraints, and hackerscad works out where the corners go.
 
 ```d
 module sketched;
 
 import std.shapes;
 
-@part
+/// A bracket whose outline is given by its sides: the corners are worked
+/// out from the constraints.
+@part("goldenrod")
 Solid bracket()
 {
     auto s = sketch();
@@ -26,7 +155,8 @@ Solid bracket()
     auto b = s.point(40, 0);
     auto c = s.point(40, 30);
     auto d = s.point(0, 10);
-    auto bottom = s.line(a, b), right = s.line(b, c), top = s.line(c, d), left = s.line(d, a);
+    auto bottom = s.line(a, b), right = s.line(b, c);
+    auto top = s.line(c, d), left = s.line(d, a);
     s.horizontal(bottom);
     s.vertical(right);
     s.vertical(left);
@@ -38,13 +168,17 @@ Solid bracket()
 }
 ```
 
-The pencil button in the view bar shows the sketch with its dimensions:
-click one to change it. Points still free to move are blue.
+![The bracket](img/12-sketch.png)
 
-## Sweeps and lofts
+The points start where they are written; the constraints move them (here the
+bottom becomes 50 mm, not 40). The pencil button in the view bar shows the
+sketch with its dimensions: click one to change it. Points still free to
+move are blue.
 
-`loft([…])` passes smoothly through outlines at different heights (a vase);
-`.sweep(path)` moves an outline along a curve (a handle, a pipe, a spring).
+## Curved shapes: lofts and sweeps
+
+`loft([…])` passes smoothly through outlines at different heights, a vase
+here; `.sweep(path)` moves an outline along a curve, the handle.
 
 ```d
 module jug;
@@ -70,6 +204,8 @@ Solid jug()
 }
 ```
 
+![The jug](img/12-jug.png)
+
 ## Libraries: screws, threads, gears, enclosures
 
 ```d
@@ -93,6 +229,8 @@ Solid lid()
 @part("orange")
 Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);
 ```
+
+![A lid with holes for M3 screws, and a gear](img/12-fixings.png)
 
 - `hardware`: screw sizes `M2` to `M8`, screws, nuts, washers, and holes made
   for them (`"clearance"`, `"tap"`, `"insert"`, `"counterbore"`,
@@ -120,8 +258,8 @@ potentiometer, drawn this way.
 ## Technical drawings
 
 A function marked `@drawing` makes a sheet with views, dimensions and
-sections, to export as PDF, SVG or DXF. Added at the end of the planter, this
-one draws the tank:
+sections, to export as PDF, SVG or DXF (Export, or `hcad render -o
+tank.pdf`). Added at the end of the planter, this one draws the tank:
 
 ```d
 @drawing
@@ -141,6 +279,7 @@ exporting many sizes at once.
 
 ```sh
 hcad check planter.hcad                       # parts, sizes, checks
+hcad check planter.hcad --printability        # overhangs and thin walls too
 hcad render planter.hcad -o planter.3mf       # export
 hcad render planter.hcad -o planter-views.png # a picture from four sides
 hcad render planter.hcad -o basil.3mf --preset basil
@@ -154,8 +293,9 @@ hcad docs fillet                              # the reference of one function
   message says what and where, and often how to fix it ("did you mean `r`?").
   Click the banner to go to the line. Meanwhile the view keeps the last model
   that worked.
-- **A rounding or a shell fails:** try a smaller radius, fewer edges at a
-  time, or a different order (round first, then shell).
+- **A rounding, a chamfer or a shell fails:** try a smaller size, fewer edges
+  at a time, or a different order (round first, then shell). A chamfer or a
+  rounding cannot reach into a hole or past the end of a face.
 - **The model is slow:** threads, text on curved faces and roundings on many
   edges take the longest. hackerscad remembers every step, so changing a
   parameter recomputes only what depends on it.
@@ -163,8 +303,12 @@ hcad docs fillet                              # the reference of one function
   OpenGL draws the view (also in ☰ › About hackerscad › Troubleshooting). If it
   says it is drawn by the processor, the graphics driver is missing or too
   old: install the one from the maker of the card. In a virtual machine or a
-  remote session it is expected.
+  remote session it is expected; **Smooth edges** off, in the cube of the view
+  bar, helps a slow card.
 - **"Unknown argument":** the message lists the arguments the function takes;
   `hcad docs` and the cheatsheet (F1) describe each function.
+
+From here, the [language reference](../LANGUAGE.md) describes everything,
+and the [examples](../../examples) are complete models to open and change.
 
 [← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md)

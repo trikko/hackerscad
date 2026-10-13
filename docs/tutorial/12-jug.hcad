@@ -1,0 +1,21 @@
+module jug;
+
+import std.shapes;
+
+@part("orange")
+Solid jug()
+{
+    auto body = loft([
+        circle(r: 20.mm),
+        circle(r: 26.mm).move(z: 40.mm),
+        circle(r: 12.mm).move(z: 80.mm),
+    ]);
+    auto vase = body.shell(open: faces.top, thickness: 2.mm);
+    auto curve = spline([
+        vec(12.mm, 0.mm, 72.mm), vec(30.mm, 0.mm, 74.mm),
+        vec(40.mm, 0.mm, 52.mm), vec(24.mm, 0.mm, 30.mm),
+    ]);
+    auto handle = circle(d: 7.mm).sweep(curve);
+    // the ends of the handle go into the wall: what would show inside goes
+    return vase + handle - (body - vase);
+}
