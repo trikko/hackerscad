@@ -196,6 +196,22 @@ void page8()
     view(`{"hidden": ["pot"], "preset": "iso"}`);
     req("section", `{"plane": "xz", "at": 0.5}`);
     shot("08-shelf", lineOf("Solid shelf()"));
+    req("section", `{"on": false}`);
+    // what each line of the shelf makes, as Ctrl+click shows it
+    void inspect(string line, string name)
+    {
+        req("inspect", format(`{"line": %d}`, lineOf(line)));
+        shot(name, lineOf("Solid shelf()"));
+    }
+    view(`{"preset": "iso"}`);
+    inspect("auto outline = inside(z);", "08-outlines");
+    inspect("curve ~= [outline.offset(", "08-curve");
+    inspect("auto full = loft(wall);", "08-full");
+    inspect("auto narrowing = loft(curve);", "08-narrowing");
+    inspect("return full - narrowing;", "08-difference");
+    req("inspect", `{}`);
+    // the shelf in section, close
+    req("section", `{"plane": "xz", "at": 0.5}`);
     view(`{"preset": "front", "projection": "orthographic", "look_at": [22, 0, 14], "size": 32}`);
     shot("08-shelf-close", lineOf("Solid shelf()"));
     req("section", `{"on": false}`);
@@ -369,11 +385,14 @@ Solid potShape() => box(size - 2.mm, size - 2.mm, height - 18.mm)
 ";
 
 enum shelf8 = "
-/// The inside of the tank at height z: the walls open out by 4°.
+/// The inside of the tank at height z, raised there: the walls open out
+/// by 4°.
 Profile inside(Length z)
 {
     immutable out = z * tan(4.deg), across = size + 2 * out - 3.2.mm;
-    return rect(across, across).round(10.mm + out - 1.6.mm);
+    return rect(across, across)
+        .round(10.mm + out - 1.6.mm)
+        .move(z: z);
 }
 
 /// A shelf 4 mm wide inside the tank, flat on top at 16 mm, where the pot
@@ -386,10 +405,13 @@ Solid shelf()
     {
         // five outlines, from 8 mm up to 16 mm
         immutable s = i / 4.0, z = 8.mm + 8.mm * s;
-        wall ~= [inside(z).move(z: z)];
-        curve ~= [inside(z).offset(-4.mm * s * s - 0.01.mm).move(z: z)];
+        auto outline = inside(z);
+        wall ~= [outline];
+        curve ~= [outline.offset(-4.mm * s * s - 0.01.mm)];
     }
-    return loft(wall) - loft(curve);
+    auto full = loft(wall);
+    auto narrowing = loft(curve);
+    return full - narrowing;
 }
 
 /// What is cut off the back right corner of the pot: the water goes in

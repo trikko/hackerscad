@@ -23,11 +23,14 @@ have in common.
 Write this at the end of the file:
 
 ```d
-/// The inside of the tank at height z: the walls open out by 4°.
+/// The inside of the tank at height z, raised there: the walls open out
+/// by 4°.
 Profile inside(Length z)
 {
     immutable out = z * tan(4.deg), across = size + 2 * out - 3.2.mm;
-    return rect(across, across).round(10.mm + out - 1.6.mm);
+    return rect(across, across)
+        .round(10.mm + out - 1.6.mm)
+        .move(z: z);
 }
 
 /// A shelf 4 mm wide inside the tank, flat on top at 16 mm, where the pot
@@ -40,10 +43,13 @@ Solid shelf()
     {
         // five outlines, from 8 mm up to 16 mm
         immutable s = i / 4.0, z = 8.mm + 8.mm * s;
-        wall ~= [inside(z).move(z: z)];
-        curve ~= [inside(z).offset(-4.mm * s * s - 0.01.mm).move(z: z)];
+        auto outline = inside(z);
+        wall ~= [outline];
+        curve ~= [outline.offset(-4.mm * s * s - 0.01.mm)];
     }
-    return loft(wall) - loft(curve);
+    auto full = loft(wall);
+    auto narrowing = loft(curve);
+    return full - narrowing;
 }
 
 /// What is cut off the back right corner of the pot: the water goes in
@@ -68,11 +74,11 @@ after `.shell(…);`, add:
 
 **The outline of the inside.** `inside(z)` is a function that takes a
 value: it gives the outline of the inside of the tank at height `z`, a
-square with round corners (`rect(…).round(…)`). `Length z` says that what it
-takes is a length. The walls lean out by 4°, so the higher, the wider: `out`
-is how much wider the tank is at that height than at the bottom (`tan`, from
-geometry, turns the angle into that length), and the walls are 1.6 mm thick,
-3.2 mm across.
+square with round corners (`rect(…).round(…)`), raised to that height
+(`.move(z: z)`). `Length z` says that what it takes is a length. The walls
+lean out by 4°, so the higher, the wider: `out` is how much wider the tank is
+at that height than at the bottom (`tan`, from geometry, turns the angle into
+that length), and the walls are 1.6 mm thick, 3.2 mm across.
 
 **A list of outlines.** `Profile[] wall, curve;` makes two empty lists of
 profiles. `foreach (i; 0 .. 5)` counts from 0 to 4: five times, with
@@ -80,19 +86,42 @@ profiles. `foreach (i; 0 .. 5)` counts from 0 to 4: five times, with
 
 - `s` goes from 0 to 1 (`i / 4.0`: 0, 0.25, 0.5, 0.75, 1), and `z` from 8 mm
   to 16 mm;
-- `wall ~= [ … ]` adds to the list `wall` the outline of the inside at
-  height `z`, moved up to that height;
-- `curve ~= [ … ]` adds the same outline made smaller by
+- `outline` is the outline of the inside at height `z`, and `wall ~= [ … ]`
+  adds it to the list `wall`;
+- `curve ~= [ … ]` adds to the list `curve` the same outline made smaller by
   `4.mm * s * s`: by nothing at the bottom, by a little in the middle
   (1 mm at half height), by 4 mm at the top. Growing as `s * s`, it draws a
   curve.
 
-**Two lofts.** `loft(wall)` is a solid that fills the inside of the tank
-from 8 to 16 mm; `loft(curve)` is the same, but narrowing as it rises.
-Taking the second from the first leaves a ring against the wall, flat on
-top, 4 mm wide, and curving down into the wall underneath. The extra
-`0.01.mm` keeps the two lofts from touching at the bottom: two surfaces
-exactly on top of each other are hard to cut.
+Look at them, as on page 7: Ctrl+click the line `auto outline = inside(z);`.
+The loop runs it five times, and the view shows the five outlines it made,
+one above the other, each a little wider than the one below, following the
+wall:
+
+![The five outlines of the wall](img/08-outlines.png)
+
+Ctrl+click the line `curve ~= [ … ]`: the five smaller outlines, the same at
+the bottom, then shrinking faster and faster as they rise:
+
+![The five outlines of the curve](img/08-curve.png)
+
+**Two lofts.** `loft(wall)` passes a surface through the five outlines of
+the wall: a solid that fills the inside of the tank from 8 to 16 mm.
+`loft(curve)` passes one through the smaller outlines: the same, but
+narrowing as it rises. Ctrl+click `auto full = …`, then `auto narrowing = …`:
+
+![The first loft: the inside of the tank, full](img/08-full.png)
+
+![The second loft: narrowing as it rises](img/08-narrowing.png)
+
+**The difference.** `full - narrowing` takes the second from the first. What
+is left is a ring against the wall, flat on top, 4 mm wide, curving down into
+the wall underneath. Ctrl+click `return full - narrowing;`:
+
+![The difference: the shelf](img/08-difference.png)
+
+The extra `0.01.mm` keeps the two lofts from touching at the bottom: two
+surfaces exactly on top of each other are hard to cut. In section, close:
 
 ![The shelf, close](img/08-shelf-close.png)
 
