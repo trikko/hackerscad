@@ -9,7 +9,7 @@ import std.format : format;
 import std.string : toLower, toUpper;
 import std.array : join;
 import std.algorithm : endsWith;
-import std.math : abs;
+import std.math : abs, PI;
 import std.algorithm : min, max, canFind;
 
 import adw.application : AdwApplication = Application;
@@ -1372,6 +1372,8 @@ private:
             note(format("%s %d part%s in %d ms%s%s", errors ? "evaluated with problems:" : "evaluated:", o.parts.length,
                 o.parts.length == 1 ? "" : "s", o.milliseconds,
                 total ? format(" (%d%% from cache)", o.cacheHits * 100 / total) : "", sketchSummary()), true);
+            if (viewport.shading == Shading.printability)
+                printSummary();
         }
         else
         {
@@ -1983,6 +1985,53 @@ private:
     CheckButton[Shading] shadingChoice;
     CheckButton perspectiveChoice, orthographicChoice, antialiasChoice;
 
+    Box printLimits;
+    import gtk.spin_button : SpinButton;
+    SpinButton overhangSpin, wallSpin;
+
+    /// What the printability style finds, per part shown.
+    JSONValue printabilityJson()
+    {
+        JSONValue[] ps;
+        foreach (i, p; last.parts)
+        {
+            if (viewport.isHidden(i))
+                continue;
+            auto pc = viewport.printCheckOf(i);
+            JSONValue jp = ["part": p.name];
+            jp["overhang_mm2"] = pc.overhangArea;
+            jp["thin_wall_mm2"] = pc.thinArea;
+            if (pc.thinArea > 0)
+                jp["thinnest_mm"] = pc.thinnest;
+            ps ~= jp;
+        }
+        JSONValue j = ["overhang_angle_deg": viewport.overhangAngle * 180 / PI, "min_wall_mm": viewport.minWall];
+        j["parts"] = ps;
+        return j;
+    }
+
+    /// The printability totals in the status line.
+    void printSummary()
+    {
+        double over = 0, thin = 0, thinnest = double.infinity;
+        foreach (i; 0 .. last.parts.length)
+            if (!viewport.isHidden(i))
+            {
+                auto pc = viewport.printCheckOf(i);
+                over += pc.overhangArea;
+                thin += pc.thinArea;
+                thinnest = min(thinnest, pc.thinnest);
+            }
+        if (over < 0.5 && thin < 0.5)
+            return info("printability: no overhangs, no thin walls");
+        string[] what;
+        if (over >= 0.5)
+            what ~= format("%.0f mm² overhangs (red)", over);
+        if (thin >= 0.5)
+            what ~= format("%.0f mm² thin walls (violet, %.2f mm)", thin, thinnest);
+        info("printability: " ~ what.join(", "));
+    }
+
     /// What the cube of the view bar opens: how the parts are drawn and the projection.
     Popover displayPopover()
     {
@@ -2017,6 +2066,43 @@ private:
         style(Shading.edges, "Shaded with edges", "Surfaces with their edges outlined");
         style(Shading.shaded, "Shaded", "Surfaces only, without edges");
         style(Shading.wireframe, "Wireframe", "Edges only, the hidden ones faint");
+        style(Shading.printability, "Printability", "For 3D printing: in red what overhangs and needs supports, "
+            ~ "in violet the walls thinner than the nozzle can print (the part rests on its lowest face)");
+        shadingChoice[Shading.printability].connectToggled(() {
+            printLimits.setVisible(shadingChoice[Shading.printability].getActive());
+            if (shadingChoice[Shading.printability].getActive() && viewport !is null)
+                printSummary();
+        });
+        {
+            // the limits: the steepest overhang from a wall, the thinnest wall
+            import gtk.spin_button : SpinButton;
+            printLimits = new Box(Orientation.Horizontal, 6);
+            printLimits.setMarginStart(28);
+            overhangSpin = SpinButton.newWithRange(0, 89, 5);
+            overhangSpin.setValue(45);
+            overhangSpin.setTooltipText("Overhangs steeper than this from a vertical wall are red (45° prints on "
+                ~ "most printers)");
+            wallSpin = SpinButton.newWithRange(0.1, 5, 0.1);
+            wallSpin.setDigits(1);
+            wallSpin.setValue(0.8);
+            wallSpin.setTooltipText("Walls thinner than this are violet (two lines of a 0.4 mm nozzle: 0.8 mm)");
+            void changed()
+            {
+                if (viewport is null)
+                    return;
+                viewport.setPrintLimits(overhangSpin.getValue() * PI / 180, wallSpin.getValue());
+                if (viewport.shading == Shading.printability)
+                    printSummary();
+            }
+            overhangSpin.connectValueChanged(() => changed());
+            wallSpin.connectValueChanged(() => changed());
+            printLimits.append(new Label("overhang °"));
+            printLimits.append(overhangSpin);
+            printLimits.append(new Label("wall mm"));
+            printLimits.append(wallSpin);
+            printLimits.setVisible(false);
+            box.append(printLimits);
+        }
         // built before the view: its defaults
         shadingChoice[Shading.edges].setActive(true);
         import gtk.separator : Separator;
@@ -3632,8 +3718,11 @@ private:
         jc["target"] = [cam.target.x, cam.target.y, cam.target.z];
         jc["projection"] = cam.orthographic ? "orthographic" : "perspective";
         jc["style"] = viewport.shading == Shading.wireframe ? "wireframe"
-            : viewport.shading == Shading.shaded ? "shaded" : "edges";
+            : viewport.shading == Shading.shaded ? "shaded" : viewport.shading == Shading.printability ? "printability"
+            : "edges";
         j["camera"] = jc;
+        if (viewport.shading == Shading.printability)
+            j["printability"] = printabilityJson();
         j["graphics"] = graphicsJson();
         string problems;
         foreach (d; last.diagnostics)

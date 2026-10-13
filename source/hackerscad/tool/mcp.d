@@ -589,7 +589,10 @@ enum modelProps = `
     "path": {"type": "string", "description": "Model file. With 'source', only used to resolve project imports."},
     "params": {"type": "object", "description": "Parameter overrides, name to value: numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\" or \"\\\"text\\\"\".", "additionalProperties": {"type": ["string", "number", "boolean"]}},
     "preset": {"type": "string", "description": "Name of a @preset to apply."},
-    "tolerance": {"type": "number", "description": "Mesh chord tolerance in mm for exported meshes and pictures (default 0.02; smaller is finer and slower)."}`;
+    "tolerance": {"type": "number", "description": "Mesh chord tolerance in mm for exported meshes and pictures (default 0.02; smaller is finer and slower)."},
+    "printability": {"type": "boolean", "description": "For 3D printing: per part, the area of overhangs needing supports and of walls too thin to print (report 'printability'), marked in pictures (overhangs striped red, thin walls hatched violet)."},
+    "overhang_angle": {"type": "number", "description": "printability: overhangs steeper than this many degrees from a wall need supports (default 45)."},
+    "min_wall": {"type": "number", "description": "printability: walls thinner than this many mm do not print (default 0.8)."}`;
 
 JSONValue[] toolList()
 {
@@ -657,7 +660,8 @@ JSONValue[] toolList()
             ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
             ~ "stays still). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
-            ~ "faint); projection is perspective or orthographic; menu opens the parts (eye) or display (cube) "
+            ~ "faint), or printability: overhangs needing supports in red, walls under min_wall in violet (then "
+            ~ "hcad_gui_state has their areas per part); projection is perspective or orthographic; menu opens the parts (eye) or display (cube) "
             ~ "menu of the view bar for a screenshot, none closes them; sidebar shows the params or steps tab; "
             ~ "cursor puts the editor's cursor at the start of a line and scrolls there; code_width sets how wide "
             ~ "the code is (pixels); theme draws the window light or dark for this run (the user's own choice, in the "
@@ -672,7 +676,9 @@ JSONValue[] toolList()
             ~ `"pan": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"zoom": {"type": "number"}, `
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
-            ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe"]}, `
+            ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe", "printability"]}, `
+            ~ `"overhang_angle": {"type": "number", "description": "printability: degrees from a wall (45)"}, `
+            ~ `"min_wall": {"type": "number", "description": "printability: thinnest wall in mm (0.8)"}, `
             ~ `"projection": {"type": "string", "enum": ["perspective", "orthographic"]}, `
             ~ `"menu": {"type": "string", "enum": ["parts", "display", "none"]}, `
             ~ `"sidebar": {"type": "string", "enum": ["params", "steps"]}, `
@@ -995,6 +1001,19 @@ RunOptions options(JSONValue args)
     }
     if (auto ps = "params" in args)
         o.overrides = toOverrides(*ps);
+    double number(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
+    if (auto v = "printability" in args)
+        o.printability = v.type == JSONType.true_;
+    if (auto v = "overhang_angle" in args)
+    {
+        o.overhangAngle = number(*v);
+        enforce(o.overhangAngle >= 0 && o.overhangAngle < 90, "'overhang_angle' is in degrees from 0 to 90");
+    }
+    if (auto v = "min_wall" in args)
+    {
+        o.minWall = number(*v);
+        enforce(o.minWall > 0, "'min_wall' must be a positive number of mm");
+    }
     return o;
 }
 

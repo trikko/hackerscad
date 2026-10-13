@@ -32,6 +32,9 @@ reference first and follow the rules below.
   draws iso/front/top/right (look at it); `-o model.3mf`, `.step`, `.zip`
   (one STL per part), `.stl` (one part: `--part name`);
   `-D width=80.mm` and `--preset name` change parameters.
+  `--printability` adds per part the overhangs needing supports and the
+  walls too thin to print (marked in the pictures: red stripes, violet
+  hatching); with the window, `hcad_gui_view` style `printability`.
 - The loop: write the model, check it, render and look, compare sizes and
   pictures with the request, fix, then export. Put the request's
   requirements in unittest blocks so the checks repeat them.

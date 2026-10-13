@@ -113,9 +113,15 @@ mixin template ControlMethods()
                 // drawing style and projection, as the cube of the view bar
                 if (auto v = arg("style"))
                 {
-                    auto sh = v == "wireframe" ? Shading.wireframe : v == "shaded" ? Shading.shaded : Shading.edges;
+                    auto sh = v == "wireframe" ? Shading.wireframe : v == "shaded" ? Shading.shaded
+                        : v == "printability" ? Shading.printability : Shading.edges;
                     shadingChoice[sh].setActive(true);
                 }
+                // the printability style's limits, as its two fields
+                if (has("overhang_angle"))
+                    overhangSpin.setValue(num(p["overhang_angle"]));
+                if (has("min_wall"))
+                    wallSpin.setValue(num(p["min_wall"]));
                 if (auto v = arg("projection"))
                     (v == "orthographic" ? orthographicChoice : perspectiveChoice).setActive(true);
                 // light or dark, for this run (the menu's choice is kept, this is not)

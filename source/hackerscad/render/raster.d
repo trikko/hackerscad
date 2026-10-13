@@ -28,6 +28,9 @@ struct Shaded
     /// Its normals are smoothed inside each face (as in the 3D view), so
     /// curved faces are not faceted.
     Mesh faces;
+    /// Optional, per triangle of `faces` (or of `mesh` without them): 1
+    /// striped red (an overhang), 2 cross-hatched violet (a thin wall).
+    const(ubyte)[] marks;
 }
 
 /// The lighting of the 3D view (its fragment shader), for a view direction
@@ -170,6 +173,8 @@ private Image render(const Shaded[] items, const Prepared[] prepared, View view,
             immutable base = Vec3((it.rgb >> 16) & 0xFF, (it.rgb >> 8) & 0xFF, it.rgb & 0xFF);
             auto m = it.mesh;
             Vec3 light(Vec3 n) => viewLighting(n, cam.eye, base);
+            Vec3 overhangLight(Vec3 n) => viewLighting(n, cam.eye, Vec3(230, 64, 51));
+            Vec3 thinLight(Vec3 n) => viewLighting(n, cam.eye, Vec3(148, 92, 224));
             if (it.faces.triangleCount)
             {
                 // smooth inside each face, as in the 3D view
@@ -178,8 +183,10 @@ private Image render(const Shaded[] items, const Prepared[] prepared, View view,
                 foreach (t; 0 .. f.triangleCount)
                 {
                     auto ia = f.tris[t * 3], ib = f.tris[t * 3 + 1], ic = f.tris[t * 3 + 2];
+                    immutable mark = t < it.marks.length ? it.marks[t] : 0;
                     c.triangle(toScreen(f.vertex(ia)), toScreen(f.vertex(ib)), toScreen(f.vertex(ic)),
-                        normals[ia], normals[ib], normals[ic], &light, alpha);
+                        normals[ia], normals[ib], normals[ic], mark ? (mark == 1 ? &overhangLight : &thinLight) : &light,
+                        alpha, mark, 10.0 * ss);
                 }
             }
             else
@@ -187,7 +194,9 @@ private Image render(const Shaded[] items, const Prepared[] prepared, View view,
                 {
                     auto a = m.vertex(m.tris[t * 3]), b = m.vertex(m.tris[t * 3 + 1]), d = m.vertex(m.tris[t * 3 + 2]);
                     auto n = (b - a).cross(d - a).normalized;
-                    c.triangle(toScreen(a), toScreen(b), toScreen(d), n, n, n, &light, alpha);
+                    immutable mark = t < it.marks.length ? it.marks[t] : 0;
+                    c.triangle(toScreen(a), toScreen(b), toScreen(d), n, n, n,
+                        mark ? (mark == 1 ? &overhangLight : &thinLight) : &light, alpha, mark, 10.0 * ss);
                 }
             // the opaque parts' edges go to a mask, drawn once all their faces
             // are in the depth buffer; see-through parts draw theirs faintly
@@ -440,7 +449,10 @@ struct Canvas
     }
 
     /// A triangle lit per pixel: `shade` turns the interpolated normal into a colour.
-    void triangle(Vec3 a, Vec3 b, Vec3 c, Vec3 na, Vec3 nb, Vec3 nc, scope Vec3 delegate(Vec3) shade, double alpha = 1)
+    /// `pattern` 1 lays white diagonal stripes over it, 2 a cross-hatch,
+    /// `period` pixels apart (as the window's printability style).
+    void triangle(Vec3 a, Vec3 b, Vec3 c, Vec3 na, Vec3 nb, Vec3 nc, scope Vec3 delegate(Vec3) shade, double alpha = 1,
+        int pattern = 0, double period = 10)
     {
         immutable area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
         if (abs(area) < 1e-12)
@@ -460,7 +472,16 @@ struct Canvas
                 immutable i = y * w + x;
                 if (z <= depth[i])
                     continue;
-                put(i, shade((na * w0 + nb * w1 + nc * w2).normalized), alpha);
+                auto colour = shade((na * w0 + nb * w1 + nc * w2).normalized);
+                if (pattern)
+                {
+                    import std.math : fmod;
+                    immutable band = 0.4 * period;
+                    immutable on = fmod(x + y, period) < band || (pattern == 2 && fmod(x - y + 1e6 * period, period) < band);
+                    if (on)
+                        colour = colour * 0.4 + Vec3(255, 255, 255) * 0.6;
+                }
+                put(i, colour, alpha);
                 if (alpha >= 1)
                     depth[i] = z;
             }

@@ -22,6 +22,7 @@ import hackerscad.lang.interp;
 import hackerscad.lang.value;
 import hackerscad.render.png;
 import hackerscad.render.raster;
+import hackerscad.geom.printability : PrintCheck, checkPrint;
 import hackerscad.drawing.sheet : Sheet, toSvg, toPdf, toDxf;
 
 struct RunOptions
@@ -33,6 +34,10 @@ struct RunOptions
     string drawing;            /// @drawing to export as .svg/.pdf/.dxf (default: the first)
     double tolerance = 0.02;
     CachingKernel cache;       /// reuse results of previous runs (long-lived servers)
+    /// overhangs and thin walls: in the report, and marked in pictures
+    bool printability;
+    double overhangAngle = 45;   /// degrees from a vertical wall
+    double minWall = 0.8;        /// mm
 }
 
 final class Run
@@ -44,6 +49,25 @@ final class Run
     string path;
     long milliseconds;
     double tolerance = 0.02;   /// mesh chord tolerance of exports and pictures (--tolerance)
+    bool printability;         /// report overhangs and thin walls, mark them in pictures
+    double overhangAngle = 45, minWall = 0.8;
+
+    private PrintCheck[] checks;
+
+    /// Per part, the overhangs and thin walls of its tessellation (by face).
+    PrintCheck[] printChecks()
+    {
+        if (checks is null)
+        {
+            import std.math : PI;
+            partMeshes();
+            PrintCheck[] r;
+            foreach (m; faceMeshes)
+                r ~= checkPrint(m.verts, 3, m.tris, overhangAngle * PI / 180, minWall);
+            checks = r;
+        }
+        return checks;
+    }
 
     private Mesh[] meshes;
 
@@ -206,7 +230,18 @@ final class Run
         Shaded[] shaded;
         foreach (i, p; result.parts)
             if (only.length == 0 || only.canFind(i))
+            {
                 shaded ~= Shaded(partMeshes()[i], p.rgb, faceMeshes[i]);
+                if (printability)
+                {
+                    // overhangs striped red, thin walls cross-hatched violet, as in the window
+                    auto pc = printChecks()[i];
+                    auto marks = new ubyte[pc.overhang.length];
+                    foreach (t, ref mk; marks)
+                        mk = pc.isThin(t) ? 2 : pc.overhang[t] ? 1 : 0;
+                    shaded[$ - 1].marks = marks;
+                }
+            }
         auto img = views.length == 1 ? render(shaded, views[0], 1000, 700) : renderSheet(shaded, views, cell);
         return encodePng(img.rgb, img.width, img.height);
     }
@@ -217,7 +252,7 @@ final class Run
         JSONValue j = ["ok": JSONValue(!hasErrors)];
         j["milliseconds"] = milliseconds;
         JSONValue[] parts;
-        foreach (p; result.parts)
+        foreach (pi, p; result.parts)
         {
             auto bb = kernel.bbox(p.solid.brep);
             JSONValue jp = ["name": p.name];
@@ -230,6 +265,14 @@ final class Run
                 "size": [bb.size.x, bb.size.y, bb.size.z]];
             jp["volume_mm3"] = kernel.volume(p.solid.brep);
             jp["valid"] = kernel.isValid(p.solid.brep);
+            if (printability)
+            {
+                auto pc = printChecks()[pi];
+                JSONValue jpr = ["overhang_mm2": pc.overhangArea, "thin_wall_mm2": pc.thinArea];
+                if (pc.thinArea > 0)
+                    jpr["thinnest_mm"] = pc.thinnest;
+                jp["printability"] = jpr;
+            }
             jp["line"] = p.span.line;
             parts ~= jp;
         }
@@ -293,6 +336,9 @@ Run evaluateModel(RunOptions o)
     run.interp.overrides = o.overrides;
     run.drawingName = o.drawing;
     run.tolerance = o.tolerance;
+    run.printability = o.printability;
+    run.overhangAngle = o.overhangAngle;
+    run.minWall = o.minWall;
     run.interp.preset = o.preset;
     auto sw = StopWatch(AutoStart.yes);
     run.path = o.path.length ? absolutePath(o.path) : buildPath(getcwd(), "inline.hcad");

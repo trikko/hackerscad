@@ -3,6 +3,7 @@
 /// towards the pointer) and face picking.
 module hackerscad.gui.viewport;
 
+import hackerscad.geom.printability : PrintCheck, checkPrint;
 import core.time : MonoTime;
 import std.math : sin, cos, tan, atan, PI, abs, pow, sqrt;
 import std.algorithm : clamp, min, max;
@@ -38,6 +39,7 @@ enum Shading
     edges,      /// shaded, with their edges outlined
     shaded,     /// shaded, without edges
     wireframe,  /// edges only, the hidden ones faint
+    printability,   /// shaded with edges, overhangs in red and thin walls in violet
 }
 
 /// What a left-button drag does (right always rotates, middle always pans).
@@ -111,7 +113,7 @@ final class Viewport
     private uint program, gridVao, gridVbo;
     private int gridCount;
     private float gridExtent, gridZ;
-    private int uMvp, uColor, uEye, uFlat, uAlpha, uClipOn, uClip;
+    private int uMvp, uColor, uEye, uFlat, uAlpha, uClipOn, uClip, uPattern;
 
     // the colours of the window's dark style: background, grid, sketches
     private bool darkStyle;
@@ -821,6 +823,12 @@ private:
         /// total edge length and the two largest sizes (mm): how crowded the
         /// edges get on screen at a given zoom
         double edgeLength = 0, spanA = 1, spanB = 1;
+        /// the printability style: the overhanging triangles' indices,
+        /// then the thin walls', for the limits they were found with
+        uint printVao, printEbo;
+        int overhangCount, thinCount;
+        bool printValid;
+        PrintCheck print;
     }
 
     struct Basis
@@ -1017,6 +1025,7 @@ private:
         uColor = glGetUniformLocation(program, "uColor");
         uEye = glGetUniformLocation(program, "uEye");
         uFlat = glGetUniformLocation(program, "uFlat");
+        uPattern = glGetUniformLocation(program, "uPattern");
         uAlpha = glGetUniformLocation(program, "uAlpha");
         uClipOn = glGetUniformLocation(program, "uClipOn");
         uClip = glGetUniformLocation(program, "uClip");
@@ -1404,6 +1413,9 @@ private:
         if (!ghost && !wire)
             renderTransparent();
 
+        if (shading == Shading.printability)
+            drawPrintability();
+
         // the picked faces, in highlight colour (an item near an edge is the edge)
         foreach (h; selection())
         {
@@ -1743,6 +1755,11 @@ private:
     {
         if (g.vao == 0)
             return;
+        if (g.printVao)
+        {
+            glDeleteVertexArrays(1, &g.printVao);
+            glDeleteBuffers(1, &g.printEbo);
+        }
         glDeleteVertexArrays(1, &g.vao);
         glDeleteVertexArrays(1, &g.edgeVao);
         glDeleteBuffers(1, &g.vbo);
@@ -1833,6 +1850,95 @@ private:
             glBindVertexArray(0);
             return g;
         }
+    }
+
+    /// Overhangs steeper than this from a wall (radians), and walls thinner
+    /// than this (mm), in the printability style.
+    public double overhangAngle = PI / 4, minWall = 0.8;
+
+    /// Sets the printability style's limits.
+    public void setPrintLimits(double angle, double wall)
+    {
+        overhangAngle = angle;
+        minWall = wall;
+        foreach (ref g; gpu)
+            g.printValid = false;
+        area.queueRender();
+    }
+
+    /// What the printability style finds in part i (computed if needed: it
+    /// takes a moment on large meshes).
+    public PrintCheck printCheckOf(size_t i)
+    {
+        if (i >= parts.length)
+            return PrintCheck.init;
+        // a part not drawn yet (its buffers are another's): no cache
+        if (i >= gpu.length || gpu[i].source !is parts[i].vertices)
+            return checkPrint(parts[i].vertices, 6, parts[i].indices, overhangAngle, minWall);
+        if (!gpu[i].printValid)
+        {
+            gpu[i].print = checkPrint(parts[i].vertices, 6, parts[i].indices, overhangAngle, minWall);
+            gpu[i].printValid = true;
+            gpu[i].overhangCount = -1;   // the buffers to make, on the drawing thread
+        }
+        return gpu[i].print;
+    }
+
+    /// The overhanging triangles in red and those over thin walls in violet,
+    /// over the shaded parts (pushed back like for the picked faces).
+    private void drawPrintability()
+    {
+        foreach (i, ref g; gpu)
+        {
+            if (isHidden(i) || i >= parts.length)
+                continue;
+            auto pc = printCheckOf(i);
+            if (g.overhangCount < 0)
+            {
+                uint[] over, thin;
+                auto idx = parts[i].indices;
+                foreach (t; 0 .. idx.length / 3)
+                {
+                    if (pc.isThin(t))
+                        thin ~= idx[t * 3 .. t * 3 + 3];
+                    else if (pc.overhang[t])
+                        over ~= idx[t * 3 .. t * 3 + 3];
+                }
+                if (!g.printVao)
+                {
+                    glGenVertexArrays(1, &g.printVao);
+                    glBindVertexArray(g.printVao);
+                    glBindBuffer(GL_ARRAY_BUFFER, g.vbo);
+                    glEnableVertexAttribArray(0);
+                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * float.sizeof, null);
+                    glEnableVertexAttribArray(1);
+                    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * float.sizeof, cast(void*)(3 * float.sizeof));
+                    glGenBuffers(1, &g.printEbo);
+                }
+                glBindVertexArray(g.printVao);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g.printEbo);
+                auto all = over ~ thin;
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, all.length * uint.sizeof, all.ptr, GL_STATIC_DRAW);
+                g.overhangCount = cast(int) over.length;
+                g.thinCount = cast(int) thin.length;
+            }
+            glBindVertexArray(g.printVao);
+            // red with white stripes, violet cross-hatched
+            if (g.overhangCount > 0)
+            {
+                glUniform3f(uColor, 0.90f, 0.25f, 0.20f);
+                glUniform1i(uPattern, 1);
+                glDrawElements(GL_TRIANGLES, g.overhangCount, GL_UNSIGNED_INT, null);
+            }
+            if (g.thinCount > 0)
+            {
+                glUniform3f(uColor, 0.58f, 0.36f, 0.88f);
+                glUniform1i(uPattern, 2);
+                glDrawElements(GL_TRIANGLES, g.thinCount, GL_UNSIGNED_INT, cast(void*)(g.overhangCount * uint.sizeof));
+            }
+        }
+        glUniform1i(uPattern, 0);
+        glBindVertexArray(0);
     }
 
     private float[] outlineScratch;
@@ -2138,6 +2244,7 @@ in vec3 vPos;
 uniform vec3 uColor;
 uniform vec3 uEye;
 uniform int uFlat;
+uniform int uPattern;   // 1 diagonal stripes, 2 a cross-hatch: marks that no part colour can be mistaken for
 uniform float uAlpha;
 uniform int uClipOn;
 uniform vec4 uClip;   // keeps dot(p, xyz) <= w
@@ -2174,7 +2281,14 @@ void main()
     float diffuse = max(dot(n, l), 0.0);
     vec3 h = normalize(l + v);
     float specular = pow(max(dot(n, h), 0.0), 48.0) * 0.22;
-    frag = vec4(uColor * (0.34 + 0.66 * diffuse) + vec3(specular), uAlpha);
+    vec3 lit = uColor * (0.34 + 0.66 * diffuse) + vec3(specular);
+    if (uPattern > 0)
+    {
+        float a = mod(gl_FragCoord.x + gl_FragCoord.y, 10.0) < 4.0 ? 1.0 : 0.0;
+        float b = uPattern == 2 && mod(gl_FragCoord.x - gl_FragCoord.y, 10.0) < 4.0 ? 1.0 : 0.0;
+        lit = mix(lit, vec3(1.0), 0.6 * max(a, b));
+    }
+    frag = vec4(lit, uAlpha);
 }
 `;
 

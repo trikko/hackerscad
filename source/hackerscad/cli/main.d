@@ -44,6 +44,10 @@ options:
   --part NAME       export only this @part (by function name or name:); repeat it
                     for more; without it, every part but the export: false ones
   --tolerance MM    mesh chord tolerance (default 0.02)
+  --printability    report overhangs and thin walls per part, and mark them in
+                    pictures: overhangs striped red, thin walls hatched violet
+  --overhang DEG    overhangs steeper than this from a wall need supports (45)
+  --min-wall MM     walls thinner than this do not print (0.8)
   --json            machine-readable output (for scripts and agents)`;
 
 /// The garbage collector marks on one thread: marking in parallel spent
@@ -111,7 +115,8 @@ int main(string[] args)
     bool oneObject;
     try
         getopt(args, "o|output", &outputs, "D", &defines, "preset", &o.preset, "drawing", &o.drawing, "tolerance", &o.tolerance,
-            "part", &only, "one-object", &oneObject, "json", &json);
+            "part", &only, "one-object", &oneObject, "json", &json, "printability", &o.printability,
+            "overhang", &o.overhangAngle, "min-wall", &o.minWall);
     catch (GetOptException e)
     {
         stderr.writeln("error: ", e.msg);
@@ -125,6 +130,11 @@ int main(string[] args)
     if (!(o.tolerance > 0))
     {
         stderr.writeln("error: --tolerance expects a positive number of mm, got ", o.tolerance);
+        return 2;
+    }
+    if (!(o.overhangAngle >= 0 && o.overhangAngle < 90) || !(o.minWall > 0))
+    {
+        stderr.writeln("error: --overhang expects degrees from 0 to 90 and --min-wall a positive number of mm");
         return 2;
     }
     o.path = args[1];
@@ -171,6 +181,14 @@ int main(string[] args)
             writefln("part %-12s %.1f × %.1f × %.1f mm   volume %.1f mm³%s%s", p.name, bb.size.x, bb.size.y, bb.size.z,
                 run.kernel.volume(p.solid.brep), p.label != p.name ? "   (exported as \"" ~ p.label ~ "\")" : "",
                 p.export_ ? "" : "   (reference, not exported)");
+        }
+    if (run.ok && run.printability)
+        foreach (i, p; run.result.parts)
+        {
+            import std.format : format;
+            auto pc = run.printChecks()[i];
+            writefln("  %-17s %.0f mm² overhangs beyond %g°, %.0f mm² walls under %g mm%s", p.name, pc.overhangArea,
+                o.overhangAngle, pc.thinArea, o.minWall, pc.thinArea > 0 ? format(" (the thinnest %.2f mm)", pc.thinnest) : "");
         }
     stderr.write(run.renderedDiagnostics());
     if (!run.ok)
