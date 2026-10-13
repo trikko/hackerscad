@@ -360,3 +360,108 @@ string scanReport(string file, string part, string axis, double step)
         s ~= format("  %s to %s (%s deep): %s\n", mm(r.from), mm(r.to), mm(r.to - r.from), r.shape.toString);
     return s;
 }
+
+/// The sections of two parts of a model by one plane, drawn on each other:
+/// the original (`b`) in thick grey, the copy (`a`) in thin orange, with
+/// both outlines as text. The picture is a PNG.
+ubyte[] sectionOverlay(string file, string a, string b, string plane, double at, out string text)
+{
+    import std.algorithm : max, min;
+    import hackerscad.geom.outlinefit;
+    import hackerscad.render.raster : Canvas;
+    import hackerscad.render.png : encodePng;
+    Vec3 u, v;
+    double along = at;
+    switch (plane)
+    {
+    case "xy": u = Vec3(1, 0, 0); v = Vec3(0, 1, 0); break;
+    case "xz": u = Vec3(1, 0, 0); v = Vec3(0, 0, 1); along = -at; break;
+    case "yz": u = Vec3(0, 1, 0); v = Vec3(0, 0, 1); break;
+    default: throw new Exception("the plane is xy, xz or yz");
+    }
+    auto n = u.cross(v);
+    auto la = slice(meshOf(file, a).welded(1e-5), n, along, u, v);
+    auto lb = slice(meshOf(file, b).welded(1e-5), n, along, u, v);
+    if (la.length == 0 && lb.length == 0)
+        throw new Exception(format("the plane %s at %g mm cuts neither part", plane, at));
+    double x0 = double.infinity, y0 = double.infinity, x1 = -double.infinity, y1 = -double.infinity;
+    foreach (ls; [la, lb])
+        foreach (l; ls)
+            foreach (p; l)
+            {
+                x0 = min(x0, p[0]);
+                x1 = max(x1, p[0]);
+                y0 = min(y0, p[1]);
+                y1 = max(y1, p[1]);
+            }
+    enum W = 900, H = 700, ss = 3;
+    auto c = Canvas(W * ss, H * ss);
+    c.clear();
+    immutable k = 0.9 * min(W * ss / max(x1 - x0, 1e-9), H * ss / max(y1 - y0, 1e-9));
+    immutable ox = W * ss / 2.0 - k * (x0 + x1) / 2, oy = H * ss / 2.0 + k * (y0 + y1) / 2;
+    Vec3 screen(P2 p) => Vec3(ox + k * p[0], oy - k * p[1], 0);
+    // a millimetre grid, faint
+    immutable gridStep = (x1 - x0) > 60 ? 10.0 : (x1 - x0) > 15 ? 5.0 : 1.0;
+    import std.math : floor, ceil;
+    for (double g = floor(x0 / gridStep) * gridStep; g <= x1; g += gridStep)
+        c.line(screen([g, y0]), screen([g, y1]), Vec3(225, 228, 235), ss, 1);
+    for (double g = floor(y0 / gridStep) * gridStep; g <= y1; g += gridStep)
+        c.line(screen([x0, g]), screen([x1, g]), Vec3(225, 228, 235), ss, 1);
+    foreach (l; lb)
+        foreach (i; 0 .. l.length)
+            c.line(screen(l[i]), screen(l[(i + 1) % l.length]), Vec3(120, 125, 140), 4.5 * ss, 1);
+    foreach (l; la)
+        foreach (i; 0 .. l.length)
+            c.line(screen(l[i]), screen(l[(i + 1) % l.length]), Vec3(235, 110, 20), 1.6 * ss, 1);
+    auto img = c.downsample(ss);
+    Element[][] fa, fb;
+    double size = 1;
+    foreach (ls; [la, lb])
+        foreach (l; ls)
+            foreach (p; l)
+                size = max(size, p[0] < 0 ? -p[0] : p[0], p[1] < 0 ? -p[1] : p[1]);
+    foreach (l; la)
+        fa ~= fit(l, 0.01 + 1e-4 * size);
+    foreach (l; lb)
+        fb ~= fit(l, 0.01 + 1e-4 * size);
+    immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
+    text = format("section %s at %g mm (coordinates %s); grid every %g mm. %s, the copy (thin orange):\n", plane, at, axes,
+        gridStep, a) ~ describe(fa) ~ format("%s, the original (thick grey):\n", b) ~ describe(fb);
+    return encodePng(img.rgb, img.width, img.height);
+}
+
+/// The outline of the part's shadow on a plane (seen along its normal), as
+/// lines, arcs and circles with their sizes and as a sketch: for parts made
+/// by extruding an outline.
+string projectionReport(string file, string part, string plane)
+{
+    import std.algorithm : max;
+    import std.math : abs;
+    import hackerscad.geom.outlinefit;
+    Vec3 u, v;
+    switch (plane)
+    {
+    case "xy": u = Vec3(1, 0, 0); v = Vec3(0, 1, 0); break;
+    case "xz": u = Vec3(1, 0, 0); v = Vec3(0, 0, 1); break;
+    case "yz": u = Vec3(0, 1, 0); v = Vec3(0, 0, 1); break;
+    default: throw new Exception("the plane is xy, xz or yz");
+    }
+    // drawn on a fine grid and traced: the union of the projections of a mesh's thousands of faces
+    // leaves slivers where neighbouring facets do not meet exactly
+    auto m = meshOf(file, part);
+    double extent = 1;
+    foreach (i; 0 .. m.vertexCount)
+        extent = max(extent, abs(m.vertex(i).dot(u)), abs(m.vertex(i).dot(v)));
+    immutable pixel = max(0.02, extent / 1500);
+    auto loops = shadowLoops(m, u, v, pixel);
+    double size = 1;
+    foreach (l; loops)
+        foreach (p; l)
+            size = max(size, abs(p[0]), abs(p[1]));
+    Element[][] fitted;
+    foreach (l; loops)
+        fitted ~= fit(l, 1.5 * pixel, true);
+    immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
+    return format("the shadow on %s (coordinates %s):\n", plane, axes) ~ describe(fitted)
+        ~ "\n// as a sketch:\n" ~ sketchCode(fitted, "shadow");
+}

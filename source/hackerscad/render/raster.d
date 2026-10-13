@@ -429,7 +429,7 @@ struct Camera
     Vec3 project(Vec3 p) const => Vec3(p.dot(right), p.dot(up), p.dot(eye));
 }
 
-struct Canvas
+public struct Canvas
 {
     uint w, h;
     float[] color; // rgb

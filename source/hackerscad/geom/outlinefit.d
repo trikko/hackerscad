@@ -105,8 +105,10 @@ struct Element
 
 /// A closed outline as lines and arcs within `tol` of its points: from each
 /// point, the longest piece (line or arc) that stays within it.
-Element[] fit(const P2[] input, double tol)
+Element[] fit(const P2[] input, double tol, bool traced = false)
 {
+    if (traced)
+        return fitTraced(input, tol);
     // points on the straight line between their neighbours dropped: a facet's two triangles cut
     // its chord in two, and the uneven pieces would hide the curve's even facets
     P2[] loop = input.dup;
@@ -264,13 +266,15 @@ private double pointLine(P2 p, P2 a, P2 b)
     return abs((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / l;
 }
 
-private bool collinear(const P2[] loop, size_t start, size_t i, size_t j, double tol)
+private bool collinear(const P2[] loop, size_t start, size_t i, size_t j, double tol, bool anyDirection = false)
 {
     immutable n = loop.length;
     auto a = loop[(start + i) % n], b = loop[(start + j) % n];
     foreach (k; i + 1 .. j)
         if (pointLine(loop[(start + k) % n], a, b) > tol)
             return false;
+    if (anyDirection)
+        return true;
     // and every segment along the line's direction (within 1°): the first facet of a curve
     // next to it may lie within the tolerance, but it already turns
     immutable dx = b[0] - a[0], dy = b[1] - a[1], l = sqrt(dx * dx + dy * dy);
@@ -708,4 +712,234 @@ unittest
     drop ~= [0, 2 * sqrt(2.0)];
     auto t = classify(fit(drop, 0.01));
     assert(t.kind == "teardrop" && abs(t.a - 4) < 1e-6 && abs(t.angle - PI / 2) < 0.05, t.toString);
+}
+
+/// The outlines of a mesh's shadow on the plane of `u` and `v`: every
+/// triangle drawn on a grid of `pixel` mm, and the edges of what it covers
+/// traced (marching squares, the corners at the middles of the pixels'
+/// sides), outside loops counter-clockwise, holes clockwise.
+P2[][] shadowLoops(const Mesh m, Vec3 u, Vec3 v, double pixel)
+{
+    import std.math : floor, ceil;
+    double x0 = double.infinity, y0 = double.infinity, x1 = -double.infinity, y1 = -double.infinity;
+    foreach (i; 0 .. m.vertexCount)
+    {
+        auto p = m.vertex(i);
+        x0 = min(x0, p.dot(u));
+        x1 = max(x1, p.dot(u));
+        y0 = min(y0, p.dot(v));
+        y1 = max(y1, p.dot(v));
+    }
+    // a pixel of margin all around: the outlines close inside the grid
+    x0 -= 2 * pixel;
+    y0 -= 2 * pixel;
+    immutable nx = cast(size_t) ceil((x1 - x0) / pixel) + 3, ny = cast(size_t) ceil((y1 - y0) / pixel) + 3;
+    auto mask = new bool[nx * ny];
+    // pixel (i, j) covers the square from x0 + i·pixel; its centre half a pixel in
+    foreach (t; 0 .. m.triangleCount)
+    {
+        P2[3] p;
+        foreach (k; 0 .. 3)
+        {
+            auto q = m.vertex(m.tris[3 * t + k]);
+            p[k] = [(q.dot(u) - x0) / pixel - 0.5, (q.dot(v) - y0) / pixel - 0.5];
+        }
+        immutable den = (p[1][1] - p[2][1]) * (p[0][0] - p[2][0]) + (p[2][0] - p[1][0]) * (p[0][1] - p[2][1]);
+        if (abs(den) < 1e-12)
+            continue;
+        immutable i0 = cast(long) ceil(min(p[0][0], p[1][0], p[2][0])), i1 = cast(long) floor(max(p[0][0], p[1][0], p[2][0]));
+        immutable j0 = cast(long) ceil(min(p[0][1], p[1][1], p[2][1])), j1 = cast(long) floor(max(p[0][1], p[1][1], p[2][1]));
+        foreach (j; max(0, j0) .. min(cast(long) ny - 1, j1) + 1)
+            foreach (i; max(0, i0) .. min(cast(long) nx - 1, i1) + 1)
+            {
+                immutable w0 = ((p[1][1] - p[2][1]) * (i - p[2][0]) + (p[2][0] - p[1][0]) * (j - p[2][1])) / den;
+                immutable w1 = ((p[2][1] - p[0][1]) * (i - p[2][0]) + (p[0][0] - p[2][0]) * (j - p[2][1])) / den;
+                if (w0 >= -1e-9 && w1 >= -1e-9 && 1 - w0 - w1 >= -1e-9)
+                    mask[j * nx + i] = true;
+            }
+    }
+    bool at(long i, long j) => i >= 0 && j >= 0 && i < nx && j < ny && mask[j * nx + i];
+    // the boundary as directed edges between pixel corners, the covered pixels on their left;
+    // corners numbered (i, j) at x0 + i·pixel, y0 + j·pixel
+    alias Corner = long[2];
+    Corner[Corner] next;
+    foreach (j; -1 .. cast(long) ny)
+        foreach (i; -1 .. cast(long) nx)
+        {
+            immutable here = at(i, j);
+            // the edge between (i, j) and its right neighbour, and its upper one
+            if (here != at(i + 1, j))
+            {
+                // vertical edge at x = i + 1, from y = j to j + 1
+                if (here)
+                    next[[i + 1, j]] = [i + 1, j + 1];
+                else
+                    next[[i + 1, j + 1]] = [i + 1, j];
+            }
+            if (here != at(i, j + 1))
+            {
+                // horizontal edge at y = j + 1, from x = i to i + 1
+                if (here)
+                    next[[i + 1, j + 1]] = [i, j + 1];
+                else
+                    next[[i, j + 1]] = [i + 1, j + 1];
+            }
+        }
+    P2[][] loops;
+    bool[Corner] used;
+    foreach (start, _; next)
+    {
+        if (start in used)
+            continue;
+        Corner[] cs;
+        Corner c = start;
+        while (c !in used)
+        {
+            used[c] = true;
+            cs ~= c;
+            auto nx_ = c in next;
+            if (nx_ is null)
+                break;
+            c = *nx_;
+        }
+        if (cs.length < 4)
+            continue;
+        // the middles of the edges: a smoother outline than the pixel corners
+        P2[] loop;
+        foreach (k; 0 .. cs.length)
+        {
+            auto a = cs[k], b = cs[(k + 1) % cs.length];
+            loop ~= [x0 + (a[0] + b[0]) / 2.0 * pixel, y0 + (a[1] + b[1]) / 2.0 * pixel];
+        }
+        loops ~= loop;
+    }
+    return loops;
+}
+
+/// fit for an outline traced on a grid: its pixel steps first smoothed away
+/// (Douglas–Peucker within half the tolerance), then lines and arcs as fit
+/// finds them, with no rule on the pieces' directions and lengths.
+private Element[] fitTraced(const P2[] input, double tol)
+{
+    // a loop simplified: the farthest point from the chord kept while it is farther than eps
+    P2[] simplify(const P2[] pts, double eps)
+    {
+        if (pts.length < 3)
+            return pts.dup;
+        size_t far;
+        double best = 0;
+        foreach (k; 1 .. pts.length - 1)
+        {
+            immutable d = pointLine(pts[k], pts[0], pts[$ - 1]);
+            if (d > best)
+            {
+                best = d;
+                far = k;
+            }
+        }
+        if (best <= eps)
+            return [pts[0], pts[$ - 1]];
+        auto a = simplify(pts[0 .. far + 1], eps), b = simplify(pts[far .. $], eps);
+        return a[0 .. $ - 1] ~ b;
+    }
+    // split the loop at its two farthest-apart points, each half simplified
+    size_t far;
+    double best = 0;
+    foreach (k; 1 .. input.length)
+        if (dist(input[0], input[k]) > best)
+        {
+            best = dist(input[0], input[k]);
+            far = k;
+        }
+    auto half1 = simplify(input[0 .. far + 1], 0.5 * tol), half2 = simplify(input[far .. $] ~ input[0], 0.5 * tol);
+    auto loop = half1[0 .. $ - 1] ~ half2[0 .. $ - 1];
+    if (loop.length < 3)
+        return null;
+    immutable n = loop.length;
+    P2 at(size_t i) => loop[i % n];
+    {
+        P2 c;
+        double r, worst;
+        if (circleFit(input, c, r, worst) && worst < tol)
+            return [Element(true, input[0], input[0], c, r, area(input) > 0 ? 2 * PI : -2 * PI, true)];
+    }
+    // start at the longest piece: a straight side, never inside an arc
+    size_t start;
+    double longest = -1;
+    foreach (i; 0 .. n)
+        if (dist(at(i), at(i + 1)) > longest)
+        {
+            longest = dist(at(i), at(i + 1));
+            start = i;
+        }
+    Element[] out_;
+    size_t i = 0;
+    while (i < n)
+    {
+        size_t lineEnd = i + 1;
+        while (lineEnd + 1 <= n && collinear(loop, start, i, lineEnd + 1, tol, true))
+            lineEnd++;
+        size_t arcEnd = i;
+        P2 ac;
+        double ar = 0;
+        // an arc: at least six points (three always lie on some circle: a corner would pass), each
+        // piece short against the radius
+        for (size_t j = i + 3; j <= n; j++)
+        {
+            P2[] pts;
+            foreach (k; i .. j + 1)
+                pts ~= at(start + k);
+            P2 c;
+            double r, worst;
+            if (!circleFit(pts, c, r, worst) || worst > tol || r > 200 * tol + 50)
+                break;
+            bool short_ = true;
+            foreach (k; 0 .. pts.length - 1)
+                if (dist(pts[k], pts[k + 1]) > 0.77 * r)
+                    short_ = false;
+            if (!short_)
+                break;
+            if (j >= i + 5)
+            {
+                arcEnd = j;
+                ac = c;
+                ar = r;
+            }
+        }
+        auto a = at(start + i);
+        if (arcEnd > lineEnd + 1)
+        {
+            auto b = at(start + arcEnd);
+            double sweep = 0;
+            foreach (k; i .. arcEnd)
+            {
+                auto p = at(start + k), q = at(start + k + 1);
+                auto d = atan2(q[1] - ac[1], q[0] - ac[0]) - atan2(p[1] - ac[1], p[0] - ac[0]);
+                while (d > PI) d -= 2 * PI;
+                while (d < -PI) d += 2 * PI;
+                sweep += d;
+            }
+            out_ ~= Element(true, a, b, ac, ar, sweep);
+            i = arcEnd;
+        }
+        else
+        {
+            out_ ~= Element(false, a, at(start + lineEnd));
+            i = lineEnd;
+        }
+    }
+    return out_;
+}
+
+unittest
+{
+    // the shadow of a 10 × 6 rectangle seen from above, traced on a grid: four sides of the right size
+    Mesh m;
+    m.verts = [0, 0, 0, 10, 0, 0, 10, 6, 0, 0, 6, 0];
+    m.tris = [0, 1, 2, 0, 2, 3];
+    auto loops = shadowLoops(m, Vec3(1, 0, 0), Vec3(0, 1, 0), 0.05);
+    assert(loops.length == 1);
+    auto e = fit(loops[0], 0.075, true);
+    auto s = classify(e);
+    assert(s.kind == "rectangle" && abs(s.a - 10) < 0.06 && abs(s.b - 6) < 0.06, s.toString);
 }

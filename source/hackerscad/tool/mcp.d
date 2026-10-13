@@ -649,9 +649,13 @@ JSONValue[] toolList()
         tool("hcad_section", "The section of a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and "
             ~ "its 'part') by a plane xy, xz or yz at 'at' mm along z, y or x: its closed outlines as straight lines, "
             ~ "arcs and whole circles with their sizes (fitted to the cut, plausibly rounded), and the same as a "
-            ~ "hackerscad sketch ready to paste and extrude. For parts that are extrusions, cut them across.",
+            ~ "hackerscad sketch ready to paste and extrude. For parts that are extrusions, cut them across. "
+            ~ "projection: true gives the outline of the part's shadow on the plane instead ('at' unused). compare: "
+            ~ "another part of the .hcad model ('part' the copy, 'compare' the original): both sections drawn on each "
+            ~ "other in a picture (the original thick grey, the copy thin orange) and both outlines as text.",
             `"path": {"type": "string"}, "part": {"type": "string"}, "plane": {"type": "string", "enum": ["xy", "xz", "yz"]}, `
-            ~ `"at": {"type": "number", "description": "mm along the plane's normal axis"}`, `["path", "plane", "at"]`),
+            ~ `"at": {"type": "number", "description": "mm along the plane's normal axis"}, "projection": {"type": "boolean"}, `
+            ~ `"compare": {"type": "string"}`, `["path", "plane"]`),
         tool("hcad_compare", "How far a part of a model is from another (a remodelled part from the mesh it copies, "
             ~ "loaded as a see-through reference part: @part(\"slategray\", alpha: 0.3, export: false) Solid original() => "
             ~ "load(\"x.stl\");): the largest, mean and rms distance both ways, where the worst is, the share within "
@@ -948,12 +952,27 @@ JSONValue callTool(string name, JSONValue args)
         }
     case "hcad_section":
         {
-            import hackerscad.tool.features : sectionReport;
+            import hackerscad.tool.features : sectionReport, sectionOverlay, projectionReport;
             try
             {
                 auto at = "at" in args;
-                text(sectionReport(arg("path"), arg("part"), arg("plane"),
-                    at is null ? 0 : at.type == JSONType.integer ? at.integer : at.floating));
+                immutable level = at is null ? 0 : at.type == JSONType.integer ? at.integer : at.floating;
+                if (arg("compare").length)
+                {
+                    string t;
+                    auto png = sectionOverlay(arg("path"), arg("part"), arg("compare"), arg("plane"), level, t);
+                    text(t);
+                    image(png);
+                }
+                else if (auto pr = "projection" in args)
+                {
+                    if (pr.type == JSONType.true_)
+                        text(projectionReport(arg("path"), arg("part"), arg("plane")));
+                    else
+                        text(sectionReport(arg("path"), arg("part"), arg("plane"), level));
+                }
+                else
+                    text(sectionReport(arg("path"), arg("part"), arg("plane"), level));
             }
             catch (Exception e)
             {

@@ -33,7 +33,9 @@ usage:
       patterns of holes, with plausible sizes
   hcad section FILE --plane xy|xz|yz --at MM [--part NAME]
       the section of a mesh, STEP file or model as lines, arcs and circles
-      with their sizes, and as a sketch ready to paste
+      with their sizes, and as a sketch ready to paste; --projection: the
+      outline of its shadow on the plane instead; --compare PART -o OUT.png:
+      the sections of two parts of a model drawn on each other
   hcad compare FILE.hcad --a PART --b PART [--tolerance MM] [-o OUT.png]
       how far part a is from part b (a remodelled part from the mesh it
       copies, loaded as a reference part): distances both ways, and a
@@ -154,10 +156,12 @@ int main(string[] args)
         }
     case "section":
         {
-            string part, plane = "xy";
+            string part, plane = "xy", other, out_;
             double at = 0;
+            bool projection;
             try
-                getopt(args, "part", &part, "plane", &plane, "at", &at);
+                getopt(args, "part", &part, "plane", &plane, "at", &at, "projection", &projection, "compare", &other,
+                    "o|output", &out_);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -168,9 +172,25 @@ int main(string[] args)
                 stderr.writeln(usage);
                 return 2;
             }
-            import hackerscad.tool.features : sectionReport;
+            import hackerscad.tool.features : sectionReport, sectionOverlay, projectionReport;
             try
-                write(sectionReport(args[1], part, plane, at));
+            {
+                if (other.length)
+                {
+                    string text;
+                    auto png = sectionOverlay(args[1], part, other, plane, at, text);
+                    write(text);
+                    if (out_.length)
+                    {
+                        import std.file : write;
+                        write(out_, png);
+                    }
+                }
+                else if (projection)
+                    write(projectionReport(args[1], part, plane));
+                else
+                    write(sectionReport(args[1], part, plane, at));
+            }
             catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);
