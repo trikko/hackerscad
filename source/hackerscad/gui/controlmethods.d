@@ -443,9 +443,12 @@ mixin template ControlMethods()
                         if ("parts" in p && p["parts"].type == JSONType.array)
                             foreach (v; p["parts"].array)
                                 only ~= v.str;
-                        exportTo(file, only, has("one_object") && p["one_object"].type == JSONType.true_);
+                        auto warnings = exportTo(file, only, has("one_object") && p["one_object"].type == JSONType.true_);
                         note("exported " ~ file);
-                        reply(JSONValue(["path": file]), null);
+                        JSONValue r = ["path": file];
+                        if (warnings.length)
+                            r["warnings"] = warnings;
+                        reply(r, null);
                     }
                     catch (Exception e)
                         reply(JSONValue.init, e.msg);

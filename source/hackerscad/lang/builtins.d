@@ -1645,6 +1645,9 @@ StructDef builtinStruct(string name, string[] fields, string type)
 
 // ================================================================ helpers used by the interpreter
 
+/// The radius of the rod that joins bodies touching only along an edge (mm).
+enum touchingBridge = 0.02;
+
 Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span, bool merged = false)
 {
     SolidVal r;
@@ -1661,6 +1664,17 @@ Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span, bool
     try
     {
         auto b2 = merged ? it.kernel.booleanMerged(a.brep, b.brep, op) : it.kernel.boolean(a.brep, b.brep, op);
+        // bodies touching only along an edge or at a corner make a mesh that
+        // is not one closed surface: a sliver joins them, and the user is told
+        if (op == BoolOp.fuse && !a.flat && !b.flat)
+            if (immutable n = it.kernel.touching(b2))
+            {
+                b2 = it.kernel.bridgeTouching(b2, touchingBridge);
+                it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("the bodies joined here touch only "
+                    ~ "along %s edge%s or at a corner: they are bridged with %g mm of material there; overlap them "
+                    ~ "(or keep them apart) to choose yourself", n == 1 ? "an" : format("%d", n), n == 1 ? "" : "s",
+                    touchingBridge), span);
+            }
         // an operation can leave nothing (disjoint intersection, total cut)
         if (it.kernel.faceCount(b2) == 0)
         {

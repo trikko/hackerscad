@@ -38,12 +38,44 @@ class ExportException : Exception
     this(string msg) { super(msg); }
 }
 
+/// Edges where a welded mesh is not a plain surface: shared by more than two
+/// triangles, as where two bodies of a part touch only along an edge or at a
+/// corner. Slicers often mend such a mesh wrongly.
+size_t nonManifoldEdges(const Mesh m)
+{
+    uint[ulong] uses;
+    foreach (t; 0 .. m.tris.length / 3)
+        foreach (i; 0 .. 3)
+        {
+            uint a = m.tris[t * 3 + i], b = m.tris[t * 3 + (i + 1) % 3];
+            if (a > b)
+            {
+                immutable c = a;
+                a = b;
+                b = c;
+            }
+            uses[(cast(ulong) a << 32) | b]++;
+        }
+    size_t n;
+    foreach (c; uses)
+        n += c > 2;
+    return n;
+}
+
 /// Writes `parts` (at least one) to `file`. With `assembly` (a name), a
 /// 3MF holds them as the pieces of one object of that name (prints in
 /// several colours or materials).
-void exportParts(string file, ExportPart[] parts, BrepKernel kernel, string assembly = null)
+string[] exportParts(string file, ExportPart[] parts, BrepKernel kernel, string assembly = null)
 {
     assert(parts.length > 0);
+    // what the file will hold that a printer may not like
+    string[] warnings;
+    if ([".3mf", ".stl", ".zip"].canFind(extension(file).toLower))
+        foreach (p; parts)
+            if (immutable n = nonManifoldEdges(p.mesh))
+                warnings ~= format("part '%s' has %d edge%s shared by more than two faces: bodies touching only along an "
+                    ~ "edge or at a corner; overlap them a little (or keep them apart) so the mesh prints as meant",
+                    p.name, n, n > 1 ? "s" : "");
     switch (extension(file).toLower)
     {
     case ".3mf":
@@ -65,6 +97,7 @@ void exportParts(string file, ExportPart[] parts, BrepKernel kernel, string asse
         throw new ExportException(format("unsupported output format '%s' (use %s)", extension(file),
             solidFormats.join(", ")));
     }
+    return warnings;
 }
 
 /// A zip with one binary STL per part, `name.stl`.

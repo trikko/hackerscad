@@ -3990,8 +3990,8 @@ private:
                 if (part is null)
                     exportFormat = given == ".zip" ? "stl" : given.length > 1
                         && [".3mf", ".stl", ".step", ".png"].canFind(given) ? given[1 .. $] : ext;
-                exportTo(out_, part ? [part] : null, oneObject);
-                note("exported " ~ out_);
+                auto warnings = exportTo(out_, part ? [part] : null, oneObject);
+                note("exported " ~ out_ ~ (warnings.length ? "; warning: " ~ warnings.join("; ") : ""));
             }
             catch (ErrorWrap)
             {
@@ -4005,7 +4005,7 @@ private:
     /// format from its extension (see hackerscad.tool.exporter; .png the
     /// view). `only`: those parts, by function name or @part(name:); else
     /// every part but the reference ones.
-    void exportTo(string out_, string[] only = null, bool oneObject = false)
+    string[] exportTo(string out_, string[] only = null, bool oneObject = false)
     {
         import std.algorithm : countUntil, filter, map;
         import std.array : array, join;
@@ -4067,9 +4067,10 @@ private:
         default:
         {
             import std.path : stripExtension;
-            exportParts(out_, parts.map!(p => ExportPart(p.label, p.welded, p.rgb, p.brep)).array, parts[0].kernel,
+            return exportParts(out_, parts.map!(p => ExportPart(p.label, p.welded, p.rgb, p.brep)).array, parts[0].kernel,
                 oneObject ? baseName(stripExtension(path)) : null);
         }
         }
+        return null;
     }
 }

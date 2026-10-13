@@ -3,7 +3,7 @@
 /// window has its own evaluator, gui/evaluator).
 module hackerscad.tool.runner;
 
-import std.algorithm : map, endsWith;
+import std.algorithm : map, endsWith, startsWith;
 import std.array : array;
 import std.datetime.stopwatch : StopWatch, AutoStart;
 import std.file : exists, readText, getcwd, write;
@@ -202,7 +202,15 @@ final class Run
         try
         {
             import std.path : baseName, stripExtension;
-            exportParts(file, parts, kernel, oneObject ? baseName(stripExtension(path)) : null);
+            // the warnings name their part: point at its function
+            foreach (w; exportParts(file, parts, kernel, oneObject ? baseName(stripExtension(path)) : null))
+            {
+                auto at = Span(path);
+                foreach (i; kept)
+                    if (w.startsWith(format("part '%s'", result.parts[i].label)))
+                        at = result.parts[i].span;
+                result.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, w, at);
+            }
         }
         catch (ExportException e)
             throw new HcadError(Code.import_, e.msg, Span(path));

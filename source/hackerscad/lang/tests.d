@@ -4,7 +4,7 @@ module hackerscad.lang.tests;
 
 version (unittest):
 
-import std.algorithm : map, canFind;
+import std.algorithm : map, canFind, count;
 import std.array : array, join;
 import std.format : format;
 import std.math : isClose, PI, sqrt, abs;
@@ -1214,6 +1214,14 @@ unittest
     expectOut(`immutable o = sphere(r: 10).move(z: 10).overhangs(45.deg) / 1.mm^^2;
         writeln(abs(o / (2 * PI * 100 * (1 - sin(45.deg))) - 1) < 0.02);`, "true", shapes ~ "import std.math;");
     expectErr(`writeln(nothing.centroid);`, "E0410", shapes);
+    // bodies touching along an edge or at a corner: one body, bridged, and a warning
+    {
+        auto r = runModel(shapes ~ "\n@part Solid p() => box(10, 10, 10) + box(10, 10, 10).move(x: 10, y: 10);"
+            ~ "\n@part Solid q() => box(10, 10, 10) + box(10, 10, 10).move(x: 10, y: 10, z: 10);");
+        assert(r.diagnostics.count!(d => d.severity == Severity.warning && d.message.canFind("bridged")) == 2);
+        foreach (p; r.parts)
+            assert(make().kernel.solids(p.solid.brep).length == 1 && abs(partVolume(r, p.name) - 2000) < 0.01, p.name);
+    }
     // fillets, chamfers, shells and drafts say what is wrong with their sizes
     expectErr(`writeln(box(10, 10, 10).fillet(edges.parallel(Z), r: 0));`, "E0202", shapes);
     expectErr(`writeln(box(10, 10, 10).chamfer(edges.parallel(Z), d: -1));`, "E0202", shapes);

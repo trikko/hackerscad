@@ -93,6 +93,8 @@ final class CachingKernel : BrepKernel
         op(key("booleanMerged", a, b, cast(int) o), inner.booleanMerged(a, b, o));
 
     Brep offset(Brep s, double d) => op(key("solidOffset", s, d), inner.offset(s, d));
+    int touching(Brep s) => query!"touching"(s, inner.touching(s));
+    Brep bridgeTouching(Brep s, double r) => op(key("bridgeTouching", s, r), inner.bridgeTouching(s, r));
     MassProps massProps(Brep s) => inner.massProps(s);
     Brep section(Brep s, Vec3 o, Vec3 n) => op(key("section", s, o, n), inner.section(s, o, n));
 

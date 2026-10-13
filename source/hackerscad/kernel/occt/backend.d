@@ -84,6 +84,8 @@ final class OcctKernel : BrepKernel
     }
 
     Brep offset(Brep s, double d) => wrap(hc_offset_solid(h(s), d), "offset");
+    int touching(Brep s) => hc_touching_count(h(s));
+    Brep bridgeTouching(Brep s, double r) => wrap(hc_bridge_touching(h(s), r), "joining");
 
     Brep section(Brep s, Vec3 origin, Vec3 normal)
     {

@@ -120,6 +120,12 @@ interface BrepKernel
     Brep profileOffset(Brep s, double d);
     /// A solid grown (d > 0) or shrunk, round where it turns.
     Brep offset(Brep s, double d);
+    /// How many edges and corners the bodies of `s` only touch along or at
+    /// (a mesh of them is not a closed surface).
+    int touching(Brep s);
+    /// `s` with a rod of radius r along each of those edges and a ball at
+    /// each of those corners, so its bodies overlap there.
+    Brep bridgeTouching(Brep s, double r);
     /// Profile → solid along +Z (−Z if negative), `height` along the axis;
     /// a positive taper leans the sides in (holes widen), a negative one out.
     Brep extrude(Brep profile, double height, double taper);

@@ -68,6 +68,8 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op);
 hc_shape *hc_boolean_merged(const hc_shape *a, const hc_shape *b, int op);
 hc_shape *hc_fuse_all(const hc_shape *const *shapes, int n);
 hc_shape *hc_offset_solid(const hc_shape *s, double d);
+int hc_touching_count(const hc_shape *s);
+hc_shape *hc_bridge_touching(const hc_shape *s, double r);
 int hc_mass_props(const hc_shape *s, double out[7]);
 hc_shape *hc_section(const hc_shape *s, const double origin[3], const double normal[3]);
 

@@ -1022,6 +1022,109 @@ static const TopTools_IndexedMapOfShape &map_of(const hc_shape *s, TopAbs_ShapeE
     return it->second;
 }
 
+// Where the bodies of a shape touch only along an edge or at a corner: edges
+// with more than two faces or the faces of two solids, and corners shared by
+// two solids along no such edge. A mesh of them is not a closed surface.
+static void touching_places(const TopoDS_Shape &s, std::vector<TopoDS_Edge> &edges, std::vector<TopoDS_Vertex> &corners)
+{
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces, edgeSolids, vertexSolids, vertexEdges;
+    TopExp::MapShapesAndAncestors(s, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    TopExp::MapShapesAndAncestors(s, TopAbs_EDGE, TopAbs_SOLID, edgeSolids);
+    TopExp::MapShapesAndAncestors(s, TopAbs_VERTEX, TopAbs_SOLID, vertexSolids);
+    TopExp::MapShapesAndAncestors(s, TopAbs_VERTEX, TopAbs_EDGE, vertexEdges);
+    auto distinct = [](const TopTools_ListOfShape &l) {
+        TopTools_IndexedMapOfShape m;
+        for (TopTools_ListOfShape::Iterator it(l); it.More(); it.Next())
+            m.Add(it.Value());
+        return m.Extent();
+    };
+    TopTools_IndexedMapOfShape bad;
+    for (int i = 1; i <= edgeFaces.Extent(); i++) {
+        const TopoDS_Edge e = TopoDS::Edge(edgeFaces.FindKey(i));
+        if (BRep_Tool::Degenerated(e))
+            continue;
+        const int solids = edgeSolids.Contains(e) ? distinct(edgeSolids.FindFromKey(e)) : 0;
+        if (distinct(edgeFaces(i)) > 2 || solids > 1) {
+            edges.push_back(e);
+            bad.Add(e);
+        }
+    }
+    for (int i = 1; i <= vertexSolids.Extent(); i++) {
+        if (distinct(vertexSolids(i)) < 2)
+            continue;
+        const TopoDS_Shape v = vertexSolids.FindKey(i);
+        bool onEdge = false;
+        if (vertexEdges.Contains(v))
+            for (TopTools_ListOfShape::Iterator it(vertexEdges.FindFromKey(v)); it.More() && !onEdge; it.Next())
+                onEdge = bad.Contains(it.Value());
+        if (!onEdge)
+            corners.push_back(TopoDS::Vertex(v));
+    }
+}
+
+int hc_touching_count(const hc_shape *s)
+{
+    return guarded<>(-1, [&] {
+        std::vector<TopoDS_Edge> edges;
+        std::vector<TopoDS_Vertex> corners;
+        touching_places(s->shape, edges, corners);
+        return (int)(edges.size() + corners.size());
+    });
+}
+
+// The shape with a thin rod of radius r along each edge where its bodies
+// only touch, and a ball at each corner where they do: one closed surface,
+// the bodies joined by a sliver of material.
+hc_shape *hc_bridge_touching(const hc_shape *s, double r)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<TopoDS_Edge> edges;
+        std::vector<TopoDS_Vertex> corners;
+        touching_places(s->shape, edges, corners);
+        TopTools_ListOfShape args, tools;
+        args.Append(s->shape);
+        for (const TopoDS_Edge &e : edges) {
+            BRepAdaptor_Curve c(e);
+            const gp_Pnt a = c.Value(c.FirstParameter()), b = c.Value(c.LastParameter());
+            if (c.GetType() == GeomAbs_Line) {
+                // a little past both ends, so the rod overlaps the corners too
+                gp_Vec d(a, b);
+                const double len = d.Magnitude();
+                if (len < 1e-9)
+                    continue;
+                d.Normalize();
+                tools.Append(BRepPrimAPI_MakeCylinder(gp_Ax2(a.Translated(-d * r), gp_Dir(d)), r, len + 2 * r).Shape());
+            } else {
+                // a curved edge: a ball every r along it
+                const double len = GCPnts_AbscissaPoint::Length(c);
+                const int n = std::max(2, std::min(2000, (int)std::ceil(len / r)));
+                for (int i = 0; i <= n; i++) {
+                    const gp_Pnt p = c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * i / n);
+                    tools.Append(BRepPrimAPI_MakeSphere(p, r).Shape());
+                }
+            }
+        }
+        for (const TopoDS_Vertex &v : corners)
+            tools.Append(BRepPrimAPI_MakeSphere(BRep_Tool::Pnt(v), r).Shape());
+        if (tools.IsEmpty()) {
+            history_new(s->shape);
+            for (size_t i = 0; i < g_history.size(); i++)
+                g_history[i] = Origin{0, (int)i};
+            return wrap(s->shape);
+        }
+        BRepAlgoAPI_Fuse fuse;
+        fuse.SetArguments(args);
+        fuse.SetTools(tools);
+        fuse.Build();
+        if (!fuse.IsDone()) {
+            set_error("joining bodies that only touch failed");
+            return nullptr;
+        }
+        history_record(fuse, {&s->shape}, fuse.Shape());
+        return wrap(fuse.Shape());
+    });
+}
+
 int hc_solid_count(const hc_shape *s) { return map_of(s, TopAbs_SOLID).Extent(); }
 
 hc_shape *hc_solid(const hc_shape *s, int index)
