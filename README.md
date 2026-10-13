@@ -154,8 +154,11 @@ left to guess writes OpenSCAD or CadQuery instead. Give it both:
 The skill alone works too, through the command line; the MCP server alone
 leaves the agent to discover the language from the tools.
 
-The easiest way: ask your agent to do the three steps below (it installs
-hackerscad too, if you want, from the releases).
+### The easy way: ask your agent
+
+Write this to your agent: it installs the skill, then follows the skill's
+instructions to install hackerscad from the releases if it is missing (it asks
+you first) and to add the MCP server.
 
 > Install the hackerscad skill for all my projects from
 > https://raw.githubusercontent.com/trikko/hackerscad/main/docs/SKILL.md, with
@@ -164,9 +167,11 @@ hackerscad too, if you want, from the releases).
 
 The skill keeps itself up to date: it carries the stamp of the docs it was made
 from, checks it against `hcad docs --stamp` and, when hackerscad has been
-updated, regenerates itself with the installed `hcad`. Or by hand:
+updated, regenerates itself with the installed `hcad`.
 
-### 1. Find `hcad`
+### By hand
+
+#### 1. Find `hcad`
 
 Both run `hcad`, the command line tool, and the agent starts it by itself from
 any folder. `hcad --version` tells whether it is in your `PATH`. If it is not,
@@ -179,7 +184,7 @@ either put it there or use its full path in the commands below:
 | macOS | `/Applications/hackerscad.app/Contents/Resources/bin/hcad` | in `~/.zshrc`: `export PATH="/Applications/hackerscad.app/Contents/Resources/bin:$PATH"` |
 | Built from source | `/path/to/hackerscad/bin/hcad` | add `/path/to/hackerscad/bin` to the `PATH` |
 
-### 2. Add the skill
+#### 2. Add the skill
 
 The rules that avoid most mistakes ([SKILL.md](docs/SKILL.md), or
 [AGENTS.md](docs/AGENTS.md) for tools that want a rules file) and the whole reference
@@ -203,7 +208,7 @@ The folder for each agent:
 | Gemini CLI | `~/.gemini/skills/hackerscad/` | `.gemini/skills/hackerscad/` |
 | Codex | `~/.agents/skills/hackerscad/` | `.agents/skills/hackerscad/` |
 
-### 3. Add the MCP server, too
+#### 3. Add the MCP server, too
 
 One command, for all your projects; then restart the agent. Name it `hcad`,
 as below: the skill tells the agent its tools (hcad_check, hcad_render…), and
