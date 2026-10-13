@@ -9,10 +9,15 @@ Solid hook()
 {
     auto plate = box(30.mm, 4.mm, 60.mm);
     auto arm = box(30.mm, 20.mm, 6.mm).move(y: -12.mm, z: 30.mm);
-    return (plate + arm)
-        .cut(teardrop(d: 4.5.mm), on: faces.back,
+    // a gusset: a triangle 20 mm along the arm and 20 mm down the plate,
+    // 3 mm thick, stood up under the arm
+    auto gusset = polygon([vec(0, 0), vec(0, -20), vec(20, 0)])
+        .extrude(3.mm)
+        .rotate(y: 90)
+        .move(y: -2.mm, z: 30.mm);
+    return (plate + arm + gusset.move(x: -15.mm) + gusset.move(x: 12.mm))
+        .cut(circle(d: 4.5.mm), on: faces.back,
             at: vec(0.mm, 0.mm, 48.mm), through: true)
         .extrude(faces.front, depth: 10.mm)
-        .chamfer(edges.between(faces.normal(-Z).largest, faces.normal(-Y).largest),
-            d: 26.mm);
+        .rotate(x: -90);
 }

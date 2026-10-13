@@ -278,19 +278,15 @@ void page12()
     // seen from below, in the printability style
     view(`{"style": "printability", "orbit": [0, -50]}`);
     shot("12-hook-print");
-    // laid on its back, then upright again
+    // laid on its back, where it stays
     type("        .extrude(faces.front, depth: 10.mm);", "        .extrude(faces.front, depth: 10.mm)\n        .rotate(x: -90);");
     view(`{"preset": "iso"}`);
     shot("12-hook-back", lineOf(".rotate("));
-    type("        .extrude(faces.front, depth: 10.mm)\n        .rotate(x: -90);", "        .extrude(faces.front, depth: 10.mm);");
-    view(`{"preset": "iso", "orbit": [0, -50]}`);
-    menu([0, -2, 30], ["Chamfer edge…"]);
-    type("d: 0.5.mm", "d: 26.mm");
-    clearSelection();
-    type("circle(d: 4.5.mm)", "teardrop(d: 4.5.mm)");
-    view(`{"preset": "iso", "orbit": [0, -25]}`);
-    shot("12-hook-final", lineOf(".chamfer("));
-    view(`{"preset": "iso", "style": "edges"}`);
+    // two gussets under the arm
+    type("    return (plate + arm)\n", gussets12);
+    view(`{"preset": "iso"}`);
+    shot("12-hook-final", lineOf("auto gusset"));
+    view(`{"style": "edges"}`);
     write(buildPath(docs, "12-hook.hcad"), source());
 
     // a label from a drawing, and the models of the other sections
@@ -306,6 +302,15 @@ void page12()
 }
 
 // ---------------------------------------------------------------- the code the reader writes
+
+enum gussets12 = "    // a gusset: a triangle 20 mm along the arm and 20 mm down the plate,
+    // 3 mm thick, stood up under the arm
+    auto gusset = polygon([vec(0, 0), vec(0, -20), vec(20, 0)])
+        .extrude(3.mm)
+        .rotate(y: 90)
+        .move(y: -2.mm, z: 30.mm);
+    return (plate + arm + gusset.move(x: -15.mm) + gusset.move(x: 12.mm))
+";
 
 enum start3 = "module planter;\n\nimport std.shapes;\n\n@part(\"sienna\")\nSolid tank() => box(62.mm, 62.mm, 66.mm);\n";
 
