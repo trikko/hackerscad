@@ -19,7 +19,7 @@ import hackerscad.kernel.occt.backend;
 import hackerscad.kernel.cache;
 import hackerscad.lang.errors;
 import hackerscad.lang.interp;
-import hackerscad.render.raster : featureEdges, edgeSets, contourTriangles;
+import hackerscad.render.raster : edgeSets, contourTriangles, smoothSeams;
 import hackerscad.lang.sketchval : SketchView, SketchVal;
 import hackerscad.lang.value : SolidVal;
 import hackerscad.geom.color;
@@ -359,6 +359,7 @@ PartMesh prepare(BrepKernel k, PartResult p, double tolerance)
         normals[ib] = normals[ib] + n;
         normals[ic] = normals[ic] + n;
     }
+    smoothSeams(raw, normals);
     m.vertices = new float[raw.vertexCount * 6];
     foreach (i; 0 .. raw.vertexCount)
     {

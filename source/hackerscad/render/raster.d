@@ -48,6 +48,36 @@ Vec3 viewLighting(Vec3 n, Vec3 v, Vec3 base)
     return base * (0.34 + 0.66 * diffuse) + Vec3(255, 255, 255) * specular;
 }
 
+/// A closed surface (the side of a cylinder) is meshed with its seam
+/// vertices twice, one copy per side, each with a normal from its own side
+/// only: the light would show the seam. Copies in the same face at the same
+/// point share the sum of their normals.
+void smoothSeams(const Mesh raw, Vec3[] normals)
+{
+    import std.math : lround;
+    auto face = new int[raw.vertexCount];
+    face[] = -1;
+    foreach (t; 0 .. raw.triangleCount)
+        foreach (k; 0 .. 3)
+            face[raw.tris[t * 3 + k]] = raw.faceOf(t);
+    enum cell = 1e-5;
+    size_t[][long[4]] same;
+    foreach (i; 0 .. raw.vertexCount)
+    {
+        auto p = raw.vertex(i);
+        same[[face[i], lround(p.x / cell), lround(p.y / cell), lround(p.z / cell)]] ~= i;
+    }
+    foreach (group; same)
+        if (group.length > 1)
+        {
+            Vec3 sum;
+            foreach (i; group)
+                sum = sum + normals[i];
+            foreach (i; group)
+                normals[i] = sum;
+        }
+}
+
 /// Per-vertex normals of a mesh with separate vertices per face: the
 /// area-weighted sum of the normals of the triangles around each vertex.
 Vec3[] vertexNormals(const Mesh m)
@@ -62,6 +92,7 @@ Vec3[] vertexNormals(const Mesh m)
         normals[ib] = normals[ib] + n;
         normals[ic] = normals[ic] + n;
     }
+    smoothSeams(m, normals);
     foreach (ref n; normals)
         n = n.length > 0 ? n.normalized : Vec3(0, 0, 1);
     return normals;

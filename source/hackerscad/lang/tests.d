@@ -1317,3 +1317,31 @@ unittest
     assert(!cylinders[0].moved && isClose(rod.size.z, 30, 1e-6), "the rod as made, standing");
     assert(cylinders[1].moved && kernel.bbox(cylinders[1].result.brep).center.x > 29, "the peg where it was moved to");
 }
+
+unittest
+{
+    // the copies of a seam vertex (a cylinder's side meets itself) share one
+    // normal, so the light does not show the seam
+    import hackerscad.render.raster : vertexNormals;
+    import hackerscad.geom.vec : Vec3;
+    import std.math : lround;
+    auto raw = kernel.tessellate(kernel.cylinder(7, 30), 0.02, 0.25);
+    auto normals = vertexNormals(raw);
+    Vec3[long[4]] seen;
+    foreach (i; 0 .. raw.vertexCount)
+    {
+        size_t t;
+        foreach (j, v; raw.tris)
+            if (v == i)
+            {
+                t = j / 3;
+                break;
+            }
+        auto p = raw.vertex(i);
+        long[4] key = [raw.faceOf(t), lround(p.x * 1e5), lround(p.y * 1e5), lround(p.z * 1e5)];
+        if (auto n = key in seen)
+            assert((*n - normals[i]).length < 1e-9, "two copies of a seam vertex with different normals");
+        else
+            seen[key] = normals[i];
+    }
+}
