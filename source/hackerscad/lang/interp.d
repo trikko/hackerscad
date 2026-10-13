@@ -115,6 +115,9 @@ struct EvalResult
     Diagnostic[] diagnostics;   /// warnings and failed unittests
 }
 
+/// The stack of the thread a model is evaluated on.
+enum size_t evalStackSize = 512 * 1024 * 1024;
+
 struct Limits
 {
     size_t steps = 200_000_000;
@@ -190,6 +193,21 @@ final class Interp
     {
         // a failure that is not a model error (a bug, a library throwing)
         // is still reported as one, instead of ending the program
+        // on a thread with a large stack: deep recursion in a model (up to
+        // the limit of calls) and deeply nested code must not overflow it
+        import core.thread : Thread;
+        static bool onEvalThread;   // thread-local: true on the thread below
+        if (!onEvalThread)
+        {
+            EvalResult r;
+            auto t = new Thread({
+                onEvalThread = true;
+                r = runSource(source, path);
+            }, evalStackSize);
+            t.start();
+            t.join(true);   // rethrows what the thread threw
+            return r;
+        }
         try
             return runSourceUnguarded(source, path);
         catch (HcadError e)
@@ -954,7 +972,21 @@ final class Interp
 
     // ------------------------------------------------------------ expressions
 
+    /// How deep eval is in the expression tree: a chain like 1 + 1 + …
+    /// parsed in a loop still evaluates recursively.
+    private uint exprDepth;
+    enum maxExprDepth = 20_000;
+
     Value eval(Expr e, Env env)
+    {
+        if (++exprDepth > maxExprDepth)
+            throw new HcadError(Code.limit, format("expression nested more than %d levels deep", maxExprDepth), e.span);
+        scope (exit)
+            exprDepth--;
+        return evalExpr(e, env);
+    }
+
+    private Value evalExpr(Expr e, Env env)
     {
         if (auto l = cast(Literal) e)
             return literal(l);

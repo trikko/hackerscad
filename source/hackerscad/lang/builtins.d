@@ -1104,7 +1104,7 @@ void axisArg(ref Args x, string name, out Vec3 origin, out Vec3 direction)
 
 StructDef axisDef()
 {
-    static StructDef def;
+    __gshared StructDef def;   // one for every thread: values compare by it
     if (def is null)
         def = builtinStruct("Axis", ["origin", "direction"], "Vec3");
     return def;
@@ -1127,7 +1127,7 @@ void frameArg(ref Args x, string name, out Vec3 origin, out Vec3 ax, out Vec3 ay
 
 StructDef frameDef()
 {
-    static StructDef def;
+    __gshared StructDef def;   // one for every thread: values compare by it
     if (def is null)
     {
         def = builtinStruct("Frame", ["origin", "x", "y", "z"], "Vec3");
@@ -1184,7 +1184,7 @@ void planeArg(ref Args x, string name, out Vec3 origin, out Vec3 normal)
 
 StructDef planeDef()
 {
-    static StructDef def;
+    __gshared StructDef def;   // one for every thread: values compare by it
     if (def is null)
         def = builtinStruct("Plane", ["origin", "normal"], "Vec3");
     return def;
@@ -1192,7 +1192,7 @@ StructDef planeDef()
 
 StructDef halvesDef()
 {
-    static StructDef def;
+    __gshared StructDef def;   // one for every thread: values compare by it
     if (def is null)
         def = builtinStruct("Halves", ["above", "below"], "Solid");
     return def;
@@ -1272,6 +1272,12 @@ immutable uint[string] namedColors;
 
 shared static this()
 {
+    // the built-in struct types, made before any thread uses them
+    cast(void) axisDef();
+    cast(void) frameDef();
+    cast(void) planeDef();
+    cast(void) halvesDef();
+    cast(void) bboxDef();
     // the CSS colour names
     namedColors = [
         "aliceblue": 0xF0F8FF, "antiquewhite": 0xFAEBD7, "aqua": 0x00FFFF, "aquamarine": 0x7FFFD4,
@@ -2278,7 +2284,7 @@ string formatValues(ref CallArgs a)
 
 StructDef bboxDef()
 {
-    static StructDef def;
+    __gshared StructDef def;   // one for every thread: values compare by it
     if (def is null)
     {
         def = new StructDef;

@@ -293,6 +293,10 @@ struct Parser
 
     Stmt parseStatement(Attribute[] attrs = null, bool topLevel = false)
     {
+        if (++nesting > maxNesting)
+            throw new HcadError(Code.limit, format("blocks nested more than %d levels deep", maxNesting), cur.span);
+        scope (exit)
+            nesting--;
         if (!topLevel && kind == Tok.at)
             attrs ~= parseAttributes();
         auto span = cur.span;
@@ -599,7 +603,19 @@ struct Parser
 
     // ------------------------------------------------------------ expressions
 
-    Expr parseExpr() => parseAssignExpr();
+    /// Expressions and statements inside one another: deep enough for any
+    /// model, low enough that the parser's own recursion stays on the stack.
+    enum maxNesting = 2000;
+    uint nesting;
+
+    Expr parseExpr()
+    {
+        if (++nesting > maxNesting)
+            throw new HcadError(Code.limit, format("expression nested more than %d levels deep", maxNesting), cur.span);
+        scope (exit)
+            nesting--;
+        return parseAssignExpr();
+    }
 
     Expr parseAssignExpr()
     {

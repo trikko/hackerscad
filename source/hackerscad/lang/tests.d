@@ -1126,3 +1126,13 @@ unittest
     // the most negative integer divided by -1 wraps instead of trapping
     expectOut(`long m = -9223372036854775807 - 1; writeln(m / -1, " ", m % -1);`, "-9223372036854775808 0");
 }
+
+unittest
+{
+    // recursion up to the limit of calls fits the evaluation thread's stack;
+    // beyond it, and with code nested too deep, an error instead of a crash
+    expectOut(`writeln(f(990));`, "990", "int f(int n) { if (n == 0) return 0; return 1 + f(n - 1); }");
+    expectErr(`writeln(f(5000));`, "E0501", "int f(int n) { if (n == 0) return 0; return 1 + f(n - 1); }");
+    import std.array : replicate;
+    expectErr(`writeln(` ~ "(".replicate(3000) ~ "1" ~ ")".replicate(3000) ~ `);`, "E0501");
+}
