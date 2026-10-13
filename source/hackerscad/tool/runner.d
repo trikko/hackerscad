@@ -366,8 +366,26 @@ final class Run
             layer ? format(", peeled to layer %d (the nearest %d%% cut away)", layer, layer * 25) : " (the outside)",
             mm(d.tolerance));
         if (d.strokes.length == 0)
-            s ~= layer < 3 ? format("  the drawings match: to look further in, peel the next layer (layer %d)\n", layer + 1)
-                : "  the drawings match, down to the deepest layer\n";
+        {
+            // the drawings match: deeper only if something differs inside, where no line shows
+            import hackerscad.geom.voxeldiff : differences;
+            import std.algorithm : max;
+            auto bb = kernel.bbox(result.parts[b].solid.brep);
+            immutable h = max(0.2, max(bb.size.x, bb.size.y, bb.size.z) / 250);
+            auto regions = differences(meshes[a], meshes[b], h, max(1.0, 8 * h * h * h));
+            double volume = 0;
+            foreach (g; regions)
+                volume += g.volume;
+            if (regions.length == 0)
+                s ~= "  the drawings match, and so does the material inside (no difference thicker than "
+                    ~ mm(2 * h) ~ " mm): no need to peel further\n";
+            else if (layer < 3)
+                s ~= format("  the drawings match, but %s mm³ of material differ in %d places (hcad diff): peel the next "
+                    ~ "layer (layer %d) to see them\n", mm(volume), regions.length, layer + 1);
+            else
+                s ~= format("  the drawings match down to the deepest layer; %s mm³ of material still differ (hcad diff)\n",
+                    mm(volume));
+        }
         size_t lacks, extra;
         foreach (st; d.strokes)
             (st.missing ? lacks : extra)++;
@@ -401,7 +419,8 @@ final class Run
         foreach (i, v; views)
             s ~= format("  %d. %s\n", i + 1, d.directions[v]);
         if (d.strokes.length && layer < 3)
-            s ~= format("fix these first; once this layer matches, peel the next one (layer %d)\n", layer + 1);
+            s ~= format("fix these first; once this layer matches, peel the next one (layer %d) if anything still "
+                ~ "differs\n", layer + 1);
         return s;
     }
 
