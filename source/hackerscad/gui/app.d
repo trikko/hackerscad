@@ -3493,14 +3493,16 @@ private:
         case "set":
             if (auto s = arg("source"))
                 buffer.setText(s);
-            if ("params" in p)
-                foreach (k, v; toOverrides(p["params"]))
-                    params.overrides[k] = v;
+            // a preset first (it clears the values set by hand), then the
+            // values given with it, on top
             if ("preset" in p)
             {
                 params.preset = arg("preset");
                 params.overrides = null;
             }
+            if ("params" in p)
+                foreach (k, v; toOverrides(p["params"]))
+                    params.overrides[k] = v;
             params.invalidate();
             firstResult = true; // frame the changed model
             scheduleEvaluation(0);
@@ -3722,23 +3724,28 @@ private:
                     whenIdle(() => reply(state(), null));
                     return;
                 }
+                // without a plane, the one shown stays (xy when none is)
                 immutable planes = ["xy", "xz", "yz", "face"];
                 import std.algorithm : countUntil;
-                auto which = arg("plane").length ? planes.countUntil(arg("plane")) : 0;
+                immutable wasOn = sectionToggle.getActive();
+                auto which = arg("plane").length ? planes.countUntil(arg("plane"))
+                    : wasOn ? sectionPlane.getSelected() : 0;
                 if (which < 0)
                     return reply(JSONValue.init, "plane must be xy, xz, yz or face");
+                immutable changed = !wasOn || which != sectionPlane.getSelected() || which == 3;
                 sectionUpdating = true;
                 sectionPlane.setSelected(cast(uint) which);
                 sectionUpdating = false;
                 sectionToggle.setActive(true);
-                updateSection(true);
+                if (changed)
+                    updateSection(true);
                 if ("at" in p)
                 {
                     auto adj = sectionSlider.getAdjustment();
                     sectionSlider.setValue(adj.getLower() + p["at"].get!double * (adj.getUpper() - adj.getLower()));
                 }
-                if ("flip" in p && p["flip"].type == JSONType.true_)
-                    sectionFlip.setActive(true);
+                if ("flip" in p)
+                    sectionFlip.setActive(p["flip"].type == JSONType.true_);
                 whenIdle(() {
                     auto r = state();
                     r["section"] = sectionLabel.getLabel();

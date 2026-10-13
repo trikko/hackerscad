@@ -634,9 +634,11 @@ JSONValue[] toolList()
             ~ "user has unsaved changes, unless force is true (which discards them: ask the user first).",
             `"path": {"type": "string"}, "force": {"type": "boolean"}`, `["path"]`),
         gui("hcad_gui_set", "Change the model shown in the user's window: replace its source, set parameter "
-            ~ "overrides or a preset (preset \"\" goes back to the defaults, as Reset to defaults). The window "
-            ~ "re-evaluates and shows the result.",
-            `"source": {"type": "string"}, "params": {"type": "object"}, "preset": {"type": "string"}`),
+            ~ "overrides or a preset (preset \"\" goes back to the defaults, as Reset to defaults). A preset clears the "
+            ~ "values set before; params given in the same call apply on top of it. The window re-evaluates and shows "
+            ~ "the result.",
+            `"source": {"type": "string"}, "params": {"type": "object", "description": "Parameter values, name to value: `
+            ~ `numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\"."}, "preset": {"type": "string"}`),
         gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: the "
             ~ "face is highlighted and the editor jumps to the feature that created it. Returns part, face, the point and "
             ~ "normal hit, and a selector expression for that face (e.g. faces.top) to use in code.",
@@ -685,8 +687,9 @@ JSONValue[] toolList()
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"path": {"type": "array", "items": {"type": "string"}}, "open": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_section", "Cut the user's 3D view with a plane: parallel to xy, xz or yz, or to the selected face "
-            ~ "(face; clicking another face moves it there); at is the position from 0 to 1 across the model; flip inverts the "
-            ~ "plane normal (shows the other side); cut solids are shown filled and hatched; on: false removes it.",
+            ~ "(face; clicking another face moves it there); without plane, the plane shown stays (xy when none is); at is "
+            ~ "the position from 0 to 1 across the model; flip: true shows the other side, false the first one; cut solids "
+            ~ "are shown filled and hatched; on: false removes it.",
             `"plane": {"type": "string", "enum": ["xy", "xz", "yz", "face"]}, "at": {"type": "number"}, `
             ~ `"flip": {"type": "boolean"}, "on": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_sketch", "Show (on: true) or hide the sketches in the user's 3D view, with their dimensions and the "
