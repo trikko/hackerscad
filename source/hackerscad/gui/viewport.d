@@ -397,12 +397,10 @@ final class Viewport
     /// sight (or they are a speck), from the same direction.
     private void frameIfOutside(PartMesh[] items)
     {
-        Vec3 lo = items[0].bbox.min, hi = items[0].bbox.max;
+        auto box = items[0].bbox;
         foreach (m; items[1 .. $])
-        {
-            lo = Vec3(min(lo.x, m.bbox.min.x), min(lo.y, m.bbox.min.y), min(lo.z, m.bbox.min.z));
-            hi = Vec3(max(hi.x, m.bbox.max.x), max(hi.y, m.bbox.max.y), max(hi.z, m.bbox.max.z));
-        }
+            box = box.merged(m.bbox);
+        immutable lo = box.min, hi = box.max;
         immutable w = area.getWidth(), h = area.getHeight();
         if (w <= 0 || h <= 0)
             return;
@@ -523,17 +521,13 @@ final class Viewport
     bool drawnBox(out Vec3 lo, out Vec3 hi)
     {
         bool any;
+        BBox box;
         void add(BBox b)
         {
-            if (!any)
-            {
-                lo = b.min;
-                hi = b.max;
-                any = true;
-                return;
-            }
-            lo = Vec3(min(lo.x, b.min.x), min(lo.y, b.min.y), min(lo.z, b.min.z));
-            hi = Vec3(max(hi.x, b.max.x), max(hi.y, b.max.y), max(hi.z, b.max.z));
+            box = any ? box.merged(b) : b;
+            any = true;
+            lo = box.min;
+            hi = box.max;
         }
         foreach (i, p; parts)
             if (!isHidden(i))
@@ -602,16 +596,20 @@ final class Viewport
         glDisable(GL_BLEND);
     }
 
-    void uploadLines(float[] v)
+    void uploadLines(const(float)[] v) => positionBuffer(lineVao, lineVbo, v);
+
+    /// Points (x y z each, no normals: lines are drawn flat) into a buffer
+    /// and its vertex array, made the first time; the array is left bound.
+    static void positionBuffer(ref uint vao, ref uint vbo, const(float)[] v, uint usage = GL_DYNAMIC_DRAW)
     {
-        if (lineVao == 0)
+        if (vao == 0)
         {
-            glGenVertexArrays(1, &lineVao);
-            glGenBuffers(1, &lineVbo);
+            glGenVertexArrays(1, &vao);
+            glGenBuffers(1, &vbo);
         }
-        glBindVertexArray(lineVao);
-        glBindBuffer(GL_ARRAY_BUFFER, lineVbo);
-        glBufferData(GL_ARRAY_BUFFER, v.length * float.sizeof, v.ptr, GL_DYNAMIC_DRAW);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, v.length * float.sizeof, v.ptr, usage);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
         glVertexAttrib3f(1, 0, 0, 1);
@@ -950,23 +948,16 @@ private:
     {
         fitPending = false;
         bool any;
-        Vec3 lo, hi;
+        BBox box;
         foreach (i, p; parts)
-        {
-            if (isHidden(i))
-                continue;
-            if (!any)
+            if (!isHidden(i))
             {
-                lo = p.bbox.min;
-                hi = p.bbox.max;
+                box = any ? box.merged(p.bbox) : p.bbox;
                 any = true;
-                continue;
             }
-            lo = Vec3(min(lo.x, p.bbox.min.x), min(lo.y, p.bbox.min.y), min(lo.z, p.bbox.min.z));
-            hi = Vec3(max(hi.x, p.bbox.max.x), max(hi.y, p.bbox.max.y), max(hi.z, p.bbox.max.z));
-        }
         if (!any)
             return;
+        immutable lo = box.min, hi = box.max;
         target = (lo + hi) / 2;
         if (orthographic)
         {
@@ -1017,8 +1008,6 @@ private:
         uAlpha = glGetUniformLocation(program, "uAlpha");
         uClipOn = glGetUniformLocation(program, "uClipOn");
         uClip = glGetUniformLocation(program, "uClip");
-        glGenVertexArrays(1, &gridVao);
-        glGenBuffers(1, &gridVbo);
         glReady = true;
     }
 
@@ -1604,17 +1593,7 @@ private:
         auto all = lines ~ construction ~ freePts ~ fixedPts;
         sketchRanges = [cast(int)(lines.length / 3), cast(int)((lines.length + construction.length) / 3),
             cast(int)((lines.length + construction.length + freePts.length) / 3), cast(int)(all.length / 3)];
-        if (sketchVao == 0)
-        {
-            glGenVertexArrays(1, &sketchVao);
-            glGenBuffers(1, &sketchVbo);
-        }
-        glBindVertexArray(sketchVao);
-        glBindBuffer(GL_ARRAY_BUFFER, sketchVbo);
-        glBufferData(GL_ARRAY_BUFFER, all.length * float.sizeof, all.ptr, GL_DYNAMIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
-        glVertexAttrib3f(1, 0, 0, 1);
+        positionBuffer(sketchVao, sketchVbo, all);
         glBindVertexArray(0);
         sketchDirty = false;
     }
@@ -1627,17 +1606,7 @@ private:
         foreach (k; 0 .. pts.length - 1)
             foreach (q; [pts[k], pts[k + 1]])
                 v ~= [cast(float) q.x, cast(float) q.y, cast(float) q.z];
-        if (lineVao == 0)
-        {
-            glGenVertexArrays(1, &lineVao);
-            glGenBuffers(1, &lineVbo);
-        }
-        glBindVertexArray(lineVao);
-        glBindBuffer(GL_ARRAY_BUFFER, lineVbo);
-        glBufferData(GL_ARRAY_BUFFER, v.length * float.sizeof, v.ptr, GL_DYNAMIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
-        glVertexAttrib3f(1, 0, 0, 1);
+        uploadLines(v);
         glUniform1i(uFlat, 1);
         glUniform3f(uColor, cast(float) color.x, cast(float) color.y, cast(float) color.z);
         glLineWidth(width);
@@ -1715,15 +1684,7 @@ private:
             g.indexCount = cast(int) p.indices.length;
             g.source = p.vertices;
 
-            glGenVertexArrays(1, &g.edgeVao);
-            glBindVertexArray(g.edgeVao);
-            glGenBuffers(1, &g.edgeVbo);
-            glBindBuffer(GL_ARRAY_BUFFER, g.edgeVbo);
-            auto lines = p.edges ~ p.tangentEdges;
-            glBufferData(GL_ARRAY_BUFFER, lines.length * float.sizeof, lines.ptr, GL_STATIC_DRAW);
-            glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
-            glVertexAttrib3f(1, 0, 0, 1);
+            positionBuffer(g.edgeVao, g.edgeVbo, p.edges ~ p.tangentEdges, GL_STATIC_DRAW);
             g.edgeCount = cast(int)(p.edges.length / 3);
             g.tangentCount = cast(int)(p.tangentEdges.length / 3);
             {
@@ -1789,18 +1750,7 @@ private:
                 outlineScratch ~= [cast(float) q.x, cast(float) q.y, cast(float) q.z];
             }
         }
-        if (g.outlineVao == 0)
-        {
-            glGenVertexArrays(1, &g.outlineVao);
-            glGenBuffers(1, &g.outlineVbo);
-            glBindVertexArray(g.outlineVao);
-            glBindBuffer(GL_ARRAY_BUFFER, g.outlineVbo);
-            glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
-            glVertexAttrib3f(1, 0, 0, 1);
-        }
-        glBindBuffer(GL_ARRAY_BUFFER, g.outlineVbo);
-        glBufferData(GL_ARRAY_BUFFER, outlineScratch.length * float.sizeof, outlineScratch.ptr, GL_STREAM_DRAW);
+        positionBuffer(g.outlineVao, g.outlineVbo, outlineScratch, GL_STREAM_DRAW);
         g.outlineCount = cast(int)(outlineScratch.length / 3);
     }
 
@@ -1826,12 +1776,7 @@ private:
             v ~= [cast(float) t, cast(float) -extent, z, cast(float) t, cast(float) extent, z];
             v ~= [cast(float) -extent, cast(float) t, z, cast(float) extent, cast(float) t, z];
         }
-        glBindVertexArray(gridVao);
-        glBindBuffer(GL_ARRAY_BUFFER, gridVbo);
-        glBufferData(GL_ARRAY_BUFFER, v.length * float.sizeof, v.ptr, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * float.sizeof, null);
-        glVertexAttrib3f(1, 0, 0, 1);
+        positionBuffer(gridVao, gridVbo, v, GL_STATIC_DRAW);
         gridCount = cast(int)(v.length / 3);
         glBindVertexArray(0);
     }

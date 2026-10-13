@@ -57,7 +57,7 @@ import gtk.gesture_click : GestureClick;
 import gtk.event_controller_key : EventControllerKey;
 import gtk.event_controller_motion : EventControllerMotion;
 import gdk.types : ModifierType, KEY_Escape, KEY_space, KEY_Control_L, KEY_Control_R, KEY_Meta_L, KEY_Meta_R;
-import hackerscad.geom.vec : Vec3;
+import hackerscad.geom.vec : BBox, Vec3;
 import glib.global : idleAdd;
 
 import hackerscad.geom.mesh;
@@ -2275,20 +2275,19 @@ private:
                     made.length, made.length == 1 ? "" : "s") : format(" · called %d times, all shown", calls);
         }
         bool any, allFlat = true, anyFlat;
-        Vec3 lo, hi;
+        BBox box;
         foreach (m; ms)
         {
             if (m.vertices.length == 0 && m.edgeInfo.length == 0)
                 continue;
-            lo = any ? Vec3(min(lo.x, m.bbox.min.x), min(lo.y, m.bbox.min.y), min(lo.z, m.bbox.min.z)) : m.bbox.min;
-            hi = any ? Vec3(max(hi.x, m.bbox.max.x), max(hi.y, m.bbox.max.y), max(hi.z, m.bbox.max.z)) : m.bbox.max;
+            box = any ? box.merged(m.bbox) : m.bbox;
             any = true;
             allFlat = allFlat && m.flat;
             anyFlat = anyFlat || m.flat;
         }
         if (!any)
             return format("%s · %s · could not be shown", where, list);
-        auto d = hi - lo;
+        auto d = box.size;
         string size;
         if (allFlat)
         {
@@ -2556,13 +2555,17 @@ private:
 
     int[] selFaces, selEdges;
 
-    Interp selectorInterp(out SolidVal sv)
+    /// An interpreter to resolve selectors on `part`, and the part as a
+    /// solid value (with where its faces come from, for stable selectors).
+    Interp selectorInterp(PartMesh part, out SolidVal sv)
     {
-        auto part = last.parts[contextHit.part];
         sv = new SolidVal(part.brep, Span.init);
         sv.creators = part.creators;
         return new Interp(part.kernel);
     }
+
+    /// ditto, on the part the right-click menu is for
+    Interp selectorInterp(out SolidVal sv) => selectorInterp(last.parts[contextHit.part], sv);
 
     /// Selector code for the selected faces / edges: a group when one picks
     /// exactly them, otherwise each one's, joined with +.
@@ -2653,10 +2656,8 @@ private:
 
     string ctxSelector(bool edge)
     {
-        auto part = last.parts[contextHit.part];
-        auto it = new Interp(part.kernel);
-        auto sv = new SolidVal(part.brep, Span.init);
-        sv.creators = part.creators;
+        SolidVal sv;
+        auto it = selectorInterp(sv);
         return edge ? edgeSelector(it, sv, contextHit.edge) : faceSelector(it, sv, contextHit.face);
     }
 
@@ -3354,9 +3355,8 @@ private:
         if (hit.face >= 0)
         {
             auto part = last.parts[hit.part];
-            auto it = new Interp(part.kernel);
-            auto sv = new SolidVal(part.brep, Span.init);
-            sv.creators = part.creators;
+            SolidVal sv;
+            auto it = selectorInterp(part, sv);
             try
                 r["selector"] = faceSelector(it, sv, hit.face);
             catch (Exception)
@@ -3375,9 +3375,8 @@ private:
             if (h.part < 0 || h.part >= last.parts.length)
                 continue;
             auto part = last.parts[h.part];
-            auto it = new Interp(part.kernel);
-            auto sv = new SolidVal(part.brep, Span.init);
-            sv.creators = part.creators;
+            SolidVal sv;
+            auto it = selectorInterp(part, sv);
             JSONValue j = ["part": part.name];
             try
             {
@@ -4131,9 +4130,8 @@ private:
                         if (pi < 0)
                             return reply(JSONValue.init, problem);
                         auto part = last.parts[pi];
-                        auto it = new Interp(part.kernel);
-                        auto sv = new SolidVal(part.brep, Span.init);
-                        sv.creators = part.creators;
+                        SolidVal sv;
+                        auto it = selectorInterp(part, sv);
                         bool faces;
                         int[] found;
                         try

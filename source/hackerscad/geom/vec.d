@@ -39,6 +39,14 @@ struct BBox
 
     Vec3 size() const => max - min;
     Vec3 center() const => (min + max) / 2;
+
+    /// The box around this one and `o`.
+    BBox merged(BBox o) const
+    {
+        import std.algorithm : mn = min, mx = max;
+        return BBox(Vec3(mn(min.x, o.min.x), mn(min.y, o.min.y), mn(min.z, o.min.z)),
+            Vec3(mx(max.x, o.max.x), mx(max.y, o.max.y), mx(max.z, o.max.z)));
+    }
 }
 
 unittest
@@ -48,4 +56,6 @@ unittest
     assert(2 * a == Vec3(2, 4, 6));
     assert(Vec3(1, 0, 0).cross(Vec3(0, 1, 0)) == Vec3(0, 0, 1));
     assert(BBox(Vec3(0, 0, 0), Vec3(2, 4, 6)).center == Vec3(1, 2, 3));
+    assert(BBox(Vec3(0, 0, 0), Vec3(1, 1, 1)).merged(BBox(Vec3(-1, 2, 0), Vec3(0, 3, 4)))
+        == BBox(Vec3(-1, 0, 0), Vec3(1, 3, 4)));
 }
