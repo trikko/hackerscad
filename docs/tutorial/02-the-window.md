@@ -27,7 +27,8 @@ bag clip is still open; we use it to try things.
 
 The buttons at the top right show or hide the console, the code, the view and
 the parameters (Ctrl+J, F7, F8, F9). The menu (☰) has New, Open, Save As,
-Export, the Cheatsheet and this tutorial.
+Export, the Cheatsheet, this tutorial, and the style: light, dark, or as the
+system is set.
 
 ## Change a size
 

@@ -363,7 +363,7 @@ unittest
 void start(string file)
 {
     auto before = openWindows();
-    immutable gui = format(`bin/hackerscad --size=1680x980 "%s"`, file);
+    immutable gui = format(`bin/hackerscad --size=1680x980 --theme=light "%s"`, file);
     if (execute(["which", "mutter"]).status == 0)
     {
         display = format("hcad-tutorial-%d", thisProcessID);

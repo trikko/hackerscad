@@ -112,6 +112,16 @@ final class Viewport
     private float gridExtent, gridZ;
     private int uMvp, uColor, uEye, uFlat, uAlpha, uClipOn, uClip;
 
+    // the colours of the window's dark style: background, grid, sketches
+    private bool darkStyle;
+
+    /// Draws for the dark style (or the light one).
+    void setDark(bool on)
+    {
+        darkStyle = on;
+        area.queueRender();
+    }
+
     // section plane: what lies where dot(p, sectionNormal) > sectionOffset is hidden
     private bool section;
     private Vec3 sectionNormal = Vec3(0, 0, 1);
@@ -1172,7 +1182,10 @@ private:
         if (dirty)
             upload();
 
-        glClearColor(0.925f, 0.93f, 0.945f, 1);
+        if (darkStyle)
+            glClearColor(0.17f, 0.175f, 0.19f, 1);
+        else
+            glClearColor(0.925f, 0.93f, 0.945f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
@@ -1197,7 +1210,10 @@ private:
         updateGrid();
         glUniform1i(uFlat, 1);
         glBindVertexArray(gridVao);
-        glUniform3f(uColor, 0.80f, 0.81f, 0.84f);
+        if (darkStyle)
+            glUniform3f(uColor, 0.27f, 0.28f, 0.30f);
+        else
+            glUniform3f(uColor, 0.80f, 0.81f, 0.84f);
         glDrawArrays(GL_LINES, 4, gridCount - 4);
         glLineWidth(2);
         glUniform3f(uColor, 0.85f, 0.25f, 0.25f);
@@ -1512,7 +1528,10 @@ private:
         glUniform1i(uFlat, 1);
         glBindVertexArray(sketchVao);
         glLineWidth(2);
-        glUniform3f(uColor, 0.10f, 0.25f, 0.65f);
+        if (darkStyle)
+            glUniform3f(uColor, 0.45f, 0.65f, 1.0f);
+        else
+            glUniform3f(uColor, 0.10f, 0.25f, 0.65f);
         glDrawArrays(GL_LINES, 0, sketchRanges[0]);
         glLineWidth(1);
         glUniform3f(uColor, 0.55f, 0.6f, 0.7f);
@@ -1521,7 +1540,10 @@ private:
         // blue points can still move, black ones are fully constrained
         glUniform3f(uColor, 0.15f, 0.45f, 0.95f);
         glDrawArrays(GL_POINTS, sketchRanges[1], sketchRanges[2] - sketchRanges[1]);
-        glUniform3f(uColor, 0.05f, 0.05f, 0.08f);
+        if (darkStyle)
+            glUniform3f(uColor, 0.92f, 0.92f, 0.95f);
+        else
+            glUniform3f(uColor, 0.05f, 0.05f, 0.08f);
         glDrawArrays(GL_POINTS, sketchRanges[2], sketchRanges[3] - sketchRanges[2]);
         glPointSize(1);
         glEnable(GL_DEPTH_TEST);

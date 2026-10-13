@@ -45,7 +45,8 @@ import gtksource.style_scheme_manager : StyleSchemeManager;
 import pango.types : Underline, EllipsizeMode;
 import adw.view_stack : ViewStack;
 import adw.view_switcher : ViewSwitcher;
-import adw.types : ViewSwitcherPolicy;
+import adw.types : ColorScheme, ViewSwitcherPolicy;
+import adw.style_manager : StyleManager;
 import gtk.menu_button : MenuButton;
 import gtk.overlay : Overlay;
 import gtk.popover : Popover;
@@ -321,12 +322,15 @@ int main(string[] args)
     version (linux)
         installDesktopEntry();
     // --screenshot=FILE.png saves the window after the first evaluation and quits;
-    // --size=WIDTHxHEIGHT opens the window that big (for pictures of it)
-    string path, shot;
+    // --size=WIDTHxHEIGHT opens the window that big (for pictures of it);
+    // --theme=light|dark|system for this run only (the menu's choice is kept)
+    string path, shot, theme;
     foreach (a; args[1 .. $])
     {
         if (a.length > 13 && a[0 .. 13] == "--screenshot=")
             shot = a[13 .. $];
+        else if (a.length > 8 && a[0 .. 8] == "--theme=")
+            theme = a[8 .. $];
         else if (a.length > 7 && a[0 .. 7] == "--size=")
         {
             import std.array : split;
@@ -341,7 +345,16 @@ int main(string[] args)
     if (path is null)
         path = absolutePath("untitled.hcad");
     auto app = new AdwApplication("it.andreafontana.hackerscad.gui", ApplicationFlags.NonUnique);
+    bool styled;
     app.connectActivate(() {
+        if (!styled)
+        {
+            styled = true;
+            if (theme.length)
+                StyleManager.getDefault().setColorScheme(MainWindow.schemeFor(theme));
+            else
+                MainWindow.applySavedTheme();
+        }
         auto w = new MainWindow(app, path);
         w.screenshotPath = shot;
     });
@@ -577,8 +590,6 @@ final class MainWindow
         lm.prependSearchPath(dataDir("language-specs"));
         if (auto lang = lm.getLanguage("hcad"))
             buffer.setLanguage(lang);
-        if (auto scheme = StyleSchemeManager.getDefault().getScheme("Adwaita"))
-            buffer.setStyleScheme(scheme);
         // errors: red squiggle under the code, a tinted line and an icon in the gutter
         import gdk.rgba : RGBA;
         void problemTags(string name, RGBA colour, string lineColour)
@@ -848,6 +859,8 @@ final class MainWindow
         action(app, "console", ["<Control>j"], () => consoleToggle.setActive(!consoleToggle.getActive()));
         action(app, "code", ["F7"], () => codeToggle.setActive(!codeToggle.getActive()));
         action(app, "view", ["F8"], () => viewToggle.setActive(!viewToggle.getActive()));
+        themeAction();
+        followStyle();
         action(app, "inspect", ["<Control>i"], () {
             TextIter s, e;
             if (buffer.getSelectionBounds(s, e) && e.getLine() > s.getLine())
@@ -1020,12 +1033,19 @@ private:
         help.append("Cheatsheet", "win.cheatsheet");
         help.append("Tutorial", "win.tutorial");
         help.append("Language Reference", "win.reference");
+        auto style = new Menu;
+        style.append("Follow the system", "win.theme::system");
+        style.append("Light", "win.theme::light");
+        style.append("Dark", "win.theme::dark");
+        auto look = new Menu;
+        look.appendSubmenu("Style", style);
         auto app = new Menu;
         app.append("About hackerscad", "win.about");
         app.append("Quit", "win.quit");
         auto menu = new Menu;
         menu.appendSection(null, files);
         menu.appendSection(null, help);
+        menu.appendSection(null, look);
         menu.appendSection(null, app);
         auto b = new MenuButton;
         b.setIconName("open-menu-symbolic");
@@ -1034,6 +1054,81 @@ private:
         b.setPrimary(true);
         return b;
     }
+
+    // ---- light or dark
+
+    /// The colour scheme for a theme preference: system, light or dark.
+    static ColorScheme schemeFor(string theme) =>
+        theme == "light" ? ColorScheme.ForceLight : theme == "dark" ? ColorScheme.ForceDark : ColorScheme.PreferLight;
+
+    /// Applies the theme saved last; once per run, before the first window.
+    static void applySavedTheme()
+    {
+        import hackerscad.gui.settings : setting;
+        StyleManager.getDefault().setColorScheme(schemeFor(setting("theme", "system")));
+    }
+
+    /// Main menu › Style: follow the system, light or dark, kept for the
+    /// next runs; every window's menu shows the choice.
+    void themeAction()
+    {
+        import glib.variant : Variant;
+        import glib.variant_type : VariantType;
+        import hackerscad.gui.settings : setSetting, setting;
+        auto a = SimpleAction.newStateful("theme", new VariantType("s"), Variant.newString(setting("theme", "system")));
+        a.connectChangeState((Variant value, SimpleAction self) {
+            immutable theme = value.getString();
+            self.setState(value);
+            setSetting("theme", theme);
+            StyleManager.getDefault().setColorScheme(schemeFor(theme));
+        });
+        // another window chose: this menu shows it too
+        StyleManager.getDefault().connectNotify("color-scheme", () {
+            auto cs = StyleManager.getDefault().getColorScheme();
+            a.setState(Variant.newString(cs == ColorScheme.ForceLight ? "light" : cs == ColorScheme.ForceDark ? "dark" : "system"));
+        });
+        window.addAction(a);
+    }
+
+    /// The editor and the 3D view follow the window's style: libadwaita
+    /// darkens the rest by itself.
+    void followStyle()
+    {
+        auto sm = StyleManager.getDefault();
+        applyStyle(sm.getDark());
+        sm.connectNotify("dark", () => applyStyle(StyleManager.getDefault().getDark()));
+    }
+
+    void applyStyle(bool dark)
+    {
+        auto schemes = StyleSchemeManager.getDefault();
+        foreach (name; dark ? ["Adwaita-dark", "classic-dark", "oblivion"] : ["Adwaita", "classic"])
+            if (auto scheme = schemes.getScheme(name))
+            {
+                buffer.setStyleScheme(scheme);
+                break;
+            }
+        viewport.setDark(dark);
+        // the completion's kind labels: lighter text on a dark popup
+        import gtk.css_provider : CssProvider;
+        import gtk.style_context : StyleContext;
+        import gdk.display : Display;
+        if (darkCss is null)
+        {
+            darkCss = new CssProvider;
+            darkCss.loadFromString(
+                " .hcad-kind-function, .hcad-kind-method, .hcad-kind-variable { color: #8fdcbf; }"
+                ~ " .hcad-kind-property, .hcad-kind-field { color: #8fb8e8; }"
+                ~ " .hcad-kind-parameter { color: #f3c362; }"
+                ~ " .hcad-kind-constant, .hcad-kind-type { color: #c9a3e6; }");
+        }
+        if (dark)
+            StyleContext.addProviderForDisplay(Display.getDefault(), darkCss, 601);
+        else
+            StyleContext.removeProviderForDisplay(Display.getDefault(), darkCss);
+    }
+
+    static imported!"gtk.css_provider".CssProvider darkCss;
 
     void showCheatsheet()
     {
