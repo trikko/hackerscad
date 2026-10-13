@@ -64,7 +64,8 @@ final class OcctKernel : BrepKernel
         wrap(hc_polyline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "path");
     Brep spline(const(Vec3)[] pts, bool closed) =>
         wrap(hc_spline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "spline");
-    Brep helix(double r, double pitch, double height, bool left) => wrap(hc_helix(r, pitch, height, left), "helix");
+    Brep helix(double r, double pitch, double height, bool left, double taper = 0) =>
+        wrap(hc_helix_tapered(r, pitch, height, left, taper), "helix");
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent)
     {
         double[6] v;

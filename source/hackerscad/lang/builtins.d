@@ -16,6 +16,7 @@ import hackerscad.lang.ast : TypeRef;
 import hackerscad.lang.value;
 import hackerscad.lang.interp;
 import hackerscad.kernel.brep;
+import hackerscad.lang.threading : ThreadSpec;
 
 immutable string[] stdModules = [
     "std.shapes", "std.math", "std.algorithm", "std.range", "std.conv", "std.format", "std.stdio", "std.array",
@@ -2238,52 +2239,25 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
     return solidBoolean(it, body, tool, outwards ? BoolOp.fuse : BoolOp.cut, a.span, true);
 }
 
-/// ISO metric coarse threads (ISO 261): nominal diameter and pitch, mm.
-public immutable double[2][] isoCoarse = [[1, 0.25], [1.2, 0.25], [1.4, 0.3], [1.6, 0.35], [2, 0.4], [2.5, 0.45], [3, 0.5],
-    [3.5, 0.6], [4, 0.7], [5, 0.8], [6, 1], [7, 1], [8, 1.25], [10, 1.5], [12, 1.75], [14, 2], [16, 2], [18, 2.5],
-    [20, 2.5], [22, 2.5], [24, 3], [27, 3], [30, 3.5], [33, 3.5], [36, 4]];
-
-/// "M8" (coarse pitch) or "M8x1" (a fine one): the diameter and the pitch.
-public bool metricSize(string s, out double d, out double pitch)
+/// A thread along +Z from z = 0 to `len`: the core and the teeth of `t`,
+/// `starts` of them, longer than `len` at both ends (trim it). The major
+/// diameter is `major` at z = 0 and changes by `slope` (on the radius) a
+/// millimetre up: tapered threads.
+Brep threadedCore(BrepKernel k, const ThreadSpec t, double major, double slope, double len, int starts, bool left)
 {
-    import std.string : toLower, indexOf;
-    auto t = s.toLower;
-    if (t.length < 2 || t[0] != 'm')
-        return false;
-    t = t[1 .. $];
-    try
-    {
-        auto x = t.indexOf('x');
-        d = (x < 0 ? t : t[0 .. x]).to!double;
-        if (x >= 0)
-        {
-            pitch = t[x + 1 .. $].to!double;
-            return d > 0 && pitch > 0;
-        }
-    }
-    catch (Exception)
-        return false;
-    foreach (row; isoCoarse)
-        if (abs(row[0] - d) < 1e-9)
-        {
-            pitch = row[1];
-            return true;
-        }
-    return false;
-}
-
-/// An ISO metric thread along +Z from z = 0 to `len`: the core and the
-/// teeth, `starts` of them, longer than `len` at both ends (trim it).
-Brep threadedCore(BrepKernel k, double d, double pitch, double len, int starts, bool left)
-{
-    immutable h = 0.5413 * pitch, minor = d - 2 * h, lead = pitch * starts;
-    immutable overlap = 0.1 * pitch;   // the tooth sinks into the core so that they fuse
-    // swept along the helix with frenet: the profile's +x points to the axis, +y along it
-    auto tooth = k.polygon([overlap, -0.375 * pitch, -h, -pitch / 16, -h, pitch / 16, overlap, 0.375 * pitch]);
-    // right-handed: a left-handed helix turns the sweep's frame, and the tooth with it, inwards;
-    // the mirror image of a right-handed thread is the left-handed one
-    auto ridge = k.translate(k.sweep(tooth, k.helix(minor / 2, lead, len + 2 * lead, false), true), Vec3(0, 0, -lead));
-    Brep[] all = [k.translate(k.cylinder(minor / 2 + 0.01, len + 4 * lead), Vec3(0, 0, -2 * lead)), ridge];
+    immutable pitch = t.pitch, h = t.depth, lead = pitch * starts;
+    immutable r0 = major / 2 - h;   // the minor radius at z = 0
+    // swept with frenet along a helix at the minor radius, a lead below z = 0; right-handed: along a
+    // left-handed helix the sweep's frame turns the tooth inwards, and the mirror image of a
+    // right-handed thread is the left-handed one
+    auto tooth = k.polygon(t.tooth(0.1 * pitch));
+    auto ridge = k.translate(k.sweep(tooth, k.helix(r0 - slope * lead, lead, len + 2 * lead, false, atan(slope)), true),
+        Vec3(0, 0, -lead));
+    // the core, a little wider than the minor diameter so that the teeth sink into it
+    immutable zc = -2 * lead, hc = len + 4 * lead;
+    auto core = slope == 0 ? k.cylinder(r0 + 0.01, hc)
+        : k.cone(r0 + 0.01 + slope * zc, r0 + 0.01 + slope * (zc + hc), hc);
+    Brep[] all = [k.translate(core, Vec3(0, 0, zc)), ridge];
     // more starts: the same ridge turned, which along a helix is the same as moved a pitch up
     foreach (s; 1 .. starts)
         all ~= k.rotate(ridge, Vec3(0, 0, 1), 2 * PI * s / starts);
@@ -2295,6 +2269,7 @@ Brep threadedCore(BrepKernel k, double d, double pitch, double len, int starts, 
 Value threadFace(Interp it, ref CallArgs a)
 {
     import hackerscad.lang.convex : turnFromZ;
+    import hackerscad.lang.threading;
     auto k = it.kernel;
     auto x = Args(it, a, "thread", ["solid", "face", "size", "pitch", "length", "turns", "starts", "left", "clearance",
         "chamfer", "flip"]);
@@ -2339,35 +2314,40 @@ Value threadFace(Interp it, ref CallArgs a)
     if (span < 2 * PI - 1e-6)
         throw new HcadError(Code.type, "the face is only part of a cylinder: a thread needs it all around", x.spanOf("face"));
 
-    // the size: "M8", "M8x1", or a pitch alone on the cylinder's own diameter
-    double d = 0, pitch = 0;
+    // the thread: by name ("M8", "1/4-20 UNC", "Tr12x3", "G1/2", "1/2 NPT"), or a pitch alone, an
+    // ISO 60° thread on the cylinder's own diameter
+    immutable outside = c.outside;
+    ThreadSpec t;
     if (x.has("size"))
     {
         auto sv = x.get("size");
-        if (sv.kind != Kind.str || !metricSize(sv.s, d, pitch))
-            throw new HcadError(Code.type, "the size is an ISO metric thread: \"M8\" (coarse) or \"M8x1\" (fine pitch)",
+        if (sv.kind != Kind.str || !parseThread(sv.s, t))
+            throw new HcadError(Code.type, "the size names a thread: \"M8\" or \"M8x1\" (ISO metric), \"1/4-20 UNC\", "
+                ~ "\"#10-32 UNF\", \"Tr12x3\" (trapezoidal), \"G1/2\" (BSP), \"R1/2\" (BSP tapered), \"1/2 NPT\"",
                 x.spanOf("size"));
     }
     if (x.has("pitch"))
     {
-        pitch = x.len("pitch");
-        if (!(pitch > 0))
+        immutable p = x.len("pitch");
+        if (!(p > 0))
             throw new HcadError(Code.type, "the pitch must be positive", x.spanOf("pitch"));
+        if (t.pitch == 0)
+        {
+            t = ThreadSpec(format("pitch %g", p), ThreadForm.iso60, 0, p);
+            t.major = outside ? 2 * c.radius : 2 * c.radius + 2 * t.depth;
+        }
+        t.pitch = p;
     }
-    if (pitch == 0)
+    if (t.pitch == 0)
         throw new HcadError(Code.type, "say which thread: thread(face, \"M8\"), or pitch: 1.25.mm on the cylinder's diameter",
             a.span);
-    immutable h = 0.5413 * pitch;
-    immutable outside = c.outside;
-    if (d == 0)   // the cylinder's diameter: the outside of a shaft, or for a hole the screw that fits it
-        d = outside ? 2 * c.radius : 2 * c.radius + 2 * h;
-    // the cylinder must suit the thread: a shaft about the nominal size, a hole about its minor diameter
-    if (outside && abs(2 * c.radius - d) > 0.25 * pitch + 0.1)
-        throw new HcadError(Code.type, format("the shaft is ⌀%g mm: an M%g thread wants ⌀%g mm", 2 * c.radius, d, d),
-            x.spanOf("face"));
-    if (!outside && (2 * c.radius > d - 0.5 * h || 2 * c.radius < d - 2 * h - 0.3 * pitch))
-        throw new HcadError(Code.type, format("the hole is ⌀%g mm: an M%g thread wants a hole of about ⌀%g mm (the tap drill)",
-            2 * c.radius, d, d - pitch), x.spanOf("face"));
+    immutable pitch = t.pitch, h = t.depth;
+    // the cylinder must suit the thread: a shaft about its major diameter, a hole about its minor
+    if (!fits(t, 2 * c.radius, outside))
+        throw new HcadError(Code.type, outside
+            ? format("the shaft is ⌀%g mm: a %s thread wants ⌀%g mm", 2 * c.radius, t.name, t.major)
+            : format("the hole is ⌀%g mm: a %s thread wants a hole of about ⌀%g mm (the tap drill)", 2 * c.radius, t.name,
+                t.minor + 0.15 * pitch), x.spanOf("face"));
 
     immutable starts = x.has("starts") ? count(x, "starts") : 1;
     immutable left = x.flag("left", false);
@@ -2417,9 +2397,11 @@ Value threadFace(Interp it, ref CallArgs a)
         if (outside)
         {
             // what the grooves take away: around the cylinder, less the threaded rod
-            immutable dd = d - 2 * clearance;
-            auto rod = k.translate(threadedCore(k, dd, pitch, len + sink, starts, left), Vec3(0, 0, -sink));
-            auto keep = k.cylinder(dd / 2 + 0.01, len);
+            // tapered: the full size at the fixed end, narrowing to the tip
+            immutable dd = t.major - 2 * clearance, slope = -tan(t.taper);
+            auto rod = k.translate(threadedCore(k, t, dd - 2 * slope * sink, slope, len + sink, starts, left),
+                Vec3(0, 0, -sink));
+            auto keep = slope == 0 ? k.cylinder(dd / 2 + 0.01, len) : k.cone(dd / 2 + 0.01, dd / 2 + 0.01 + slope * len, len);
             if (chamfer)   // the tip's crest bevelled at 45°, a tooth high
             {
                 auto ed = k.edges(keep);
@@ -2439,11 +2421,13 @@ Value threadFace(Interp it, ref CallArgs a)
         else
         {
             // the screw that fits, cut into the wall
-            immutable dd = d + 2 * clearance;
+            // tapered: the full size at the opening, narrowing inwards
+            immutable slope = tan(t.taper), dd = t.major + 2 * clearance;   // at the opening, z = len
             // past the opening (and past the far end of a through hole) the tool reaches into the
             // air a little: cutting nothing there, it leaves no face lying on the body's
             immutable below = sink > 0 ? 0 : 0.2 * pitch, above = 0.2 * pitch;
-            tool = k.boolean(k.translate(threadedCore(k, dd, pitch, len + below + above, starts, left), Vec3(0, 0, -below)),
+            immutable d0 = dd - 2 * slope * (len + below);   // at z = -below
+            tool = k.boolean(k.translate(threadedCore(k, t, d0, slope, len + below + above, starts, left), Vec3(0, 0, -below)),
                 k.translate(k.cylinder(dd, len + below + above), Vec3(0, 0, -below)), BoolOp.common);
             if (chamfer)   // the opening countersunk at 45°, to start the screw
                 tool = k.boolean(tool, k.translate(k.cone(dd / 2 - h, dd / 2 + 0.01, h + 0.01), Vec3(0, 0, len - h)),

@@ -75,6 +75,7 @@
 #include <GC_MakeArcOfCircle.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <Geom_CylindricalSurface.hxx>
+#include <Geom_ConicalSurface.hxx>
 #include <Geom2d_Line.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
 #include <BRepAdaptor_CompCurve.hxx>
@@ -1869,14 +1870,29 @@ hc_shape *hc_spline(const double *xyz, int n, int closed)
 
 hc_shape *hc_helix(double r, double pitch, double height, int left)
 {
+    return hc_helix_tapered(r, pitch, height, left, 0);
+}
+
+// The same on a cone: `taper` is the angle (radians) its side leans from
+// the axis, outwards as it rises when positive; r is the radius at z = 0.
+hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, double taper)
+{
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
-        // a straight line on the unrolled cylinder: u is the angle, v the height
-        Handle(Geom_CylindricalSurface) cyl = new Geom_CylindricalSurface(gp_Ax3(gp::XOY()), r);
-        gp_Dir2d dir(left ? -2 * M_PI : 2 * M_PI, pitch);
+        // a straight line on the unrolled cylinder or cone: u is the angle, v the distance
+        // along the side (the height, on a cylinder)
+        Handle(Geom_Surface) surf;
+        double vPerTurn = pitch;
+        if (std::abs(taper) < 1e-9)
+            surf = new Geom_CylindricalSurface(gp_Ax3(gp::XOY()), r);
+        else {
+            surf = new Geom_ConicalSurface(gp_Ax3(gp::XOY()), taper, r);
+            vPerTurn = pitch / std::cos(taper);
+        }
+        gp_Dir2d dir(left ? -2 * M_PI : 2 * M_PI, vPerTurn);
         Handle(Geom2d_Line) line = new Geom2d_Line(gp_Pnt2d(0, 0), dir);
         double turns = height / pitch;
-        double len = turns * std::sqrt(4 * M_PI * M_PI + pitch * pitch);
-        TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, cyl, 0, len).Edge();
+        double len = turns * std::sqrt(4 * M_PI * M_PI + vPerTurn * vPerTurn);
+        TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, surf, 0, len).Edge();
         // the curve in space follows the line closely only with enough pieces: a few per turn
         // (by default long helices get too few, and sweeps along them fail)
         const int segments = std::max(30, (int)std::ceil(turns * 4));

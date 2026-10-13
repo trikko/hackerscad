@@ -14,8 +14,10 @@ Solid threadedRod(Length d, Length pitch, Length length, bool chamfer = true, bo
     immutable minor = d - 2 * h;
     immutable overlap = 0.1 * pitch;   // the tooth sinks into the core so that they fuse
     // swept along the helix: the profile's +x points to the axis, +y along it
-    auto tooth = polygon([vec(overlap, -0.375 * pitch), vec(-h, -pitch / 16), vec(-h, pitch / 16),
-                          vec(overlap, 0.375 * pitch)]);
+    // the ISO basic profile: 3/8 of the pitch each side at the root, 1/16 at the crest; the
+    // flanks carry on at 30° into the core
+    immutable foot = 0.375 * pitch + overlap * 0.5774;
+    auto tooth = polygon([vec(overlap, -foot), vec(-h, -pitch / 16), vec(-h, pitch / 16), vec(overlap, foot)]);
     // right-handed, mirrored for a left-handed thread: along a left-handed helix the sweep
     // would turn the tooth inwards
     auto ridge = tooth.sweep(helix(d: minor, pitch: pitch, height: length + 2 * pitch), frenet: true)

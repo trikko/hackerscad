@@ -120,6 +120,7 @@ hc_shape *hc_from_mesh(const float *verts, int nverts, const int *tris, int ntri
 hc_shape *hc_polyline(const double *xyz, int n, int closed);
 hc_shape *hc_spline(const double *xyz, int n, int closed);
 hc_shape *hc_helix(double r, double pitch, double height, int left);
+hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, double taper);
 /* Start (at_end = 0) or end point and tangent of a path; out: xyz, txyz. */
 int hc_path_frame(const hc_shape *path, int at_end, double out[6]);
 

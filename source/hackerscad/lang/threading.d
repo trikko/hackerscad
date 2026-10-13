@@ -1,0 +1,330 @@
+/// Screw thread standards: their names ("M8", "1/4-20 UNC", "Tr12x3",
+/// "G1/2", "1/2 NPT"), sizes and the shape of their teeth. The tables are
+/// the published nominal sizes of ISO 261 (metric), ASME B1.1 (unified
+/// inch), ISO 2904 (trapezoidal), ISO 228-1 and ISO 7-1 (BSP parallel and
+/// tapered) and ASME B1.20.1 (NPT).
+module hackerscad.lang.threading;
+
+import std.algorithm : canFind, endsWith, startsWith;
+import std.array : replace;
+import std.conv : to, ConvException;
+import std.format : format;
+import std.math : abs, atan, cos, PI, sin, tan;
+import std.string : indexOf, strip, toUpper;
+
+/// The shape of the teeth.
+enum ThreadForm
+{
+    iso60,       /// 60°, flat crests and roots: metric and unified inch
+    trapezoid,   /// 30°, wide flat crests: lead screws
+    whitworth,   /// 55°, round crests: BSP pipe threads
+    npt,         /// 60°, nearly sharp: NPT pipe threads
+}
+
+/// A thread: its name, form, largest diameter and pitch (mm), and for a
+/// tapered one the angle its side leans from the axis.
+struct ThreadSpec
+{
+    string name;
+    ThreadForm form;
+    double major = 0, pitch = 0;
+    double taper = 0;   /// radians; 0 parallel
+
+    /// How deep the teeth are, from the root to the crest.
+    double depth() const
+    {
+        final switch (form)
+        {
+        case ThreadForm.iso60: return 0.5413 * pitch;
+        case ThreadForm.trapezoid: return 0.5 * pitch;
+        case ThreadForm.whitworth: return 0.6403 * pitch;
+        case ThreadForm.npt: return 0.8 * pitch;
+        }
+    }
+
+    double minor() const => major - 2 * depth;
+
+    /// The family, for menus: "ISO metric", "Unified inch"…
+    string family() const
+    {
+        if (name.startsWith("M"))
+            return "ISO metric";
+        if (name.startsWith("Tr"))
+            return "Trapezoidal";
+        if (name.startsWith("G"))
+            return "BSP parallel (G)";
+        if (name.startsWith("R"))
+            return "BSP tapered (R)";
+        if (name.endsWith("NPT"))
+            return "NPT tapered";
+        return "Unified inch";
+    }
+
+    /// The tooth in the plane of the axis, as a polygon for a sweep along the
+    /// helix at the minor radius: x towards the axis (0 at the minor radius,
+    /// `overlap` inside the core so that they fuse), y along the axis.
+    double[] tooth(double overlap) const
+    {
+        immutable p = pitch, h = depth;
+        double[] xy;
+        void flat(double halfRoot, double halfCrest, double flankAngle)
+        {
+            immutable w = halfRoot + overlap * tan(flankAngle);
+            xy = [overlap, -w, -h, -halfCrest, -h, halfCrest, overlap, w];
+        }
+        final switch (form)
+        {
+        case ThreadForm.iso60:
+            flat(0.375 * p, p / 16, PI / 6);
+            break;
+        case ThreadForm.trapezoid:
+            flat(0.317 * p, 0.183 * p, PI / 12);
+            break;
+        case ThreadForm.npt:
+            flat(0.481 * p, 0.019 * p, PI / 6);
+            break;
+        case ThreadForm.whitworth:
+            {
+                // 55° flanks, the crest an arc of radius 0.1373 p tangent to both
+                immutable half = 27.5 * PI / 180, r = 0.1373 * p, foot = 0.4167 * p + overlap * tan(half);
+                immutable centre = 0.5030 * p;   // the arc's centre, out from the root
+                xy = [overlap, -foot];
+                enum steps = 8;
+                foreach (i; 0 .. steps + 1)
+                {
+                    immutable a = -(PI / 2 - half) + (PI - 2 * half) * i / steps;
+                    xy ~= [-(centre + r * cos(a)), r * sin(a)];
+                }
+                xy ~= [overlap, foot];
+                break;
+            }
+        }
+        return xy;
+    }
+}
+
+/// The tapers of pipe threads: 1 in 16 on the diameter.
+enum pipeTaper = atan(1.0 / 32);
+
+/// ISO metric coarse threads (ISO 261): nominal diameter and pitch, mm.
+immutable double[2][] isoCoarse = [[1, 0.25], [1.2, 0.25], [1.4, 0.3], [1.6, 0.35], [2, 0.4], [2.5, 0.45], [3, 0.5],
+    [3.5, 0.6], [4, 0.7], [5, 0.8], [6, 1], [7, 1], [8, 1.25], [10, 1.5], [12, 1.75], [14, 2], [16, 2], [18, 2.5],
+    [20, 2.5], [22, 2.5], [24, 3], [27, 3], [30, 3.5], [33, 3.5], [36, 4]];
+
+/// ISO trapezoidal threads (ISO 2904), preferred pitches: diameter, pitch.
+immutable double[2][] trapezoidal = [[8, 1.5], [10, 2], [12, 3], [14, 3], [16, 4], [18, 4], [20, 4], [22, 5], [24, 5],
+    [26, 5], [28, 5], [30, 6], [32, 6], [36, 6], [40, 7], [44, 7], [48, 8], [50, 8]];
+
+private struct Inch
+{
+    string size;
+    double inches;
+    double coarse, fine;   /// threads per inch, UNC and UNF (0: none)
+}
+
+/// Unified inch threads (ASME B1.1): size, diameter, UNC and UNF threads per inch.
+private immutable Inch[] unified = [
+    Inch("#0", 0.060, 0, 80), Inch("#1", 0.073, 64, 72), Inch("#2", 0.086, 56, 64), Inch("#3", 0.099, 48, 56),
+    Inch("#4", 0.112, 40, 48), Inch("#5", 0.125, 40, 44), Inch("#6", 0.138, 32, 40), Inch("#8", 0.164, 32, 36),
+    Inch("#10", 0.190, 24, 32), Inch("#12", 0.216, 24, 28), Inch("1/4", 0.25, 20, 28), Inch("5/16", 0.3125, 18, 24),
+    Inch("3/8", 0.375, 16, 24), Inch("7/16", 0.4375, 14, 20), Inch("1/2", 0.5, 13, 20), Inch("9/16", 0.5625, 12, 18),
+    Inch("5/8", 0.625, 11, 18), Inch("3/4", 0.75, 10, 16), Inch("7/8", 0.875, 9, 14), Inch("1", 1, 8, 12),
+];
+
+private struct Pipe
+{
+    string size;
+    double major;   /// mm: BSP the thread's major diameter, NPT the pipe's outside
+    double tpi;
+}
+
+/// BSP pipe threads (ISO 228-1 parallel, ISO 7-1 tapered).
+private immutable Pipe[] bsp = [
+    Pipe("1/16", 7.723, 28), Pipe("1/8", 9.728, 28), Pipe("1/4", 13.157, 19), Pipe("3/8", 16.662, 19),
+    Pipe("1/2", 20.955, 14), Pipe("5/8", 22.911, 14), Pipe("3/4", 26.441, 14), Pipe("7/8", 30.201, 14),
+    Pipe("1", 33.249, 11), Pipe("1-1/8", 37.897, 11), Pipe("1-1/4", 41.910, 11), Pipe("1-1/2", 47.803, 11),
+    Pipe("1-3/4", 53.746, 11), Pipe("2", 59.614, 11),
+];
+
+/// NPT pipe threads (ASME B1.20.1): the pipe's outside diameter.
+private immutable Pipe[] npt = [
+    Pipe("1/16", 0.3125 * 25.4, 27), Pipe("1/8", 0.405 * 25.4, 27), Pipe("1/4", 0.540 * 25.4, 18),
+    Pipe("3/8", 0.675 * 25.4, 18), Pipe("1/2", 0.840 * 25.4, 14), Pipe("3/4", 1.050 * 25.4, 14),
+    Pipe("1", 1.315 * 25.4, 11.5), Pipe("1-1/4", 1.660 * 25.4, 11.5), Pipe("1-1/2", 1.900 * 25.4, 11.5),
+    Pipe("2", 2.375 * 25.4, 11.5),
+];
+
+/// Reads a thread's name: "M8", "M8x1", "Tr12x3", "Tr12", "1/4-20 UNC",
+/// "1/4 UNF", "#10-32", "G1/2", "R1/2", "1/2 NPT". False when it is none of them.
+bool parseThread(string text, out ThreadSpec spec)
+{
+    auto s = text.strip.toUpper.replace(" ", "");
+    double num(string t) => t.to!double;
+    try
+    {
+        // trapezoidal
+        if (s.startsWith("TR"))
+        {
+            auto t = s[2 .. $];
+            auto x = t.indexOf('X');
+            immutable d = num(x < 0 ? t : t[0 .. x]);
+            double p = 0;
+            if (x >= 0)
+                p = num(t[x + 1 .. $]);
+            else
+                foreach (row; trapezoidal)
+                    if (abs(row[0] - d) < 1e-9)
+                        p = row[1];
+            if (!(d > 0 && p > 0))
+                return false;
+            spec = ThreadSpec(format("Tr%gx%g", d, p), ThreadForm.trapezoid, d, p);
+            return true;
+        }
+        // metric
+        if (s.startsWith("M"))
+        {
+            auto t = s[1 .. $];
+            auto x = t.indexOf('X');
+            immutable d = num(x < 0 ? t : t[0 .. x]);
+            double p = 0;
+            if (x >= 0)
+                p = num(t[x + 1 .. $]);
+            else
+                foreach (row; isoCoarse)
+                    if (abs(row[0] - d) < 1e-9)
+                        p = row[1];
+            if (!(d > 0 && p > 0))
+                return false;
+            spec = ThreadSpec(x < 0 ? format("M%g", d) : format("M%gx%g", d, p), ThreadForm.iso60, d, p);
+            return true;
+        }
+        // pipes: G and R (BSP), NPT
+        bool pipe(string size, const Pipe[] table, string name, ThreadForm form, double taper)
+        {
+            foreach (row; table)
+                if (row.size == size)
+                {
+                    spec = ThreadSpec(name, form, row.major, 25.4 / row.tpi, taper);
+                    return true;
+                }
+            return false;
+        }
+        if (s.startsWith("G"))
+            return pipe(s[1 .. $], bsp, "G" ~ s[1 .. $], ThreadForm.whitworth, 0);
+        if (s.startsWith("BSPT"))
+            return pipe(s[4 .. $], bsp, "R" ~ s[4 .. $], ThreadForm.whitworth, pipeTaper);
+        if (s.startsWith("RC") || s.startsWith("RP"))
+            return pipe(s[2 .. $], bsp, "R" ~ s[2 .. $], ThreadForm.whitworth, pipeTaper);
+        if (s.startsWith("R"))
+            return pipe(s[1 .. $], bsp, "R" ~ s[1 .. $], ThreadForm.whitworth, pipeTaper);
+        if (s.startsWith("NPT") || s.endsWith("NPT"))
+        {
+            auto t = s.startsWith("NPT") ? s[3 .. $] : s[0 .. $ - 3];
+            auto dash = t.lastIndexOf2('-');
+            // "1/2-14 NPT": the threads per inch are the standard's anyway
+            if (dash > 0 && t[0 .. dash].canFind('/') && !t[dash + 1 .. $].canFind('/'))
+                t = t[0 .. dash];
+            return pipe(t, npt, t ~ " NPT", ThreadForm.npt, pipeTaper);
+        }
+        // unified inch: "1/4-20", "1/4-20UNC", "1/4UNF", "#10-32"
+        string series;
+        foreach (suffix; ["UNC", "UNF"])
+            if (s.endsWith(suffix))
+            {
+                series = suffix;
+                s = s[0 .. $ - 3];
+            }
+        auto dash = s.lastIndexOf2('-');
+        string size = s;
+        double tpi = 0;
+        if (dash > 0 && !s[dash + 1 .. $].canFind('/'))
+        {
+            size = s[0 .. dash];
+            tpi = num(s[dash + 1 .. $]);
+        }
+        foreach (row; unified)
+            if (row.size == size)
+            {
+                if (tpi == 0)
+                    tpi = series == "UNF" ? row.fine : row.coarse;
+                if (!(tpi > 0))
+                    return false;
+                immutable label = series.length ? series : tpi == row.coarse ? "UNC" : tpi == row.fine ? "UNF" : "UN";
+                spec = ThreadSpec(format("%s-%g %s", size, tpi, label), ThreadForm.iso60, row.inches * 25.4, 25.4 / tpi);
+                return true;
+            }
+        return false;
+    }
+    catch (ConvException)
+        return false;
+}
+
+private ptrdiff_t lastIndexOf2(string s, char c)
+{
+    foreach_reverse (i, ch; s)
+        if (ch == c)
+            return i;
+    return -1;
+}
+
+/// Every thread in the tables (coarse metric, UNC and UNF, preferred
+/// trapezoidal, BSP and NPT), for menus.
+ThreadSpec[] allThreads()
+{
+    ThreadSpec[] r;
+    foreach (row; isoCoarse)
+        r ~= ThreadSpec(format("M%g", row[0]), ThreadForm.iso60, row[0], row[1]);
+    foreach (row; unified)
+    {
+        if (row.coarse > 0)
+            r ~= ThreadSpec(format("%s-%g UNC", row.size, row.coarse), ThreadForm.iso60, row.inches * 25.4, 25.4 / row.coarse);
+        if (row.fine > 0)
+            r ~= ThreadSpec(format("%s-%g UNF", row.size, row.fine), ThreadForm.iso60, row.inches * 25.4, 25.4 / row.fine);
+    }
+    foreach (row; trapezoidal)
+        r ~= ThreadSpec(format("Tr%gx%g", row[0], row[1]), ThreadForm.trapezoid, row[0], row[1]);
+    foreach (row; bsp)
+    {
+        r ~= ThreadSpec("G" ~ row.size, ThreadForm.whitworth, row.major, 25.4 / row.tpi);
+        r ~= ThreadSpec("R" ~ row.size, ThreadForm.whitworth, row.major, 25.4 / row.tpi, pipeTaper);
+    }
+    foreach (row; npt)
+        r ~= ThreadSpec(row.size ~ " NPT", ThreadForm.npt, row.major, 25.4 / row.tpi, pipeTaper);
+    return r;
+}
+
+/// Whether a cylinder of diameter `dia` takes the thread: a shaft about its
+/// major diameter, a hole about its minor one (the tap drill, a little more
+/// for the tooth's crest, a little less for printed parts).
+bool fits(const ThreadSpec t, double dia, bool outside)
+{
+    if (outside)
+        return abs(dia - t.major) <= 0.25 * t.pitch + 0.1;
+    return dia <= t.major - 0.5 * t.depth && dia >= t.minor - 0.3 * t.pitch;
+}
+
+unittest
+{
+    ThreadSpec t;
+    assert(parseThread("M8", t) && t.major == 8 && t.pitch == 1.25 && t.name == "M8");
+    assert(parseThread("m8x1", t) && t.pitch == 1 && t.name == "M8x1");
+    assert(parseThread("Tr12x3", t) && t.form == ThreadForm.trapezoid && t.pitch == 3);
+    assert(parseThread("Tr 16", t) && t.pitch == 4);
+    assert(parseThread("1/4-20 UNC", t) && abs(t.major - 6.35) < 1e-9 && abs(t.pitch - 1.27) < 1e-9 && t.name == "1/4-20 UNC");
+    assert(parseThread("1/4 UNF", t) && abs(t.pitch - 25.4 / 28) < 1e-9);
+    assert(parseThread("#10-32", t) && t.name == "#10-32 UNF");
+    assert(parseThread("G1/2", t) && t.form == ThreadForm.whitworth && t.taper == 0 && abs(t.pitch - 25.4 / 14) < 1e-9);
+    assert(parseThread("R1/2", t) && t.taper > 0);
+    assert(parseThread("1/2 NPT", t) && abs(t.major - 21.336) < 1e-9 && t.taper > 0);
+    assert(parseThread("1/2-14 NPT", t) && t.name == "1/2 NPT");
+    assert(!parseThread("X12", t) && !parseThread("M", t) && !parseThread("G9/9", t));
+    // every tooth is a closed outline between the root and the crest
+    foreach (s; allThreads())
+    {
+        auto xy = s.tooth(0.1 * s.pitch);
+        assert(xy.length >= 8 && xy.length % 2 == 0, s.name);
+        foreach (i; 0 .. xy.length / 2)
+            assert(xy[2 * i] <= 0.1 * s.pitch + 1e-9 && xy[2 * i] >= -s.depth - 1e-9, s.name);
+    }
+    assert(fits(ThreadSpec("M8", ThreadForm.iso60, 8, 1.25), 8, true) && fits(ThreadSpec("M8", ThreadForm.iso60, 8, 1.25), 6.8, false));
+}

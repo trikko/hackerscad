@@ -64,6 +64,7 @@ import hackerscad.geom.mesh;
 import hackerscad.kernel.brep : EdgeKind;
 import hackerscad.lang.errors;
 import hackerscad.io.stl;
+import hackerscad.lang.threading : ThreadSpec, allThreads, fits;
 import hackerscad.io.threemf;
 import hackerscad.render.raster;
 import hackerscad.render.png;
@@ -2637,9 +2638,20 @@ private:
             auto sizes = threadSizes();
             if (sizes.length)
             {
+                // by family: ISO metric, unified inch, trapezoidal, pipe threads
                 MenuEntry[] th;
-                foreach (sz; sizes)
-                    th ~= I(sz, threadAction(sz));
+                string[] families;
+                foreach (t; sizes)
+                    if (!families.canFind(t.family))
+                        families ~= t.family;
+                foreach (f; families)
+                {
+                    MenuEntry[] group;
+                    foreach (t; sizes)
+                        if (t.family == f)
+                            group ~= I(t.name, threadAction(t.name));
+                    th ~= families.length == 1 ? group : [G(f, group)];
+                }
                 entries ~= G(threadOutside ? "Thread (outside)" : "Thread (in the hole)", th);
             }
         }
@@ -2854,9 +2866,7 @@ private:
         case "thread":
             {
                 // an ISO metric thread on the clicked cylinder (the selected faces, if they are its parts)
-                import hackerscad.lang.builtins : metricSize;
-                double d, p;
-                if (!onFace || !metricSize(size, d, p) || !threadSizes().canFind(size))
+                if (!onFace || !threadSizes().canFind!(t => t.name == size))
                     return null;
                 return format(".thread(%s, \"%s\")", ctxSelector(false), size);
             }
@@ -2906,13 +2916,12 @@ private:
 
     bool threadOutside;   /// what threadSizes found: a shaft (true) or a hole
 
-    /// The ISO metric threads that fit the cylindrical face of the context:
-    /// for a shaft the size of its diameter, for a hole the sizes it is the
-    /// tap drill of; none when the face is not a whole cylinder.
-    string[] threadSizes()
+    /// The threads that fit the cylindrical face of the context: for a shaft
+    /// those of its diameter, for a hole those it is the tap drill of; none
+    /// when the face is not a whole cylinder.
+    ThreadSpec[] threadSizes()
     {
         import hackerscad.kernel.brep : CylinderInfo;
-        import hackerscad.lang.builtins : isoCoarse;
         import std.math : PI;
         if (contextHit.face < 0 || contextHit.part >= last.parts.length)
             return null;
@@ -2926,14 +2935,10 @@ private:
         catch (Exception)
             return null;
         threadOutside = c.outside;
-        string[] r;
-        foreach (row; isoCoarse)
-        {
-            immutable d = row[0], p = row[1], h = 0.5413 * p, dia = 2 * c.radius;
-            immutable fits = c.outside ? abs(dia - d) <= 0.25 * p + 0.1 : dia <= d - 0.5 * h && dia >= d - 2 * h - 0.3 * p;
-            if (fits)
-                r ~= format("M%g", d);
-        }
+        ThreadSpec[] r;
+        foreach (t; allThreads())
+            if (fits(t, 2 * c.radius, c.outside))
+                r ~= t;
         return r;
     }
 

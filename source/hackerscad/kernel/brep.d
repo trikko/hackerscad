@@ -129,7 +129,9 @@ interface BrepKernel
     /// Paths (wires) for sweeps.
     Brep polyline(const(Vec3)[] pts, bool closed);
     Brep spline(const(Vec3)[] pts, bool closed);
-    Brep helix(double r, double pitch, double height, bool left);
+    /// `taper`: the angle (radians) the helix's cone leans from the axis,
+    /// widening as it rises when positive; 0, a cylinder of radius r.
+    Brep helix(double r, double pitch, double height, bool left, double taper = 0);
     /// Point and tangent at the start (or end) of a path.
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent);
     /// `twist`: radians the profile turns about the path from its start to

@@ -1566,10 +1566,10 @@ unittest
         unittest
         {
             immutable mm3 = 1.mm ^^ 3, head = PI * 6.5 ^^ 2 * 5;
-            // the threaded length of an M8 is about 1220 mm³ over 30 mm (40.6 a mm)
-            assert(abs(bolt.volume / mm3 - head - 1219.6) < 2, "bolt");
+            // the threaded length of an M8 (ISO basic profile) is about 1241 mm³ over 30 mm
+            assert(abs(bolt.volume / mm3 - head - 1240.9) < 2, "bolt");
             // 8 turns are 10 mm threaded, the other 20 mm stay plain
-            assert(abs(part.volume / mm3 - head - PI * 16 * 20 - 10 * 40.6) < 3, "part");
+            assert(abs(part.volume / mm3 - head - PI * 16 * 20 - 412.5) < 3, "part");
             assert(part.isValid && bolt.isValid && nut.isValid, "valid");
             // the nut loses a little more than its plain hole
             assert(nut.volume < 3200 * mm3 - PI * 3.4 ^^ 2 * 8 * mm3 - 40 * mm3, "nut");
@@ -1589,4 +1589,29 @@ unittest
     // a name that exists on its own, used as a member: no "did you mean" the same name
     auto d = error("@part Solid p() { foreach (f; box(1, 1, 1).faces) {} return box(1, 1, 1); }");
     assert(d.message.canFind("stands on its own") && !d.suggestion.canFind("'faces'"), d.message ~ " " ~ d.suggestion);
+}
+
+unittest
+{
+    // the thread families, and the taper of pipe threads
+    auto r = runModel(q{
+        import std.math;
+        Solid shaft(Length d, Length h) => cylinder(d: d * 1.6, h: 5) + cylinder(d: d, h: h).move(z: 5);
+        @part Solid unc() => shaft(6.35.mm, 15.mm).thread(faces.largest, "1/4-20 UNC");
+        @part Solid tr() => shaft(12.mm, 15.mm).thread(faces.largest, "Tr12x3");
+        @part Solid npt() => shaft(21.336.mm, 20.mm).thread(faces.largest, "1/2 NPT");
+        @part Solid socket() => (box(40, 40, 20) - cylinder(d: 18.6, h: 50, center: true))
+            .thread(faces.filter(f => f.area > 1100 * 1.mm ^^ 2 && f.area < 1200 * 1.mm ^^ 2), "R1/2");
+        unittest
+        {
+            assert(unc.isValid && tr.isValid && npt.isValid && socket.isValid, "valid");
+            // NPT narrows by 1 in 16 on the diameter: 1.25 mm over 20 mm, a little less at the bevel
+            immutable top = npt.section(XY.offset(23.mm)).bbox.size.x, bottom = npt.section(XY.offset(7.mm)).bbox.size.x;
+            assert(bottom - top > 0.8.mm && bottom - top < 1.3.mm, "taper");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error(`@part Solid p() => cylinder(d: 8, h: 20).thread(faces.filter(f => f.center.z > 5.mm `
+        ~ `&& f.center.z < 15.mm), "Z9");`).message.canFind("names a thread"));
 }

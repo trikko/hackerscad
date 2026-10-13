@@ -221,7 +221,7 @@ immutable Ref[] reference =
         "Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm)."),
     F("thread", "Solid", ["face: Faces", "size: string", "pitch: Length", "length: Length", "turns: number", "starts: int",
         "left: bool", "clearance: Length", "chamfer: bool", "flip: bool"], "Solid",
-        "An ISO metric thread on a cylindrical face: outside a shaft, or inside a hole (made at the tap drill size): body.thread(faces.…, \"M8\")."),
+        "A thread on a cylindrical face, outside a shaft or inside a hole (made at the tap drill size): \"M8\", \"M8x1\", \"1/4-20 UNC\", \"#10-32 UNF\", \"Tr12x3\", \"G1/2\", tapered \"R1/2\" and \"1/2 NPT\"."),
     F("extrude", "Solid", ["faces: Selector", "depth: Length", "along: Vec3"], "Solid",
         "Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in."),
     ]) ~

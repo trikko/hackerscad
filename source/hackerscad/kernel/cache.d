@@ -71,8 +71,8 @@ final class CachingKernel : BrepKernel
         op(key("outline", segs.map!(g => [cast(double) g.kind, g.ax, g.ay, g.bx, g.by, g.mx, g.my]).join), inner.outline(segs));
     Brep polyline(const(Vec3)[] pts, bool closed) => op(key("polyline", flatten(pts), closed), inner.polyline(pts, closed));
     Brep spline(const(Vec3)[] pts, bool closed) => op(key("spline", flatten(pts), closed), inner.spline(pts, closed));
-    Brep helix(double r, double pitch, double height, bool left) =>
-        op(key("helix", r, pitch, height, left), inner.helix(r, pitch, height, left));
+    Brep helix(double r, double pitch, double height, bool left, double taper = 0) =>
+        op(key("helix", r, pitch, height, left, taper), inner.helix(r, pitch, height, left, taper));
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent) => inner.pathFrame(path, atEnd, point, tangent);
     Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0) =>
         op(key("sweep", profile, path, frenet, twist), inner.sweep(profile, path, frenet, twist));

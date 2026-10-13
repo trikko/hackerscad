@@ -82,6 +82,7 @@ hc_shape* hc_from_mesh(const(float)* verts, int nverts, const(int)* tris, int nt
 hc_shape* hc_polyline(const(double)* xyz, int n, int closed);
 hc_shape* hc_spline(const(double)* xyz, int n, int closed);
 hc_shape* hc_helix(double r, double pitch, double height, int left);
+hc_shape* hc_helix_tapered(double r, double pitch, double height, int left, double taper);
 int hc_path_frame(const(hc_shape)* path, int at_end, ref double[6] out_);
 hc_shape* hc_outline(const(double)* data, int n);
 hc_shape* hc_sweep(const(hc_shape)* profile, const(hc_shape)* path, int frenet);
