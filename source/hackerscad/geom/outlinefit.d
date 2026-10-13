@@ -104,8 +104,29 @@ struct Element
 
 /// A closed outline as lines and arcs within `tol` of its points: from each
 /// point, the longest piece (line or arc) that stays within it.
-Element[] fit(const P2[] loop, double tol)
+Element[] fit(const P2[] input, double tol)
 {
+    // points on the straight line between their neighbours dropped: a facet's two triangles cut
+    // its chord in two, and the uneven pieces would hide the curve's even facets
+    P2[] loop = input.dup;
+    for (bool changed = true; changed && loop.length > 3;)
+    {
+        changed = false;
+        P2[] kept;
+        foreach (i; 0 .. loop.length)
+        {
+            auto a = loop[(i + loop.length - 1) % loop.length], b = loop[i], c = loop[(i + 1) % loop.length];
+            if (dist(a, b) < 1e-9 || (pointLine(b, a, c) < 0.05 * tol && abs(turn(a, b, c)) < 0.02))
+            {
+                changed = true;
+                continue;
+            }
+            kept ~= b;
+        }
+        if (kept.length < 3)
+            break;
+        loop = kept;
+    }
     immutable n = loop.length;
     if (n < 3)
         return null;
@@ -152,18 +173,21 @@ Element[] fit(const P2[] loop, double tol)
             if (!circleFit(pts, c, r, worst) || worst > tol || r > 1e4 * tol)
                 break;
             // no straight run in it: every segment short against the radius (< 45° of arc), and
-            // about as long as the others (a curve is cut in even facets)
+            // none much longer than the typical one (a curve is cut in about even facets; a
+            // straight side among them is much longer)
             bool ok = true;
-            double shortest = double.infinity, longestSeg = 0;
+            double[] lens;
             foreach (k; 0 .. pts.length - 1)
             {
                 immutable l = dist(pts[k], pts[k + 1]);
                 if (l > 0.77 * r)
                     ok = false;
-                shortest = min(shortest, l);
-                longestSeg = max(longestSeg, l);
+                lens ~= l;
             }
-            if (longestSeg > 2.5 * shortest + tol)
+            import std.algorithm : sort, maxElement;
+            auto sorted = lens.dup;
+            sorted.sort();
+            if (lens.maxElement > 3 * sorted[$ / 2] + tol)
                 ok = false;
             if (!ok)
                 break;
@@ -274,11 +298,21 @@ double area(const P2[] loop)
 /// The circle nearest to the points (algebraic fit), and how far from it the farthest is.
 bool circleFit(const P2[] pts, out P2 c, out double r, out double worst)
 {
-    // x² + y² + D x + E y + F = 0, least squares
-    double[3][3] a = 0;
-    double[3] b = 0;
+    // x² + y² + D x + E y + F = 0, least squares, on the points moved to their mean (far from
+    // the origin the sums lose the digits the fit needs)
+    double mx = 0, my = 0;
     foreach (p; pts)
     {
+        mx += p[0];
+        my += p[1];
+    }
+    mx /= pts.length;
+    my /= pts.length;
+    double[3][3] a = 0;
+    double[3] b = 0;
+    foreach (q; pts)
+    {
+        immutable P2 p = [q[0] - mx, q[1] - my];
         immutable double[3] row = [p[0], p[1], 1];
         immutable rhs = -(p[0] * p[0] + p[1] * p[1]);
         foreach (s; 0 .. 3)
@@ -302,11 +336,12 @@ bool circleFit(const P2[] pts, out P2 c, out double r, out double worst)
             m[row][col] = b[row];
         x[col] = det3(m) / d;
     }
-    c = [-x[0] / 2, -x[1] / 2];
-    immutable rr = c[0] * c[0] + c[1] * c[1] - x[2];
+    immutable P2 local = [-x[0] / 2, -x[1] / 2];
+    immutable rr = local[0] * local[0] + local[1] * local[1] - x[2];
     if (!(rr > 0))
         return false;
     r = sqrt(rr);
+    c = [local[0] + mx, local[1] + my];
     worst = 0;
     foreach (p; pts)
         worst = max(worst, abs(dist(p, c) - r));

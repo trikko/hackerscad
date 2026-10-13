@@ -212,6 +212,7 @@ Analysis analyse(const Mesh input)
     }
     foreach (g; members)
         process(g, 0);
+    r.features = mergeCylinders(r.features, r.tolerance);
     // largest first
     r.features.sort!((a, b) => a.area > b.area);
     r.patterns = patterns(r.features, r.tolerance);
@@ -542,6 +543,53 @@ Vec3 smallestEigenvector(double[3][3] a)
     return Vec3(v[0][best], v[1][best], v[2][best]).normalized;
 }
 
+/// Pieces of one cylinder (a mesh can split it along a seam): the same axis
+/// line, radius and side, overlapping along the axis; joined into one,
+/// their angles added.
+private Feature[] mergeCylinders(Feature[] fs, double tol)
+{
+    auto gone = new bool[fs.length];
+    foreach (i; 0 .. fs.length)
+    {
+        if (gone[i] || fs[i].kind != Surface.cylinder)
+            continue;
+        foreach (j; i + 1 .. fs.length)
+        {
+            if (gone[j] || fs[j].kind != Surface.cylinder || fs[j].hole != fs[i].hole)
+                continue;
+            auto a = fs[i], b = fs[j];
+            if (abs(a.radius - b.radius) > max(0.01, 0.005 * a.radius) || abs(abs(a.axis.dot(b.axis)) - 1) > 1e-4)
+                continue;
+            auto off = b.point - a.point;
+            if ((off - a.axis * off.dot(a.axis)).length > max(0.02, 0.01 * a.radius))
+                continue;
+            // their extents along a's axis
+            immutable s0 = a.from, s1 = a.to;
+            double t0 = off.dot(a.axis) + (b.axis.dot(a.axis) > 0 ? b.from : -b.to);
+            double t1 = off.dot(a.axis) + (b.axis.dot(a.axis) > 0 ? b.to : -b.from);
+            if (t1 < s0 - 0.05 || t0 > s1 + 0.05)
+                continue;
+            // one cylinder: extent the union, angles summed (at most a full turn)
+            immutable lo = min(s0, t0), hi = max(s1, t1);
+            fs[i].point = a.point + a.axis * lo;
+            fs[i].from = 0;
+            fs[i].to = hi - lo;
+            fs[i].span = min(2 * PI, a.span + b.span);
+            fs[i].area = a.area + b.area;
+            fs[i].triangles = a.triangles + b.triangles;
+            fs[i].error = max(a.error, b.error);
+            fs[i].lo = Vec3(min(a.lo.x, b.lo.x), min(a.lo.y, b.lo.y), min(a.lo.z, b.lo.z));
+            fs[i].hi = Vec3(max(a.hi.x, b.hi.x), max(a.hi.y, b.hi.y), max(a.hi.z, b.hi.z));
+            gone[j] = true;
+        }
+    }
+    Feature[] r;
+    foreach (i, f; fs)
+        if (!gone[i])
+            r ~= f;
+    return r;
+}
+
 /// Full cylinders of one radius on parallel axes: on a circle, or in a row.
 private Pattern[] patterns(const Feature[] fs, double tol)
 {
@@ -563,7 +611,7 @@ private Pattern[] patterns(const Feature[] fs, double tol)
         }
         if (group.length < 2)
             continue;
-        // the centres, seen along the axis
+        // the centres, seen along the axis; pieces of one hole (a slot across it splits it) count once
         auto ax = f.axis;
         Vec3 u = ax.cross(abs(ax.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).normalized, w = ax.cross(u);
         Vec3 centre(size_t k)
@@ -571,6 +619,21 @@ private Pattern[] patterns(const Feature[] fs, double tol)
             auto p = fs[k].point;
             return p - ax * p.dot(ax);   // projected onto the plane through the origin
         }
+        {
+            size_t[] distinct;
+            foreach (k; group)
+            {
+                bool same;
+                foreach (q; distinct)
+                    if ((centre(k) - centre(q)).length < max(0.05, 0.02 * f.radius))
+                        same = true;
+                if (!same)
+                    distinct ~= k;
+            }
+            group = distinct;
+        }
+        if (group.length < 2)
+            continue;
         Pattern p;
         p.axis = ax;
         if (group.length >= 3)
@@ -602,7 +665,7 @@ private Pattern[] patterns(const Feature[] fs, double tol)
                     worst = max(worst, abs(sqrt((c.dot(u) - cx) ^^ 2 + (c.dot(w) - cy) ^^ 2) - rc));
                     angles ~= atan2(c.dot(w) - cy, c.dot(u) - cx);
                 }
-                if (rc > 1e-3 && worst < max(0.05, 0.01 * rc))
+                if (rc > 1e-3 && worst < max(0.05, 0.01 * rc) && angles.length >= 3)
                 {
                     angles.sort();
                     double stepMin = double.infinity;
