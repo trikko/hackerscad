@@ -121,7 +121,9 @@ interface BrepKernel
     Brep helix(double r, double pitch, double height, bool left);
     /// Point and tangent at the start (or end) of a path.
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent);
-    Brep sweep(Brep profile, Brep path, bool frenet);
+    /// `twist`: radians the profile turns about the path from its start to
+    /// its end, evenly along it.
+    Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0);
     Brep loft(Brep[] profiles, bool ruled);
     /// Hidden-line projection: `dir` points from the model to the viewer.
     ViewSegment[] hiddenLines(Brep s, Vec3 dir, Vec3 up, double deflection);

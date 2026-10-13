@@ -1520,3 +1520,31 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    // twisted extrusions and sweeps: the profile turns, the volume stays
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable mm3 = 1.mm ^^ 3;
+            immutable bar = rect(20, 10).extrude(30, twist: 90.deg);
+            // the guide of the twist is a fitted curve: a few millionths off
+            assert(abs(bar.volume / mm3 - 6000) < 0.01, "volume");
+            // a quarter turn: the top lies across the bottom
+            assert(abs(bar.section(XY.offset(30.mm - 1e-6.mm)).bbox.size.x / 1.mm - 10) < 1e-3, "turned");
+            assert(abs(bar.section(XY.offset(15.mm)).bbox.size.x / 1.mm - 15 * sqrt(2.0)) < 1e-3, "half way");
+            assert(abs(regularPolygon(6, r: 10).extrude(40, twist: 720.deg).volume / mm3 - 40 * 150 * sqrt(3.0)) < 0.1,
+                "two turns");
+            immutable down = (circle(r: 15) - circle(r: 13)).extrude(-20, twist: -60.deg);
+            assert(abs(down.bbox.min.z / 1.mm + 20) < 1e-6, "downwards");
+            immutable ribbon = rect(4, 2).sweep(spline([vec(0, 0, 0), vec(20, 0, 10), vec(40, 10, 30)]), twist: 180.deg);
+            assert(abs(ribbon.volume / mm3 - 8 * ribbon.bbox.size.length / 1.mm) < 8 * 60, "ribbon");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error("@part Solid p() => rect(5, 5).extrude(5, twist: 30.deg, taper: 2.deg);").message.canFind("not both"));
+}

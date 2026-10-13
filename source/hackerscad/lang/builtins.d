@@ -804,12 +804,16 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // body.extrude(profile, on: frame, depth: 5.mm) to add material on a face
         if (a.positional.length && a.positional[0].kind == Kind.solid && !a.positional[0].solid.flat)
             return pushesFace(a) ? pushFace(it, a, false) : onFace(it, a, false);
-        auto x = Args(it, a, "extrude", ["profile", "height", "taper", "symmetric"]);
+        auto x = Args(it, a, "extrude", ["profile", "height", "taper", "symmetric", "twist"]);
         auto p = profileArg(x, "profile");
-        immutable h = x.len("height"), taper = x.angleOr("taper", 0);
+        immutable h = x.len("height"), taper = x.angleOr("taper", 0), twist = x.angleOr("twist", 0);
         immutable sym = x.flag("symmetric", false);
         requireXY(it, p, a.span);
-        auto sv = derived(it, k.extrude(nonEmpty(p, a.span), h, taper), [p], "extrude", a.span);
+        if (twist != 0 && taper != 0)
+            throw new HcadError(Code.type, "an extrusion is either twisted or tapered, not both", x.spanOf("twist"));
+        // twisted: a sweep up a straight line, the profile turning around Z as it rises
+        auto sv = derived(it, twist != 0 ? k.sweep(nonEmpty(p, a.span), k.polyline([Vec3(0, 0, 0), Vec3(0, 0, h)], false),
+            false, h < 0 ? -twist : twist) : k.extrude(nonEmpty(p, a.span), h, taper), [p], "extrude", a.span);
         sv.flat = false;
         if (sym)
             return transformed(it, a.span, sv, b => k.translate(b, Vec3(0, 0, -h / 2)));
@@ -881,13 +885,18 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
     def("sweep", (ref CallArgs a) {
         // circle(d: 4.mm).sweep(path): the profile, drawn on XY around the origin, starts
-        // at the beginning of the path and normal to it, its +Y kept towards world +Z
-        auto x = Args(it, a, "sweep", ["profile", "path", "frenet"]);
+        // at the beginning of the path and normal to it, its +Y kept towards world +Z;
+        // twist: 360.deg turns it once around the path on the way, evenly
+        auto x = Args(it, a, "sweep", ["profile", "path", "frenet", "twist"]);
         auto p = profileArg(x, "profile");
         auto pv = x.get("path");
         if (pv.kind != Kind.solid || !pv.solid.path)
             throw new HcadError(Code.type, format("'path' must be a Path (path, spline, helix), not %s", pv.typeName), x.spanOf("path"));
-        auto sv = derived(it, k.sweep(nonEmpty(p, a.span), pv.solid.brep, x.flag("frenet", false)), [p], "sweep", a.span);
+        immutable twist = x.angleOr("twist", 0);
+        if (twist != 0 && x.flag("frenet", false))
+            throw new HcadError(Code.type, "a twisted sweep turns the profile its own way: leave frenet out", x.spanOf("frenet"));
+        auto sv = derived(it, k.sweep(nonEmpty(p, a.span), pv.solid.brep, x.flag("frenet", false), twist), [p], "sweep",
+            a.span);
         sv.flat = false;
         return Value.of(sv);
     });

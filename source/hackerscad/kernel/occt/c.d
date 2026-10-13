@@ -83,6 +83,7 @@ hc_shape* hc_helix(double r, double pitch, double height, int left);
 int hc_path_frame(const(hc_shape)* path, int at_end, ref double[6] out_);
 hc_shape* hc_outline(const(double)* data, int n);
 hc_shape* hc_sweep(const(hc_shape)* profile, const(hc_shape)* path, int frenet);
+hc_shape* hc_sweep_twisted(const(hc_shape)* profile, const(hc_shape)* path, int frenet, double twist);
 hc_shape* hc_loft(const(hc_shape*)* profiles, int n, int ruled);
 int hc_hlr(const(hc_shape)* s, double dx, double dy, double dz, double ux, double uy, double uz, double deflection,
     double** out_);

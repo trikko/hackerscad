@@ -74,7 +74,8 @@ final class CachingKernel : BrepKernel
     Brep helix(double r, double pitch, double height, bool left) =>
         op(key("helix", r, pitch, height, left), inner.helix(r, pitch, height, left));
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent) => inner.pathFrame(path, atEnd, point, tangent);
-    Brep sweep(Brep profile, Brep path, bool frenet) => op(key("sweep", profile, path, frenet), inner.sweep(profile, path, frenet));
+    Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0) =>
+        op(key("sweep", profile, path, frenet, twist), inner.sweep(profile, path, frenet, twist));
     Brep loft(Brep[] profiles, bool ruled)
     {
         ulong[] ks;

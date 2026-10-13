@@ -129,6 +129,7 @@ hc_shape *hc_outline(const double *data, int n);
  * starts normal to the path, its +Y as close to world +Z as possible.
  * frenet = 1 follows the path's curvature (helices). */
 hc_shape *hc_sweep(const hc_shape *profile, const hc_shape *path, int frenet);
+hc_shape *hc_sweep_twisted(const hc_shape *profile, const hc_shape *path, int frenet, double twist);
 /* A solid through profiles already placed in space (ruled: flat sides). */
 hc_shape *hc_loft(const hc_shape *const *profiles, int n, int ruled);
 

@@ -72,7 +72,8 @@ final class OcctKernel : BrepKernel
         point = Vec3(v[0], v[1], v[2]);
         tangent = Vec3(v[3], v[4], v[5]).normalized;
     }
-    Brep sweep(Brep profile, Brep path, bool frenet) => wrap(hc_sweep(h(profile), h(path), frenet), "sweep");
+    Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0) =>
+        wrap(hc_sweep_twisted(h(profile), h(path), frenet, twist), "sweep");
     Brep loft(Brep[] profiles, bool ruled)
     {
         const(hc_shape)*[] ps;

@@ -1893,7 +1893,49 @@ int hc_path_frame(const hc_shape *path, int at_end, double out[6])
     });
 }
 
+// A guide for a sweep that turns the profile by `twist` radians from the start
+// of `spine` to its end, evenly along its length: a curve winding around it,
+// at `radius`, starting in direction `start` (normal to the spine there). The
+// reference it turns from follows the spine without turning on its own.
+static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, double twist, double radius)
+{
+    BRepAdaptor_CompCurve c(spine);
+    // points close enough for an interpolation to follow the winding
+    const int n = std::min(600, std::max(24, (int)std::ceil(std::abs(twist) / (2 * M_PI) * 72) + 24));
+    GCPnts_UniformAbscissa ua(c, n + 1);
+    if (!ua.IsDone() || ua.NbPoints() < 3)
+        throw Standard_Failure("the path is too short to twist along");
+    Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, ua.NbPoints());
+    gp_Vec ref(start);
+    for (int i = 1; i <= ua.NbPoints(); i++) {
+        gp_Pnt p;
+        gp_Vec t;
+        c.D1(ua.Parameter(i), p, t);
+        if (t.Magnitude() < 1e-12)
+            throw Standard_Failure("the path stops along the way: it cannot be twisted along");
+        t.Normalize();
+        // the reference carried along, kept normal to the path
+        ref = ref - t * ref.Dot(t);
+        if (ref.Magnitude() < 1e-9)
+            throw Standard_Failure("the path turns too sharply to twist along");
+        ref.Normalize();
+        const double f = (i - 1.0) / (ua.NbPoints() - 1.0);
+        const gp_Vec turned = ref.Rotated(gp_Ax1(gp::Origin(), gp_Dir(t)), twist * f);
+        pts->SetValue(i, p.Translated(turned * radius));
+    }
+    GeomAPI_Interpolate in(pts, Standard_False, 1e-9);
+    in.Perform();
+    if (!in.IsDone())
+        throw Standard_Failure("could not build the twist along the path");
+    return BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(in.Curve()).Edge()).Wire();
+}
+
 hc_shape *hc_sweep(const hc_shape *profile, const hc_shape *path, int frenet)
+{
+    return hc_sweep_twisted(profile, path, frenet, 0);
+}
+
+hc_shape *hc_sweep_twisted(const hc_shape *profile, const hc_shape *path, int frenet, double twist)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         TopoDS_Wire spine = single_wire(path->shape);
@@ -1913,9 +1955,19 @@ hc_shape *hc_sweep(const hc_shape *profile, const hc_shape *path, int frenet)
         place.SetTransformation(gp_Ax3(p, tz, x), gp_Ax3(gp::XOY()));
         TopoDS_Shape moved = BRepBuilderAPI_Transform(profile->shape, place, true).Shape();
         ProfileLoops loops = loops_of(moved);
+        // a twist: a guide winding around the path turns the profile
+        TopoDS_Wire guide;
+        if (twist != 0) {
+            Bnd_Box bb;
+            BRepBndLib::Add(moved, bb);
+            const double radius = std::max(1.0, std::sqrt(bb.SquareExtent()));
+            guide = twist_guide(spine, x, twist, radius);
+        }
         auto pipe = [&](const TopoDS_Wire &w) {
             BRepOffsetAPI_MakePipeShell mk(spine);
-            if (frenet)
+            if (twist != 0)
+                mk.SetMode(guide, Standard_True);
+            else if (frenet)
                 mk.SetMode(Standard_True);
             mk.SetTransitionMode(BRepBuilderAPI_RightCorner);   // mitred corners on polylines
             mk.Add(w);
