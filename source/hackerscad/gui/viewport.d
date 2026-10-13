@@ -814,6 +814,11 @@ private:
         int tangentCount;   /// after the edges in their buffer: drawn in wireframe
         uint outlineVao, outlineVbo;   /// the outline of curved surfaces (wireframe), from the latest frame
         int outlineCount;
+        Vec3 outlineEye, outlineForward;   /// where the outline was seen from
+        bool outlineOrthographic, outlineValid;
+        /// the part's vertices it was made from: unchanged parts keep their
+        /// buffers (held here, so the memory is not reused for another part)
+        const(float)[] source;
         /// total edge length and the two largest sizes (mm): how crowded the
         /// edges get on screen at a given zoom
         double edgeLength = 0, spanA = 1, spanB = 1;
@@ -1661,11 +1666,31 @@ private:
 
     void upload()
     {
-        foreach (ref g; gpu)
-            freeGpu(g);
-        gpu = null;
+        // a part whose mesh did not change (the evaluator keeps it) keeps
+        // its buffers: an edit re-uploads only what it changed
+        Gpu[] next;
+        auto used = new bool[gpu.length];
         foreach (p; parts)
-            gpu ~= uploadMesh(p);
+        {
+            ptrdiff_t old = -1;
+            foreach (j, g; gpu)
+                if (!used[j] && g.source is p.vertices && p.vertices.length)
+                {
+                    old = j;
+                    break;
+                }
+            if (old >= 0)
+            {
+                used[old] = true;
+                next ~= gpu[old];
+            }
+            else
+                next ~= uploadMesh(p);
+        }
+        foreach (j, ref g; gpu)
+            if (!used[j])
+                freeGpu(g);
+        gpu = next;
         glBindVertexArray(0);
         dirty = false;
         gridExtent = 0; // force a grid rebuild sized on the new parts
@@ -1688,6 +1713,7 @@ private:
             glEnableVertexAttribArray(1);
             glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * float.sizeof, cast(void*)(3 * float.sizeof));
             g.indexCount = cast(int) p.indices.length;
+            g.source = p.vertices;
 
             glGenVertexArrays(1, &g.edgeVao);
             glBindVertexArray(g.edgeVao);
@@ -1733,6 +1759,14 @@ private:
     void uploadOutline(size_t i, ref Gpu g)
     {
         auto b = basis();
+        // the same eye sees the same outline: hovering redraws, it does not move
+        if (g.outlineValid && g.outlineEye == b.eye && g.outlineForward == b.forward
+            && g.outlineOrthographic == orthographic)
+            return;
+        g.outlineEye = b.eye;
+        g.outlineForward = b.forward;
+        g.outlineOrthographic = orthographic;
+        g.outlineValid = true;
         auto c = parts[i].contour;
         outlineScratch.length = 0;
         outlineScratch.assumeSafeAppend();
@@ -1812,6 +1846,11 @@ private:
         {
             if (isHidden(pi))
                 continue;
+            // a part whose box the ray misses, or reaches behind what it
+            // already hit, has no triangle to test (hovering picks often)
+            immutable entry = rayBox(eye, dir, p.bbox);
+            if (!(entry < best.distance))
+                continue;
             Vec3 vtx(uint i) => Vec3(p.vertices[i * 6], p.vertices[i * 6 + 1], p.vertices[i * 6 + 2]);
             foreach (t; 0 .. p.indices.length / 3)
             {
@@ -1837,6 +1876,45 @@ private:
 }
 
 private:
+
+/// Where the ray enters the box (0 when it starts inside), or infinity
+/// when it misses it. The box is grown a little: a ray along a face hits.
+double rayBox(Vec3 origin, Vec3 dir, BBox box)
+{
+    enum grow = 1e-3;
+    double near = 0, far = double.infinity;
+    foreach (k; 0 .. 3)
+    {
+        immutable o = [origin.x, origin.y, origin.z][k], d = [dir.x, dir.y, dir.z][k];
+        immutable lo = [box.min.x, box.min.y, box.min.z][k] - grow, hi = [box.max.x, box.max.y, box.max.z][k] + grow;
+        if (abs(d) < 1e-15)
+        {
+            if (o < lo || o > hi)
+                return double.infinity;
+            continue;
+        }
+        double t0 = (lo - o) / d, t1 = (hi - o) / d;
+        if (t0 > t1)
+        {
+            immutable t = t0;
+            t0 = t1;
+            t1 = t;
+        }
+        near = max(near, t0);
+        far = min(far, t1);
+        if (near > far)
+            return double.infinity;
+    }
+    return near;
+}
+
+unittest
+{
+    auto box = BBox(Vec3(0, 0, 0), Vec3(10, 10, 10));
+    assert(rayBox(Vec3(5, 5, -10), Vec3(0, 0, 1), box) > 9.9);
+    assert(rayBox(Vec3(5, 5, -10), Vec3(1, 0, 0), box) == double.infinity);
+    assert(rayBox(Vec3(5, 5, 5), Vec3(0, 0, 1), box) == 0);
+}
 
 int faceOf(const(uint)[] faceStart, size_t triangle)
 {
