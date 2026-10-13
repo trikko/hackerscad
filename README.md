@@ -143,9 +143,16 @@ printed by the <code>unittest</code>.</em></p>
 ## Using hackerscad with an AI agent
 
 hackerscad is new, so it is not in the training data of the models: a model
-left to guess writes OpenSCAD or CadQuery instead. Give it the MCP server
-(best: the agent checks models, looks at renders, measures, exports and drives
-the open application) or, for agents without MCP, the skill.
+left to guess writes OpenSCAD or CadQuery instead. Give it both:
+
+* the **skill**: what hackerscad is, how to work with it, the rules that avoid
+  most mistakes, and which tools the MCP server offers, so the agent knows they
+  are there and what to use them for;
+* the **MCP server**: the tools themselves, with which the agent checks models,
+  looks at renders, measures, exports and drives the open application.
+
+The skill alone works too, through the command line; the MCP server alone
+leaves the agent to discover the language from the tools.
 
 ### 1. Find `hcad`
 
@@ -160,9 +167,36 @@ either put it there or use its full path in the commands below:
 | macOS | `/Applications/hackerscad.app/Contents/Resources/bin/hcad` | in `~/.zshrc`: `export PATH="/Applications/hackerscad.app/Contents/Resources/bin:$PATH"` |
 | Built from source | `/path/to/hackerscad/bin/hcad` | add `/path/to/hackerscad/bin` to the `PATH` |
 
-### 2. Add the MCP server
+### 2. Add the skill
 
-One command, for all your projects; then restart the agent.
+The rules that avoid most mistakes ([SKILL.md](docs/SKILL.md), or
+[AGENTS.md](docs/AGENTS.md) for tools that want a rules file) and the whole reference
+([llms-full.txt](docs/llms-full.txt); [llms.txt](docs/llms.txt) is a short
+overview). `hcad` prints them, so they always match the installed version; in
+Claude Code, for example:
+
+```sh
+mkdir -p ~/.claude/skills/hackerscad
+hcad docs --skill > ~/.claude/skills/hackerscad/SKILL.md
+hcad docs > ~/.claude/skills/hackerscad/llms-full.txt
+```
+
+The folder for each agent:
+
+| Tool | For all projects | For one project |
+|---|---|---|
+| Claude Code | `~/.claude/skills/hackerscad/` | `.claude/skills/hackerscad/` |
+| Antigravity (IDE, 2.0) | `~/.gemini/config/skills/hackerscad/` | `.agents/skills/hackerscad/` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/skills/hackerscad/` | `.agents/skills/hackerscad/` |
+| Gemini CLI | `~/.gemini/skills/hackerscad/` | `.gemini/skills/hackerscad/` |
+| Codex | `~/.agents/skills/hackerscad/` | `.agents/skills/hackerscad/` |
+
+### 3. Add the MCP server, too
+
+One command, for all your projects; then restart the agent. Name it `hcad`,
+as below: the skill tells the agent its tools (hcad_check, hcad_render…), and
+one server is enough (two, under different names, give the agent every tool
+twice).
 
 | Agent | With `hcad` in the `PATH` | Check |
 |---|---|---|
@@ -188,31 +222,6 @@ claude mcp add -s user hcad -- C:\path\to\hackerscad\bin\hcad.exe mcp
 
 Other tools take the same server in their MCP settings: the command (`hcad`,
 or its full path) with the argument `mcp`.
-
-### 3. Or the skill
-
-For agents that work with the command line: the rules that avoid most
-mistakes ([SKILL.md](docs/SKILL.md), or [AGENTS.md](docs/AGENTS.md) for tools
-that want a rules file) and the whole reference
-([llms-full.txt](docs/llms-full.txt); [llms.txt](docs/llms.txt) is a short
-overview). `hcad` prints them, so they always match the installed version; in
-Claude Code, for example:
-
-```sh
-mkdir -p ~/.claude/skills/hackerscad
-hcad docs --skill > ~/.claude/skills/hackerscad/SKILL.md
-hcad docs > ~/.claude/skills/hackerscad/llms-full.txt
-```
-
-The folder for each agent:
-
-| Tool | For all projects | For one project |
-|---|---|---|
-| Claude Code | `~/.claude/skills/hackerscad/` | `.claude/skills/hackerscad/` |
-| Antigravity (IDE, 2.0) | `~/.gemini/config/skills/hackerscad/` | `.agents/skills/hackerscad/` |
-| Antigravity CLI | `~/.gemini/antigravity-cli/skills/hackerscad/` | `.agents/skills/hackerscad/` |
-| Gemini CLI | `~/.gemini/skills/hackerscad/` | `.gemini/skills/hackerscad/` |
-| Codex | `~/.agents/skills/hackerscad/` | `.agents/skills/hackerscad/` |
 
 Then ask, for example: *"a hexagonal pen holder, 10 cm tall, with a rounded
 bottom, as 3MF"*.

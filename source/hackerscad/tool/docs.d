@@ -107,7 +107,11 @@ reference first and follow the rules below.
 
 ## How to work
 
-- **With the MCP server** (best): `claude mcp add -s user hcad -- hcad mcp`. Tools:
+- **With the MCP server** (best): the tools are named hcad_*, whatever name
+  the server was added under (usually `hcad`, sometimes `hackerscad`). If they
+  are missing, use the command line below and suggest adding the server once:
+  `claude mcp add -s user hcad -- hcad mcp` (Codex: `codex mcp add hcad --
+  hcad mcp`), then restarting the agent. Tools:
   hcad_docs (the reference, one topic, or format: cheatsheet for every
   function in one line), hcad_check (errors with line,
   column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
