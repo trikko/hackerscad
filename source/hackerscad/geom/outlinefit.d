@@ -6,7 +6,7 @@ module hackerscad.geom.outlinefit;
 import std.algorithm : max, min, reverse;
 import std.array : array;
 import std.format : format;
-import std.math : abs, atan2, cos, PI, round, sin, sqrt;
+import std.math : abs, asin, atan2, cos, PI, round, sin, sqrt;
 
 import hackerscad.geom.mesh;
 import hackerscad.geom.meshfeatures : plausible;
@@ -523,12 +523,15 @@ unittest
 /// What an outline is, in a designer's words.
 struct Shape
 {
-    string kind;   /// circle, rectangle, rounded rectangle, hexagon, teardrop, slot, D, polygon, outline
+    string kind;   /// circle, notched circle, rectangle, rounded rectangle, hexagon, teardrop, slot, D, polygon,
+                   /// outline
     P2 center;
     double a = 0, b = 0;   /// circle: diameter; rectangle: width, height (along the axes); hexagon: across
                            /// flats; teardrop: diameter; slot: length, width; rounded rectangle: w, h, b = r
-    double r = 0;          /// rounded rectangle: the corners' radius; D: the flat's distance from the centre
-    double angle = 0;      /// rectangle, hexagon, slot: the turn of its first side; teardrop: where the point is
+    double r = 0;          /// rounded rectangle: the corners' radius; D: the flat's distance from the centre;
+                           /// notched circle: the notch's radius
+    double angle = 0;      /// rectangle, hexagon, slot: the turn of its first side; teardrop: where the point
+                           /// is; notched circle: where the notch is
     size_t sides;          /// polygon: how many
 
     /// One line: "rectangle 10 × 19, centre (−7.75, 1.85)".
@@ -538,6 +541,9 @@ struct Shape
         switch (kind)
         {
         case "circle": return format("circle ⌀%s, centre %s", mm(a), c);
+        case "notched circle":
+            return format("circle ⌀%s with a notch r %s towards %s° (for printing), centre %s", mm(a), mm(r),
+                mm(angle * 180 / PI), c);
         case "rectangle":
             return format("rectangle %s × %s, centre %s%s", mm(a), mm(b), c, turned);
         case "rounded rectangle":
@@ -689,6 +695,49 @@ Shape classify(const Element[] e)
             s.b = 2 * as[0].radius;
             s.angle = atan2(as[1].center[1] - as[0].center[1], as[1].center[0] - as[0].center[0]);
             s.center = [(as[0].center[0] + as[1].center[0]) / 2, (as[0].center[1] + as[1].center[1]) / 2];
+            return s;
+        }
+    }
+    // a circle with a small notch on its edge (a printing notch, a keyhole): arcs of one circle around most of
+    // it (300° or more), and a few short pieces near its edge, the notch's round end the widest small arc
+    {
+        double R = 0;
+        foreach (x; e)
+            if (x.arc)
+                R = max(R, x.radius);
+        double around = 0;
+        P2 c;
+        foreach (x; e)
+            if (x.arc && abs(x.radius - R) < 0.01 * R + 1e-3)
+            {
+                around += abs(x.sweep);
+                c = x.center;
+            }
+        bool small = true;
+        double sweep = 0, notchR = 0;
+        P2 nc;
+        foreach (x; e)
+        {
+            if (x.arc && abs(x.radius - R) < 0.01 * R + 1e-3 && dist(x.center, c) < 0.01 * R + 1e-3)
+                continue;
+            // the rest: short, and near the circle's edge
+            if (dist(x.from, x.to) > R || dist(x.from, c) > 1.6 * R || dist(x.to, c) > 1.6 * R
+                || (x.arc && x.radius > 0.6 * R))
+                small = false;
+            else if (x.arc && abs(x.sweep) > sweep)
+            {
+                sweep = abs(x.sweep);
+                notchR = x.radius;
+                nc = x.center;
+            }
+        }
+        if (R > 0 && around > 300 * PI / 180 && small && sweep > PI / 2)
+        {
+            s.kind = "notched circle";
+            s.center = c;
+            s.a = 2 * R;
+            s.r = notchR;
+            s.angle = atan2(nc[1] - c[1], nc[0] - c[0]);
             return s;
         }
     }
@@ -1015,4 +1064,29 @@ unittest
     auto loops = slice(m, Vec3(0, 0, 1), 5, Vec3(1, 0, 0), Vec3(0, 1, 0));
     assert(loops.length == 1, format("%d outlines", loops.length));
     assert(abs(area(loops[0]) - 100) < 1e-6, format("area %s", area(loops[0])));
+}
+
+unittest
+{
+    // a hole ⌀3.3 with a notch r 0.5 on top (as printed parts have): a circle, notched upwards; not a teardrop
+    P2[] o;
+    immutable R = 1.65, nr = 0.5;
+    // the circle from just right of the notch round to just left of it, then the notch's sides and round top
+    immutable gap = asin(nr / R);
+    foreach (i; 0 .. 61)
+    {
+        immutable ang = PI / 2 + gap + (2 * PI - 2 * gap) * i / 60;
+        o ~= [R * cos(ang), R * sin(ang)];
+    }
+    immutable top = 1.65 + 0.2;
+    o ~= [nr, top];
+    foreach (i; 1 .. 12)
+    {
+        immutable ang = PI * i / 12;
+        o ~= [nr * cos(ang), top + nr * sin(ang)];
+    }
+    o ~= [-nr, top];
+    auto sh = classify(fit(o, 0.005));
+    assert(sh.kind == "notched circle", sh.toString ~ "\n" ~ describe([fit(o, 0.005)]));
+    assert(abs(sh.a - 3.3) < 0.01 && abs(sh.r - 0.5) < 0.02 && abs(sh.angle - PI / 2) < 0.05, sh.toString);
 }

@@ -405,11 +405,17 @@ final class Run
                 s ~= format("  the drawings match this deep; %s mm³ of material still differ (hcad diff)\n", mm(volume));
         }
         size_t[3] count;
+        double[3] total = 0;
         foreach (st; d.strokes)
+        {
             count[st.kind]++;
+            total[st.kind] += st.length;
+        }
+        // the totals go down as the copy gets closer (the counts need not: a fix can split a group in two)
         if (d.strokes.length)
-            s ~= format("  %d groups of lines of %s that %s lacks, %d of %s that %s has not, %d places where the surface "
-                ~ "faces otherwise; the most seen:\n", count[Kind.missing], nb, na, count[Kind.extra], na, nb,
+            s ~= format("  in all: %s mm of lines of %s that %s lacks (%d groups), %s mm of lines of %s that %s has not "
+                ~ "(%d), %s mm² of surface facing otherwise (%d); the most seen:\n", mm(total[Kind.missing]), nb, na,
+                count[Kind.missing], mm(total[Kind.extra]), na, nb, count[Kind.extra], mm(total[Kind.facing]),
                 count[Kind.facing]);
         // where to look: the first picture that shows it, else one direction that does
         string inPicture(const size_t[] seen)
