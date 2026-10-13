@@ -1277,7 +1277,9 @@ private:
         if (wire)
             glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         glDisable(GL_POLYGON_OFFSET_FILL);
-        if (section && !wire)
+        // the cut, hatched, in wireframe too: it is the one surface there,
+        // and what lies behind it turns into hidden edges
+        if (section)
             capSection();
         if (!ghost && !wire)
             renderTransparent();
