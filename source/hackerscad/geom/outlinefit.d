@@ -68,24 +68,63 @@ P2[][] slice(const Mesh m, Vec3 n, double at, Vec3 u, Vec3 v)
         startAt[key(s[0], q)] = i;
     auto used = new bool[segs.length];
     P2[][] loops;
+    P2[][] open;   // chains that did not come back to their start (a mesh with a flaw there)
     foreach (i; 0 .. segs.length)
     {
         if (used[i])
             continue;
         P2[] loop;
         size_t at_ = i;
+        bool closed;
         while (!used[at_])
         {
             used[at_] = true;
             loop ~= segs[at_][0];
             auto next = key(segs[at_][1], q) in startAt;
             if (next is null)
+            {
+                loop ~= segs[at_][1];
                 break;
+            }
+            if (*next == i)
+                closed = true;
             at_ = *next;
+        }
+        if (!closed)
+        {
+            open ~= loop;
+            continue;
         }
         // an outline with no area: a face lying in the plane, cut along its edge
         if (loop.length >= 3 && abs(area(loop)) > 1e-4)
             loops ~= loop;
+    }
+    // open chains joined end to start where their ends are close (a gap a mesh left), the rest dropped:
+    // closing them blindly would draw lines across the part
+    immutable gap = max(1e-3, 1e-5 * size);
+    auto taken = new bool[open.length];
+    foreach (i; 0 .. open.length)
+    {
+        if (taken[i])
+            continue;
+        taken[i] = true;
+        auto chain = open[i];
+        for (bool grown = true; grown;)
+        {
+            grown = false;
+            if (dist(chain[$ - 1], chain[0]) <= gap)
+                break;
+            foreach (j; 0 .. open.length)
+                if (!taken[j] && dist(chain[$ - 1], open[j][0]) <= gap)
+                {
+                    chain ~= open[j][1 .. $];
+                    taken[j] = true;
+                    grown = true;
+                    break;
+                }
+        }
+        if (chain.length >= 4 && dist(chain[$ - 1], chain[0]) <= gap && abs(area(chain[0 .. $ - 1])) > 1e-4)
+            loops ~= chain[0 .. $ - 1];
     }
     return loops;
 }
