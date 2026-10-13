@@ -5,6 +5,7 @@
 module hackerscad.tool.codegen;
 
 import std.algorithm : canFind;
+import std.array : join;
 import std.format : format;
 import std.math : abs;
 
@@ -84,6 +85,60 @@ string edgeSelector(Interp it, SolidVal s, int edge)
         if (unique(it, c, s, edge))
             return c;
     return format("edges.filter(e => distance(e.mid, %s) < 0.01.mm)", vecMm(info.mid));
+}
+
+/// One selector for several edges of `s`: a group that picks exactly them
+/// when there is one (edges.parallel(Z), edges.of(faces.top)…), otherwise
+/// their own selectors joined with +.
+string edgesSelector(Interp it, SolidVal s, int[] edges)
+{
+    if (edges.length == 1)
+        return edgeSelector(it, s, edges[0]);
+    string[] candidates = ["edges.parallel(X)", "edges.parallel(Y)", "edges.parallel(Z)", "edges.circles", "edges.lines"];
+    foreach (f; ["faces.top", "faces.bottom", "faces.front", "faces.back", "faces.left", "faces.right"])
+    {
+        candidates ~= ["edges.of(" ~ f ~ ")", "edges.of(" ~ f ~ ").circles", "edges.of(" ~ f ~ ").lines"];
+        foreach (ax; ["X", "Y", "Z"])
+            candidates ~= "edges.of(" ~ f ~ ").parallel(" ~ ax ~ ")";
+    }
+    foreach (c; candidates)
+        if (exactly(it, c, s, edges))
+            return c;
+    string[] parts;
+    foreach (e; edges)
+        parts ~= edgeSelector(it, s, e);
+    return parts.join(" + ");
+}
+
+/// One selector for several faces of `s`: a group that picks exactly them
+/// when there is one (faces.normal(X)…), otherwise their own selectors joined with +.
+string facesSelector(Interp it, SolidVal s, int[] faces)
+{
+    if (faces.length == 1)
+        return faceSelector(it, s, faces[0]);
+    foreach (ax; ["X", "Y", "Z"])
+        if (exactly(it, "faces.normal(" ~ ax ~ ") + faces.normal(-" ~ ax ~ ")", s, faces))
+            return "faces.normal(" ~ ax ~ ") + faces.normal(-" ~ ax ~ ")";
+    string[] parts;
+    foreach (f; faces)
+        parts ~= faceSelector(it, s, f);
+    return parts.join(" + ");
+}
+
+/// Whether `expr` selects exactly `items` (in any order).
+private bool exactly(Interp it, string expr, SolidVal s, int[] items)
+{
+    import std.algorithm : sort;
+    try
+    {
+        auto r = it.trySelector(expr, s).dup;
+        auto want = items.dup;
+        r.sort();
+        want.sort();
+        return r == want;
+    }
+    catch (HcadError)
+        return false;
 }
 
 private bool unique(Interp it, string expr, SolidVal s, int index)
@@ -189,6 +244,8 @@ Edit appendToPart(string source, string file, string part, string call, string p
     // calls may span lines (a comment above them): indent every line
     import std.array : replace, join;
     import std.string : splitLines;
+    if (fn.exprBody !is null)
+        return toBlock(source, toks, fn, first, last, body, call, placeholder);
     string[] lines;
     foreach (l; call.splitLines)
         lines ~= wrapCall(l, indent);
@@ -211,10 +268,58 @@ Edit appendToPart(string source, string file, string part, string call, string p
     return e;
 }
 
+/// `=> expr;` turned into a body with braces, the call added to the
+/// returned chain: one statement per line reads better than a long
+/// expression once features are added.
+private Edit toBlock(string source, Token[] toks, FuncDecl fn, size_t first, size_t last, string body, string call,
+    string placeholder)
+{
+    import std.array : join;
+    import std.string : splitLines, lastIndexOf;
+    auto arrow = first - 1;
+    size_t from = offsetOf(source, toks[arrow].span);
+    while (from > 0 && source[from - 1] == ' ')
+        from--;
+    immutable to = offsetOf(source, toks[last].span) + 1;   // after the ';'
+    // the declaration's indentation
+    size_t ls = offsetOf(source, fn.nameSpan);
+    while (ls > 0 && source[ls - 1] != '\n')
+        ls--;
+    size_t le = ls;
+    while (le < source.length && (source[le] == ' ' || source[le] == '\t'))
+        le++;
+    immutable decl = source[ls .. le];
+    // the chain moves one level in: the lines after the first get four more spaces
+    auto exprLines = body.splitLines;
+    foreach (ref l; exprLines[1 .. $])
+        if (l.length)
+            l = "    " ~ l;
+    string[] lines;
+    foreach (l; call.splitLines)
+        lines ~= wrapCall(l, decl ~ "        ");
+    auto text = "\n" ~ decl ~ "{\n" ~ decl ~ "    return " ~ exprLines.join("\n") ~ "\n" ~ lines.join("\n") ~ ";\n"
+        ~ decl ~ "}";
+    Edit e;
+    e.offset = from;
+    e.length = to - from;
+    e.text = text;
+    e.selectOffset = from + text.length;
+    if (placeholder.length)
+    {
+        auto at = text.lastIndexOf(placeholder);
+        if (at >= 0)
+        {
+            e.selectOffset = from + at;
+            e.selectLength = placeholder.length;
+        }
+    }
+    return e;
+}
+
 /// One line of code at `indent`; a call longer than `width` continues on
 /// the next lines, one more level in, breaking after the commas between its
 /// arguments.
-string wrapCall(string line, string indent, size_t width = 100)
+string wrapCall(string line, string indent, size_t width = 80)
 {
     if (indent.length + line.length <= width)
         return indent ~ line;
@@ -351,7 +456,8 @@ unittest
         ~ "@part Solid b()\n{\n    auto s = box(5, 5, 5);\n    return s.move(x: 20);\n}\n";
     auto e = appendToPart(src, "m.hcad", "a", ".fillet(edges.parallel(Z), r: 1.mm)", "1.mm");
     auto out1 = e.apply(src);
-    assert(out1.canFind("=> (box(10, 10, 10) - cylinder(d: 2, h: 20))\n    .fillet(edges.parallel(Z), r: 1.mm);"), out1);
+    assert(out1.canFind("Solid a()\n{\n    return (box(10, 10, 10) - cylinder(d: 2, h: 20))\n"
+        ~ "        .fillet(edges.parallel(Z), r: 1.mm);\n}\n"), out1);
     assert(out1[e.selectOffset .. e.selectOffset + e.selectLength] == "1.mm");
     auto e2 = appendToPart(src, "m.hcad", "b", ".shell(open: faces.top, thickness: 2.mm)", "2.mm");
     assert(e2.apply(src).canFind("return s.move(x: 20)\n        .shell(open: faces.top, thickness: 2.mm);"), e2.apply(src));
@@ -398,4 +504,23 @@ unittest
 
     auto es = edgeSelector(it, box, edge);
     assert(es == "edges.between(faces.top, faces.right)" || es == "edges.between(faces.right, faces.top)", es);
+
+    // several edges or faces: one group when there is one
+    int[] vertical, topEdges, sides;
+    foreach (i, ed; it.kernel.edges(box.brep))
+    {
+        if (abs(ed.direction.z) > 0.99)
+            vertical ~= cast(int) i;
+        if (ed.mid.z > 29.9)
+            topEdges ~= cast(int) i;
+    }
+    foreach (i, f; it.kernel.faces(box.brep))
+        if (abs(f.normal.x) > 0.99)
+            sides ~= cast(int) i;
+    assert(edgesSelector(it, box, vertical) == "edges.parallel(Z)", edgesSelector(it, box, vertical));
+    assert(edgesSelector(it, box, topEdges) == "edges.of(faces.top)", edgesSelector(it, box, topEdges));
+    assert(facesSelector(it, box, sides) == "faces.normal(X) + faces.normal(-X)", facesSelector(it, box, sides));
+    // no group for two edges of different faces: each its own
+    auto two = edgesSelector(it, box, [vertical[0], topEdges[0]]);
+    assert(two.canFind(" + "), two);
 }
