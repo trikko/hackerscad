@@ -588,7 +588,8 @@ enum modelProps = `
     "source": {"type": "string", "description": "Model source (.hcad). If omitted, the file at 'path' is read."},
     "path": {"type": "string", "description": "Model file. With 'source', only used to resolve project imports."},
     "params": {"type": "object", "description": "Parameter overrides, name to value: numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\" or \"\\\"text\\\"\".", "additionalProperties": {"type": ["string", "number", "boolean"]}},
-    "preset": {"type": "string", "description": "Name of a @preset to apply."}`;
+    "preset": {"type": "string", "description": "Name of a @preset to apply."},
+    "tolerance": {"type": "number", "description": "Mesh chord tolerance in mm for exported meshes and pictures (default 0.02; smaller is finer and slower)."}`;
 
 JSONValue[] toolList()
 {
@@ -912,6 +913,11 @@ RunOptions options(JSONValue args)
     if (auto s = "source" in args) o.source = s.str;
     if (auto p = "preset" in args) o.preset = p.str;
     if (auto p = "drawing" in args) o.drawing = p.str;
+    if (auto t = "tolerance" in args)
+    {
+        o.tolerance = t.type == JSONType.integer ? t.integer : t.floating;
+        enforce(o.tolerance > 0, "'tolerance' must be a positive number of mm");
+    }
     if (auto ps = "params" in args)
         o.overrides = toOverrides(*ps);
     return o;

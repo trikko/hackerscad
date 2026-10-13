@@ -43,6 +43,7 @@ final class Run
     Diagnostic[] fatal;        /// the error that stopped evaluation, if any
     string path;
     long milliseconds;
+    double tolerance = 0.02;   /// mesh chord tolerance of exports and pictures (--tolerance)
 
     private Mesh[] meshes;
 
@@ -60,16 +61,23 @@ final class Run
         return false;
     }
 
-    /// Welded meshes of the parts, in part order.
-    Mesh[] partMeshes(double tolerance = 0.02)
+    /// Welded meshes of the parts, in part order, at `tolerance`.
+    Mesh[] partMeshes()
     {
         if (meshes is null)
+        {
+            // kept only when every part is done: a failure halfway would
+            // otherwise leave a short list for the next call
+            Mesh[] welded, raw;
             foreach (p; result.parts)
             {
-                auto raw = kernel.tessellate(p.solid.brep, tolerance, 0.2);
-                faceMeshes ~= raw;
-                meshes ~= raw.welded;
+                auto m = kernel.tessellate(p.solid.brep, tolerance, 0.2);
+                raw ~= m;
+                welded ~= m.welded;
             }
+            faceMeshes = raw;
+            meshes = welded;
+        }
         return meshes;
     }
 
@@ -275,6 +283,7 @@ Run evaluateModel(RunOptions o)
             o.cache.endRun();
     run.interp.overrides = o.overrides;
     run.drawingName = o.drawing;
+    run.tolerance = o.tolerance;
     run.interp.preset = o.preset;
     auto sw = StopWatch(AutoStart.yes);
     run.path = o.path.length ? absolutePath(o.path) : buildPath(getcwd(), "inline.hcad");
@@ -296,4 +305,16 @@ Run evaluateModel(RunOptions o)
         run.fatal = [Diagnostic(Severity.error, Code.kernel, e.msg, Span(run.path))];
     run.milliseconds = sw.peek.total!"msecs";
     return run;
+}
+
+unittest
+{
+    // --tolerance reaches the meshes of exports and pictures
+    RunOptions coarse, fine;
+    coarse.source = fine.source = "import std.shapes;\n@part Solid s() => sphere(10.mm);\n";
+    coarse.tolerance = 1;
+    fine.tolerance = 0.01;
+    auto a = evaluateModel(coarse), b = evaluateModel(fine);
+    assert(a.ok && b.ok, a.fatal.length ? a.fatal[0].message : b.fatal.length ? b.fatal[0].message : "");
+    assert(a.partMeshes()[0].triangleCount * 2 < b.partMeshes()[0].triangleCount);
 }

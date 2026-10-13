@@ -115,6 +115,11 @@ int main(string[] args)
         stderr.writeln(usage);
         return 2;
     }
+    if (!(o.tolerance > 0))
+    {
+        stderr.writeln("error: --tolerance expects a positive number of mm, got ", o.tolerance);
+        return 2;
+    }
     o.path = args[1];
     foreach (d; defines)
     {
