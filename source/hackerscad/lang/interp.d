@@ -1,6 +1,6 @@
 module hackerscad.lang.interp;
 
-import std.conv : to;
+import std.conv : ConvException, to;
 import std.format : format;
 import std.math : PI, abs, floor, isNaN, fmod;
 import std.algorithm : canFind, map;
@@ -188,6 +188,20 @@ final class Interp
 
     EvalResult runSource(string source, string path)
     {
+        // a failure that is not a model error (a bug, a library throwing)
+        // is still reported as one, instead of ending the program
+        try
+            return runSourceUnguarded(source, path);
+        catch (HcadError e)
+            throw e;
+        catch (KernelException e)
+            throw e;
+        catch (Exception e)
+            throw new HcadError(Code.type, e.msg, Span(path, 1, 1));
+    }
+
+    private EvalResult runSourceUnguarded(string source, string path)
+    {
         if (root is null)
             root = dirName(absolutePath(path));
         traceFile = path;
@@ -300,6 +314,8 @@ final class Interp
                 execBlock(s.body, new Env(mod.env, mod));
             catch (HcadError e)
                 diagnostics ~= e.diag;
+            catch (KernelException e)
+                diagnostics ~= Diagnostic(Severity.error, Code.kernel, e.msg, s.span);
         }
 
         r.params = params;
@@ -677,7 +693,11 @@ final class Interp
                     throw new HcadError(Code.type, "the first @param argument is the description string", arg.span);
                 p.doc = v.s;
                 break;
-            case "doc": p.doc = v.s; break;
+            case "doc":
+                if (v.kind != Kind.str)
+                    throw new HcadError(Code.type, "doc is the description of the parameter: a string", arg.span);
+                p.doc = v.s;
+                break;
             case "min": p.min = v; break;
             case "max": p.max = v; break;
             case "step": p.step = v; break;
@@ -1069,7 +1089,12 @@ final class Interp
     {
         final switch (l.type)
         {
-        case Literal.Type.int_: return Value.integer(l.text.to!long);
+        case Literal.Type.int_:
+            try
+                return Value.integer(l.text.to!long);
+            catch (ConvException)
+                throw new HcadError(Code.lex, "integer too large: the largest is 9223372036854775807; "
+                    ~ "write it as a number with a dot (" ~ l.text ~ ".0) for a floating value", l.span);
         case Literal.Type.float_: return Value.number(l.text.to!double);
         case Literal.Type.string_: return Value.of(l.text);
         case Literal.Type.true_: return Value.of(true);
@@ -1343,8 +1368,10 @@ final class Interp
         case Tok.div:
             if (b.value == 0 && bothInt)
                 throw new HcadError(Code.type, "integer division by zero", span);
+            // the most negative integer divided by -1 does not fit: the
+            // processor traps on it, so it is negated instead (and wraps)
             if (bothInt)
-                return Value.integer(cast(long) a.value / cast(long) b.value);
+                return Value.integer(b.value == -1 ? -cast(long) a.value : cast(long) a.value / cast(long) b.value);
             return Value.number(a.value / b.value, a.dim - b.dim);
         case Tok.mod:
             sameDim();
@@ -1352,7 +1379,7 @@ final class Interp
             {
                 if (b.value == 0)
                     throw new HcadError(Code.type, "integer modulo by zero", span);
-                return Value.integer(cast(long) a.value % cast(long) b.value);
+                return Value.integer(b.value == -1 ? 0 : cast(long) a.value % cast(long) b.value);
             }
             return Value.number(fmod(a.value, b.value), a.dim);
         case Tok.pow:
@@ -1557,6 +1584,10 @@ final class Interp
                     r = f.bi.impl(args);
                 catch (KernelException e)
                     throw new HcadError(Code.kernel, e.msg, args.span);
+                catch (ValueKindError e)
+                    throw new HcadError(Code.type, f.bi.name ~ ": " ~ e.msg, args.span);
+                catch (ConvException e)
+                    throw new HcadError(Code.type, f.bi.name ~ ": " ~ e.msg, args.span);
                 if (recordTrace)
                     traceCall(r, span, f.bi.name, Span.init);
                 return r;

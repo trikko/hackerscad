@@ -77,29 +77,95 @@ enum Kind : ubyte
     object_,
 }
 
+/// A value used as a kind it is not (a number where a string was
+/// expected): the interpreter reports it as a type error at the call.
+class ValueKindError : Exception
+{
+    Kind wanted, got;
+    this(Kind wanted, Kind got)
+    {
+        import std.conv : to;
+        this.wanted = wanted;
+        this.got = got;
+        super("expected " ~ kindName(wanted) ~ ", not " ~ kindName(got));
+    }
+}
+
+/// How a kind is named in messages.
+string kindName(Kind k)
+{
+    final switch (k)
+    {
+    case Kind.void_: return "nothing";
+    case Kind.null_: return "null";
+    case Kind.bool_: return "a bool";
+    case Kind.num: return "a number";
+    case Kind.str: return "a string";
+    case Kind.vec: return "a vector";
+    case Kind.array: return "an array";
+    case Kind.aa: return "an associative array";
+    case Kind.struct_: return "a struct";
+    case Kind.func: return "a function";
+    case Kind.builtin: return "a function";
+    case Kind.bound: return "a method";
+    case Kind.type: return "a type";
+    case Kind.module_: return "a module";
+    case Kind.solid: return "a solid";
+    case Kind.selector: return "a selector";
+    case Kind.edge: return "an edge";
+    case Kind.face: return "a face";
+    case Kind.object_: return "an object";
+    }
+}
+
 struct Value
 {
     Kind kind;
-    union
+    // the payload: read and written through the accessors below, which
+    // check the kind first; reading the wrong member of an untagged union
+    // would reinterpret its bits (a number read as a string crashes)
+    private union
     {
-        bool b;
-        NumVal n;
-        string s;
-        VecVal v;
-        Value[] arr;
-        AAVal aa;
-        StructVal st;
-        Closure fn;
-        Builtin bi;
-        Bound bound;
-        TypeVal type;
-        ModuleVal mod;
-        SolidVal solid;
-        SelectorVal sel;
-        EdgeVal edge;
-        FaceVal face;
-        ObjectVal obj;
+        bool b_;
+        NumVal n_;
+        string s_;
+        VecVal v_;
+        Value[] arr_;
+        AAVal aa_;
+        StructVal st_;
+        Closure fn_;
+        Builtin bi_;
+        Bound bound_;
+        TypeVal type_;
+        ModuleVal mod_;
+        SolidVal solid_;
+        SelectorVal sel_;
+        EdgeVal edge_;
+        FaceVal face_;
+        ObjectVal obj_;
     }
+
+    private static string accessor(string name, string kind) =>
+        "@property ref inout(typeof(" ~ name ~ "_)) " ~ name ~ "() inout return {"
+        ~ " if (kind != Kind." ~ kind ~ ") throw new ValueKindError(Kind." ~ kind ~ ", kind);"
+        ~ " return " ~ name ~ "_; }";
+    mixin(accessor("b", "bool_"));
+    mixin(accessor("n", "num"));
+    mixin(accessor("s", "str"));
+    mixin(accessor("v", "vec"));
+    mixin(accessor("arr", "array"));
+    mixin(accessor("aa", "aa"));
+    mixin(accessor("st", "struct_"));
+    mixin(accessor("fn", "func"));
+    mixin(accessor("bi", "builtin"));
+    mixin(accessor("bound", "bound"));
+    mixin(accessor("type", "type"));
+    mixin(accessor("mod", "module_"));
+    mixin(accessor("solid", "solid"));
+    mixin(accessor("sel", "selector"));
+    mixin(accessor("edge", "edge"));
+    mixin(accessor("face", "face"));
+    mixin(accessor("obj", "object_"));
 
     static Value void_() => Value.init;
 

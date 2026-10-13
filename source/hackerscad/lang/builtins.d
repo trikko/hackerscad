@@ -319,8 +319,15 @@ void installPrelude(Interp it, Env env)
         noTemplate(a, "sort");
         auto xs = arrayArg(a, 0, "sort").dup;
         Value less = a.positional.length > 1 ? fnArg(a, 1, "sort", "(a, b) => a < b") : Value.void_;
-        sort!((x, y) => less.kind == Kind.void_ ? it.applyBinary(Tok.lt, x, y, a.span).truthy
-            : call2(it, less, x, y, a.span).truthy)(xs);
+        // a comparison that is not a strict order (a <= b, or one that
+        // changes its mind) makes the sort's own check fail: say why
+        import core.exception : AssertError;
+        try
+            sort!((x, y) => less.kind == Kind.void_ ? it.applyBinary(Tok.lt, x, y, a.span).truthy
+                : call2(it, less, x, y, a.span).truthy)(xs);
+        catch (AssertError)
+            throw new HcadError(Code.type, "the comparison given to sort is not consistent: it must say whether "
+                ~ "a comes strictly before b, like (a, b) => a < b (not <=)", a.span);
         return Value.of(xs);
     });
     def("reverse", (ref CallArgs a) {

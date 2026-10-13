@@ -1111,3 +1111,18 @@ unittest
     assert(fs.length == 3 && fs[0].name == "p" && fs[1].name == "s" && fs[2].name == "many", format("%s", fs));
     assert(fs[0].first == 1 && fs[0].last == 1 && fs[1].first == 2 && fs[1].last == 2 && fs[2].first == 3);
 }
+
+unittest
+{
+    // values of the wrong kind, malformed literals and failing library calls
+    // are errors with a line, never a crash of the program
+    expectErr(`writeln(text("hi", font: 12345));`, "E0202", "import std.shapes;");
+    assert(error("import std.shapes;\n@param(doc: 5) immutable k = 3;\n@part Solid a() => box(1, 1, 1);").code == "E0202");
+    expectErr(`writeln(0x);`, "E0100");
+    expectErr(`writeln(0xFFFFFFFFFFFFFFFFFF);`, "E0100");
+    expectErr(`writeln(99999999999999999999);`, "E0100");
+    expectErr(`writeln(to!int("abc"));`, "E0202", "import std.conv;");
+    expectErr(`writeln([3, 1, 2, 2, 5, 1, 9, 3, 3, 7, 1, 0].sort((p, q) => p <= q));`, "E0202", "import std.algorithm;");
+    // the most negative integer divided by -1 wraps instead of trapping
+    expectOut(`long m = -9223372036854775807 - 1; writeln(m / -1, " ", m % -1);`, "-9223372036854775808 0");
+}

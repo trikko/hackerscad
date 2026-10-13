@@ -3,6 +3,7 @@ module hackerscad.lang.lexer;
 import std.ascii : isDigit, isHexDigit, isAlpha, isAlphaNum, isWhite;
 import std.conv : to;
 import std.array : replace;
+import std.algorithm : stripLeft;
 
 import hackerscad.lang.errors;
 
@@ -289,7 +290,11 @@ Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
                     advance();
                 auto digits = source[startI + 2 .. i].replace("_", "");
                 span.length = cast(uint)(i - startI);
-                toks ~= Token(Tok.intLit, digits.to!long(16).to!string, span);
+                if (digits.length == 0)
+                    throw new HcadError(Code.lex, "0x needs hex digits after it, like 0xFF", span);
+                if (digits.stripLeft('0').length > 16)
+                    throw new HcadError(Code.lex, "hex number too large for an integer (at most 16 digits)", span);
+                toks ~= Token(Tok.intLit, (cast(long) digits.to!ulong(16)).to!string, span);
                 continue;
             }
             while (isDigit(peek) || peek == '_')
