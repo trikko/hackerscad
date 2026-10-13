@@ -18,7 +18,7 @@ import std.string : strip;
 import core.atomic : atomicLoad, atomicOp;
 
 import hackerscad.render.raster : View;
-import hackerscad.tool.docs : agentsText, reference, skillText, summaryText;
+import hackerscad.tool.docs : agentsText, docsStamp, reference, skillText, summaryText;
 import hackerscad.tool.runner;
 import hackerscad.tool.guiclient;
 import hackerscad.kernel.cache : CachingKernel;
@@ -619,8 +619,9 @@ JSONValue[] toolList()
         tool("hcad_docs", "Reference of the .hcad language, the geometry API, conventions and examples. "
             ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware') for a short excerpt. format: "
             ~ "cheatsheet gives every function in one line each (compact), summary the short index (llms.txt), agents "
-            ~ "and skill the agent guides.",
-            `"topic": {"type": "string"}, "format": {"type": "string", "enum": ["reference", "cheatsheet", "summary", "agents", "skill"]}`),
+            ~ "and skill the agent guides, stamp which docs the server has (an installed skill showing another is out "
+            ~ "of date: refresh it with format skill).",
+            `"topic": {"type": "string"}, "format": {"type": "string", "enum": ["reference", "cheatsheet", "summary", "agents", "skill", "stamp"]}`),
         tool("hcad_check", "Evaluate a model: parts with bounding boxes and volumes, parameters, presets, "
             ~ "writeln output, errors with line/column/suggestion and failed unittest checks.", modelProps),
         tool("hcad_render", "Evaluate a model and return the same report as hcad_check plus a PNG of the parts "
@@ -903,8 +904,9 @@ JSONValue callTool(string name, JSONValue args)
             case "summary": text(summaryText()); break;
             case "agents": text(agentsText()); break;
             case "skill": text(skillText()); break;
+            case "stamp": text(docsStamp()); break;
             case null, "reference": text(reference(arg("topic"))); break;
-            default: throw new Exception("format must be reference, cheatsheet, summary, agents or skill");
+            default: throw new Exception("format must be reference, cheatsheet, summary, agents, skill or stamp");
             }
             break;
         }

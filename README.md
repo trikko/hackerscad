@@ -154,6 +154,18 @@ left to guess writes OpenSCAD or CadQuery instead. Give it both:
 The skill alone works too, through the command line; the MCP server alone
 leaves the agent to discover the language from the tools.
 
+The easiest way: ask your agent to do the three steps below (it installs
+hackerscad too, if you want, from the releases).
+
+> Install the hackerscad skill for all my projects from
+> https://raw.githubusercontent.com/trikko/hackerscad/main/docs/SKILL.md, with
+> https://raw.githubusercontent.com/trikko/hackerscad/main/docs/llms-full.txt
+> next to it, then follow its "Setup and updates" section.
+
+The skill keeps itself up to date: it carries the stamp of the docs it was made
+from, checks it against `hcad docs --stamp` and, when hackerscad has been
+updated, regenerates itself with the installed `hcad`. Or by hand:
+
 ### 1. Find `hcad`
 
 Both run `hcad`, the command line tool, and the agent starts it by itself from

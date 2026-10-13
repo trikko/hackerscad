@@ -8,7 +8,7 @@ import std.string : indexOf;
 import hackerscad.lang.errors;
 import hackerscad.kernel.brep : KernelException;
 import hackerscad.tool.runner;
-import hackerscad.tool.docs : reference, agentsText, skillText, summaryText;
+import hackerscad.tool.docs : reference, agentsText, skillText, summaryText, docsStamp;
 import hackerscad.tool.mcp : serve, serveWorker;
 
 enum usage = `hackerscad — parametric CAD with a D-like language
@@ -22,11 +22,12 @@ usage:
       @drawing (the first one, or --drawing NAME)
   hcad check FILE.hcad [--json] [-D name=value…] [--preset NAME]
       evaluates the model and reports parts, parameters, output and problems
-  hcad docs [TOPIC | --cheatsheet | --agents | --skill | --summary]
+  hcad docs [TOPIC | --cheatsheet | --agents | --skill | --summary | --stamp]
       language reference and agent guide (without a topic: the full text,
       llms-full.txt); --cheatsheet every function in one line each (also
       --cheatsheet-html), --agents AGENTS.md, --skill SKILL.md, --summary
-      llms.txt
+      llms.txt; --stamp which docs this build has: an installed skill that
+      shows another is out of date
   hcad features FILE [--part NAME] [--json]
       what a mesh (.stl .obj .3mf), a STEP file or a model is made of, to
       remodel it: flat faces, holes and shafts, cones, spheres, roundings,
@@ -134,6 +135,11 @@ int main(string[] args)
                 auto logo = exists("data/logo/it.andreafontana.hackerscad.gui.svg")
                     ? readText("data/logo/it.andreafontana.hackerscad.gui.svg") : null;
                 write(cheatsheetHtml(logo));
+                return 0;
+            }
+            if (topic == "--stamp")
+            {
+                writeln(docsStamp());
                 return 0;
             }
             write(topic == "--agents" ? agentsText() : topic == "--skill" ? skillText()

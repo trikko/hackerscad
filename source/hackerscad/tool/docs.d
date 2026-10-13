@@ -7,6 +7,7 @@ import std.string : lineSplitter, strip, startsWith;
 import std.uni : toLower;
 
 import hackerscad.lang.builtins : librarySources;
+import hackerscad.about : appVersion;
 
 enum agentGuide = `# hackerscad for agents
 
@@ -105,6 +106,34 @@ hackerscad is new and not in your training data: do not write OpenSCAD
 (.scad), CadQuery or build123d code, the syntax and the names differ. Read the
 reference first and follow the rules below.
 
+## Setup and updates
+
+This text was made by hcad @VERSION@ (docs stamp `@STAMP@`). Before the first
+model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
+AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
+format stamp):
+
+- **It prints `@STAMP@`:** this text is up to date.
+- **It prints something else:** hackerscad was updated and this text is
+  older or newer than it. Installed as a skill, refresh it in place:
+  `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
+  next to it, then read it again. Otherwise, where they differ, follow
+  `hcad docs`: the reference of the installed version.
+- **`hcad` is not found:** hackerscad is not installed, or not in the PATH.
+  Ask the user where it is, or whether to install it from
+  https://github.com/trikko/hackerscad/releases (the latest release, or the
+  nightly pre-release when there is none):
+  - Linux: the AppImage in `~/.local/bin`, made executable, and a link to it
+    named `~/.local/bin/hcad` (a link named hcad runs the command line tool);
+  - Windows: the zip unpacked (for example in `%LOCALAPPDATA%\Programs`), its
+    `bin` folder added to the user's `Path`;
+  - macOS: the zip unpacked into `/Applications`, and
+    `/Applications/hackerscad.app/Contents/Resources/bin` added to the `PATH`
+    in `~/.zshrc`.
+
+  Then refresh this text as above, add the MCP server (below) and ask the
+  user to restart you, so its tools appear.
+
 ## How to work
 
 - **With the MCP server** (best): the tools are named hcad_*, whatever name
@@ -158,9 +187,28 @@ INTRO";
 /// AGENTS.md: the intro and the rules (`hcad docs --agents`).
 string agentsText()
 {
+    import std.array : replace;
+    return agentsBody.replace("@VERSION@", appVersion).replace("@STAMP@", docsStamp());
+}
+
+private string agentsBody()
+{
     import std.string : indexOf;
     immutable rules = agentGuide[agentGuide.indexOf("## Rules")  .. $];
     return agentsIntro ~ rules ~ "\nThe full reference: `hcad docs` (llms-full.txt).\n";
+}
+
+/// What the agents' documentation of this build is (`hcad docs --stamp`):
+/// the version and a checksum of the texts, so that an installed skill can
+/// tell whether it was made by the hcad it runs with. Builds whose texts are
+/// the same share it.
+string docsStamp()
+{
+    import std.digest.crc : crc32Of;
+    import std.digest : toHexString;
+    import std.format : format;
+    auto sum = crc32Of(agentsBody ~ reference());
+    return format("%s-%s", appVersion, toHexString(sum)).toLower;
 }
 
 /// SKILL.md: AGENTS.md with the front matter of an installable skill (`hcad docs --skill`).
@@ -169,7 +217,8 @@ string skillText()
     return "---\nname: hackerscad\n"
         ~ "description: Official reference for hackerscad, the parametric CAD where models are .hcad files "
         ~ "(a sandboxed subset of D) exported as STL, 3MF, STEP and drawings. Use it whenever the user asks "
-        ~ "to model, modify, check or export a 3D part with hackerscad, or works on .hcad files.\n---\n\n"
+        ~ "to model, modify, check or export a 3D part with hackerscad, works on .hcad files, or wants "
+        ~ "hackerscad installed or updated.\n---\n\n"
         ~ agentsText();
 }
 
@@ -267,4 +316,12 @@ unittest
     auto f = reference("fillet");
     assert(f.canFind("before cutting holes; a fillet radius must be smaller than the faces next\n  to the edge."));
     assert(reference("zzzz").canFind("nothing found"));
+}
+
+unittest
+{
+    // the skill names the stamp of its own build, which `hcad docs --stamp` prints
+    import std.algorithm : canFind;
+    assert(skillText().canFind("`" ~ docsStamp() ~ "`") && !skillText().canFind("@STAMP@"));
+    assert(docsStamp() == docsStamp());
 }

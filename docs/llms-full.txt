@@ -933,7 +933,8 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
     lid += lip.move(z: wall);
 
     // posts: tapped for the screw in the base, clearance holes in the lid
-    immutable px = inner.x / 2 - screw.d * 1.2, py = inner.y / 2 - screw.d * 1.2;
+    // a little into the walls: posts only tangent to them would touch along a line
+    immutable px = inner.x / 2 - screw.d * 1.1, py = inner.y / 2 - screw.d * 1.1;
     foreach (sx; [-1, 1])
         foreach (sy; [-1, 1])
         {

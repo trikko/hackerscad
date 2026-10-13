@@ -10,6 +10,34 @@ hackerscad is new and not in your training data: do not write OpenSCAD
 (.scad), CadQuery or build123d code, the syntax and the names differ. Read the
 reference first and follow the rules below.
 
+## Setup and updates
+
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-c45e28db`). Before the first
+model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
+AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
+format stamp):
+
+- **It prints `0.3.1-c45e28db`:** this text is up to date.
+- **It prints something else:** hackerscad was updated and this text is
+  older or newer than it. Installed as a skill, refresh it in place:
+  `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
+  next to it, then read it again. Otherwise, where they differ, follow
+  `hcad docs`: the reference of the installed version.
+- **`hcad` is not found:** hackerscad is not installed, or not in the PATH.
+  Ask the user where it is, or whether to install it from
+  https://github.com/trikko/hackerscad/releases (the latest release, or the
+  nightly pre-release when there is none):
+  - Linux: the AppImage in `~/.local/bin`, made executable, and a link to it
+    named `~/.local/bin/hcad` (a link named hcad runs the command line tool);
+  - Windows: the zip unpacked (for example in `%LOCALAPPDATA%\Programs`), its
+    `bin` folder added to the user's `Path`;
+  - macOS: the zip unpacked into `/Applications`, and
+    `/Applications/hackerscad.app/Contents/Resources/bin` added to the `PATH`
+    in `~/.zshrc`.
+
+  Then refresh this text as above, add the MCP server (below) and ask the
+  user to restart you, so its tools appear.
+
 ## How to work
 
 - **With the MCP server** (best): the tools are named hcad_*, whatever name
