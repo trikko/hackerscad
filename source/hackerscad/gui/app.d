@@ -2633,6 +2633,15 @@ private:
             entries ~= G("Hole at point", holes);
             entries ~= I("Pocket at point…", () => ctx("pocket", "2.mm"));
             entries ~= I("Boss at point…", () => ctx("boss", "3.mm"));
+            // a whole cylinder: the ISO threads that fit it
+            auto sizes = threadSizes();
+            if (sizes.length)
+            {
+                MenuEntry[] th;
+                foreach (sz; sizes)
+                    th ~= I(sz, threadAction(sz));
+                entries ~= G(threadOutside ? "Thread (outside)" : "Thread (in the hole)", th);
+            }
         }
 
         // measurements: values on the right, a click copies them
@@ -2842,6 +2851,15 @@ private:
                     ~ ".cut(circle(d: %g.mm), on: %s, at: %s, depth: %s)", size, kind, holeDiameter(kind, size),
                     ctxSelector(false), ctxAt(), or("5.mm"));
             }
+        case "thread":
+            {
+                // an ISO metric thread on the clicked cylinder (the selected faces, if they are its parts)
+                import hackerscad.lang.builtins : metricSize;
+                double d, p;
+                if (!onFace || !metricSize(size, d, p) || !threadSizes().canFind(size))
+                    return null;
+                return format(".thread(%s, \"%s\")", ctxSelector(false), size);
+            }
         case "pocket":
             return onFace ? format(".cut(rect(10.mm, 6.mm), on: %s, at: %s, depth: %s)", ctxSelector(false), ctxAt(),
                 or("2.mm")) : null;
@@ -2885,6 +2903,42 @@ private:
         auto i = sizes.countUntil(size);
         return kind == "clearance" ? cl[i] : kind == "tap" ? tp[i] : ins[i];
     }
+
+    bool threadOutside;   /// what threadSizes found: a shaft (true) or a hole
+
+    /// The ISO metric threads that fit the cylindrical face of the context:
+    /// for a shaft the size of its diameter, for a hole the sizes it is the
+    /// tap drill of; none when the face is not a whole cylinder.
+    string[] threadSizes()
+    {
+        import hackerscad.kernel.brep : CylinderInfo;
+        import hackerscad.lang.builtins : isoCoarse;
+        import std.math : PI;
+        if (contextHit.face < 0 || contextHit.part >= last.parts.length)
+            return null;
+        auto part = last.parts[contextHit.part];
+        if (part.brep is null || part.kernel is null)
+            return null;
+        CylinderInfo c;
+        try
+            if (!part.kernel.faceCylinder(part.brep, contextHit.face, c) || c.span < 2 * PI - 1e-6)
+                return null;
+        catch (Exception)
+            return null;
+        threadOutside = c.outside;
+        string[] r;
+        foreach (row; isoCoarse)
+        {
+            immutable d = row[0], p = row[1], h = 0.5413 * p, dia = 2 * c.radius;
+            immutable fits = c.outside ? abs(dia - d) <= 0.25 * p + 0.1 : dia <= d - 0.5 * h && dia >= d - 2 * h - 0.3 * p;
+            if (fits)
+                r ~= format("M%g", d);
+        }
+        return r;
+    }
+
+    // a function of its own: closures made in a loop would all share the last size
+    void delegate() threadAction(string size) => () => ctx("thread", null, null, size);
 
     // a function of its own: closures made in a loop would all share the last size
     // a blind hole 5 mm deep at the clicked point: edit the depth, or use through: true
