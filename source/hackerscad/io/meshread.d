@@ -83,6 +83,8 @@ Mesh readObj(const(char)[] text)
             if (l.startsWith("v "))
             {
                 auto p = l.split;
+                if (p.length < 4)
+                    throw new MeshFormatException("OBJ vertex with fewer than 3 coordinates: " ~ l.idup);
                 foreach (c; p[1 .. 4])
                     m.verts ~= c.to!float;
             }
@@ -99,6 +101,8 @@ Mesh readObj(const(char)[] text)
                         throw new MeshFormatException("OBJ face refers to a missing vertex");
                     idx ~= cast(uint) i;
                 }
+                if (idx.length < 3)
+                    throw new MeshFormatException("OBJ face with fewer than 3 vertices: " ~ l.idup);
                 foreach (k; 1 .. idx.length - 1)
                     m.tris ~= [idx[0], idx[k], idx[k + 1]];
             }
@@ -449,4 +453,13 @@ unittest
     import std.exception : assertThrown;
     assertThrown!MeshFormatException(readStl(cast(ubyte[]) "hello"));
     assertThrown!MeshFormatException(read3mf(cast(ubyte[]) "hello"));
+}
+
+unittest
+{
+    // short lines are format errors, not crashes
+    import std.exception : assertThrown;
+    assertThrown!MeshFormatException(readObj("v 0 0\nf 1 1 1\n"));
+    assertThrown!MeshFormatException(readObj("v 0 0 0\nv 1 0 0\nf 1 2\n"));
+    assertThrown!MeshFormatException(readObj("v 0 0 0\nf\n"));
 }
