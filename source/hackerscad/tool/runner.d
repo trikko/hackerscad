@@ -469,7 +469,10 @@ final class Run
                 jp["export"] = false;
             jp["bbox"] = ["min": [bb.min.x, bb.min.y, bb.min.z], "max": [bb.max.x, bb.max.y, bb.max.z],
                 "size": [bb.size.x, bb.size.y, bb.size.z]];
-            jp["volume_mm3"] = kernel.volume(p.solid.brep);
+            try
+                jp["volume_mm3"] = kernel.volume(p.solid.brep);
+            catch (KernelException)
+                jp["volume_mm3"] = null;   // an invalid solid may have none
             jp["valid"] = kernel.isValid(p.solid.brep);
             if (printability)
             {

@@ -4,7 +4,7 @@ import std.conv : to;
 import std.format : format;
 import std.math : PI, abs, isClose;
 import std.array : join;
-import std.algorithm : map;
+import std.algorithm : map, canFind;
 
 import hackerscad.geom.vec;
 public import hackerscad.geom.color;
@@ -40,6 +40,13 @@ struct Dim
         if (this == volume) return "Volume";
         if (this == angle) return "Angle";
         return format("mm^%d·rad^%d", len, ang);
+    }
+
+    /// The name with its article: "a Length", "an Angle".
+    string aName() const
+    {
+        immutable n = name;
+        return ("AEIOUaeiou".canFind(n[0]) ? "an " : "a ") ~ n;
     }
 
     /// Suffix used when printing.
@@ -447,6 +454,14 @@ final class Env
     VarDecl[string] pending;   /// module-level globals not evaluated yet
     bool[string] evaluating;   /// cycle detection for pending globals
     ModuleVal mod;
+    /// Declared types of variables (int n = …), checked again on assignment;
+    /// `mod` resolves the type's name.
+    struct Typed
+    {
+        TypeRef type;
+        ModuleVal mod;
+    }
+    Typed[string] types;
 
     this(Env parent, ModuleVal mod)
     {

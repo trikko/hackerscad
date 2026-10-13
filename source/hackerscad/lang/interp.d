@@ -118,6 +118,10 @@ struct EvalResult
 /// The stack of the thread a model is evaluated on.
 enum size_t evalStackSize = 512 * 1024 * 1024;
 
+/// The largest integer a double holds exactly, with its neighbours (2^53 - 1):
+/// past it, a sum like 2^53 + 1 would round without anyone noticing.
+enum long maxExactInt = (1L << 53) - 1;
+
 struct Limits
 {
     size_t steps = 200_000_000;
@@ -306,6 +310,10 @@ final class Interp
                 if (q.label.toLower == label.toLower)
                     throw new HcadError(Code.type, format("two parts would have the same name in exported files, "
                         ~ "'%s': give one a name: of its own", label), f.nameSpan);
+            // an invalid solid exports as a broken mesh: say so instead of "ok"
+            if (!kernel.isValid(v.solid.brep))
+                diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("@part '%s' is not a valid closed solid "
+                    ~ "(a self-intersecting outline, overlapping sweep or fold?): exports may be broken", f.name), f.nameSpan);
             r.parts ~= PartResult(f.name, v.solid, rgb, f.nameSpan, export_, label);
         }
         // drawings: collected here, projected only when exported
@@ -730,14 +738,33 @@ final class Interp
             }
         }
 
+        // a bare number for a length/angle parameter uses the model's unit
+        Value inUnit(Value v)
+        {
+            if (v.isNum && v.n.dim == Dim.none && def.isNum && def.n.dim != Dim.none)
+                return Value.number(v.n.value * (def.n.dim == Dim.length ? env.mod.unitFactor : PI / 180), def.n.dim);
+            return v;
+        }
+        // min: 10, max: 90 on an angle are degrees, like the value
+        p.min = inUnit(p.min);
+        p.max = inUnit(p.max);
+        p.step = inUnit(p.step);
+        foreach (lim; [p.min, p.max, p.step])
+            if (lim.isNum && def.isNum && lim.n.dim != def.n.dim)
+                throw new HcadError(Code.units, format("the limits of '%s' must be in %s, like its value, not %s", d.name,
+                    def.n.dim.name, lim.n.dim.name), a.span);
+        if (p.min.isNum && p.max.isNum && p.min.n.value > p.max.n.value)
+            throw new HcadError(Code.type, format("the min of '%s' (%s) is above its max (%s)", d.name, p.min, p.max), a.span);
+
         // every candidate value is checked like the default: type, unit, limits
         Value check(Value v, Span span)
         {
-            // a bare number for a length/angle parameter uses the model's unit
-            if (v.isNum && v.n.dim == Dim.none && def.isNum && def.n.dim != Dim.none)
-                v = Value.number(v.n.value * (def.n.dim == Dim.length ? env.mod.unitFactor : PI / 180), def.n.dim);
+            v = inUnit(v);
             if (v.kind != def.kind || (v.isNum && v.n.dim != def.n.dim))
                 throw new HcadError(Code.type, format("parameter '%s' expects %s, got %s", d.name, def.typeName, v.typeName), span);
+            if (v.isNum && def.n.isInt && !v.n.isInt)
+                throw new HcadError(Code.type, format("parameter '%s' is a whole number, not %s (if it may have "
+                    ~ "decimals, give its default with a dot or a unit: %s.0, %s.mm)", d.name, v, def, def), span);
             if (p.min.isNum && v.n.value < p.min.n.value || p.max.isNum && v.n.value > p.max.n.value)
                 throw new HcadError(Code.type, format("parameter '%s' = %s is outside [%s, %s]", d.name, v,
                     p.min.kind == Kind.void_ ? "-∞" : p.min.toString, p.max.kind == Kind.void_ ? "∞" : p.max.toString), span);
@@ -790,7 +817,10 @@ final class Interp
                 throw new HcadError(Code.redefined, format("'%s' is already declared in this scope", v.name), v.nameSpan);
             auto val = v.init ? eval(v.init, env) : defaultOf(v.type, env.mod, v.nameSpan);
             if (v.type)
+            {
                 val = coerce(val, v.type, env.mod, v.init ? v.init.span : v.nameSpan, "'" ~ v.name ~ "'");
+                env.types[v.name] = Env.Typed(v.type, env.mod);
+            }
             env.vars[v.name] = val;
             if (v.storage != Storage.auto_)
                 env.readonly[v.name] = true;
@@ -919,6 +949,10 @@ final class Interp
             if (f.key.name.length)
                 scope_.vars[f.key.name] = f.key.type ? coerce(key, f.key.type, env.mod, f.key.span, "'" ~ f.key.name ~ "'") : key;
             scope_.vars[f.value.name] = f.value.type ? coerce(val, f.value.type, env.mod, f.value.span, "'" ~ f.value.name ~ "'") : val;
+            if (f.key.type && f.key.name.length)
+                scope_.types[f.key.name] = Env.Typed(f.key.type, env.mod);
+            if (f.value.type)
+                scope_.types[f.value.name] = Env.Typed(f.value.type, env.mod);
             return exec(f.body, scope_);
         }
 
@@ -946,11 +980,24 @@ final class Interp
         auto agg = eval(f.aggregate, env);
         if (agg.kind == Kind.array)
         {
+            // foreach (i, x; xs.enumerate): x is the element, as in D, not the pair
+            bool enumerated;
+            {
+                auto e = f.aggregate;
+                if (auto c = cast(Call) e)
+                    e = c.callee;
+                if (auto m = cast(Member) e)
+                    enumerated = m.name == "enumerate";
+                else if (auto id = cast(Ident) e)
+                    enumerated = id.name == "enumerate";
+            }
+            enumerated = enumerated && f.key.name.length;
             auto items = agg.arr;
             foreach (k; 0 .. items.length)
             {
                 immutable i = f.reverse ? items.length - 1 - k : k;
-                auto fl = iteration(Value.integer(i), items[i]);
+                auto pair = enumerated && items[i].kind == Kind.array && items[i].arr.length == 2 ? items[i].arr : null;
+                auto fl = pair ? iteration(pair[0], pair[1]) : iteration(Value.integer(i), items[i]);
                 if (fl == Flow.break_) break;
                 if (fl == Flow.return_) return fl;
             }
@@ -1131,12 +1178,30 @@ final class Interp
         final switch (l.type)
         {
         case Literal.Type.int_:
-            try
-                return Value.integer(l.text.to!long);
-            catch (ConvException)
-                throw new HcadError(Code.lex, "integer too large: the largest is 9223372036854775807; "
-                    ~ "write it as a number with a dot (" ~ l.text ~ ".0) for a floating value", l.span);
-        case Literal.Type.float_: return Value.number(l.text.to!double);
+            {
+                // numbers are doubles: integers stay exact up to 2^53
+                long x;
+                try
+                    x = l.text.to!long;
+                catch (ConvException)
+                    x = long.max;
+                if (x > maxExactInt || x < -maxExactInt)
+                    throw new HcadError(Code.lex, format("integer too large: the largest exact one is %s; write it with a "
+                        ~ "dot (%s.0) for a floating value", maxExactInt, l.text), l.span);
+                return Value.integer(x);
+            }
+        case Literal.Type.float_:
+            {
+                import std.math : isInfinity;
+                double x;
+                try
+                    x = l.text.to!double;
+                catch (ConvException)
+                    x = double.infinity;   // out of range
+                if (isInfinity(x))
+                    throw new HcadError(Code.lex, "number too large: the largest is about 1.8e308", l.span);
+                return Value.number(x);
+            }
         case Literal.Type.string_: return Value.of(l.text);
         case Literal.Type.true_: return Value.of(true);
         case Literal.Type.false_: return Value.of(false);
@@ -1213,7 +1278,10 @@ final class Interp
                 throw new HcadError(Code.undefined, format("undefined identifier '%s'", id.name), id.span, suggest(id.name, env.allNames));
             if (e.readonly.get(id.name, false))
                 throw new HcadError(Code.immutable_, format("cannot modify '%s': it is enum/immutable/const or module-level", id.name), id.span);
-            env.find(id.name).vars[id.name] = v;
+            // a declared type holds for every assignment, not only the first
+            if (auto t = id.name in e.types)
+                v = coerce(v, t.type, env.mod, id.span, "'" ~ id.name ~ "'", t.mod);
+            e.vars[id.name] = v;
             return;
         }
         if (auto ix = cast(Index) target)
@@ -1288,6 +1356,18 @@ final class Interp
     {
         import hackerscad.lang.builtins : solidBoolean;
 
+        // 0 is zero in any unit when added or compared: thinWalls == 0, [].sum + 1.mm
+        if (l.isNum && r.isNum && l.n.dim != r.n.dim && (op == Tok.plus || op == Tok.minus || op == Tok.eq
+            || op == Tok.ne || op == Tok.lt || op == Tok.le || op == Tok.gt || op == Tok.ge))
+        {
+            if (l.n.dim == Dim.none && l.n.value == 0)
+                l = Value.number(0, r.n.dim);
+            else if (r.n.dim == Dim.none && r.n.value == 0)
+                r = Value.number(0, l.n.dim);
+            else if (op == Tok.eq || op == Tok.ne)
+                throw new HcadError(Code.units, format("cannot compare %s with %s", l.n.dim.aName, r.n.dim.aName), span,
+                    l.n.dim == Dim.none || r.n.dim == Dim.none ? "add a unit to the bare number, e.g. 5.mm" : null);
+        }
         if (op == Tok.eq)
             return Value.of(equal(l, r));
         if (op == Tok.ne)
@@ -1316,8 +1396,39 @@ final class Interp
             };
             return Value.make(Kind.selector, c);
         }
+        if (op == Tok.tilde)
+        {
+            // doubling a list in a loop reaches any size in a few steps
+            void fits(size_t n)
+            {
+                if (n > limits.arrayLength)
+                    throw new HcadError(Code.limit, format("a list or text longer than %s elements", limits.arrayLength), span);
+            }
+            if (l.kind == Kind.array || r.kind == Kind.array)
+                fits((l.kind == Kind.array ? l.arr.length : 1) + (r.kind == Kind.array ? r.arr.length : 1));
+            if (l.kind == Kind.array && r.kind == Kind.array)
+                return Value.of(l.arr ~ r.arr);
+            if (l.kind == Kind.array)
+                return Value.of(l.arr ~ r);
+            if (r.kind == Kind.array)
+                return Value.of(l ~ r.arr);
+            // a string joined with anything else takes its textual form
+            if (l.kind == Kind.str || r.kind == Kind.str)
+            {
+                auto t = l.toString ~ r.toString;
+                fits(t.length);
+                return Value.of(t);
+            }
+            throw new HcadError(Code.type, format("cannot concatenate %s and %s", l.typeName, r.typeName), span);
+        }
+
         if (l.kind == Kind.solid || r.kind == Kind.solid)
         {
+            // the sum of an empty list (0) is no solid at all
+            if (l.isNum && l.n.isInt && l.n.value == 0)
+                l = Value.of(new SolidVal(null, span));
+            if (r.isNum && r.n.isInt && r.n.value == 0)
+                r = Value.of(new SolidVal(null, span));
             if (l.kind != Kind.solid || r.kind != Kind.solid)
                 throw new HcadError(Code.type, format("cannot combine %s and %s with '%s'", l.typeName, r.typeName, opText(op)), span);
             if (l.solid.path || r.solid.path)
@@ -1338,19 +1449,6 @@ final class Interp
             return v;
         }
 
-        if (op == Tok.tilde)
-        {
-            if (l.kind == Kind.array && r.kind == Kind.array)
-                return Value.of(l.arr ~ r.arr);
-            if (l.kind == Kind.array)
-                return Value.of(l.arr ~ r);
-            if (r.kind == Kind.array)
-                return Value.of(l ~ r.arr);
-            // a string joined with anything else takes its textual form
-            if (l.kind == Kind.str || r.kind == Kind.str)
-                return Value.of(l.toString ~ r.toString);
-            throw new HcadError(Code.type, format("cannot concatenate %s and %s", l.typeName, r.typeName), span);
-        }
 
         if (l.isNum && r.isNum)
             return numeric(op, l.n, r.n, span);
@@ -1400,11 +1498,20 @@ final class Interp
         }
 
         immutable bothInt = a.isInt && b.isInt;
+        // integers are doubles, exact up to 2^53: past it they would round
+        // silently (and wrap when turned back into whole numbers)
+        Value whole(double x)
+        {
+            if (x > maxExactInt || x < -maxExactInt)
+                throw new HcadError(Code.limit, format("integer overflow: %.17g is past %s, the largest exact integer; "
+                    ~ "use a floating value (1.0 * x)", x, maxExactInt), span);
+            return Value.number(x, Dim.none, true);
+        }
         switch (op)
         {
-        case Tok.plus: sameDim(); return Value.number(a.value + b.value, a.dim, bothInt);
-        case Tok.minus: sameDim(); return Value.number(a.value - b.value, a.dim, bothInt);
-        case Tok.mul: return Value.number(a.value * b.value, a.dim + b.dim, bothInt);
+        case Tok.plus: sameDim(); return bothInt ? whole(a.value + b.value) : Value.number(a.value + b.value, a.dim);
+        case Tok.minus: sameDim(); return bothInt ? whole(a.value - b.value) : Value.number(a.value - b.value, a.dim);
+        case Tok.mul: return bothInt ? whole(a.value * b.value) : Value.number(a.value * b.value, a.dim + b.dim);
         case Tok.div:
             if (b.value == 0 && bothInt)
                 throw new HcadError(Code.type, "integer division by zero", span);
@@ -1429,7 +1536,9 @@ final class Interp
                 if (a.dim != Dim.none && b.value != floor(b.value))
                     throw new HcadError(Code.units, format("a %s can only be raised to an integer power", a.dim.name), span);
                 import std.math : pow;
-                return Value.number(pow(a.value, b.value), a.dim.times(cast(int) b.value), bothInt && b.value >= 0);
+                if (bothInt && b.value >= 0)
+                    return whole(pow(a.value, b.value));
+                return Value.number(pow(a.value, b.value), a.dim.times(cast(int) b.value));
             }
         case Tok.lt: sameDim(); return Value.of(a.value < b.value);
         case Tok.le: sameDim(); return Value.of(a.value <= b.value);
@@ -1743,7 +1852,10 @@ final class Interp
             else
                 throw new HcadError(Code.missingArg, format("missing argument '%s' for '%s'", p.name, c.name), args.span);
             if (p.type)
+            {
                 v = coerce(v, p.type, args.caller, vs, "argument '" ~ p.name ~ "'", c.mod);
+                env.types[p.name] = Env.Typed(p.type, c.mod);
+            }
             env.vars[p.name] = v;
         }
         foreach (name; args.namedOrder)
@@ -1868,6 +1980,12 @@ final class Interp
     {
         if (args.positional.length > def.fields.length)
             throw new HcadError(Code.arity, format("%s has %d fields, %d values given", def.name, def.fields.length, args.positional.length), args.span);
+        // struct P { P inner; } builds defaults without end
+        if (++depth > limits.depth)
+            throw new HcadError(Code.limit, format("%s nests deeper than %d levels: does it contain itself? a list "
+                ~ "(%s[]) can hold more of the same", def.name, limits.depth, def.name), args.span);
+        scope (exit)
+            depth--;
         auto fields = new Value[def.fields.length];
         foreach (i, f; def.fields)
         {
@@ -1989,8 +2107,16 @@ final class Interp
                     return v;
                 if (v.n.dim == Dim.none && (want == Dim.length || want == Dim.angle))
                     return Value.number(v.n.value * (want == Dim.length ? (mod ? mod.unitFactor : 1) : PI / 180), want);
-                throw new HcadError(Code.units, format("%s must be a %s, not a %s", what, t.name, v.n.dim.name), span);
+                throw new HcadError(Code.units, format("%s must be a %s, not %s", what, t.name, v.n.dim.aName), span);
             }
+        case "Vec":
+            if (v.kind == Kind.array)
+            {
+                import hackerscad.lang.builtins : arrayToVec;
+                v = arrayToVec(this, v.arr, mod, span);
+            }
+            if (v.kind != Kind.vec) fail();
+            return v;
         case "Vec2", "Vec3":
             {
                 if (v.kind == Kind.array)
@@ -2127,10 +2253,17 @@ final class Interp
         return cast(uint) features.length;
     }
 
-    void print(string text, Span span)
+    /// A line of output; write() leaves it open for the next print to continue.
+    void print(string text, Span span, bool newline = true)
     {
-        log ~= LogLine(text, span);
+        if (openLine && log.length)
+            log[$ - 1].text ~= text;
+        else
+            log ~= LogLine(text, span);
+        openLine = !newline;
     }
+
+    private bool openLine;
 
     static string suggest(string name, const(string)[] candidates)
     {

@@ -160,11 +160,11 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>slot(length: Length, width: Length) → Profile</dt><dd>A stadium along X.</dd>
 <dt>teardrop(r | d: Length, angle: Angle, flat: bool) → Profile</dt><dd>A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.</dd>
 <dt>text(text: string, size: Length, font: string) → Profile</dt><dd>A text outline starting at the origin on the baseline.</dd>
-<dt>p.round(r: Length) → Profile</dt><dd>Rounds the (convex) corners.</dd>
+<dt>p.round(r: Length) → Profile</dt><dd>Rounds every corner, outward and inward, holes too; an error names a corner r is too large for.</dd>
 <dt>p.offset(distance: Length) → Profile</dt><dd>Grows (d &gt; 0) or shrinks the outline; on a plane, the parallel plane.</dd>
 <dt>s.offset(distance: Length) → Solid</dt><dd>Grows (d &gt; 0) or shrinks the solid, round where it turns (its walls thickened).</dd>
 <dt>p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle) → Solid</dt><dd>A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly.</dd>
-<dt>p.revolve(axis: Axis, angle: Angle) → Solid</dt><dd>Turns the profile around an axis in its plane; without one, x is the radius and y the height along Z.</dd>
+<dt>p.revolve(axis: Axis, angle: Angle) → Solid</dt><dd>Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.</dd>
 <dt>p.sweep(path: Path, frenet: bool, twist: Angle) → Solid</dt><dd>Moves the profile along a path; twist: 360.deg turns it once around the path on the way.</dd>
 <dt>loft(profiles: Profile[], ruled: bool) → Solid</dt><dd>A solid through profiles placed in space.</dd>
 <dt>hull(shapes…) → Solid</dt><dd>The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.</dd>
@@ -242,8 +242,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>e.isLine → bool</dt><dd>Whether it is straight.</dd>
 <dt>e.isCircle → bool</dt><dd>Whether it is a circle or an arc.</dd>
 <dt>e.radius → Length</dt><dd>The radius of a circular edge.</dd>
-<dt>e.isParallel(axis: Direction) → bool</dt><dd>Whether it runs along the axis (a face: whether its normal does).</dd>
-<dt>e.isPerpendicular(axis: Direction) → bool</dt><dd>Whether it is at right angles to the axis.</dd>
+<dt>e.isParallel(axis: Direction) → bool</dt><dd>Whether it runs along the axis (a face: whether it lies along it, its normal at right angles: the side walls for Z).</dd>
+<dt>e.isPerpendicular(axis: Direction) → bool</dt><dd>Whether it is at right angles to the axis (a face: whether its normal runs along it: top and bottom for Z).</dd>
 </dl></section>
 <section><h2>Sketches</h2><dl>
 <dt>sketch() → Sketch</dt><dd>A constrained 2D sketch: add points, lines, constraints, then take .profile.</dd>

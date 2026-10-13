@@ -510,8 +510,12 @@ int main(string[] args)
         foreach (p; run.result.parts)
         {
             auto bb = run.kernel.bbox(p.solid.brep);
+            double volume = double.nan;   // an invalid solid may have none
+            try
+                volume = run.kernel.volume(p.solid.brep);
+            catch (KernelException) {}
             writefln("part %-12s %.1f × %.1f × %.1f mm   volume %.1f mm³%s%s", p.name, bb.size.x, bb.size.y, bb.size.z,
-                run.kernel.volume(p.solid.brep), p.label != p.name ? "   (exported as \"" ~ p.label ~ "\")" : "",
+                volume, p.label != p.name ? "   (exported as \"" ~ p.label ~ "\")" : "",
                 p.export_ ? "" : "   (reference, not exported)");
         }
     if (run.ok && run.printability)

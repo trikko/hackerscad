@@ -27,6 +27,8 @@ Profile gearProfile(Length m, int teeth, Angle pressure = 20.deg, Length backlas
     immutable ra = r + m;
     immutable rf = r - 1.25 * m;
     // half the tooth thickness on the pitch circle, as an angle, plus the involute offset
+    assert(backlash >= 0.mm, "the backlash cannot be negative");
+    assert(backlash < PI * m / 2, "the backlash would thin the teeth to nothing: keep it below half the tooth (π·m/2)");
     immutable half = PI / (2 * teeth) - backlash / (2 * r) + involute(rb, r);
     immutable start = max(rb, rf);
     Vec2[] pts;
@@ -67,6 +69,7 @@ Solid spurGear(Length m, int teeth, Length thickness, Length bore = 0.mm, Angle 
 /// A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0.
 Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pressure = 20.deg)
 {
+    assert(teeth >= 1, "a rack needs at least 1 tooth");
     immutable p = PI * m;
     immutable b = base > 0.mm ? base : 2 * m;
     immutable t = tan(pressure);

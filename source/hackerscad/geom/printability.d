@@ -21,6 +21,22 @@ struct PrintCheck
     bool isThin(size_t t) const => thin.length > t && thin[t] >= 0.5;
 }
 
+/// The fraction of a triangle where a value interpolated linearly from its
+/// corners' `v` is below `limit`.
+double fractionBelow(double[3] v, double limit)
+{
+    import std.algorithm : sort;
+    v[].sort();
+    immutable a = v[0], b = v[1], c = v[2];
+    if (limit <= a)
+        return 0;
+    if (limit >= c)
+        return 1;
+    if (limit <= b)
+        return (limit - a) * (limit - a) / ((b - a) * (c - a));
+    return 1 - (c - limit) * (c - limit) / ((c - a) * (c - b));
+}
+
 /// Checks the triangles `tris` of a closed mesh wound outwards, its vertex
 /// positions every `stride` floats of `pos`. A triangle overhangs when it
 /// faces down more than `angle` (radians) from a vertical wall and does not
@@ -45,8 +61,14 @@ PrintCheck checkPrint(const(float)[] pos, size_t stride, const(uint)[] tris, dou
         top = max(top, at(v).z);
     }
     immutable flatTol = 1e-3 + 1e-6 * (top - bed), sinA = sin(angle);
+    // a hair past the angle (0.1°): a surface at exactly 45° (a teardrop, a
+    // chamfer) is not one, whatever the rounding of its mesh
+    immutable limit = -sinA - 1.5e-3;
     auto normals = new Vec3[n];
     auto areas = new double[n];
+    // the surface's normal at each vertex (vertices are not shared between
+    // faces of the solid, so a curved face is smoothed and edges stay sharp)
+    auto smooth = new Vec3[pos.length / stride];
     foreach (t; 0 .. n)
     {
         auto a = at(tris[t * 3]), b = at(tris[t * 3 + 1]), c = at(tris[t * 3 + 2]);
@@ -54,15 +76,28 @@ PrintCheck checkPrint(const(float)[] pos, size_t stride, const(uint)[] tris, dou
         immutable len = cr.length;
         areas[t] = len / 2;
         normals[t] = len > 0 ? cr / len : Vec3(0, 0, 0);
+        foreach (v; tris[t * 3 .. t * 3 + 3])
+            smooth[v] = smooth[v] + cr;
+    }
+    foreach (t; 0 .. n)
+    {
+        auto a = at(tris[t * 3]), b = at(tris[t * 3 + 1]), c = at(tris[t * 3 + 2]);
         // facing down more than the angle, and not resting on the bed
         immutable onBed = a.z < bed + flatTol && b.z < bed + flatTol && c.z < bed + flatTol;
-        // a hair past the angle (0.1°): a surface at exactly 45° (a
-        // teardrop, a chamfer) is not one, whatever the rounding of its mesh
-        if (normals[t].z < -sinA - 1.5e-3 && !onBed)
+        if (onBed)
+            continue;
+        r.overhang[t] = normals[t].z < limit;
+        // the area: the part of the triangle where the normal, interpolated
+        // between its corners, faces down past the angle; whole triangles
+        // of a curved face would be off by a band of them
+        double[3] nz;
+        foreach (i, v; tris[t * 3 .. t * 3 + 3])
         {
-            r.overhang[t] = true;
-            r.overhangArea += areas[t];
+            // a vertex shared across a sharp edge keeps the triangle's own normal
+            immutable l = smooth[v].length;
+            nz[i] = l > 0 && smooth[v].dot(normals[t]) / l > 0.85 ? smooth[v].z / l : normals[t].z;
         }
+        r.overhangArea += areas[t] * fractionBelow(nz, limit);
     }
     if (wall <= 0)
         return r;

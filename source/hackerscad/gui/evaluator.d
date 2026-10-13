@@ -342,7 +342,10 @@ PartMesh prepare(BrepKernel k, PartResult p, double tolerance)
     m.export_ = p.export_;
     m.span = p.span;
     m.bbox = k.bbox(p.solid.brep);
-    m.volume = k.volume(p.solid.brep);
+    try
+        m.volume = k.volume(p.solid.brep);
+    catch (KernelException)
+        m.volume = double.nan;   // an invalid solid may have none
     m.brep = p.solid.brep;
     // exports run on the GTK thread: give them the uncached kernel
     auto cached = cast(CachingKernel) k;

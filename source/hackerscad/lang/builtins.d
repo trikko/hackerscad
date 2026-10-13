@@ -4,10 +4,11 @@ module hackerscad.lang.builtins;
 
 import std.conv : to, ConvException;
 import std.format : format;
-import std.math : PI, abs, sqrt, floor, ceil, round, sin, cos, tan, asin, acos, atan, atan2;
+import std.math : PI, abs, sqrt, floor, ceil, round, sin, cos, tan, asin, acos, atan, atan2, isFinite;
 import std.algorithm : canFind, map, sort, max, min;
 import std.array : array, join;
 import std.uni : toLower;
+static import std.string;
 import std.algorithm : startsWith;
 
 import hackerscad.lang.errors;
@@ -121,7 +122,7 @@ void installPrelude(Interp it, Env env)
 
     // ---- output and strings
     def("writeln", (ref CallArgs a) { it.print(a.positional.map!(v => v.toString).join, a.span); return Value.void_; });
-    def("write", (ref CallArgs a) { it.print(a.positional.map!(v => v.toString).join, a.span); return Value.void_; });
+    def("write", (ref CallArgs a) { it.print(a.positional.map!(v => v.toString).join, a.span, false); return Value.void_; });
     def("format", (ref CallArgs a) => Value.of(formatValues(a)));
     def("to", (ref CallArgs a) => convert(it, a));
 
@@ -133,9 +134,16 @@ void installPrelude(Interp it, Env env)
         return Value.number(sqrt(v.n.value), Dim(cast(byte)(v.n.dim.len / 2), cast(byte)(v.n.dim.ang / 2)));
     });
     def("abs", (ref CallArgs a) { auto v = num(a, "abs"); return Value.number(abs(v.n.value), v.n.dim, v.n.isInt); });
-    def("floor", (ref CallArgs a) { auto v = num(a, "floor"); return Value.number(floor(v.n.value), v.n.dim, v.n.dim == Dim.none); });
-    def("ceil", (ref CallArgs a) { auto v = num(a, "ceil"); return Value.number(ceil(v.n.value), v.n.dim, v.n.dim == Dim.none); });
-    def("round", (ref CallArgs a) { auto v = num(a, "round"); return Value.number(round(v.n.value), v.n.dim, v.n.dim == Dim.none); });
+    // angles round to whole degrees, not radians
+    Value whole(ref CallArgs a, string name, double function(double) f)
+    {
+        auto v = num(a, name);
+        immutable x = v.n.dim == Dim.angle ? f(v.n.value * 180 / PI) * PI / 180 : f(v.n.value);
+        return Value.number(x, v.n.dim, v.n.dim == Dim.none && isFinite(x));
+    }
+    def("floor", (ref CallArgs a) => whole(a, "floor", x => floor(x)));
+    def("ceil", (ref CallArgs a) => whole(a, "ceil", x => ceil(x)));
+    def("round", (ref CallArgs a) => whole(a, "round", x => round(x)));
     def("sin", (ref CallArgs a) => Value.number(sin(angleArg(a, "sin"))));
     def("cos", (ref CallArgs a) => Value.number(cos(angleArg(a, "cos"))));
     def("tan", (ref CallArgs a) => Value.number(tan(angleArg(a, "tan"))));
@@ -156,6 +164,8 @@ void installPrelude(Interp it, Env env)
     def("clamp", (ref CallArgs a) {
         auto x = Args(it, a, "clamp", ["value", "lo", "hi"]);
         auto v = x.get("value"), lo = x.get("lo"), hi = x.get("hi");
+        if (it.applyBinary(Tok.gt, lo, hi, a.span).truthy)
+            throw new HcadError(Code.type, format("clamp: lo (%s) is above hi (%s)", lo, hi), a.span);
         if (it.applyBinary(Tok.lt, v, lo, a.span).truthy) return lo;
         if (it.applyBinary(Tok.gt, v, hi, a.span).truthy) return hi;
         return v;
@@ -361,8 +371,11 @@ void installPrelude(Interp it, Env env)
         foreach (i; 0 .. a.positional.length)
         {
             Value[][] next;
+            auto xs = arrayArg(a, i, "cartesianProduct");
+            if (xs.length && acc.length > it.limits.arrayLength / xs.length)
+                throw new HcadError(Code.limit, format("cartesianProduct would give more than %s pairs", it.limits.arrayLength), a.span);
             foreach (prefix; acc)
-                foreach (v; arrayArg(a, i, "cartesianProduct"))
+                foreach (v; xs)
                     next ~= prefix ~ v;
             acc = next;
         }
@@ -384,6 +397,14 @@ void installPrelude(Interp it, Env env)
     });
 
     installGeometry(it, env, &def);
+
+    // round(x) on numbers, p.round(r) on profiles: the profile one replaced
+    // the math one under the same name
+    {
+        auto profileRound = env.vars["round"].bi.impl;
+        def("round", (ref CallArgs a) => a.positional.length && a.positional[0].isNum
+            ? whole(a, "round", x => round(x)) : profileRound(a));
+    }
 }
 
 // ================================================================ geometry
@@ -420,7 +441,17 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto x = Args(it, a, "cone", ["r1", "r2", "h", "d1", "d2", "center"]);
         auto r1 = x.radius("r1", "d1"), r2 = x.radius("r2", "d2"), h = x.len("h");
         positive(a, [h], "cone height");
-        return solid(k.translate(k.cone(r1, r2, h), Vec3(0, 0, x.flag("center", false) ? -h / 2 : 0)), "cone", a.span);
+        if (r1 < 0 || r2 < 0)
+            throw new HcadError(Code.type, "cone radii must not be negative", a.span);
+        if (max(r1, r2) <= 0)
+            throw new HcadError(Code.type, "a cone needs a radius greater than zero at one end at least", a.span);
+        // a point too small for the kernel is a point
+        if (r1 < 1e-6 * r2) r1 = 0;
+        if (r2 < 1e-6 * r1) r2 = 0;
+        immutable shift = Vec3(0, 0, x.flag("center", false) ? -h / 2 : 0);
+        if (abs(r1 - r2) <= 1e-9 * max(r1, r2))   // equal radii: a cylinder
+            return solid(k.translate(k.cylinder(r1, h), shift), "cone", a.span);
+        return solid(k.translate(k.cone(r1, r2, h), shift), "cone", a.span);
     });
     def("sphere", (ref CallArgs a) {
         auto x = Args(it, a, "sphere", ["r", "d"]);
@@ -441,6 +472,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // direction (through the origin) or an Axis (through its own origin)
         auto x = Args(it, a, "rotate", ["solid", "angle", "axis", "x", "y", "z"]);
         auto s = x.solid("solid");
+        foreach (n; ["x", "y", "z"])
+            if (x.has("angle") && x.has(n))
+                throw new HcadError(Code.unknownArg, format("rotate takes an angle (and an axis:), or x:, y:, z:, not "
+                    ~ "both: '%s' would be ignored", n), x.spanOf(n));
+        if (x.has("axis") && !x.has("angle"))
+            throw new HcadError(Code.missingArg, "rotate(axis: …) needs the angle too: rotate(90.deg, axis: X)",
+                x.spanOf("axis"));
         if (x.has("angle"))
         {
             Vec3 o, d = Vec3(0, 0, 1);
@@ -498,6 +536,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto s = x.solid("solid");
         auto sel = x.selector("edges", false);
         immutable r = x.len("r");
+        if (!(r > 0))
+            throw new HcadError(Code.type, "the fillet radius r must be greater than 0", x.spanOf("r"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("edges"));
         return edgeFeature(it, a, s, idx, "fillet", "r", b => k.fillet(b, idx, r));
     });
@@ -506,6 +546,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto s = x.solid("solid");
         auto sel = x.selector("edges", false);
         immutable d = x.len("d");
+        if (!(d > 0))
+            throw new HcadError(Code.type, "the chamfer size d must be greater than 0", x.spanOf("d"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("edges"));
         return edgeFeature(it, a, s, idx, "chamfer", "d", b => k.chamfer(b, idx, d));
     });
@@ -514,7 +556,21 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto s = x.solid("solid");
         auto sel = x.selector("open", true);
         immutable t = x.len("thickness");
+        if (!(t > 0))
+            throw new HcadError(Code.type, "the wall thickness must be greater than 0", x.spanOf("thickness"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("open"));
+        if (s.brep !is null)
+        {
+            if (idx.length >= k.faceCount(s.brep))
+                throw new HcadError(Code.type, "every face is open: nothing would be left to make the walls of",
+                    x.spanOf("open"));
+            auto size = k.bbox(s.brep).size;
+            immutable thinnest = min(size.x, size.y, size.z);
+            // (an open side needs one wall across, a closed one two: the kernel says the rest)
+            if (t >= thinnest)
+                throw new HcadError(Code.type, format("a wall of %g mm leaves nothing inside a part %g mm thin", t,
+                    thinnest), x.spanOf("thickness"));
+        }
         return transformed(it, a.span, s, b => k.shell(b, idx, t), "shell");
     });
 
@@ -577,6 +633,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto s = x.solid("solid");
         immutable n = count(x, "n");
         auto step = x.vecLen("step");
+        if (n > 1 && step.length == 0)
+            throw new HcadError(Code.type, "a step of zero puts every copy in the same place", x.spanOf("step"));
         Value[] copies;
         foreach (i; 0 .. n)
             copies ~= transformed(it, a.span, s, b => k.translate(b, step * i));
@@ -590,8 +648,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (x.has("axis"))
             axisArg(x, "axis", o, axis);
         immutable total = x.angleOr("angle", 2 * PI);
-        // a full turn spaces n copies evenly; a partial arc includes both ends
-        immutable step = abs(total - 2 * PI) < 1e-9 ? total / n : n > 1 ? total / (n - 1) : 0;
+        if (n > 1 && abs(total) < 1e-9)
+            throw new HcadError(Code.type, "an angle of 0 puts every copy in the same place", x.spanOf("angle"));
+        // a full turn (either way, or several) spaces n copies evenly; a
+        // partial arc includes both ends
+        immutable turns = total / (2 * PI);
+        immutable full = abs(turns - round(turns)) < 1e-9 / (2 * PI);
+        immutable step = full ? (total > 0 ? 2 * PI : -2 * PI) / n : n > 1 ? total / (n - 1) : 0;
         Value[] copies;
         foreach (i; 0 .. n)
             copies ~= transformed(it, a.span, s, b => k.translate(k.rotate(k.translate(b, -o), axis, step * i), o));
@@ -604,10 +667,17 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto s = x.solid("solid");
         auto sel = x.selector("faces", true);
         immutable ang = x.angle("angle");
+        if (ang == 0 || !(abs(ang) < PI / 2 - 1e-9))
+            throw new HcadError(Code.type, "the draft angle goes from 0 to 90° (either way), both excluded",
+                x.spanOf("angle"));
         auto pull = x.has("pull") ? x.dir("pull") : Vec3(0, 0, 1);
         auto point = pull * x.lenOr("neutral", 0);
         auto idx = resolveSelector(it, sel, s, x.spanOf("faces"));
-        return transformed(it, a.span, s, b => k.draft(b, idx, ang, pull, point), "draft");
+        try
+            return transformed(it, a.span, s, b => k.draft(b, idx, ang, pull, point), "draft");
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, "the kernel could not draft these faces", a.span,
+                "a smaller angle (a few degrees, as moulds use), or fewer faces at a time");
     });
 
     // ---- files: parts made elsewhere, inside the project directory only
@@ -738,9 +808,17 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             auto v = p.kind == Kind.array ? arrayToVec(it, p.arr, a.caller, x.spanOf("points")) : p;
             if (v.kind != Kind.vec)
                 throw new HcadError(Code.type, format("polygon points must be vectors, not %s", v.typeName), x.spanOf("points"));
+            if (v.v.dim != Dim.none && v.v.dim != Dim.length)
+                throw new HcadError(Code.units, format("polygon points are lengths, not %s", v.typeName), x.spanOf("points"));
             immutable f = v.v.dim == Dim.none ? x.unitFactor : 1;
+            if (v.v.v.z != 0)
+                throw new HcadError(Code.type, "polygon points lie on XY (z = 0): place the profile afterwards with "
+                    ~ "move, rotate or placeOn", x.spanOf("points"));
+            if (!isFinite(v.v.v.x) || !isFinite(v.v.v.y))
+                throw new HcadError(Code.type, "polygon points must be finite numbers", x.spanOf("points"));
             xy ~= [v.v.v.x * f, v.v.v.y * f];
         }
+        polygonCheck(xy, x.spanOf("points"));
         return flat(k.polygon(xy), "polygon", a.span);
     });
     def("regularPolygon", (ref CallArgs a) {
@@ -771,12 +849,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto x = Args(it, a, "teardrop", ["r", "d", "angle", "flat"]);
         immutable r = x.radius("r", "d"), ang = x.angleOr("angle", PI / 4);
         positive(a, [r], "the teardrop's radius");
-        if (!(ang > 0.05 && ang < PI / 2))
+        if (!(ang >= PI / 60 - 1e-9 && ang <= PI / 2 + 1e-9))
             throw new HcadError(Code.type, "the point's angle is from the vertical: between 3° and 90°", x.spanOf("angle"));
-        // the sides are tangent to the circle and meet above it, at r / sin(angle)
+        // the sides are tangent to the circle and meet above it, at r / sin(angle); at 90° they
+        // meet on it, and the teardrop is the circle
         immutable tip = r / sin(ang);
-        auto shape = k.boolean(k.circle(r), k.polygon([-r * cos(ang), r * sin(ang), r * cos(ang), r * sin(ang), 0, tip]),
-            BoolOp.fuse);
+        auto shape = r * cos(ang) < 1e-6 ? k.circle(r) : k.boolean(k.circle(r),
+            k.polygon([-r * cos(ang), r * sin(ang), r * cos(ang), r * sin(ang), 0, tip]), BoolOp.fuse);
         if (x.flag("flat", false))
             shape = k.boolean(shape, k.rect(4 * r, 2 * r), BoolOp.common);
         return flat(shape, "teardrop", a.span);
@@ -792,12 +871,19 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (t.kind != Kind.str || t.s.length == 0)
             throw new HcadError(Code.type, "text needs a non-empty string", x.spanOf("text"));
         auto font = x.has("font") ? x.get("font").s : "Sans";
-        return flat(k.text(t.s, x.lenOr("size", 10), font), "text", a.span);
+        immutable size = x.lenOr("size", 10);
+        // fonts give no outline below a few hundredths of a millimetre
+        if (!(size >= 0.01))
+            throw new HcadError(Code.type, format("the text size must be at least 0.01 mm, not %g mm", size),
+                x.has("size") ? x.spanOf("size") : a.span);
+        return flat(k.text(t.s, size, font), "text", a.span);
     });
     def("round", (ref CallArgs a) {
         auto x = Args(it, a, "round", ["profile", "r"]);
         auto p = profileArg(x, "profile");
         immutable r = x.len("r");
+        if (!(r > 0))
+            throw new HcadError(Code.type, "the rounding radius r must be greater than 0", x.spanOf("r"));
         return Value.of(flatResult(transformed(it, a.span, p, b => k.profileRound(b, r), "round")));
     });
     def("extrude", (ref CallArgs a) {
@@ -840,7 +926,10 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (!upright)
             axisArg(x, "axis", o, d);
         immutable ang = x.angleOr("angle", 2 * PI);
-        auto b = k.revolve(nonEmpty(p, a.span), o, d, ang);
+        if (!(abs(ang) > 1e-9 && abs(ang) <= 2 * PI + 1e-9))
+            throw new HcadError(Code.type, "a revolve turns by more than 0° and at most 360° (either way)",
+                x.has("angle") ? x.spanOf("angle") : a.span);
+        auto b = k.revolve(nonEmpty(p, a.span), o, d, max(-2 * PI, min(2 * PI, ang)));
         if (upright)
             b = k.rotate(b, Vec3(1, 0, 0), PI / 2);
         auto sv = derived(it, b, [p], "revolve", a.span);
@@ -1093,7 +1182,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (!(angle >= 0 && angle < PI / 2))
             throw new HcadError(Code.type, "the overhang angle is from a vertical wall: 0 to 90°", x.spanOf("angle"));
         import hackerscad.geom.printability : checkPrint;
-        auto m = k.tessellate(nonEmpty(s, a.span), 0.05, 0.2);
+        auto m = k.tessellate(nonEmpty(s, a.span), 0.02, 0.1);
         return Value.number(checkPrint(m.verts, 3, m.tris, angle, 0).overhangArea, Dim.area);
     });
     def("thinWalls", (ref CallArgs a) {
@@ -1280,7 +1369,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             if (idx.length != 1)
                 throw new HcadError(Code.type, format("frame needs exactly one face, the selector matched %d", idx.length),
                     x.spanOf("face"));
-            auto f = k.faces(s.brep)[idx[0]];
+            auto f = flatFace(it, s, idx[0], "frame", x.spanOf("face"));
             o = f.center;
             n = f.normal;
         }
@@ -1355,6 +1444,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             auto x = Args(it, a, "offset", ["solid", "distance"]);
             auto s = x.solid("solid");
             immutable d = x.len("distance");
+            // no distance: the solid as it is (the kernel cannot offset by nothing)
+            if (abs(d) < 1e-6)
+                return Value.of(s);
             return transformed(it, a.span, s, b => k.offset(b, d), "offset");
         }
         if (a.positional.length && a.positional[0].kind == Kind.solid)
@@ -1770,8 +1862,9 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
             case "volume": result = Value.number(s.brep ? it.kernel.volume(s.brep) : 0, Dim.volume); return true;
             case "area": result = Value.number(s.brep ? it.kernel.area(s.brep) : 0, Dim.area); return true;
             case "centroid":
-                if (s.brep is null || s.flat || s.path)
+                if (s.flat || s.path)
                     return false;
+                nonEmpty(s, span);
                 result = Value.vector(it.kernel.massProps(s.brep).centroid, 3, Dim.length);
                 return true;
             case "isEmpty": result = Value.of(s.brep is null); return true;
@@ -2000,16 +2093,27 @@ struct Args
 
     double unitFactor() => raw.caller ? raw.caller.unitFactor : 1;
 
+    /// NaN or infinity (1.0 / 0, sqrt(-1)…) would hang the kernel or give nonsense.
+    double finite(string n, double x)
+    {
+        if (!isFinite(x))
+            throw new HcadError(Code.type, format("'%s' is %s: a division by zero, or sqrt, asin or acos out of their range?",
+                n, x != x ? "not a number (NaN)" : "infinite"), spanOf(n));
+        return x;
+    }
+
     double len(string n)
     {
         auto v = get(n);
+        if (v.isNum)
+            finite(n, v.n.value);
         if (!v.isNum)
             throw new HcadError(Code.type, format("'%s' must be a Length, not %s", n, v.typeName), spanOf(n));
         if (v.n.dim == Dim.length)
             return v.n.value;
         if (v.n.dim == Dim.none)
             return v.n.value * unitFactor;
-        throw new HcadError(Code.units, format("'%s' must be a Length, not a %s", n, v.n.dim.name), spanOf(n));
+        throw new HcadError(Code.units, format("'%s' must be a Length, not %s", n, v.n.dim.aName), spanOf(n));
     }
 
     double lenOr(string n, double def) => has(n) ? len(n) : def;
@@ -2029,6 +2133,8 @@ struct Args
     double angle(string n)
     {
         auto v = get(n);
+        if (v.isNum)
+            finite(n, v.n.value);
         if (v.isNum && v.n.dim == Dim.angle)
             return v.n.value;
         if (v.isNum && v.n.dim == Dim.none)
@@ -2043,7 +2149,7 @@ struct Args
         auto v = get(n);
         if (!v.isNum || v.n.dim != Dim.none)
             throw new HcadError(Code.type, format("'%s' must be a plain number, not %s", n, v.typeName), spanOf(n));
-        return v.n.value;
+        return finite(n, v.n.value);
     }
 
     bool flag(string n, bool def)
@@ -2080,6 +2186,7 @@ struct Args
             v = arrayToVec(it, v.arr, raw.caller, spanOf(n));
         if (v.kind != Kind.vec)
             throw new HcadError(Code.type, format("'%s' must be a vector, not %s", n, v.typeName), spanOf(n));
+        finite(n, v.v.v.x), finite(n, v.v.v.y), finite(n, v.v.v.z);
         return v.v;
     }
 
@@ -2465,8 +2572,16 @@ Value threadFace(Interp it, ref CallArgs a)
                 t.minor + 0.15 * pitch), x.spanOf("face"));
 
     immutable starts = x.has("starts") ? count(x, "starts") : 1;
+    // every start is a sweep of its own: more take minutes and no thread has them
+    if (starts > 12)
+        throw new HcadError(Code.limit, format("%s starts: a thread has at most 12", starts), x.spanOf("starts"));
+    if (h >= 0.45 * c.radius)
+        throw new HcadError(Code.type, format("a pitch of %g mm is too coarse for ⌀%g mm: its teeth would reach the axis",
+            pitch, 2 * c.radius), x.spanOf(x.has("pitch") ? "pitch" : "size"));
     immutable left = x.flag("left", false);
     immutable clearance = x.has("clearance") ? x.len("clearance") : outside ? 0 : 0.15;
+    if (clearance < 0)
+        throw new HcadError(Code.type, "the clearance is play between the parts: it cannot be negative", x.spanOf("clearance"));
     immutable lead = pitch * starts;
     // which end it starts from: the free one, where the axis leaves the material (the tip of a
     // shaft, the opening of a hole); flip: true for the other
@@ -2489,8 +2604,18 @@ Value threadFace(Interp it, ref CallArgs a)
     if (x.has("turns"))
         len = x.num("turns") * lead;
     if (!(len > 0) || len > faceLen + 1e-6)
-        throw new HcadError(Code.type, format("the thread must be between 0 and the face's %g mm", faceLen),
+        throw new HcadError(Code.type, x.has("turns")
+            ? format("%g turns of %g mm make %g mm: the thread must be longer than 0 and fit in the face's %g mm",
+                x.num("turns"), lead, len, faceLen)
+            : format("the thread must be longer than 0 and fit in the face's %g mm", faceLen),
             x.spanOf(x.has("turns") ? "turns" : "length"));
+    if (len < pitch)
+        throw new HcadError(Code.type, format("a thread needs one pitch (%g mm) of length at least", pitch),
+            x.spanOf(x.has("turns") ? "turns" : x.has("length") ? "length" : "face"));
+    // a sweep per turn and start: a hair-thin pitch would run for minutes
+    if (len / pitch > 500)
+        throw new HcadError(Code.limit, format("%g turns: a thread has at most 500 (is the pitch, %g mm, right?)",
+            len / pitch, pitch), x.spanOf(x.has("pitch") ? "pitch" : "size"));
     immutable chamfer = x.flag("chamfer", true);
     // where the thread stops short of the face, or the face ends against more material (a
     // bolt's head), the threaded length reaches a fifth of a pitch into it: overlapping, the
@@ -2594,6 +2719,101 @@ Brep nonEmpty(SolidVal s, Span span)
     return s.brep;
 }
 
+/// A face that a frame can stand on: on a curved one its centre and average
+/// normal are inside the body (on a cylinder's axis), and what is placed on
+/// it ends up buried, so it is refused.
+FaceInfo flatFace(Interp it, SolidVal s, int face, string fn, Span span)
+{
+    auto f = it.kernel.faces(s.brep)[face];
+    immutable size = it.kernel.bbox(s.brep).size.length;
+    foreach (loop; it.kernel.faceLoops(s.brep, face, 1e-3 * size))
+        foreach (p; loop)
+            if (abs((p - f.center).dot(f.normal)) > 1e-6 * size)
+            {
+                CylinderInfo c;
+                immutable cylinder = it.kernel.faceCylinder(s.brep, face, c);
+                throw new HcadError(Code.type, format("%s needs a flat face; this one is curved%s", fn, cylinder
+                    ? format(" (a cylinder ⌀%g mm): body.axis(…) gives its axis, plane(origin:, normal:) a plane "
+                        ~ "touching it", 2 * c.radius) : ""), span);
+            }
+    return f;
+}
+
+/// Rejects outlines that cross or retrace themselves, or enclose nothing:
+/// the kernel builds them without a word and their solids have no volume.
+/// Repeated points are dropped from `xy` first.
+void polygonCheck(ref double[] xy, Span span)
+{
+    import std.math : abs;
+    double size = 0;
+    foreach (c; xy)
+        size = max(size, abs(c));
+    immutable eps = 1e-9 * max(size, 1e-6);
+    double[] kept;
+    foreach (i; 0 .. xy.length / 2)
+    {
+        immutable px = xy[2 * i], py = xy[2 * i + 1];
+        if (kept.length && abs(kept[$ - 2] - px) <= eps && abs(kept[$ - 1] - py) <= eps)
+            continue;
+        kept ~= [px, py];
+    }
+    while (kept.length > 2 && abs(kept[0] - kept[$ - 2]) <= eps && abs(kept[1] - kept[$ - 1]) <= eps)
+        kept = kept[0 .. $ - 2];
+    immutable n = kept.length / 2;
+    if (n < 3)
+        throw new HcadError(Code.type, "polygon needs at least 3 different points", span);
+    double px(size_t i) => kept[2 * (i % n)];
+    double py(size_t i) => kept[2 * (i % n) + 1];
+    // orientation of c from segment a-b: > 0 left, < 0 right, 0 on the line
+    double orient(size_t a, size_t b, size_t c)
+    {
+        immutable o = (px(b) - px(a)) * (py(c) - py(a)) - (py(b) - py(a)) * (px(c) - px(a));
+        return abs(o) <= eps * size ? 0 : o;
+    }
+    bool within(size_t a, size_t b, size_t c) =>   // c on the line a-b: whether between them
+        min(px(a), px(b)) - eps <= px(c) && px(c) <= max(px(a), px(b)) + eps
+        && min(py(a), py(b)) - eps <= py(c) && py(c) <= max(py(a), py(b)) + eps;
+    bool cross(size_t a, size_t b, size_t c, size_t d)
+    {
+        immutable o1 = orient(a, b, c), o2 = orient(a, b, d), o3 = orient(c, d, a), o4 = orient(c, d, b);
+        if (((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0)))
+            return true;
+        return (o1 == 0 && within(a, b, c)) || (o2 == 0 && within(a, b, d))
+            || (o3 == 0 && within(c, d, a)) || (o4 == 0 && within(c, d, b));
+    }
+    bool line = true;
+    foreach (i; 2 .. n)
+        line = line && orient(0, 1, i) == 0;
+    if (line)
+        throw new HcadError(Code.type, "the polygon's points are all on one line: it encloses nothing", span);
+    foreach (i; 0 .. n)
+    {
+        // a point going straight back the way it came
+        immutable a = i, b = i + 1, c = i + 2;
+        if (orient(a, b, c) == 0 && (px(b) - px(a)) * (px(c) - px(b)) + (py(b) - py(a)) * (py(c) - py(b)) < 0)
+            throw new HcadError(Code.type, format("the polygon turns back on itself at point %d (%g, %g)", (i + 1) % n,
+                px(b), py(b)), span);
+        immutable xlo = min(px(a), px(b)) - eps, xhi = max(px(a), px(b)) + eps;
+        foreach (j; i + 2 .. n)
+        {
+            if (i == 0 && j == n - 1)
+                continue;   // neighbours through the closing segment
+            if (max(px(j), px(j + 1)) < xlo || min(px(j), px(j + 1)) > xhi)
+                continue;
+            if (cross(a, b, j, j + 1))
+                throw new HcadError(Code.type, format("the polygon crosses itself: its side %d (from (%g, %g)) meets "
+                    ~ "side %d (from (%g, %g)); give the points in order around the outline", i + 1, px(a), py(a),
+                    j + 1, px(j), py(j)), span);
+        }
+    }
+    double area = 0;
+    foreach (i; 0 .. n)
+        area += px(i) * py(i + 1) - px(i + 1) * py(i);
+    if (abs(area) / 2 <= eps * max(size, 1e-6))
+        throw new HcadError(Code.type, "the polygon encloses no area", span);
+    xy = kept;
+}
+
 void positive(ref CallArgs a, double[] xs, string what)
 {
     foreach (x; xs)
@@ -2606,14 +2826,29 @@ Vec3 axisVec(size_t i) => i == 0 ? Vec3(1, 0, 0) : i == 1 ? Vec3(0, 1, 0) : Vec3
 
 Value unionAll(Interp it, Value[] xs, Span span)
 {
-    Value acc = Value.of(new SolidVal(null, span));
+    bool flat, solid;
     foreach (v; xs)
     {
         if (v.kind != Kind.solid)
             throw new HcadError(Code.type, format("cannot fuse %s with solids", v.typeName), span);
-        acc = solidBoolean(it, acc.solid, v.solid, BoolOp.fuse, span);
+        if (v.solid.path)
+            throw new HcadError(Code.type, "cannot fuse a Path: sweep a profile along it", span);
+        if (v.solid.brep !is null)
+            (v.solid.flat ? flat : solid) = true;
     }
-    return acc;
+    if (flat && solid)
+        throw new HcadError(Code.type, "cannot combine a Solid and a Profile: extrude the profile first", span);
+    // in pairs, then pairs of pairs: joining one at a time into a growing
+    // body makes long patterns quadratic (400 copies took half a minute)
+    Value fuse(Value[] part)
+    {
+        if (part.length == 0)
+            return Value.of(new SolidVal(null, span));
+        if (part.length == 1)
+            return part[0];
+        return solidBoolean(it, fuse(part[0 .. $ / 2]).solid, fuse(part[$ / 2 .. $]).solid, BoolOp.fuse, span);
+    }
+    return fuse(xs);
 }
 
 SelectorVal copy(SelectorVal s)
@@ -2841,7 +3076,7 @@ double plain(ref CallArgs a, string name)
 {
     auto v = num(a, name);
     if (v.n.dim != Dim.none)
-        throw new HcadError(Code.units, format("%s takes a plain number, not a %s", name, v.n.dim.name), a.span);
+        throw new HcadError(Code.units, format("%s takes a plain number, not %s", name, v.n.dim.aName), a.span);
     return v.n.value;
 }
 
@@ -2850,7 +3085,7 @@ double angleArg(ref CallArgs a, string name)
 {
     auto v = num(a, name);
     if (v.n.dim != Dim.angle && v.n.dim != Dim.none)
-        throw new HcadError(Code.units, format("%s takes an Angle, not a %s", name, v.n.dim.name), a.span);
+        throw new HcadError(Code.units, format("%s takes an Angle, not %s", name, v.n.dim.aName), a.span);
     return v.n.value;
 }
 
@@ -2877,16 +3112,33 @@ Value convert(Interp it, ref CallArgs a)
     {
     case "string": return Value.of(v.toString);
     case "int", "long":
-        if (v.kind == Kind.str)
-            return Value.integer(v.s.to!long);
-        if (!v.isNum || v.n.dim != Dim.none)
-            break;
-        if (v.n.value != floor(v.n.value))
-            throw new HcadError(Code.type, format("%s is not an integer (use floor/round first)", v), a.span);
-        return Value.integer(cast(long) v.n.value);
+        {
+            double x;
+            if (v.kind == Kind.str)
+            {
+                try
+                    x = std.string.strip(v.s).to!long;
+                catch (ConvException)
+                    throw new HcadError(Code.type, format("\"%s\" is not a whole number", v.s), a.span);
+            }
+            else if (v.isNum && v.n.dim == Dim.none)
+                x = v.n.value;
+            else
+                break;
+            if (x != floor(x))
+                throw new HcadError(Code.type, format("%s is not an integer (use floor/round first)", v), a.span);
+            if (!(abs(x) <= maxExactInt))
+                throw new HcadError(Code.limit, format("%s is too large for an exact integer (at most %s)", v, maxExactInt), a.span);
+            return Value.integer(cast(long) x);
+        }
     case "double", "float", "real":
         if (v.kind == Kind.str)
-            return Value.number(v.s.to!double);
+        {
+            try
+                return Value.number(std.string.strip(v.s).to!double);
+            catch (ConvException)
+                throw new HcadError(Code.type, format("\"%s\" is not a number", v.s), a.span);
+        }
         if (v.isNum && v.n.dim == Dim.none)
             return Value.number(v.n.value);
         break;
@@ -2925,13 +3177,33 @@ string formatValues(ref CallArgs a)
             throw new HcadError(Code.arity, "not enough arguments for format string", a.span);
         auto v = a.positional[next++];
         auto spec = fmt[i .. j + 1];
+        // "%300000000s" would fill the memory
+        {
+            import std.conv : to;
+            import std.string : split;
+            auto digits = fmt[i + 1 .. j];
+            while (digits.length && "-+ ".canFind(digits[0]))
+                digits = digits[1 .. $];
+            foreach (part; digits.split("."))
+                if (part.length > 3)
+                    throw new HcadError(Code.limit, format("'%s': widths and precisions go up to 999", spec), a.span);
+        }
         switch (fmt[j])
         {
-        case 's': r ~= v.toString; break;
+        case 's': r ~= format(spec, v.toString); break;
         case 'd':
-            if (!v.isNum) throw new HcadError(Code.type, "%d needs a number", a.span);
-            r ~= format("%d", cast(long) v.n.value);
-            break;
+            {
+                if (!v.isNum) throw new HcadError(Code.type, "%d needs a number", a.span);
+                // angles in degrees, like %f
+                immutable x = v.n.dim == Dim.angle ? v.n.value * 180 / PI : v.n.value;
+                if (!isFinite(x) || abs(x) >= 9.2e18)
+                    throw new HcadError(Code.type, format("%%d: %s is too large for a whole number", v.toString), a.span);
+                if (abs(x - round(x)) > 1e-9 * max(1.0, abs(x)))
+                    throw new HcadError(Code.type, format("%%d needs a whole number, not %s: round it, or use %%.0f",
+                        v.toString), a.span);
+                r ~= format(spec, cast(long) round(x));
+                break;
+            }
         case 'f', 'g', 'e':
             {
                 if (!v.isNum) throw new HcadError(Code.type, spec ~ " needs a number", a.span);

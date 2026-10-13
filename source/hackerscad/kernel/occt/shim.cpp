@@ -64,6 +64,7 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepFilletAPI_MakeFillet2d.hxx>
+#include <ChFi2d_FilletAPI.hxx>
 #include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
@@ -409,23 +410,156 @@ hc_shape *hc_text(const char *utf8, double size, const char *font)
     });
 }
 
+static TopoDS_Shape faces_from_loops(const std::vector<TopoDS_Wire> &loops);
+
+// Shapes made one by one from the separate regions of a profile, fused:
+// where they overlap (grown into each other) they become one.
+static TopoDS_Shape fused(const std::vector<TopoDS_Shape> &parts)
+{
+    if (parts.empty())
+        throw Standard_Failure("the profile is empty");
+    if (parts.size() == 1)
+        return parts[0];
+    TopTools_ListOfShape args, tools;
+    args.Append(parts[0]);
+    for (size_t i = 1; i < parts.size(); i++)
+        tools.Append(parts[i]);
+    BRepAlgoAPI_Fuse fuse;
+    fuse.SetArguments(args);
+    fuse.SetTools(tools);
+    fuse.Build();
+    if (!fuse.IsDone())
+        throw Standard_Failure("could not merge the regions of the profile");
+    ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_True, Standard_True, Standard_False);
+    unify.Build();
+    return unify.Shape();
+}
+
+// Whether the outline of a face runs on smoothly through vertex v (the seam
+// of a circle, a line running into an arc tangent to it): no corner there.
+static bool smooth_at(const TopoDS_Face &face, const TopoDS_Vertex &v)
+{
+    std::vector<gp_Dir> tangents;
+    for (TopExp_Explorer e(face, TopAbs_EDGE); e.More(); e.Next()) {
+        const TopoDS_Edge edge = TopoDS::Edge(e.Current());
+        BRepAdaptor_Curve c(edge);
+        for (const TopoDS_Vertex &end : {TopExp::FirstVertex(edge), TopExp::LastVertex(edge)}) {
+            if (!end.IsSame(v))
+                continue;
+            gp_Pnt p;
+            gp_Vec t;
+            c.D1(BRep_Tool::Parameter(end, edge), p, t);
+            if (t.Magnitude() > 1e-12)
+                tangents.push_back(gp_Dir(t));
+        }
+    }
+    return tangents.size() == 2 && tangents[0].IsParallel(tangents[1], 1e-2);
+}
+
+// One closed outline with each of its corners rounded by r, convex or
+// concave. Throws, naming the corner, when r does not fit.
+static TopoDS_Wire rounded_loop(const TopoDS_Wire &w, double r)
+{
+    const TopoDS_Face face = upward(BRepBuilderAPI_MakeFace(w, Standard_True).Face());
+    auto too_large = [&](const TopoDS_Vertex *v) {
+        char msg[200];
+        if (v) {
+            const gp_Pnt p = BRep_Tool::Pnt(*v);
+            std::snprintf(msg, sizeof msg, "r = %g mm is too large for the corner at (%g, %g) mm: its sides are too short",
+                          r, std::abs(p.X()) < 1e-9 ? 0.0 : p.X(), std::abs(p.Y()) < 1e-9 ? 0.0 : p.Y());
+        } else
+            std::snprintf(msg, sizeof msg, "r = %g mm is too large for the corners: the roundings overlap", r);
+        return Standard_Failure(msg);
+    };
+    // the edges in order round the outline, each with the vertex it starts at
+    std::vector<TopoDS_Edge> edges;
+    std::vector<TopoDS_Vertex> starts;
+    bool curved = false;
+    for (BRepTools_WireExplorer ex(w, face); ex.More(); ex.Next()) {
+        edges.push_back(ex.Current());
+        starts.push_back(ex.CurrentVertex());
+        const GeomAbs_CurveType t = BRepAdaptor_Curve(ex.Current()).GetType();
+        curved = curved || (t != GeomAbs_Line && t != GeomAbs_Circle);
+    }
+    const size_t n = edges.size();
+    bool any = false;
+    if (!curved) {
+        // lines and arcs: the kernel's own 2D fillet, which also rounds a
+        // side away entirely (a 10 mm square rounded by 5 mm is a circle)
+        BRepFilletAPI_MakeFillet2d mk(face);
+        for (const TopoDS_Vertex &v : starts) {
+            if (smooth_at(face, v))
+                continue;
+            bool ok;
+            try {
+                mk.AddFillet(v, r);
+                ok = mk.Status() == ChFi2d_IsDone;
+            } catch (const Standard_Failure &) {
+                ok = false;
+            }
+            if (!ok)
+                throw too_large(&v);
+            any = true;
+        }
+        if (!any)
+            return w;
+        mk.Build();
+        if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid())
+            throw too_large(nullptr);
+        return BRepTools::OuterWire(TopoDS::Face(mk.Shape()));
+    }
+    // other curves (text, splines): corner by corner, each side trimmed
+    // where its rounding meets it, the arcs put in between
+    const gp_Pln plane = BRepAdaptor_Surface(face).Plane();
+    std::vector<TopoDS_Edge> arcs(n);
+    for (size_t i = 0; n > 1 && i < n; i++) {
+        // the corner where edge i ends and edge j starts
+        const size_t j = (i + 1) % n;
+        const TopoDS_Vertex &v = starts[j];
+        if (smooth_at(face, v))
+            continue;
+        const gp_Pnt p = BRep_Tool::Pnt(v);
+        ChFi2d_FilletAPI fillet(edges[i], edges[j], plane);
+        if (!fillet.Perform(r) || fillet.NbResults(p) < 1)
+            throw too_large(&v);
+        arcs[i] = fillet.Result(p, edges[i], edges[j]);
+        if (arcs[i].IsNull())
+            throw too_large(&v);
+        any = true;
+    }
+    if (!any)
+        return w;
+    BRepBuilderAPI_MakeWire mw;
+    for (size_t i = 0; i < n; i++) {
+        mw.Add(edges[i]);
+        if (!arcs[i].IsNull())
+            mw.Add(arcs[i]);
+    }
+    if (!mw.IsDone() || !mw.Wire().Closed())
+        throw too_large(nullptr);
+    BRepBuilderAPI_MakeFace f(mw.Wire(), Standard_True);
+    if (!f.IsDone() || !BRepCheck_Analyzer(f.Face()).IsValid())
+        throw too_large(nullptr);
+    return mw.Wire();
+}
+
 hc_shape *hc_profile_round(const hc_shape *s, double r)
 {
-    return guarded<>((hc_shape *)nullptr, [&] {
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        // each outline and hole rounded on its own: a face with holes does
+        // not round as one
         std::vector<TopoDS_Shape> out;
         for (const TopoDS_Face &face : faces_of(s->shape)) {
-            BRepFilletAPI_MakeFillet2d mk(face);
-            TopTools_IndexedMapOfShape vertices;
-            TopExp::MapShapes(face, TopAbs_VERTEX, vertices);
-            for (int i = 1; i <= vertices.Extent(); i++) {
+            std::vector<TopoDS_Wire> loops;
+            for (TopExp_Explorer ex(face, TopAbs_WIRE); ex.More(); ex.Next()) {
                 try {
-                    mk.AddFillet(TopoDS::Vertex(vertices(i)), r);
-                } catch (const Standard_Failure &) {
-                    // tangent or too short edges: leave the corner sharp
+                    loops.push_back(rounded_loop(TopoDS::Wire(ex.Current()), r));
+                } catch (const Standard_Failure &e) {
+                    set_error(e.GetMessageString());   // which corner, without the exception's name
+                    return (hc_shape *)nullptr;
                 }
             }
-            mk.Build();
-            out.push_back(mk.IsDone() ? mk.Shape() : TopoDS_Shape(face));
+            out.push_back(faces_from_loops(loops));
         }
         return primitive(compound_of(out));
     });
@@ -436,6 +570,13 @@ hc_shape *hc_profile_round(const hc_shape *s, double r)
 hc_shape *hc_offset_solid(const hc_shape *s, double d)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        if (std::abs(d) < 1e-6) {
+            // nothing to do: the solid as it is, each face its own
+            history_new(s->shape);
+            for (size_t i = 0; i < g_history.size(); i++)
+                g_history[i] = Origin{0, (int)i};
+            return wrap(s->shape);
+        }
         // faces on one surface split by a union (two blocks side by side)
         // merged first: an edge between them confuses the offset
         ShapeUpgrade_UnifySameDomain unify(s->shape, Standard_True, Standard_True, Standard_False);
@@ -443,7 +584,8 @@ hc_shape *hc_offset_solid(const hc_shape *s, double d)
         BRepOffsetAPI_MakeOffsetShape off;
         off.PerformByJoin(unify.Shape(), d, 1e-6, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Arc);
         if (!off.IsDone()) {
-            set_error(d < 0 ? "offset failed (would the solid vanish?)" : "offset failed");
+            set_error(d < 0 ? "the solid cannot shrink that much (would it vanish?)"
+                            : "the kernel could not grow the solid by that much");
             return nullptr;
         }
         TopoDS_Shape r = off.Shape();
@@ -475,34 +617,20 @@ hc_shape *hc_profile_offset(const hc_shape *s, double d)
                 set_error("offset failed (the profile would vanish?)");
                 return nullptr;
             }
-            // one face per resulting wire; the largest is the outline, the rest holes
-            std::vector<TopoDS_Face> parts;
-            for (TopExp_Explorer ex(mk.Shape(), TopAbs_WIRE); ex.More(); ex.Next()) {
-                BRepBuilderAPI_MakeFace f(TopoDS::Wire(ex.Current()), Standard_True);
-                if (f.IsDone())
-                    parts.push_back(upward(f.Face()));
-            }
-            if (parts.empty()) {
+            // the wires it gives: outlines, holes, and islands where a narrow
+            // part of the face closed up, told apart by how they nest
+            std::vector<TopoDS_Wire> loops;
+            for (TopExp_Explorer ex(mk.Shape(), TopAbs_WIRE); ex.More(); ex.Next())
+                if (BRepBuilderAPI_MakeFace(TopoDS::Wire(ex.Current()), Standard_True).IsDone())
+                    loops.push_back(TopoDS::Wire(ex.Current()));
+            if (loops.empty()) {
                 set_error("offset left nothing");
                 return nullptr;
             }
-            size_t outer = 0;
-            double best = -1;
-            for (size_t i = 0; i < parts.size(); i++) {
-                GProp_GProps p;
-                BRepGProp::SurfaceProperties(parts[i], p);
-                if (std::abs(p.Mass()) > best) {
-                    best = std::abs(p.Mass());
-                    outer = i;
-                }
-            }
-            TopoDS_Shape result = parts[outer];
-            for (size_t i = 0; i < parts.size(); i++)
-                if (i != outer)
-                    result = BRepAlgoAPI_Cut(result, parts[i]).Shape();
-            out.push_back(result);
+            out.push_back(faces_from_loops(loops));
         }
-        return primitive(compound_of(out));
+        // separate regions grown into each other become one
+        return primitive(fused(out));
     });
 }
 
@@ -558,7 +686,75 @@ static TopoDS_Shape drafted(const TopoDS_Face &face, double height, double taper
     if (!draft.IsDone())
         return TopoDS_Shape();
     TopoDS_Shape r = draft.Shape();
-    const double z = plane.Location().Z();
+    const double z = plane.Location().Z(), z0 = std::min(z, z + height), z1 = std::max(z, z + height);
+    if (!sound_solid(r, z0, z1))
+        return TopoDS_Shape();
+    // a round side that narrows to its apex and widens again past it (a
+    // circle shrunk to nothing on the way up) is an hourglass, valid as a
+    // shape but not the extrusion asked for
+    const double tol = 1e-7 + 1e-7 * (z1 - z0);
+    for (TopExp_Explorer e(r, TopAbs_FACE); e.More(); e.Next()) {
+        BRepAdaptor_Surface ss(TopoDS::Face(e.Current()));
+        if (ss.GetType() != GeomAbs_Cone)
+            continue;
+        const double apex = ss.Cone().Apex().Z();
+        if (apex > z0 + tol && apex < z1 - tol)
+            return TopoDS_Shape();
+    }
+    return r;
+}
+
+// A face bounded only by full circles (a disc, a ring, a plate of round
+// holes) tapered as truncated cones, exactly: the draft of a cone whose top
+// is small comes out invalid. Empty if the face has other edges, or an
+// outline closes up or a hole reaches it on the way.
+static TopoDS_Shape drafted_circles(const TopoDS_Face &face, double height, double taper_rad)
+{
+    struct Ring {
+        gp_Pnt c;
+        double r;
+    };
+    auto ring_of = [](const TopoDS_Wire &w, Ring &out) {
+        int n = 0;
+        for (TopExp_Explorer e(w, TopAbs_EDGE); e.More(); e.Next(), n++) {
+            BRepAdaptor_Curve c(TopoDS::Edge(e.Current()));
+            if (c.GetType() != GeomAbs_Circle || std::abs(c.LastParameter() - c.FirstParameter() - 2 * M_PI) > 1e-9)
+                return false;
+            out = Ring{c.Circle().Location(), c.Circle().Radius()};
+        }
+        return n == 1;
+    };
+    const TopoDS_Wire outer = BRepTools::OuterWire(face);
+    Ring o;
+    if (!ring_of(outer, o))
+        return TopoDS_Shape();
+    std::vector<Ring> holes;
+    for (TopExp_Explorer e(face, TopAbs_WIRE); e.More(); e.Next()) {
+        const TopoDS_Wire w = TopoDS::Wire(e.Current());
+        if (w.IsSame(outer))
+            continue;
+        Ring h;
+        if (!ring_of(w, h))
+            return TopoDS_Shape();
+        holes.push_back(h);
+    }
+    const double grow = std::abs(height) * std::tan(taper_rad);   // the outline shrinks by it, holes widen
+    const double top = o.r - grow;
+    if (top < -1e-9)
+        return TopoDS_Shape();
+    const gp_Dir dir = height > 0 ? gp::DZ() : -gp::DZ();
+    auto cone = [&](const gp_Pnt &c, double r1, double r2) {
+        return BRepPrimAPI_MakeCone(gp_Ax2(c, dir), r1, std::max(r2, 0.0), std::abs(height)).Shape();
+    };
+    TopoDS_Shape r = cone(o.c, o.r, top);
+    for (const Ring &h : holes) {
+        // a hole must stay inside the outline at both ends
+        const double d = gp_Pnt(h.c.X(), h.c.Y(), 0).Distance(gp_Pnt(o.c.X(), o.c.Y(), 0));
+        if (h.r + grow < 0 || d + h.r + grow > top + 1e-9)
+            return TopoDS_Shape();
+        r = BRepAlgoAPI_Cut(r, cone(h.c, h.r, h.r + grow)).Shape();
+    }
+    const double z = o.c.Z();
     if (!sound_solid(r, std::min(z, z + height), std::max(z, z + height)))
         return TopoDS_Shape();
     return r;
@@ -577,6 +773,8 @@ hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
         for (const TopoDS_Face &face : faces_of(s->shape)) {
             bool curved;
             TopoDS_Shape r = drafted(face, height, taper_rad, curved);
+            if (r.IsNull() && !curved)
+                r = drafted_circles(face, height, taper_rad);
             const double cap = height > 0 ? 1e-3 : -1e-3;
             if (r.IsNull() && !curved && std::abs(height) > 2 * std::abs(cap)) {
                 // a rounding that closes up at the very top (a profile
@@ -629,14 +827,45 @@ hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
             }
             out.push_back(r);
         }
-        return primitive(compound_of(out));
+        // regions that grow into each other on the way up overlap
+        return primitive(fused(out));
     });
 }
 
 hc_shape *hc_revolve(const hc_shape *s, double ox, double oy, double oz, double dx, double dy, double dz, double angle_rad)
 {
-    return guarded<>((hc_shape *)nullptr, [&] {
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         gp_Ax1 axis(gp_Pnt(ox, oy, oz), gp_Dir(dx, dy, dz));
+        Bnd_Box bb;
+        BRepBndLib::Add(s->shape, bb);
+        const double size = 2 * std::sqrt(bb.SquareExtent()) + axis.Location().Distance(bb.CornerMin()) + 10;
+        for (const TopoDS_Face &face : faces_of(s->shape)) {
+            BRepAdaptor_Surface surf(face);
+            if (surf.GetType() != GeomAbs_Plane)
+                continue;
+            // the axis in the profile's plane: turned around any other, the
+            // profile sweeps no volume
+            const gp_Pln pln = surf.Plane();
+            const gp_Dir n = pln.Axis().Direction();
+            if (std::abs(n.Dot(axis.Direction())) > 1e-9 || pln.Distance(axis.Location()) > 1e-7 * size) {
+                set_error("the axis must lie in the profile's plane");
+                return nullptr;
+            }
+            // and the profile on one side of it, touching it at most: across
+            // it the solid would pass through itself
+            const gp_Ax3 frame(axis.Location(), n, axis.Direction());
+            double area[2];
+            for (int side = 0; side < 2; side++) {
+                TopoDS_Face half = BRepBuilderAPI_MakeFace(gp_Pln(frame), -size, size, side ? -size : 0, side ? 0 : size);
+                GProp_GProps p;
+                BRepGProp::SurfaceProperties(BRepAlgoAPI_Common(face, half).Shape(), p);
+                area[side] = std::abs(p.Mass());
+            }
+            if (std::min(area[0], area[1]) > 1e-7 * (area[0] + area[1]) + 1e-12) {
+                set_error("the profile crosses the axis: it must lie on one side of it (touching it is fine)");
+                return nullptr;
+            }
+        }
         return primitive(BRepPrimAPI_MakeRevol(s->shape, axis, angle_rad).Shape());
     });
 }
@@ -2063,13 +2292,36 @@ int hc_path_frame(const hc_shape *path, int at_end, double out[6])
 
 // A guide for a sweep that turns the profile by `twist` radians from the start
 // of `spine` to its end, evenly along its length: a curve winding around it,
-// at `radius`, starting in direction `start` (normal to the spine there). The
-// reference it turns from follows the spine without turning on its own.
+// at `radius` at most, starting in direction `start` (normal to the spine
+// there). The reference it turns from follows the spine without turning on
+// its own. The sweep finds the guide where the plane normal to the spine
+// cuts it.
 static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, double twist, double radius)
 {
     BRepAdaptor_CompCurve c(spine);
+    // how the path bends: the guide keeps well inside its tightest bend (a
+    // plane normal to the path would cut it twice there), and gets more
+    // points where the path turns more
+    const int probes = 400;
+    const double u0 = c.FirstParameter(), u1 = c.LastParameter();
+    double tightest = Precision::Infinite(), turning = 0;
+    for (int i = 0; i <= probes; i++) {
+        gp_Pnt p;
+        gp_Vec d1, d2;
+        c.D2(u0 + (u1 - u0) * i / probes, p, d1, d2);
+        const double speed = d1.Magnitude();
+        if (speed < 1e-12)
+            continue;
+        const double k = d1.Crossed(d2).Magnitude() / (speed * speed * speed);
+        if (k > 1e-12)
+            tightest = std::min(tightest, 1 / k);
+        if (i < probes)
+            turning += k * speed * (u1 - u0) / probes;
+    }
+    radius = std::min(radius, 0.2 * tightest);
     // points close enough for an interpolation to follow the winding
-    const int n = std::min(600, std::max(24, (int)std::ceil(std::abs(twist) / (2 * M_PI) * 72) + 24));
+    const double turns = (std::abs(twist) + turning) / (2 * M_PI);
+    const int n = std::min(2000, std::max(24, (int)std::ceil(turns * 72) + 24));
     GCPnts_UniformAbscissa ua(c, n + 1);
     if (!ua.IsDone() || ua.NbPoints() < 3)
         throw Standard_Failure("the path is too short to twist along");
@@ -2134,7 +2386,7 @@ hc_shape *hc_sweep_twisted(const hc_shape *profile, const hc_shape *path, int fr
         auto pipe = [&](const TopoDS_Wire &w) {
             BRepOffsetAPI_MakePipeShell mk(spine);
             if (twist != 0)
-                mk.SetMode(guide, Standard_True);
+                mk.SetMode(guide, Standard_False);
             else if (frenet)
                 mk.SetMode(Standard_True);
             mk.SetTransitionMode(BRepBuilderAPI_RightCorner);   // mitred corners on polylines

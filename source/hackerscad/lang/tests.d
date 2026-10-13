@@ -7,7 +7,7 @@ version (unittest):
 import std.algorithm : map, canFind;
 import std.array : array, join;
 import std.format : format;
-import std.math : isClose, PI, sqrt;
+import std.math : isClose, PI, sqrt, abs;
 import std.file : tempDir, mkdirRecurse, write, rmdirRecurse;
 import std.path : buildPath;
 
@@ -1141,8 +1141,90 @@ unittest
     expectErr(`writeln(99999999999999999999);`, "E0100");
     expectErr(`writeln(to!int("abc"));`, "E0202", "import std.conv;");
     expectErr(`writeln([3, 1, 2, 2, 5, 1, 9, 3, 3, 7, 1, 0].sort((p, q) => p <= q));`, "E0202", "import std.algorithm;");
-    // the most negative integer divided by -1 wraps instead of trapping
-    expectOut(`long m = -9223372036854775807 - 1; writeln(m / -1, " ", m % -1);`, "-9223372036854775808 0");
+    // integers are exact up to 2^53: past it an error, not a silent rounding or wrap
+    expectOut(`long m = -9007199254740990 - 1; writeln(m / -1, " ", m % -1);`, "9007199254740991 0");
+    expectErr(`writeln(9007199254740992);`, "E0100");
+    expectErr(`writeln(3 ^^ 40);`, "E0501");
+    expectErr(`writeln(9007199254740991 + 1);`, "E0501");
+    expectErr(`writeln(1e30.to!int);`, "E0501", "import std.conv;");
+    expectErr(`writeln(1e400);`, "E0100");
+}
+
+unittest
+{
+    // edge cases found probing the operators: each was a crash, a hang, a
+    // wrong result or a silent acceptance
+    enum shapes = "import std.shapes;";
+    // a struct containing itself, lists doubled without end, huge widths
+    expectErr(`writeln(P());`, "E0501", "struct P { P inner; }");
+    expectErr(`auto a = [1]; foreach (i; 0 .. 40) a = a ~ a;`, "E0501");
+    expectErr(`writeln(format("%300000000.1f", 1.0));`, "E0501", "import std.format;");
+    // NaN and infinity never reach the kernel
+    expectErr(`writeln(box(1.0 / 0, 1, 1));`, "E0202", shapes);
+    expectErr(`writeln(box(1, 1, 1).rotate(z: asin(2)));`, "E0202", shapes ~ "import std.math;");
+    // self-intersecting and degenerate polygons
+    expectErr(`writeln(polygon([vec(0, 0), vec(10, 10), vec(10, 0), vec(0, 10)]).area);`, "E0202", shapes);
+    expectErr(`writeln(polygon([vec(0, 0), vec(10, 0), vec(0, 0), vec(0, 10)]).area);`, "E0202", shapes);
+    expectErr(`writeln(polygon([vec(0, 0), vec(5, 0), vec(10, 0)]).area);`, "E0202", shapes);
+    expectOut(`writeln(polygon([vec(0, 0), vec(10, 0), vec(10, 0), vec(10, 10), vec(0, 10), vec(0, 0)]).area);`,
+        "100 mm^2", shapes);
+    // cone with equal radii is a cylinder; rotate does not drop arguments
+    expectOut(`writeln(format("%.3f", cone(r1: 5, r2: 5, h: 10).volume));`, "785.398", shapes ~ "import std.format;");
+    expectErr(`writeln(cone(r1: -5, r2: 2, h: 10));`, "E0202", shapes);
+    expectErr(`writeln(box(10, 20, 30).rotate(90.deg, x: 90));`, "E0204", shapes);
+    expectErr(`writeln(box(10, 20, 30).rotate(axis: X));`, "E0205", shapes);
+    // a full turn either way, or several, spaces the copies evenly
+    expectOut(`auto b = box(2, 2, 2).move(x: 10);
+        writeln(b.circularPattern(4, angle: -360.deg).volume, " ", b.circularPattern(4, angle: 720.deg).volume);`,
+        "32 mm^3 32 mm^3", shapes);
+    expectErr(`writeln(fuse([box(2, 2, 2), rect(4, 4)]));`, "E0202", shapes);
+    expectOut(`Solid[] cs; cs ~= box(1, 1, 1); cs ~= box(2, 2, 2); writeln(cs.length);`, "2", shapes);
+    // the empty sum is zero of any kind
+    expectOut(`Solid[] e; writeln((box(2, 2, 2) - e.sum).volume, " ", [1.mm].filter(x => false).sum + 1.mm);`,
+        "8 mm^3 1 mm", shapes ~ "import std.algorithm;");
+    // math on numbers and angles
+    expectOut(`writeln(round(2.5), " ", floor(45.5.deg), " ", ceil(1.2.deg));`, "3 45° 2°", "import std.math;");
+    expectOut(`write("a"); write("b"); writeln("c");`, "abc");
+    expectOut(`writeln(format("[%5d][%-3s][%d]", 42, "a", 90.deg));`, "[   42][a  ][90]", "import std.format;");
+    expectErr(`writeln(format("%d", 2.5));`, "E0202", "import std.format;");
+    expectErr(`writeln(clamp(5, 10, 0));`, "E0202", "import std.algorithm;");
+    expectOut(`writeln(0.mm == 0, " ", 1.mm != 2.mm);`, "true true");
+    expectErr(`writeln(1.mm == 1);`, "E0310");
+    // declared types hold on every assignment
+    expectErr(`int a = 1; a = "s";`, "E0202");
+    expectErr(`Length b = 1.mm; b = 2.deg;`, "E0310");
+    expectErr(`int c = 1; c += 0.5;`, "E0202");
+    expectOut(`foreach (i, x; ["a", "b"].enumerate) write(i, x); writeln();`, "0a1b", "import std.range;");
+    // @param limits in the parameter's unit; whole numbers stay whole
+    auto it = make();
+    it.overrides = ["a": "100"];
+    assert(error("@param(\"a\", min: 10, max: 90) immutable a = 45.deg;\nimport std.shapes;\n@part Solid p() => box(1, 1, 1);",
+        it).code == "E0202");
+    it = make();
+    it.overrides = ["n": "2.5"];
+    assert(error("@param(\"n\", min: 1, max: 10) immutable n = 3;\nimport std.shapes;\n@part Solid p() => box(n, 1, 1);",
+        it).code == "E0202");
+    // threads: bounded, and no negative clearance
+    expectErr(`writeln(cylinder(d: 8, h: 20).thread(faces.largest, "M8x0.0001"));`, "E0501", shapes);
+    expectErr(`writeln(cylinder(d: 8, h: 20).thread(faces.largest, "M8", starts: 100));`, "E0501", shapes);
+    expectErr(`writeln(cylinder(d: 8, h: 20).thread(faces.largest, "M8", clearance: -1.mm));`, "E0202", shapes);
+    // frames stand on flat faces only
+    expectErr(`writeln(cylinder(d: 10, h: 20).frame(faces.largest));`, "E0202", shapes);
+    // overhangs of a curved surface: 2πR²(1 - sin a) for a sphere, within 2 %
+    expectOut(`immutable o = sphere(r: 10).move(z: 10).overhangs(45.deg) / 1.mm^^2;
+        writeln(abs(o / (2 * PI * 100 * (1 - sin(45.deg))) - 1) < 0.02);`, "true", shapes ~ "import std.math;");
+    expectErr(`writeln(nothing.centroid);`, "E0410", shapes);
+    // fillets, chamfers, shells and drafts say what is wrong with their sizes
+    expectErr(`writeln(box(10, 10, 10).fillet(edges.parallel(Z), r: 0));`, "E0202", shapes);
+    expectErr(`writeln(box(10, 10, 10).chamfer(edges.parallel(Z), d: -1));`, "E0202", shapes);
+    expectErr(`writeln(box(10, 10, 10).shell(open: faces.top, thickness: 0));`, "E0202", shapes);
+    expectErr(`writeln(box(10, 10, 10).shell(open: faces.top, thickness: 12));`, "E0202", shapes);
+    expectErr(`writeln(box(10, 10, 10).draft(faces.normal(X), angle: 90.deg));`, "E0202", shapes);
+    // a circle tapered almost to a point: an exact truncated cone
+    expectOut(`writeln(format("%.3f", circle(r: 3).extrude(5.mm, taper: 30.deg).volume / 1.mm^^3));`,
+        format("%.3f", PI * 5 / 3 * (9 + 3 * (3 - 5 / sqrt(3.0)) + (3 - 5 / sqrt(3.0)) ^^ 2)),
+        shapes ~ "import std.format;");
+    expectErr(`writeln(spurGear(1.mm, 20, 5.mm, backlash: 5.mm));`, "E0600", "import gears;");
 }
 
 unittest
@@ -1762,4 +1844,142 @@ unittest
     assert(abs(kernel.volume(filled) - 19.96 * 19.96 * 9.96) < 1, format("the part filled: %s mm³", kernel.volume(filled)));
     auto voids = kernel.boolean(filled, part, BoolOp.cut);
     assert(abs(kernel.volume(voids) - (PI * 9 * 10 + 3 * 4 * 4)) < 2, "its voids: the hole and the pocket inside the block");
+}
+
+unittest
+{
+    // tapered regions that grow into each other are one solid, not counted twice
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable a = rect(10, 10), b = rect(10, 10).move(x: 12);
+            immutable both = (a + b).extrude(10, taper: -10.deg);
+            immutable apart = a.extrude(10, taper: -10.deg) + b.extrude(10, taper: -10.deg);
+            assert(abs(both.volume / 1.mm ^^ 3 - apart.volume / 1.mm ^^ 3) < 1e-3, "overlap counted once");
+            assert(both.pieces.length == 1 && both.isValid, "one solid");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    // a circle shrinking to its centre before the top would be an hourglass
+    foreach (src; ["circle(r: 3).extrude(5.mm, taper: 60.deg)",
+            "box(20, 20, 10).cut(circle(r: 3), on: faces.top, depth: 5.mm, taper: 60.deg)",
+            "box(20, 20, 10).cut(circle(r: 3), on: faces.top, through: true, taper: 30.deg)"])
+    {
+        immutable d = error("@part Solid p() => " ~ src ~ ";");
+        assert(d.message.canFind("closes up"), src ~ ": " ~ d.message);
+    }
+}
+
+unittest
+{
+    // offsets of profiles: regions grown into each other merge; a narrow
+    // neck that closes up leaves the islands on either side
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable mm2 = 1.mm ^^ 2;
+            // two 14 mm squares rounded by 2, overlapping on a 2 mm strip with rounded ends
+            immutable square = 196 - 4 * (4 - PI), lens = 2 * (10 + 2 * (PI - (sqrt(3.0) / 2 + PI / 3)));
+            immutable grown = (rect(10, 10) + rect(10, 10).move(x: 12)).offset(2.mm);
+            assert(abs(grown.area / mm2 - (2 * square - lens)) < 1e-3, "merged");
+            assert(grown.extrude(1).pieces.length == 1, "one region");
+            // two 7 mm squares, each with a little bulge where the neck met it
+            immutable bulge = 2 * (1.5 - (sqrt(1.25) / 2 + 1.125 * asin(2.0 / 3) / 1.deg * PI / 180));
+            immutable shrunk = (rect(10, 10) + rect(10, 10).move(x: 20) + rect(12, 2).move(x: 10)).offset(-1.5.mm);
+            assert(abs(shrunk.area / mm2 - (98 + 2 * bulge)) < 1e-3, "islands");
+            assert(shrunk.extrude(1).pieces.length == 2, "two islands");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
+
+unittest
+{
+    // rounding profiles: holes and text too, every corner; a radius that
+    // does not fit is an error naming the corner
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable mm2 = 1.mm ^^ 2, corner = 1 - PI / 4;
+            assert(abs((rect(20, 20) - circle(r: 3)).round(1).area / mm2 - (400 - 4 * corner - 9 * PI)) < 1e-6, "round hole");
+            // the hole's corners filled as much as the outline's are cut
+            immutable framed = (rect(20, 20) - rect(5, 5)).round(1);
+            assert(abs(framed.area / mm2 - 375) < 1e-6 && framed.extrude(1).isValid, "square hole");
+            immutable label = text("Hello", size: 10.mm);
+            immutable soft = label.round(0.15.mm);
+            assert(abs(soft.area / mm2 - label.area / mm2) > 1e-3 && soft.extrude(1).isValid, "text");
+            assert(abs(rect(10, 10).round(5).area / mm2 - 25 * PI) < 1e-6, "a circle");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error("@part Solid p() => rect(10, 10).round(6.mm).extrude(1);").message.canFind("too large for the corner at"));
+    assert(error("@part Solid p() => rect(10, 10).round(100.mm).extrude(1);").message.canFind("too large"));
+    assert(error("@part Solid p() => rect(10, 10).round(0).extrude(1);").message.canFind("greater than 0"));
+    assert(error("@part Solid p() => rect(10, 10).round(-2.mm).extrude(1);").message.canFind("greater than 0"));
+}
+
+unittest
+{
+    // a twisted sweep along a curve keeps the volume of the untwisted one:
+    // the area of the profile times the length of the path
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable mm3 = 1.mm ^^ 3, coil = helix(r: 10.mm, pitch: 5.mm, height: 20.mm);
+            immutable length = 4 * sqrt((20 * PI) ^^ 2 + 25.0);
+            assert(abs(circle(r: 1.mm).sweep(coil).volume / mm3 - PI * length) < 0.01, "plain");
+            assert(abs(circle(r: 1.mm).sweep(coil, twist: 90.deg).volume / mm3 - PI * length) < 0.01, "circle");
+            assert(abs(rect(2, 1).sweep(coil, twist: 90.deg).volume / mm3 - 2 * length) < 0.01, "rectangle");
+            assert(abs(rect(4, 4).sweep(coil, twist: 1.deg).volume / mm3 - 16 * length) < 0.05, "a little");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
+
+unittest
+{
+    // revolve: an angle up to a full turn, an axis in the profile's plane, the profile on one side of it
+    assert(error("@part Solid p() => rect(10, 10).move(x: 10).revolve(angle: 400.deg);").message.canFind("at most 360°"));
+    assert(error("@part Solid p() => rect(10, 10).move(x: 10).revolve(angle: 0.deg);").message.canFind("more than 0°"));
+    assert(error("@part Solid p() => rect(10, 10).move(y: 10).revolve(axis: Z);").message.canFind("profile's plane"));
+    assert(error("@part Solid p() => rect(10, 10).revolve();").message.canFind("crosses the axis"));
+    assert(error("@part Solid p() => rect(10, 10).move(x: 4.mm).revolve();").message.canFind("crosses the axis"));
+    auto r = runModel("@part Solid touching() => rect(10, 10).move(x: 5.mm).revolve();\n"
+        ~ "@part Solid back() => rect(10, 10).move(x: 10).revolve(angle: -90.deg);");
+    assert(isClose(partVolume(r, "touching"), PI * 100 * 10, 1e-6));
+    assert(isClose(partVolume(r, "back"), PI * (225 - 25) * 10 / 4, 1e-6));
+}
+
+unittest
+{
+    // solids offset by nothing stay as they are; teardrops up to 90°; text of a size
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            assert(abs(box(10, 10, 10).offset(0).volume / 1.mm ^^ 3 - 1000) < 1e-9, "offset 0");
+            assert(abs(box(10, 10, 10).offset(1e-7).volume / 1.mm ^^ 3 - 1000) < 1e-9, "offset almost 0");
+            // at 90° the sides meet on the circle: no point left
+            assert(abs(teardrop(r: 5, angle: 90.deg).area / 1.mm ^^ 2 - 25 * PI) < 1e-6, "teardrop 90°");
+            assert(abs(teardrop(r: 5, angle: 90.deg, flat: true).area / 1.mm ^^ 2 - 25 * PI) < 1e-6, "flat 90°");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error("@part Solid p() => teardrop(r: 5, angle: 91.deg).extrude(1);").message.canFind("between 3° and 90°"));
+    foreach (size; ["0", "-2", "1e-6"])
+        assert(error(`@part Solid p() => text("A", size: ` ~ size ~ `).extrude(1);`).message.canFind("text size"), size);
 }

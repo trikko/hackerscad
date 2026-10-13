@@ -105,6 +105,8 @@ final class SketchVal : ObjectVal
                 auto x = Args(it, a, "circle", ["sketch", "center", "r", "d", "construction"]);
                 immutable given = x.has("r") || x.has("d");
                 immutable r = given ? x.radius("r", "d") : 10;
+                if (given && !(r > 0))
+                    throw new HcadError(Code.type, "a circle's radius must be positive", x.spanOf(x.has("r") ? "r" : "d"));
                 auto c = made(a.span, () => sk.circle(pointArg(x, "center"), r, x.flag("construction", false)));
                 if (given)
                     add(ConstraintKind.radius, [idOf(c)], a.span, r, 0, x.spanOf(x.has("r") ? "r" : "d"), x.has("d"));
@@ -474,6 +476,29 @@ final class SketchVal : ObjectVal
                 span, "add dimensions or constraints, or fix the points with fixed: true");
         }
         import hackerscad.kernel.brep : KernelException;
+
+        // the same loop twice (two equal circles) cancels out: no hole, no error
+        {
+            import std.algorithm : sort;
+            import std.array : join;
+            bool[string] seen;
+            string[] points;
+            foreach (g; segs)
+            {
+                if (g.kind != OutlineSeg.Kind.end)
+                {
+                    foreach (c; [g.ax, g.ay, g.bx, g.by, g.mx, g.my])
+                        points ~= format("%.6f", c + 0.0);
+                    continue;
+                }
+                auto key = points.sort.release.join(" ");
+                if (key in seen)
+                    throw new HcadError(Code.sketch, "two outlines of the sketch lie on each other (two equal circles?): "
+                        ~ "they would cancel out", span);
+                seen[key] = true;
+                points = null;
+            }
+        }
 
         Brep b;
         try

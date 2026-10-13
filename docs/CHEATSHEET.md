@@ -138,11 +138,11 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `slot(length: Length, width: Length) → Profile` — A stadium along X.
 - `teardrop(r | d: Length, angle: Angle, flat: bool) → Profile` — A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.
 - `text(text: string, size: Length, font: string) → Profile` — A text outline starting at the origin on the baseline.
-- `p.round(r: Length) → Profile` — Rounds the (convex) corners.
+- `p.round(r: Length) → Profile` — Rounds every corner, outward and inward, holes too; an error names a corner r is too large for.
 - `p.offset(distance: Length) → Profile` — Grows (d > 0) or shrinks the outline; on a plane, the parallel plane.
 - `s.offset(distance: Length) → Solid` — Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened).
 - `p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle) → Solid` — A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly.
-- `p.revolve(axis: Axis, angle: Angle) → Solid` — Turns the profile around an axis in its plane; without one, x is the radius and y the height along Z.
+- `p.revolve(axis: Axis, angle: Angle) → Solid` — Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.
 - `p.sweep(path: Path, frenet: bool, twist: Angle) → Solid` — Moves the profile along a path; twist: 360.deg turns it once around the path on the way.
 - `loft(profiles: Profile[], ruled: bool) → Solid` — A solid through profiles placed in space.
 - `hull(shapes…) → Solid` — The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.
@@ -224,8 +224,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `e.isLine → bool` — Whether it is straight.
 - `e.isCircle → bool` — Whether it is a circle or an arc.
 - `e.radius → Length` — The radius of a circular edge.
-- `e.isParallel(axis: Direction) → bool` — Whether it runs along the axis (a face: whether its normal does).
-- `e.isPerpendicular(axis: Direction) → bool` — Whether it is at right angles to the axis.
+- `e.isParallel(axis: Direction) → bool` — Whether it runs along the axis (a face: whether it lies along it, its normal at right angles: the side walls for Z).
+- `e.isPerpendicular(axis: Direction) → bool` — Whether it is at right angles to the axis (a face: whether its normal runs along it: top and bottom for Z).
 
 ## Sketches
 
