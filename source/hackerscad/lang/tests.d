@@ -1383,3 +1383,12 @@ unittest
     assert(error("@part Solid p() => hull(circle(r: 1), circle(r: 1).move(x: 2), circle(r: 1).move(x: 4)).extrude(1)"
         ~ " - hull(vec(0, 0, 0));").message.length > 0);
 }
+
+unittest
+{
+    // mass properties of a block 10 × 20 × 30: its centre, 6 g of water, the
+    // moments m/12 (b² + c²) about its three axes
+    expectOut(`auto b = box(10, 20, 30).move(x: 5); writeln(b.centroid, " ", b.mass(density: 1), " ", b.inertia(density: 1));`,
+        "[5 mm, 0 mm, 15 mm] 6 [250, 500, 650]", "import std.shapes;");
+    expectErr(`writeln(box(1, 1, 1).mass(density: 0));`, "E0202", "import std.shapes;");
+}

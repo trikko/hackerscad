@@ -882,6 +882,33 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return Value.of(sv);
     });
 
+    // ---- mass properties: density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04)
+    def("mass", (ref CallArgs a) {
+        // s.mass(density: 1.24): grams
+        auto x = Args(it, a, "mass", ["solid", "density"]);
+        auto s = x.solid("solid");
+        immutable density = x.num("density");
+        if (s.flat || s.path)
+            throw new HcadError(Code.type, "mass is of solids", a.span);
+        if (density <= 0)
+            throw new HcadError(Code.type, "density is in g/cm³ and positive: PLA 1.24, PETG 1.27, ABS 1.04",
+                x.spanOf("density"));
+        return Value.number(it.kernel.volume(nonEmpty(s, a.span)) * density / 1000);
+    });
+    def("inertia", (ref CallArgs a) {
+        // s.inertia(density: 1.24): the principal moments of inertia about the centre of mass,
+        // ascending, in g·mm²
+        auto x = Args(it, a, "inertia", ["solid", "density"]);
+        auto s = x.solid("solid");
+        immutable density = x.num("density");
+        if (s.flat || s.path)
+            throw new HcadError(Code.type, "inertia is of solids", a.span);
+        if (density <= 0)
+            throw new HcadError(Code.type, "density is in g/cm³ and positive", x.spanOf("density"));
+        auto m = it.kernel.massProps(nonEmpty(s, a.span)).moments;
+        return Value.vector(Vec3(m[0], m[1], m[2]) * (density / 1000), 3, Dim.none);
+    });
+
     // ---- convex hulls and Minkowski sums (lang/convex)
     def("hull", (ref CallArgs a) {
         // hull(a, b, …) or hull([a, b, …]): the smallest convex shape around them
@@ -1504,6 +1531,11 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
                 }
             case "volume": result = Value.number(s.brep ? it.kernel.volume(s.brep) : 0, Dim.volume); return true;
             case "area": result = Value.number(s.brep ? it.kernel.area(s.brep) : 0, Dim.area); return true;
+            case "centroid":
+                if (s.brep is null || s.flat || s.path)
+                    return false;
+                result = Value.vector(it.kernel.massProps(s.brep).centroid, 3, Dim.length);
+                return true;
             case "isEmpty": result = Value.of(s.brep is null); return true;
             case "pieces":
                 {

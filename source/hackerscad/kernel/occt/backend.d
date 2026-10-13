@@ -83,6 +83,13 @@ final class OcctKernel : BrepKernel
 
     Brep offset(Brep s, double d) => wrap(hc_offset_solid(h(s), d), "offset");
 
+    MassProps massProps(Brep s)
+    {
+        double[7] v;
+        check(hc_mass_props(h(s), v) == 0, "mass properties");
+        return MassProps(v[0], Vec3(v[1], v[2], v[3]), [v[4], v[5], v[6]]);
+    }
+
     Brep fuseAll(Brep[] parts)
     {
         const(hc_shape)*[] ps;

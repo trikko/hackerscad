@@ -39,6 +39,13 @@ struct EdgeInfo
 /// Where a face of an operation's result comes from: operand `input`
 /// (0 first, 1 second) and its face `index` there, or -1 when the operation
 /// created the face.
+struct MassProps
+{
+    double volume;
+    Vec3 centroid;
+    double[3] moments;
+}
+
 struct FaceOrigin
 {
     int input = -1;
@@ -155,6 +162,9 @@ interface BrepKernel
     Brep draft(Brep s, const(int)[] faces, double angle, Vec3 pull, Vec3 neutral);
 
     double volume(Brep s);
+    /// Volume, centre of mass and principal moments of inertia about it
+    /// (ascending, per unit density: mm⁵).
+    MassProps massProps(Brep s);
     double area(Brep s);
     BBox bbox(Brep s);
     bool isValid(Brep s);

@@ -90,6 +90,7 @@ final class CachingKernel : BrepKernel
     Brep boolean(Brep a, Brep b, BoolOp o) => op(key("boolean", a, b, cast(int) o), inner.boolean(a, b, o));
 
     Brep offset(Brep s, double d) => op(key("solidOffset", s, d), inner.offset(s, d));
+    MassProps massProps(Brep s) => inner.massProps(s);
 
     Brep fuseAll(Brep[] parts)
     {

@@ -186,6 +186,9 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <section><h2>Measuring</h2><dl>
 <dt>s.bbox → BBox</dt><dd>The bounding box: min, max, size, center.</dd>
 <dt>s.volume → Volume</dt><dd>The volume.</dd>
+<dt>s.centroid → Vec3</dt><dd>The centre of mass (of a uniform solid).</dd>
+<dt>s.mass(density: number) → number</dt><dd>Grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85.</dd>
+<dt>s.inertia(density: number) → Vec3</dt><dd>The principal moments of inertia about the centre of mass, ascending, in g·mm².</dd>
 <dt>s.area → Area</dt><dd>The surface area (of a profile: its area).</dd>
 <dt>s.isEmpty → bool</dt><dd>Whether nothing is left.</dd>
 <dt>s.isValid → bool</dt><dd>Whether the solid is a valid closed solid.</dd>

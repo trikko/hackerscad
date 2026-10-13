@@ -35,6 +35,7 @@
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
+#include <GProp_PrincipalProps.hxx>
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepCheck_Analyzer.hxx>
@@ -981,6 +982,29 @@ double hc_volume(const hc_shape *s)
         GProp_GProps p;
         BRepGProp::VolumeProperties(s->shape, p);
         return p.Mass();
+    });
+}
+
+// Mass properties per unit density: out = volume, the centre of mass
+// (x y z) and the principal moments of inertia about it (three, ascending).
+int hc_mass_props(const hc_shape *s, double out[7])
+{
+    return guarded<>(-1, [&]() -> int {
+        GProp_GProps p;
+        BRepGProp::VolumeProperties(s->shape, p);
+        if (p.Mass() <= 0) {
+            set_error("the solid has no volume");
+            return -1;
+        }
+        gp_Pnt c = p.CentreOfMass();
+        double i1, i2, i3;
+        p.PrincipalProperties().Moments(i1, i2, i3);
+        double m[3] = {i1, i2, i3};
+        std::sort(m, m + 3);
+        double v[7] = {p.Mass(), c.X(), c.Y(), c.Z(), m[0], m[1], m[2]};
+        for (int i = 0; i < 7; i++)
+            out[i] = v[i];
+        return 0;
     });
 }
 
