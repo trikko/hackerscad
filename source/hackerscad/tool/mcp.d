@@ -716,6 +716,12 @@ JSONValue[] toolList()
             ~ "points that can still move in blue. The reply lists the sketches: solved, degrees_of_freedom, "
             ~ "free_points, and the dimensions with their label, the line and col of their value in the code, the value "
             ~ "and conflicting when the constraints disagree.", `"on": {"type": "boolean"}`, `[]`),
+        gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
+            ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "
+            ~ "several times, every run), what a value row made, or what a function returns. row is 0-based, in the "
+            ~ "order of the steps list of hcad_gui_state with source: true; headings are not rows to click. "
+            ~ "hcad_gui_rollback with {} (or Esc) goes back to the final model.",
+            `"row": {"type": "integer"}`, `["row"]`),
         gui("hcad_gui_dimension", "Change a sketch dimension in the user's window, as clicking it and typing: the "
             ~ "value at line and col (from hcad_gui_sketch) becomes value, e.g. \"40.mm\".",
             `"line": {"type": "integer"}, "col": {"type": "integer"}, "value": {"type": "string"}`, `["line", "col", "value"]`),
@@ -906,7 +912,7 @@ JSONValue callTool(string name, JSONValue args)
             break;
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
-            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
+            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
             "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet":
         {
             auto method = name["hcad_gui_".length .. $];

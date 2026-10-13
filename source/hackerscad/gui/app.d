@@ -3818,6 +3818,18 @@ private:
                 reply(r, null);
             });
             return;
+        case "step":
+            {
+                // {"row": 3}: a row of the Steps panel clicked (0-based, as state's steps lists them)
+                if (!has("row"))
+                    return reply(JSONValue.init, "give row: the index of the Steps panel row (state with source: true "
+                        ~ "lists them)");
+                sideStack.setVisibleChildName("features");
+                if (!features.activate(cast(int) p["row"].get!long))
+                    return reply(JSONValue.init, "no such row, or it is a heading");
+                whenIdle(() => reply(state(), null));
+                return;
+            }
         case "dimension":
             {
                 // {"line": 12, "col": 30, "value": "40.mm"}: a sketch dimension changed, as clicking it

@@ -86,13 +86,22 @@ final class FeaturesPanel
         list = new ListBox;
         list.setSelectionMode(SelectionMode.Single);
         list.addCssClass("boxed-list");
-        list.connectRowActivated((ListBoxRow row) {
-            immutable i = row.getIndex();
+        list.connectRowActivated((ListBoxRow row) { activate(row.getIndex()); });
+        widget.append(list);
+    }
+
+    /// Row `i` clicked (also for the control socket): false when there is no
+    /// such row or it is a heading.
+    bool activate(int i)
+    {
+        {
             if (i < 0 || i >= entries.length)
-                return;
+                return false;
             auto e = entries[i];
             if (e.type == Entry.Type.header)
-                return;
+                return false;
+            if (auto row = list.getRowAtIndex(i))
+                list.selectRow(row);
             finalButton.setSensitive(true);
             if (e.type == Entry.Type.returns)
             {
@@ -106,8 +115,8 @@ final class FeaturesPanel
             }
             else if (onSelect)
                 onSelect(e.ids);
-        });
-        widget.append(list);
+            return true;
+        }
     }
 
     /// The rows as the panel shows them, one string each (for agents).
