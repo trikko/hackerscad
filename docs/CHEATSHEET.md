@@ -141,13 +141,14 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `p.round(r: Length) → Profile` — Rounds the (convex) corners.
 - `p.offset(distance: Length) → Profile` — Grows (d > 0) or shrinks the outline; on a plane, the parallel plane.
 - `s.offset(distance: Length) → Solid` — Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened).
-- `p.extrude(height: Length, taper: Angle, symmetric: bool) → Solid` — A solid along +Z from the profile.
+- `p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle) → Solid` — A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly.
 - `p.revolve(axis: Axis, angle: Angle) → Solid` — Turns the profile around an axis in its plane; without one, x is the radius and y the height along Z.
-- `p.sweep(path: Path, frenet: bool) → Solid` — Moves the profile along a path.
+- `p.sweep(path: Path, frenet: bool, twist: Angle) → Solid` — Moves the profile along a path; twist: 360.deg turns it once around the path on the way.
 - `loft(profiles: Profile[], ruled: bool) → Solid` — A solid through profiles placed in space.
 - `hull(shapes…) → Solid` — The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.
 - `minkowski(a, b) → Solid` — a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.
 - `s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid` — Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).
+- `s.thread(face: Faces, size: string, pitch: Length, length: Length, turns: number, starts: int, left: bool, clearance: Length, chamfer: bool, flip: bool) → Solid` — A thread on a cylindrical face, outside a shaft or inside a hole (made at the tap drill size): "M8", "M8x1", "1/4-20 UNC", "#10-32 UNF", "Tr12x3", "G1/2", tapered "R1/2" and "1/2 NPT".
 - `s.extrude(faces: Selector, depth: Length, along: Vec3) → Solid` — Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in.
 
 ## Paths, sweeps and lofts
@@ -172,6 +173,9 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.centroid → Vec3` — The centre of mass (of a uniform solid).
 - `s.section(plane: Plane) → Profile` — The cut of the solid by a plane: a profile in that plane.
 - `s.projection(plane: Plane) → Profile` — The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY.
+- `s.features → string` — What the solid is made of, one surface a line: flat faces, holes and shafts (with the ISO size they match), cones, spheres, roundings, patterns of holes; to remodel a loaded mesh: writeln(load("x.stl").features).
+- `s.aligned → Solid` — The solid lying on its largest flat face, its longest extent along X, centred in X and Y on z = 0: a mesh found tilted, set straight to remodel it.
+- `s.deviation(other: Solid) → Length` — How far apart the two surfaces are at most, both ways: to check a remodelled part against the mesh it copies, assert(clone.deviation(original) < 0.1.mm).
 - `s.overhangs(angle: Angle) → Area` — The area facing down more steeply than the angle from a wall (45° by default), off the bed: what needs supports.
 - `s.thinWalls(min: Length) → Area` — The surface over walls thinner than min (0.8 mm by default): 0 when every wall prints.
 - `s.mass(density: number) → number` — Grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85.

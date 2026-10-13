@@ -120,7 +120,8 @@ interface BrepKernel
     Brep profileOffset(Brep s, double d);
     /// A solid grown (d > 0) or shrunk, round where it turns.
     Brep offset(Brep s, double d);
-    /// Profile → solid along +Z (−Z if negative); taper narrows the top.
+    /// Profile → solid along +Z (−Z if negative), `height` along the axis;
+    /// a positive taper leans the sides in (holes widen), a negative one out.
     Brep extrude(Brep profile, double height, double taper);
     /// Profile → solid of revolution around an axis in its plane.
     Brep revolve(Brep profile, Vec3 origin, Vec3 direction, double angle);

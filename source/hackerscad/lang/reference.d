@@ -207,7 +207,7 @@ immutable Ref[] reference =
     F("offset", "Profile", ["distance: Length"], "Profile", "Grows (d > 0) or shrinks the outline; on a plane, the parallel plane."),
     F("offset", "Solid", ["distance: Length"], "Solid", "Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened)."),
     F("extrude", "Profile", ["height: Length", "taper: Angle", "symmetric: bool", "twist: Angle"], "Solid",
-        "A solid along +Z from the profile; twist: 90.deg turns it around Z as it rises, evenly."),
+        "A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly."),
     F("revolve", "Profile", ["axis: Axis", "angle: Angle"], "Solid",
         "Turns the profile around an axis in its plane; without one, x is the radius and y the height along Z."),
     F("sweep", "Profile", ["path: Path", "frenet: bool", "twist: Angle"], "Solid",

@@ -83,6 +83,7 @@
 #include <algorithm>
 #include <cmath>
 #include <LocOpe_DPrism.hxx>
+#include <BRepOffsetAPI_DraftAngle.hxx>
 #include <StdPrs_BRepFont.hxx>
 #include <StdPrs_BRepTextBuilder.hxx>
 #include <gp_Circ.hxx>
@@ -505,27 +506,128 @@ hc_shape *hc_profile_offset(const hc_shape *s, double d)
     });
 }
 
+// A solid made, checked: valid, closed outside in (a reversed one is turned
+// round), along z from z0 to z1.
+static bool sound_solid(TopoDS_Shape &r, double z0, double z1)
+{
+    if (r.IsNull() || !TopExp_Explorer(r, TopAbs_SOLID).More() || !BRepCheck_Analyzer(r).IsValid())
+        return false;
+    GProp_GProps p;
+    BRepGProp::VolumeProperties(r, p);
+    if (std::abs(p.Mass()) < 1e-9)
+        return false;
+    if (p.Mass() < 0)
+        r.Reverse();
+    Bnd_Box bb;
+    BRepBndLib::Add(r, bb);
+    double bx0, by0, bz0, bx1, by1, bz1;
+    bb.Get(bx0, by0, bz0, bx1, by1, bz1);
+    const double tol = 1e-4 + 1e-5 * std::abs(z1 - z0);
+    return std::abs(bz0 - z0) < tol && std::abs(bz1 - z1) < tol;
+}
+
+// One face extruded `height` along its normal with its sides drafted by
+// `taper`: the straight prism with every side tilted about the profile's
+// plane, so they stay planes (cylinders become cones) and meet at sharp
+// edges. Empty if the result is broken (a feature of the profile closed up
+// on the way) or, `curved` set, a side cannot be drafted (not a plane,
+// cylinder or cone).
+static TopoDS_Shape drafted(const TopoDS_Face &face, double height, double taper_rad, bool &curved)
+{
+    curved = false;
+    BRepAdaptor_Surface surf(face);
+    const gp_Pln plane = surf.Plane();
+    const gp_Dir up = height > 0 ? gp::DZ() : -gp::DZ();
+    TopoDS_Shape prism = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, height)).Shape();
+    BRepOffsetAPI_DraftAngle draft(prism);
+    for (TopExp_Explorer e(prism, TopAbs_FACE); e.More(); e.Next()) {
+        const TopoDS_Face side = TopoDS::Face(e.Current());
+        BRepAdaptor_Surface ss(side);
+        if (ss.GetType() == GeomAbs_Plane && ss.Plane().Axis().Direction().IsParallel(up, 1e-9))
+            continue;   // the bottom or the top
+        if (ss.GetType() != GeomAbs_Plane && ss.GetType() != GeomAbs_Cylinder && ss.GetType() != GeomAbs_Cone) {
+            curved = true;
+            return TopoDS_Shape();
+        }
+        // matter is taken away above the neutral plane for a positive angle
+        draft.Add(side, up, taper_rad, plane);
+        if (!draft.AddDone())
+            return TopoDS_Shape();
+    }
+    draft.Build();
+    if (!draft.IsDone())
+        return TopoDS_Shape();
+    TopoDS_Shape r = draft.Shape();
+    const double z = plane.Location().Z();
+    if (!sound_solid(r, std::min(z, z + height), std::max(z, z + height)))
+        return TopoDS_Shape();
+    return r;
+}
+
 hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         if (taper_rad == 0)
             return primitive(BRepPrimAPI_MakePrism(s->shape, gp_Vec(0, 0, height)).Shape());
+        if (std::abs(taper_rad) >= M_PI / 2 - 1e-6) {
+            set_error("a taper must be less than 90°");
+            return nullptr;
+        }
         std::vector<TopoDS_Shape> out;
         for (const TopoDS_Face &face : faces_of(s->shape)) {
-            // the draft prism grows along the face normal: flip for downward extrusions
-            TopoDS_Face f = face;
-            BRepAdaptor_Surface surf(f);
-            gp_Dir n = surf.Plane().Axis().Direction();
-            if (f.Orientation() == TopAbs_REVERSED)
-                n.Reverse();
-            if ((n.Z() > 0) != (height > 0))
-                f.Reverse();
-            LocOpe_DPrism prism(f, std::abs(height), taper_rad);
-            if (!prism.IsDone()) {
-                set_error("tapered extrusion failed (taper too steep for the height?)");
+            bool curved;
+            TopoDS_Shape r = drafted(face, height, taper_rad, curved);
+            const double cap = height > 0 ? 1e-3 : -1e-3;
+            if (r.IsNull() && !curved && std::abs(height) > 2 * std::abs(cap)) {
+                // a rounding that closes up at the very top (a profile
+                // offset inwards, tapered back out as far): drafted to just
+                // below, its top extruded straight the last micron
+                TopoDS_Shape low = drafted(face, height - cap, taper_rad, curved);
+                const double ztop = BRepAdaptor_Surface(face).Plane().Location().Z() + height - cap;
+                for (TopExp_Explorer e(low, TopAbs_FACE); e.More() && r.IsNull(); e.Next()) {
+                    const TopoDS_Face top = TopoDS::Face(e.Current());
+                    BRepAdaptor_Surface ts(top);
+                    if (ts.GetType() != GeomAbs_Plane || !ts.Plane().Axis().Direction().IsParallel(gp::DZ(), 1e-9)
+                        || std::abs(ts.Plane().Location().Z() - ztop) > 1e-7)
+                        continue;
+                    TopoDS_Face t = top;
+                    t.Orientation(TopAbs_FORWARD);
+                    BRepAlgoAPI_Fuse fuse(low, BRepPrimAPI_MakePrism(t, gp_Vec(0, 0, cap)).Shape());
+                    if (!fuse.IsDone())
+                        break;
+                    ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_True, Standard_True, Standard_False);
+                    unify.Build();
+                    r = unify.Shape();
+                    const double z = ztop - height + cap;
+                    if (!sound_solid(r, std::min(z, z + height), std::max(z, z + height)))
+                        r.Nullify();
+                }
+            }
+            if (r.IsNull() && !curved) {
+                set_error("tapered extrusion failed: an edge or a hole of the profile closes up before the top "
+                          "(lower the height or the taper)");
                 return nullptr;
             }
-            out.push_back(prism.Shape());
+            if (r.IsNull()) {
+                // sides of splines: the draft prism, which measures its
+                // height along the sides and grows along the face's normal
+                TopoDS_Face f = face;
+                BRepAdaptor_Surface surf(f);
+                gp_Dir n = surf.Plane().Axis().Direction();
+                if (f.Orientation() == TopAbs_REVERSED)
+                    n.Reverse();
+                if ((n.Z() > 0) != (height > 0))
+                    f.Reverse();
+                LocOpe_DPrism prism(f, std::abs(height) / std::cos(taper_rad), taper_rad);
+                if (prism.IsDone())
+                    r = prism.Shape();
+                const double z = surf.Plane().Location().Z();
+                if (!prism.IsDone() || !sound_solid(r, std::min(z, z + height), std::max(z, z + height))) {
+                    set_error("tapered extrusion failed (taper too steep for the height?)");
+                    return nullptr;
+                }
+            }
+            out.push_back(r);
         }
         return primitive(compound_of(out));
     });
