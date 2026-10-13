@@ -51,6 +51,10 @@ usage:
       tunes the named @param lengths so that part a (a copy) matches part b
       (the original) as closely as it goes: the volume where they differ made
       as small as possible (downhill simplex)
+  hcad match FILE.hcad --a PART --b PART
+      the operations of a copy (a) and its original (b) matched one by one:
+      holes, shafts, cones, roundings, planes, and the pockets met along x, y
+      and z; what has no match, however small, is listed
   hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
@@ -342,6 +346,31 @@ int main(string[] args)
             import hackerscad.tool.fitting : fit;
             try
                 write(fit(args[1], pa, pb, names, evaluations, (string s) { stderr.writeln(s); }));
+            catch (Exception e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
+            return 0;
+        }
+    case "match":
+        {
+            string pa, pb;
+            try
+                getopt(args, "a", &pa, "b", &pb);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2 || pa.length == 0 || pb.length == 0)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            import hackerscad.tool.features : matchReport;
+            try
+                write(matchReport(args[1], pa, pb));
             catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);

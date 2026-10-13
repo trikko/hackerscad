@@ -205,7 +205,26 @@ private void planeAcross(string axis, out Vec3 u, out Vec3 v, out string names, 
 /// shape and where it starts and ends, found to a hundredth of a mm) and
 /// the outside outline's changes, to see a part as the operations it was
 /// made with.
-string scanReport(string file, string part, string axis, double step)
+/// A shape followed along an axis: where it starts and ends, in the
+/// plane's coordinates, and whether it is a hole (else the outside).
+struct ScanRun
+{
+    import hackerscad.geom.outlinefit : Shape;
+    Shape shape;
+    double from, to;
+    bool hole;
+}
+
+/// What a scan found, and how it looked.
+struct ScanResult
+{
+    ScanRun[] runs;
+    double lo, hi, step;
+    string axis, names;
+}
+
+/// The scan of mesh `m` along `axis`: see scanReport.
+ScanResult scan(const Mesh mesh, string axis, double step)
 {
     import std.algorithm : max, min, sort;
     import std.math : abs, floor, ceil;
@@ -215,7 +234,7 @@ string scanReport(string file, string part, string axis, double step)
     bool flip;
     planeAcross(axis, u, v, names, flip);
     auto n = u.cross(v);
-    auto m = meshOf(file, part).welded(1e-5);
+    auto m = mesh.welded(1e-5);
     double lo = double.infinity, hi = -double.infinity;
     foreach (i; 0 .. m.vertexCount)
     {
@@ -275,12 +294,7 @@ string scanReport(string file, string part, string axis, double step)
     }
 
     // the levels, and every shape followed from level to level
-    struct Run
-    {
-        Shape shape;
-        double from, to;   /// the levels it was seen at, first and last
-        bool hole;
-    }
+    alias Run = ScanRun;
     Run[] runs;
     size_t[] open;
     double[] levels;
@@ -329,6 +343,21 @@ string scanReport(string file, string part, string axis, double step)
         r.from = r.from - step / 2 <= lo ? lo : edge(r, r.from, r.from - step);
         r.to = r.to + step / 2 >= hi ? hi : edge(r, r.to, r.to + step);
     }
+    return ScanResult(runs, lo, hi, step, axis, names);
+}
+
+/// Cuts every `step` mm along `axis`: the holes and pockets met (each one's
+/// shape and where it starts and ends, found to a hundredth of a mm) and
+/// the outside outline's changes, to see a part as the operations it was
+/// made with.
+string scanReport(string file, string part, string axis, double step)
+{
+    import std.algorithm : max, sort;
+    auto sr = scan(meshOf(file, part), axis, step);
+    auto runs = sr.runs;
+    immutable lo = sr.lo, hi = sr.hi, names = sr.names;
+    step = sr.step;
+    alias Run = ScanRun;
     string mm(double x)
     {
         import hackerscad.geom.meshfeatures : plausible;
@@ -464,4 +493,175 @@ string projectionReport(string file, string part, string plane)
     immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
     return format("the shadow on %s (coordinates %s):\n", plane, axes) ~ describe(fitted)
         ~ "\n// as a sketch:\n" ~ sketchCode(fitted, "shadow");
+}
+
+/// The operations of two parts of a model matched one by one: the surfaces
+/// hcad features finds (holes, shafts, cones, roundings, spheres, planes)
+/// and the holes and pockets the scans along x, y and z meet. What has no
+/// match is a difference, however small: "in the original, not in the
+/// copy", "in the copy, not in the original", "in both, different".
+string matchReport(string file, string a, string b)
+{
+    import std.algorithm : max, min;
+    import std.math : abs, PI;
+    import hackerscad.geom.meshfeatures;
+    import hackerscad.geom.outlinefit : Shape;
+    auto ma = meshOf(file, a), mb = meshOf(file, b);
+    auto fa = analyse(ma).features, fb = analyse(mb).features;
+    string mm(double x)
+    {
+        immutable q = plausible(x);
+        return format("%g", q == 0 ? 0.0 : q);
+    }
+    // each finding with its weight (an area, or a pocket's volume): the largest first in the lists
+    struct Item
+    {
+        string text;
+        double weight;
+    }
+    Item[] onlyB, onlyA, different;
+
+    // surfaces: curved ones by axis and size, planes by plane and place
+    bool overlap(Vec3 alo, Vec3 ahi, Vec3 blo, Vec3 bhi, double slack) =>
+        alo.x <= bhi.x + slack && blo.x <= ahi.x + slack && alo.y <= bhi.y + slack && blo.y <= ahi.y + slack
+        && alo.z <= bhi.z + slack && blo.z <= ahi.z + slack;
+    // how alike two surfaces are: 0 not the same one, 1 the same in place, 2 the same and alike in size
+    int alike(const Feature x, const Feature y)
+    {
+        if (x.kind != y.kind || x.kind == Surface.curved)
+            return 0;
+        if (x.kind == Surface.plane)
+        {
+            if (x.normal.dot(y.normal) < 0.999 || abs(x.offset - y.offset) > 0.05 || !overlap(x.lo, x.hi, y.lo, y.hi, 0.05))
+                return 0;
+            return abs(x.area - y.area) <= max(1.0, 0.15 * max(x.area, y.area)) ? 2 : 1;
+        }
+        if (x.hole != y.hole)
+            return 0;
+        if (x.kind == Surface.sphere)
+            return (x.point - y.point).length > 0.2 ? 0 : abs(x.radius - y.radius) <= 0.05 ? 2 : 1;
+        if (abs(x.axis.dot(y.axis)) < 0.999)
+            return 0;
+        auto off = y.point - x.point;
+        if ((off - x.axis * off.dot(x.axis)).length > 0.15 + 0.02 * x.radius || !overlap(x.lo, x.hi, y.lo, y.hi, 0.1))
+            return 0;
+        immutable sameSize = abs(x.radius - y.radius) <= 0.03 && abs((x.to - x.from) - (y.to - y.from)) <= 0.25
+            && abs(x.span - y.span) <= 15 * PI / 180 && abs(x.halfAngle - y.halfAngle) <= 2 * PI / 180;
+        return sameSize ? 2 : 1;
+    }
+    auto usedA = new bool[fa.length];
+    foreach (y; fb)
+    {
+        if (y.kind == Surface.curved || (y.kind == Surface.plane && y.area < 2))
+            continue;
+        int best;
+        size_t bi;
+        foreach (i, x; fa)
+        {
+            immutable k = alike(x, y);
+            if (k > best)
+            {
+                best = k;
+                bi = i;
+            }
+        }
+        if (best == 0)
+            onlyB ~= Item(describe(y), y.area);
+        else
+        {
+            usedA[bi] = true;
+            if (best == 1)
+                different ~= Item(format("%s\n      the copy: %s", describe(y), describe(fa[bi])),
+                    abs(y.area - fa[bi].area) + 0.1 * y.area);
+        }
+    }
+    foreach (i, x; fa)
+        if (!usedA[i] && x.kind != Surface.curved && !(x.kind == Surface.plane && x.area < 2))
+        {
+            bool any;
+            foreach (y; fb)
+                any = any || alike(x, y) > 0;
+            if (!any)
+                onlyA ~= Item(describe(x), x.area);
+        }
+
+    // the holes and pockets along each axis
+    foreach (axis; ["x", "y", "z"])
+    {
+        auto sa = scan(ma, axis, 0), sb = scan(mb, axis, 0);
+        string where(const ScanRun r) => format("along %s from %s to %s (%s deep): %s", axis, mm(r.from), mm(r.to),
+            mm(r.to - r.from), r.shape.toString);
+        double volume(const ScanRun r) => r.shape.a * r.shape.b * (r.to - r.from);
+        bool overlaps(const ScanRun x, const ScanRun y) => x.from <= y.to + 0.1 && y.from <= x.to + 0.1;
+        bool near(const ScanRun x, const ScanRun y)
+        {
+            import std.math : sqrt;
+            immutable d = sqrt((x.shape.center[0] - y.shape.center[0]) ^^ 2 + (x.shape.center[1] - y.shape.center[1]) ^^ 2);
+            return d < 0.3 + 0.1 * max(x.shape.a, y.shape.a) && overlaps(x, y);
+        }
+        ScanRun[] ha, hb;
+        foreach (r; sa.runs)
+            if (r.hole && r.to - r.from > 0.2)
+                ha ~= r;
+        foreach (r; sb.runs)
+            if (r.hole && r.to - r.from > 0.2)
+                hb ~= r;
+        auto used = new bool[ha.length];
+        foreach (y; hb)
+        {
+            ptrdiff_t same = -1, close = -1;
+            foreach (i, x; ha)
+            {
+                if (x.shape.same(y.shape, 0.08) && overlaps(x, y))
+                    same = i;
+                else if (close < 0 && near(x, y))
+                    close = i;
+            }
+            if (same >= 0)
+            {
+                used[same] = true;
+                auto x = ha[same];
+                if (abs(x.from - y.from) > 0.15 || abs(x.to - y.to) > 0.15)
+                    different ~= Item(format("%s\n      the copy: from %s to %s", where(y), mm(x.from), mm(x.to)),
+                        y.shape.a * y.shape.b * (abs(x.from - y.from) + abs(x.to - y.to)));
+            }
+            else if (close >= 0)
+            {
+                used[close] = true;
+                different ~= Item(format("%s\n      the copy: %s", where(y), where(ha[close])),
+                    abs(volume(y) - volume(ha[close])) + 0.2 * volume(y));
+            }
+            else
+                onlyB ~= Item(where(y), volume(y));
+        }
+        foreach (i, x; ha)
+            if (!used[i])
+            {
+                bool any;
+                foreach (y; hb)
+                    any = any || near(x, y);
+                if (!any)
+                    onlyA ~= Item(where(x), volume(x));
+            }
+    }
+    string s = format("%s (the copy) against %s (the original):\n", a, b);
+    void list(string title, Item[] items)
+    {
+        import std.algorithm : sort;
+        items.sort!((x, y) => x.weight > y.weight);
+        s ~= format("%s (%d, the largest first)\n", title, items.length);
+        foreach (i, it; items)
+        {
+            if (i == 25)
+            {
+                s ~= format("  and %d smaller ones\n", items.length - 25);
+                break;
+            }
+            s ~= "  " ~ it.text ~ "\n";
+        }
+    }
+    list("in the original, not in the copy", onlyB);
+    list("in the copy, not in the original", onlyA);
+    list("in both, different", different);
+    return s;
 }

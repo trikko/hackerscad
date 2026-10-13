@@ -267,7 +267,7 @@ JSONValue toolError(string message)
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
     ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
-        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit"].canFind(tool);
+        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit", "hcad_match"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -684,6 +684,12 @@ JSONValue[] toolList()
             `"path": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"params": {"type": "array", "items": {"type": "string"}}, "evaluations": {"type": "integer"}`,
             `["path", "a", "b", "params"]`),
+        tool("hcad_match", "The operations of a copy and its original (two parts of an .hcad model: 'a' the copy, 'b' "
+            ~ "the original) matched one by one: the holes, shafts, cones, roundings, spheres and planes hcad_features "
+            ~ "finds, and the holes and pockets met along x, y and z. Lists what is in the original and not in the copy, "
+            ~ "in the copy and not in the original, and in both but different, however small (a chamfer, a counterbore, "
+            ~ "a teardrop where the original has a circle).",
+            `"path": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}`, `["path", "a", "b"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -1071,6 +1077,18 @@ JSONValue callTool(string name, JSONValue args)
                 auto ev = "evaluations" in args;
                 text(fit(arg("path"), arg("a"), arg("b"), names, ev is null ? 60 : cast(int) ev.integer));
             }
+            catch (Exception e)
+            {
+                isError = true;
+                text(e.msg);
+            }
+            break;
+        }
+    case "hcad_match":
+        {
+            import hackerscad.tool.features : matchReport;
+            try
+                text(matchReport(arg("path"), arg("a"), arg("b")));
             catch (Exception e)
             {
                 isError = true;
