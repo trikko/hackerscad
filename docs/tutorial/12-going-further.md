@@ -134,6 +134,12 @@ printable as it changes, write it as a check, `assert(hook.overhangs ==
 fields under Printability change the angle and the thinnest wall, for your
 printer.
 
+A word of honesty: we would not print this hook. It is not the prettiest
+hook ever made, nor the most useful: a flat arm with nothing at its end, and
+your jacket will slide off it at the first chance. But it is a start: give
+the arm a lip that turns up, round its edges, put a second screw in, and
+make a real one.
+
 ## A label from a drawing
 
 A label to push into the soil of the planter. The leaf is drawn in a drawing
