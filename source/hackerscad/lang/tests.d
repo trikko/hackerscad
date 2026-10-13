@@ -1256,3 +1256,29 @@ unittest
         assert(m.isClosed);
     }
 }
+
+unittest
+{
+    // load() reuses an unchanged file, and reads it again when it changes
+    import hackerscad.io.stl : toStl;
+    import std.file : write, mkdirRecurse, rmdirRecurse;
+    auto dir = buildPath(tempDir, "hcad-load-cache-test");
+    mkdirRecurse(dir);
+    scope (exit)
+        rmdirRecurse(dir);
+    auto file = buildPath(dir, "part.stl");
+    write(file, toStl(kernel.tessellate(kernel.box(10, 10, 10), 0.01, 0.1).welded));
+    double volumeOf()
+    {
+        auto it = make();
+        it.root = dir;
+        auto r = it.runSource(q{
+            @part Solid p() => load("part.stl");
+        }, buildPath(dir, "main.hcad"));
+        return partVolume(r, "p");
+    }
+    assert(isClose(volumeOf(), 1000, 1e-6));
+    assert(isClose(volumeOf(), 1000, 1e-6));
+    write(file, toStl(kernel.tessellate(kernel.box(20, 10, 10), 0.01, 0.1).welded));
+    assert(isClose(volumeOf(), 2000, 1e-6));
+}

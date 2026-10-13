@@ -631,6 +631,14 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
 
         Brep b;
         immutable ext = extension(file).toLower;
+        // the same file, unchanged, with the same kernel: what it gave last
+        // time (reading and checking a large mesh takes most of a second)
+        import std.file : timeLastModified, getSize;
+        immutable cacheKey = format("%s|%s|%s|%s", cast(void*) k, file, timeLastModified(file).stdTime, getSize(file));
+        synchronized (loadCacheLock)
+            if (auto cached = cacheKey in loadCache)
+                b = *cached;
+        if (b is null)
         try
         {
             switch (ext)
@@ -655,6 +663,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         }
         catch (MeshFormatException e)
             throw new HcadError(Code.import_, e.msg, x.spanOf("path"));
+        synchronized (loadCacheLock)
+        {
+            // a few files at a time: a model loads one or two
+            if (loadCache.length >= 16 && cacheKey !in loadCache)
+                loadCache.clear();
+            loadCache[cacheKey] = b;
+        }
         if (x.has("scale"))
         {
             immutable f = x.num("scale");
@@ -1271,8 +1286,13 @@ uint colorOf(Value v, Span span)
 
 immutable uint[string] namedColors;
 
+/// Files read by load(), by kernel, path, time and size: see load.
+private __gshared Brep[string] loadCache;
+private __gshared Object loadCacheLock;
+
 shared static this()
 {
+    loadCacheLock = new Object;
     // the built-in struct types, made before any thread uses them
     cast(void) axisDef();
     cast(void) frameDef();
