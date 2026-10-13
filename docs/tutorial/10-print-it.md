@@ -4,7 +4,7 @@
 
 ## Export
 
-Click the export button, the third at the top left, and choose **3MF**, then
+Click **Export** at the top left and choose **3MF**, then
 a name for the file. Ctrl+E does the same with the last format
 you used.
 

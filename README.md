@@ -64,8 +64,10 @@ open /Applications/hackerscad.app                                    # the appli
 /Applications/hackerscad.app/Contents/Resources/bin/hcad check model.hcad  # the command line tool
 ```
 
-A new file starts from a small example: a clip that keeps bags of biscuits
-closed. Change its parameters, edit its code, right-click its faces.
+The window opens on a small example: a clip that keeps bags of biscuits
+closed. Change its parameters, edit its code, right-click its faces. The New
+button starts a model of your own from a few lines: a cube with two holes
+across it.
 
 ## A model
 

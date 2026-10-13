@@ -39,9 +39,8 @@ Building it from the source code is explained in the
 
 ## The first start
 
-Open hackerscad. A window opens on a new model: a clip that keeps bags of
-biscuits closed. Every new model starts from this example, so that there is
-something to play with.
+Open hackerscad. A window opens on an example: a clip that keeps bags of
+biscuits closed, something to play with.
 
 ![hackerscad at its first start](img/01-first-start.png)
 

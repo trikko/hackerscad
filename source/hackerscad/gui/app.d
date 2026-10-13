@@ -85,8 +85,23 @@ import hackerscad.lang.sketchval : SketchView;
 import hackerscad.tool.guiclient : toOverrides;
 import std.json;
 
-/// What a new file starts with: a small model that shows the main ideas.
-enum newModelTemplate = import("bagclip.hcad");
+/// What the window opens on when there is no file: a small model that
+/// shows the main ideas.
+enum startModel = import("bagclip.hcad");
+
+/// What New starts with: a part in a few lines, to change into one's own.
+enum newModelTemplate = `import std.shapes;
+
+@part
+Solid body()
+{
+    auto cube = box(20.mm, 20.mm, 20.mm, center: true);
+    auto rod = cylinder(d: 14.mm, h: 30.mm, center: true);
+
+    // the cube less (-) the rod, across it twice: two holes
+    return cube - rod.rotate(x: 90) - rod.rotate(y: 90);
+}
+`;
 
 /// Linux: the shell (GNOME, KDE on Wayland) shows the icon of a window only
 /// through the desktop entry named like the application id. When no package
@@ -430,8 +445,11 @@ final class MainWindow
         auto header = new HeaderBar;
         title = new WindowTitle(baseName(path), dirName(path));
         header.setTitleWidget(title);
+        header.packStart(button("document-new-symbolic", "New model (Ctrl+N)", &newFile));
         header.packStart(button("document-open-symbolic", "Open (Ctrl+O)", &openFile));
-        header.packStart(button("document-save-symbolic", "Save (Ctrl+S)", &save));
+        // words, not icons: Adwaita's save (an arrow down) and send (an
+        // arrow out) read as download and upload
+        header.packStart(textButton("Save", "Save (Ctrl+S)", &save));
         header.packStart(exportMenu());
         busyIndicator = new Spinner;
         busyIndicator.setTooltipText("Evaluating the model");
@@ -886,7 +904,7 @@ final class MainWindow
             updateTitle();
             idleAdd(PRIORITY_DEFAULT, () { refuseFile(refused, why); return false; });
         }
-        buffer.setText(exists(path) ? readText(path) : newModelTemplate);
+        buffer.setText(exists(path) ? readText(path) : startModel);
         modified = false;
         updateTitle();
         buffer.connectChanged(() {
@@ -4202,7 +4220,8 @@ private:
     {
         import gtk.menu_button : MenuButton;
         auto b = new MenuButton;
-        b.setIconName("document-send-symbolic");
+        b.setLabel("Export");
+        b.setAlwaysShowArrow(true);
         b.setTooltipText("Export: 3MF, STL, STEP or PNG (Ctrl+E repeats the last format)");
         b.setMenuModel(exportModel());
         return b;

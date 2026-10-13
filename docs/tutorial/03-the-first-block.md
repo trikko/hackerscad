@@ -8,8 +8,9 @@ that holds the water.
 
 ## A new model
 
-1. Open the menu (☰, top right) and choose **New**, or press Ctrl+N. The bag
-   clip appears: every new model starts from it.
+1. Click the New button, the first at the top left, or press Ctrl+N. A new
+   model appears, a few lines that make a cube with two holes across it: a
+   start to change into your own.
 2. Select all its code (Ctrl+A) and type, or paste, these lines in its place:
 
    ```d
