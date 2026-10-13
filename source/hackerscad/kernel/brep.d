@@ -165,6 +165,8 @@ interface BrepKernel
     /// Volume, centre of mass and principal moments of inertia about it
     /// (ascending, per unit density: mm⁵).
     MassProps massProps(Brep s);
+    /// The cut of a solid by a plane: a profile, where the plane is.
+    Brep section(Brep s, Vec3 origin, Vec3 normal);
     double area(Brep s);
     BBox bbox(Brep s);
     bool isValid(Brep s);

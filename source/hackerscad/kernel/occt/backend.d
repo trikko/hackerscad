@@ -83,6 +83,12 @@ final class OcctKernel : BrepKernel
 
     Brep offset(Brep s, double d) => wrap(hc_offset_solid(h(s), d), "offset");
 
+    Brep section(Brep s, Vec3 origin, Vec3 normal)
+    {
+        double[3] o = [origin.x, origin.y, origin.z], n = [normal.x, normal.y, normal.z];
+        return wrap(hc_section(h(s), o, n), "section");
+    }
+
     MassProps massProps(Brep s)
     {
         double[7] v;

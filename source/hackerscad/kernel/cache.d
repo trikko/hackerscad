@@ -91,6 +91,7 @@ final class CachingKernel : BrepKernel
 
     Brep offset(Brep s, double d) => op(key("solidOffset", s, d), inner.offset(s, d));
     MassProps massProps(Brep s) => inner.massProps(s);
+    Brep section(Brep s, Vec3 o, Vec3 n) => op(key("section", s, o, n), inner.section(s, o, n));
 
     Brep fuseAll(Brep[] parts)
     {

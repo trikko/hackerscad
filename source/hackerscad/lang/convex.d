@@ -433,3 +433,78 @@ void swap(T)(ref T a, ref T b)
     a = b;
     b = t;
 }
+
+/// The shadow of a closed solid seen from above: a profile on XY. Every
+/// vertical line through the shadow leaves the solid through a surface
+/// facing up, so the triangles facing up cover it; within one face of the
+/// solid they do not overlap seen from above, and the sides they use once
+/// are the outlines of that face's shadow. Those regions joined are the
+/// shadow (curved surfaces within the meshing's 0.02 mm).
+public Brep projectionOf(BrepKernel k, Brep b, Span span)
+{
+    import std.algorithm : canFind;
+    auto m = k.tessellate(b, 0.02, 0.2).welded;
+    immutable faced = m.faceStart.length >= 2;
+    immutable faces = faced ? m.faceStart.length - 1 : 1;
+    Brep[] regions;
+    foreach (f; 0 .. faces)
+    {
+        immutable t0 = faced ? m.faceStart[f] : 0, t1 = faced ? m.faceStart[f + 1] : m.triangleCount;
+        // the directed sides of the triangles facing up
+        bool[ulong] sides;
+        static ulong key(uint a, uint b) => cast(ulong) a << 32 | b;
+        foreach (t; t0 .. t1)
+            if (triangleNormal(m, t).z > 1e-9)
+                foreach (j; 0 .. 3)
+                    sides[key(m.tris[t * 3 + j], m.tris[t * 3 + (j + 1) % 3])] = true;
+        if (sides.length == 0)
+            continue;
+        // the outline: sides without their reverse, chained into loops
+        uint[][uint] next;
+        foreach (s, _; sides)
+        {
+            immutable a = cast(uint)(s >> 32), c = cast(uint)(s & 0xffff_ffff);
+            if (key(c, a) !in sides)
+                next[a] ~= c;
+        }
+        Brep[] outer, holes;
+        while (next.length)
+        {
+            uint start = next.byKey.front, at = start;
+            double[] xy;
+            do
+            {
+                auto p = m.vertex(at);
+                xy ~= [p.x, p.y];
+                auto outs = next[at];
+                immutable to = outs[$ - 1];
+                if (outs.length == 1)
+                    next.remove(at);
+                else
+                    next[at] = outs[0 .. $ - 1];
+                at = to;
+            }
+            while (at != start && at in next);
+            if (xy.length < 6)
+                continue;
+            double area = 0;
+            for (size_t i = 0; i + 1 < xy.length; i += 2)
+            {
+                immutable j = (i + 2) % xy.length;
+                area += xy[i] * xy[j + 1] - xy[j] * xy[i + 1];
+            }
+            if (abs(area) < 1e-12)
+                continue;
+            (area > 0 ? outer : holes) ~= k.polygon(xy);
+        }
+        if (outer.length == 0)
+            continue;
+        auto region = unionOfProfiles(k, outer);
+        if (holes.length)
+            region = k.boolean(region, unionOfProfiles(k, holes), BoolOp.cut);
+        regions ~= region;
+    }
+    if (regions.length == 0)
+        throw new HcadError(Code.type, "the solid casts no shadow seen from above", span);
+    return unionOfProfiles(k, regions);
+}

@@ -316,6 +316,43 @@ static TopoDS_Face upward(TopoDS_Face f)
     return f;
 }
 
+// A planar face around a plane's origin, `size` on each side.
+static TopoDS_Face plane_face(const gp_Pln &pln, double size)
+{
+    return BRepBuilderAPI_MakeFace(pln, -size, size, -size, size).Face();
+}
+
+// The solid cut by a plane: its faces on the plane, a profile where it lies.
+hc_shape *hc_section(const hc_shape *s, const double origin[3], const double normal[3])
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        Bnd_Box bb;
+        BRepBndLib::Add(s->shape, bb);
+        if (bb.IsVoid()) {
+            set_error("nothing to cut");
+            return nullptr;
+        }
+        gp_Pnt o(origin[0], origin[1], origin[2]);
+        double xmin, ymin, zmin, xmax, ymax, zmax;
+        bb.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+        gp_Pnt mid((xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2);
+        const double size = 2 * std::sqrt(bb.SquareExtent()) + o.Distance(mid) + 10;
+        BRepAlgoAPI_Common common(s->shape, plane_face(gp_Pln(o, gp_Dir(normal[0], normal[1], normal[2])), size));
+        if (!common.IsDone()) {
+            set_error("the cut failed");
+            return nullptr;
+        }
+        if (!TopExp_Explorer(common.Shape(), TopAbs_FACE).More()) {
+            set_error("the plane does not cut the solid");
+            return nullptr;
+        }
+        ShapeUpgrade_UnifySameDomain unify(common.Shape(), Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        history_new(unify.Shape());
+        return wrap(unify.Shape());
+    });
+}
+
 hc_shape *hc_polygon(const double *xy, int n)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {

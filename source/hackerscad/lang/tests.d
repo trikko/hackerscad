@@ -1392,3 +1392,26 @@ unittest
         "[5 mm, 0 mm, 15 mm] 6 [250, 500, 650]", "import std.shapes;");
     expectErr(`writeln(box(1, 1, 1).mass(density: 0));`, "E0202", "import std.shapes;");
 }
+
+unittest
+{
+    // profiles from solids: a cut by a plane (exact), the shadow seen from
+    // above (within the meshing of curved surfaces)
+    auto r = runModel(q{
+        import std.math;
+        immutable cube = box(20, 20, 20, center: true) - cylinder(d: 14, h: 30, center: true).rotate(x: 90)
+            - cylinder(d: 14, h: 30, center: true).rotate(y: 90);
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable mm2 = 1.mm ^^ 2;
+            assert(abs(cube.section(XZ).area / mm2 - 120) < 1e-6, "cut");
+            assert(abs(sphere(10).section(XY.offset(6.mm)).area / mm2 - PI * 64) < 1e-6, "ball");
+            assert(abs(sphere(10).projection.area / mm2 - PI * 100) < PI, "shadow");
+            assert(abs(cylinder(r: 5, h: 20).rotate(x: 90).projection.area / mm2 - 200) < 0.5, "lying");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error("@part Solid p() => circle(r: 2).section(XY).extrude(1);").message.canFind("cuts solids"));
+}

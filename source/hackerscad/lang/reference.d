@@ -233,6 +233,8 @@ immutable Ref[] reference =
     P("bbox", "Solid", "BBox", "The bounding box: min, max, size, center."),
     P("volume", "Solid", "Volume", "The volume."),
     P("centroid", "Solid", "Vec3", "The centre of mass (of a uniform solid)."),
+    F("section", "Solid", ["plane: Plane"], "Profile", "The cut of the solid by a plane: a profile in that plane."),
+    F("projection", "Solid", [], "Profile", "The solid's shadow seen from above: a profile on XY (turn the solid first for another side)."),
     F("mass", "Solid", ["density: number"], "number", "Grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85."),
     F("inertia", "Solid", ["density: number"], "Vec3", "The principal moments of inertia about the centre of mass, ascending, in g·mm²."),
     P("area", "Shape", "Area", "The surface area (of a profile: its area)."),

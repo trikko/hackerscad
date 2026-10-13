@@ -168,6 +168,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.bbox → BBox` — The bounding box: min, max, size, center.
 - `s.volume → Volume` — The volume.
 - `s.centroid → Vec3` — The centre of mass (of a uniform solid).
+- `s.section(plane: Plane) → Profile` — The cut of the solid by a plane: a profile in that plane.
+- `s.projection() → Profile` — The solid's shadow seen from above: a profile on XY (turn the solid first for another side).
 - `s.mass(density: number) → number` — Grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85.
 - `s.inertia(density: number) → Vec3` — The principal moments of inertia about the centre of mass, ascending, in g·mm².
 - `s.area → Area` — The surface area (of a profile: its area).

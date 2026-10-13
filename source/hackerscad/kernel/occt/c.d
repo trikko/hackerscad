@@ -48,6 +48,7 @@ hc_shape* hc_boolean(const(hc_shape)* a, const(hc_shape)* b, int op);
 hc_shape* hc_fuse_all(const(hc_shape*)* shapes, int n);
 hc_shape* hc_offset_solid(const(hc_shape)* s, double d);
 int hc_mass_props(const(hc_shape)* s, ref double[7] output);
+hc_shape* hc_section(const(hc_shape)* s, ref const double[3] origin, ref const double[3] normal);
 int hc_solid_count(const(hc_shape)* s);
 hc_shape* hc_solid(const(hc_shape)* s, int index);
 

@@ -66,6 +66,7 @@ model in milliseconds.
   - `hull(a, b, …)` or `hull([a, b, …])`: the smallest convex shape around solids and profiles (two spheres make a capsule, four cylinders a plate with round corners); profiles in one plane give a profile, `hull(circle(r: 4.mm), circle(r: 4.mm).move(x: 20.mm))` a slot. Curved surfaces become flat facets within 0.05 mm.
   - `minkowski(a, b)`: `a` moved by every point of `b`. With a sphere (a circle for profiles) it rounds every edge and corner exactly, like `s.offset(r)`; with another convex shape (a box, a cylinder) it is made of flat facets, and one of the two shapes must be convex.
   - `s.offset(d)` grows a solid by `d` (or shrinks it, `d` negative), round where it turns.
+- **Profiles from solids:** `s.section(XZ)` (any plane: `s.section(s.plane(faces.top).offset(-2.mm))`) is the cut of the solid by the plane, a profile lying in it; `s.projection` is the solid's shadow seen from above, a profile on XY (turn the solid first for another side; curved surfaces within 0.02 mm). Both can be extruded, offset, combined like any profile.
 - **Mass:** `s.centroid` is the centre of mass; `s.mass(density: 1.24)` the mass in grams for a density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85); `s.inertia(density: 1.24)` the principal moments of inertia about the centre of mass, ascending, in g·mm².
   - `Solid.init` and `nothing` are the empty solid. `solids.sum` and `fuse(…)` unite arrays.
 - **Primitives** stand on the XY plane, centred in X and Y; `center: true` centres them in Z too. Spheres are centred.

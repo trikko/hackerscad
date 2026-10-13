@@ -882,6 +882,36 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return Value.of(sv);
     });
 
+    // ---- profiles from solids
+    def("section", (ref CallArgs a) {
+        // s.section(XZ) or s.section(s.plane(faces.top).offset(-2)): the cut, a profile in that plane
+        auto x = Args(it, a, "section", ["solid", "plane"]);
+        auto s = x.solid("solid");
+        if (s.flat || s.path)
+            throw new HcadError(Code.type, "section cuts solids: a profile is already flat", a.span);
+        Vec3 o, n;
+        planeArg(x, "plane", o, n);
+        auto r = primitive(it, k.section(nonEmpty(s, a.span), o, n), "section", a.span);
+        r.flat = true;
+        r.rgb = s.rgb;
+        r.hasColor = s.hasColor;
+        return Value.of(r);
+    });
+    def("projection", (ref CallArgs a) {
+        // s.projection: the solid's shadow seen from above, a profile on XY (turn the solid first
+        // for another direction)
+        auto x = Args(it, a, "projection", ["solid"]);
+        auto s = x.solid("solid");
+        if (s.flat || s.path)
+            throw new HcadError(Code.type, "projection is of solids: a profile is already flat", a.span);
+        import hackerscad.lang.convex : projectionOf;
+        auto r = primitive(it, projectionOf(k, nonEmpty(s, a.span), a.span), "projection", a.span);
+        r.flat = true;
+        r.rgb = s.rgb;
+        r.hasColor = s.hasColor;
+        return Value.of(r);
+    });
+
     // ---- mass properties: density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04)
     def("mass", (ref CallArgs a) {
         // s.mass(density: 1.24): grams
