@@ -142,7 +142,8 @@ final class Run
     /// @drawing as .svg, .pdf or .dxf, according to the extension.
     /// `only`: the parts to write, by function name or @part(name:);
     /// empty, every exported part (not the reference ones).
-    void exportTo(string file, string[] only = null)
+    /// `oneObject`: a 3MF holds the parts as the pieces of one object.
+    void exportTo(string file, string[] only = null, bool oneObject = false)
     {
         switch (extension(file).toLower)
         {
@@ -175,7 +176,10 @@ final class Run
         foreach (i; kept)
             parts ~= ExportPart(result.parts[i].label, ms[i], result.parts[i].rgb, result.parts[i].solid.brep);
         try
-            exportParts(file, parts, kernel);
+        {
+            import std.path : baseName, stripExtension;
+            exportParts(file, parts, kernel, oneObject ? baseName(stripExtension(path)) : null);
+        }
         catch (ExportException e)
             throw new HcadError(Code.import_, e.msg, Span(path));
     }

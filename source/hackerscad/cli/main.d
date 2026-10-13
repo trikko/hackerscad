@@ -39,6 +39,8 @@ options:
   -D name=value     override a @param (e.g. -D width=80.mm)
   --preset NAME     use the values of a @preset
   --drawing NAME    the @drawing to export as .svg, .pdf or .dxf
+  --one-object      a .3mf holds the parts as pieces of one object, as slicers want
+                    them for prints in several colours or materials
   --part NAME       export only this @part (by function name or name:); repeat it
                     for more; without it, every part but the export: false ones
   --tolerance MM    mesh chord tolerance (default 0.02)
@@ -106,9 +108,10 @@ int main(string[] args)
     RunOptions o;
     bool json;
     string[] only;
+    bool oneObject;
     try
         getopt(args, "o|output", &outputs, "D", &defines, "preset", &o.preset, "drawing", &o.drawing, "tolerance", &o.tolerance,
-            "part", &only, "json", &json);
+            "part", &only, "one-object", &oneObject, "json", &json);
     catch (GetOptException e)
     {
         stderr.writeln("error: ", e.msg);
@@ -146,7 +149,7 @@ int main(string[] args)
     {
         try
             foreach (out_; outputs)
-                run.exportTo(out_, only);
+                run.exportTo(out_, only, oneObject);
         catch (HcadError e)
             run.fatal ~= e.diag;
         catch (KernelException e)

@@ -885,6 +885,7 @@ final class MainWindow
         action(app, "export", ["<Primary>e"], () => exportFile(exportFormat));
         foreach (f; exportFormats)
             exportAction(app, f.ext);
+        action(app, "export-3mf-one", [], () => exportFile("3mf", null, true));
         action(app, "fit", ["F5"], () => viewport.fit());
         action(app, "params", ["F9"], () => paramsToggle.setActive(!paramsToggle.getActive()));
         action(app, "console", ["<Primary>j"], () => consoleToggle.setActive(!consoleToggle.getActive()));
@@ -3635,7 +3636,12 @@ private:
     {
         auto m = new GMenu;
         foreach (f; exportFormats)
+        {
             m.append(f.label ~ " — " ~ f.what, "win.export-" ~ f.ext);
+            if (f.ext == "3mf")
+                m.append("3MF, one object — the parts as its pieces: for prints in several colours",
+                    "win.export-3mf-one");
+        }
         return m;
     }
 
@@ -3650,8 +3656,9 @@ private:
         return b;
     }
 
-    /// The export dialog for format `ext`; `part`: that part alone.
-    void exportFile(string ext, string part = null)
+    /// The export dialog for format `ext`; `part`: that part alone;
+    /// `oneObject`: a 3MF of one object made of the parts.
+    void exportFile(string ext, string part = null, bool oneObject = false)
     {
         import gtk.file_filter : FileFilter;
         import std.algorithm : count, find;
@@ -3707,7 +3714,7 @@ private:
                 if (part is null)
                     exportFormat = given == ".zip" ? "stl" : given.length > 1
                         && [".3mf", ".stl", ".step", ".png"].canFind(given) ? given[1 .. $] : ext;
-                exportTo(out_, part ? [part] : null);
+                exportTo(out_, part ? [part] : null, oneObject);
                 note("exported " ~ out_);
             }
             catch (ErrorWrap)
@@ -3722,7 +3729,7 @@ private:
     /// format from its extension (see hackerscad.tool.exporter; .png the
     /// view). `only`: those parts, by function name or @part(name:); else
     /// every part but the reference ones.
-    void exportTo(string out_, string[] only = null)
+    void exportTo(string out_, string[] only = null, bool oneObject = false)
     {
         import std.algorithm : countUntil, filter, map;
         import std.array : array, join;
@@ -3782,7 +3789,11 @@ private:
                 break;
             }
         default:
-            exportParts(out_, parts.map!(p => ExportPart(p.label, p.welded, p.rgb, p.brep)).array, parts[0].kernel);
+        {
+            import std.path : stripExtension;
+            exportParts(out_, parts.map!(p => ExportPart(p.label, p.welded, p.rgb, p.brep)).array, parts[0].kernel,
+                oneObject ? baseName(stripExtension(path)) : null);
+        }
         }
     }
 }

@@ -418,7 +418,7 @@ mixin template ControlMethods()
                         if ("parts" in p && p["parts"].type == JSONType.array)
                             foreach (v; p["parts"].array)
                                 only ~= v.str;
-                        exportTo(file, only);
+                        exportTo(file, only, has("one_object") && p["one_object"].type == JSONType.true_);
                         note("exported " ~ file);
                         reply(JSONValue(["path": file]), null);
                     }

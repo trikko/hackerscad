@@ -17,7 +17,10 @@ struct Part
     uint rgb = 0x8FCBB4;   /// 0xTTRRGGBB, see hexColor
 }
 
-ubyte[] to3mf(const Part[] parts)
+/// With `assembly` (a name), the parts are the pieces of one object of
+/// that name, as slicers want them for prints in several colours or
+/// materials; without, each is an object of its own.
+ubyte[] to3mf(const Part[] parts, string assembly = null)
 {
     auto zip = new ZipArchive;
     void add(string name, string content)
@@ -38,16 +41,16 @@ ubyte[] to3mf(const Part[] parts)
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`);
-    add("3D/3dmodel.model", modelXml(parts));
+    add("3D/3dmodel.model", modelXml(parts, assembly));
     return cast(ubyte[]) zip.build();
 }
 
-void write3mf(const Part[] parts, string path)
+void write3mf(const Part[] parts, string path, string assembly = null)
 {
-    write(path, to3mf(parts));
+    write(path, to3mf(parts, assembly));
 }
 
-private string modelXml(const Part[] parts)
+private string modelXml(const Part[] parts, string assembly)
 {
     auto o = appender!string;
     o ~= `<?xml version="1.0" encoding="UTF-8"?>` ~ "\n";
@@ -69,9 +72,22 @@ private string modelXml(const Part[] parts)
                 p.mesh.tris[t * 3], p.mesh.tris[t * 3 + 1], p.mesh.tris[t * 3 + 2]);
         o ~= "    </triangles>\n   </mesh>\n  </object>\n";
     }
-    o ~= " </resources>\n <build>\n";
-    foreach (i; 0 .. parts.length)
-        o.formattedWrite("  <item objectid=\"%d\"/>\n", i + 2);
+    if (assembly.length)
+    {
+        // one object made of the others, each a component in place
+        immutable id = parts.length + 2;
+        o.formattedWrite("  <object id=\"%d\" name=\"%s\" type=\"model\">\n   <components>\n", id, xmlEscape(assembly));
+        foreach (i; 0 .. parts.length)
+            o.formattedWrite("    <component objectid=\"%d\"/>\n", i + 2);
+        o ~= "   </components>\n  </object>\n";
+        o.formattedWrite(" </resources>\n <build>\n  <item objectid=\"%d\"/>\n", id);
+    }
+    else
+    {
+        o ~= " </resources>\n <build>\n";
+        foreach (i; 0 .. parts.length)
+            o.formattedWrite("  <item objectid=\"%d\"/>\n", i + 2);
+    }
     o ~= " </build>\n</model>\n";
     return o[];
 }
@@ -94,4 +110,10 @@ unittest
     auto model = cast(string) zip.expand(zip.directory["3D/3dmodel.model"]);
     assert(model.canFind(`name="a&lt;b"`));
     assert(model.canFind(`displaycolor="#FF8800"`));
+
+    // one object of two pieces: the build holds the assembly only
+    auto one = cast(string) new ZipArchive(to3mf([Part("a", m), Part("b", m)], "clip"))
+        .expand(new ZipArchive(to3mf([Part("a", m), Part("b", m)], "clip")).directory["3D/3dmodel.model"]);
+    assert(one.canFind(`<object id="4" name="clip" type="model">`) && one.canFind(`<component objectid="3"/>`));
+    assert(one.canFind(`<item objectid="4"/>`) && !one.canFind(`<item objectid="2"/>`));
 }

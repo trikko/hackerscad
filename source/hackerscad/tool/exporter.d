@@ -38,14 +38,16 @@ class ExportException : Exception
     this(string msg) { super(msg); }
 }
 
-/// Writes `parts` (at least one) to `file`.
-void exportParts(string file, ExportPart[] parts, BrepKernel kernel)
+/// Writes `parts` (at least one) to `file`. With `assembly` (a name), a
+/// 3MF holds them as the pieces of one object of that name (prints in
+/// several colours or materials).
+void exportParts(string file, ExportPart[] parts, BrepKernel kernel, string assembly = null)
 {
     assert(parts.length > 0);
     switch (extension(file).toLower)
     {
     case ".3mf":
-        write3mf(parts.map!(p => Part(p.name, p.mesh, p.rgb)).array, file);
+        write3mf(parts.map!(p => Part(p.name, p.mesh, p.rgb)).array, file, assembly);
         break;
     case ".stl":
         if (parts.length > 1)

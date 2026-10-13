@@ -600,6 +600,8 @@ JSONValue[] toolList()
         return t;
     }
 
+    enum oneObjectProp = `"one_object": {"type": "boolean", "description": "In a .3mf, the parts as the pieces of `
+        ~ `one object (what slicers want for prints in several colours or materials); default an object each."}`;
     enum partsProp = `"parts": {"type": "array", "items": {"type": "string"}, "description": "Only these parts, by `
         ~ `function name or @part(name:); default every part but the export: false ones."}`;
 
@@ -627,7 +629,7 @@ JSONValue[] toolList()
             ~ "name-top.png and so on one view); .svg, .pdf or .dxf write a @drawing (the first, or the one named by "
             ~ "'drawing').",
             modelProps ~ `, "output": {"type": ["string", "array"], "items": {"type": "string"}}, "drawing": {"type": "string"}, `
-            ~ partsProp, `["output"]`),
+            ~ partsProp ~ `, ` ~ oneObjectProp, `["output"]`),
         tool("hcad_drawing", "Evaluate a model and return a @drawing as SVG text (views with hidden lines, sections, "
             ~ "dimensions, title block), to check it before exporting it as PDF or DXF.",
             modelProps ~ `, "drawing": {"type": "string", "description": "Name of the @drawing function; default the first."}`),
@@ -738,7 +740,7 @@ JSONValue[] toolList()
             ~ "there, to 'path': .3mf (one object per part, colours), .stl (one part), .zip (one STL per part), "
             ~ ".step (one named body per part) or .png (the 3D view as shown; with 'parts', those alone). Drawings "
             ~ "(.svg, .pdf, .dxf) are made by hcad_export on the file.",
-            `"path": {"type": "string"}, ` ~ partsProp, `["path"]`),
+            `"path": {"type": "string"}, ` ~ partsProp ~ `, ` ~ oneObjectProp, `["path"]`),
         gui("hcad_gui_complete", "What the editor's completion offers in the user's window: at the cursor, or at "
             ~ "line and col (1-based). Gives the proposals with their signature and documentation, and inside a call "
             ~ "the callee's signature and the argument the cursor is on.",
@@ -847,9 +849,11 @@ JSONValue callTool(string name, JSONValue args)
                 else if (arg("output").length)
                     outputs = [arg("output")];
                 enforce(outputs.length, "missing 'output'");
+                immutable oneObject = args.type == JSONType.object && "one_object" in args
+                    && args["one_object"].type == JSONType.true_;
                 foreach (output; outputs)
                 {
-                    run.exportTo(output, only);
+                    run.exportTo(output, only, oneObject);
                     text("written " ~ output);
                 }
             }
