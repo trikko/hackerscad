@@ -86,6 +86,10 @@ A `.hcad` file is written in an **interpreted, sandboxed scripting language insp
 surprises. There is no compilation step: the interpreter runs inside hackerscad and re-evaluates a
 model in milliseconds.
 
+New to it? The [tour of the language](#a-tour-of-the-language) at the end is one model that uses each
+basic construct once, with comments saying what each makes appear; in the application it is under
+**Examples › Language tour** (and ☰ › Language Tour).
+
 ## What stays the same as D
 - **Lexical:** identifiers; numbers (`42`, `1_000`, `2.5`, `0xFF`, `2.5e3`); strings `"…"`, `` `…` ``, `r"…"` (the last two WYSIWYG as in D); comments `//`, `/* */` and nested `/+ +/`.
 - **Declarations:** `immutable`, `const`, `auto`, typed variables, `struct` (fields, defaults, methods), functions (with `{ … }` or `=> expr;` bodies), `import`, `unittest`, UDAs.
@@ -223,6 +227,161 @@ model in milliseconds.
 Solid block() => box(40, 30, 20)
     .fillet(edges.parallel(Z), r: 3.mm)
     .shell(open: faces.top, thickness: 2.mm);
+```
+
+## A tour of the language
+
+Every basic construct once (values and units, parameters, functions, structs, `if`, `foreach`,
+`while`, `for` with `continue`, `switch`, lists with `map`, `?:`, `unittest`, `writeln`), each
+with a comment on what it makes appear in the view or in the console. It is
+[examples/language.hcad](../examples/language.hcad), and **Examples › Language tour** in the
+application: open it there, change the numbers and watch.
+
+```d
+/// A tour of the language: every basic construct once, each with what it
+/// makes appear in the 3D view or in the Console below the editor.
+/// Read it top to bottom, change the numbers, and watch what happens.
+module language;
+
+import std.shapes;
+import std.math;
+
+// ---- values and units
+// Lengths carry their unit: 10.mm, 2.cm and 1.inch are all lengths, and a
+// plain number in a shape is in mm. Angles are 30.deg (or radians).
+// Module-level values are read-only: `immutable` for constants.
+immutable plate = 60.mm;          // the width of the base plate below
+immutable gap = 4.mm;
+immutable tilt = 15.deg;
+
+// ---- parameters
+// @param puts a value in the Parameters panel (on the right), to change it:
+// the model follows. min and max keep it sensible.
+// Try 1, 3 and 5: the pegs on the plate change, and so do the green
+// markers in front (see `switch` below).
+@param("How many pegs", min: 1, max: 6)
+immutable pegs = 4;
+
+@param("Round pegs instead of square ones")
+immutable round = true;
+
+// ---- functions
+// A function with a block body: statements, then `return`.
+Solid peg(Length size, bool isRound)
+{
+    // `if`/`else`: one of the two shapes is made, never both
+    if (isRound)
+        return cylinder(d: size, h: 12.mm);
+    else
+        return box(size, size, 12.mm);
+}
+
+// A function with an expression body: `=> expression;`
+Length pitch(int count) => (plate - 2 * gap) / count;
+
+// ---- structs
+// A struct groups values; it can have defaults and methods.
+struct Marker
+{
+    Length r = 2.mm;
+    Length height = 3.mm;
+
+    Solid shape() => cylinder(r: r, h: height);
+}
+
+// ---- the parts: what the view shows
+// Each @part function is one object in the view (and in the exports),
+// with its colour. Without @part a function is only a helper.
+
+/// The base plate with a row of pegs on it.
+@part("steelblue")
+Solid base()
+{
+    auto b = box(plate, 20.mm, 4.mm);   // boxes stand on z = 0, centred in x and y
+    // `foreach` over a range: one peg per step, `pegs` of them (the parameter)
+    foreach (i; 0 .. pegs)
+    {
+        immutable x = -plate / 2 + gap + pitch(pegs) * (i + 0.5);
+        // `min`: as wide as the pitch allows, but never more than 16 mm,
+        // so a few pegs do not grow past the plate's 20 mm depth
+        b += peg(min(pitch(pegs) - 2.mm, 16.mm), round).move(x: x, z: 4.mm);
+    }
+    return b;
+}
+
+/// A staircase, built with `while`: it stops when the steps reach 15 mm.
+@part("orange")
+Solid stairs()
+{
+    auto s = Solid.init;   // the empty solid: nothing to see yet
+    auto h = 3.mm;
+    int step = 0;
+    while (h <= 15.mm)
+    {
+        s += box(6.mm, 12.mm, h).move(x: 6.mm * step);
+        h += 3.mm;
+        step++;
+    }
+    // a C-style `for` and `continue`: holes in every step but the second
+    for (int i = 0; i < step; i++)
+    {
+        if (i == 1)
+            continue;   // this step keeps no hole: look for it in the view
+        s -= cylinder(d: 2.mm, h: 40.mm, center: true).move(x: 6.mm * i);
+    }
+    return s.move(y: 30.mm);
+}
+
+/// `switch`: the green markers in front change shape with the number of
+/// pegs: circles for 1 or 2, triangles for 3, hexagons for 4 to 6.
+@part("seagreen")
+Solid markers()
+{
+    auto outline = circle(r: 3.mm);   // a profile: a flat outline on XY
+    switch (pegs)
+    {
+    case 1, 2:
+        outline = circle(r: 3.mm);
+        break;
+    case 3:
+        outline = regularPolygon(3, r: 3.mm);
+        break;
+    default:
+        outline = regularPolygon(6, r: 3.mm);   // 4 to 6 pegs: hexagons
+        break;
+    }
+    // arrays and algorithms: positions computed with `map`, shapes joined with `sum`
+    auto xs = [-20.mm, 0.mm, 20.mm];
+    return xs
+        .map(x => outline.extrude(2.mm).move(x: x, y: -25.mm))
+        .sum;
+}
+
+/// A struct at work, and the ternary `?:`: tall when the pegs are round.
+@part("crimson")
+Solid marker()
+{
+    auto m = Marker(r: 3.mm, height: round ? 8.mm : 3.mm);
+    return m.shape.rotate(x: tilt).move(x: 45.mm);
+}
+
+// A function that is never called and has no @part: nothing of it appears.
+Solid unused() => sphere(r: 100.mm);
+
+// ---- checks and messages
+// `unittest` blocks run after the parts are built. `writeln` prints to the
+// Console; a failing `assert` is reported as a problem (the parts still show).
+unittest
+{
+    writeln("pegs: ", pegs, ", pitch: ", pitch(pegs));
+    writeln("base volume: ", base.volume);
+    // the plate is wider than the pegs need: try 6 pegs and a plate of 20.mm
+    assert(pitch(pegs) > 4.mm, "the pegs do not fit on the plate");
+    // an associative array, looked up by key
+    immutable names = [1: "one", 2: "two", 3: "three"];
+    writeln("stairs: ", stairs.pieces.length == 1 ? "one piece" : "several pieces",
+        ", three is ", names[3]);
+}
 ```
 
 ## Example

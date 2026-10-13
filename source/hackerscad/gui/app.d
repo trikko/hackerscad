@@ -1083,6 +1083,7 @@ private:
         auto help = new Menu;
         help.append("Cheatsheet", "win.cheatsheet");
         help.append("Tutorial", "win.tutorial");
+        help.append("Language Tour", "win.example-language");
         help.append("Language Reference", "win.reference");
         auto style = new Menu;
         style.append("Follow the system", "win.theme::system");
