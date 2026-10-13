@@ -38,6 +38,10 @@ usage:
       how far part a is from part b (a remodelled part from the mesh it
       copies, loaded as a reference part): distances both ways, and a
       picture of a coloured green, yellow, red by its distance from b
+  hcad scan FILE --axis x|y|z [--step MM] [--part NAME]
+      cuts all along an axis: each hole and pocket met with its shape (circle,
+      rectangle, hexagon, teardrop, slot…) and where it starts and ends, and
+      the outside outline's changes
   hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
@@ -209,6 +213,32 @@ int main(string[] args)
                 }
             }
             catch (HcadError e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
+            return 0;
+        }
+    case "scan":
+        {
+            string part, axis = "z";
+            double step = 0;
+            try
+                getopt(args, "part", &part, "axis", &axis, "step", &step);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            import hackerscad.tool.features : scanReport;
+            try
+                write(scanReport(args[1], part, axis, step));
+            catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);
                 return 1;

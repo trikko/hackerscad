@@ -267,7 +267,7 @@ JSONValue toolError(string message)
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
     ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
-        "hcad_compare"].canFind(tool);
+        "hcad_compare", "hcad_scan"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -659,6 +659,13 @@ JSONValue[] toolList()
             ~ "yellow at it, red at twice it. Correct the model until it is green.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}`, `["a", "b"]`),
+        tool("hcad_scan", "Cut a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and its 'part') "
+            ~ "all along an axis, every 'step' mm: each hole and pocket met with its shape (circle, rectangle, rounded "
+            ~ "rectangle, hexagon (a nut trap), teardrop with the direction of its point, slot, D) and where it starts "
+            ~ "and ends (found to a hundredth of a mm), and where the outside keeps one size. Scan along x, y and z "
+            ~ "to see the part as the operations it was made with; then hcad_section at a level for exact outlines.",
+            `"path": {"type": "string"}, "part": {"type": "string"}, "axis": {"type": "string", "enum": ["x", "y", "z"]}, `
+            ~ `"step": {"type": "number", "description": "mm between cuts (default: the length / 200, at least 0.25)"}`, `["path", "axis"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -978,6 +985,22 @@ JSONValue callTool(string name, JSONValue args)
             auto j = run.compare(ia, ib, tol, png);
             text(j.toPrettyString());
             image(png);
+            break;
+        }
+    case "hcad_scan":
+        {
+            import hackerscad.tool.features : scanReport;
+            try
+            {
+                auto st = "step" in args;
+                text(scanReport(arg("path"), arg("part"), arg("axis"),
+                    st is null ? 0 : st.type == JSONType.integer ? st.integer : st.floating));
+            }
+            catch (Exception e)
+            {
+                isError = true;
+                text(e.msg);
+            }
             break;
         }
     case "hcad_measure":

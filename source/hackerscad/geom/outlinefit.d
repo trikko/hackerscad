@@ -22,7 +22,7 @@ P2[][] slice(const Mesh m, Vec3 n, double at, Vec3 u, Vec3 v)
     double size = 1;
     foreach (i; 0 .. m.vertexCount)
         size = max(size, m.vertex(i).length);
-    immutable eps = 1e-7 * size;
+    immutable eps = 1e-5 + 1e-7 * size;
     foreach (i; 0 .. m.vertexCount)
         if (abs(m.vertex(i).dot(n) - at) < eps)
         {
@@ -83,7 +83,8 @@ P2[][] slice(const Mesh m, Vec3 n, double at, Vec3 u, Vec3 v)
                 break;
             at_ = *next;
         }
-        if (loop.length >= 3)
+        // an outline with no area: a face lying in the plane, cut along its edge
+        if (loop.length >= 3 && abs(area(loop)) > 1e-4)
             loops ~= loop;
     }
     return loops;
@@ -455,4 +456,256 @@ unittest
     assert(h.length == 1 && h[0].circle && abs(h[0].radius - 3) < 1e-9 && h[0].sweep < 0);
     auto code = sketchCode([e, h], "section");
     assert(code.length > 0);
+}
+
+/// What an outline is, in a designer's words.
+struct Shape
+{
+    string kind;   /// circle, rectangle, rounded rectangle, hexagon, teardrop, slot, D, polygon, outline
+    P2 center;
+    double a = 0, b = 0;   /// circle: diameter; rectangle: width, height (along the axes); hexagon: across
+                           /// flats; teardrop: diameter; slot: length, width; rounded rectangle: w, h, b = r
+    double r = 0;          /// rounded rectangle: the corners' radius; D: the flat's distance from the centre
+    double angle = 0;      /// rectangle, hexagon, slot: the turn of its first side; teardrop: where the point is
+    size_t sides;          /// polygon: how many
+
+    /// One line: "rectangle 10 × 19, centre (−7.75, 1.85)".
+    string toString() const
+    {
+        immutable c = pt(center);
+        switch (kind)
+        {
+        case "circle": return format("circle ⌀%s, centre %s", mm(a), c);
+        case "rectangle":
+            return format("rectangle %s × %s, centre %s%s", mm(a), mm(b), c, turned);
+        case "rounded rectangle":
+            return format("rounded rectangle %s × %s, corners r %s, centre %s%s", mm(a), mm(b), mm(r), c, turned);
+        case "hexagon": return format("hexagon %s across flats, centre %s%s", mm(a), c, turned);
+        case "teardrop": return format("teardrop ⌀%s, point towards %s°, centre %s", mm(a), mm(angle * 180 / PI), c);
+        case "slot": return format("slot %s long, %s wide, centre %s%s", mm(a), mm(b), c, turned);
+        case "D": return format("D ⌀%s, the flat %s from the centre, centre %s", mm(a), mm(r), c);
+        case "polygon": return format("polygon of %d sides, centre %s, %s × %s", sides, c, mm(a), mm(b));
+        default: return format("outline, centre %s, %s × %s", c, mm(a), mm(b));
+        }
+    }
+
+    private string turned() const
+    {
+        immutable deg = angle * 180 / PI;
+        return abs(deg) < 0.05 ? "" : format(", turned %s°", mm(deg));
+    }
+
+    /// The same shape, within `tol` (for following it along an axis).
+    bool same(const Shape o, double tol) const
+    {
+        return kind == o.kind && abs(a - o.a) < tol && abs(b - o.b) < tol && abs(r - o.r) < tol
+            && dist(center, o.center) < tol && sides == o.sides;
+    }
+}
+
+/// The shape of a fitted outline.
+Shape classify(const Element[] e)
+{
+    Shape s;
+    // the box around its points, and its middle
+    double x0 = double.infinity, y0 = double.infinity, x1 = -double.infinity, y1 = -double.infinity;
+    void grow(P2 p)
+    {
+        x0 = min(x0, p[0]);
+        x1 = max(x1, p[0]);
+        y0 = min(y0, p[1]);
+        y1 = max(y1, p[1]);
+    }
+    foreach (x; e)
+    {
+        grow(x.from);
+        if (x.arc)
+        {
+            // the arc's extreme points
+            foreach (k; 0 .. 4)
+            {
+                immutable ang = PI / 2 * k;
+                immutable a0 = atan2(x.from[1] - x.center[1], x.from[0] - x.center[0]);
+                double d = ang - a0;
+                while (x.sweep > 0 && d < 0) d += 2 * PI;
+                while (x.sweep < 0 && d > 0) d -= 2 * PI;
+                if (abs(d) <= abs(x.sweep) + 1e-9)
+                    grow([x.center[0] + x.radius * cos(ang), x.center[1] + x.radius * sin(ang)]);
+            }
+        }
+    }
+    s.center = [(x0 + x1) / 2, (y0 + y1) / 2];
+    s.a = x1 - x0;
+    s.b = y1 - y0;
+    s.kind = "outline";
+    size_t lines, arcs;
+    foreach (x; e)
+        (x.arc ? arcs : lines)++;
+    if (e.length == 1 && e[0].circle)
+    {
+        s.kind = "circle";
+        s.center = e[0].center;
+        s.a = 2 * e[0].radius;
+        return s;
+    }
+    // turns between consecutive lines (degrees), for polygons
+    double turnAt(size_t i)
+    {
+        auto p = e[i], q = e[(i + 1) % e.length];
+        return turn(p.from, p.to, q.to) * 180 / PI;
+    }
+    if (arcs == 0 && lines >= 3)
+    {
+        bool allTurn(double deg)
+        {
+            foreach (i; 0 .. e.length)
+                if (abs(abs(turnAt(i)) - deg) > 1.5)
+                    return false;
+            return true;
+        }
+        s.sides = lines;
+        s.kind = "polygon";
+        if (lines == 4 && allTurn(90) && abs(e[0].length - e[2].length) < 0.02 && abs(e[1].length - e[3].length) < 0.02)
+        {
+            s.kind = "rectangle";
+            s.angle = atan2(e[0].to[1] - e[0].from[1], e[0].to[0] - e[0].from[0]);
+            // sides along the axes when it is not turned: width along x
+            s.a = e[0].length;
+            s.b = e[1].length;
+            normalise(s);
+        }
+        else if (lines == 6 && allTurn(60))
+        {
+            double side = 0;
+            foreach (x; e)
+                side += x.length;
+            side /= 6;
+            s.kind = "hexagon";
+            s.a = side * sqrt(3.0);
+            s.angle = atan2(e[0].to[1] - e[0].from[1], e[0].to[0] - e[0].from[0]);
+        }
+        return s;
+    }
+    // a rounded rectangle: four lines and four quarter arcs of one radius
+    if (lines == 4 && arcs == 4)
+    {
+        bool ok = true;
+        double rr = -1;
+        Element[] ls;
+        foreach (x; e)
+        {
+            if (x.arc)
+            {
+                if (abs(abs(x.sweep) - PI / 2) > 0.03 || (rr >= 0 && abs(x.radius - rr) > 0.02))
+                    ok = false;
+                rr = x.radius;
+            }
+            else
+                ls ~= x;
+        }
+        if (ok)
+        {
+            s.kind = "rounded rectangle";
+            s.r = rr;
+            s.angle = atan2(ls[0].to[1] - ls[0].from[1], ls[0].to[0] - ls[0].from[0]);
+            s.a = ls[0].length + 2 * rr;
+            s.b = ls[1].length + 2 * rr;
+            normalise(s);
+            return s;
+        }
+    }
+    // a slot: two half circles of one radius and two lines
+    if (lines == 2 && arcs == 2)
+    {
+        Element[] as, ls;
+        foreach (x; e)
+            (x.arc ? as : ls) ~= x;
+        if (abs(abs(as[0].sweep) - PI) < 0.05 && abs(abs(as[1].sweep) - PI) < 0.05 && abs(as[0].radius - as[1].radius) < 0.02)
+        {
+            s.kind = "slot";
+            s.a = dist(as[0].center, as[1].center) + 2 * as[0].radius;
+            s.b = 2 * as[0].radius;
+            s.angle = atan2(as[1].center[1] - as[0].center[1], as[1].center[0] - as[0].center[0]);
+            s.center = [(as[0].center[0] + as[1].center[0]) / 2, (as[0].center[1] + as[1].center[1]) / 2];
+            return s;
+        }
+    }
+    // a teardrop: one big arc (230° or more) and two lines to a point (perhaps cut by a small arc or flat)
+    {
+        size_t big = size_t.max;
+        foreach (i, x; e)
+            if (x.arc && abs(x.sweep) > 230 * PI / 180)
+                big = i;
+        if (big != size_t.max && e.length <= 5)
+        {
+            auto c = e[big].center;
+            // the point: the farthest corner from the centre
+            P2 tip = e[big].from;
+            foreach (x; e)
+                foreach (p; [x.from, x.to])
+                    if (dist(p, c) > dist(tip, c))
+                        tip = p;
+            if (dist(tip, c) > e[big].radius * 1.05 || e.length >= 3)
+            {
+                s.kind = "teardrop";
+                s.center = c;
+                s.a = 2 * e[big].radius;
+                // the point's direction: the middle of the part the arc leaves out
+                immutable a0 = atan2(e[big].to[1] - c[1], e[big].to[0] - c[0]);
+                immutable a1 = atan2(e[big].from[1] - c[1], e[big].from[0] - c[0]);
+                double mid = (a0 + a1) / 2;
+                // the gap is the short way between the arc's ends
+                if (abs(a0 - a1) > PI)
+                    mid += PI;
+                s.angle = atan2(sin(mid), cos(mid));
+                return s;
+            }
+        }
+    }
+    // a D: one arc and one line
+    if (e.length == 2 && arcs == 1)
+    {
+        auto x = e[0].arc ? e[0] : e[1];
+        auto l = e[0].arc ? e[1] : e[0];
+        s.kind = "D";
+        s.center = x.center;
+        s.a = 2 * x.radius;
+        s.r = pointLine(x.center, l.from, l.to);
+        return s;
+    }
+    s.sides = e.length;
+    return s;
+}
+
+/// A rectangle given by its first side: as width along x and height along y when it lies along the
+/// axes, the turn otherwise between -45° and 45°.
+private void normalise(ref Shape s)
+{
+    double a = s.angle;
+    while (a > PI / 4) { a -= PI / 2; immutable t = s.a; s.a = s.b; s.b = t; }
+    while (a < -PI / 4) { a += PI / 2; immutable t = s.a; s.a = s.b; s.b = t; }
+    s.angle = abs(a) < 1e-6 ? 0 : a;
+}
+
+unittest
+{
+    // a rectangle, a hexagon, a teardrop, read from their outlines
+    P2[] rect = [[0, 0], [10, 0], [10, 19], [0, 19]];
+    auto r = classify(fit(rect, 0.01));
+    assert(r.kind == "rectangle" && abs(r.a - 10) < 1e-9 && abs(r.b - 19) < 1e-9 && abs(r.center[0] - 5) < 1e-9, r.toString);
+    P2[] hex;
+    foreach (i; 0 .. 6)
+        hex ~= [4 * cos(PI / 3 * i), 4 * sin(PI / 3 * i)];
+    auto h = classify(fit(hex, 0.01));
+    assert(h.kind == "hexagon" && abs(h.a - 4 * sqrt(3.0)) < 1e-9, h.toString);
+    // a teardrop ⌀4 with its point up (+Y): an arc of 270° and two 45° sides
+    P2[] drop;
+    foreach (i; 0 .. 37)
+    {
+        immutable ang = PI / 4 + PI / 2 + 1.5 * PI * i / 36;
+        drop ~= [2 * cos(ang), 2 * sin(ang)];
+    }
+    drop ~= [0, 2 * sqrt(2.0)];
+    auto t = classify(fit(drop, 0.01));
+    assert(t.kind == "teardrop" && abs(t.a - 4) < 1e-6 && abs(t.angle - PI / 2) < 0.05, t.toString);
 }

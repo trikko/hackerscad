@@ -187,3 +187,176 @@ string sectionReport(string file, string part, string plane, double at)
         ~ "\n// as a sketch (" ~ axes ~ " of the plane become its x, y):\n" ~ sketchCode(sorted, "section");
 }
 
+
+/// The plane across `axis` ("x", "y" or "z") and its own axes: (u, v, n),
+/// with names for the report, as sectionReport uses them.
+private void planeAcross(string axis, out Vec3 u, out Vec3 v, out string names, out bool flip)
+{
+    switch (axis)
+    {
+    case "z": u = Vec3(1, 0, 0); v = Vec3(0, 1, 0); names = "x, y"; flip = false; break;
+    case "y": u = Vec3(1, 0, 0); v = Vec3(0, 0, 1); names = "x, z"; flip = true; break;
+    case "x": u = Vec3(0, 1, 0); v = Vec3(0, 0, 1); names = "y, z"; flip = false; break;
+    default: throw new Exception("the axis is x, y or z");
+    }
+}
+
+/// Cuts every `step` mm along `axis`: the holes and pockets met (each one's
+/// shape and where it starts and ends, found to a hundredth of a mm) and
+/// the outside outline's changes, to see a part as the operations it was
+/// made with.
+string scanReport(string file, string part, string axis, double step)
+{
+    import std.algorithm : max, min, sort;
+    import std.math : abs, floor, ceil;
+    import hackerscad.geom.outlinefit;
+    Vec3 u, v;
+    string names;
+    bool flip;
+    planeAcross(axis, u, v, names, flip);
+    auto n = u.cross(v);
+    auto m = meshOf(file, part).welded(1e-5);
+    double lo = double.infinity, hi = -double.infinity;
+    foreach (i; 0 .. m.vertexCount)
+    {
+        immutable a = m.vertex(i).dot(n) * (flip ? -1 : 1);
+        lo = min(lo, a);
+        hi = max(hi, a);
+    }
+    if (!(step > 0))
+        step = max(0.25, (hi - lo) / 200);
+
+    // the shapes at one level: outside outlines and holes (an outline inside an odd number of others)
+    struct Level
+    {
+        Shape[] outer, holes;
+    }
+    static bool inside(const P2[] poly, P2 p)
+    {
+        bool r;
+        for (size_t i = 0, j = poly.length - 1; i < poly.length; j = i++)
+            if ((poly[i][1] > p[1]) != (poly[j][1] > p[1])
+                && p[0] < (poly[j][0] - poly[i][0]) * (p[1] - poly[i][1]) / (poly[j][1] - poly[i][1]) + poly[i][0])
+                r = !r;
+        return r;
+    }
+    Level at(double t)
+    {
+        Level l;
+        auto loops = slice(m, n, flip ? -t : t, u, v);
+        double size = 1;
+        foreach (lp; loops)
+            foreach (p; lp)
+                size = max(size, abs(p[0]), abs(p[1]));
+        foreach (i, lp; loops)
+        {
+            int depth;
+            foreach (j, other; loops)
+                if (i != j && inside(other, lp[0]))
+                    depth++;
+            auto sh = classify(fit(lp, 0.01 + 1e-4 * size));
+            (depth % 2 ? l.holes : l.outer) ~= sh;
+        }
+        return l;
+    }
+    // the outside followed by its box alone: small details along it change its pieces, not its size
+    static bool sameBox(const Shape a, const Shape b)
+    {
+        import std.math : abs;
+        return abs(a.a - b.a) < 0.05 && abs(a.b - b.b) < 0.05 && abs(a.center[0] - b.center[0]) < 0.05
+            && abs(a.center[1] - b.center[1]) < 0.05;
+    }
+    static bool has(const Shape[] list, const Shape s, bool hole)
+    {
+        foreach (x; list)
+            if (hole ? x.same(s, 0.05) : sameBox(x, s))
+                return true;
+        return false;
+    }
+
+    // the levels, and every shape followed from level to level
+    struct Run
+    {
+        Shape shape;
+        double from, to;   /// the levels it was seen at, first and last
+        bool hole;
+    }
+    Run[] runs;
+    size_t[] open;
+    double[] levels;
+    for (double t = lo + step / 2; t < hi; t += step)
+        levels ~= t;
+    foreach (t; levels)
+    {
+        auto l = at(t);
+        size_t[] still;
+        foreach (hole; [false, true])
+            foreach (sh; hole ? l.holes : l.outer)
+            {
+                bool found;
+                foreach (k; open)
+                    if (runs[k].hole == hole && (hole ? runs[k].shape.same(sh, 0.05) : sameBox(runs[k].shape, sh)))
+                    {
+                        runs[k].to = t;
+                        still ~= k;
+                        found = true;
+                        break;
+                    }
+                if (!found)
+                {
+                    runs ~= Run(sh, t, t, hole);
+                    still ~= runs.length - 1;
+                }
+            }
+        open = still;
+    }
+    // each run's ends found more closely: halving the step to where the shape is no longer there
+    double edge(const Run r, double inside_, double outside_)
+    {
+        foreach (_; 0 .. 7)
+        {
+            immutable mid = (inside_ + outside_) / 2;
+            auto l = at(mid);
+            if (has(r.hole ? l.holes : l.outer, r.shape, r.hole))
+                inside_ = mid;
+            else
+                outside_ = mid;
+        }
+        return (inside_ + outside_) / 2;
+    }
+    foreach (ref r; runs)
+    {
+        r.from = r.from - step / 2 <= lo ? lo : edge(r, r.from, r.from - step);
+        r.to = r.to + step / 2 >= hi ? hi : edge(r, r.to, r.to + step);
+    }
+    string mm(double x)
+    {
+        import hackerscad.geom.meshfeatures : plausible;
+        immutable p = plausible(x);
+        return format("%g", p == 0 ? 0.0 : p);
+    }
+    string s = format("scan along %s from %s to %s, every %s mm (shapes in %s):\n", axis, mm(lo), mm(hi), mm(step), names);
+    // the outside: where it keeps one size for a millimetre or more; the rest are its chamfers and slopes
+    s ~= "outside (where its size stays the same for 1 mm or more; cut there with hcad section for its outline):\n";
+    size_t brief;
+    foreach (r; runs)
+        if (!r.hole)
+        {
+            if (r.to - r.from >= max(1.0, 2 * step))
+                s ~= format("  %s to %s: %s × %s, centre (%s, %s)\n", mm(r.from), mm(r.to), mm(r.shape.a), mm(r.shape.b),
+                    mm(r.shape.center[0]), mm(r.shape.center[1]));
+            else
+                brief++;
+        }
+    if (brief)
+        s ~= format("  and %d short changes between them (chamfers, slopes, small steps)\n", brief);
+    s ~= "holes and pockets (deeper than 0.2 mm):\n";
+    Run[] holes;
+    foreach (r; runs)
+        if (r.hole && r.to - r.from > 0.2)
+            holes ~= r;
+    holes.sort!((a, b) => a.from < b.from);
+    foreach (r; holes)
+        s ~= format("  %s to %s (%s deep): %s\n", mm(r.from), mm(r.to), mm(r.to - r.from), r.shape.toString);
+    return s;
+}
