@@ -159,6 +159,11 @@ hcad docs fillet                              # the reference of one function
 - **The model is slow:** threads, text on curved faces and roundings on many
   edges take the longest. hackerscad remembers every step, so changing a
   parameter recomputes only what depends on it.
+- **The view is jerky when you turn it:** the console says at the start which
+  OpenGL draws the view (also in ☰ › About hackerscad › Troubleshooting). If it
+  says it is drawn by the processor, the graphics driver is missing or too
+  old: install the one from the maker of the card. In a virtual machine or a
+  remote session it is expected.
 - **"Unknown argument":** the message lists the arguments the function takes;
   `hcad docs` and the cheatsheet (F1) describe each function.
 

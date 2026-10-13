@@ -786,7 +786,9 @@ JSONValue[] toolList()
             ~ "running evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) "
             ~ "and seconds; with source: true it includes the code as it is in the editor (maybe not saved) and steps, "
             ~ "the Steps panel row by row. params give value, default, type, min, max, step and choices; revision "
-            ~ "counts the evaluations, log is what the model printed, outdated says the window should be restarted.",
+            ~ "counts the evaluations, log is what the model printed, outdated says the window should be restarted; "
+            ~ "graphics tells what draws the 3D view (OpenGL renderer, software: true when the processor draws it) "
+            ~ "and how fast (draw_ms, frame_interval_ms while moving).",
             `"now": {"type": "boolean"}, "source": {"type": "boolean"}`, `[]`),
     ];
 }

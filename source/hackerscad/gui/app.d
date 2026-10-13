@@ -1218,7 +1218,13 @@ private:
         }
         import std.system : os;
         import std.conv : to;
-        d.setDebugInfo(appName ~ " " ~ appVersion ~ "\n" ~ os.to!string ~ "\n" ~ path);
+        auto g = graphicsJson();
+        d.setDebugInfo(appName ~ " " ~ appVersion ~ "\n" ~ os.to!string ~ "\n" ~ path ~ "\n\n3D view: OpenGL "
+            ~ viewport.glVersion ~ " on " ~ viewport.glRenderer ~ " (" ~ viewport.glVendor ~ ")"
+            ~ (viewport.softwareGl() ? ", drawn by the processor" : "")
+            ~ format("\nframe: %.1f ms to draw, %.1f ms apart while moving", viewport.drawMs, viewport.frameIntervalMs)
+            ~ ("GSK_RENDERER" in g ? "\nGSK_RENDERER=" ~ g["GSK_RENDERER"].str : "")
+            ~ ("HCAD_GL" in g ? "\nHCAD_GL=" ~ g["HCAD_GL"].str : ""));
         d.present(window);
     }
 
@@ -1355,6 +1361,7 @@ private:
         {
             viewport.setParts(o.parts, firstResult);
             firstResult = false;
+            noteGraphics();
             import std.algorithm : map;
             import std.array : array;
             params.updateParts(o.parts.map!(p => p.name).array, o.parts.map!(p => p.rgb).array, &viewport.isHidden);
@@ -1455,6 +1462,37 @@ private:
 
     /// A message of the program (not of the model): shown at the bottom of the
     /// console, dimmed. Evaluation summaries replace each other.
+    /// Once the 3D view has drawn: which OpenGL it uses, in the console,
+    /// and a warning when the processor does the drawing (slow).
+    void noteGraphics()
+    {
+        if (graphicsNoted || viewport.glRenderer.length == 0)
+            return;
+        graphicsNoted = true;
+        note(format("3D view: OpenGL %s on %s", viewport.glVersion, viewport.glRenderer));
+        if (viewport.softwareGl())
+            note("the 3D view is drawn by the processor, without the graphics card: it will be slow. Update the "
+                ~ "graphics driver (on Windows from the maker of the card, not Windows Update's basic driver); in a "
+                ~ "virtual machine or a remote session this is expected");
+    }
+
+    bool graphicsNoted;
+
+    /// What draws the window, for diagnosis (state, About).
+    JSONValue graphicsJson()
+    {
+        import std.process : environment;
+        JSONValue g = ["renderer": viewport.glRenderer, "version": viewport.glVersion, "vendor": viewport.glVendor];
+        g["software"] = viewport.softwareGl();
+        g["draw_ms"] = viewport.drawMs;
+        g["frame_interval_ms"] = viewport.frameIntervalMs;
+        // how GTK draws the rest, and whether hackerscad fell back on Mesa
+        foreach (name; ["GSK_RENDERER", "GDK_DEBUG", "HCAD_GL"])
+            if (auto v = environment.get(name))
+                g[name] = v;
+        return g;
+    }
+
     void note(string message, bool evaluation = false)
     {
         import std.datetime.systime : Clock;
@@ -4338,6 +4376,7 @@ private:
         jc["style"] = viewport.shading == Shading.wireframe ? "wireframe"
             : viewport.shading == Shading.shaded ? "shaded" : "edges";
         j["camera"] = jc;
+        j["graphics"] = graphicsJson();
         string problems;
         foreach (d; last.diagnostics)
             problems ~= render(d, last.sources.get(d.span.file, ""));

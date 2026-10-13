@@ -3,6 +3,7 @@
 /// towards the pointer) and face picking.
 module hackerscad.gui.viewport;
 
+import core.time : MonoTime;
 import std.math : sin, cos, tan, atan, PI, abs, pow, sqrt;
 import std.algorithm : clamp, min, max;
 import std.string : toStringz;
@@ -1000,6 +1001,17 @@ private:
             explain();
             return;
         }
+        {
+            import std.string : fromStringz;
+            string text(uint name)
+            {
+                auto p = glGetString(name);
+                return p is null ? "" : (cast(const(char)*) p).fromStringz.idup;
+            }
+            glRenderer = text(GL_RENDERER);
+            glVersion = text(GL_VERSION);
+            glVendor = text(GL_VENDOR);
+        }
         program = buildProgram();
         uMvp = glGetUniformLocation(program, "uMvp");
         uColor = glGetUniformLocation(program, "uColor");
@@ -1169,10 +1181,43 @@ private:
         return clamp(1 - (covered - 1.5) / 3, 0.3, 1.0);
     }
 
+    // ---- for diagnosis: what draws the view, and how fast
+
+    /// The OpenGL the view draws with, as the driver names it.
+    public string glRenderer, glVersion, glVendor;
+
+    /// Whether the processor does the drawing (Mesa's llvmpipe or softpipe,
+    /// Windows' GDI or basic display driver): every frame then costs CPU.
+    public bool softwareGl() const
+    {
+        import std.algorithm : canFind;
+        import std.uni : toLower;
+        auto r = glRenderer.toLower;
+        return ["llvmpipe", "softpipe", "gdi generic", "microsoft basic render", "swrast", "software"]
+            .canFind!(w => r.canFind(w));
+    }
+
+    /// Average time spent drawing a frame (ms, on the processor: issuing
+    /// the commands), and between frames while they come one after the
+    /// other (turning or zooming): 16.7 is 60 frames a second.
+    public double drawMs = 0, frameIntervalMs = 0;
+    private MonoTime lastFrame;
+
     bool render()
     {
         if (!glReady)
             return false;
+        immutable started = MonoTime.currTime;
+        scope (exit)
+        {
+            // averages over the last few dozen frames
+            immutable now = MonoTime.currTime;
+            drawMs = drawMs * 0.95 + (now - started).total!"usecs" / 1000.0 * 0.05;
+            immutable gap = (started - lastFrame).total!"usecs" / 1000.0;
+            if (lastFrame != MonoTime.init && gap < 250)
+                frameIntervalMs = frameIntervalMs == 0 ? gap : frameIntervalMs * 0.9 + gap * 0.1;
+            lastFrame = started;
+        }
         if (dirty)
             upload();
 
