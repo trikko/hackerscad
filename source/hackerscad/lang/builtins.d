@@ -1231,7 +1231,7 @@ Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span)
     {
         auto b2 = it.kernel.boolean(a.brep, b.brep, op);
         // an operation can leave nothing (disjoint intersection, total cut)
-        if (it.kernel.faces(b2).length == 0)
+        if (it.kernel.faceCount(b2) == 0)
         {
             r = new SolidVal(null, span);
             r.rgb = a.rgb;
@@ -1773,7 +1773,7 @@ SolidVal primitive(Interp it, Brep b, string kind, Span span)
 {
     auto r = new SolidVal(b, span);
     immutable id = it.addFeature(kind, span);
-    r.creators = new uint[it.kernel.faces(b).length];
+    r.creators = new uint[it.kernel.faceCount(b)];
     r.creators[] = id;
     it.features[id - 1].result = r;
     return r;

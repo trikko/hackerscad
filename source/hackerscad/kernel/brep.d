@@ -134,6 +134,8 @@ interface BrepKernel
     /// fillet/chamfer/shell accept.
     EdgeInfo[] edges(Brep s);
     FaceInfo[] faces(Brep s);
+    /// How many faces `s` has, without computing anything about them.
+    size_t faceCount(Brep s);
 
     /// Face origins recorded when `s` was produced (see FaceOrigin).
     FaceOrigin[] faceOrigins(Brep s);

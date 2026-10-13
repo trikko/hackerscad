@@ -175,6 +175,8 @@ final class OcctKernel : BrepKernel
         return r;
     }
 
+    size_t faceCount(Brep s) => hc_face_count(h(s));
+
     FaceOrigin[] faceOrigins(Brep s)
     {
         auto o = cast(OcctBrep) s;
