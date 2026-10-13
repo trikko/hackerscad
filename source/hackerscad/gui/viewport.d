@@ -762,6 +762,9 @@ final class Viewport
 
     Camera camera() => Camera(yaw * 180 / PI, pitch * 180 / PI, distance, target, orthographic);
 
+    /// Where the camera looks: from the eye towards the target.
+    Vec3 viewDirection() => basis().forward;
+
     void setShading(Shading s)
     {
         shading = s;
@@ -933,12 +936,26 @@ private:
         if (!any)
             return;
         target = (lo + hi) / 2;
+        if (orthographic)
+        {
+            // the box of the parts as it looks from here: no perspective, so
+            // its corners on the screen plane tell how much has to fit
+            auto b = basis();
+            double w = 1, h = 1;
+            foreach (k; 0 .. 8)
+            {
+                auto c = Vec3(k & 1 ? hi.x : lo.x, k & 2 ? hi.y : lo.y, k & 4 ? hi.z : lo.z) - target;
+                w = max(w, abs(c.dot(b.right)));
+                h = max(h, abs(c.dot(b.up)));
+            }
+            distance = max(h, w / aspect) / tan(fovy / 2) * 1.08;
+            return;
+        }
         immutable radius = max(1.0, (hi - lo).length / 2);
-        // the narrower of the vertical and horizontal fields of view
+        // the sphere around the parts in the narrower of the vertical and
+        // horizontal fields of view
         immutable fov = min(fovy, 2 * atan(tan(fovy / 2) * aspect));
-        // perspective: the sphere around the parts in the cone of sight;
-        // orthographic: in the view's half height or width
-        distance = radius / (orthographic ? tan(fov / 2) : sin(fov / 2)) * 1.02;
+        distance = radius / sin(fov / 2) * 1.02;
     }
 
     void realize()
@@ -1795,8 +1812,11 @@ int faceOf(const(uint)[] faceStart, size_t triangle)
 }
 
 /// Möller–Trumbore ray/triangle intersection; returns the distance or -1.
+/// The edges count a hair beyond the triangle: a ray along the edge two
+/// triangles share would otherwise miss both, by rounding, and go through.
 double intersect(Vec3 o, Vec3 d, Vec3 a, Vec3 b, Vec3 c)
 {
+    enum eps = 1e-7;
     auto e1 = b - a, e2 = c - a;
     auto p = d.cross(e2);
     immutable det = e1.dot(p);
@@ -1805,11 +1825,11 @@ double intersect(Vec3 o, Vec3 d, Vec3 a, Vec3 b, Vec3 c)
     immutable inv = 1 / det;
     auto s = o - a;
     immutable u = s.dot(p) * inv;
-    if (u < 0 || u > 1)
+    if (u < -eps || u > 1 + eps)
         return -1;
     auto q = s.cross(e1);
     immutable v = d.dot(q) * inv;
-    if (v < 0 || u + v > 1)
+    if (v < -eps || u + v > 1 + eps)
         return -1;
     return e2.dot(q) * inv;
 }

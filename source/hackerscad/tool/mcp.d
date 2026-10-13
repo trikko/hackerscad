@@ -628,7 +628,8 @@ JSONValue[] toolList()
             ~ "user has unsaved changes, unless force is true (which discards them: ask the user first).",
             `"path": {"type": "string"}, "force": {"type": "boolean"}`, `["path"]`),
         gui("hcad_gui_set", "Change the model shown in the user's window: replace its source, set parameter "
-            ~ "overrides or a preset. The window re-evaluates and shows the result.",
+            ~ "overrides or a preset (preset \"\" goes back to the defaults, as Reset to defaults). The window "
+            ~ "re-evaluates and shows the result.",
             `"source": {"type": "string"}, "params": {"type": "object"}, "preset": {"type": "string"}`),
         gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: the "
             ~ "face is highlighted and the editor jumps to the feature that created it. Returns part, face, the point and "
@@ -641,8 +642,12 @@ JSONValue[] toolList()
             ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
             ~ "stays still). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
-            ~ "faint); projection is perspective or orthographic. hidden lists the parts to hide (the others are "
-            ~ "shown); code, console, view and params show or hide those panels. hcad_gui_state gives the camera.",
+            ~ "faint); projection is perspective or orthographic; menu opens the parts (eye) or display (cube) "
+            ~ "menu of the view bar for a screenshot, none closes them; sidebar shows the params or steps tab; "
+            ~ "cursor puts the editor's cursor at the start of a line and scrolls there; code_width sets how wide "
+            ~ "the code is (pixels). "
+            ~ "hidden lists the parts to hide (the others are shown); code, console, view and params show or hide "
+            ~ "those panels. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
             ~ `"look_at": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"size": {"type": "number"}, `
@@ -652,6 +657,9 @@ JSONValue[] toolList()
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe"]}, `
             ~ `"projection": {"type": "string", "enum": ["perspective", "orthographic"]}, `
+            ~ `"menu": {"type": "string", "enum": ["parts", "display", "none"]}, `
+            ~ `"sidebar": {"type": "string", "enum": ["params", "steps"]}, `
+            ~ `"cursor": {"type": "integer"}, "code_width": {"type": "integer"}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
             ~ `"code": {"type": "boolean"}, "console": {"type": "boolean"}, "view": {"type": "boolean"}, `
             ~ `"params": {"type": "boolean"}`, `[]`),
@@ -666,9 +674,10 @@ JSONValue[] toolList()
             ~ "choose entries of the menu in order, e.g. [\"Hole at point\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: "
             ~ "what the user would do with the mouse. Entries that write code append it to the part in the editor. "
             ~ "Without path, returns the entries the menu has there (with sub-entries and the values it shows) and "
-            ~ "chooses nothing.",
+            ~ "chooses nothing. With open: true the menu stays open (path: only groups to open), to show it in "
+            ~ "hcad_gui_screenshot.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
-            ~ `"path": {"type": "array", "items": {"type": "string"}}`, `[]`),
+            ~ `"path": {"type": "array", "items": {"type": "string"}}, "open": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_section", "Cut the user's 3D view with a plane: parallel to xy, xz or yz, or to the selected face "
             ~ "(face; clicking another face moves it there); at is the position from 0 to 1 across the model; flip inverts the "
             ~ "plane normal (shows the other side); cut solids are shown filled and hatched; on: false removes it.",

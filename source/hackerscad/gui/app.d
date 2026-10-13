@@ -56,7 +56,7 @@ import gtk.scale : Scale;
 import gtk.gesture_click : GestureClick;
 import gtk.event_controller_key : EventControllerKey;
 import gtk.event_controller_motion : EventControllerMotion;
-import gdk.types : ModifierType, KEY_Escape, KEY_Control_L, KEY_Control_R;
+import gdk.types : ModifierType, KEY_Escape, KEY_space, KEY_Control_L, KEY_Control_R;
 import hackerscad.geom.vec : Vec3;
 import glib.global : idleAdd;
 
@@ -320,12 +320,21 @@ int main(string[] args)
     }
     version (linux)
         installDesktopEntry();
-    // --screenshot=FILE.png saves the window after the first evaluation and quits
+    // --screenshot=FILE.png saves the window after the first evaluation and quits;
+    // --size=WIDTHxHEIGHT opens the window that big (for pictures of it)
     string path, shot;
     foreach (a; args[1 .. $])
     {
         if (a.length > 13 && a[0 .. 13] == "--screenshot=")
             shot = a[13 .. $];
+        else if (a.length > 7 && a[0 .. 7] == "--size=")
+        {
+            import std.array : split;
+            import std.conv : to;
+            auto wh = a[7 .. $].split("x");
+            if (wh.length == 2)
+                MainWindow.startSize = [wh[0].to!int, wh[1].to!int];
+        }
         else
             path = absolutePath(a);
     }
@@ -402,7 +411,7 @@ final class MainWindow
     {
         this.path = path;
         window = new ApplicationWindow(app);
-        window.setDefaultSize(1440, 880);
+        window.setDefaultSize(startSize[0], startSize[1]);
 
         // ---- header bar
         auto header = new HeaderBar;
@@ -550,7 +559,7 @@ final class MainWindow
         partsMenu.setTooltipText("Parts shown in the view");
         partsMenu.addCssClass("flat");
         viewBar.append(partsMenu);
-        auto displayMenu = new MenuButton;
+        displayMenu = new MenuButton;
         displayMenu.setIconName("hcad-display-symbolic");
         displayMenu.setTooltipText("How the view draws the parts: edges, wireframe, perspective or orthographic");
         displayMenu.addCssClass("flat");
@@ -715,11 +724,19 @@ final class MainWindow
         // Esc in the view closes Inspect
         {
             auto keys = new EventControllerKey;
+            // Esc: back from Inspect or a rollback, otherwise (like Space) an empty selection
             keys.connectKeyPressed((uint key, uint code, ModifierType state) {
-                if (key != KEY_Escape || !(viewport.inInspect || viewport.inRollback))
-                    return false;
-                showFinal();
-                return true;
+                if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback))
+                {
+                    showFinal();
+                    return true;
+                }
+                if ((key == KEY_Escape || key == KEY_space) && viewport.selection().length)
+                {
+                    clearSelection();
+                    return true;
+                }
+                return false;
             });
             viewport.area.addController(keys);
         }
@@ -732,7 +749,7 @@ final class MainWindow
 
         // parameters in a sidebar with bounded width that can be hidden
         // parameters and the feature tree share the sidebar
-        auto stack = new ViewStack;
+        auto stack = sideStack = new ViewStack;
         stack.addTitledWithIcon(paramsScroll, "params", "Parameters", "preferences-other-symbolic");
         auto featuresScroll = new ScrolledWindow;
         featuresScroll.setChild(features.widget);
@@ -804,7 +821,7 @@ final class MainWindow
         }
         viewport.area.setSizeRequest(320, 240);
 
-        auto main = new Paned(Orientation.Horizontal);
+        auto main = mainPaned = new Paned(Orientation.Horizontal);
         main.setStartChild(left);
         main.setEndChild(right);
         main.setPosition(560);
@@ -900,6 +917,8 @@ final class MainWindow
                     showFinal();
                     return true;
                 }
+                else if (key == KEY_Escape && viewport.selection().length)
+                    clearSelection();   // and the key goes on: it also closes the completion list
                 return false;
             });
             keys.connectKeyReleased((uint key, uint code, ModifierType state) {
@@ -1248,6 +1267,11 @@ private:
         paintable.snapshot(snap, w.getWidth(), w.getHeight());
         if (completion !is null && other is null)
             completion.snapshotOver(snap, window);
+        // the open menus of the view: the right-click one, the parts, the display style
+        if (other is null)
+            foreach (pop; [contextPopover, partsMenu ? partsMenu.getPopover() : null,
+                    displayMenu ? displayMenu.getPopover() : null])
+                snapshotPopover(snap, window, pop);
         auto node = snap.toNode();
         if (node is null)
         {
@@ -1470,6 +1494,16 @@ private:
 
     /// A click selects a face: it is highlighted and the editor shows the
     /// line of the feature that created it (or the part's function).
+    /// Empties the selection, and the line it marked in the code.
+    void clearSelection()
+    {
+        viewport.setSelection(null);
+        TextIter s, e;
+        buffer.getBounds(s, e);
+        buffer.removeTagByName("picked", s, e);
+        info("");
+    }
+
     void picked(Hit hit)
     {
         // in sketch mode a click near a sketch point shows the line that created it
@@ -1648,8 +1682,9 @@ private:
         else
             sectionSlider.setValue(old);
         sectionUpdating = false;
+        // the half towards the viewer goes, so that the cut faces them
         if (reset)
-            sectionFlipped = false;
+            sectionFlipped = through != through && n.dot(viewport.viewDirection()) > 0;
         sectionUpdating = true;
         sectionFlip.setActive(sectionFlipped);
         sectionUpdating = false;
@@ -1761,6 +1796,10 @@ private:
     }
 
     MenuButton partsMenu;   /// the eye of the view bar
+    MenuButton displayMenu; /// the cube of the view bar: drawing style and projection
+    ViewStack sideStack;    /// the sidebar: Parameters and Steps
+    static int[2] startSize = [1440, 880];   /// of the window (--size=WxH)
+    Paned mainPaned;        /// the code on the left, the rest on the right
     import gtk.check_button : CheckButton;
     CheckButton[Shading] shadingChoice;
     CheckButton perspectiveChoice, orthographicChoice;
@@ -2387,25 +2426,20 @@ private:
         return new Interp(part.kernel);
     }
 
-    /// Selector code for the selected faces / edges, joined with +.
+    /// Selector code for the selected faces / edges: a group when one picks
+    /// exactly them, otherwise each one's, joined with +.
     string facesCode()
     {
         SolidVal sv;
         auto it = selectorInterp(sv);
-        string[] parts;
-        foreach (f; selFaces)
-            parts ~= faceSelector(it, sv, f);
-        return parts.join(" + ");
+        return facesSelector(it, sv, selFaces);
     }
 
     string edgesCode()
     {
         SolidVal sv;
         auto it = selectorInterp(sv);
-        string[] parts;
-        foreach (e; selEdges)
-            parts ~= edgeSelector(it, sv, e);
-        return parts.join(" + ");
+        return edgesSelector(it, sv, selEdges);
     }
 
     void ctxFaces(string code, string placeholder) => appendFeature(last.parts[contextHit.part], format(code, facesCode()),
@@ -2433,7 +2467,19 @@ private:
         return edge ? edgeSelector(it, sv, contextHit.edge) : faceSelector(it, sv, contextHit.face);
     }
 
-    string ctxAt() => format("vec(%.4g.mm, %.4g.mm, %.4g.mm)", contextHit.point.x, contextHit.point.y, contextHit.point.z);
+    /// The clicked point, to the hundredth of a millimetre: a click is not
+    /// more precise, and 0 stays 0 instead of -3.6e-10.
+    string ctxAt()
+    {
+        import std.math : round;
+        string mm(double v)
+        {
+            immutable r = round(v * 100) / 100;
+            return format("%g.mm", r == 0 ? 0.0 : r);
+        }
+        auto p = contextHit.point;
+        return format("vec(%s, %s, %s)", mm(p.x), mm(p.y), mm(p.z));
+    }
 
     /// `code` with %s for the face selector and %s for the clicked point.
     void ctxOnFace(string code, string placeholder)
@@ -2457,7 +2503,7 @@ private:
     void ctxHole(string kind, string size)
     {
         // a blind hole 5 mm deep at the clicked point: edit the depth, or use through: true
-        appendFeature(last.parts[contextHit.part], format("// %s %s hole (through: true instead of depth for a through hole)\n"
+        appendFeature(last.parts[contextHit.part], format("// %s %s hole (through: true goes all the way)\n"
             ~ ".cut(circle(d: %g.mm), on: %s, at: %s, depth: 5.mm)", size, kind, holeDiameter(kind, size), ctxSelector(false),
             ctxAt()), "5.mm");
     }
@@ -2525,7 +2571,13 @@ private:
         if (part.span.file != absolutePath(path))
             return info(format("part '%s' is defined in another file", part.name));
         try
+        {
             applyEdit(appendToPart(text(), path, part.name, call, placeholder));
+            // the feature changes the faces and edges: the selection would
+            // point at others
+            viewport.setSelection(null);
+            info("");
+        }
         catch (CodegenException e)
             info(e.msg);
         catch (HcadError e)
@@ -3363,6 +3415,35 @@ private:
                     foreach (i, pm; last.parts)
                         setPartVisible(i, (pm.name in hide) is null);
                 }
+                // the cursor at the start of a line, the code scrolled there (and fully left)
+                if (has("cursor"))
+                {
+                    TextIter at;
+                    if (buffer.getIterAtLine(at, cast(int) p["cursor"].get!long - 1))
+                    {
+                        buffer.placeCursor(at);
+                        editor.scrollToIter(at, 0.1, true, 0, 0.3);
+                        completion.close();
+                    }
+                }
+                // how wide the code is, in pixels
+                if (has("code_width"))
+                    mainPaned.setPosition(cast(int) p["code_width"].get!long);
+                // the tab of the sidebar
+                if (auto tab = arg("sidebar"))
+                    sideStack.setVisibleChildName(tab == "steps" ? "features" : "params");
+                // a menu of the view bar opened, for a screenshot ("none" closes them)
+                if (auto m = arg("menu"))
+                {
+                    foreach (b; [partsMenu, displayMenu])
+                        b.popdown();
+                    if (contextPopover !is null)
+                        contextPopover.popdown();
+                    if (m == "parts")
+                        partsMenu.popup();
+                    else if (m == "display")
+                        displayMenu.popup();
+                }
                 if (has("console"))
                     consoleToggle.setActive(p["console"].type == JSONType.true_);
                 if (has("params"))
@@ -3429,8 +3510,10 @@ private:
         case "menu":
             {
                 // {"x": 0.5, "y": 0.5, "path": ["Hole at point", "Clearance", "M3"]}: the right-click menu there,
-                // then its entries clicked in order; without path, the entries it has there
+                // then its entries clicked in order; without path, the entries it has there; with
+                // "open": true it stays open (path: groups to open), for a screenshot
                 string[] path;
+                immutable keep = "open" in p && p["open"].type == JSONType.true_;
                 if ("path" in p && p["path"].type == JSONType.array)
                     foreach (v; p["path"].array)
                         path ~= v.str;
@@ -3446,7 +3529,8 @@ private:
                     if (list)
                     {
                         auto entries = lastMenuEntries();
-                        closeLastMenu();
+                        if (!keep)
+                            closeLastMenu();
                         return reply(JSONValue(["entries": menuJson(entries)]), null);
                     }
                     if (auto problem = activateMenuPath(path))
@@ -3777,7 +3861,7 @@ private:
                 // {"selector": "faces.top", "part": "lid"} selects, {"clear": true} empties; always the selection back
                 whenIdle(() {
                     if ("clear" in p && p["clear"].type == JSONType.true_)
-                        viewport.setSelection(null);
+                        clearSelection();
                     if (auto expr = arg("selector"))
                     {
                         string problem;

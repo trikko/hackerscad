@@ -115,6 +115,9 @@ final class EditorCompletion
         pendingSelect = label;   // applied by the refresh open() schedules
     }
 
+    /// Closes the list and the signature, if open.
+    void close() => hide();
+
     /// What the list would show at the cursor (for the control socket).
     CompletionResult proposals()
     {

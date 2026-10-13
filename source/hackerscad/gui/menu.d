@@ -233,3 +233,29 @@ private final class Menu
     }
 
 }
+
+/// Draws popover `p`, when open, over a snapshot of `window` at the place
+/// GTK put it: popovers are surfaces of their own, missing from a
+/// screenshot of the window.
+void snapshotPopover(imported!"gtk.snapshot".Snapshot snap, Widget window, Popover p)
+{
+    import gdk.c.functions : gdk_popup_get_position_x, gdk_popup_get_position_y;
+    import gdk.c.types : GdkPopup;
+    import graphene.point : Point;
+    import gtk.native : Native;
+    import gtk.widget_paintable : WidgetPaintable;
+    auto top = cast(Native) window;
+    if (top is null || p is null || !p.getVisible() || p.getWidth() <= 0 || p.getSurface() is null)
+        return;
+    double wx, wy, sx, sy;
+    top.getSurfaceTransform(wx, wy);
+    p.getSurfaceTransform(sx, sy);
+    auto popup = cast(GdkPopup*) p.getSurface()._cPtr;
+    Point at;
+    at.x = cast(float)(gdk_popup_get_position_x(popup) + sx - wx);
+    at.y = cast(float)(gdk_popup_get_position_y(popup) + sy - wy);
+    snap.save();
+    snap.translate(at);
+    new WidgetPaintable(p).snapshot(snap, p.getWidth(), p.getHeight());
+    snap.restore();
+}
