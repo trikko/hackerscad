@@ -768,6 +768,37 @@ hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d)
     });
 }
 
+// The flat face `face` swept by the vector v: the solid a push or pull of
+// the face adds or removes.
+hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, double vz)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const auto &m = map_of(s, TopAbs_FACE);
+        if (face < 0 || face >= m.Extent()) {
+            set_error("no such face");
+            return nullptr;
+        }
+        const TopoDS_Face f = TopoDS::Face(m(face + 1));
+        BRepAdaptor_Surface surf(f);
+        if (surf.GetType() != GeomAbs_Plane) {
+            set_error("only flat faces can be pushed or pulled");
+            return nullptr;
+        }
+        const gp_Vec v(vx, vy, vz);
+        if (std::abs(v.Dot(gp_Vec(surf.Plane().Axis().Direction()))) < 1e-9 * (v.Magnitude() + 1)) {
+            set_error("the direction lies in the face's plane: the face would sweep no volume");
+            return nullptr;
+        }
+        BRepPrimAPI_MakePrism prism(f, v);
+        if (!prism.IsDone()) {
+            set_error("the face could not be swept");
+            return nullptr;
+        }
+        history_new(prism.Shape());
+        return wrap(prism.Shape());
+    });
+}
+
 hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thickness)
 {
     return guarded<>((hc_shape *)nullptr, [&] {

@@ -215,6 +215,8 @@ immutable Ref[] reference =
         "a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex."),
     F("cut", "Solid", ["profile: Profile", "on: Frame", "depth: Length", "through: bool", "taper: Angle"], "Solid",
         "Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm)."),
+    F("extrude", "Solid", ["faces: Selector", "depth: Length", "along: Vec3"], "Solid",
+        "Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in."),
     ]) ~
     group("Paths, sweeps and lofts", [
     F("path", "", ["points: Vec[]", "closed: bool"], "Path", "Straight segments through the points."),

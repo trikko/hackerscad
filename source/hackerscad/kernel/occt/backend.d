@@ -237,6 +237,8 @@ final class OcctKernel : BrepKernel
     Brep chamfer(Brep s, const(int)[] edges, double d) =>
         wrap(hc_chamfer(h(s), edges.ptr, cast(int) edges.length, d), "chamfer");
 
+    Brep facePrism(Brep s, int face, Vec3 v) => wrap(hc_face_prism(h(s), face, v.x, v.y, v.z), "push/pull");
+
     Brep shell(Brep s, const(int)[] faces, double thickness) =>
         wrap(hc_shell(h(s), faces.ptr, cast(int) faces.length, thickness), "shell");
 

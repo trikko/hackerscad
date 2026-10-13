@@ -787,7 +787,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // profile.extrude(10.mm, taper: 2.deg, symmetric: true), or
         // body.extrude(profile, on: frame, depth: 5.mm) to add material on a face
         if (a.positional.length && a.positional[0].kind == Kind.solid && !a.positional[0].solid.flat)
-            return onFace(it, a, false);
+            return pushesFace(a) ? pushFace(it, a, false) : onFace(it, a, false);
         auto x = Args(it, a, "extrude", ["profile", "height", "taper", "symmetric"]);
         auto p = profileArg(x, "profile");
         immutable h = x.len("height"), taper = x.angleOr("taper", 0);
@@ -801,7 +801,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
     def("cut", (ref CallArgs a) {
         // body.cut(profile, on: frame, depth: 3.mm) or through: true
-        return onFace(it, a, true);
+        return pushesFace(a) ? pushFace(it, a, true) : onFace(it, a, true);
     });
     def("revolve", (ref CallArgs a) {
         // profile.revolve(axis: Y, angle: 360.deg): the axis lies in the profile's plane.
@@ -2090,6 +2090,63 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
         return k.translate(b, o);
     });
     return solidBoolean(it, body, placed.solid, remove ? BoolOp.cut : BoolOp.fuse, a.span);
+}
+
+/// Whether an extrude() or cut() of a solid is given faces of it (a push
+/// or pull) rather than a profile.
+bool pushesFace(ref CallArgs a)
+{
+    if (a.positional.length >= 2)
+        return a.positional[1].kind == Kind.selector;
+    return ("faces" in a.named) !is null;
+}
+
+/// body.extrude(faces.top, depth: 5.mm) grows flat faces outwards along
+/// their normals; body.cut(faces.top, depth: 2.mm) sinks them (as does a
+/// negative depth to extrude). `along:` sweeps them in another direction,
+/// slanted: material is added when it points out of the face, removed
+/// when it points in.
+Value pushFace(Interp it, ref CallArgs a, bool remove)
+{
+    auto k = it.kernel;
+    immutable fn = remove ? "cut" : "extrude";
+    auto x = Args(it, a, fn, ["solid", "faces", "depth", "along"]);
+    auto body = x.solid("solid");
+    auto idx = resolveSelector(it, x.selector("faces", true), body, x.spanOf("faces"));
+    if (idx.length == 0)
+        throw new HcadError(Code.type, "the selector matched no faces", x.spanOf("faces"));
+    auto depth = x.len("depth");
+    if (remove)
+        depth = -depth;
+    if (depth == 0)
+        throw new HcadError(Code.type, "depth must not be zero", x.spanOf("depth"));
+    Vec3 along;
+    if (x.has("along"))
+    {
+        along = x.dir("along");
+        if (along.length < 1e-12)
+            throw new HcadError(Code.type, "'along' needs a direction, not a zero vector", x.spanOf("along"));
+        along = along.normalized;
+    }
+    auto infos = k.faces(nonEmpty(body, a.span));
+    Brep[] prisms;
+    int outwards, inwards;
+    foreach (f; idx)
+    {
+        immutable n = infos[f].normal;
+        immutable v = (x.has("along") ? along : n) * depth;
+        (v.dot(n) > 0 ? outwards : inwards)++;
+        try
+            prisms ~= k.facePrism(body.brep, f, v);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, x.spanOf(x.has("along") ? "along" : "faces"));
+    }
+    if (outwards && inwards)
+        throw new HcadError(Code.type, "the direction goes out of some faces and into others: push or pull them apart",
+            x.spanOf("along"));
+    auto tool = derived(it, prisms.length == 1 ? prisms[0] : k.fuseAll(prisms), [body], fn, a.span);
+    tool.flat = false;
+    return solidBoolean(it, body, tool, outwards ? BoolOp.fuse : BoolOp.cut, a.span);
 }
 
 int count(ref Args x, string n)

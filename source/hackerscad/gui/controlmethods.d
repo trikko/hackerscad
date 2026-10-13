@@ -200,7 +200,7 @@ mixin template ControlMethods()
                     auto code = contextCode(act, value, kind, size);
                     if (code.length == 0)
                         return reply(JSONValue.init, "unknown action, or it does not apply there: use fillet-edge, "
-                            ~ "chamfer-edge (an edge), fillet-face, chamfer-face, shell, draft (faces), hole (kind: "
+                            ~ "chamfer-edge (an edge), fillet-face, chamfer-face, shell, draft, extrude-face, push-face (faces), hole (kind: "
                             ~ "clearance, tap or insert; size: M2 to M8), pocket or boss (a face)");
                     appendFeature(last.parts[hit.part], code, null);
                     whenIdle(() {

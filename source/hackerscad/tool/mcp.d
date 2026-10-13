@@ -690,12 +690,12 @@ JSONValue[] toolList()
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face), "
-            ~ "draft (tilts the face), hole (kind and size: a hole for a screw, 5 mm deep), pocket (a rectangle cut "
+            ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), push-face (sinks it), hole (kind and size: a hole for a screw, 5 mm deep), pocket (a rectangle cut "
             ~ "in), boss (a cylinder standing on the face). With use_selection: true it acts on the Shift selection "
             ~ "(hcad_gui_pick with shift) that contains the point, as the menu does: several edges or faces at once.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"action": {"type": "string", "enum": ["fillet-edge", "chamfer-edge", "fillet-face", "chamfer-face", `
-            ~ `"shell", "draft", "hole", "pocket", "boss"]}, "value": {"type": "string", "description": `
+            ~ `"shell", "draft", "extrude-face", "push-face", "hole", "pocket", "boss"]}, "value": {"type": "string", "description": `
             ~ `"radius, distance, thickness, angle or depth, e.g. 2.mm or -4.deg"}, `
             ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert"]}, `
             ~ `"size": {"type": "string", "enum": ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"]}, `

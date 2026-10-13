@@ -61,6 +61,7 @@ int hc_edge_faces(const(hc_shape)* s, int* output);
 
 hc_shape* hc_fillet(const(hc_shape)* s, const(int)* edges, int nedges, double r);
 hc_shape* hc_chamfer(const(hc_shape)* s, const(int)* edges, int nedges, double d);
+hc_shape* hc_face_prism(const(hc_shape)* s, int face, double vx, double vy, double vz);
 hc_shape* hc_shell(const(hc_shape)* s, const(int)* faces, int nfaces, double thickness);
 hc_shape* hc_draft(const(hc_shape)* s, const(int)* faces, int nfaces, double angle_rad,
     double px, double py, double pz, double nx, double ny, double nz);

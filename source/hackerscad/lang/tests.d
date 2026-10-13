@@ -1434,3 +1434,25 @@ unittest
         assert(d.severity != Severity.error, d.message);
     assert(error("@part Solid p() => circle(r: 2).section(XY).extrude(1);").message.canFind("cuts solids"));
 }
+
+unittest
+{
+    // push and pull: flat faces swept along their normals, or slanted
+    auto r = runModel(q{
+        immutable b = box(10, 10, 10);
+        @part Solid up() => b.extrude(faces.top, depth: 5);
+        @part Solid down() => b.cut(faces.top, depth: 4);
+        @part Solid sides() => b.extrude(faces.filter(f => f.isPerpendicular(Z) == false), depth: 1);
+        @part Solid slant() => b.extrude(faces.top, depth: 5, along: vec(1, 0, 1));
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(isClose(partVolume(r, "up"), 1500, 1e-9));
+    assert(isClose(partVolume(r, "down"), 600, 1e-9));
+    assert(isClose(partVolume(r, "sides"), 1000 + 4 * 100, 1e-9));
+    // a prism slanted at 45°: the same base, height 5/√2
+    assert(isClose(partVolume(r, "slant"), 1000 + 100 * 5 / sqrt(2.0), 1e-9));
+    assert(error("@part Solid p() => cylinder(r: 5, h: 5).extrude(faces.largest, depth: 1);")
+        .message.canFind("flat"));
+    assert(error("@part Solid p() => box(1, 1, 1).extrude(faces.top, depth: 1, along: X);").message.canFind("plane"));
+}

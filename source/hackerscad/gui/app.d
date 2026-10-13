@@ -2481,6 +2481,8 @@ private:
             entries ~= I(nf == 1 ? "Shell, opening this face…" : format("Shell, opening %d faces…", nf),
                 () => ctx("shell", "2.mm"));
             entries ~= I(nf == 1 ? "Draft face…" : format("Draft %d faces…", nf), () => ctx("draft", "3.deg"));
+            entries ~= I(nf == 1 ? "Extrude face…" : format("Extrude %d faces…", nf), () => ctx("extrude-face", "5.mm"));
+            entries ~= I(nf == 1 ? "Push face in…" : format("Push %d faces in…", nf), () => ctx("push-face", "2.mm"));
         }
         if (hit.face >= 0)
         {
@@ -2693,6 +2695,9 @@ private:
         case "chamfer-face": return faces ? format(".chamfer(edges.of(%s), d: %s)", facesCode(), or("0.5.mm")) : null;
         case "shell": return faces ? format(".shell(open: %s, thickness: %s)", facesCode(), or("2.mm")) : null;
         case "draft": return faces ? format(".draft(%s, angle: %s)", facesCode(), or("3.deg")) : null;
+        // flat faces swept along their normals (along: vec(…) slants them)
+        case "extrude-face": return faces ? format(".extrude(%s, depth: %s)", facesCode(), or("5.mm")) : null;
+        case "push-face": return faces ? format(".cut(%s, depth: %s)", facesCode(), or("2.mm")) : null;
         case "hole":
             {
                 if (!onFace || !["clearance", "tap", "insert"].canFind(kind)

@@ -155,6 +155,9 @@ interface BrepKernel
 
     Brep fillet(Brep s, const(int)[] edges, double r);
     Brep chamfer(Brep s, const(int)[] edges, double d);
+    /// The flat face `face` swept by the vector `v`: what pushing or
+    /// pulling it adds or removes.
+    Brep facePrism(Brep s, int face, Vec3 v);
     /// Hollows the solid inwards, opening the given faces.
     Brep shell(Brep s, const(int)[] faces, double thickness);
     /// Tilts faces by `angle` for moulding: `pull` is the opening direction,
