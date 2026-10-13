@@ -71,7 +71,7 @@ import hackerscad.gui.evaluator;
 import hackerscad.gui.viewport;
 import hackerscad.gui.params;
 import hackerscad.gui.control;
-import hackerscad.gui.features;
+import hackerscad.gui.steps;
 import hackerscad.gui.menu;
 import hackerscad.gui.measure : Item;
 import hackerscad.tool.codegen;
@@ -425,7 +425,7 @@ final class MainWindow
     bool sectionFlipped, sectionUpdating;
     ToggleButton sectionFlip;
     double sectionFace = 0;   /// position of the selected face along its normal
-    FeaturesPanel features;
+    StepsPanel stepsPanel;
     // Inspect: the solids and profiles a line of code made
     InspectQuery inspectQuery;   /// what is shown, asked again after each evaluation
     TraceEntry[] inspectShown;
@@ -747,10 +747,10 @@ final class MainWindow
             card.addCssClass("hcad-gl-help");
             overlay.addOverlay(card);
         };
-        features = new FeaturesPanel;
-        features.onSelect = &showFeature;
-        features.onFinal = () => showFinal();
-        features.onValue = (TraceEntry[] made) {
+        stepsPanel = new StepsPanel;
+        stepsPanel.onSelect = &showFeature;
+        stepsPanel.onFinal = () => showFinal();
+        stepsPanel.onValue = (TraceEntry[] made) {
             if (made.length == 0)
                 return;
             jumpTo(made[0].site, "");
@@ -758,7 +758,7 @@ final class MainWindow
             showInspected(distinct(made), format("line %d · %s", made[0].site.line,
                 made[0].decl.file.length ? made[0].fn ~ "()" : made[0].fn), false);
         };
-        features.onReturns = (FunctionInfo fn) {
+        stepsPanel.onReturns = (FunctionInfo fn) {
             jumpTo(fn.nameSpan, "");
             inspectFunction(fn);
         };
@@ -792,9 +792,9 @@ final class MainWindow
         // parameters and the feature tree share the sidebar
         auto stack = sideStack = new ViewStack;
         stack.addTitledWithIcon(paramsScroll, "params", "Parameters", "preferences-other-symbolic");
-        auto featuresScroll = new ScrolledWindow;
-        featuresScroll.setChild(features.widget);
-        stack.addTitledWithIcon(featuresScroll, "features", "Steps", "view-list-symbolic");
+        auto stepsScroll = new ScrolledWindow;
+        stepsScroll.setChild(stepsPanel.widget);
+        stack.addTitledWithIcon(stepsScroll, "steps", "Steps", "view-list-symbolic");
         stack.setVexpand(true);
         auto switcher = new ViewSwitcher;
         switcher.setMarginTop(6);
@@ -820,7 +820,7 @@ final class MainWindow
         info("");
         overlay.setVexpand(true);
 
-        // the parameters and features column: drag its edge to make it wider
+        // the parameters and stepsPanel column: drag its edge to make it wider
         auto right = new Paned(Orientation.Horizontal);
         right.setStartChild(overlay);
         right.setEndChild(sidebar);
@@ -1305,7 +1305,7 @@ private:
         params.update(o.params, o.presets);
         {
             import std.string : splitLines;
-            features.update(o.features, o.trace, o.functions, path, text().splitLines);
+            stepsPanel.update(o.features, o.trace, o.functions, path, text().splitLines);
         }
         // Inspect shows what the same lines make now
         if (viewport.inInspect && !o.cancelled)
@@ -1696,7 +1696,7 @@ private:
                 auto f = last.features[id - 1];
                 what = format("%s · %s %d · %s, line %d", part.name, hit.edge >= 0 ? "edge" : "face",
                     hit.edge >= 0 ? hit.edge : hit.face, f.kind, f.span.line);
-                // features from imported modules point elsewhere: stay on the part
+                // stepsPanel from imported modules point elsewhere: stay on the part
                 if (f.span.file == absolutePath(path))
                     span = f.span;
             }
@@ -2111,7 +2111,7 @@ private:
         viewport.clearRollback();
         if (viewport.inInspect)
             stopInspect();
-        features.clearSelection();
+        stepsPanel.clearSelection();
         info("");
         showModeBar(null);
     }
@@ -2224,7 +2224,7 @@ private:
         if (viewport.inRollback)
         {
             viewport.clearRollback();
-            features.clearSelection();
+            stepsPanel.clearSelection();
         }
         info(where ~ " (computing…)");
         SolidVal[] vals;
@@ -2330,7 +2330,7 @@ private:
         viewport.clearInspect();
         if (was)
         {
-            features.clearSelection();
+            stepsPanel.clearSelection();
             info("");
         }
         if (!viewport.inRollback)
@@ -2370,7 +2370,7 @@ private:
         return j;
     }
 
-    // ---- context menu: features written into the code
+    // ---- context menu: stepsPanel written into the code
 
     void contextMenu(Hit hit, double x, double y)
     {
@@ -3540,7 +3540,7 @@ private:
                     if (withSource)
                     {
                         j["source"] = text();
-                        j["steps"] = features.rowsText();   // the Steps panel, row by row
+                        j["steps"] = stepsPanel.rowsText();   // the Steps panel, row by row
                     }
                     return j;
                 }
@@ -3638,7 +3638,7 @@ private:
                     mainPaned.setPosition(cast(int) p["code_width"].get!long);
                 // the tab of the sidebar
                 if (auto tab = arg("sidebar"))
-                    sideStack.setVisibleChildName(tab == "steps" ? "features" : "params");
+                    sideStack.setVisibleChildName(tab == "steps" ? "steps" : "params");
                 // a menu of the view bar opened, for a screenshot ("none" closes them)
                 if (auto m = arg("menu"))
                 {
@@ -3807,8 +3807,8 @@ private:
                 if (!has("row"))
                     return reply(JSONValue.init, "give row: the index of the Steps panel row (state with source: true "
                         ~ "lists them)");
-                sideStack.setVisibleChildName("features");
-                if (!features.activate(cast(int) p["row"].get!long))
+                sideStack.setVisibleChildName("steps");
+                if (!stepsPanel.activate(cast(int) p["row"].get!long))
                     return reply(JSONValue.init, "no such row, or it is a heading");
                 whenIdle(() => reply(state(), null));
                 return;

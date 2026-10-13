@@ -21,7 +21,8 @@ cp data/logo/it.andreafontana.hackerscad.gui.svg docs/logo.svg
 awk '/^## A model/{f=1} f&&/^```d/{g=1;next} g&&/^```/{exit} g' README.md > build/readme-cup.hcad
 bin/hcad check build/readme-cup.hcad >/dev/null
 # the tutorial's planter: the model at the end of each page must check; the
-# pictures of the index from the last one, whole and with the pot lifted out
+# pictures of the index from page 9's (the finished planter, before the agent
+# of page 11 writes a name on it), whole and with the pot lifted out
 # (the window's pictures: dub run --single tools/tutorial-shots.d)
 for f in docs/tutorial/planter-*.hcad; do
     bin/hcad check "$f" >/dev/null

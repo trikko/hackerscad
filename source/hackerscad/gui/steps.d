@@ -1,7 +1,7 @@
-/// Feature tree: the modelling operations of the model in source order,
+/// The Steps panel: the modelling operations of the model in source order,
 /// grouped by function. Selecting one rolls the view back to the solid right
 /// after it; a function's "returns" row shows what it returns (Inspect).
-module hackerscad.gui.features;
+module hackerscad.gui.steps;
 
 import std.algorithm : any, sort;
 import std.format : format;
@@ -17,7 +17,7 @@ import pango.types : EllipsizeMode;
 
 import hackerscad.lang.interp : FeatureInfo, FunctionInfo, TraceEntry, callsOf;
 
-final class FeaturesPanel
+final class StepsPanel
 {
     Box widget;
     /// A feature was chosen: its id (index + 1 in the outcome's features).

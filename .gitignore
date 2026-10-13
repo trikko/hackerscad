@@ -12,11 +12,6 @@ __dummy.html
 untitled.hcad
 window-*.png
 screen-*.png
-# benchmark executables
-bench/bench-*
-!bench/*.d
-!bench/*.hcad
-!bench/*.png
 # examples kept out of the repository: for development, or work in progress
 examples/dev/
 examples/scissors.hcad
