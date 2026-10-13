@@ -199,6 +199,18 @@ void edgeSets(const Mesh m, double angleDeg, out uint[2][] sharp, out uint[2][] 
             ulong a = m.tris[t * 3 + k], b = m.tris[t * 3 + (k + 1) % 3];
             faces[min(a, b) << 32 | max(a, b)] ~= t;
         }
+    // two faces of the solid that meet at an angle anywhere meet at an
+    // edge all along: where the angle fades (two cylinders crossing) the
+    // edge goes on, instead of breaking into dashes
+    static ulong pairOf(int f0, int f1) => cast(ulong) min(f0, f1) << 32 | cast(uint) max(f0, f1);
+    bool[ulong] sharpPairs;
+    foreach (key, ts; faces)
+        if (ts.length == 2 && normals[ts[0]].dot(normals[ts[1]]) < limit)
+        {
+            immutable f0 = m.faceOf(ts[0]), f1 = m.faceOf(ts[1]);
+            if (f0 != f1 && f0 >= 0 && f1 >= 0)
+                sharpPairs[pairOf(f0, f1)] = true;
+        }
     foreach (key, ts; faces)
     {
         immutable a = cast(uint)(key >> 32), b = cast(uint)(key & 0xffff_ffff);
@@ -208,7 +220,12 @@ void edgeSets(const Mesh m, double angleDeg, out uint[2][] sharp, out uint[2][] 
         {
             immutable f0 = m.faceOf(ts[0]), f1 = m.faceOf(ts[1]);
             if (f0 != f1 && f0 >= 0 && f1 >= 0)
-                tangent ~= [a, b];
+            {
+                if (pairOf(f0, f1) in sharpPairs)
+                    sharp ~= [a, b];
+                else
+                    tangent ~= [a, b];
+            }
         }
     }
 }
