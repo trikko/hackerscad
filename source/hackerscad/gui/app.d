@@ -2100,6 +2100,25 @@ private:
     }
 
     /// Back to the final model: closes Inspect and rollback.
+    /// A new or another model: the view and the panels as at the start
+    /// (what the previous model left open, selected or hidden goes). The
+    /// panels shown or hidden, and the style, are the user's and stay.
+    void resetInterface()
+    {
+        showFinal();
+        clearSelection();
+        completion.close();
+        sectionToggle.setActive(false);
+        sectionPlane.setSelected(0);
+        inspectToggle.setActive(false);
+        sketchToggle.setActive(false);
+        rotateMode.setActive(true);
+        shadingChoice[Shading.edges].setActive(true);
+        perspectiveChoice.setActive(true);
+        sideStack.setVisibleChildName("params");
+        viewport.showAll();
+    }
+
     void showFinal()
     {
         viewport.clearRollback();
@@ -3009,7 +3028,7 @@ private:
             params.preset = null;
             params.invalidate();
             firstResult = true;
-            viewport.showAll();
+            resetInterface();
             buffer.setText(newModelTemplate);
             diskTime = 0;
             modified = false;
@@ -3143,7 +3162,7 @@ private:
         params.preset = null;
         params.invalidate();
         firstResult = true;
-        viewport.showAll();
+        resetInterface();
         buffer.setText(format("module %s;\n\nimport std.shapes;\n\n"
             ~ "// %s, from the same folder as this model: cut it, add to it, measure it\n"
             ~ "@part\nSolid imported() => load(\"%s\");\n", name, baseName(file), baseName(file)));
@@ -3160,7 +3179,7 @@ private:
         params.preset = null;
         params.invalidate();
         firstResult = true;
-        viewport.showAll();
+        resetInterface();
         buffer.setText(readText(path));
         diskTime = mtimeOf(path);
         modified = false;
