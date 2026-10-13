@@ -179,6 +179,9 @@ void project(ref View v, BrepKernel k)
         grow(g.x1, g.y1);
         grow(g.x2, g.y2);
     }
+    // a drawing can be rendered again (a second export): start afresh, or
+    // the loops would double and the even-odd hatching cancel out
+    v.hatchLoops = null;
     if (v.isSection)
     {
         // faces lying on the cutting plane, facing the viewer, are hatched

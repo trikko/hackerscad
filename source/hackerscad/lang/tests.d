@@ -1150,3 +1150,25 @@ unittest
     assert(partVolume(r, "tube") > 100);
     assert(error("@part Solid a() => path([vec(0, 0, 0), vec(0, 0, 20)]).move(x: 3);").message.canFind("Path"));
 }
+
+unittest
+{
+    // a drawing rendered twice (two exports) keeps its section hatched
+    import hackerscad.lang.drawingval : DrawingVal;
+    import hackerscad.drawing.sheet : toSvg;
+    auto r = runModel(q{
+        @part Solid block() => box(40, 20, 10) - cylinder(d: 8, h: 10);
+        @drawing Drawing sheet()
+        {
+            auto d = drawing(title: "Block");
+            d.standardViews(block);
+            d.section(block, XZ, label: "A");
+            return d;
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    auto dv = cast(DrawingVal) r.drawings[0].drawing;
+    auto first = toSvg(dv.render()), second = toSvg(dv.render());
+    assert(first == second, "a second render differs from the first");
+}
