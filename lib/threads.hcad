@@ -16,14 +16,17 @@ Solid threadedRod(Length d, Length pitch, Length length, bool chamfer = true, bo
     // swept along the helix: the profile's +x points to the axis, +y along it
     auto tooth = polygon([vec(overlap, -0.375 * pitch), vec(-h, -pitch / 16), vec(-h, pitch / 16),
                           vec(overlap, 0.375 * pitch)]);
-    auto ridge = tooth.sweep(helix(d: minor, pitch: pitch, height: length + 2 * pitch, left: left), frenet: true)
+    // right-handed, mirrored for a left-handed thread: along a left-handed helix the sweep
+    // would turn the tooth inwards
+    auto ridge = tooth.sweep(helix(d: minor, pitch: pitch, height: length + 2 * pitch), frenet: true)
         .move(z: -pitch);
     // the core is longer than the ridge: the ends are trimmed afterwards
     auto core = cylinder(d: minor + 0.02.mm, h: length + 4 * pitch).move(z: -2 * pitch);
     auto envelope = cylinder(d: d + 0.02.mm, h: length);
     if (chamfer)
         envelope = envelope.chamfer(edges.circles, d: h);
-    return (core + ridge) & envelope;
+    auto rod = (core + ridge) & envelope;
+    return left ? rod.mirror(XZ) : rod;
 }
 
 /// A tool to subtract for an internal thread that a `d` screw fits, from

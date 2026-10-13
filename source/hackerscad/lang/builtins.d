@@ -2239,12 +2239,12 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
 }
 
 /// ISO metric coarse threads (ISO 261): nominal diameter and pitch, mm.
-immutable double[2][] isoCoarse = [[1, 0.25], [1.2, 0.25], [1.4, 0.3], [1.6, 0.35], [2, 0.4], [2.5, 0.45], [3, 0.5],
+public immutable double[2][] isoCoarse = [[1, 0.25], [1.2, 0.25], [1.4, 0.3], [1.6, 0.35], [2, 0.4], [2.5, 0.45], [3, 0.5],
     [3.5, 0.6], [4, 0.7], [5, 0.8], [6, 1], [7, 1], [8, 1.25], [10, 1.5], [12, 1.75], [14, 2], [16, 2], [18, 2.5],
     [20, 2.5], [22, 2.5], [24, 3], [27, 3], [30, 3.5], [33, 3.5], [36, 4]];
 
 /// "M8" (coarse pitch) or "M8x1" (a fine one): the diameter and the pitch.
-bool metricSize(string s, out double d, out double pitch)
+public bool metricSize(string s, out double d, out double pitch)
 {
     import std.string : toLower, indexOf;
     auto t = s.toLower;
@@ -2280,12 +2280,15 @@ Brep threadedCore(BrepKernel k, double d, double pitch, double len, int starts, 
     immutable overlap = 0.1 * pitch;   // the tooth sinks into the core so that they fuse
     // swept along the helix with frenet: the profile's +x points to the axis, +y along it
     auto tooth = k.polygon([overlap, -0.375 * pitch, -h, -pitch / 16, -h, pitch / 16, overlap, 0.375 * pitch]);
-    auto ridge = k.translate(k.sweep(tooth, k.helix(minor / 2, lead, len + 2 * lead, left), true), Vec3(0, 0, -lead));
+    // right-handed: a left-handed helix turns the sweep's frame, and the tooth with it, inwards;
+    // the mirror image of a right-handed thread is the left-handed one
+    auto ridge = k.translate(k.sweep(tooth, k.helix(minor / 2, lead, len + 2 * lead, false), true), Vec3(0, 0, -lead));
     Brep[] all = [k.translate(k.cylinder(minor / 2 + 0.01, len + 4 * lead), Vec3(0, 0, -2 * lead)), ridge];
     // more starts: the same ridge turned, which along a helix is the same as moved a pitch up
     foreach (s; 1 .. starts)
         all ~= k.rotate(ridge, Vec3(0, 0, 1), 2 * PI * s / starts);
-    return k.fuseAll(all);
+    auto rod = k.fuseAll(all);
+    return left ? k.mirror(rod, Vec3(0, 1, 0)) : rod;
 }
 
 /// body.thread(faces.…, "M8", …): see def("thread").
@@ -2394,6 +2397,18 @@ Value threadFace(Interp it, ref CallArgs a)
         throw new HcadError(Code.type, format("the thread must be between 0 and the face's %g mm", faceLen),
             x.spanOf(x.has("turns") ? "turns" : "length"));
     immutable chamfer = x.flag("chamfer", true);
+    // where the thread stops short of the face, or the face ends against more material (a
+    // bolt's head), the threaded length reaches a fifth of a pitch into it: overlapping, the
+    // two fuse cleanly, where only touching along a plane they often do not
+    double sink = 0;
+    {
+        immutable probe = outside ? 0.5 * c.radius : 0;
+        auto side = c.axis.cross(abs(c.axis.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).normalized;
+        immutable fixedAt = freeAtTo ? to - len : from + len;
+        immutable beyond = fixedAt + (freeAtTo ? -0.01 : 0.01);
+        if (len < faceLen - 1e-6 || k.inside(b, c.origin + c.axis * beyond + side * probe))
+            sink = 0.2 * pitch;
+    }
 
     // built along +Z from 0 (the fixed end) to len (the free end), then placed
     Brep tool;
@@ -2403,7 +2418,7 @@ Value threadFace(Interp it, ref CallArgs a)
         {
             // what the grooves take away: around the cylinder, less the threaded rod
             immutable dd = d - 2 * clearance;
-            auto rod = threadedCore(k, dd, pitch, len, starts, left);
+            auto rod = k.translate(threadedCore(k, dd, pitch, len + sink, starts, left), Vec3(0, 0, -sink));
             auto keep = k.cylinder(dd / 2 + 0.01, len);
             if (chamfer)   // the tip's crest bevelled at 45°, a tooth high
             {
@@ -2415,12 +2430,21 @@ Value threadFace(Interp it, ref CallArgs a)
                 keep = k.chamfer(keep, top, h);
             }
             tool = k.boolean(rod, keep, BoolOp.common);
+            // into the material, a plain core a little narrower than the thread's: overlapping the
+            // shaft or the head there, the two fuse cleanly
+            if (sink > 0)
+                tool = k.boolean(tool, k.translate(k.cylinder(dd / 2 - h - 0.02, sink + 0.02), Vec3(0, 0, -sink)),
+                    BoolOp.fuse);
         }
         else
         {
             // the screw that fits, cut into the wall
             immutable dd = d + 2 * clearance;
-            tool = k.boolean(threadedCore(k, dd, pitch, len, starts, left), k.cylinder(dd, len), BoolOp.common);
+            // past the opening (and past the far end of a through hole) the tool reaches into the
+            // air a little: cutting nothing there, it leaves no face lying on the body's
+            immutable below = sink > 0 ? 0 : 0.2 * pitch, above = 0.2 * pitch;
+            tool = k.boolean(k.translate(threadedCore(k, dd, pitch, len + below + above, starts, left), Vec3(0, 0, -below)),
+                k.translate(k.cylinder(dd, len + below + above), Vec3(0, 0, -below)), BoolOp.common);
             if (chamfer)   // the opening countersunk at 45°, to start the screw
                 tool = k.boolean(tool, k.translate(k.cone(dd / 2 - h, dd / 2 + 0.01, h + 0.01), Vec3(0, 0, len - h)),
                     BoolOp.fuse);
