@@ -49,15 +49,13 @@ jobs:
           fi
           docker tag "$image" hackerscad-appimage
 
-      # dub's packages and objects (gid is most of the build), Manifold and
-      # the OpenCascade shim (rebuilt when their sources change)
+      # dub's packages and objects (gid is most of the build) and the
+      # OpenCascade shim (rebuilt when its sources change)
       - uses: actions/cache@v4
         with:
           path: |
             ~/dub-cache
             build/native
-            build/manifold
-            third_party/manifold
           key: linux-${{ hashFiles('packaging/linux/Containerfile', 'dub.selections.json', 'tools/build-native.sh') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*') }}
           restore-keys: linux-${{ hashFiles('packaging/linux/Containerfile', 'dub.selections.json', 'tools/build-native.sh') }}-
 
@@ -102,15 +100,13 @@ jobs:
           key: win-downloads-${{ hashFiles('tools/setup-win-cross.sh') }}
       - name: Toolchain and libraries
         run: ./tools/setup-win-cross.sh
-      # dub's packages and objects, Manifold and the native DLL; the DLL is
+      # dub's packages and objects and the native DLL; the DLL is
       # rebuilt when the shim changes, all of it when the MSYS2 packages do
       - uses: actions/cache@v4
         with:
           path: |
             ~/.dub
-            build/win/manifold
             build/win/native
-            third_party/manifold
           key: win-${{ hashFiles('build/win/pkgs.txt', 'tools/setup-win-cross.sh', 'tools/build-native*.sh', 'dub.selections.json') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*', 'data/logo/*.svg') }}
           restore-keys: win-${{ hashFiles('build/win/pkgs.txt', 'tools/setup-win-cross.sh', 'tools/build-native*.sh', 'dub.selections.json') }}-
       - name: Package
@@ -180,15 +176,13 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: |
-          brew install ldc dub opencascade tbb gtk4 libadwaita gtksourceview5 adwaita-icon-theme cmake ninja dylibbundler librsvg imagemagick
-          brew list --versions ldc opencascade tbb > brew-versions.txt
+          brew install ldc dub opencascade gtk4 libadwaita gtksourceview5 adwaita-icon-theme dylibbundler librsvg imagemagick
+          brew list --versions ldc opencascade > brew-versions.txt
       - uses: actions/cache@v4
         with:
           path: |
             ~/.dub
             build/native
-            build/manifold
-            third_party/manifold
           key: macos-${{ hashFiles('brew-versions.txt', 'dub.selections.json', 'tools/build-native.sh') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*') }}
           restore-keys: macos-${{ hashFiles('brew-versions.txt', 'dub.selections.json', 'tools/build-native.sh') }}-
       - name: Test

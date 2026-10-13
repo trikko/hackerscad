@@ -11,7 +11,7 @@ ARG OCCT_TAG=V7_9_3
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build git curl ca-certificates xz-utils file pkg-config \
-        libgtk-4-dev libadwaita-1-dev libgtksourceview-5-dev libtbb-dev \
+        libgtk-4-dev libadwaita-1-dev libgtksourceview-5-dev \
         libfreetype-dev libfontconfig-dev libgl-dev libx11-dev \
         desktop-file-utils librsvg2-bin squashfs-tools zsync \
     && rm -rf /var/lib/apt/lists/*

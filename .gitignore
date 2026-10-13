@@ -8,8 +8,6 @@ dist/
 *.pdb
 docs.json
 __dummy.html
-# downloaded by tools/build-native.sh
-third_party/manifold/
 # left by tests and by running the application
 untitled.hcad
 window-*.png

@@ -23,7 +23,7 @@ only source of truth, so it diffs, versions and reviews like any other code.
 * 🎛️ **Parameters**: `@param` gives a field in the side panel, `@preset` named
   sets of values, `unittest` the design's requirements.
 * 🧱 **Exact solids**: OpenCascade B-rep with fillets, shells, drafts, sweeps,
-  lofts and constrained sketches; Manifold for fast mesh booleans.
+  lofts, hulls, Minkowski sums, offsets and constrained sketches.
 * 📦 **Exports**: 3MF with one object and colour per part, STL (a zip of one
   file per part), STEP with a named body per part, PNG, and
   drawings with views, sections and dimensions as PDF, SVG or DXF.
@@ -219,7 +219,7 @@ bottom, as 3MF"*.
 ## Building
 
 Linux and macOS: install LDC and dub, OpenCascade 7.9, GTK 4, libadwaita,
-GtkSourceView 5, TBB, CMake and Ninja, then:
+GtkSourceView 5, then:
 
 ```sh
 dub build -b release          # bin/hcad, the command line tool
@@ -230,7 +230,7 @@ dub test :core                # the tests
 Without `-b release` dub makes a debug build: handy to work on hackerscad, but
 two to ten times slower on large meshes.
 
-Manifold is downloaded and built on the first build (`tools/build-native.sh`).
+The first build compiles the OpenCascade shim (`tools/build-native.sh`).
 
 Packages:
 
@@ -245,8 +245,7 @@ tools/docs.sh                       # regenerate the agent documentation in docs
 ## Credits
 
 hackerscad is built on [Open CASCADE Technology](https://dev.opencascade.org),
-[Manifold](https://github.com/elalish/manifold),
-[Clipper2](https://github.com/AngusJohnson/Clipper2), [GTK](https://gtk.org),
+[GTK](https://gtk.org),
 [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/),
 [GtkSourceView](https://wiki.gnome.org/Projects/GtkSourceView),
 [giD](https://github.com/Kymorphia/gid) and

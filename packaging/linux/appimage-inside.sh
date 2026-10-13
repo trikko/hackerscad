@@ -5,13 +5,13 @@ set -e
 version="${VERSION:-$(sed -n 's/.*appVersion = "\(.*\)";/\1/p' /src/source/hackerscad/about.d)}"
 
 # a clean copy: the host's build/ holds objects for another system (the CI
-# builds them in this same image: KEEP_NATIVE=1 keeps Manifold and the shim)
+# builds them in this same image: KEEP_NATIVE=1 keeps the shim)
 mkdir -p /work
 cd /src
 tar --exclude=./build --exclude=./bin --exclude=./dist --exclude=./.dub -cf - . | tar -xf - -C /work
 if [ -n "${KEEP_NATIVE:-}" ] && [ -d build/native ]; then
     mkdir -p /work/build
-    cp -a build/native build/manifold /work/build/
+    cp -a build/native /work/build/
 fi
 cd /work
 dub build -b release --compiler=ldc2
