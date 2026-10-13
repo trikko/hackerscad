@@ -222,10 +222,13 @@ Linux and macOS: install LDC and dub, OpenCascade 7.9, GTK 4, libadwaita,
 GtkSourceView 5, TBB, CMake and Ninja, then:
 
 ```sh
-dub build          # bin/hcad, the command line tool
-dub build :gui     # bin/hackerscad, the application
-dub test :core     # the tests
+dub build -b release          # bin/hcad, the command line tool
+dub build -b release :gui     # bin/hackerscad, the application
+dub test :core                # the tests
 ```
+
+Without `-b release` dub makes a debug build: handy to work on hackerscad, but
+two to ten times slower on large meshes.
 
 Manifold is downloaded and built on the first build (`tools/build-native.sh`).
 
