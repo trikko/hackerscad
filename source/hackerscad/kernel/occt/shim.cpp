@@ -1877,7 +1877,10 @@ hc_shape *hc_helix(double r, double pitch, double height, int left)
         double turns = height / pitch;
         double len = turns * std::sqrt(4 * M_PI * M_PI + pitch * pitch);
         TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, cyl, 0, len).Edge();
-        BRepLib::BuildCurves3d(e);
+        // the curve in space follows the line closely only with enough pieces: a few per turn
+        // (by default long helices get too few, and sweeps along them fail)
+        const int segments = std::max(30, (int)std::ceil(turns * 4));
+        BRepLib::BuildCurves3d(e, 1e-6, GeomAbs_C2, 9, segments);
         return primitive(BRepBuilderAPI_MakeWire(e).Wire());
     });
 }
