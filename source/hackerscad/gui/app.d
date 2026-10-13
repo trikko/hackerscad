@@ -57,7 +57,7 @@ import gtk.scale : Scale;
 import gtk.gesture_click : GestureClick;
 import gtk.event_controller_key : EventControllerKey;
 import gtk.event_controller_motion : EventControllerMotion;
-import gdk.types : ModifierType, KEY_Escape, KEY_space, KEY_Control_L, KEY_Control_R;
+import gdk.types : ModifierType, KEY_Escape, KEY_space, KEY_Control_L, KEY_Control_R, KEY_Meta_L, KEY_Meta_R;
 import hackerscad.geom.vec : Vec3;
 import glib.global : idleAdd;
 
@@ -84,6 +84,22 @@ import hackerscad.lang.value : SolidVal;
 import hackerscad.lang.sketchval : SketchView;
 import hackerscad.tool.guiclient : toOverrides;
 import std.json;
+
+/// The key held to click a line of code and see what it makes: Ctrl, and
+/// Cmd on macOS, where Ctrl+click is the right click.
+version (OSX)
+{
+    enum inspectClick = ModifierType.MetaMask;
+    static immutable uint[] inspectKeys = [KEY_Meta_L, KEY_Meta_R];
+    /// The key of the shortcuts, as the tooltips name it.
+    enum shortcutKey = "Cmd";
+}
+else
+{
+    enum inspectClick = ModifierType.ControlMask;
+    static immutable uint[] inspectKeys = [KEY_Control_L, KEY_Control_R];
+    enum shortcutKey = "Ctrl";
+}
 
 /// What the window opens on when there is no file: a small model that
 /// shows the main ideas.
@@ -445,16 +461,16 @@ final class MainWindow
         auto header = new HeaderBar;
         title = new WindowTitle(baseName(path), dirName(path));
         header.setTitleWidget(title);
-        header.packStart(button("document-new-symbolic", "New model (Ctrl+N)", &newFile));
-        header.packStart(button("document-open-symbolic", "Open (Ctrl+O)", &openFile));
+        header.packStart(button("document-new-symbolic", "New model (" ~ shortcutKey ~ "+N)", &newFile));
+        header.packStart(button("document-open-symbolic", "Open (" ~ shortcutKey ~ "+O)", &openFile));
         // words, not icons: Adwaita's save (an arrow down) and send (an
         // arrow out) read as download and upload
-        header.packStart(textButton("Save", "Save (Ctrl+S)", &save));
+        header.packStart(textButton("Save", "Save (" ~ shortcutKey ~ "+S)", &save));
         header.packStart(exportMenu());
         busyIndicator = new Spinner;
         busyIndicator.setTooltipText("Evaluating the model");
         busyIndicator.setVisible(false);
-        consoleToggle = toggle("utilities-terminal-symbolic", "Show console (Ctrl+J)", true);
+        consoleToggle = toggle("utilities-terminal-symbolic", "Show console (" ~ shortcutKey ~ "+J)", true);
         paramsToggle = toggle("sidebar-show-right-symbolic", "Show parameters (F9)", true);
         codeToggle = toggle("sidebar-show-symbolic", "Show code (F7)", true);
         viewToggle = toggle("hcad-view-symbolic", "Show the 3D view (F8)", true);
@@ -495,8 +511,8 @@ final class MainWindow
             sectionBar.setVisible(sectionToggle.getActive());
             updateSection(true);
         });
-        inspectToggle = toggle("edit-find-symbolic", "Inspect (Ctrl+I): click a line of code to see the solids and "
-            ~ "2D profiles it makes, or a function's name to see what it returns; Ctrl+click a line does the same", false);
+        inspectToggle = toggle("edit-find-symbolic", "Inspect (" ~ shortcutKey ~ "+I): click a line of code to see the solids and "
+            ~ "2D profiles it makes, or a function's name to see what it returns; " ~ shortcutKey ~ "+click a line does the same", false);
         inspectToggle.connectToggled(() => updateEditorCursor(false));
         // left-drag mode: rotate or pan (right drag always rotates, middle pans)
         import gtk.icon_theme : IconTheme;
@@ -863,23 +879,23 @@ final class MainWindow
         window.setContent(toolbar);
 
         // ---- actions and shortcuts
-        action(app, "save", ["<Control>s"], &save);
-        action(app, "open", ["<Control>o"], &openFile);
-        action(app, "new", ["<Control>n"], &newFile);
-        action(app, "save-as", ["<Control><Shift>s"], () => saveAs());
-        action(app, "quit", ["<Control>q"], () => window.close());
-        // Ctrl+E: the format used last (3MF at first); the menus name them all
-        action(app, "export", ["<Control>e"], () => exportFile(exportFormat));
+        action(app, "save", ["<Primary>s"], &save);
+        action(app, "open", ["<Primary>o"], &openFile);
+        action(app, "new", ["<Primary>n"], &newFile);
+        action(app, "save-as", ["<Primary><Shift>s"], () => saveAs());
+        appQuit(app);
+        // Ctrl+E (Cmd+E on macOS): the format used last (3MF at first); the menus name them all
+        action(app, "export", ["<Primary>e"], () => exportFile(exportFormat));
         foreach (f; exportFormats)
             exportAction(app, f.ext);
         action(app, "fit", ["F5"], () => viewport.fit());
         action(app, "params", ["F9"], () => paramsToggle.setActive(!paramsToggle.getActive()));
-        action(app, "console", ["<Control>j"], () => consoleToggle.setActive(!consoleToggle.getActive()));
+        action(app, "console", ["<Primary>j"], () => consoleToggle.setActive(!consoleToggle.getActive()));
         action(app, "code", ["F7"], () => codeToggle.setActive(!codeToggle.getActive()));
         action(app, "view", ["F8"], () => viewToggle.setActive(!viewToggle.getActive()));
         themeAction();
         followStyle();
-        action(app, "inspect", ["<Control>i"], () {
+        action(app, "inspect", ["<Primary>i"], () {
             TextIter s, e;
             if (buffer.getSelectionBounds(s, e) && e.getLine() > s.getLine())
                 inspectCursor();
@@ -919,7 +935,7 @@ final class MainWindow
         {
             auto click = new GestureClick;
             click.connectReleased((int n, double x, double y, GestureClick g) {
-                immutable ctrl = (g.getCurrentEventState() & ModifierType.ControlMask) != 0;
+                immutable ctrl = (g.getCurrentEventState() & inspectClick) != 0;
                 if (!ctrl && !inspectToggle.getActive())
                     return;
                 TextIter s, e;
@@ -938,10 +954,10 @@ final class MainWindow
             });
             editor.addController(click);
 
-            // the lens cursor while Ctrl is held over the code
+            // the lens cursor while Ctrl (Cmd on macOS) is held over the code
             auto keys = new EventControllerKey;
             keys.connectKeyPressed((uint key, uint code, ModifierType state) {
-                if (key == KEY_Control_L || key == KEY_Control_R)
+                if (inspectKeys.canFind(key))
                     updateEditorCursor(true);
                 else if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback))
                 {
@@ -953,13 +969,13 @@ final class MainWindow
                 return false;
             });
             keys.connectKeyReleased((uint key, uint code, ModifierType state) {
-                if (key == KEY_Control_L || key == KEY_Control_R)
+                if (inspectKeys.canFind(key))
                     updateEditorCursor(false);
             });
             editor.addController(keys);
             auto motion = new EventControllerMotion;
             motion.connectMotion((double x, double y, EventControllerMotion m) {
-                updateEditorCursor((m.getCurrentEventState() & ModifierType.ControlMask) != 0);
+                updateEditorCursor((m.getCurrentEventState() & inspectClick) != 0);
             });
             motion.connectLeave(() => updateEditorCursor(false));
             editor.addController(motion);
@@ -1059,7 +1075,7 @@ private:
         look.appendSubmenu("Style", style);
         auto app = new Menu;
         app.append("About hackerscad", "win.about");
-        app.append("Quit", "win.quit");
+        app.append("Quit", "app.quit");
         auto menu = new Menu;
         menu.appendSection(null, files);
         menu.appendSection(null, help);
@@ -1209,6 +1225,21 @@ private:
         import std.conv : to;
         d.setDebugInfo(appName ~ " " ~ appVersion ~ "\n" ~ os.to!string ~ "\n" ~ path);
         d.present(window);
+    }
+
+    /// app.quit, once per application: closes every window, each asking
+    /// about unsaved changes. macOS's application menu calls it (Quit, Cmd+Q).
+    static void appQuit(AdwApplication app)
+    {
+        if (app.lookupAction("quit") !is null)
+            return;
+        auto a = new SimpleAction("quit");
+        a.connectActivate(() {
+            foreach (w; app.getWindows())
+                w.close();
+        });
+        app.addAction(a);
+        app.setAccelsForAction("app.quit", ["<Primary>q"]);
     }
 
     void action(AdwApplication app, string name, string[] accels, void delegate() run)
@@ -4222,7 +4253,7 @@ private:
         auto b = new MenuButton;
         b.setLabel("Export");
         b.setAlwaysShowArrow(true);
-        b.setTooltipText("Export: 3MF, STL, STEP or PNG (Ctrl+E repeats the last format)");
+        b.setTooltipText("Export: 3MF, STL, STEP or PNG (" ~ shortcutKey ~ "+E repeats the last format)");
         b.setMenuModel(exportModel());
         return b;
     }
