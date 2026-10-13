@@ -1412,7 +1412,7 @@ StructDef builtinStruct(string name, string[] fields, string type)
 
 // ================================================================ helpers used by the interpreter
 
-Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span)
+Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span, bool merged = false)
 {
     SolidVal r;
     if (a.brep is null || b.brep is null)
@@ -1427,7 +1427,7 @@ Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span)
     }
     try
     {
-        auto b2 = it.kernel.boolean(a.brep, b.brep, op);
+        auto b2 = merged ? it.kernel.booleanMerged(a.brep, b.brep, op) : it.kernel.boolean(a.brep, b.brep, op);
         // an operation can leave nothing (disjoint intersection, total cut)
         if (it.kernel.faceCount(b2) == 0)
         {
@@ -2215,7 +2215,8 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
             x.spanOf("along"));
     auto tool = derived(it, prisms.length == 1 ? prisms[0] : k.fuseAll(prisms), [body], fn, a.span);
     tool.flat = false;
-    return solidBoolean(it, body, tool, outwards ? BoolOp.fuse : BoolOp.cut, a.span);
+    // the faces beside the pushed one stay whole: a box pulled up is a taller box
+    return solidBoolean(it, body, tool, outwards ? BoolOp.fuse : BoolOp.cut, a.span, true);
 }
 
 int count(ref Args x, string n)

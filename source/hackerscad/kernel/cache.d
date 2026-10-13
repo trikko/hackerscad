@@ -88,6 +88,8 @@ final class CachingKernel : BrepKernel
     Brep scale(Brep s, double f) => op(key("scale", s, f), inner.scale(s, f));
     Brep mirror(Brep s, Vec3 n) => op(key("mirror", s, n), inner.mirror(s, n));
     Brep boolean(Brep a, Brep b, BoolOp o) => op(key("boolean", a, b, cast(int) o), inner.boolean(a, b, o));
+    Brep booleanMerged(Brep a, Brep b, BoolOp o) =>
+        op(key("booleanMerged", a, b, cast(int) o), inner.booleanMerged(a, b, o));
 
     Brep offset(Brep s, double d) => op(key("solidOffset", s, d), inner.offset(s, d));
     MassProps massProps(Brep s) => inner.massProps(s);

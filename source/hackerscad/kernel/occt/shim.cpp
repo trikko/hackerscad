@@ -92,6 +92,8 @@
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <ShapeFix_Solid.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <BRepTools_History.hxx>
+#include <memory>
 #include <TopoDS_Shell.hxx>
 #include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -592,6 +594,57 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
         case HC_COMMON: return run(BRepAlgoAPI_Common(a->shape, b->shape));
         default: set_error("invalid boolean operation"); return nullptr;
         }
+    });
+}
+
+// A boolean of solids whose result has the faces lying on one surface
+// merged (a face pushed or pulled stays one face with its neighbours), each
+// merged face keeping the origin of one of the faces it was made of.
+hc_shape *hc_boolean_merged(const hc_shape *a, const hc_shape *b, int op)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::unique_ptr<BRepAlgoAPI_BooleanOperation> mk;
+        switch (op) {
+        case HC_FUSE: mk.reset(new BRepAlgoAPI_Fuse(a->shape, b->shape)); break;
+        case HC_CUT: mk.reset(new BRepAlgoAPI_Cut(a->shape, b->shape)); break;
+        case HC_COMMON: mk.reset(new BRepAlgoAPI_Common(a->shape, b->shape)); break;
+        default: set_error("invalid boolean operation"); return nullptr;
+        }
+        if (!mk->IsDone()) {
+            set_error("the boolean operation failed");
+            return nullptr;
+        }
+        const TopoDS_Shape r = mk->Shape();
+        history_record(*mk, {&a->shape, &b->shape}, r);
+        std::vector<Origin> before = g_history;
+        TopTools_IndexedMapOfShape faces;
+        TopExp::MapShapes(r, TopAbs_FACE, faces);
+        ShapeUpgrade_UnifySameDomain unify(r, Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        const TopoDS_Shape u = unify.Shape();
+        history_new(u);
+        TopTools_IndexedMapOfShape merged;
+        TopExp::MapShapes(u, TopAbs_FACE, merged);
+        Handle(BRepTools_History) h = unify.History();
+        // the first operand's origin wins: the body's face, not the tool's
+        for (int pass = 0; pass < 2; pass++)
+            for (int i = 1; i <= faces.Extent(); i++) {
+                const Origin o = before[i - 1];
+                if (o.input < 0 || (pass == 0) != (o.input == 0))
+                    continue;
+                const TopoDS_Shape &f = faces(i);
+                auto set = [&](const TopoDS_Shape &g) {
+                    int j = merged.FindIndex(g);
+                    if (j > 0 && g_history[j - 1].input < 0)
+                        g_history[j - 1] = o;
+                };
+                if (h.IsNull() || (!h->IsRemoved(f) && h->Modified(f).IsEmpty()))
+                    set(f);
+                else
+                    for (TopTools_ListOfShape::Iterator it(h->Modified(f)); it.More(); it.Next())
+                        set(it.Value());
+            }
+        return wrap(u);
     });
 }
 

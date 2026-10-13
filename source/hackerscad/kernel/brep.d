@@ -136,6 +136,9 @@ interface BrepKernel
     Brep mirror(Brep s, Vec3 normal);
 
     Brep boolean(Brep a, Brep b, BoolOp op);
+    /// The same, with the result's faces that lie on one surface merged
+    /// into one (what pushing or pulling a face should give).
+    Brep booleanMerged(Brep a, Brep b, BoolOp op);
     /// The union of all of `parts`, in one go.
     Brep fuseAll(Brep[] parts);
     /// The disconnected solid bodies of `s` (face origins point into `s`).

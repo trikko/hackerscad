@@ -1444,6 +1444,8 @@ unittest
         @part Solid down() => b.cut(faces.top, depth: 4);
         @part Solid sides() => b.extrude(faces.filter(f => f.isPerpendicular(Z) == false), depth: 1);
         @part Solid slant() => b.extrude(faces.top, depth: 5, along: vec(1, 0, 1));
+        // the sides stay one face each: the front can be the plane of a frame
+        @part Solid merged() => up().cut(circle(d: 2), on: faces.front, depth: 1.mm);
     });
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);

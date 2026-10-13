@@ -158,6 +158,12 @@ final class OcctKernel : BrepKernel
         return wrap(hc_boolean(h(a), h(b), codes[op]), op.to!string);
     }
 
+    Brep booleanMerged(Brep a, Brep b, BoolOp op)
+    {
+        static immutable int[BoolOp.max + 1] codes = [HC_FUSE, HC_CUT, HC_COMMON];
+        return wrap(hc_boolean_merged(h(a), h(b), codes[op]), op.to!string);
+    }
+
     EdgeInfo[] edges(Brep s)
     {
         auto r = new EdgeInfo[hc_edge_count(h(s))];

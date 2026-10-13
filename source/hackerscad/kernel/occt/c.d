@@ -45,6 +45,7 @@ hc_shape* hc_scale(const(hc_shape)* s, double factor);
 hc_shape* hc_mirror(const(hc_shape)* s, double nx, double ny, double nz);
 
 hc_shape* hc_boolean(const(hc_shape)* a, const(hc_shape)* b, int op);
+hc_shape* hc_boolean_merged(const(hc_shape)* a, const(hc_shape)* b, int op);
 hc_shape* hc_fuse_all(const(hc_shape*)* shapes, int n);
 hc_shape* hc_offset_solid(const(hc_shape)* s, double d);
 int hc_mass_props(const(hc_shape)* s, ref double[7] output);
