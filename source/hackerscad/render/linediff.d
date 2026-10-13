@@ -56,21 +56,32 @@ Direction[] orbit(double depth = 0)
     return r;
 }
 
-/// A group of lines one part has and the other has not.
+/// What a stroke is.
+enum Kind
+{
+    missing, /// lines of b (the original) that a lacks
+    extra,   /// lines of a that b has not
+    facing,  /// surface that faces another way in a than in b (shaded otherwise: twisted, curved, tilted)
+}
+
+/// A group of lines one part has and the other has not, or of surface facing otherwise.
 struct Stroke
 {
-    bool missing;      /// a line of b (the original) that a lacks; else a line of a that b has not
+    Kind kind;
     Vec3 lo, hi;       /// its box on the part
-    double length = 0; /// mm, about
+    double length = 0; /// mm of lines, about; for a surface, its area in mm²
     size_t[] seenFrom; /// the directions (indices) that show it
+
+    bool missing() const => kind == Kind.missing;
 }
 
 /// The drawings compared from each direction.
 struct LineDiff
 {
     Direction[] directions;
-    size_t[] differing;  /// per direction: how many pixels of lines differ
-    Image[] pictures;    /// per direction: common lines grey, b's only red, a's only blue
+    size_t[] differing;  /// per direction: how many pixels differ (lines, and surface facing otherwise)
+    /// per direction: common lines grey, b's only red, a's only blue, surface facing otherwise violet
+    Image[] pictures;
     Stroke[] strokes;    /// most seen and longest first
     double tolerance;    /// mm: lines nearer than this in a picture count as the same
 }
@@ -99,9 +110,9 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
         diag = (hi - lo).length;
     }
     immutable g = max(0.4, diag / 250);
-    // per kind (0 missing, 1 extra): cell key → the views that see a differing line in it, as bits
+    // per kind: cell key → the views that see a difference in it, as bits
     immutable words = (directions.length + 63) / 64;
-    ulong[][long][2] cells;
+    ulong[][long][3] cells;
     void mark(int kind, long c, size_t vi)
     {
         auto bits = c in cells[kind];
@@ -144,40 +155,74 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
         auto onlyB = minus(db.line, grow(da.line, n, reach)), onlyA = minus(da.line, grow(db.line, n, reach));
         dropSpecks(onlyB, n, 6 * ss);
         dropSpecks(onlyA, n, 6 * ss);
-        size_t count;
+        auto lines = new bool[n * n];
+        foreach (q; 0 .. n * n)
+            lines[q] = da.line[q] || db.line[q];
+        // surface both have there, facing more than 15° apart from all of the other's around it (as for the
+        // lines: where a hair moves an edge, the normals jump a pixel or two over)
+        auto facing = new bool[n * n];
+        immutable limit = cos(15 * PI / 180);
+        enum near = ss;
+        bool alike(const ref Drawn from, const ref Drawn to, int x, int y)
+        {
+            immutable want = from.normal[y * n + x];
+            foreach (yy; max(0, y - near) .. min(cast(int) n, y + near + 1))
+                foreach (xx; max(0, x - near) .. min(cast(int) n, x + near + 1))
+                {
+                    immutable o = yy * n + xx;
+                    if (to.covered[o] && to.normal[o].dot(want) >= limit)
+                        return true;
+                }
+            return false;
+        }
+        foreach (y; 0 .. cast(int) n)
+            foreach (x; 0 .. cast(int) n)
+            {
+                immutable q = y * n + x;
+                if (da.covered[q] && db.covered[q] && da.normal[q].dot(db.normal[q]) < limit)
+                    facing[q] = !alike(da, db, x, y) || !alike(db, da, x, y);
+            }
+        dropSpecks(facing, n, 4 * ss * ss);
+        size_t count, shaded;
         foreach (q; 0 .. n * n)
         {
             if (onlyB[q])
-                mark(0, key(db.at[q]), vi);
+                mark(Kind.missing, key(db.at[q]), vi);
             if (onlyA[q])
-                mark(1, key(da.at[q]), vi);
+                mark(Kind.extra, key(da.at[q]), vi);
+            if (facing[q])
+                mark(Kind.facing, key(db.pos[q]), vi);
             count += onlyA[q] + onlyB[q];
+            shaded += facing[q];
         }
-        r.differing ~= count / ss;
+        r.differing ~= count / ss + shaded / (ss * ss);
 
-        // the picture: grey the lines in common, red and blue (thickened) what differs
+        // the picture: grey the lines in common, red and blue (thickened) what differs, violet the
+        // surface facing otherwise
         auto red = grow(onlyB, n, ss), blue = grow(onlyA, n, ss);
         auto img = Image(size, size, new ubyte[size * size * 3]);
         foreach (y; 0 .. size)
             foreach (x; 0 .. size)
             {
-                bool rr, bb, gg;
+                bool rr, bb, gg, vv;
                 foreach (dy; 0 .. ss)
                     foreach (dx; 0 .. ss)
                     {
                         immutable q = (y * ss + dy) * n + x * ss + dx;
                         rr |= red[q];
                         bb |= blue[q];
-                        gg |= da.line[q] || db.line[q];
+                        gg |= lines[q];
+                        vv |= facing[q];
                     }
-                ubyte[3] c = rr ? [220, 30, 30] : bb ? [30, 90, 230] : gg ? [150, 150, 158] : [255, 255, 255];
+                ubyte[3] c = rr ? [220, 30, 30] : bb ? [30, 90, 230] : gg ? [150, 150, 158] : vv ? [176, 120, 236]
+                    : [255, 255, 255];
                 img.rgb[(y * size + x) * 3 .. (y * size + x) * 3 + 3] = c[];
             }
         r.pictures ~= img;
     }
 
     // the strokes: cells that touch, of one kind
-    foreach (kind; 0 .. 2)
+    foreach (kind; [Kind.missing, Kind.extra, Kind.facing])
     {
         bool[long] done;
         foreach (c0, _; cells[kind])
@@ -185,7 +230,7 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
             if (c0 in done)
                 continue;
             Stroke s;
-            s.missing = kind == 0;
+            s.kind = kind;
             s.lo = Vec3(double.infinity, double.infinity, double.infinity);
             s.hi = -s.lo;
             auto views = new ulong[words];
@@ -217,9 +262,9 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
             foreach (vi; 0 .. directions.length)
                 if (views[vi / 64] & (1UL << (vi % 64)))
                     s.seenFrom ~= vi;
-            s.length = count * g;
+            s.length = kind == Kind.facing ? count * g * g : count * g;
             // a line seen from one direction only is often where two drawings part by a hair
-            if (s.seenFrom.length >= 2 && s.length >= 4 * g)
+            if (s.seenFrom.length >= 2 && count >= 4)
                 r.strokes ~= s;
         }
     }
@@ -262,6 +307,25 @@ size_t[] telling(const LineDiff d, size_t count)
             foreach (v; s.seenFrom)
                 if (v == pick)
                     shown[si] = true;
+    }
+    return r;
+}
+
+/// Twelve directions of `d` that stay the same from one comparison to the
+/// next (to compare two versions picture by picture): around the part at
+/// 30° above, level and 30° below, four each.
+size_t[] fixedViews(const LineDiff d)
+{
+    size_t[] r;
+    foreach (want; [Direction(45, 30), Direction(135, 30), Direction(225, 30), Direction(315, 30), Direction(0, 0),
+            Direction(90, 0), Direction(180, 0), Direction(270, 0), Direction(45, -30), Direction(135, -30),
+            Direction(225, -30), Direction(315, -30)])
+    {
+        size_t best;
+        foreach (i, dir; d.directions)
+            if (dir.eye.dot(want.eye) > d.directions[best].eye.dot(want.eye))
+                best = i;
+        r ~= best;
     }
     return r;
 }
@@ -311,11 +375,14 @@ struct Camera
     Vec3 project(Vec3 p) const => Vec3(p.dot(right), p.dot(up), p.dot(eye));
 }
 
-/// A drawing: which pixels are on a line, and where on the part each one is.
+/// A drawing: which pixels are on a line, and where on the part each one is;
+/// which are on the surface, which way it faces there and where it is.
 struct Drawn
 {
     bool[] line;
     Vec3[] at;
+    bool[] covered;
+    Vec3[] normal, pos;
 }
 
 /// A mesh's edges with the normals of the faces on each side: drawn when
@@ -326,6 +393,7 @@ struct Lines
     uint[2][] edges;
     Vec3[2][] normals;  // the second is nan on an open edge
     bool[] sharp;
+    Vec3[] corners;     // per triangle corner: the normal there, smooth across edges that are not sharp
 
     this(const Mesh m)
     {
@@ -364,6 +432,29 @@ struct Lines
         immutable limit = cos(20 * PI / 180);
         foreach (i, nn; normals)
             sharp[i] = nn[1].x != nn[1].x || nn[0].dot(nn[1]) < limit;
+        // smooth normals: at each corner, the faces around its vertex that turn less than 30° from its own,
+        // weighted by their areas (a curved surface is not shaded facet by facet)
+        size_t[][] around = new size_t[][mesh.vertexCount];
+        auto weighted = new Vec3[mesh.triangleCount];
+        foreach (t; 0 .. mesh.triangleCount)
+        {
+            auto p0 = mesh.vertex(mesh.tris[3 * t]), p1 = mesh.vertex(mesh.tris[3 * t + 1]),
+                p2 = mesh.vertex(mesh.tris[3 * t + 2]);
+            weighted[t] = (p1 - p0).cross(p2 - p0);
+            foreach (c; 0 .. 3)
+                around[mesh.tris[3 * t + c]] ~= t;
+        }
+        immutable smooth = cos(30 * PI / 180);
+        corners = new Vec3[3 * mesh.triangleCount];
+        foreach (t; 0 .. mesh.triangleCount)
+            foreach (c; 0 .. 3)
+            {
+                Vec3 sum;
+                foreach (u; around[mesh.tris[3 * t + c]])
+                    if (tn[u].dot(tn[t]) >= smooth)
+                        sum = sum + weighted[u];
+                corners[3 * t + c] = sum.length > 0 ? sum.normalized : tn[t];
+            }
     }
 
     /// Seen from `eye`, without what is nearer than `cut` (in the view's depth): there the section's
@@ -372,10 +463,15 @@ struct Lines
     {
         auto depth = new float[n * n];
         depth[] = -float.infinity;
+        Drawn d;
+        d.covered = new bool[n * n];
+        d.normal = new Vec3[n * n];
+        d.pos = new Vec3[n * n];
         foreach (t; 0 .. mesh.triangleCount)
         {
-            auto a = toScreen(mesh.vertex(mesh.tris[3 * t])), b = toScreen(mesh.vertex(mesh.tris[3 * t + 1])),
-                c = toScreen(mesh.vertex(mesh.tris[3 * t + 2]));
+            auto p0 = mesh.vertex(mesh.tris[3 * t]), p1 = mesh.vertex(mesh.tris[3 * t + 1]),
+                p2 = mesh.vertex(mesh.tris[3 * t + 2]);
+            auto a = toScreen(p0), b = toScreen(p1), c = toScreen(p2);
             immutable area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
             if (abs(area) < 1e-12)
                 continue;
@@ -392,10 +488,17 @@ struct Lines
                         continue;
                     immutable z = w0 * a.z + w1 * b.z + w2 * c.z;
                     if (z > depth[y * n + x] && z <= cut)
-                        depth[y * n + x] = cast(float) z;
+                    {
+                        immutable q = y * n + x;
+                        depth[q] = cast(float) z;
+                        d.covered[q] = true;
+                        // facing the viewer (two-sided: seen from inside, once peeled, as from outside)
+                        auto nn = (corners[3 * t] * w0 + corners[3 * t + 1] * w1 + corners[3 * t + 2] * w2).normalized;
+                        d.normal[q] = nn.dot(eye) < 0 ? -nn : nn;
+                        d.pos[q] = p0 * w0 + p1 * w1 + p2 * w2;
+                    }
                 }
         }
-        Drawn d;
         d.line = new bool[n * n];
         d.at = new Vec3[n * n];
         void segment(Vec3 p, Vec3 q, bool hidden)
@@ -572,4 +675,9 @@ unittest
     foreach (st; d.strokes)
         lost += st.missing;
     assert(lost, "lines of the original the copy lacks");
+    // where the copy has two faces meeting square, the original its chamfer facing between them
+    bool turned;
+    foreach (st; d.strokes)
+        turned |= st.kind == Kind.facing && st.lo.x > 6 && st.hi.y < 4;
+    assert(turned, "the chamfer's surface faces otherwise");
 }

@@ -341,18 +341,35 @@ final class Run
 
     /// The drawings of part `a` (a copy) and part `b` (the original) compared
     /// from many directions around them: the lines one has and the other
-    /// has not, as strokes on the part, the most seen and longest first;
-    /// `picture` the `shown` views that show most of them. `depth` (mm)
-    /// peels them like an onion, that much cut away towards each view: the
-    /// inside, once the outside matches.
-    string lines(size_t a, size_t b, double depth, size_t shown, out ubyte[] picture)
+    /// has not, and the surface facing another way in one (twisted, curved,
+    /// tilted: shaded otherwise), as places on the part, the most seen and
+    /// largest first; `picture` the `shown` views that show most of them, or
+    /// with `fixed` twelve views that stay the same from one version to the
+    /// next. `depth` (mm) peels them like an onion, that much cut away towards
+    /// each view: the inside, once the outside matches. `voids` compares
+    /// their holes, pockets and cavities made solid instead (b filled from its
+    /// shadows, minus each part).
+    string lines(size_t a, size_t b, double depth, size_t shown, bool fixed, bool voids, out ubyte[] picture)
     {
-        import hackerscad.render.linediff : lineDiff, orbit, sheet, telling;
+        import hackerscad.render.linediff : fixedViews, Kind, lineDiff, orbit, sheet, telling;
         import hackerscad.geom.meshfeatures : plausible;
-        partMeshes();
         import std.algorithm : max, min;
         import std.math : ceil;
-        auto d = lineDiff(meshes[a], meshes[b], orbit(max(0.0, depth)), 300);
+        partMeshes();
+        Mesh ma = meshes[a], mb = meshes[b];
+        string na = result.parts[a].name, nb = result.parts[b].name;
+        if (voids)
+        {
+            import hackerscad.kernel.brep : BoolOp;
+            import hackerscad.lang.convex : shapeOfShadows;
+            import hackerscad.lang.errors : Span;
+            auto filled = shapeOfShadows(kernel, result.parts[b].solid.brep, Span(path));
+            ma = kernel.tessellate(kernel.boolean(filled, result.parts[a].solid.brep, BoolOp.cut), tolerance, 0.2).welded;
+            mb = kernel.tessellate(kernel.boolean(filled, result.parts[b].solid.brep, BoolOp.cut), tolerance, 0.2).welded;
+            na = "the voids of " ~ na;
+            nb = "the voids of " ~ nb;
+        }
+        auto d = lineDiff(ma, mb, orbit(max(0.0, depth)), 300);
         // the next peel: a quarter of the thinnest side, in whole millimetres
         auto bb = kernel.bbox(result.parts[b].solid.brep);
         immutable thinnest = min(bb.size.x, bb.size.y, bb.size.z);
@@ -363,13 +380,12 @@ final class Run
             immutable p = plausible(v);
             return format("%g", p == 0 ? 0.0 : p);
         }
-        auto views = telling(d, shown);
+        auto views = fixed ? fixedViews(d) : telling(d, shown);
         auto img = sheet(d, views);
         picture = encodePng(img.rgb, img.width, img.height);
         string s = format("%s against %s, drawn as lines from %d directions around them%s, lines within %s mm taken "
-            ~ "as the same:\n", result.parts[a].name, result.parts[b].name, d.directions.length,
-            depth > 0 ? format(", peeled %s mm deep", mm(depth)) : " (the outside)",
-            mm(d.tolerance));
+            ~ "as the same, surface facing more than 15° otherwise marked:\n", na, nb, d.directions.length,
+            depth > 0 ? format(", peeled %s mm deep", mm(depth)) : " (the outside)", mm(d.tolerance));
         if (d.strokes.length == 0)
         {
             // the drawings match: deeper only if something differs inside, where no line shows
@@ -384,16 +400,17 @@ final class Run
                     ~ mm(2 * h) ~ " mm): no need to peel further\n";
             else if (deeper)
                 s ~= format("  the drawings match, but %s mm³ of material differ in %d places (hcad diff): peel deeper "
-                    ~ "(depth %s mm) to see them\n", mm(volume), regions.length, mm(next));
+                    ~ "(depth %s mm) or compare the voids to see them\n", mm(volume), regions.length, mm(next));
             else
                 s ~= format("  the drawings match this deep; %s mm³ of material still differ (hcad diff)\n", mm(volume));
         }
-        size_t lacks, extra;
+        size_t[3] count;
         foreach (st; d.strokes)
-            (st.missing ? lacks : extra)++;
+            count[st.kind]++;
         if (d.strokes.length)
-            s ~= format("  %d groups of lines of %s that %s lacks, %d of %s that %s has not; the most seen:\n", lacks,
-                result.parts[b].name, result.parts[a].name, extra, result.parts[a].name, result.parts[b].name);
+            s ~= format("  %d groups of lines of %s that %s lacks, %d of %s that %s has not, %d places where the surface "
+                ~ "faces otherwise; the most seen:\n", count[Kind.missing], nb, na, count[Kind.extra], na, nb,
+                count[Kind.facing]);
         // where to look: the first picture that shows it, else one direction that does
         string inPicture(const size_t[] seen)
         {
@@ -411,13 +428,16 @@ final class Run
                 break;
             }
             auto size = st.hi - st.lo;
-            s ~= format("  %s: about %s mm of lines from (%s, %s, %s) to (%s, %s, %s), %s × %s × %s, seen from %d "
-                ~ "directions, %s\n", st.missing ? "only in " ~ result.parts[b].name : "only in "
-                ~ result.parts[a].name, mm(st.length), mm(st.lo.x), mm(st.lo.y), mm(st.lo.z), mm(st.hi.x), mm(st.hi.y),
-                mm(st.hi.z), mm(size.x), mm(size.y), mm(size.z), st.seenFrom.length, inPicture(st.seenFrom));
+            s ~= format("  %s: about %s from (%s, %s, %s) to (%s, %s, %s), %s × %s × %s, seen from %d directions, %s\n",
+                st.kind == Kind.missing ? "only in " ~ nb : st.kind == Kind.extra ? "only in " ~ na
+                    : "surface facing otherwise (twisted, curved or tilted)",
+                st.kind == Kind.facing ? mm(st.length) ~ " mm²" : mm(st.length) ~ " mm of lines", mm(st.lo.x), mm(st.lo.y),
+                mm(st.lo.z), mm(st.hi.x), mm(st.hi.y), mm(st.hi.z), mm(size.x), mm(size.y), mm(size.z),
+                st.seenFrom.length, inPicture(st.seenFrom));
         }
-        s ~= format("the picture: %d views, left to right and top to bottom (grey the lines in common, red only in %s, "
-            ~ "blue only in %s):\n", views.length, result.parts[b].name, result.parts[a].name);
+        s ~= format("the picture: %d views%s, left to right and top to bottom (grey the lines in common, red only in "
+            ~ "%s, blue only in %s, violet the surface facing otherwise):\n", views.length,
+            fixed ? " (the same each time)" : "", nb, na);
         foreach (i, v; views)
             s ~= format("  %d. %s\n", i + 1, d.directions[v]);
         if (d.strokes.length && deeper)

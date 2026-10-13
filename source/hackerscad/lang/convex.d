@@ -525,6 +525,59 @@ public Brep projectionOn(BrepKernel k, Brep b, Vec3 origin, Vec3 normal, Span sp
     return k.translate(r, origin);
 }
 
+/// `b` with its holes, pockets and cavities filled: its shadows seen along x,
+/// y and z, each without the holes in it (and 0.02 mm inside its outline),
+/// pulled across it and intersected.
+/// What it has and `b` has not are `b`'s voids, as a solid.
+public Brep shapeOfShadows(BrepKernel k, Brep b, Span span)
+{
+    import std.math : PI_2;
+    Brep shape;
+    // each view turned onto z: from above as it is, x and y turned up
+    foreach (turn; [Vec3(0, 0, 0), Vec3(0, -PI_2, 0), Vec3(PI_2, 0, 0)])
+    {
+        immutable axis = turn.y != 0 ? Vec3(0, 1, 0) : Vec3(1, 0, 0), angle = turn.x + turn.y;
+        auto s = angle != 0 ? k.rotate(b, axis, angle) : b;
+        auto box = k.bbox(s);
+        auto shadow = projectionOf(k, s, span);
+        // the shadow's faces by their outer outlines (the longest loop around each)
+        Brep[] filled;
+        foreach (f; 0 .. cast(int) k.faceCount(shadow))
+        {
+            double best = 0;
+            double[] xy;
+            foreach (loop; k.faceLoops(shadow, f, 0.01))
+            {
+                double area = 0;
+                foreach (i; 0 .. loop.length)
+                {
+                    immutable p = loop[i], q = loop[(i + 1) % loop.length];
+                    area += p.x * q.y - q.x * p.y;
+                }
+                if (abs(area) > best)
+                {
+                    best = abs(area);
+                    xy.length = 0;
+                    foreach (p; loop)
+                        xy ~= [p.x, p.y];
+                }
+            }
+            if (xy.length >= 6)
+                filled ~= k.polygon(xy);
+        }
+        if (filled.length == 0)
+            throw new HcadError(Code.type, "the solid casts no shadow", span);
+        // a hair inside: its sides would lie on the part's own faces, and cutting one from the other would
+        // leave slivers of them
+        auto outline = k.profileOffset(unionOfProfiles(k, filled), -0.02);
+        auto prism = k.translate(k.extrude(outline, box.size.z + 2, 0), Vec3(0, 0, box.min.z - 1));
+        if (angle != 0)
+            prism = k.rotate(prism, axis, -angle);
+        shape = shape is null ? prism : k.boolean(shape, prism, BoolOp.common);
+    }
+    return shape;
+}
+
 /// A profile on XY from closed outlines (from a drawing): an outline inside
 /// an even number of others is filled, inside an odd number it is a hole.
 public Brep profileOfLoops(BrepKernel k, double[2][][] loops, Span span)

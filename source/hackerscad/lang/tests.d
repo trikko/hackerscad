@@ -16,7 +16,7 @@ import hackerscad.lang.errors;
 import hackerscad.lang.value : Value, Dim;
 import hackerscad.geom.color;
 import hackerscad.kernel.occt.backend;
-import hackerscad.kernel.brep : BoolOp, Vec3;
+import hackerscad.kernel.brep : BoolOp, Brep, Vec3;
 
 private:
 
@@ -1695,4 +1695,26 @@ unittest
     });
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
+}
+
+unittest
+{
+    // a block with a hole through it and a pocket in its side: filled from its shadows, both are gone
+    import std.math : abs;
+    import hackerscad.lang.convex : shapeOfShadows;
+    import hackerscad.lang.errors : Span;
+    make();
+    auto block = kernel.box(20, 20, 10);
+    auto bb = kernel.bbox(block);
+    auto c = bb.center;
+    // each moved so that its box starts where asked, wherever the kernel makes it
+    auto at(Brep s, Vec3 lo) => kernel.translate(s, lo - kernel.bbox(s).min);
+    auto hole = at(kernel.cylinder(3, 30), Vec3(c.x - 3, c.y - 3, bb.min.z - 10));
+    auto pocket = at(kernel.box(4, 4, 4), Vec3(bb.min.x - 1, c.y - 2, c.z - 2));
+    auto part = kernel.boolean(kernel.boolean(block, hole, BoolOp.cut), pocket, BoolOp.cut);
+    auto filled = shapeOfShadows(kernel, part, Span("t.hcad"));
+    // 0.02 inside on every side
+    assert(abs(kernel.volume(filled) - 19.96 * 19.96 * 9.96) < 1, format("the part filled: %s mm³", kernel.volume(filled)));
+    auto voids = kernel.boolean(filled, part, BoolOp.cut);
+    assert(abs(kernel.volume(voids) - (PI * 9 * 10 + 3 * 4 * 4)) < 2, "its voids: the hole and the pocket inside the block");
 }

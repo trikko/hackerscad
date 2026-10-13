@@ -40,11 +40,15 @@ usage:
       how far part a is from part b (a remodelled part from the mesh it
       copies, loaded as a reference part): distances both ways, and a
       picture of a coloured green, yellow, red by its distance from b
-  hcad lines FILE.hcad --a PART --b PART [--depth MM] [--views N] [-o OUT.png]
+  hcad lines FILE.hcad --a PART --b PART [--depth MM] [--voids] [--fixed] [--views N] [-o OUT.png]
       parts a (a copy) and b (the original) drawn as lines (sharp edges and
       outlines) from 62 directions around them: the lines only one has, as
-      places on the part, the most seen first; OUT.png the N views (12)
-      showing most of them, grey in common, red only in b, blue only in a.
+      places on the part, the most seen first, and the surface facing
+      otherwise (twisted, curved, tilted: shaded otherwise); OUT.png the N
+      views (12) showing most of them (--fixed: twelve that stay the same,
+      to compare versions), grey in common, red only in b, blue only in a,
+      violet the surface facing otherwise. --voids compares their holes,
+      pockets and cavities made solid instead.
       Once the outside matches, and only if something still differs,
       --depth MM peels both like an onion (that much cut away towards each
       view) to compare the inside
@@ -280,8 +284,9 @@ int main(string[] args)
             string pa, pb, out_;
             size_t views = 12;
             double depth = 0;
+            bool fixed, voids;
             try
-                getopt(args, "a", &pa, "b", &pb, "depth", &depth, "views", &views, "o|output", &out_);
+                getopt(args, "a", &pa, "b", &pb, "depth", &depth, "fixed", &fixed, "voids", &voids, "views", &views, "o|output", &out_);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -303,7 +308,7 @@ int main(string[] args)
             try
             {
                 ubyte[] png;
-                write(run.lines(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], depth, views, png));
+                write(run.lines(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], depth, views, fixed, voids, png));
                 if (out_.length)
                 {
                     import std.file : write;
