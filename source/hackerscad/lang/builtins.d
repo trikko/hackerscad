@@ -484,6 +484,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto r = new SolidVal(s.brep, s.origin);
         r.creators = s.creators;
         r.flat = s.flat;
+        r.path = s.path;
         r.rgb = colorOf(x.get("color"), x.spanOf("color"));
         if (x.has("alpha"))
             r.rgb = withAlpha(r.rgb, x.num("alpha"));
@@ -1788,6 +1789,8 @@ SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span)
         r.rgb = inputs[0].rgb;
         r.hasColor = inputs[0].hasColor;
         r.flat = inputs[0].flat || (inputs[0].brep is null && inputs.length > 1 && inputs[1].flat);
+        // a path moved, turned or mirrored is still a path
+        r.path = inputs.length == 1 && inputs[0].path;
     }
     auto origins = it.kernel.faceOrigins(b);
     r.creators = new uint[origins.length];

@@ -1136,3 +1136,17 @@ unittest
     import std.array : replicate;
     expectErr(`writeln(` ~ "(".replicate(3000) ~ "1" ~ ")".replicate(3000) ~ `);`, "E0501");
 }
+
+unittest
+{
+    // a path moved or coloured is still a path: it can be swept along, and
+    // it is not a part
+    auto r = runModel(q{
+        immutable p = path([vec(0, 0, 0), vec(0, 0, 20), vec(20, 0, 20)]);
+        @part Solid tube() => circle(d: 4).sweep(p.move(x: 5).color("red"));
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(partVolume(r, "tube") > 100);
+    assert(error("@part Solid a() => path([vec(0, 0, 0), vec(0, 0, 20)]).move(x: 3);").message.canFind("Path"));
+}
