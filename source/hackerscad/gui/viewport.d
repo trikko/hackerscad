@@ -1203,10 +1203,76 @@ private:
     public double drawMs = 0, frameIntervalMs = 0;
     private MonoTime lastFrame;
 
+    // ---- antialiasing on screen: GtkGLArea has no multisampling, so the
+    // view is drawn into a multisampled buffer of its own, then resolved
+    // into GTK's (not with the processor drawing: it would slow it further)
+
+    private uint msaaFbo;
+    private uint[2] msaaBuffers;
+    private int msaaW, msaaH;
+    private bool msaaBroken;
+
+    /// Binds the multisampled buffer, made or resized for the view; returns
+    /// the framebuffer to resolve it into at the end, or -1 without one.
+    private int beginMultisample()
+    {
+        if (offscreen || msaaBroken || softwareGl())
+            return -1;
+        int target;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &target);
+        int[4] port;
+        glGetIntegerv(GL_VIEWPORT, port.ptr);
+        immutable w = port[0] + port[2], h = port[1] + port[3];
+        if (w <= 0 || h <= 0)
+            return -1;
+        if (msaaFbo == 0 || w != msaaW || h != msaaH)
+        {
+            if (msaaFbo == 0)
+            {
+                glGenFramebuffers(1, &msaaFbo);
+                glGenRenderbuffers(2, msaaBuffers.ptr);
+            }
+            int most;
+            glGetIntegerv(GL_MAX_SAMPLES, &most);
+            immutable samples = min(4, max(1, most));
+            glBindRenderbuffer(GL_RENDERBUFFER, msaaBuffers[0]);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, w, h);
+            glBindRenderbuffer(GL_RENDERBUFFER, msaaBuffers[1]);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, w, h);
+            glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaBuffers[0]);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaBuffers[1]);
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            {
+                // drawn without, from now on
+                msaaBroken = true;
+                glBindFramebuffer(GL_FRAMEBUFFER, target);
+                return -1;
+            }
+            msaaW = w;
+            msaaH = h;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo);
+        return target;
+    }
+
+    private void endMultisample(int target)
+    {
+        if (target < 0)
+            return;
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+        glBlitFramebuffer(0, 0, msaaW, msaaH, 0, 0, msaaW, msaaH, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, target);
+    }
+
     bool render()
     {
         if (!glReady)
             return false;
+        immutable resolveInto = beginMultisample();
+        scope (exit)
+            endMultisample(resolveInto);
         immutable started = MonoTime.currTime;
         scope (exit)
         {
