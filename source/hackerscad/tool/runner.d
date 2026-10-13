@@ -342,17 +342,22 @@ final class Run
     /// The drawings of part `a` (a copy) and part `b` (the original) compared
     /// from many directions around them: the lines one has and the other
     /// has not, as strokes on the part, the most seen and longest first;
-    /// `picture` the `shown` views that show most of them. `layer` 1, 2, 3
-    /// peels them like an onion, a quarter, half, three quarters of their
-    /// depth cut away towards each view: the inside, once the outside matches.
-    string lines(size_t a, size_t b, uint layer, size_t shown, out ubyte[] picture)
+    /// `picture` the `shown` views that show most of them. `depth` (mm)
+    /// peels them like an onion, that much cut away towards each view: the
+    /// inside, once the outside matches.
+    string lines(size_t a, size_t b, double depth, size_t shown, out ubyte[] picture)
     {
         import hackerscad.render.linediff : lineDiff, orbit, sheet, telling;
         import hackerscad.geom.meshfeatures : plausible;
         partMeshes();
-        if (layer > 3)
-            throw new HcadError(Code.limit, format("layer %d: the layers go from 0 (the outside) to 3", layer), Span(path));
-        auto d = lineDiff(meshes[a], meshes[b], orbit(layer * 0.25), 300);
+        import std.algorithm : max, min;
+        import std.math : ceil;
+        auto d = lineDiff(meshes[a], meshes[b], orbit(max(0.0, depth)), 300);
+        // the next peel: a quarter of the thinnest side, in whole millimetres
+        auto bb = kernel.bbox(result.parts[b].solid.brep);
+        immutable thinnest = min(bb.size.x, bb.size.y, bb.size.z);
+        immutable next = depth + max(1.0, ceil(thinnest / 4));
+        immutable deeper = next < thinnest;
         string mm(double v)
         {
             immutable p = plausible(v);
@@ -363,14 +368,12 @@ final class Run
         picture = encodePng(img.rgb, img.width, img.height);
         string s = format("%s against %s, drawn as lines from %d directions around them%s, lines within %s mm taken "
             ~ "as the same:\n", result.parts[a].name, result.parts[b].name, d.directions.length,
-            layer ? format(", peeled to layer %d (the nearest %d%% cut away)", layer, layer * 25) : " (the outside)",
+            depth > 0 ? format(", peeled %s mm deep", mm(depth)) : " (the outside)",
             mm(d.tolerance));
         if (d.strokes.length == 0)
         {
             // the drawings match: deeper only if something differs inside, where no line shows
             import hackerscad.geom.voxeldiff : differences;
-            import std.algorithm : max;
-            auto bb = kernel.bbox(result.parts[b].solid.brep);
             immutable h = max(0.2, max(bb.size.x, bb.size.y, bb.size.z) / 250);
             auto regions = differences(meshes[a], meshes[b], h, max(1.0, 8 * h * h * h));
             double volume = 0;
@@ -379,12 +382,11 @@ final class Run
             if (regions.length == 0)
                 s ~= "  the drawings match, and so does the material inside (no difference thicker than "
                     ~ mm(2 * h) ~ " mm): no need to peel further\n";
-            else if (layer < 3)
-                s ~= format("  the drawings match, but %s mm³ of material differ in %d places (hcad diff): peel the next "
-                    ~ "layer (layer %d) to see them\n", mm(volume), regions.length, layer + 1);
+            else if (deeper)
+                s ~= format("  the drawings match, but %s mm³ of material differ in %d places (hcad diff): peel deeper "
+                    ~ "(depth %s mm) to see them\n", mm(volume), regions.length, mm(next));
             else
-                s ~= format("  the drawings match down to the deepest layer; %s mm³ of material still differ (hcad diff)\n",
-                    mm(volume));
+                s ~= format("  the drawings match this deep; %s mm³ of material still differ (hcad diff)\n", mm(volume));
         }
         size_t lacks, extra;
         foreach (st; d.strokes)
@@ -418,9 +420,9 @@ final class Run
             ~ "blue only in %s):\n", views.length, result.parts[b].name, result.parts[a].name);
         foreach (i, v; views)
             s ~= format("  %d. %s\n", i + 1, d.directions[v]);
-        if (d.strokes.length && layer < 3)
-            s ~= format("fix these first; once this layer matches, peel the next one (layer %d) if anything still "
-                ~ "differs\n", layer + 1);
+        if (d.strokes.length && deeper)
+            s ~= format("fix these first; once they match, peel deeper (depth %s mm) only if anything still differs\n",
+                mm(next));
         return s;
     }
 

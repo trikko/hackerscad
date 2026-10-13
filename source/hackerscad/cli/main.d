@@ -40,13 +40,14 @@ usage:
       how far part a is from part b (a remodelled part from the mesh it
       copies, loaded as a reference part): distances both ways, and a
       picture of a coloured green, yellow, red by its distance from b
-  hcad lines FILE.hcad --a PART --b PART [--layer 0-3] [--views N] [-o OUT.png]
+  hcad lines FILE.hcad --a PART --b PART [--depth MM] [--views N] [-o OUT.png]
       parts a (a copy) and b (the original) drawn as lines (sharp edges and
       outlines) from 62 directions around them: the lines only one has, as
       places on the part, the most seen first; OUT.png the N views (12)
       showing most of them, grey in common, red only in b, blue only in a.
-      Once the outside matches, --layer 1, 2, 3 peels both like an onion
-      (a quarter, half, three quarters cut away) to compare the inside
+      Once the outside matches, and only if something still differs,
+      --depth MM peels both like an onion (that much cut away towards each
+      view) to compare the inside
   hcad scan FILE --axis x|y|z [--step MM] [--part NAME]
       cuts all along an axis: each hole and pocket met with its shape (circle,
       rectangle, hexagon, teardrop, slot…) and where it starts and ends, and
@@ -278,9 +279,9 @@ int main(string[] args)
         {
             string pa, pb, out_;
             size_t views = 12;
-            uint layer;
+            double depth = 0;
             try
-                getopt(args, "a", &pa, "b", &pb, "layer", &layer, "views", &views, "o|output", &out_);
+                getopt(args, "a", &pa, "b", &pb, "depth", &depth, "views", &views, "o|output", &out_);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -302,7 +303,7 @@ int main(string[] args)
             try
             {
                 ubyte[] png;
-                write(run.lines(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], layer, views, png));
+                write(run.lines(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], depth, views, png));
                 if (out_.length)
                 {
                     import std.file : write;

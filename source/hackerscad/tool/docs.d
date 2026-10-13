@@ -138,7 +138,7 @@ reference first and follow the rules below.
   material to add or cut; `hcad lines` (hcad_lines) both drawn as lines
   from many sides, the lines only one has (chamfers, countersinks,
   letterings: what the eye sees first; once the outside matches,
-  `--layer 1` to 3 peels both to compare the inside); `hcad scan`
+  `--depth MM` peels both to compare the inside); `hcad scan`
   (hcad_scan) holes and pockets along
   an axis; `hcad fit` (hcad_fit) tunes @param lengths to the original.
   `--printability` adds per part the overhangs needing supports and the

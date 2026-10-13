@@ -18,9 +18,9 @@ import hackerscad.render.raster : Image;
 struct Direction
 {
     double azimuth = 0, elevation = 0;
-    /// Peeled: the share of the part's depth (0 … 1) cut away on the viewer's side, to see the lines
-    /// inside; 0 the whole part.
-    double peel = 0;
+    /// Peeled: how deep (mm, from the nearest point) the parts are cut away on the viewer's side, to
+    /// see the lines inside; 0 the whole parts.
+    double depth = 0;
 
     /// From the part towards the viewer.
     Vec3 eye() const
@@ -32,7 +32,7 @@ struct Direction
     string toString() const
     {
         import std.format : format;
-        immutable cut = peel > 0 ? format(", the nearest %g%% cut away", peel * 100) : "";
+        immutable cut = depth > 0 ? format(", the nearest %g mm cut away", depth) : "";
         if (elevation >= 89.9)
             return "top" ~ cut;
         if (elevation <= -89.9)
@@ -43,16 +43,16 @@ struct Direction
 
 /// Rings around the part, every 30° of azimuth at elevations -60 to 60
 /// (every other ring turned by 15°), and the views from above and below;
-/// with `peel`, the share of the part's depth cut away on the viewer's side
-/// in each (the onion's next layer).
-Direction[] orbit(double peel = 0)
+/// with `depth`, the millimetres cut away on the viewer's side in each (the
+/// onion peeled).
+Direction[] orbit(double depth = 0)
 {
     Direction[] r;
     foreach (ring, el; [-60.0, -30, 0, 30, 60])
         foreach (k; 0 .. 12)
-            r ~= Direction(k * 30.0 + (ring % 2 ? 15 : 0), el, peel);
-    r ~= Direction(0, 90, peel);
-    r ~= Direction(0, -90, peel);
+            r ~= Direction(k * 30.0 + (ring % 2 ? 15 : 0), el, depth);
+    r ~= Direction(0, 90, depth);
+    r ~= Direction(0, -90, depth);
     return r;
 }
 
@@ -135,7 +135,7 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
             return Vec3(ox + k * q.x, oy - k * q.y, q.z);
         }
         immutable tol = 0.004 * max(z1 - z0, 1e-6);
-        immutable cut = d.peel > 0 ? z1 - d.peel * (z1 - z0) : double.infinity;
+        immutable cut = d.depth > 0 ? z1 - d.depth : double.infinity;
         auto da = ea.draw(cam.eye, &toScreen, n, tol, cut), db = eb.draw(cam.eye, &toScreen, n, tol, cut);
 
         // lines farther than r pixels from any line of the other

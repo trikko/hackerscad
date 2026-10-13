@@ -676,10 +676,10 @@ JSONValue[] toolList()
             ~ "notch, a lettering: small in volume, long as lines), and pictures of the 'views' (12) directions that "
             ~ "show most of them: grey in common, red only in the original, blue only in the copy. Use it after "
             ~ "hcad_compare: what it lists is what a person sees first. Fix the outside first; only once it matches, "
-            ~ "'layer' 1, 2, 3 peels both like an onion (a quarter, half, three quarters of their depth cut away "
-            ~ "towards each view) to compare the inside, one layer at a time.",
+            ~ "and only if something still differs, 'depth' (mm) peels both like an onion (that much cut away "
+            ~ "towards each view) to compare the inside; the answer says when going deeper is no use.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "views": {"type": "integer"}, `
-            ~ `"layer": {"type": "integer", "description": "0 the outside (default), 1 to 3 peeled deeper"}`, `["a", "b"]`),
+            ~ `"depth": {"type": "number", "description": "mm cut away towards each view; 0 the outside (default)"}`, `["a", "b"]`),
         tool("hcad_diff", "Where a part of a model (a copy) differs from another (the original, e.g. a mesh loaded as a "
             ~ "see-through reference part), as pieces of material: what the copy lacks (to add) and what it has too much "
             ~ "of (to cut), largest first, each with its box, volume, centre of mass and how much of its box it fills (a "
@@ -1067,7 +1067,8 @@ JSONValue callTool(string name, JSONValue args)
                 auto v = "views" in args;
                 ubyte[] png;
                 text(run.lines(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0],
-                    "layer" in args ? cast(uint) args["layer"].integer : 0, v is null ? 12 : cast(size_t) v.integer, png));
+                    "depth" !in args ? 0.0 : args["depth"].type == JSONType.integer ? args["depth"].integer
+                    : args["depth"].floating, v is null ? 12 : cast(size_t) v.integer, png));
                 image(png);
             }
             catch (HcadError e)
