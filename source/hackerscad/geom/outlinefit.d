@@ -60,36 +60,55 @@ P2[][] slice(const Mesh m, Vec3 n, double at, Vec3 u, Vec3 v)
         }
         segs ~= [[cut[0].dot(u), cut[0].dot(v)], [cut[1].dot(u), cut[1].dot(v)]];
     }
-    // chained by their ends
+    // chained by their ends, whichever way each one points: a sliver of a triangle (meshes have them where
+    // they were mended) has no reliable normal, and its segment may point back; each outline is then turned
+    // the way most of its length points
     static long[2] key(P2 p, double q) => [cast(long) round(p[0] / q), cast(long) round(p[1] / q)];
     immutable q = 1e-6 * size;
-    size_t[long[2]] startAt;
+    size_t[][long[2]] touching;
     foreach (i, s; segs)
-        startAt[key(s[0], q)] = i;
+        if (key(s[0], q) != key(s[1], q))
+            foreach (e; 0 .. 2)
+                touching[key(s[e], q)] ~= i;
     auto used = new bool[segs.length];
     P2[][] loops;
     P2[][] open;   // chains that did not come back to their start (a mesh with a flaw there)
     foreach (i; 0 .. segs.length)
     {
-        if (used[i])
+        if (used[i] || key(segs[i][0], q) == key(segs[i][1], q))
             continue;
-        P2[] loop;
+        P2[] loop = [segs[i][0]];
+        double along = 0;   // the length of the segments walked their own way, less the others'
         size_t at_ = i;
+        P2 from = segs[i][0];
         bool closed;
-        while (!used[at_])
+        immutable home = key(segs[i][0], q);
+        while (true)
         {
             used[at_] = true;
-            loop ~= segs[at_][0];
-            auto next = key(segs[at_][1], q) in startAt;
-            if (next is null)
+            immutable forward = key(segs[at_][0], q) == key(from, q);
+            immutable to = segs[at_][forward ? 1 : 0];
+            along += (forward ? 1 : -1) * dist(segs[at_][0], segs[at_][1]);
+            if (key(to, q) == home)
             {
-                loop ~= segs[at_][1];
+                closed = true;
                 break;
             }
-            if (*next == i)
-                closed = true;
-            at_ = *next;
+            loop ~= to;
+            size_t next = size_t.max;
+            foreach (o; touching.get(key(to, q), null))
+                if (!used[o])
+                {
+                    next = o;
+                    break;
+                }
+            if (next == size_t.max)
+                break;
+            from = to;
+            at_ = next;
         }
+        if (along < 0)
+            loop.reverse();
         if (!closed)
         {
             open ~= loop;
@@ -981,4 +1000,19 @@ unittest
     auto e = fit(loops[0], 0.075, true);
     auto s = classify(e);
     assert(s.kind == "rectangle" && abs(s.a - 10) < 0.06 && abs(s.b - 6) < 0.06, s.toString);
+}
+
+unittest
+{
+    // a 10 mm cube with one side triangle turned the wrong way (as a sliver mended badly would be): the cut
+    // across it is still one closed outline, counter-clockwise, 100 mm²
+    Mesh m;
+    foreach (k; 0 .. 8)
+        m.verts ~= [k & 1 ? 10.0f : 0, k & 2 ? 10.0f : 0, k & 4 ? 10.0f : 0];
+    m.tris = [0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6, 0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 4, 6, 0, 6, 2, 1, 3, 7, 1, 7, 5];
+    // the first triangle of the side x = 10 reversed
+    m.tris[30 .. 33] = [1, 7, 3];
+    auto loops = slice(m, Vec3(0, 0, 1), 5, Vec3(1, 0, 0), Vec3(0, 1, 0));
+    assert(loops.length == 1, format("%d outlines", loops.length));
+    assert(abs(area(loops[0]) - 100) < 1e-6, format("area %s", area(loops[0])));
 }
