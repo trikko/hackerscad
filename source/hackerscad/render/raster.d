@@ -35,12 +35,16 @@ struct Shaded
 /// viewer, and a highlight.
 Vec3 viewLighting(Vec3 n, Vec3 v, Vec3 base)
 {
-    import std.math : pow;
     if (n.dot(v) < 0)
         n = -n;   // two-sided: open meshes still look solid
     immutable l = (v + Vec3(0, 0, 0.6)).normalized;
     immutable diffuse = max(0.0, n.dot(l));
-    immutable specular = pow(max(0.0, n.dot((l + v).normalized)), 48.0) * 0.22;
+    // x^48 = ((x^3)^2)^2^2^2, by squaring: once per pixel, pow is costly
+    immutable x = max(0.0, n.dot((l + v).normalized));
+    double h = x * x * x;
+    foreach (_; 0 .. 4)
+        h *= h;
+    immutable specular = h * 0.22;
     return base * (0.34 + 0.66 * diffuse) + Vec3(255, 255, 255) * specular;
 }
 
@@ -70,7 +74,29 @@ struct Image
 }
 
 /// Renders the meshes from the given view, fitted to the image.
-Image render(const Shaded[] items, View view, uint width, uint height)
+Image render(const Shaded[] items, View view, uint width, uint height) =>
+    render(items, prepare(items), view, width, height);
+
+/// What does not depend on the view: computed once for a sheet of views.
+private struct Prepared
+{
+    uint[2][] edges;    /// feature edges of the welded mesh
+    Vec3[] normals;     /// smooth normals of the face mesh, if any
+}
+
+private Prepared[] prepare(const Shaded[] items)
+{
+    auto r = new Prepared[items.length];
+    foreach (i, it; items)
+    {
+        r[i].edges = featureEdges(it.mesh, 25);
+        if (it.faces.triangleCount)
+            r[i].normals = vertexNormals(it.faces);
+    }
+    return r;
+}
+
+private Image render(const Shaded[] items, const Prepared[] prepared, View view, uint width, uint height)
 {
     enum ss = 3; // supersampling factor
     auto c = Canvas(width * ss, height * ss);
@@ -105,7 +131,7 @@ Image render(const Shaded[] items, View view, uint width, uint height)
     {
         if (see && opaqueEdges.length)
             c.drawEdges(opaqueEdges, &toScreen, ss * 1.1, edgeTolerance, ss);
-        foreach (it; items)
+        foreach (i, it; items)
         {
             immutable alpha = alphaOf(it.rgb);
             if ((alpha < 0.999) != see)
@@ -117,7 +143,7 @@ Image render(const Shaded[] items, View view, uint width, uint height)
             {
                 // smooth inside each face, as in the 3D view
                 auto f = it.faces;
-                auto normals = vertexNormals(f);
+                auto normals = prepared[i].normals;
                 foreach (t; 0 .. f.triangleCount)
                 {
                     auto ia = f.tris[t * 3], ib = f.tris[t * 3 + 1], ic = f.tris[t * 3 + 2];
@@ -135,11 +161,11 @@ Image render(const Shaded[] items, View view, uint width, uint height)
             // the opaque parts' edges go to a mask, drawn once all their faces
             // are in the depth buffer; see-through parts draw theirs faintly
             if (see)
-                foreach (e; featureEdges(m, 25))
+                foreach (e; prepared[i].edges)
                     c.line(toScreen(m.vertex(e[0])), toScreen(m.vertex(e[1])), edgeColour, ss * 1.1, edgeTolerance,
                         0.15);   // a thick line blends each pixel several times
             else
-                opaqueEdges ~= Edges(m, featureEdges(m, 25));
+                opaqueEdges ~= Edges(m, prepared[i].edges.dup);
         }
     }
 
@@ -152,9 +178,10 @@ Image renderSheet(const Shaded[] items, const View[] views, uint cell, uint colu
     immutable rows = cast(uint)((views.length + columns - 1) / columns);
     Image sheet = Image(cell * columns, cell * rows, new ubyte[cell * columns * cell * rows * 3]);
     sheet.rgb[] = 255;
+    auto prepared = prepare(items);
     foreach (i, v; views)
     {
-        auto img = render(items, v, cell, cell);
+        auto img = render(items, prepared, v, cell, cell);
         immutable cx = cast(uint)(i % columns) * cell, cy = cast(uint)(i / columns) * cell;
         foreach (y; 0 .. cell)
             sheet.rgb[((cy + y) * sheet.width + cx) * 3 .. ((cy + y) * sheet.width + cx + cell) * 3] =
