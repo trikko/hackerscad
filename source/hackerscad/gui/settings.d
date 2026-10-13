@@ -4,7 +4,7 @@
 /// %APPDATA%\hackerscad on Windows.
 module hackerscad.gui.settings;
 
-import std.file : exists, mkdirRecurse, readText, write;
+import std.file : mkdirRecurse, readText, write;
 import std.json;
 import std.path : buildPath, dirName;
 import std.process : environment;

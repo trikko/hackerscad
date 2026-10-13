@@ -11,7 +11,7 @@ import gtk.popover : Popover;
 import gtk.separator : Separator;
 import gtk.stack : Stack;
 import gtk.widget : Widget;
-import gtk.types : Orientation, Align, PositionType, StackTransitionType;
+import gtk.types : Orientation, PositionType, StackTransitionType;
 import gdk.rectangle : Rectangle;
 import glib.global : idleAdd;
 import glib.types : PRIORITY_DEFAULT;

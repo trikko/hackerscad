@@ -1021,7 +1021,7 @@ unittest
     auto p = parse(`
         @unit(inch) module test;
         import std.shapes;
-        import c = lib.cerniere;
+        import c = lib.hinges;
         import hardware : M3, M4;
 
         @param("Width", min: 20.mm) @preset("wide", 90.mm) immutable width = 60.mm;
@@ -1054,7 +1054,7 @@ unittest
     assert(p.moduleDecl.attrs[0].name == "unit");
     assert(p.decls.length == 10);
     auto imp = cast(ImportDecl) p.decls[1];
-    assert(imp.aliasName == "c" && imp.path == ["lib", "cerniere"]);
+    assert(imp.aliasName == "c" && imp.path == ["lib", "hinges"]);
     auto v = cast(VarDecl) p.decls[3];
     assert(v.storage == Storage.immutable_ && v.attrs[0].args[1].name == "min" && v.attrs[1].name == "preset");
     auto s = cast(StructDecl) p.decls[5];

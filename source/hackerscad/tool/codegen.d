@@ -274,7 +274,6 @@ Edit appendToPart(string source, string file, string part, string call, string p
 private Edit toBlock(string source, Token[] toks, FuncDecl fn, size_t first, size_t last, string body, string call,
     string placeholder)
 {
-    import std.array : join;
     import std.string : splitLines, lastIndexOf;
     auto arrow = first - 1;
     size_t from = offsetOf(source, toks[arrow].span);

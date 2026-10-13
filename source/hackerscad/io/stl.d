@@ -1,7 +1,6 @@
 module hackerscad.io.stl;
 
 import std.bitmanip : nativeToLittleEndian;
-import std.file : write;
 
 import hackerscad.geom.mesh;
 
@@ -31,11 +30,6 @@ ubyte[] toStl(const Mesh m)
         o += 2; // attribute byte count
     }
     return data;
-}
-
-void writeStl(const Mesh m, string path)
-{
-    write(path, toStl(m));
 }
 
 unittest

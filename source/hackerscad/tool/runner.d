@@ -1,6 +1,6 @@
 /// One evaluation of a model with everything clients need: the JSON report,
-/// exports and rendered images. Shared by the CLI, the MCP server and the
-/// GUI control socket.
+/// exports and rendered images. Shared by the CLI and the MCP server (the
+/// window has its own evaluator, gui/evaluator).
 module hackerscad.tool.runner;
 
 import std.algorithm : map, endsWith;
@@ -134,8 +134,6 @@ final class Run
         foreach (d; result.drawings)
             if (name.length == 0 || d.name == name)
                 return (cast(DrawingVal) d.drawing).render();
-        import std.algorithm : map;
-        import std.array : array;
         throw new HcadError(Code.undefined, format("no @drawing named '%s'", name), Span(path),
             Interp.suggest(name, result.drawings.map!(d => d.name).array));
     }
@@ -187,7 +185,6 @@ final class Run
     /// (front, back, bottom, left, right, iso) that one, else the iso view.
     static View[] pngViews(string file)
     {
-        import std.algorithm : endsWith;
         import std.conv : to;
         import std.traits : EnumMembers;
         if (file.endsWith("-views.png"))

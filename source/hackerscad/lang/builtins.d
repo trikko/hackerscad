@@ -4,7 +4,7 @@ module hackerscad.lang.builtins;
 
 import std.conv : to, ConvException;
 import std.format : format;
-import std.math : PI, abs, sqrt, floor, ceil, round, sin, cos, tan, asin, acos, atan, atan2, isNaN;
+import std.math : PI, abs, sqrt, floor, ceil, round, sin, cos, tan, asin, acos, atan, atan2;
 import std.algorithm : canFind, map, sort, max, min;
 import std.array : array, join;
 import std.uni : toLower;
@@ -1139,7 +1139,6 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
 /// solid `near`), registered as a "split" feature for face provenance.
 SolidVal halfSpace(Interp it, Brep near, Vec3 o, Vec3 n, Span span)
 {
-    import std.math : acos;
 
     auto k = it.kernel;
     auto bb = k.bbox(near);
@@ -1218,7 +1217,6 @@ Vec3 inPlane(Vec3 v, Vec3 n) => v - n * v.dot(n);
 /// Axis and angle of the rotation whose matrix has columns x, y, z.
 double axisAngle(Vec3 x, Vec3 y, Vec3 z, out Vec3 axis)
 {
-    import std.math : acos;
 
     immutable trace = x.x + y.y + z.z;
     immutable c = max(-1.0, min(1.0, (trace - 1) / 2));

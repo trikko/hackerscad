@@ -4,7 +4,7 @@
 /// the modules it imports; the cheatsheet for the built-in libraries.
 module hackerscad.tool.outline;
 
-import std.algorithm : canFind, startsWith;
+import std.algorithm : startsWith;
 import std.array : join;
 import std.file : exists, readText;
 import std.path : buildNormalizedPath;

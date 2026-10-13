@@ -1,12 +1,11 @@
 /// Readers for triangle mesh files: STL (binary and ASCII), OBJ and 3MF.
 module hackerscad.io.meshread;
 
-import std.algorithm : startsWith, endsWith, splitter;
+import std.algorithm : startsWith, endsWith;
 import std.array : split;
 import std.bitmanip : littleEndianToNative;
 import std.conv : to, ConvException;
 import std.string : strip, lineSplitter, indexOf;
-import std.uni : toLower;
 
 import hackerscad.geom.mesh;
 

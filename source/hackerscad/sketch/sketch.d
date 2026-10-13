@@ -7,9 +7,9 @@
 /// must form closed loops, which become the outline of a profile.
 module hackerscad.sketch.sketch;
 
-import std.algorithm : max, min, canFind;
+import std.algorithm : max, min;
 import std.format : format;
-import std.math : abs, sqrt, atan2, cos, sin, tan, PI, fmod;
+import std.math : abs, atan2, cos, sin, tan, PI;
 
 import hackerscad.geom.vec;
 import hackerscad.kernel.brep : OutlineSeg;

@@ -8,14 +8,13 @@ import std.string : toLower;
 import adw.header_bar : HeaderBar;
 import adw.toolbar_view : ToolbarView;
 import adw.window : AdwWindow = Window;
-import glib.global : markupEscapeText;
 import gtk.box : Box;
 import gtk.label : Label;
 import gtk.list_box : ListBox;
 import gtk.list_box_row : ListBoxRow;
 import gtk.scrolled_window : ScrolledWindow;
 import gtk.search_entry : SearchEntry;
-import gtk.types : Orientation, Align, PolicyType, SelectionMode;
+import gtk.types : Orientation, PolicyType, SelectionMode;
 import gtk.window : Window;
 import pango.types : WrapMode;
 

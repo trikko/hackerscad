@@ -8,7 +8,6 @@
 /// the last runs are dropped.
 module hackerscad.kernel.cache;
 
-import std.conv : to;
 import std.traits : isNumeric;
 import std.algorithm : map;
 import std.array : array, join;
@@ -370,7 +369,6 @@ private:
 unittest
 {
     import hackerscad.kernel.occt.backend : OcctKernel;
-    import std.math : isClose;
     import std.exception : assertThrown;
 
     auto k = new CachingKernel(new OcctKernel);

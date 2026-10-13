@@ -51,7 +51,6 @@ import gtk.menu_button : MenuButton;
 import gtk.overlay : Overlay;
 import gtk.popover : Popover;
 import gtk.entry : Entry;
-import gdk.rectangle : Rectangle;
 import gtk.drop_down : DropDown;
 import gtk.scale : Scale;
 import gtk.gesture_click : GestureClick;
@@ -62,7 +61,7 @@ import hackerscad.geom.vec : Vec3;
 import glib.global : idleAdd;
 
 import hackerscad.geom.mesh;
-import hackerscad.kernel.brep : BoolOp, EdgeKind;
+import hackerscad.kernel.brep : EdgeKind;
 import hackerscad.lang.errors;
 import hackerscad.io.stl;
 import hackerscad.io.threemf;
@@ -128,10 +127,8 @@ Solid body()
 /// someone else wrote.
 version (linux) void installDesktopEntry()
 {
-    import std.algorithm : canFind;
     import std.array : split;
     import std.file : mkdirRecurse, copy, readText, write, exists;
-    import std.path : buildPath;
     import std.process : environment;
 
     enum id = "it.andreafontana.hackerscad.gui";
@@ -217,7 +214,6 @@ version (Windows)
     private bool hardwareGl()
     {
         import core.sys.windows.windows;
-        import std.algorithm : canFind;
         import std.array : split;
         import std.conv : to;
         import std.string : fromStringz;
@@ -278,11 +274,7 @@ version (Windows)
     /// (a separate download), the 3D view explains what to do.
     private bool relaunchWithMesa(string[] args)
     {
-        import std.file : exists, thisExePath;
-        import std.path : buildPath, dirName;
         import std.process : environment, spawnProcess;
-        import hackerscad.about : appVersion;
-        import hackerscad.gui.viewport : Viewport;
         // the help is ready whenever Mesa is missing: shown only if OpenGL fails
         immutable hasMesa = exists(buildPath(dirName(thisExePath), "mesa", "opengl32.dll"));
         if (!hasMesa)
@@ -348,8 +340,6 @@ int main(string[] args)
         // GLib follows XDG_DATA_DIRS when set (MSYS2 and other tools export
         // theirs): our share/ goes first, for the icons, the GtkSourceView
         // files and the settings schemas
-        import std.file : thisExePath;
-        import std.path : buildPath, dirName;
         import std.string : toStringz;
         auto share = buildPath(dirName(dirName(thisExePath())), "share");
         auto dirs = environment.get("XDG_DATA_DIRS");
@@ -1063,7 +1053,6 @@ private:
     Widget mainMenu()
     {
         import gio.menu : Menu;
-        import gtk.menu_button : MenuButton;
         auto files = new Menu;
         files.append("New", "win.new");
         files.append("Open…", "win.open");
@@ -1524,7 +1513,6 @@ private:
     /// Stop button; the old model is veiled meanwhile.
     bool tickProgress()
     {
-        import std.format : format;
         if (!evaluator.busy)
         {
             stopProgress();
@@ -1571,7 +1559,6 @@ private:
 
     void stopEvaluation()
     {
-        import std.format : format;
         immutable seconds = (MonoTime.currTime - evalStart).total!"msecs" / 1000.0;
         evaluator.cancel();
         busyIndicator.stop();
@@ -2565,7 +2552,6 @@ private:
         contextPopover = popupMenu(viewport.area, x, y, entries);
     }
 
-    import gtk.popover : Popover;
     Popover contextPopover;
 
     int[] selFaces, selEdges;
@@ -2647,7 +2633,6 @@ private:
         case "draft": return faces ? format(".draft(%s, angle: %s)", facesCode(), or("3.deg")) : null;
         case "hole":
             {
-                import std.algorithm : canFind;
                 if (!onFace || !["clearance", "tap", "insert"].canFind(kind)
                     || !["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"].canFind(size))
                     return null;
@@ -3045,7 +3030,6 @@ private:
     /// Replaces the text with the file's, keeping the cursor line and the parameters.
     void reloadKeepingView(string disk)
     {
-        import gtk.text_mark : TextMark;
         TextIter it;
         buffer.getIterAtMark(it, buffer.getInsert());
         immutable line = it.getLine();
@@ -4394,7 +4378,6 @@ private:
     /// The export button: a menu of the formats.
     Widget exportMenu()
     {
-        import gtk.menu_button : MenuButton;
         auto b = new MenuButton;
         b.setLabel("Export");
         b.setAlwaysShowArrow(true);

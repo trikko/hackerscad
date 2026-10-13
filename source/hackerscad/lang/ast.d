@@ -260,7 +260,7 @@ final class Switch : Stmt
 final class ImportDecl : Stmt
 {
     string[] path;        /// std.shapes → ["std", "shapes"]
-    string aliasName;     /// import c = lib.cerniere;
+    string aliasName;     /// import c = lib.hinges;
     string[] selective;   /// import hardware : M3, M4;
     bool isPublic;        /// public import: who imports this module sees them too
 }

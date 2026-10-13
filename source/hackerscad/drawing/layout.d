@@ -197,7 +197,6 @@ void project(ref View v, BrepKernel k)
 void layout(ref Drawing d, double ax, double ay, double aw, double ah)
 {
     // the scale: the largest standard one at which the auto views fit
-    double needW = 0, needH = 0;
     View* front;
     foreach (ref v; d.views)
         if (v.autoPlaced && front is null && v.name != "iso" && !v.isSection)
@@ -534,7 +533,6 @@ unittest
     auto sh = render(d, k);
     assert(d.scale == 2, format("%s", d.scale));
     auto svg = toSvg(sh);
-    import std.algorithm : canFind;
     assert(svg.canFind(">60<") && svg.canFind(">40<") && svg.canFind("2× ⌀6"), svg);
     // the holes are hidden in the front view: dashed lines exist
     assert(sh.lines.count!(l => l.pen == Pen.hidden) > 0);

@@ -6,8 +6,8 @@ module hackerscad.tool.complete;
 
 import std.algorithm : canFind, endsWith, sort, startsWith;
 import std.array : array, join, split;
-import std.ascii : isAlpha, isAlphaNum, isDigit, isWhite;
-import std.regex : ctRegex, matchAll, matchFirst;
+import std.ascii : isAlphaNum, isDigit, isWhite;
+import std.regex : ctRegex, matchAll;
 import std.string : indexOf, lastIndexOf, strip, toLower;
 
 import hackerscad.lang.reference;

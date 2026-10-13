@@ -5,7 +5,7 @@ import std.format : format;
 import std.math : PI, abs, floor, isNaN, fmod;
 import std.algorithm : canFind, map;
 import std.array : array, join;
-import std.path : buildNormalizedPath, absolutePath, dirName, relativePath, isAbsolute;
+import std.path : buildNormalizedPath, absolutePath, dirName, relativePath;
 import std.file : exists, readText;
 import std.string : startsWith, strip;
 import std.uni : toLower;
@@ -78,7 +78,6 @@ uint callsOf(const TraceEntry[] entries)
     Span[] seen;
     foreach (e; entries)
     {
-        import std.algorithm : canFind;
         if (seen.canFind(e.site))
             continue;
         seen ~= e.site;
@@ -1312,7 +1311,6 @@ final class Interp
             c.faces = a.faces;
             immutable o = op;
             c.tests ~= (size_t i, ref SelectCtx ctx) {
-                import std.algorithm : canFind;
                 immutable inA = ctx.resolve(a).canFind(cast(int) i), inB = ctx.resolve(b).canFind(cast(int) i);
                 return o == Tok.plus ? inA || inB : o == Tok.minus ? inA && !inB : inA && inB;
             };
@@ -2105,7 +2103,6 @@ final class Interp
     /// The same, telling whether the indices are of faces or of edges.
     int[] trySelector(string expr, SolidVal s, out bool faces)
     {
-        import hackerscad.lang.parser : parseExpression;
         import hackerscad.lang.builtins : resolveSelector;
 
         auto v = eval(parseExpression(expr, "<selector>"), new Env(prelude, null));

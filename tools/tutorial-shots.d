@@ -13,17 +13,17 @@
 module tutorialshots;
 
 import core.thread : Thread;
-import core.time : msecs, seconds;
-import std.algorithm : canFind, countUntil, setDifference, sort;
-import std.array : array, split;
+import core.time : msecs;
+import std.algorithm : canFind, setDifference, sort;
+import std.array : array;
 import std.conv : to;
-import std.file : exists, mkdirRecurse, readText, remove, tempDir, write;
+import std.file : exists, mkdirRecurse, remove, tempDir, write;
 import std.format : format;
 import std.json;
 import std.path : absolutePath, buildPath;
 import std.process : execute, spawnProcess, Pid, kill, wait, thisProcessID;
-import std.stdio : writeln, writefln;
-import std.string : indexOf, lineSplitter, strip;
+import std.stdio : writeln;
+import std.string : indexOf, lineSplitter;
 
 import hackerscad.tool.guiclient : guiRequest, openWindows;
 
