@@ -56,7 +56,9 @@ PrintCheck checkPrint(const(float)[] pos, size_t stride, const(uint)[] tris, dou
         normals[t] = len > 0 ? cr / len : Vec3(0, 0, 0);
         // facing down more than the angle, and not resting on the bed
         immutable onBed = a.z < bed + flatTol && b.z < bed + flatTol && c.z < bed + flatTol;
-        if (normals[t].z < -sinA - 1e-9 && !onBed)
+        // a hair past the angle (0.1°): a surface at exactly 45° (a
+        // teardrop, a chamfer) is not one, whatever the rounding of its mesh
+        if (normals[t].z < -sinA - 1.5e-3 && !onBed)
         {
             r.overhang[t] = true;
             r.overhangArea += areas[t];
