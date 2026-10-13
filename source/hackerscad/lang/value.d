@@ -303,6 +303,15 @@ struct Value
             foreach (i; 0 .. st.fields.length)
                 if (st.fields[i] != o.st.fields[i]) return false;
             return true;
+        case Kind.aa:
+            if (aa is o.aa) return true;
+            if (aa.vals.length != o.aa.vals.length) return false;
+            foreach (key, val; aa.vals)
+            {
+                auto other = key in o.aa.vals;
+                if (other is null || *other != val) return false;
+            }
+            return true;
         case Kind.type: return type.name == o.type.name;
         case Kind.solid: return solid is o.solid;
         case Kind.object_: return obj is o.obj;
@@ -389,7 +398,9 @@ string aaKey(const Value k, Span span)
     switch (k.kind)
     {
     case Kind.str: return "s" ~ k.s;
-    case Kind.num: return format("n%s%s/%s", k.n.value, k.n.dim.len, k.n.dim.ang);
+    // the exact value (hexadecimal, every bit), not 6 digits: 1000000 and
+    // 1000001 are two keys; -0 is 0, as == says
+    case Kind.num: return format("n%a%s/%s", k.n.value == 0 ? 0.0 : k.n.value, k.n.dim.len, k.n.dim.ang);
     case Kind.bool_: return k.b ? "b1" : "b0";
     default:
         throw new HcadError(Code.type, "associative array keys must be strings, numbers or bools, not " ~ k.typeName, span);

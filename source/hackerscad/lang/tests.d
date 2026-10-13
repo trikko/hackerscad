@@ -1172,3 +1172,10 @@ unittest
     auto first = toSvg(dv.render()), second = toSvg(dv.render());
     assert(first == second, "a second render differs from the first");
 }
+
+unittest
+{
+    // associative arrays: numeric keys are exact, and equal contents compare equal
+    expectOut(`int[double] m; m[1000000] = 1; m[1000001] = 2; m[1.0000001] = 3; m[1.0000002] = 4; writeln(m.length);`, "4");
+    expectOut(`int[string] p, q; p["a"] = 1; q["a"] = 1; writeln(p == q); q["b"] = 2; writeln(p == q);`, "true\nfalse");
+}
