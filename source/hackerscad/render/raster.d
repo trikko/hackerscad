@@ -189,36 +189,60 @@ void edgeSets(const Mesh m, double angleDeg, out uint[2][] sharp, out uint[2][] 
     import std.math : cos, PI;
 
     immutable limit = cos(angleDeg * PI / 180);
+    immutable nt = m.triangleCount;
     auto normals = triangleNormals(m);
     foreach (ref n; normals)
         n = n.normalized;
-    size_t[][ulong] faces;
-    foreach (t; 0 .. m.triangleCount)
+    // the face of every triangle, once (faceOf searches for it)
+    auto face = new int[nt];
+    face[] = -1;
+    if (m.faceStart.length >= 2)
+        foreach (f; 0 .. m.faceStart.length - 1)
+            foreach (t; m.faceStart[f] .. min(m.faceStart[f + 1], nt))
+                face[t] = cast(int) f;
+    // every side of every triangle, keyed by its two vertices and sorted: the
+    // sides of one edge come next to each other
+    auto keys = new ulong[nt * 3];
+    auto tri = new uint[nt * 3];
+    foreach (t; 0 .. nt)
         foreach (k; 0 .. 3)
         {
             ulong a = m.tris[t * 3 + k], b = m.tris[t * 3 + (k + 1) % 3];
-            faces[min(a, b) << 32 | max(a, b)] ~= t;
+            keys[t * 3 + k] = min(a, b) << 32 | max(a, b);
+            tri[t * 3 + k] = cast(uint) t;
         }
+    sortKeys(keys, tri);
+    // calls `edge` with each edge's vertices and its triangles
+    void eachEdge(scope void delegate(uint a, uint b, const uint[] ts) edge)
+    {
+        for (size_t i = 0; i < keys.length;)
+        {
+            size_t j = i + 1;
+            while (j < keys.length && keys[j] == keys[i])
+                j++;
+            edge(cast(uint)(keys[i] >> 32), cast(uint)(keys[i] & 0xffff_ffff), tri[i .. j]);
+            i = j;
+        }
+    }
     // two faces of the solid that meet at an angle anywhere meet at an
     // edge all along: where the angle fades (two cylinders crossing) the
     // edge goes on, instead of breaking into dashes
     static ulong pairOf(int f0, int f1) => cast(ulong) min(f0, f1) << 32 | cast(uint) max(f0, f1);
     bool[ulong] sharpPairs;
-    foreach (key, ts; faces)
+    eachEdge((a, b, ts) {
         if (ts.length == 2 && normals[ts[0]].dot(normals[ts[1]]) < limit)
         {
-            immutable f0 = m.faceOf(ts[0]), f1 = m.faceOf(ts[1]);
+            immutable f0 = face[ts[0]], f1 = face[ts[1]];
             if (f0 != f1 && f0 >= 0 && f1 >= 0)
                 sharpPairs[pairOf(f0, f1)] = true;
         }
-    foreach (key, ts; faces)
-    {
-        immutable a = cast(uint)(key >> 32), b = cast(uint)(key & 0xffff_ffff);
+    });
+    eachEdge((a, b, ts) {
         if (ts.length != 2 || normals[ts[0]].dot(normals[ts[1]]) < limit)
             sharp ~= [a, b];
         else
         {
-            immutable f0 = m.faceOf(ts[0]), f1 = m.faceOf(ts[1]);
+            immutable f0 = face[ts[0]], f1 = face[ts[1]];
             if (f0 != f1 && f0 >= 0 && f1 >= 0)
             {
                 if (pairOf(f0, f1) in sharpPairs)
@@ -227,7 +251,7 @@ void edgeSets(const Mesh m, double angleDeg, out uint[2][] sharp, out uint[2][] 
                     tangent ~= [a, b];
             }
         }
-    }
+    });
 }
 
 /// The triangles of curved surfaces, 18 floats each: their three corners,
@@ -246,18 +270,29 @@ float[] contourTriangles(const Mesh m, double angleDeg)
     auto unit = new Vec3[area.length];
     foreach (t, n; area)
         unit[t] = n.normalized;
-    auto around = new uint[][m.vertexCount];
+    // the triangles around each vertex, in one array: those of vertex v are
+    // around[start[v] .. start[v + 1]]
+    immutable nv = m.vertexCount;
+    auto start = new uint[nv + 1];
+    foreach (v; m.tris)
+        start[v + 1]++;
+    foreach (i; 1 .. nv + 1)
+        start[i] += start[i - 1];
+    auto fill = start[0 .. nv].dup;
+    auto around = new uint[m.tris.length];
     foreach (t; 0 .. m.triangleCount)
         foreach (k; 0 .. 3)
-            around[m.tris[t * 3 + k]] ~= cast(uint) t;
-    float[] r;
+            around[fill[m.tris[t * 3 + k]]++] = cast(uint) t;
+    auto r = new float[m.triangleCount * 18];
+    size_t used;
     foreach (t; 0 .. m.triangleCount)
     {
         Vec3[3] n;
         foreach (k; 0 .. 3)
         {
             Vec3 sum;
-            foreach (o; around[m.tris[t * 3 + k]])
+            immutable v = m.tris[t * 3 + k];
+            foreach (o; around[start[v] .. start[v + 1]])
                 if (unit[o].dot(unit[t]) >= limit)
                     sum = sum + area[o];
             n[k] = sum.normalized;
@@ -268,12 +303,16 @@ float[] contourTriangles(const Mesh m, double angleDeg)
         foreach (k; 0 .. 3)
         {
             auto p = m.vertex(m.tris[t * 3 + k]);
-            r ~= [cast(float) p.x, cast(float) p.y, cast(float) p.z];
+            r[used .. used + 3] = [cast(float) p.x, cast(float) p.y, cast(float) p.z];
+            used += 3;
         }
         foreach (k; 0 .. 3)
-            r ~= [cast(float) n[k].x, cast(float) n[k].y, cast(float) n[k].z];
+        {
+            r[used .. used + 3] = [cast(float) n[k].x, cast(float) n[k].y, cast(float) n[k].z];
+            used += 3;
+        }
     }
-    return r;
+    return r[0 .. used];
 }
 
 /// The normal of every triangle, as long as twice its area.

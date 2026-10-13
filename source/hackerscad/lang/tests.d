@@ -1189,3 +1189,70 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    // the sorted edge grouping gives the same edges as grouping them in a map
+    import hackerscad.render.raster : edgeSets;
+    import hackerscad.geom.mesh : Mesh;
+    import hackerscad.geom.vec : Vec3;
+    import std.algorithm : min, max, sort;
+    static void reference(const Mesh m, double angleDeg, out uint[2][] sharp, out uint[2][] tangent)
+    {
+        import std.math : cos, PI;
+        immutable limit = cos(angleDeg * PI / 180);
+        Vec3 normal(size_t t)
+        {
+            auto a = m.vertex(m.tris[t * 3]), b = m.vertex(m.tris[t * 3 + 1]), c = m.vertex(m.tris[t * 3 + 2]);
+            return (b - a).cross(c - a).normalized;
+        }
+        size_t[][ulong] faces;
+        foreach (t; 0 .. m.triangleCount)
+            foreach (k; 0 .. 3)
+            {
+                ulong a = m.tris[t * 3 + k], b = m.tris[t * 3 + (k + 1) % 3];
+                faces[min(a, b) << 32 | max(a, b)] ~= t;
+            }
+        bool[ulong] pairs;
+        foreach (key, ts; faces)
+            if (ts.length == 2 && normal(ts[0]).dot(normal(ts[1])) < limit)
+            {
+                immutable f0 = m.faceOf(ts[0]), f1 = m.faceOf(ts[1]);
+                if (f0 != f1 && f0 >= 0 && f1 >= 0)
+                    pairs[cast(ulong) min(f0, f1) << 32 | max(f0, f1)] = true;
+            }
+        foreach (key, ts; faces)
+        {
+            immutable a = cast(uint)(key >> 32), b = cast(uint)(key & 0xffff_ffff);
+            if (ts.length != 2 || normal(ts[0]).dot(normal(ts[1])) < limit)
+                sharp ~= [a, b];
+            else
+            {
+                immutable f0 = m.faceOf(ts[0]), f1 = m.faceOf(ts[1]);
+                if (f0 != f1 && f0 >= 0 && f1 >= 0)
+                {
+                    if ((cast(ulong) min(f0, f1) << 32 | max(f0, f1)) in pairs)
+                        sharp ~= [a, b];
+                    else
+                        tangent ~= [a, b];
+                }
+            }
+        }
+    }
+    auto r = runModel(q{
+        @part Solid a() => (box(30, 20, 10).fillet(edges.parallel(Z), r: 3) - cylinder(d: 8, h: 10))
+            .chamfer(edges.of(faces.top), d: 0.5);
+        @part Solid b() => cylinder(d: 20, h: 20, center: true) & cylinder(d: 20, h: 20, center: true).rotate(x: 90);
+    });
+    foreach (p; r.parts)
+    {
+        auto m = kernel.tessellate(p.solid.brep, 0.05, 0.2).welded;
+        uint[2][] s1, t1, s2, t2;
+        edgeSets(m, 25, s1, t1);
+        reference(m, 25, s2, t2);
+        foreach (x; [&s1, &t1, &s2, &t2])
+            sort(*x);
+        assert(s1 == s2 && t1 == t2, p.name);
+        assert(m.isClosed);
+    }
+}

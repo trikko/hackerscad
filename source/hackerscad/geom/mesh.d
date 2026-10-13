@@ -1,6 +1,7 @@
 module hackerscad.geom.mesh;
 
 import hackerscad.geom.vec;
+import std.algorithm.mutation : swap;
 
 /// Indexed triangle mesh, the common currency between kernels, exporters and
 /// the viewport.
@@ -76,15 +77,16 @@ struct Mesh
     /// winding, i.e. the mesh is a closed, consistently oriented surface.
     bool isClosed() const
     {
-        int[ulong] directed;
+        // every directed edge once, and its reverse once: sorted, then looked up
+        import std.range : assumeSorted;
+        auto keys = new ulong[tris.length];
         foreach (t; 0 .. triangleCount)
             foreach (k; 0 .. 3)
-            {
-                immutable ulong a = tris[t * 3 + k], b = tris[t * 3 + (k + 1) % 3];
-                directed[a << 32 | b]++;
-            }
-        foreach (key, n; directed)
-            if (n != 1 || directed.get((key & 0xffff_ffff) << 32 | key >> 32, 0) != 1)
+                keys[t * 3 + k] = cast(ulong) tris[t * 3 + k] << 32 | tris[t * 3 + (k + 1) % 3];
+        sortKeys(keys);
+        auto sorted = keys.assumeSorted;
+        foreach (i, key; keys)
+            if ((i + 1 < keys.length && keys[i + 1] == key) || !sorted.contains((key & 0xffff_ffff) << 32 | key >> 32))
                 return false;
         return true;
     }
@@ -121,4 +123,47 @@ unittest
     assert(w.isClosed);
     import std.math : isClose;
     assert(isClose(w.volume, 1.0 / 6));
+}
+
+/// Sorts `keys` (and `vals` along, when given) by radix: four passes of 16
+/// bits, linear in the length. Meshes have millions of edges to group, and
+/// a sort beats a map of them by an order of magnitude.
+void sortKeys(ref ulong[] keys, ref uint[] vals)
+{
+    auto k2 = new ulong[keys.length], v2 = new uint[vals.length];
+    auto count = new size_t[65537];
+    foreach (pass; 0 .. 4)
+    {
+        immutable shift = pass * 16;
+        count[] = 0;
+        foreach (k; keys)
+            count[((k >> shift) & 0xffff) + 1]++;
+        foreach (i; 1 .. count.length)
+            count[i] += count[i - 1];
+        foreach (i, k; keys)
+        {
+            immutable d = count[(k >> shift) & 0xffff]++;
+            k2[d] = k;
+            if (vals.length)
+                v2[d] = vals[i];
+        }
+        swap(keys, k2);
+        swap(vals, v2);
+    }
+}
+
+/// ditto
+void sortKeys(ref ulong[] keys)
+{
+    uint[] none;
+    sortKeys(keys, none);
+}
+
+unittest
+{
+    ulong[] keys = [5, 1UL << 40, 3, 0, 1UL << 40 | 2, 7UL << 60];
+    uint[] vals = [0, 1, 2, 3, 4, 5];
+    sortKeys(keys, vals);
+    assert(keys == [0, 3, 5, 1UL << 40, 1UL << 40 | 2, 7UL << 60]);
+    assert(vals == [3, 2, 0, 1, 4, 5]);
 }
