@@ -1,0 +1,90 @@
+module planter;
+
+import std.shapes;
+
+@param("Size", min: 50.mm, max: 120.mm)
+@preset("herbs", 62.mm) @preset("basil", 80.mm) @preset("chili", 96.mm)
+immutable size = 62.mm;
+
+@param("Height", min: 50.mm, max: 120.mm)
+@preset("herbs", 66.mm) @preset("basil", 90.mm) @preset("chili", 110.mm)
+immutable height = 66.mm;
+
+@param("Drainage holes")
+immutable drainage = true;
+
+@part("sienna")
+Solid tank()
+{
+    auto t = box(size, size, height)
+        .fillet(edges.parallel(Z), r: 10.mm)
+        .draft(faces.front + faces.right + faces.back + faces.left,
+            angle: -4.deg)
+        .fillet(edges.of(faces.bottom), r: 12.mm)
+        .shell(open: faces.top, thickness: 1.6.mm);
+    // the shelf the pot rests on
+    return t + shelf();
+}
+
+@part
+Solid pot()
+{
+    auto p = (potShape() - corner())
+        .shell(open: faces.top, thickness: 1.6.mm)
+        // M8 clearance hole (through: true goes all the way)
+        .cut(circle(d: 9.mm), on: faces.normal(Z).largest,
+            at: vec(0.mm, 0.mm, 17.6.mm), depth: 5.mm);
+    // four drainage holes, one in each quarter of the floor
+    if (drainage)
+        foreach (x; [-12.mm, 12.mm])
+            foreach (y; [-12.mm, 12.mm])
+                p = p.cut(circle(d: 3.4.mm), on: faces.normal(Z).largest,
+                    at: vec(x, y, 17.6.mm), depth: 5.mm);
+    return p;
+}
+
+/// The outside of the pot: the shape of the tank, a little smaller and
+/// lower, 16 mm up. Below it stays the water.
+Solid potShape() => box(size - 2.mm, size - 2.mm, height - 18.mm)
+    .fillet(edges.parallel(Z), r: 9.mm)
+    .draft(faces.left + faces.front + faces.back + faces.right,
+        angle: -4.deg)
+    .fillet(edges.of(faces.bottom), r: 1.mm)
+    .move(z: 16.mm);
+
+/// The inside of the tank at height z: the walls open out by 4°.
+Profile inside(Length z)
+{
+    immutable out = z * tan(4.deg), across = size + 2 * out - 3.2.mm;
+    return rect(across, across).round(10.mm + out - 1.6.mm);
+}
+
+/// A shelf 4 mm wide inside the tank, flat on top at 16 mm, where the pot
+/// rests. Underneath it curves down into the wall: it prints without
+/// supports.
+Solid shelf()
+{
+    Profile[] wall, curve;
+    foreach (i; 0 .. 5)
+    {
+        // five outlines, from 8 mm up to 16 mm
+        immutable s = i / 4.0, z = 8.mm + 8.mm * s;
+        wall ~= [inside(z).move(z: z)];
+        curve ~= [inside(z).offset(-4.mm * s * s - 0.01.mm).move(z: z)];
+    }
+    return loft(wall) - loft(curve);
+}
+
+/// What is cut off the back right corner of the pot: the water goes in
+/// there, between pot and tank.
+Solid corner() => box(40.mm, 40.mm, 3 * height, center: true)
+    .rotate(z: 45.deg)
+    .move(x: size / 2 + 6.mm, y: size / 2 + 6.mm);
+
+unittest
+{
+    // the water under the pot: about the inside of the tank, 13 mm deep
+    immutable ml = (size - 3.2.mm) ^^ 2 * 13.mm / 1.cm ^^ 3;
+    writeln("the tank holds about $(format("%.0f", ml)) ml of water");
+    assert(ml > 40, "the tank holds too little water: make it larger");
+}

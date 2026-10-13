@@ -1,0 +1,20 @@
+module planter;
+
+import std.shapes;
+
+@param("Size", min: 50.mm, max: 120.mm)
+immutable size = 62.mm;
+
+@param("Height", min: 50.mm, max: 120.mm)
+immutable height = 66.mm;
+
+@part("sienna")
+Solid tank()
+{
+    return box(size, size, height)
+        .fillet(edges.parallel(Z), r: 10.mm)
+        .draft(faces.front + faces.right + faces.back + faces.left,
+            angle: -4.deg)
+        .fillet(edges.of(faces.bottom), r: 12.mm)
+        .shell(open: faces.top, thickness: 1.6.mm);
+}

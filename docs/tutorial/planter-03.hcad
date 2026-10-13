@@ -1,0 +1,10 @@
+module planter;
+
+import std.shapes;
+
+@part("sienna")
+Solid tank()
+{
+    return box(62.mm, 62.mm, 66.mm)
+        .fillet(edges.parallel(Z), r: 10.mm);
+}

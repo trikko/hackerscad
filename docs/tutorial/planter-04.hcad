@@ -1,0 +1,14 @@
+module planter;
+
+import std.shapes;
+
+@part("sienna")
+Solid tank()
+{
+    return box(62.mm, 62.mm, 66.mm)
+        .fillet(edges.parallel(Z), r: 10.mm)
+        .draft(faces.front + faces.right + faces.back + faces.left,
+            angle: -4.deg)
+        .fillet(edges.of(faces.bottom), r: 12.mm)
+        .shell(open: faces.top, thickness: 1.6.mm);
+}

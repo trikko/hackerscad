@@ -1,0 +1,45 @@
+module planter;
+
+import std.shapes;
+
+@param("Size", min: 50.mm, max: 120.mm)
+immutable size = 62.mm;
+
+@param("Height", min: 50.mm, max: 120.mm)
+immutable height = 66.mm;
+
+@part("sienna")
+Solid tank()
+{
+    return box(size, size, height)
+        .fillet(edges.parallel(Z), r: 10.mm)
+        .draft(faces.front + faces.right + faces.back + faces.left,
+            angle: -4.deg)
+        .fillet(edges.of(faces.bottom), r: 12.mm)
+        .shell(open: faces.top, thickness: 1.6.mm);
+}
+
+@part
+Solid pot()
+{
+    auto p = potShape()
+        .shell(open: faces.top, thickness: 1.6.mm)
+        // M8 clearance hole (through: true goes all the way)
+        .cut(circle(d: 9.mm), on: faces.normal(Z).largest,
+            at: vec(0.mm, 0.mm, 17.6.mm), depth: 5.mm);
+    // four drainage holes, one in each quarter of the floor
+    foreach (x; [-12.mm, 12.mm])
+        foreach (y; [-12.mm, 12.mm])
+            p = p.cut(circle(d: 3.4.mm), on: faces.normal(Z).largest,
+                at: vec(x, y, 17.6.mm), depth: 5.mm);
+    return p;
+}
+
+/// The outside of the pot: the shape of the tank, a little smaller and
+/// lower, 16 mm up. Below it stays the water.
+Solid potShape() => box(size - 2.mm, size - 2.mm, height - 18.mm)
+    .fillet(edges.parallel(Z), r: 9.mm)
+    .draft(faces.left + faces.front + faces.back + faces.right,
+        angle: -4.deg)
+    .fillet(edges.of(faces.bottom), r: 1.mm)
+    .move(z: 16.mm);

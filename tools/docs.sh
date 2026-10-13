@@ -20,12 +20,13 @@ cp data/logo/it.andreafontana.hackerscad.gui.svg docs/logo.svg
 # screenshot of the application, taken by hand)
 awk '/^## A model/{f=1} f&&/^```d/{g=1;next} g&&/^```/{exit} g' README.md > build/readme-cup.hcad
 bin/hcad check build/readme-cup.hcad >/dev/null
-# the tutorial's pot, one model and one picture per step
-for f in docs/tutorial/pot-*.hcad; do
+# the tutorial's planter: the model at the end of each page must check; the
+# pictures of the index from the last one, whole and with the pot lifted out
+# (the window's pictures: dub run --single tools/tutorial-shots.d)
+for f in docs/tutorial/planter-*.hcad; do
     bin/hcad check "$f" >/dev/null
-    bin/hcad render "$f" -o "${f%.hcad}.png" >/dev/null
 done
-# the profile of step 1 also from the front, the drainage holes from above
-bin/hcad render docs/tutorial/pot-1-profile.hcad -o docs/tutorial/pot-1-profile-front.png >/dev/null
-bin/hcad render docs/tutorial/pot-5.hcad -o docs/tutorial/pot-5-top.png >/dev/null
+bin/hcad render docs/tutorial/planter-09.hcad -o docs/tutorial/img/planter.png >/dev/null
+sed 's/^    return p;$/    return p.move(z: 72.mm);/' docs/tutorial/planter-09.hcad > build/planter-apart.hcad
+bin/hcad render build/planter-apart.hcad -o docs/tutorial/img/planter-apart.png >/dev/null
 echo "docs/ updated"
