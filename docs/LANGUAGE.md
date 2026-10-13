@@ -1,6 +1,6 @@
 # The `.hcad` language
 
-A `.hcad` file is an **interpreted, sandboxed subset of D**. Anyone who knows D can read it without
+A `.hcad` file is written in an **interpreted, sandboxed scripting language inspired by D**. Anyone who knows D can read it without
 surprises. There is no compilation step: the interpreter runs inside hackerscad and re-evaluates a
 model in milliseconds.
 

@@ -11,9 +11,10 @@ only source of truth, so it diffs, versions and reviews like any other code.
 [language reference](docs/LANGUAGE.md) · [cheatsheet](docs/CHEATSHEET.md) · [examples](examples) ·
 [for AI agents](#using-hackerscad-with-an-ai-agent)
 
-* ✏️ **Models as code**: `.hcad` is a sandboxed subset of D, with units
-  (`60.mm`, `30.deg`), booleans as operators and selectors such as
-  `edges.parallel(Z)` instead of edge numbers.
+* ✏️ **Models as code**: `.hcad` is a sandboxed scripting language inspired
+  by D, with units (`60.mm`, `30.deg`), solids joined, cut and intersected
+  with `+`, `-` and `&`, and selectors such as `edges.parallel(Z)` instead of
+  edge numbers.
 * 💡 **An editor that knows the language**: completion of methods, units,
   arguments and library functions, signatures while you type, help on hover,
   and a searchable cheatsheet (F1).
