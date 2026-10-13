@@ -689,8 +689,10 @@ JSONValue[] toolList()
             ~ `"theme": {"type": "string", "enum": ["system", "light", "dark"]}, `
             ~ `"drag": {"type": "string", "enum": ["rotate", "pan"]}, "antialias": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (a cube with two "
-            ~ "holes), parameters and view reset. Refused when the user has unsaved changes, unless force is true "
-            ~ "(which discards them: ask the user first).", `"force": {"type": "boolean"}`, `[]`),
+            ~ "holes), parameters and view reset; with example, one of the Examples menu instead (bagclip, jug, "
+            ~ "planter, language: a commented tour of the language), unsaved. Refused when the user has unsaved "
+            ~ "changes, unless force is true (which discards them: ask the user first).",
+            `"force": {"type": "boolean"}, "example": {"type": "string", "enum": ["bagclip", "jug", "planter", "language"]}`, `[]`),
         gui("hcad_gui_rename", "Rename the user's window (the name in its header bar, which the user and the "
             ~ "'window' argument use): letters, digits and dashes.", `"name": {"type": "string"}`, `["name"]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "

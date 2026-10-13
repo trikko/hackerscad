@@ -27,7 +27,10 @@ bag clip is still open; we use it to try things.
 
 The buttons at the top left start a new model, open one, save it and export
 it (Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E; on macOS, Cmd in place of Ctrl, here and
-in the rest of this tutorial). The buttons at the top right show or hide
+in the rest of this tutorial). **Examples** opens ready models to try: the
+bag clip, a jug with a handle, the planter this tutorial builds, and a tour
+of the language that shows `if`, `for`, `while`, `switch`, functions and
+structs, each with what it makes appear. The buttons at the top right show or hide
 the console, the code, the view and the parameters (Ctrl+J, F7, F8, F9). The
 menu (☰) has New, Open, Save As,
 Export, the Cheatsheet, this tutorial, and the style: light, dark, or as the

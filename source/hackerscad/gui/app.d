@@ -105,6 +105,22 @@ else
 /// shows the main ideas.
 enum startModel = import("bagclip.hcad");
 
+/// The models of the Examples menu: name, label, what it shows, source.
+struct Example
+{
+    string name, label, what, source;
+}
+
+static immutable Example[] examples = [
+    Example("bagclip", "Bag clip", "the model hackerscad starts with: a print-in-place clip", import("bagclip.hcad")),
+    Example("jug", "Jug with a handle", "a loft, a shell and a swept handle (the tutorial's last chapter)",
+        import("jug.hcad")),
+    Example("planter", "Planter", "the tutorial's planter: parameters, presets, drafts, text, checks",
+        import("tutorial/planter-11.hcad")),
+    Example("language", "Language tour", "if, for, while, switch, functions, structs, arrays: each with what it shows",
+        import("language.hcad")),
+];
+
 /// What New starts with: a part in a few lines, to change into one's own.
 enum newModelTemplate = `// An example: replace what is inside body() with your own.
 
@@ -464,6 +480,7 @@ final class MainWindow
         // arrow out) read as download and upload
         header.packStart(textButton("Save", "Save (" ~ shortcutKey ~ "+S)", &save));
         header.packStart(exportMenu());
+        header.packStart(examplesMenu());
         busyIndicator = new Spinner;
         busyIndicator.setTooltipText("Evaluating the model");
         busyIndicator.setVisible(false);
@@ -887,6 +904,8 @@ final class MainWindow
         foreach (f; exportFormats)
             exportAction(app, f.ext);
         action(app, "export-3mf-one", [], () => exportFile("3mf", null, true));
+        foreach (e; examples)
+            action(app, "example-" ~ e.name, [], exampleAction(e.name));
         action(app, "fit", ["F5"], () => viewport.fit());
         action(app, "params", ["F9"], () => paramsToggle.setActive(!paramsToggle.getActive()));
         action(app, "console", ["<Primary>j"], () => consoleToggle.setActive(!consoleToggle.getActive()));
@@ -3762,6 +3781,49 @@ private:
                     "win.export-3mf-one");
         }
         return m;
+    }
+
+    /// The Examples button: models to open and try, as unsaved new models.
+    Widget examplesMenu()
+    {
+        auto m = new GMenu;
+        foreach (e; examples)
+            m.append(e.label ~ " — " ~ e.what, "win.example-" ~ e.name);
+        auto b = new MenuButton;
+        b.setLabel("Examples");
+        b.setAlwaysShowArrow(true);
+        b.setTooltipText("Open an example model, to try and change");
+        b.setMenuModel(m);
+        return b;
+    }
+
+    // a function of its own: closures made in a loop would all share the last name
+    void delegate() exampleAction(string name) => () => confirmDiscard(() { startExample(name); });
+
+    /// A new model with the example `name`'s code, not saved yet: its
+    /// file would be name.hcad next to the current one (name_2.hcad if
+    /// that exists). False when there is no such example.
+    bool startExample(string name)
+    {
+        import std.algorithm : find;
+        auto e = examples.find!(x => x.name == name);
+        if (e.length == 0)
+            return false;
+        auto target = buildPath(dirName(path), name ~ ".hcad");
+        for (int k = 2; exists(target); k++)
+            target = buildPath(dirName(path), format("%s_%d.hcad", name, k));
+        agentText = null;
+        path = target;
+        params.overrides = null;
+        params.preset = null;
+        params.invalidate();
+        firstResult = true;
+        resetInterface();
+        buffer.setText(e[0].source);
+        diskTime = 0;
+        modified = false;
+        updateTitle();
+        return true;
     }
 
     /// The export button: a menu of the formats.

@@ -222,7 +222,14 @@ mixin template ControlMethods()
             if (modified && !("force" in p && p["force"].type == JSONType.true_))
                 return reply(JSONValue.init, "the model has unsaved changes: save it, or pass force: true to discard "
                     ~ "them (ask the user first)");
-            startNew();
+            // with "example": that example model instead of the template, as the Examples menu
+            if (auto ex = arg("example"))
+            {
+                if (!startExample(ex))
+                    return reply(JSONValue.init, "no example named '" ~ ex ~ "': bagclip, jug, planter or language");
+            }
+            else
+                startNew();
             whenIdle(() => reply(state(), null));
             return;
         case "rename":
