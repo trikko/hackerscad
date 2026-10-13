@@ -1774,13 +1774,15 @@ Value transformed(Interp it, Span span, SolidVal s, Brep delegate(Brep) f, strin
     if (s.brep is null)
         return Value.of(s);
     auto r = derived(it, f(s.brep), [s], kind, span);
-    // moving what a feature has just made, in the same call (circle(…).move(…)):
-    // the feature shows where its solid ends up. A caller moving what a function
-    // returned (f().move(…)) moves it on its own line, not on the feature's.
+    // moving what a feature has just made, in the same statement
+    // (circle(…).move(…)): the feature shows where its solid ends up. A caller
+    // moving what a function returned (f().move(…)), or a solid kept in a
+    // variable and moved later (rod.rotate(…), maybe twice), moves it on its
+    // own line, not on the feature's.
     if (s.creators.length && s.creators[0] > 0 && s.creators[0] <= it.features.length)
     {
         auto feature = &it.features[s.creators[0] - 1];
-        if (feature.result is s && feature.frame is it.callFrame)
+        if (feature.result is s && feature.frame is it.callFrame && feature.statement is it.currentStatement)
         {
             feature.result = r;
             feature.moved = true;

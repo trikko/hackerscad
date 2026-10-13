@@ -1293,3 +1293,27 @@ unittest
     assert(isClose(kernel.volume(s), m.volume, 1e-9), format("%s %s", kernel.volume(s), m.volume));
     assert(kernel.area(s) > 4 * 3.14 * 100 * 0.98);
 }
+
+unittest
+{
+    // a step shows its solid as it made it, unless the same statement moves
+    // it at once: a rod kept in a variable and turned later stands upright
+    auto r = runModel(q{
+        @part Solid body()
+        {
+            auto cube = box(20, 20, 20, center: true);
+            auto rod = cylinder(d: 14, h: 30, center: true);
+            auto peg = cylinder(d: 4, h: 10).move(x: 30);
+            return cube - rod.rotate(x: 90) - rod.rotate(y: 90) + peg;
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.algorithm : filter;
+    import std.array : array;
+    auto cylinders = r.features.filter!(f => f.kind == "cylinder").array;
+    assert(cylinders.length == 2);
+    auto rod = kernel.bbox(cylinders[0].result.brep);
+    assert(!cylinders[0].moved && isClose(rod.size.z, 30, 1e-6), "the rod as made, standing");
+    assert(cylinders[1].moved && kernel.bbox(cylinders[1].result.brep).center.x > 29, "the peg where it was moved to");
+}

@@ -54,6 +54,7 @@ struct FeatureInfo
     bool moved;        /// result is the solid moved, turned or mirrored right after it was made
     SolidVal[] operands;   /// of a union, difference or intersection: the two solids it combined
     Object frame;      /// the function call it ran in (Interp.callFrame)
+    Object statement;  /// the statement it ran in (Interp.currentStatement)
 }
 
 /// A solid, profile or path a call in the evaluated file produced (the
@@ -763,9 +764,18 @@ final class Interp
 
     // ------------------------------------------------------------ statements
 
+    /// The statement running (blocks aside): a feature is shown moved only
+    /// by a move in the statement that made it (see transformed).
+    Object currentStatement;
+
     private Flow exec(Stmt s, Env env)
     {
         tick(s.span);
+        auto outer = currentStatement;
+        if (cast(Block) s is null)
+            currentStatement = s;
+        scope (exit)
+            currentStatement = outer;
         if (auto e = cast(ExprStmt) s)
         {
             eval(e.expr, env);
@@ -2109,6 +2119,7 @@ final class Interp
     {
         features ~= FeatureInfo(kind, span);
         features[$ - 1].frame = callFrame;
+        features[$ - 1].statement = currentStatement;
         return cast(uint) features.length;
     }
 
