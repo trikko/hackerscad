@@ -3133,7 +3133,7 @@ private:
         models.addSuffix("hcad");
         filters.append(models);
         auto meshes = new FileFilter;
-        meshes.setName("Meshes and CAD files, to use with load() in a model (*.stl, *.obj, *.3mf, *.step)");
+        meshes.setName("Meshes, CAD files and drawings, to use with load() in a model (*.stl, *.obj, *.3mf, *.step, *.svg, *.dxf)");
         foreach (ext; importable)
             meshes.addSuffix(ext[1 .. $]);
         filters.append(meshes);
@@ -3157,7 +3157,7 @@ private:
     }
 
     /// Files a model can use with load(), not open as a model.
-    static immutable importable = [".stl", ".obj", ".3mf", ".step", ".stp"];
+    static immutable importable = [".stl", ".obj", ".3mf", ".step", ".stp", ".svg", ".dxf"];
 
     /// Why `file` is not a model hackerscad can open (null if it is one).
     static string notAModel(string file)
@@ -3245,9 +3245,15 @@ private:
         params.invalidate();
         firstResult = true;
         resetInterface();
-        buffer.setText(format("module %s;\n\nimport std.shapes;\n\n"
-            ~ "// %s, from the same folder as this model: cut it, add to it, measure it\n"
-            ~ "@part\nSolid imported() => load(\"%s\");\n", name, baseName(file), baseName(file)));
+        import std.uni : toLower;
+        immutable drawing = [".svg", ".dxf"].canFind(extension(file).toLower);
+        buffer.setText(drawing
+            ? format("module %s;\n\nimport std.shapes;\n\n"
+                ~ "// the outlines of %s, from the same folder as this model, made a plate\n"
+                ~ "@part\nSolid imported() => load(\"%s\")\n    .extrude(3.mm);\n", name, baseName(file), baseName(file))
+            : format("module %s;\n\nimport std.shapes;\n\n"
+                ~ "// %s, from the same folder as this model: cut it, add to it, measure it\n"
+                ~ "@part\nSolid imported() => load(\"%s\");\n", name, baseName(file), baseName(file)));
         diskTime = 0;
         modified = true;
         updateTitle();

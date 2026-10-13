@@ -611,7 +611,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
 
     // ---- files: parts made elsewhere, inside the project directory only
     def("load", (ref CallArgs a) {
-        // load("part.stl", scale: 1): STL, OBJ and 3MF (mesh; STL and OBJ in mm) or STEP (exact B-rep)
+        // load("part.stl", scale: 1): STL, OBJ and 3MF (mesh; STL and OBJ in mm) or STEP (exact B-rep);
+        // load("logo.svg") and load("plate.dxf"): the drawing's closed outlines, a profile on XY
         import std.file : exists, read, readText, isFile;
         import std.path : buildNormalizedPath, absolutePath, extension, dirName;
         import std.string : toLower;
@@ -646,6 +647,17 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             case ".step", ".stp":
                 b = k.readStep(file);
                 break;
+            case ".svg", ".dxf":
+                {
+                    import hackerscad.io.outlines : readSvg, readDxf, OutlineException;
+                    import hackerscad.lang.convex : profileOfLoops;
+                    try
+                        b = profileOfLoops(k, ext == ".svg" ? readSvg(readText(file)) : readDxf(readText(file)),
+                            x.spanOf("path"));
+                    catch (OutlineException e)
+                        throw new HcadError(Code.import_, e.msg, x.spanOf("path"));
+                    break;
+                }
             case ".stl", ".obj", ".3mf":
                 {
                     auto mesh = ext == ".stl" ? readStl(cast(ubyte[]) read(file))
@@ -657,7 +669,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                     break;
                 }
             default:
-                throw new HcadError(Code.import_, format("unsupported file type '%s' (use .stl, .obj, .3mf, .step or .stp)", ext),
+                throw new HcadError(Code.import_, format("unsupported file type '%s' (use .stl, .obj, .3mf, .step, .stp, .svg or .dxf)", ext),
                     x.spanOf("path"));
             }
         }
@@ -677,7 +689,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 throw new HcadError(Code.type, "scale must be positive", x.spanOf("scale"));
             b = k.scale(b, f);
         }
-        return Value.of(primitive(it, b, "load", a.span));
+        auto r = primitive(it, b, "load", a.span);
+        r.flat = ext == ".svg" || ext == ".dxf";
+        return Value.of(r);
     });
 
     def("centered", (ref CallArgs a) {
@@ -898,14 +912,23 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return Value.of(r);
     });
     def("projection", (ref CallArgs a) {
-        // s.projection: the solid's shadow seen from above, a profile on XY (turn the solid first
-        // for another direction)
-        auto x = Args(it, a, "projection", ["solid"]);
+        // s.projection: the solid's shadow seen from above, a profile on XY;
+        // s.projection(XZ): its shadow on that plane, cast along the plane's normal
+        auto x = Args(it, a, "projection", ["solid", "plane"]);
         auto s = x.solid("solid");
         if (s.flat || s.path)
             throw new HcadError(Code.type, "projection is of solids: a profile is already flat", a.span);
-        import hackerscad.lang.convex : projectionOf;
-        auto r = primitive(it, projectionOf(k, nonEmpty(s, a.span), a.span), "projection", a.span);
+        import hackerscad.lang.convex : projectionOf, projectionOn;
+        Brep shadow;
+        if (x.has("plane"))
+        {
+            Vec3 o, n;
+            planeArg(x, "plane", o, n);
+            shadow = projectionOn(k, nonEmpty(s, a.span), o, n, a.span);
+        }
+        else
+            shadow = projectionOf(k, nonEmpty(s, a.span), a.span);
+        auto r = primitive(it, shadow, "projection", a.span);
         r.flat = true;
         r.rgb = s.rgb;
         r.hasColor = s.hasColor;

@@ -760,6 +760,14 @@ unittest
     }
     write(buildPath(dir, "tri.obj"), "v 0 0 0\nv 10 0 0\nv 0 10 0\nv 0 0 10\nf 1 3 2\nf 1 2 4\nf 1 4 3\nf 2 3 4\n");
     write(buildPath(dir, "open.obj"), "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    // drawings: a 40 x 20 mm plate with a hole of 10 mm and an island in it
+    write(buildPath(dir, "plate.svg"), `<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="20mm" viewBox="0 0 400 200">
+        <rect width="400" height="200" rx="20"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="20"/>
+        <path d="M250 50 h100 v100 h-100 z M275 75 v50 h50 v-50 z"/></svg>`);
+    write(buildPath(dir, "plate.dxf"), "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n90\n4\n70\n1\n"
+        ~ "10\n0\n20\n0\n10\n40\n20\n0\n10\n40\n20\n20\n10\n0\n20\n20\n"
+        ~ "0\nCIRCLE\n10\n10\n20\n10\n40\n5\n0\nARC\n10\n30\n20\n10\n40\n4\n50\n0\n51\n180\n"
+        ~ "0\nLINE\n10\n26\n20\n10\n11\n34\n21\n10\n0\nENDSEC\n0\nEOF\n");
 
     auto it = make();
     it.root = dir;
@@ -769,6 +777,8 @@ unittest
         @part Solid rounded() => mesh.fillet(edges.parallel(Z).filter(e => e.mid.x > 15.mm && e.mid.y > 15.mm), r: 2);
         @part Solid fromStep() => load("cube.step", scale: 2);
         @part Solid fromObj() => load("tri.obj");
+        @part Solid fromSvg() => load("plate.svg").extrude(2);
+        @part Solid fromDxf() => load("plate.dxf").extrude(1);
         unittest { writeln(mesh.plane(faces.top).origin.z, " ", mesh.centered.bbox.center); }
     }, buildPath(dir, "main.hcad"));
     foreach (d; r.diagnostics)
@@ -780,6 +790,11 @@ unittest
     assert(partVolume(r, "rounded") < partVolume(r, "fromStl") + PI * 20, "fillet on an imported part");
     assert(isClose(partVolume(r, "fromStep"), cubeVol * 8, 1e-6));
     assert(isClose(partVolume(r, "fromObj"), 1000.0 / 6, 1e-6));
+    // plate with rounded corners (r 2), less the ring (r 5 - r 2) and the square frame (10² - 5²)
+    immutable plate = 800 - (4 - PI) * 4 - PI * (25 - 4) - 75;
+    assert(isClose(partVolume(r, "fromSvg"), plate * 2, 2e-3), format("%s", partVolume(r, "fromSvg")));
+    // a plate with a round hole and a half disc cut by its diameter
+    assert(isClose(partVolume(r, "fromDxf"), 800 - PI * 25 - PI * 8, 2e-3), format("%s", partVolume(r, "fromDxf")));
     assert(r.log[0].text == "20 mm [0 mm, 0 mm, 0 mm]", r.log[0].text);
 
     // coplanar triangles merge into real faces: the top of the cube is one face
@@ -1409,6 +1424,10 @@ unittest
             assert(abs(sphere(10).section(XY.offset(6.mm)).area / mm2 - PI * 64) < 1e-6, "ball");
             assert(abs(sphere(10).projection.area / mm2 - PI * 100) < PI, "shadow");
             assert(abs(cylinder(r: 5, h: 20).rotate(x: 90).projection.area / mm2 - 200) < 0.5, "lying");
+            // on another plane: the standing cylinder seen from the front, lying in XZ
+            immutable side = cylinder(r: 5, h: 20).projection(XZ.offset(-30.mm));
+            assert(abs(side.area / mm2 - 200) < 0.5, "side");
+            assert(abs(side.bbox.size.y / 1.mm) < 1e-6 && abs(side.bbox.size.z / 1.mm - 20) < 1e-6, "in XZ");
         }
     });
     foreach (d; r.diagnostics)

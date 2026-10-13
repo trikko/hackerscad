@@ -165,7 +165,7 @@ immutable Ref[] reference =
     F("cone", "", ["r1: Length", "r2: Length", "h: Length", "d1: Length", "d2: Length", "center: bool"], "Solid",
         "A cone (or truncated cone) along Z."),
     F("sphere", "", ["r: Length", "d: Length"], "Solid", "A sphere centred on the origin."),
-    F("load", "", ["path: string", "scale: number"], "Solid", "A part from an STL, OBJ, 3MF or STEP file in the project."),
+    F("load", "", ["path: string", "scale: number"], "Solid", "A part from an STL, OBJ, 3MF or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm)."),
     ]) ~
     group("Transforms", [
     F("move", "Shape", ["v: Vec", "x: Length", "y: Length", "z: Length"], "", "Moves: move(x: 10.mm) or move(vec(…))."),
@@ -234,7 +234,7 @@ immutable Ref[] reference =
     P("volume", "Solid", "Volume", "The volume."),
     P("centroid", "Solid", "Vec3", "The centre of mass (of a uniform solid)."),
     F("section", "Solid", ["plane: Plane"], "Profile", "The cut of the solid by a plane: a profile in that plane."),
-    F("projection", "Solid", [], "Profile", "The solid's shadow seen from above: a profile on XY (turn the solid first for another side)."),
+    F("projection", "Solid", ["plane: Plane"], "Profile", "The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY."),
     F("mass", "Solid", ["density: number"], "number", "Grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85."),
     F("inertia", "Solid", ["density: number"], "Vec3", "The principal moments of inertia about the centre of mass, ascending, in g·mm²."),
     P("area", "Shape", "Area", "The surface area (of a profile: its area)."),

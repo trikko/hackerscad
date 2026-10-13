@@ -39,7 +39,7 @@ model in milliseconds.
   - Every function is therefore deterministic, and results can be cached. This is the basis of incremental regeneration.
 - **Not available:** classes, pointers, `mixin`, `static if`, user templates, exceptions, `asm`, `alias`, `new`.
 - **Sandbox.**
-  - `load()` reads mesh and STEP files inside the project directory only.
+  - `load()` reads mesh, STEP and drawing (SVG, DXF) files inside the project directory only.
   - Library imports are limited to hackerscad's standard modules: `std.shapes`, `std.math`, `std.algorithm`, `std.range`, `std.conv`, `std.format`, `std.stdio`, `std.array`, and `hardware`.
   - Imports cannot leave the project directory or the library folder they were found in.
   - There is no file, network or process access.
@@ -66,7 +66,7 @@ model in milliseconds.
   - `hull(a, b, …)` or `hull([a, b, …])`: the smallest convex shape around solids and profiles (two spheres make a capsule, four cylinders a plate with round corners); profiles in one plane give a profile, `hull(circle(r: 4.mm), circle(r: 4.mm).move(x: 20.mm))` a slot. Curved surfaces become flat facets within 0.05 mm.
   - `minkowski(a, b)`: `a` moved by every point of `b`. With a sphere (a circle for profiles) it rounds every edge and corner exactly, like `s.offset(r)`; with another convex shape (a box, a cylinder) it is made of flat facets, and one of the two shapes must be convex.
   - `s.offset(d)` grows a solid by `d` (or shrinks it, `d` negative), round where it turns.
-- **Profiles from solids:** `s.section(XZ)` (any plane: `s.section(s.plane(faces.top).offset(-2.mm))`) is the cut of the solid by the plane, a profile lying in it; `s.projection` is the solid's shadow seen from above, a profile on XY (turn the solid first for another side; curved surfaces within 0.02 mm). Both can be extruded, offset, combined like any profile.
+- **Profiles from solids:** `s.section(XZ)` (any plane: `s.section(s.plane(faces.top).offset(-2.mm))`) is the cut of the solid by the plane, a profile lying in it; `s.projection` is the solid's shadow seen from above, a profile on XY, and `s.projection(XZ)` its shadow on any plane, cast along the plane's normal (curved surfaces within 0.02 mm). Both can be extruded, offset, combined like any profile.
 - **Mass:** `s.centroid` is the centre of mass; `s.mass(density: 1.24)` the mass in grams for a density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85); `s.inertia(density: 1.24)` the principal moments of inertia about the centre of mass, ascending, in g·mm².
   - `Solid.init` and `nothing` are the empty solid. `solids.sum` and `fuse(…)` unite arrays.
 - **Primitives** stand on the XY plane, centred in X and Y; `center: true` centres them in Z too. Spheres are centred.
@@ -101,7 +101,7 @@ model in milliseconds.
   - `solid.placeOn(f)`: a solid built on XY with Z up is moved onto the frame. A plane works too (`placeOn(plane)`): its origin is the zero and X is the global X projected on it. A boss: `cylinder(d: 8, h: 5).placeOn(f)`; a pocket: `body - box(10, 10, 3).move(z: -3).placeOn(f)`.
 - **Cutting:** `s.split(plane)` returns both sides: `.above` (where the normal points) and `.below`.
 - **Separate bodies:** `s.pieces` lists the disconnected bodies of a solid (e.g. after a cut through it), ordered by position along X, then Y, then Z; pick one with `[i]` or sort them (`s.pieces.sort((a, b) => a.volume > b.volume)`).
-- **Importing parts:** `load("part.stl")`, `load("part.obj")`, `load("part.3mf")`, `load("part.step")`, with `scale:` (STL and OBJ are read in mm; 3MF uses its own unit and build transforms). Meshes become solids (coplanar triangles merged into faces, closed meshes only), STEP files keep their exact geometry; both can be cut, filleted, measured and selected like any other solid. Paths are relative to the model file and must stay inside the project directory.
+- **Importing parts:** `load("part.stl")`, `load("part.obj")`, `load("part.3mf")`, `load("part.step")`, with `scale:` (STL and OBJ are read in mm; 3MF uses its own unit and build transforms). Meshes become solids (coplanar triangles merged into faces, closed meshes only), STEP files keep their exact geometry; both can be cut, filleted, measured and selected like any other solid. Paths are relative to the model file and must stay inside the project directory. Drawings become profiles on XY: `load("logo.svg")` and `load("plate.dxf")` give their closed outlines (an outline inside another is a hole, inside a hole an island), ready to extrude; SVG sizes come from the drawing's width and height in mm, cm, in or pt (plain numbers are mm), DXF from its $INSUNITS (mm when unset); curves within 0.05 mm. Open lines, text and images are left out.
 - **Centring:** `shape.centered` moves a profile (in X and Y) or a solid (in X, Y and Z) so its bounding box is centred on the origin, e.g. `text("LABEL", size: 4.mm).centered`.
 - **Measuring:** `distance(a, b)` between two solids (0 when they touch), `s.bbox`, `s.volume`, `s.area`.
 - **Introspection:** `s.bbox` (`min`, `max`, `size`, `center`), `s.volume`, `s.area`, `s.isValid`.

@@ -442,7 +442,6 @@ void swap(T)(ref T a, ref T b)
 /// shadow (curved surfaces within the meshing's 0.02 mm).
 public Brep projectionOf(BrepKernel k, Brep b, Span span)
 {
-    import std.algorithm : canFind;
     auto m = k.tessellate(b, 0.02, 0.2).welded;
     immutable faced = m.faceStart.length >= 2;
     immutable faces = faced ? m.faceStart.length - 1 : 1;
@@ -506,5 +505,88 @@ public Brep projectionOf(BrepKernel k, Brep b, Span span)
     }
     if (regions.length == 0)
         throw new HcadError(Code.type, "the solid casts no shadow seen from above", span);
+    return unionOfProfiles(k, regions);
+}
+
+/// The shadow of `b` on a plane, cast along its normal: a profile lying
+/// in the plane.
+public Brep projectionOn(BrepKernel k, Brep b, Vec3 origin, Vec3 normal, Span span)
+{
+    Vec3 axis;
+    double angle;
+    turnFromZ(normal.normalized, axis, angle);
+    // the plane brought onto XY, the shadow taken there and put back
+    auto s = k.translate(b, -origin);
+    if (angle > 1e-12)
+        s = k.rotate(s, axis, -angle);
+    auto r = projectionOf(k, s, span);
+    if (angle > 1e-12)
+        r = k.rotate(r, axis, angle);
+    return k.translate(r, origin);
+}
+
+/// A profile on XY from closed outlines (from a drawing): an outline inside
+/// an even number of others is filled, inside an odd number it is a hole.
+public Brep profileOfLoops(BrepKernel k, double[2][][] loops, Span span)
+{
+    static bool inside(const(double[2])[] poly, double[2] p)
+    {
+        bool r;
+        for (size_t i = 0, j = poly.length - 1; i < poly.length; j = i++)
+            if ((poly[i][1] > p[1]) != (poly[j][1] > p[1])
+                && p[0] < (poly[j][0] - poly[i][0]) * (p[1] - poly[i][1]) / (poly[j][1] - poly[i][1]) + poly[i][0])
+                r = !r;
+        return r;
+    }
+    // a point well inside each outline: the middle of a side, nudged in
+    double[2] probe(const(double[2])[] l)
+    {
+        immutable a = l[0], b = l[1];
+        immutable dx = b[0] - a[0], dy = b[1] - a[1], len = (dx * dx + dy * dy) ^^ 0.5;
+        immutable double[2] m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        immutable e = max(1e-6, len * 1e-4);
+        double[2] q = [m[0] - dy / len * e, m[1] + dx / len * e];
+        double[2] other = [m[0] + dy / len * e, m[1] - dx / len * e];
+        return inside(l, q) ? q : other;
+    }
+    const(double[2])[][] good;
+    foreach (l; loops)
+        if (l.length >= 3 && abs(area2(l)) > 1e-9)
+            good ~= l;
+    if (good.length == 0)
+        throw new HcadError(Code.import_, "the drawing has no outlines with an area", span);
+    // depth: how many other outlines each one is inside
+    auto depth = new size_t[good.length];
+    foreach (i, l; good)
+    {
+        immutable p = probe(l);
+        foreach (j, o; good)
+            if (i != j && inside(o, p))
+                depth[i]++;
+    }
+    Brep polygonOf(const(double[2])[] l)
+    {
+        double[] xy;
+        foreach (p; l)
+            xy ~= [p[0], p[1]];
+        try
+            return k.polygon(xy);
+        catch (Exception e)
+            throw new HcadError(Code.import_, "an outline of the drawing crosses itself: " ~ e.msg, span);
+    }
+    Brep[] regions;
+    foreach (i, l; good)
+    {
+        if (depth[i] % 2)
+            continue;
+        auto region = polygonOf(l);
+        Brep[] holes;
+        foreach (j, o; good)
+            if (depth[j] == depth[i] + 1 && inside(l, probe(o)))
+                holes ~= polygonOf(o);
+        if (holes.length)
+            region = k.boolean(region, unionOfProfiles(k, holes), BoolOp.cut);
+        regions ~= region;
+    }
     return unionOfProfiles(k, regions);
 }
