@@ -161,10 +161,13 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>text(text: string, size: Length, font: string) → Profile</dt><dd>A text outline starting at the origin on the baseline.</dd>
 <dt>p.round(r: Length) → Profile</dt><dd>Rounds the (convex) corners.</dd>
 <dt>p.offset(distance: Length) → Profile</dt><dd>Grows (d &gt; 0) or shrinks the outline; on a plane, the parallel plane.</dd>
+<dt>s.offset(distance: Length) → Solid</dt><dd>Grows (d &gt; 0) or shrinks the solid, round where it turns (its walls thickened).</dd>
 <dt>p.extrude(height: Length, taper: Angle, symmetric: bool) → Solid</dt><dd>A solid along +Z from the profile.</dd>
 <dt>p.revolve(axis: Axis, angle: Angle) → Solid</dt><dd>Turns the profile around an axis in its plane; without one, x is the radius and y the height along Z.</dd>
 <dt>p.sweep(path: Path, frenet: bool) → Solid</dt><dd>Moves the profile along a path.</dd>
 <dt>loft(profiles: Profile[], ruled: bool) → Solid</dt><dd>A solid through profiles placed in space.</dd>
+<dt>hull(shapes…) → Solid</dt><dd>The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.</dd>
+<dt>minkowski(a, b) → Solid</dt><dd>a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.</dd>
 <dt>s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid</dt><dd>Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).</dd>
 </dl></section>
 <section><h2>Paths, sweeps and lofts</h2><dl>

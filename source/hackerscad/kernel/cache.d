@@ -90,6 +90,16 @@ final class CachingKernel : BrepKernel
     Brep mirror(Brep s, Vec3 n) => op(key("mirror", s, n), inner.mirror(s, n));
     Brep boolean(Brep a, Brep b, BoolOp o) => op(key("boolean", a, b, cast(int) o), inner.boolean(a, b, o));
 
+    Brep offset(Brep s, double d) => op(key("solidOffset", s, d), inner.offset(s, d));
+
+    Brep fuseAll(Brep[] parts)
+    {
+        ulong[] ks;
+        foreach (p; parts)
+            ks ~= keyOf(p);
+        return op(key("fuseAll", cast(const(double)[]) ks.map!(x => cast(double) x).array), inner.fuseAll(parts));
+    }
+
     Brep[] solids(Brep s)
     {
         immutable base = key("solids", s);

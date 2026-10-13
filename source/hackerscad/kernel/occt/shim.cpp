@@ -389,6 +389,39 @@ hc_shape *hc_profile_round(const hc_shape *s, double r)
     });
 }
 
+// A solid grown (d > 0) or shrunk by d, round where it turns: the
+// Minkowski sum with a ball of radius d, exactly.
+hc_shape *hc_offset_solid(const hc_shape *s, double d)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        // faces on one surface split by a union (two blocks side by side)
+        // merged first: an edge between them confuses the offset
+        ShapeUpgrade_UnifySameDomain unify(s->shape, Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        BRepOffsetAPI_MakeOffsetShape off;
+        off.PerformByJoin(unify.Shape(), d, 1e-6, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Arc);
+        if (!off.IsDone()) {
+            set_error(d < 0 ? "offset failed (would the solid vanish?)" : "offset failed");
+            return nullptr;
+        }
+        TopoDS_Shape r = off.Shape();
+        if (!TopExp_Explorer(r, TopAbs_SOLID).More()) {
+            BRepBuilderAPI_MakeSolid ms;
+            for (TopExp_Explorer e(r, TopAbs_SHELL); e.More(); e.Next())
+                ms.Add(TopoDS::Shell(e.Current()));
+            r = ms.Solid();
+        }
+        GProp_GProps p;
+        BRepGProp::VolumeProperties(r, p);
+        if (r.IsNull() || p.Mass() <= 0 || !BRepCheck_Analyzer(r).IsValid()) {
+            set_error("offset gave a broken solid: try a smaller distance");
+            return nullptr;
+        }
+        history_new(r);
+        return wrap(r);
+    });
+}
+
 hc_shape *hc_profile_offset(const hc_shape *s, double d)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -521,6 +554,37 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
         case HC_COMMON: return run(BRepAlgoAPI_Common(a->shape, b->shape));
         default: set_error("invalid boolean operation"); return nullptr;
         }
+    });
+}
+
+// All the shapes joined in one general fuse: much faster than one union at
+// a time when there are many (the pieces of a Minkowski sum).
+hc_shape *hc_fuse_all(const hc_shape *const *shapes, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        if (n < 1) {
+            set_error("nothing to join");
+            return nullptr;
+        }
+        if (n == 1)
+            return wrap(shapes[0]->shape);
+        TopTools_ListOfShape args, tools;
+        args.Append(shapes[0]->shape);
+        for (int i = 1; i < n; i++)
+            tools.Append(shapes[i]->shape);
+        BRepAlgoAPI_Fuse fuse;
+        fuse.SetArguments(args);
+        fuse.SetTools(tools);
+        fuse.SetRunParallel(Standard_True);
+        fuse.Build();
+        if (!fuse.IsDone()) {
+            set_error("joining the pieces failed");
+            return nullptr;
+        }
+        ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        history_new(unify.Shape());
+        return wrap(unify.Shape());
     });
 }
 

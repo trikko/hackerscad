@@ -1345,3 +1345,41 @@ unittest
             seen[key] = normals[i];
     }
 }
+
+unittest
+{
+    // hull and minkowski: volumes and areas as computed by hand (within the
+    // facets of the curved surfaces), profiles in a plane stay profiles
+    import std.math : abs, PI;
+    auto r = runModel(q{
+        @part Solid capsule() => hull(sphere(5), sphere(5).move(x: 20));
+        @part Solid plate() => hull([cylinder(r: 4, h: 3), cylinder(r: 4, h: 3).move(x: 30),
+            cylinder(r: 4, h: 3).move(y: 20), cylinder(r: 4, h: 3).move(x: 30, y: 20)]);
+        @part Solid slot() => hull(circle(r: 4), circle(r: 4).move(x: 20)).extrude(3);
+        @part Solid rounded() => minkowski(box(20, 20, 10), sphere(2));
+        @part Solid ell() => minkowski(box(30, 10, 5) + box(10, 30, 5).move(x: -10, y: 10), sphere(1.5));
+        @part Solid octagon() => minkowski(rect(10, 10), rect(3, 3).rotate(z: 45)).extrude(1);
+        @part Solid grown() => box(20, 20, 10).offset(2);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    void near(string part, double want, double tolerance)
+    {
+        immutable got = partVolume(r, part);
+        assert(abs(got - want) <= tolerance * want, format("%s: %s, expected about %s", part, got, want));
+    }
+    near("capsule", PI * 25 * 20 + 4.0 / 3 * PI * 125, 0.01);
+    near("plate", (30 * 20 + 2 * 30 * 4 + 2 * 20 * 4 + PI * 16) * 3, 0.002);
+    near("slot", (20 * 8 + PI * 16) * 3, 0.005);
+    // a box grown by a ball: its faces moved out, its edges quarter cylinders, its corners a ball
+    immutable roundedBox = 4000 + 1600 * 2 + 200 * PI * 4 / 4 + 4.0 / 3 * PI * 8;
+    near("rounded", roundedBox, 1e-4);
+    near("grown", roundedBox, 1e-4);
+    near("ell", 5370.2, 1e-3);
+    // a square grown by a diamond of half-diagonal h: an octagon
+    immutable h = 1.5 * 2 ^^ 0.5;
+    near("octagon", (10 + 2 * h) ^^ 2 - 2 * h * h, 1e-6);
+    assert(error("@part Solid p() => minkowski(box(5, 5, 5), circle(r: 1));").message.canFind("two solids or two profiles"));
+    assert(error("@part Solid p() => hull(circle(r: 1), circle(r: 1).move(x: 2), circle(r: 1).move(x: 4)).extrude(1)"
+        ~ " - hull(vec(0, 0, 0));").message.length > 0);
+}

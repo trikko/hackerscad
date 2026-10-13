@@ -882,6 +882,58 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return Value.of(sv);
     });
 
+    // ---- convex hulls and Minkowski sums (lang/convex)
+    def("hull", (ref CallArgs a) {
+        // hull(a, b, …) or hull([a, b, …]): the smallest convex shape around them
+        import hackerscad.lang.convex : hullOf;
+        if (a.named.length)
+            throw new HcadError(Code.unknownArg, "hull takes only the shapes: hull(a, b, …) or hull([a, b, …])", a.span);
+        SolidVal[] items;
+        void add(Value v, Span span)
+        {
+            if (v.kind == Kind.array)
+                foreach (e; v.arr)
+                    add(e, span);
+            else if (v.kind == Kind.solid && !v.solid.path)
+                items ~= v.solid;
+            else
+                throw new HcadError(Code.type, format("hull takes solids and profiles, not %s", v.typeName), span);
+        }
+        foreach (i, v; a.positional)
+            add(v, i < a.positionalSpans.length ? a.positionalSpans[i] : a.span);
+        if (items.length == 0)
+            throw new HcadError(Code.arity, "hull needs shapes: hull(a, b) or hull([a, b])", a.span);
+        Brep[] bs;
+        bool allFlat = true;
+        foreach (sv; items)
+        {
+            bs ~= nonEmpty(sv, a.span);
+            allFlat = allFlat && sv.flat;
+        }
+        bool flat;
+        auto r = primitive(it, hullOf(k, bs, allFlat, a.span, flat), "hull", a.span);
+        r.flat = flat;
+        r.rgb = items[0].rgb;
+        r.hasColor = items[0].hasColor;
+        return Value.of(r);
+    });
+    def("minkowski", (ref CallArgs a) {
+        // minkowski(a, b): a moved by every point of b (b a sphere: a with round edges)
+        import hackerscad.lang.convex : minkowskiOf;
+        auto x = Args(it, a, "minkowski", ["a", "b"]);
+        auto sa = x.solid("a"), sb = x.solid("b");
+        if (sa.path || sb.path)
+            throw new HcadError(Code.type, "minkowski takes solids or profiles, not paths", a.span);
+        if (sa.flat != sb.flat)
+            throw new HcadError(Code.type, "minkowski takes two solids or two profiles, not one of each", a.span);
+        auto r = primitive(it, minkowskiOf(k, nonEmpty(sa, a.span), nonEmpty(sb, a.span), sa.flat, a.span),
+            "minkowski", a.span);
+        r.flat = sa.flat;
+        r.rgb = sa.rgb;
+        r.hasColor = sa.hasColor;
+        return Value.of(r);
+    });
+
     // ---- planes
     def("plane", (ref CallArgs a) {
         // plane(origin: vec(0, 0, 10), normal: Z) or body.plane(faces.top)
@@ -1042,7 +1094,16 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
 
     def("offset", (ref CallArgs a) {
-        // profile.offset(d) grows or shrinks a profile; plane.offset(d) is a parallel plane
+        // profile.offset(d) grows or shrinks a profile, solid.offset(d) a solid (round where it
+        // turns); plane.offset(d) is a parallel plane
+        if (a.positional.length && a.positional[0].kind == Kind.solid && !a.positional[0].solid.flat
+            && !a.positional[0].solid.path)
+        {
+            auto x = Args(it, a, "offset", ["solid", "distance"]);
+            auto s = x.solid("solid");
+            immutable d = x.len("distance");
+            return transformed(it, a.span, s, b => k.offset(b, d), "offset");
+        }
         if (a.positional.length && a.positional[0].kind == Kind.solid)
         {
             auto x = Args(it, a, "offset", ["profile", "distance"]);

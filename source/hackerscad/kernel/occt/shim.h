@@ -65,6 +65,8 @@ hc_shape *hc_scale(const hc_shape *s, double factor);
 hc_shape *hc_mirror(const hc_shape *s, double nx, double ny, double nz);
 
 hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op);
+hc_shape *hc_fuse_all(const hc_shape *const *shapes, int n);
+hc_shape *hc_offset_solid(const hc_shape *s, double d);
 
 /* Disconnected solid bodies of a shape (e.g. after a cut in two). The
  * history of hc_solid maps the body's faces to the faces of `s`. */

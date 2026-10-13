@@ -100,6 +100,8 @@ interface BrepKernel
     Brep profileRound(Brep s, double r);
     /// Grows (d > 0) or shrinks (d < 0) a profile.
     Brep profileOffset(Brep s, double d);
+    /// A solid grown (d > 0) or shrunk, round where it turns.
+    Brep offset(Brep s, double d);
     /// Profile → solid along +Z (−Z if negative); taper narrows the top.
     Brep extrude(Brep profile, double height, double taper);
     /// Profile → solid of revolution around an axis in its plane.
@@ -127,6 +129,8 @@ interface BrepKernel
     Brep mirror(Brep s, Vec3 normal);
 
     Brep boolean(Brep a, Brep b, BoolOp op);
+    /// The union of all of `parts`, in one go.
+    Brep fuseAll(Brep[] parts);
     /// The disconnected solid bodies of `s` (face origins point into `s`).
     Brep[] solids(Brep s);
 

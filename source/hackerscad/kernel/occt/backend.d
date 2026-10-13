@@ -81,6 +81,16 @@ final class OcctKernel : BrepKernel
         return wrap(hc_loft(ps.ptr, cast(int) ps.length, ruled), "loft");
     }
 
+    Brep offset(Brep s, double d) => wrap(hc_offset_solid(h(s), d), "offset");
+
+    Brep fuseAll(Brep[] parts)
+    {
+        const(hc_shape)*[] ps;
+        foreach (p; parts)
+            ps ~= h(p);
+        return wrap(hc_fuse_all(ps.ptr, cast(int) ps.length), "union");
+    }
+
     ViewSegment[] hiddenLines(Brep s, Vec3 dir, Vec3 up, double deflection)
     {
         double* buf;

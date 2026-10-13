@@ -145,6 +145,9 @@ model in milliseconds.
 - **`unittest { assert(…); }`** blocks are design checks. They run after evaluation; a failure does not discard the geometry, but is reported in the GUI, the CLI and to agents.
 - **Solids and booleans:**
   - `a + b` union, `a - b` difference, `a & b` intersection; `s += x` inside functions.
+  - `hull(a, b, …)` or `hull([a, b, …])`: the smallest convex shape around solids and profiles (two spheres make a capsule, four cylinders a plate with round corners); profiles in one plane give a profile, `hull(circle(r: 4.mm), circle(r: 4.mm).move(x: 20.mm))` a slot. Curved surfaces become flat facets within 0.05 mm.
+  - `minkowski(a, b)`: `a` moved by every point of `b`. With a sphere (a circle for profiles) it rounds every edge and corner exactly, like `s.offset(r)`; with another convex shape (a box, a cylinder) it is made of flat facets, and one of the two shapes must be convex.
+  - `s.offset(d)` grows a solid by `d` (or shrinks it, `d` negative), round where it turns.
   - `Solid.init` and `nothing` are the empty solid. `solids.sum` and `fuse(…)` unite arrays.
 - **Primitives** stand on the XY plane, centred in X and Y; `center: true` centres them in Z too. Spheres are centred.
   - `box(x, y, z)`, `cylinder(r | d, h)`, `cone(r1 | d1, r2 | d2, h)`, `sphere(r | d)`.
