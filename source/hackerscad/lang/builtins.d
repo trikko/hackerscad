@@ -764,6 +764,22 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             k.translate(c, Vec3((l - w) / 2, 0, 0)), BoolOp.fuse);
         return flat(shape, "slot", a.span);
     });
+    def("teardrop", (ref CallArgs a) {
+        // teardrop(d: 5.mm, angle: 45.deg, flat: false): a round hole with a point towards +Y, so that a
+        // hole through a wall prints without supports; flat: true cuts the point at the circle's top
+        auto x = Args(it, a, "teardrop", ["r", "d", "angle", "flat"]);
+        immutable r = x.radius("r", "d"), ang = x.angleOr("angle", PI / 4);
+        positive(a, [r], "the teardrop's radius");
+        if (!(ang > 0.05 && ang < PI / 2))
+            throw new HcadError(Code.type, "the point's angle is from the vertical: between 3° and 90°", x.spanOf("angle"));
+        // the sides are tangent to the circle and meet above it, at r / sin(angle)
+        immutable tip = r / sin(ang);
+        auto shape = k.boolean(k.circle(r), k.polygon([-r * cos(ang), r * sin(ang), r * cos(ang), r * sin(ang), 0, tip]),
+            BoolOp.fuse);
+        if (x.flag("flat", false))
+            shape = k.boolean(shape, k.rect(4 * r, 2 * r), BoolOp.common);
+        return flat(shape, "teardrop", a.span);
+    });
     def("text", (ref CallArgs a) {
         // text("hello", size: 10.mm, font: "Sans"): a text outline starting at the
         // origin on its baseline
@@ -936,6 +952,34 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
 
     // ---- mass properties: density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04)
+    // ---- printing: what a printer will find hard
+    def("overhangs", (ref CallArgs a) {
+        // s.overhangs(45.deg): the area facing down more steeply than the angle from a wall, off the bed
+        auto x = Args(it, a, "overhangs", ["solid", "angle"]);
+        auto s = x.solid("solid");
+        if (s.flat || s.path)
+            throw new HcadError(Code.type, "overhangs are of solids", a.span);
+        immutable angle = x.angleOr("angle", PI / 4);
+        if (!(angle >= 0 && angle < PI / 2))
+            throw new HcadError(Code.type, "the overhang angle is from a vertical wall: 0 to 90°", x.spanOf("angle"));
+        import hackerscad.geom.printability : checkPrint;
+        auto m = k.tessellate(nonEmpty(s, a.span), 0.05, 0.2);
+        return Value.number(checkPrint(m.verts, 3, m.tris, angle, 0).overhangArea, Dim.area);
+    });
+    def("thinWalls", (ref CallArgs a) {
+        // s.thinWalls(0.8.mm): the surface over walls thinner than that (0 when there are none)
+        auto x = Args(it, a, "thinWalls", ["solid", "min"]);
+        auto s = x.solid("solid");
+        if (s.flat || s.path)
+            throw new HcadError(Code.type, "thin walls are of solids", a.span);
+        immutable wall = x.lenOr("min", 0.8);
+        if (!(wall > 0))
+            throw new HcadError(Code.type, "the thinnest wall must be positive", x.spanOf("min"));
+        import hackerscad.geom.printability : checkPrint;
+        auto m = k.tessellate(nonEmpty(s, a.span), 0.05, 0.2);
+        return Value.number(checkPrint(m.verts, 3, m.tris, PI / 4, wall).thinArea, Dim.area);
+    });
+
     def("mass", (ref CallArgs a) {
         // s.mass(density: 1.24): grams
         auto x = Args(it, a, "mass", ["solid", "density"]);
@@ -1693,6 +1737,31 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
         ctx.edges = it.kernel.edges(b);
         ctx.edgeFaces = it.kernel.edgeFaces(b);
     }
+    double[][double] shares;
+    ctx.overhangShares = (double angle) {
+        if (auto r = angle in shares)
+            return *r;
+        import hackerscad.geom.printability : checkPrint;
+        auto m = it.kernel.tessellate(b, 0.05, 0.2);
+        auto pc = checkPrint(m.verts, 3, m.tris, angle, 0);
+        auto r = new double[faces.length];
+        r[] = 0;
+        if (m.faceStart.length == faces.length + 1)
+            foreach (f; 0 .. faces.length)
+            {
+                double over = 0, all = 0;
+                foreach (t; m.faceStart[f] .. m.faceStart[f + 1])
+                {
+                    auto v0 = m.vertex(m.tris[t * 3]), v1 = m.vertex(m.tris[t * 3 + 1]), v2 = m.vertex(m.tris[t * 3 + 2]);
+                    immutable area = (v1 - v0).cross(v2 - v0).length / 2;
+                    all += area;
+                    if (pc.overhang[t])
+                        over += area;
+                }
+                r[f] = all > 0 ? over / all : 0;
+            }
+        return shares[angle] = r;
+    };
     int[][SelectorVal] nested;
     ctx.resolve = (SelectorVal inner) {
         if (auto r = inner in nested)
@@ -2337,6 +2406,16 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
             });
             return true;
         }
+    case "overhanging":
+        // faces.overhanging(45.deg): faces facing down more steeply than the angle from a wall (any part
+        // of them), not resting on the bed: where a printer needs supports
+        return fn((ref CallArgs a) {
+            auto x = Args(it, a, "overhanging", ["selector", "angle"]);
+            immutable angle = x.angleOr("angle", PI / 4);
+            if (!(angle >= 0 && angle < PI / 2))
+                throw new HcadError(Code.type, "the overhang angle is from a vertical wall: 0 to 90°", x.spanOf("angle"));
+            return with_((size_t i, ref SelectCtx c) => c.overhangShares(angle)[i] > 0.01);
+        });
     case "normal":
         return fn((ref CallArgs a) {
             auto x = Args(it, a, "normal", ["selector", "axis"]);

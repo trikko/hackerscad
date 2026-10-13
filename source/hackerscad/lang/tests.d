@@ -1456,3 +1456,39 @@ unittest
         .message.canFind("flat"));
     assert(error("@part Solid p() => box(1, 1, 1).extrude(faces.top, depth: 1, along: X);").message.canFind("plane"));
 }
+
+unittest
+{
+    // printing: teardrops, overhanging faces, overhang and thin-wall areas
+    auto r = runModel(q{
+        import std.math;
+        // a shelf: a 0.5 mm plate sticking out 10 mm from a post on the bed
+        immutable shelf = box(10, 10, 10).move(z: 5) + box(30, 10, 0.5).move(z: 10.25);
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable mm2 = 1.mm ^^ 2;
+            // circle plus the triangle up to the point: r² (π - π/4 + 1) for 45°
+            assert(abs(teardrop(d: 10).area / mm2 - 25 * (PI * 3 / 4 + 1)) < 1e-6, "teardrop");
+            assert(abs(teardrop(d: 10, flat: true).bbox.size.y / 1.mm - 10) < 1e-6, "flat");
+            assert(abs(shelf.overhangs / mm2 - 200) < 1e-6, "shelf");
+            assert(shelf.overhangs(60.deg) == shelf.overhangs, "flat underside");
+            assert(box(10, 10, 10).overhangs / mm2 == 0, "cube");
+            // the plate's top and underside beside the post (over the post it is 10.5 thick)
+            assert(abs(shelf.thinWalls / mm2 - 400) < 1, "thin");
+            assert(shelf.thinWalls(0.4.mm) / mm2 == 0, "thick enough");
+            // a horizontal hole: the upper half of its wall overhangs, a teardrop's point does not
+            immutable wall = box(20, 10, 20);
+            immutable round = wall.cut(circle(d: 8), on: faces.front, depth: 10.mm);
+            immutable drop = wall.cut(teardrop(d: 8), on: faces.front, depth: 10.mm);
+            assert(round.overhangs / mm2 > 20, "round hole");
+            assert(drop.overhangs / mm2 < 1, "teardrop hole");
+            // the hole's wall, the one overhanging face
+            assert(abs(round.plane(faces.overhanging()).origin.z / 1.mm - 10) < 1e-6, "selector");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error("@part Solid p() => box(20, 10, 20).cut(teardrop(d: 8), on: faces.front, depth: 10.mm)"
+        ~ ".chamfer(edges.of(faces.overhanging()), d: 1);").message.canFind("no"));
+}
