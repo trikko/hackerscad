@@ -886,9 +886,34 @@ double hc_distance(const hc_shape *a, const hc_shape *b, double out[6])
     });
 }
 
+static bool plain_triangle(const TopoDS_Face &face, gp_Pnt p[3]);
+
+// Volume and area of a solid made of plain triangles (an imported mesh),
+// summed from the triangles: BRepGProp integrates every face, which takes
+// about a second for 50 000 of them. False when a face is anything else.
+static bool triangle_properties(const hc_shape *s, double &volume, double &area)
+{
+    const auto &faces = map_of(s, TopAbs_FACE);
+    if (faces.Extent() < 500)
+        return false;
+    volume = area = 0;
+    gp_Pnt p[3];
+    for (int f = 1; f <= faces.Extent(); f++) {
+        if (!plain_triangle(TopoDS::Face(faces(f)), p))
+            return false;
+        gp_Vec a(p[0].XYZ()), b(p[1].XYZ()), c(p[2].XYZ());
+        volume += a.Dot(b.Crossed(c)) / 6;
+        area += gp_Vec(p[0], p[1]).Crossed(gp_Vec(p[0], p[2])).Magnitude() / 2;
+    }
+    return true;
+}
+
 double hc_volume(const hc_shape *s)
 {
     return guarded<>(-1.0, [&] {
+        double volume, area;
+        if (triangle_properties(s, volume, area))
+            return volume;
         GProp_GProps p;
         BRepGProp::VolumeProperties(s->shape, p);
         return p.Mass();
@@ -898,6 +923,9 @@ double hc_volume(const hc_shape *s)
 double hc_area(const hc_shape *s)
 {
     return guarded<>(-1.0, [&] {
+        double volume, area;
+        if (triangle_properties(s, volume, area))
+            return area;
         GProp_GProps p;
         BRepGProp::SurfaceProperties(s->shape, p);
         return p.Mass();

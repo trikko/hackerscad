@@ -1282,3 +1282,14 @@ unittest
     write(file, toStl(kernel.tessellate(kernel.box(20, 10, 10), 0.01, 0.1).welded));
     assert(isClose(volumeOf(), 2000, 1e-6));
 }
+
+unittest
+{
+    // a solid made from a fine mesh: volume and area summed from its
+    // triangles match the mesh's own
+    auto m = kernel.tessellate(kernel.sphere(10), 0.01, 0.05).welded;
+    assert(m.triangleCount > 500);
+    auto s = kernel.fromMesh(m);
+    assert(isClose(kernel.volume(s), m.volume, 1e-9), format("%s %s", kernel.volume(s), m.volume));
+    assert(kernel.area(s) > 4 * 3.14 * 100 * 0.98);
+}
