@@ -160,6 +160,7 @@ interface BrepKernel
     /// A closed triangle mesh (e.g. from STL) as a solid, coplanar triangles merged.
     Brep fromMesh(const Mesh m);
 
-    void writeStep(Brep s, string path);
+    /// One STEP file, each part a separate, named body.
+    void writeStep(Brep[] parts, string[] names, string path);
     Brep readStep(string path);
 }

@@ -38,6 +38,7 @@ struct Request
 struct PartMesh
 {
     string name;
+    string label;   /// the name in exported files: @part(name:), or `name`
     uint rgb;
     bool export_ = true;   /// false for reference parts
     float[] vertices;   /// x y z nx ny nz per vertex
@@ -272,6 +273,7 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
             {
                 m = *old;
                 m.name = p.name;
+                m.label = p.label;
                 m.rgb = p.rgb;
                 m.export_ = p.export_;
                 m.span = p.span;
@@ -335,6 +337,7 @@ PartMesh prepare(BrepKernel k, PartResult p, double tolerance)
 {
     PartMesh m;
     m.name = p.name;
+    m.label = p.label;
     m.rgb = p.rgb;
     m.export_ = p.export_;
     m.span = p.span;

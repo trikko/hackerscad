@@ -341,7 +341,7 @@ immutable Ref[] reference =
     K("false", "Boolean false."),
     ]) ~
     group("Annotations", [
-    A("part", ["color", "alpha: 0..1", "export: bool"], "A body to show and export: @part(\"steelblue\")."),
+    A("part", ["color", "alpha: 0..1", "export: bool", "name: string"], "A body to show and export: @part(\"steelblue\"); name: its name in exported files."),
     A("param", ["description", "min:", "max:", "step:", "choices:"], "A parameter with a field in the panel."),
     A("preset", ["name", "value"], "The parameter's value in a named preset."),
     A("drawing", [], "A function returning a technical drawing."),

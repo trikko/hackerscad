@@ -254,9 +254,17 @@ final class OcctKernel : BrepKernel
         wrap(hc_from_mesh(m.verts.ptr, cast(int) m.vertexCount, cast(const(int)*) m.tris.ptr, cast(int) m.triangleCount, 1e-5),
             "mesh import");
 
-    void writeStep(Brep s, string path)
+    void writeStep(Brep[] parts, string[] names, string path)
     {
-        check(hc_write_step(h(s), path.toStringz) == 0, "STEP export");
+        assert(parts.length > 0 && parts.length == names.length);
+        hc_shape*[] ps;
+        const(char)*[] ns;
+        foreach (i, p; parts)
+        {
+            ps ~= h(p);
+            ns ~= names[i].toStringz;
+        }
+        check(hc_write_step(ps.ptr, ns.ptr, cast(int) ps.length, path.toStringz) == 0, "STEP export");
     }
 
     Brep readStep(string path) => wrap(hc_read_step(path.toStringz), "STEP import");
@@ -345,7 +353,7 @@ unittest
     auto path = buildPath(tempDir, "hackerscad-test.step");
     scope (exit)
         remove(path);
-    k.writeStep(s, path);
+    k.writeStep([s], ["s"], path);
     assert(isClose(k.volume(k.readStep(path)), k.volume(s), 1e-6));
 
     import std.exception : assertThrown;

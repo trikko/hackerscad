@@ -20,7 +20,8 @@ reference first and follow the rules below.
 - **With the MCP server** (best): `claude mcp add -s user hcad -- hcad mcp`. Tools:
   hcad_docs (the reference, or one topic), hcad_check (errors with line,
   column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
-  views: look at them), hcad_measure, hcad_export (.3mf .stl .step .png),
+  views: look at them), hcad_measure, hcad_export (.3mf, .stl for one part,
+  .zip for one STL per part, .step, .png; 'parts' picks some),
   hcad_drawing (.pdf .svg .dxf). When the user has the application open, the
   hcad_gui_* tools drive it (open, edit the code, set parameters, move the
   view, pick faces, select and measure, context menu, section plane, rollback,
@@ -32,7 +33,8 @@ reference first and follow the rules below.
 - **With the command line:** `hcad docs` prints the whole reference
   (`hcad docs fillet` one topic); `hcad check model.hcad --json` reports
   errors, parts and sizes; `hcad render model.hcad -o model-views.png`
-  draws iso/front/top/right (look at it); `-o model.3mf`, `.step`, `.stl`;
+  draws iso/front/top/right (look at it); `-o model.3mf`, `.step`, `.zip`
+  (one STL per part), `.stl` (one part: `--part name`);
   `-D width=80.mm` and `--preset name` change parameters.
 - The loop: write the model, check it, render and look, compare sizes and
   pictures with the request, fix, then export. Put the request's

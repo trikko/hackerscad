@@ -23,7 +23,8 @@ only source of truth, so it diffs, versions and reviews like any other code.
   sets of values, `unittest` the design's requirements.
 * 🧱 **Exact solids**: OpenCascade B-rep with fillets, shells, drafts, sweeps,
   lofts and constrained sketches; Manifold for fast mesh booleans.
-* 📦 **Exports**: 3MF with one object and colour per part, STL, STEP, PNG, and
+* 📦 **Exports**: 3MF with one object and colour per part, STL (a zip of one
+  file per part), STEP with a named body per part, PNG, and
   drawings with views, sections and dimensions as PDF, SVG or DXF.
 * 🔩 **Libraries**: screws, nuts, holes and inserts, ISO threads, gears,
   print-in-place hinges, snap fits, enclosures.

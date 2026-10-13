@@ -10,13 +10,18 @@ you used.
 
 - **3MF** keeps the two parts apart and their colours: your slicer opens them
   as two objects. It is the best choice for a 3D printer.
-- **STL** is the older format every slicer reads; the parts arrive as one
-  mesh.
-- **STEP** keeps the exact shapes, for other CAD programs.
+- **STL** is the older format every slicer reads. It holds one part only, so
+  with two parts hackerscad saves a zip with one file each, `tank.stl` and
+  `pot.stl`.
+- **STEP** keeps the exact shapes, each part a separate body, for other CAD
+  programs.
 - **PNG** is a picture of the view.
 
 The model is exported with the values in the Parameters panel: choose the
 preset or the sizes first.
+
+To export one part alone, right-click it in the view and choose **Export
+pot**, then the format.
 
 ![The planter from the front](img/10-final.png)
 

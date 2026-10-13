@@ -7,7 +7,8 @@ import std.algorithm : canFind, map;
 import std.array : array, join;
 import std.path : buildNormalizedPath, absolutePath, dirName, relativePath, isAbsolute;
 import std.file : exists, readText;
-import std.string : startsWith;
+import std.string : startsWith, strip;
+import std.uni : toLower;
 
 import hackerscad.lang.errors;
 import hackerscad.lang.lexer : Tok;
@@ -41,6 +42,7 @@ struct PartResult
     uint rgb;       /// see alphaOf
     Span span;
     bool export_ = true;   /// false: shown, but left out of STL/3MF/STEP (a reference part)
+    string label;   /// the name in exported files: @part(name:), or `name`
 }
 
 /// A modelling operation that creates faces, with the code that ran it.
@@ -235,10 +237,11 @@ final class Interp
                 throw new HcadError(Code.type, format("@part '%s' returns a Path: sweep a profile along it", f.name), f.nameSpan);
             if (v.solid.flat)
                 throw new HcadError(Code.type, format("@part '%s' returns a 2D profile: extrude or revolve it", f.name), f.nameSpan);
-            // @part("colour", alpha: 0.5, export: false)
+            // @part("colour", alpha: 0.5, export: false, name: "Tank")
             import hackerscad.lang.builtins : colorOf;
             uint rgb = v.solid.hasColor ? v.solid.rgb : defaultPartColor;
             bool export_ = true;
+            string label = f.name;
             foreach (i, arg; a.args)
             {
                 auto val = eval(arg.value, mod.env);
@@ -256,11 +259,22 @@ final class Interp
                         throw new HcadError(Code.type, "export must be true or false", arg.span);
                     export_ = val.b;
                 }
+                else if (arg.name == "name")
+                {
+                    if (val.kind != Kind.str || val.s.strip.length == 0)
+                        throw new HcadError(Code.type, "name is the part's name in exported files: a text, "
+                            ~ "like name: \"Tank\"", arg.span);
+                    label = val.s.strip;
+                }
                 else
-                    throw new HcadError(Code.type, "@part takes a colour, alpha: and export:", arg.span,
-                        suggest(arg.name, ["alpha", "export"]));
+                    throw new HcadError(Code.type, "@part takes a colour, alpha:, export: and name:", arg.span,
+                        suggest(arg.name, ["alpha", "export", "name"]));
             }
-            r.parts ~= PartResult(f.name, v.solid, rgb, f.nameSpan, export_);
+            foreach (q; r.parts)
+                if (q.label.toLower == label.toLower)
+                    throw new HcadError(Code.type, format("two parts would have the same name in exported files, "
+                        ~ "'%s': give one a name: of its own", label), f.nameSpan);
+            r.parts ~= PartResult(f.name, v.solid, rgb, f.nameSpan, export_, label);
         }
         // drawings: collected here, projected only when exported
         foreach (f; collectOrdered!FuncDecl(mod))

@@ -2390,6 +2390,11 @@ private:
         }
 
         entries ~= S();
+        {
+            auto name = part.name;
+            entries ~= G("Export " ~ name, [I("3MF…", () => exportFile("3mf", name)),
+                I("STL…", () => exportFile("stl", name)), I("STEP…", () => exportFile("step", name))]);
+        }
         entries ~= I("Hide " ~ part.name, () => setPartVisible(contextHit.part, false));
         if (last.parts.length > 1)
             entries ~= I("Show only " ~ part.name, () {
@@ -3642,7 +3647,11 @@ private:
                 whenIdle(() {
                     try
                     {
-                        exportTo(file);
+                        string[] only;
+                        if ("parts" in p && p["parts"].type == JSONType.array)
+                            foreach (v; p["parts"].array)
+                                only ~= v.str;
+                        exportTo(file, only);
                         note("exported " ~ file);
                         reply(JSONValue(["path": file]), null);
                     }
@@ -4072,7 +4081,7 @@ private:
     /// The export formats, as the menus show them.
     static immutable ExportFormat[] exportFormats = [
         ExportFormat("3mf", "3MF", "one object per part, with colours: for slicers"),
-        ExportFormat("stl", "STL", "one mesh: for any slicer"),
+        ExportFormat("stl", "STL", "for any slicer: a zip of one STL per part when there are more"),
         ExportFormat("step", "STEP", "exact solids: for other CAD programs"),
         ExportFormat("png", "PNG", "a picture of the parts"),
     ];
@@ -4104,33 +4113,49 @@ private:
         return b;
     }
 
-    void exportFile(string ext)
+    /// The export dialog for format `ext`; `part`: that part alone.
+    void exportFile(string ext, string part = null)
     {
         import gtk.file_filter : FileFilter;
-        import std.algorithm : find;
+        import std.algorithm : count, find;
         if (last.parts.length == 0)
             return;
         exportFormat = ext;
         auto format = exportFormats.find!(f => f.ext == ext)[0];
+        // several parts in STL: a zip, one file each
+        immutable several = part is null && last.parts.count!(p => p.export_) > 1;
+        immutable fileExt = ext == "stl" && several ? "zip" : ext;
         auto d = new FileDialog;
-        d.setTitle("Export " ~ format.label);
+        d.setTitle("Export " ~ (part ? part ~ " as " : "") ~ format.label
+            ~ (fileExt == "zip" ? ": a zip with one STL per part" : ""));
         // every format in the dialog's list, the chosen one selected
         import gio.list_store : ListStore;
         auto filters = new ListStore(FileFilter._getGType());
-        foreach (f; exportFormats)
+        void addFilter(string label, string what, string fext)
         {
             auto filter = new FileFilter;
-            filter.setName(f.label ~ " — " ~ f.what ~ " (*." ~ f.ext ~ ")");
-            filter.addSuffix(f.ext);
-            if (f.ext == "step")
+            filter.setName(label ~ " — " ~ what ~ " (*." ~ fext ~ ")");
+            filter.addSuffix(fext);
+            if (fext == "step")
                 filter.addSuffix("stp");
             filters.append(filter);
-            if (f.ext == ext)
+            if (fext == fileExt)
                 d.setDefaultFilter(filter);
         }
+        foreach (f; exportFormats)
+            addFilter(f.label, f.what, f.ext);
+        addFilter("ZIP", "one STL per part", "zip");
         d.setFilters(filters);
         immutable base = baseName(path).endsWith(".hcad") ? baseName(path)[0 .. $ - 5] : "model";
-        d.setInitialName(base ~ "." ~ ext);
+        string initial = base;
+        if (part)
+            foreach (p; last.parts)
+                if (p.name == part)
+                {
+                    import hackerscad.tool.exporter : fileNames;
+                    initial = fileNames([p.label])[0];
+                }
+        d.setInitialName(initial ~ "." ~ fileExt);
         d.save(window, null, (ObjectWrap src, AsyncResult res) {
             try
             {
@@ -4140,10 +4165,12 @@ private:
                 auto out_ = f.getPath();
                 // the format comes from the name; without a known extension, the chosen one
                 immutable given = extension(out_).toLower;
-                if (![".3mf", ".stl", ".step", ".stp", ".png"].canFind(given))
-                    out_ ~= "." ~ ext;
-                exportFormat = given.length > 1 && [".3mf", ".stl", ".step", ".png"].canFind(given) ? given[1 .. $] : ext;
-                exportTo(out_);
+                if (![".3mf", ".stl", ".zip", ".step", ".stp", ".png"].canFind(given))
+                    out_ ~= "." ~ fileExt;
+                if (part is null)
+                    exportFormat = given == ".zip" ? "stl" : given.length > 1
+                        && [".3mf", ".stl", ".step", ".png"].canFind(given) ? given[1 .. $] : ext;
+                exportTo(out_, part ? [part] : null);
                 note("exported " ~ out_);
             }
             catch (ErrorWrap)
@@ -4154,37 +4181,35 @@ private:
         });
     }
 
-    void exportTo(string out_)
+    /// Writes the parts shown (with the window's parameters) to `out_`, the
+    /// format from its extension (see hackerscad.tool.exporter; .png the
+    /// view). `only`: those parts, by function name or @part(name:); else
+    /// every part but the reference ones.
+    void exportTo(string out_, string[] only = null)
     {
-        import std.algorithm : filter;
-        import std.array : array;
-        import std.array : array;
-        // reference parts (export: false) only appear in pictures
+        import std.algorithm : countUntil, filter, map;
+        import std.array : array, join;
+        import hackerscad.tool.exporter : ExportPart, exportParts;
         if (last.parts.length == 0)
             throw new Exception("nothing to export: the model has no parts yet");
-        auto parts = extension(out_).toLower == ".png" ? last.parts : last.parts.filter!(p => p.export_).array;
+        if (extension(out_).length == 0)
+            out_ ~= ".3mf";
+        PartMesh[] parts;
+        foreach (want; only)
+        {
+            auto i = last.parts.countUntil!(p => p.name == want || p.label == want);
+            if (i < 0)
+                throw new Exception(format("no part named '%s' (the parts: %s)", want,
+                    last.parts.map!(p => p.name).join(", ")));
+            parts ~= last.parts[i];
+        }
+        // reference parts (export: false) only appear in pictures
+        if (only.length == 0)
+            parts = extension(out_).toLower == ".png" ? last.parts : last.parts.filter!(p => p.export_).array;
         if (parts.length == 0)
             throw new Exception("nothing to export: every part has export: false");
         switch (extension(out_).toLower)
         {
-        case ".stl":
-            Mesh all;
-            foreach (p; parts)
-            {
-                immutable base = cast(uint) all.vertexCount;
-                all.verts ~= p.welded.verts;
-                foreach (t; p.welded.tris)
-                    all.tris ~= t + base;
-            }
-            writeStl(all, out_);
-            break;
-        case ".step", ".stp":
-            auto k = parts[0].kernel;
-            auto acc = parts[0].brep;
-            foreach (p; parts[1 .. $])
-                acc = k.boolean(acc, p.brep, BoolOp.fuse);
-            k.writeStep(acc, out_);
-            break;
         case ".png":
             {
                 // the 3D view as it is, drawn by OpenGL at twice its size
@@ -4210,10 +4235,7 @@ private:
                 break;
             }
         default:
-            Part[] ps;
-            foreach (p; parts)
-                ps ~= Part(p.name, p.welded, p.rgb);
-            write3mf(ps, extension(out_).length ? out_ : out_ ~ ".3mf");
+            exportParts(out_, parts.map!(p => ExportPart(p.label, p.welded, p.rgb, p.brep)).array, parts[0].kernel);
         }
     }
 }

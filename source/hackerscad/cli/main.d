@@ -14,8 +14,9 @@ import hackerscad.tool.mcp : serve, serveWorker;
 enum usage = `hackerscad — parametric CAD with a D-like language
 
 usage:
-  hcad render FILE.hcad -o OUT [-o OUT…] [-D name=value…] [--preset NAME]
-      OUT can be .3mf (one object per part), .stl, .step or .png (iso view;
+  hcad render FILE.hcad -o OUT [-o OUT…] [-D name=value…] [--preset NAME] [--part NAME…]
+      OUT can be .3mf (one object per part), .stl (one part), .zip (one STL
+      per part), .step (one named body per part) or .png (iso view;
       name-views.png gives iso/front/top/right, name-top.png only the top,
       and so on for front, back, bottom, left, right), or .svg, .pdf, .dxf for a
       @drawing (the first one, or --drawing NAME)
@@ -38,6 +39,8 @@ options:
   -D name=value     override a @param (e.g. -D width=80.mm)
   --preset NAME     use the values of a @preset
   --drawing NAME    the @drawing to export as .svg, .pdf or .dxf
+  --part NAME       export only this @part (by function name or name:); repeat it
+                    for more; without it, every part but the export: false ones
   --tolerance MM    mesh chord tolerance (default 0.02)
   --json            machine-readable output (for scripts and agents)`;
 
@@ -98,8 +101,10 @@ int main(string[] args)
     string[] outputs, defines;
     RunOptions o;
     bool json;
+    string[] only;
     try
-        getopt(args, "o|output", &outputs, "D", &defines, "preset", &o.preset, "drawing", &o.drawing, "tolerance", &o.tolerance, "json", &json);
+        getopt(args, "o|output", &outputs, "D", &defines, "preset", &o.preset, "drawing", &o.drawing, "tolerance", &o.tolerance,
+            "part", &only, "json", &json);
     catch (GetOptException e)
     {
         stderr.writeln("error: ", e.msg);
@@ -132,7 +137,7 @@ int main(string[] args)
     {
         try
             foreach (out_; outputs)
-                run.exportTo(out_);
+                run.exportTo(out_, only);
         catch (HcadError e)
             run.fatal ~= e.diag;
         catch (KernelException e)
@@ -151,8 +156,9 @@ int main(string[] args)
         foreach (p; run.result.parts)
         {
             auto bb = run.kernel.bbox(p.solid.brep);
-            writefln("part %-12s %.1f × %.1f × %.1f mm   volume %.1f mm³%s", p.name, bb.size.x, bb.size.y, bb.size.z,
-                run.kernel.volume(p.solid.brep), p.export_ ? "" : "   (reference, not exported)");
+            writefln("part %-12s %.1f × %.1f × %.1f mm   volume %.1f mm³%s%s", p.name, bb.size.x, bb.size.y, bb.size.z,
+                run.kernel.volume(p.solid.brep), p.label != p.name ? "   (exported as \"" ~ p.label ~ "\")" : "",
+                p.export_ ? "" : "   (reference, not exported)");
         }
     stderr.write(run.renderedDiagnostics());
     if (!run.ok)

@@ -173,7 +173,7 @@ final class CachingKernel : BrepKernel
     Vec3[][] faceLoops(Brep s, int face, double deflection) => inner.faceLoops(s, face, deflection);
 
     // files can change on disk: not cached
-    void writeStep(Brep s, string path) => inner.writeStep(s, path);
+    void writeStep(Brep[] parts, string[] names, string path) => inner.writeStep(parts, names, path);
     Brep readStep(string path) => remember(fresh(), inner.readStep(path));
 
 private:

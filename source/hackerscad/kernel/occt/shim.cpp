@@ -44,6 +44,9 @@
 #include <STEPControl_Writer.hxx>
 #include <STEPControl_Reader.hxx>
 #include <Interface_Static.hxx>
+#include <StepData_StepModel.hxx>
+#include <StepBasic_Product.hxx>
+#include <TCollection_HAsciiString.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
@@ -1220,14 +1223,27 @@ hc_shape *hc_from_mesh(const float *verts, int nverts, const int *tris, int ntri
     });
 }
 
-int hc_write_step(const hc_shape *s, const char *path)
+int hc_write_step(const hc_shape *const *shapes, const char *const *names, int n, const char *path)
 {
     return guarded<>(-1, [&]() -> int {
         STEPControl_Writer w;
         Interface_Static::SetCVal("write.step.unit", "MM");
-        if (w.Transfer(s->shape, STEPControl_AsIs) != IFSelect_RetDone) {
-            set_error("STEP transfer failed");
-            return -1;
+        // each part a product of its own: other CAD programs see separate
+        // bodies, named like the parts
+        for (int i = 0; i < n; i++)
+            if (w.Transfer(shapes[i]->shape, STEPControl_AsIs) != IFSelect_RetDone) {
+                set_error("STEP transfer failed");
+                return -1;
+            }
+        int k = 0;
+        Handle(StepData_StepModel) model = w.Model();
+        for (int e = 1; e <= model->NbEntities() && k < n; e++) {
+            Handle(StepBasic_Product) product = Handle(StepBasic_Product)::DownCast(model->Value(e));
+            if (product.IsNull())
+                continue;
+            Handle(TCollection_HAsciiString) name = new TCollection_HAsciiString(names[k++]);
+            product->SetId(name);
+            product->SetName(name);
         }
         if (w.Write(path) != IFSelect_RetDone) {
             set_error("STEP write failed");

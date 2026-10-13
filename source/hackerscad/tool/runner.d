@@ -92,7 +92,6 @@ final class Run
         return r;
     }
 
-    /// Writes .3mf, .stl, .step or .png according to the extension.
     /// The sheet of a @drawing (the first when no name is given).
     Sheet drawingSheet(string name = null)
     {
@@ -110,7 +109,11 @@ final class Run
             Interp.suggest(name, result.drawings.map!(d => d.name).array));
     }
 
-    void exportTo(string file)
+    /// Writes .3mf, .stl, .zip (one STL per part), .step, .png, or a
+    /// @drawing as .svg, .pdf or .dxf, according to the extension.
+    /// `only`: the parts to write, by function name or @part(name:);
+    /// empty, every exported part (not the reference ones).
+    void exportTo(string file, string[] only = null)
     {
         switch (extension(file).toLower)
         {
@@ -129,47 +132,38 @@ final class Run
         if (result.parts.length == 0)
             throw new HcadError(Code.undefined, "nothing to export: the model has no @part", Span.init);
         auto ms = partMeshes();
-        // reference parts (@part(export: false)) appear only in pictures
-        size_t[] kept;
-        foreach (i, p; result.parts)
-            if (p.export_)
-                kept ~= i;
         immutable picture = extension(file).toLower == ".png";
-        if (!picture && kept.length == 0)
-            throw new HcadError(Code.undefined, "nothing to export: every @part has export: false", Span.init);
-        switch (extension(file).toLower)
-        {
-        case ".3mf":
-            Part[] parts;
-            foreach (i; kept)
-                parts ~= Part(result.parts[i].name, ms[i], result.parts[i].rgb);
-            write3mf(parts, file);
-            break;
-        case ".stl":
-            Mesh all;
-            foreach (i; kept)
+        size_t[] kept;
+        if (only.length)
+            foreach (want; only)
             {
-                auto m = ms[i];
-                immutable base = cast(uint) all.vertexCount;
-                all.verts ~= m.verts;
-                foreach (t; m.tris)
-                    all.tris ~= t + base;
+                import std.algorithm : countUntil;
+                auto i = result.parts.countUntil!(p => p.name == want || p.label == want);
+                if (i < 0)
+                    throw new HcadError(Code.undefined, format("no @part named '%s'", want), Span(path),
+                        Interp.suggest(want, result.parts.map!(p => p.name).array));
+                kept ~= i;
             }
-            writeStl(all, file);
-            break;
-        case ".step", ".stp":
-            Brep acc = result.parts[kept[0]].solid.brep;
-            foreach (i; kept[1 .. $])
-                acc = kernel.boolean(acc, result.parts[i].solid.brep, BoolOp.fuse);
-            kernel.writeStep(acc, file);
-            break;
-        case ".png":
-            write(file, png(pngViews(file)));
-            break;
-        default:
-            throw new HcadError(Code.import_, format("unsupported output format '%s' (use .3mf, .stl, .step, .png, .svg, .pdf or .dxf)",
-                extension(file)), Span.init);
+        else
+            // reference parts (@part(export: false)) appear only in pictures
+            foreach (i, p; result.parts)
+                if (p.export_ || picture)
+                    kept ~= i;
+        if (kept.length == 0)
+            throw new HcadError(Code.undefined, "nothing to export: every @part has export: false", Span.init);
+        if (picture)
+        {
+            write(file, png(pngViews(file), 450, kept));
+            return;
         }
+        import hackerscad.tool.exporter : ExportException, ExportPart, exportParts;
+        ExportPart[] parts;
+        foreach (i; kept)
+            parts ~= ExportPart(result.parts[i].label, ms[i], result.parts[i].rgb, result.parts[i].solid.brep);
+        try
+            exportParts(file, parts, kernel);
+        catch (ExportException e)
+            throw new HcadError(Code.import_, e.msg, Span(path));
     }
 
     /// PNG of the parts: one view at 1000×700, or a 2-column sheet.
@@ -188,11 +182,14 @@ final class Run
         return [View.iso];
     }
 
-    ubyte[] png(const View[] views, uint cell = 450)
+    /// `only`: the indices of the parts drawn; empty, all of them.
+    ubyte[] png(const View[] views, uint cell = 450, const size_t[] only = null)
     {
+        import std.algorithm : canFind;
         Shaded[] shaded;
         foreach (i, p; result.parts)
-            shaded ~= Shaded(partMeshes()[i], p.rgb, faceMeshes[i]);
+            if (only.length == 0 || only.canFind(i))
+                shaded ~= Shaded(partMeshes()[i], p.rgb, faceMeshes[i]);
         auto img = views.length == 1 ? render(shaded, views[0], 1000, 700) : renderSheet(shaded, views, cell);
         return encodePng(img.rgb, img.width, img.height);
     }
@@ -207,6 +204,8 @@ final class Run
         {
             auto bb = kernel.bbox(p.solid.brep);
             JSONValue jp = ["name": p.name];
+            if (p.label != p.name)
+                jp["export_name"] = p.label;
             jp["color"] = hexColor(p.rgb);
             if (!p.export_)
                 jp["export"] = false;

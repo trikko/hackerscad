@@ -284,7 +284,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 ## Annotations
 
-- `@part(color, alpha: 0..1, export: bool)` — A body to show and export: @part("steelblue").
+- `@part(color, alpha: 0..1, export: bool, name: string)` — A body to show and export: @part("steelblue"); name: its name in exported files.
 - `@param(description, min:, max:, step:, choices:)` — A parameter with a field in the panel.
 - `@preset(name, value)` — The parameter's value in a named preset.
 - `@drawing` — A function returning a technical drawing.

@@ -599,6 +599,9 @@ JSONValue[] toolList()
         return t;
     }
 
+    enum partsProp = `"parts": {"type": "array", "items": {"type": "string"}, "description": "Only these parts, by `
+        ~ `function name or @part(name:); default every part but the export: false ones."}`;
+
     // every GUI tool can name the window, when several are open
     JSONValue gui(string name, string description, string properties, string required = "[]") =>
         tool(name, description, `"window": {"type": "string", "description": "Name of the hackerscad window (shown in `
@@ -615,8 +618,10 @@ JSONValue[] toolList()
             ~ "(default views: iso, front, top, right). Use it to verify the result visually.",
             modelProps ~ `, "views": {"type": "array", "items": {"type": "string", "enum": ["iso", "front", "back", "top", "bottom", "left", "right"]}}`),
         tool("hcad_export", "Evaluate a model and write it to 'output': .3mf (one object per part, with colours), "
-            ~ ".stl, .step or .png; .svg, .pdf or .dxf write a @drawing (the first, or the one named by 'drawing').",
-            modelProps ~ `, "output": {"type": "string"}, "drawing": {"type": "string"}`, `["output"]`),
+            ~ ".stl (one part), .zip (one STL per part), .step (one named body per part) or .png; .svg, .pdf or .dxf "
+            ~ "write a @drawing (the first, or the one named by 'drawing').",
+            modelProps ~ `, "output": {"type": "string"}, "drawing": {"type": "string"}, `
+            ~ partsProp, `["output"]`),
         tool("hcad_drawing", "Evaluate a model and return a @drawing as SVG text (views with hidden lines, sections, "
             ~ "dimensions, title block), to check it before exporting it as PDF or DXF.",
             modelProps ~ `, "drawing": {"type": "string", "description": "Name of the @drawing function; default the first."}`),
@@ -695,8 +700,9 @@ JSONValue[] toolList()
             ~ "whose inspect lists the items shown (line, function, kind, calls, bounding box).",
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "function": {"type": "string"}`, `[]`),
         gui("hcad_gui_export", "Export the model open in the user's window, with the parameters and preset set "
-            ~ "there, to 'path': .3mf (one object per part, colours), .stl, .step or .png.",
-            `"path": {"type": "string"}`, `["path"]`),
+            ~ "there, to 'path': .3mf (one object per part, colours), .stl (one part), .zip (one STL per part), "
+            ~ ".step (one named body per part) or .png.",
+            `"path": {"type": "string"}, ` ~ partsProp, `["path"]`),
         gui("hcad_gui_complete", "What the editor's completion offers in the user's window: at the cursor, or at "
             ~ "line and col (1-based). Gives the proposals with their signature and documentation, and inside a call "
             ~ "the callee's signature and the argument the cursor is on.",
@@ -778,7 +784,11 @@ JSONValue callTool(string name, JSONValue args)
             {
                 auto output = arg("output");
                 enforce(output.length, "missing 'output'");
-                run.exportTo(output);
+                string[] only;
+                if (args.type == JSONType.object && "parts" in args && args["parts"].type == JSONType.array)
+                    foreach (v; args["parts"].array)
+                        only ~= v.str;
+                run.exportTo(output, only);
                 text("written " ~ output);
             }
             text(run.report().toPrettyString(JSONOptions.doNotEscapeSlashes));

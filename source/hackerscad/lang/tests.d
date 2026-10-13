@@ -305,6 +305,16 @@ unittest
     assert(r.parts[2].rgb == 0x0000FF && r.parts[3].rgb == defaultPartColor);
     assert(hexColor(r.parts[0].rgb) == "#FF000080" && hexColor(r.parts[2].rgb) == "#0000FF");
 
+    // the name in exported files: name:, else the function's; two alike are refused
+    r = runModel(q{
+        @part("orange", name: "Big tank") Solid tank() => box(2, 2, 2);
+        @part Solid pot() => box(1, 1, 1);
+    });
+    assert(r.parts[0].label == "Big tank" && r.parts[1].label == "pot" && r.parts[0].name == "tank");
+    auto same = error(`@part(name: "pot") Solid a() => box(1, 1, 1); @part Solid pot() => box(1, 1, 1);`);
+    assert(same.message.canFind("same name"), same.message);
+    assert(error(`@part(name: 3) Solid a() => box(1, 1, 1);`).message.canFind("a text"));
+
     auto it = make();
     it.overrides["w"] = "50";      // bare number: model unit
     assert(isClose(partVolume(runModel(model, it), "p"), 5000));
@@ -739,7 +749,15 @@ unittest
         rmdirRecurse(dir);
     auto cube = kernel.boolean(kernel.box(20, 20, 20), kernel.translate(kernel.cylinder(4, 30), Vec3(10, 10, -5)), BoolOp.cut);
     write(buildPath(dir, "cube.stl"), toStl(kernel.tessellate(cube, 0.01, 0.1).welded));
-    kernel.writeStep(cube, buildPath(dir, "cube.step"));
+    kernel.writeStep([cube], ["cube"], buildPath(dir, "cube.step"));
+    // several parts: separate, named bodies in one file
+    kernel.writeStep([cube, kernel.translate(cube, Vec3(30, 0, 0))], ["left", "right"], buildPath(dir, "two.step"));
+    {
+        import std.file : readText;
+        auto step = readText(buildPath(dir, "two.step"));
+        assert(step.canFind("PRODUCT('left'") && step.canFind("PRODUCT('right'"));
+        assert(kernel.solids(kernel.readStep(buildPath(dir, "two.step"))).length == 2);
+    }
     write(buildPath(dir, "tri.obj"), "v 0 0 0\nv 10 0 0\nv 0 10 0\nv 0 0 10\nf 1 3 2\nf 1 2 4\nf 1 4 3\nf 2 3 4\n");
     write(buildPath(dir, "open.obj"), "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
 
