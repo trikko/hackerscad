@@ -1206,8 +1206,10 @@ private:
         glUniform3f(uEye, cast(float) b.eye.x, cast(float) b.eye.y, cast(float) b.eye.z);
         glUniform1f(uAlpha, 1);
 
-        // grid and axes
+        // grid and axes, behind everything: they write no depth, so the
+        // edges of a part standing on the grid are never cut by its lines
         updateGrid();
+        glDepthMask(GL_FALSE);
         glUniform1i(uFlat, 1);
         glBindVertexArray(gridVao);
         if (darkStyle)
@@ -1221,6 +1223,7 @@ private:
         glUniform3f(uColor, 0.25f, 0.65f, 0.3f);
         glDrawArrays(GL_LINES, 2, 2);
         glLineWidth(1);
+        glDepthMask(GL_TRUE);
 
         // the section plane cuts the parts, not the grid
         glUniform1i(uClipOn, section ? 1 : 0);
