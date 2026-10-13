@@ -1165,14 +1165,16 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             auto p = x.vecLen("origin");
             o = p - n * (p - o).dot(n);
         }
-        auto xAxis = inPlane(x.has("x") ? x.dir("x") : Vec3(1, 0, 0), n);
-        if (xAxis.length < 1e-9)
+        Vec3 xAxis;
+        if (x.has("x"))
         {
-            if (x.has("x"))
+            xAxis = inPlane(x.dir("x"), n);
+            if (xAxis.length < 1e-9)
                 throw new HcadError(Code.type, "the x direction is perpendicular to the plane", x.spanOf("x"));
-            xAxis = inPlane(Vec3(0, 1, 0), n);
+            xAxis = xAxis.normalized;
         }
-        xAxis = xAxis.normalized;
+        else
+            xAxis = faceXAxis(n);
         return frameValue(o, xAxis, n.cross(xAxis), n);
     });
     def("at", (ref CallArgs a) {
@@ -1200,10 +1202,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (v.kind == Kind.struct_ && v.st.def is planeDef)
         {
             planeArg(x, "frame", o, az);
-            ax = inPlane(Vec3(1, 0, 0), az);
-            if (ax.length < 1e-9)
-                ax = inPlane(Vec3(0, 1, 0), az);
-            ax = ax.normalized;
+            ax = faceXAxis(az);
             ay = az.cross(ax);
         }
         else
@@ -1337,6 +1336,18 @@ StructDef frameDef()
 
 /// `v` without its component along the unit normal `n`.
 Vec3 inPlane(Vec3 v, Vec3 n) => v - n * v.dot(n);
+
+/// The X axis of a frame on a face or plane with normal `n`: on a wall (any
+/// face that is not flat) horizontal and to the right seen from outside, so
+/// that Y goes up it (a text reads, a teardrop points up, on every side);
+/// on a flat face the global X.
+Vec3 faceXAxis(Vec3 n)
+{
+    n = n.normalized;
+    if (abs(n.z) < 1 - 1e-9)
+        return Vec3(0, 0, 1).cross(n).normalized;
+    return inPlane(Vec3(1, 0, 0), n).normalized;
+}
 
 /// Axis and angle of the rotation whose matrix has columns x, y, z.
 double axisAngle(Vec3 x, Vec3 y, Vec3 z, out Vec3 axis)
@@ -2108,19 +2119,13 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
             auto f = k.faces(body.brep)[idx[0]];
             o = f.center;
             az = f.normal;
-            ax = inPlane(Vec3(1, 0, 0), az);
-            if (ax.length < 1e-9)
-                ax = inPlane(Vec3(0, 1, 0), az);
-            ax = ax.normalized;
+            ax = faceXAxis(az);
             ay = az.cross(ax);
         }
         else if (v.kind == Kind.struct_ && v.st.def is planeDef)
         {
             planeArg(x, "on", o, az);
-            ax = inPlane(Vec3(1, 0, 0), az);
-            if (ax.length < 1e-9)
-                ax = inPlane(Vec3(0, 1, 0), az);
-            ax = ax.normalized;
+            ax = faceXAxis(az);
             ay = az.cross(ax);
         }
         else

@@ -1494,3 +1494,29 @@ unittest
     assert(error("@part Solid p() => box(20, 10, 20).cut(teardrop(d: 8), on: faces.front, depth: 10.mm)"
         ~ ".chamfer(edges.of(faces.overhanging()), d: 1);").message.canFind("no"));
 }
+
+unittest
+{
+    // on every wall a frame's Y goes up and X right seen from outside: a
+    // teardrop points up on the back as on the front
+    auto r = runModel(q{
+        import std.math;
+        immutable wall = box(20, 20, 20);
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            foreach (f; [wall.frame(faces.front), wall.frame(faces.back), wall.frame(faces.left), wall.frame(faces.right)])
+            {
+                assert(f.y == Z, "y up");
+                assert(f.x.cross(f.y) == f.z, "right-handed");
+            }
+            assert(wall.frame(faces.top).x == X, "flat faces keep X");
+            immutable mm2 = 1.mm ^^ 2;
+            foreach (side; [faces.front, faces.back, faces.left, faces.right])
+                assert(wall.cut(teardrop(d: 6), on: side, at: vec(0.mm, 0.mm, 10.mm), depth: 5.mm).overhangs / mm2 < 0.5,
+                    "teardrop up");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
