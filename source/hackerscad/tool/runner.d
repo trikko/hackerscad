@@ -340,16 +340,19 @@ final class Run
     }
 
     /// The drawings of part `a` (a copy) and part `b` (the original) compared
-    /// from many directions around them (and, peeled like an onion, cut a
-    /// quarter, half and three quarters deep): the lines one has and the
-    /// other has not, as strokes on the part, the most seen and longest
-    /// first; `picture` the `shown` views that show most of them.
-    string lines(size_t a, size_t b, size_t shown, out ubyte[] picture)
+    /// from many directions around them: the lines one has and the other
+    /// has not, as strokes on the part, the most seen and longest first;
+    /// `picture` the `shown` views that show most of them. `layer` 1, 2, 3
+    /// peels them like an onion, a quarter, half, three quarters of their
+    /// depth cut away towards each view: the inside, once the outside matches.
+    string lines(size_t a, size_t b, uint layer, size_t shown, out ubyte[] picture)
     {
-        import hackerscad.render.linediff : lineDiff, orbit, peeled, sheet, telling;
+        import hackerscad.render.linediff : lineDiff, orbit, sheet, telling;
         import hackerscad.geom.meshfeatures : plausible;
         partMeshes();
-        auto d = lineDiff(meshes[a], meshes[b], orbit() ~ peeled(), 300);
+        if (layer > 3)
+            throw new HcadError(Code.limit, format("layer %d: the layers go from 0 (the outside) to 3", layer), Span(path));
+        auto d = lineDiff(meshes[a], meshes[b], orbit(layer * 0.25), 300);
         string mm(double v)
         {
             immutable p = plausible(v);
@@ -358,11 +361,13 @@ final class Run
         auto views = telling(d, shown);
         auto img = sheet(d, views);
         picture = encodePng(img.rgb, img.width, img.height);
-        string s = format("%s against %s, drawn as lines from %d directions (%d of them peeled), lines within %s mm "
-            ~ "taken as the same:\n", result.parts[a].name, result.parts[b].name, d.directions.length,
-            peeled().length, mm(d.tolerance));
+        string s = format("%s against %s, drawn as lines from %d directions around them%s, lines within %s mm taken "
+            ~ "as the same:\n", result.parts[a].name, result.parts[b].name, d.directions.length,
+            layer ? format(", peeled to layer %d (the nearest %d%% cut away)", layer, layer * 25) : " (the outside)",
+            mm(d.tolerance));
         if (d.strokes.length == 0)
-            s ~= "  the drawings match\n";
+            s ~= layer < 3 ? format("  the drawings match: to look further in, peel the next layer (layer %d)\n", layer + 1)
+                : "  the drawings match, down to the deepest layer\n";
         size_t lacks, extra;
         foreach (st; d.strokes)
             (st.missing ? lacks : extra)++;
@@ -386,20 +391,17 @@ final class Run
                 break;
             }
             auto size = st.hi - st.lo;
-            size_t inside;
-            foreach (v; st.seenFrom)
-                inside += d.directions[v].peel > 0;
             s ~= format("  %s: about %s mm of lines from (%s, %s, %s) to (%s, %s, %s), %s × %s × %s, seen from %d "
-                ~ "directions%s, %s\n", st.missing ? "only in " ~ result.parts[b].name : "only in "
+                ~ "directions, %s\n", st.missing ? "only in " ~ result.parts[b].name : "only in "
                 ~ result.parts[a].name, mm(st.length), mm(st.lo.x), mm(st.lo.y), mm(st.lo.z), mm(st.hi.x), mm(st.hi.y),
-                mm(st.hi.z), mm(size.x), mm(size.y), mm(size.z), st.seenFrom.length,
-                inside == st.seenFrom.length ? " (only once peeled: inside)" : inside ? format(" (%d peeled)", inside) : "",
-                inPicture(st.seenFrom));
+                mm(st.hi.z), mm(size.x), mm(size.y), mm(size.z), st.seenFrom.length, inPicture(st.seenFrom));
         }
         s ~= format("the picture: %d views, left to right and top to bottom (grey the lines in common, red only in %s, "
             ~ "blue only in %s):\n", views.length, result.parts[b].name, result.parts[a].name);
         foreach (i, v; views)
             s ~= format("  %d. %s\n", i + 1, d.directions[v]);
+        if (d.strokes.length && layer < 3)
+            s ~= format("fix these first; once this layer matches, peel the next one (layer %d)\n", layer + 1);
         return s;
     }
 

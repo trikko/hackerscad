@@ -42,34 +42,17 @@ struct Direction
 }
 
 /// Rings around the part, every 30° of azimuth at elevations -60 to 60
-/// (every other ring turned by 15°), and the views from above and below.
-Direction[] orbit()
+/// (every other ring turned by 15°), and the views from above and below;
+/// with `peel`, the share of the part's depth cut away on the viewer's side
+/// in each (the onion's next layer).
+Direction[] orbit(double peel = 0)
 {
     Direction[] r;
     foreach (ring, el; [-60.0, -30, 0, 30, 60])
         foreach (k; 0 .. 12)
-            r ~= Direction(k * 30.0 + (ring % 2 ? 15 : 0), el);
-    r ~= Direction(0, 90);
-    r ~= Direction(0, -90);
-    return r;
-}
-
-/// The part peeled like an onion: from the six sides and the eight corners,
-/// a quarter, half and three quarters of it cut away, to compare what is
-/// inside.
-Direction[] peeled()
-{
-    import std.math : atan, SQRT1_2;
-    Direction[] r;
-    immutable corner = atan(SQRT1_2) * 180 / PI;
-    auto sides = [Direction(0, 0), Direction(90, 0), Direction(180, 0), Direction(270, 0), Direction(0, 90),
-        Direction(0, -90)];
-    foreach (k; 0 .. 4)
-        foreach (el; [corner, -corner])
-            sides ~= Direction(45 + 90 * k, el);
-    foreach (peel; [0.25, 0.5, 0.75])
-        foreach (d; sides)
-            r ~= Direction(d.azimuth, d.elevation, peel);
+            r ~= Direction(k * 30.0 + (ring % 2 ? 15 : 0), el, peel);
+    r ~= Direction(0, 90, peel);
+    r ~= Direction(0, -90, peel);
     return r;
 }
 
