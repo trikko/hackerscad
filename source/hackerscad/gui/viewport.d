@@ -508,48 +508,65 @@ final class Viewport
         glUniform1i(uFlat, 0);
     }
 
-    /// Corners of a square on the section plane, a bit larger than the parts.
+    /// The box around everything drawn: the parts shown, the solid of a
+    /// rollback, what Inspect shows. False when there is nothing.
+    bool drawnBox(out Vec3 lo, out Vec3 hi)
+    {
+        bool any;
+        void add(BBox b)
+        {
+            if (!any)
+            {
+                lo = b.min;
+                hi = b.max;
+                any = true;
+                return;
+            }
+            lo = Vec3(min(lo.x, b.min.x), min(lo.y, b.min.y), min(lo.z, b.min.z));
+            hi = Vec3(max(hi.x, b.max.x), max(hi.y, b.max.y), max(hi.z, b.max.z));
+        }
+        foreach (i, p; parts)
+            if (!isHidden(i))
+                add(p.bbox);
+        if (rollback)
+            add(rollbackMesh.bbox);
+        if (inspecting)
+            foreach (m; inspectItems)
+                add(m.bbox);
+        return any;
+    }
+
+    /// Corners of a rectangle on the section plane covering everything drawn,
+    /// with a margin: a tenth of its size, at least 5 mm, and at least 20 mm
+    /// across.
     Vec3[4] sectionQuad()
     {
         auto n = sectionNormal;
         auto u = (abs(n.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(n).normalized;
         auto v = n.cross(u);
-        double size = 10;
-        Vec3 c;
-        size_t count;
-        foreach (i, p; parts)
-            if (!isHidden(i))
-            {
-                size = max(size, (p.bbox.max - p.bbox.min).length * 0.6);
-                c = c + (p.bbox.min + p.bbox.max) * 0.5;
-                count++;
-            }
-        if (count)
-            c = c * (1.0 / count);
-        c = c - n * (c.dot(n) - sectionOffset);
-        return [c + u * size + v * size, c - u * size + v * size, c - u * size - v * size, c + u * size - v * size];
+        Vec3 lo, hi;
+        if (!drawnBox(lo, hi))
+            lo = hi = Vec3(0, 0, 0);
+        // the corners of the box, along u and v
+        double u0 = double.max, u1 = -double.max, v0 = double.max, v1 = -double.max;
+        foreach (k; 0 .. 8)
+        {
+            auto c = Vec3(k & 1 ? hi.x : lo.x, k & 2 ? hi.y : lo.y, k & 4 ? hi.z : lo.z);
+            u0 = min(u0, c.dot(u));
+            u1 = max(u1, c.dot(u));
+            v0 = min(v0, c.dot(v));
+            v1 = max(v1, c.dot(v));
+        }
+        immutable margin = max(5.0, 0.1 * max(u1 - u0, v1 - v0));
+        immutable du = max(10.0, (u1 - u0) / 2 + margin), dv = max(10.0, (v1 - v0) / 2 + margin);
+        // the middle, on the plane
+        auto c = u * ((u0 + u1) / 2) + v * ((v0 + v1) / 2) + n * sectionOffset;
+        return [c + u * du + v * dv, c - u * du + v * dv, c - u * du - v * dv, c + u * du - v * dv];
     }
 
     void drawSectionOutline()
     {
-        // a rectangle on the plane, a bit larger than the parts
-        auto n = sectionNormal;
-        auto u = (abs(n.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(n).normalized;
-        auto v = n.cross(u);
-        double size = 10;
-        Vec3 c;
-        size_t count;
-        foreach (i, p; parts)
-            if (!isHidden(i))
-            {
-                size = max(size, (p.bbox.max - p.bbox.min).length * 0.6);
-                c = c + (p.bbox.min + p.bbox.max) * 0.5;
-                count++;
-            }
-        if (count)
-            c = c * (1.0 / count);
-        c = c - n * (c.dot(n) - sectionOffset);
-        auto q = [c + u * size + v * size, c - u * size + v * size, c - u * size - v * size, c + u * size - v * size];
+        auto q = sectionQuad();
         // a translucent sheet with a border; parts in front of it hide it
         float[] tri;
         foreach (k; [0, 1, 2, 0, 2, 3])
