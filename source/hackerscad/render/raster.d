@@ -31,6 +31,9 @@ struct Shaded
     /// Optional, per triangle of `faces` (or of `mesh` without them): 1
     /// striped red (an overhang), 2 cross-hatched violet (a thin wall).
     const(ubyte)[] marks;
+    /// Optional, per triangle of `faces` (or of `mesh`): its own colour (0xRRGGBB), as for a map of
+    /// deviations; it replaces the part's colour.
+    const(uint)[] colors;
 }
 
 /// The lighting of the 3D view (its fragment shader), for a view direction
@@ -184,9 +187,13 @@ private Image render(const Shaded[] items, const Prepared[] prepared, View view,
                 {
                     auto ia = f.tris[t * 3], ib = f.tris[t * 3 + 1], ic = f.tris[t * 3 + 2];
                     immutable mark = t < it.marks.length ? it.marks[t] : 0;
+                    Vec3 own;
+                    if (t < it.colors.length)
+                        own = Vec3((it.colors[t] >> 16) & 0xFF, (it.colors[t] >> 8) & 0xFF, it.colors[t] & 0xFF);
+                    Vec3 ownLight(Vec3 n) => viewLighting(n, cam.eye, own);
                     c.triangle(toScreen(f.vertex(ia)), toScreen(f.vertex(ib)), toScreen(f.vertex(ic)),
-                        normals[ia], normals[ib], normals[ic], mark ? (mark == 1 ? &overhangLight : &thinLight) : &light,
-                        alpha, mark, 10.0 * ss);
+                        normals[ia], normals[ib], normals[ic], t < it.colors.length ? &ownLight
+                        : mark ? (mark == 1 ? &overhangLight : &thinLight) : &light, alpha, mark, 10.0 * ss);
                 }
             }
             else

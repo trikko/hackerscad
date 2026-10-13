@@ -246,6 +246,34 @@ final class Run
         return encodePng(img.rgb, img.width, img.height);
     }
 
+    /// How far part `a` is from part `b` (a remodelled part from the mesh it
+    /// copies): the distances both ways, and pictures of `a` coloured by its
+    /// distance from `b` (green within tol / 2, yellow at tol, red at twice it).
+    JSONValue compare(size_t a, size_t b, double tol, out ubyte[] picture)
+    {
+        import hackerscad.geom.deviation : deviation, deviationMap;
+        import std.algorithm : max;
+        partMeshes();
+        auto bb = kernel.bbox(result.parts[a].solid.brep);
+        immutable spacing = max(0.2, bb.size.length / 300);
+        auto ab = deviation(faceMeshes[a], meshes[b], spacing), ba = deviation(meshes[b], faceMeshes[a], spacing);
+        JSONValue j = ["max_mm": max(ab.max, ba.max)];
+        j["a_to_b"] = ["max_mm": JSONValue(ab.max), "mean_mm": JSONValue(ab.mean), "rms_mm": JSONValue(ab.rms),
+            "within_tolerance": JSONValue(ab.within(tol))];
+        j["a_to_b"]["worst_at"] = [ab.worstAt.x, ab.worstAt.y, ab.worstAt.z];
+        j["b_to_a"] = ["max_mm": JSONValue(ba.max), "mean_mm": JSONValue(ba.mean), "rms_mm": JSONValue(ba.rms),
+            "within_tolerance": JSONValue(ba.within(tol))];
+        j["b_to_a"]["worst_at"] = [ba.worstAt.x, ba.worstAt.y, ba.worstAt.z];
+        j["tolerance_mm"] = tol;
+        uint[] colors;
+        auto map = deviationMap(faceMeshes[a], meshes[b], max(0.3, bb.size.length / 150), tol, colors);
+        auto s = Shaded(map.welded(1e-6), result.parts[a].rgb, map);
+        s.colors = colors;
+        auto img = renderSheet([s], [View.iso, View.front, View.top, View.right], 450);
+        picture = encodePng(img.rgb, img.width, img.height);
+        return j;
+    }
+
     /// Machine-readable summary for scripts and agents.
     JSONValue report()
     {

@@ -246,6 +246,8 @@ immutable Ref[] reference =
     F("projection", "Solid", ["plane: Plane"], "Profile", "The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY."),
     P("features", "Solid", "string",
         "What the solid is made of, one surface a line: flat faces, holes and shafts (with the ISO size they match), cones, spheres, roundings, patterns of holes; to remodel a loaded mesh: writeln(load(\"x.stl\").features)."),
+    F("deviation", "Solid", ["other: Solid"], "Length",
+        "How far apart the two surfaces are at most, both ways: to check a remodelled part against the mesh it copies, assert(clone.deviation(original) < 0.1.mm)."),
     F("overhangs", "Solid", ["angle: Angle"], "Area",
         "The area facing down more steeply than the angle from a wall (45° by default), off the bed: what needs supports."),
     F("thinWalls", "Solid", ["min: Length"], "Area",

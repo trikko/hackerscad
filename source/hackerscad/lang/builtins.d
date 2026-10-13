@@ -979,6 +979,19 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return Value.of(report(analyse(k.tessellate(nonEmpty(s, a.span), 0.01, 0.1))));
     });
 
+    def("deviation", (ref CallArgs a) {
+        // clone.deviation(original): how far apart their surfaces are at most, both ways
+        auto x = Args(it, a, "deviation", ["a", "b"]);
+        auto sa = x.solid("a"), sb = x.solid("b");
+        if (sa.flat || sa.path || sb.flat || sb.path)
+            throw new HcadError(Code.type, "deviation compares solids", a.span);
+        import hackerscad.geom.deviation : deviation;
+        auto ma = k.tessellate(nonEmpty(sa, a.span), 0.01, 0.1), mb = k.tessellate(nonEmpty(sb, a.span), 0.01, 0.1);
+        auto bb = k.bbox(sa.brep);
+        immutable spacing = max(0.2, bb.size.length / 300);
+        return Value.number(max(deviation(ma, mb, spacing).max, deviation(mb, ma, spacing).max), Dim.length);
+    });
+
     // ---- printing: what a printer will find hard
     def("overhangs", (ref CallArgs a) {
         // s.overhangs(45.deg): the area facing down more steeply than the angle from a wall, off the bed

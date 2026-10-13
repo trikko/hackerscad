@@ -1661,3 +1661,20 @@ unittest
     immutable expected = 800 - 4 * (25 - PI * 25 / 4) - PI * 9;
     assert(abs(r.log[0].text.to!double - expected) < 0.5, r.log[0].text);
 }
+
+unittest
+{
+    // how far two solids are: a block against the same block 0.5 mm taller
+    auto r = runModel(q{
+        import std.math;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable d = box(20, 10, 5).deviation(box(20, 10, 5.5));
+            assert(abs(d / 1.mm - 0.5) < 1e-6, "taller");
+            assert(cylinder(d: 10, h: 5).deviation(cylinder(d: 10, h: 5)) < 0.001.mm, "same");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

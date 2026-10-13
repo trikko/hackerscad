@@ -266,7 +266,8 @@ JSONValue toolError(string message)
 
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
-    ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section"].canFind(tool);
+    ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
+        "hcad_compare"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -651,6 +652,13 @@ JSONValue[] toolList()
             ~ "hackerscad sketch ready to paste and extrude. For parts that are extrusions, cut them across.",
             `"path": {"type": "string"}, "part": {"type": "string"}, "plane": {"type": "string", "enum": ["xy", "xz", "yz"]}, `
             ~ `"at": {"type": "number", "description": "mm along the plane's normal axis"}`, `["path", "plane", "at"]`),
+        tool("hcad_compare", "How far a part of a model is from another (a remodelled part from the mesh it copies, "
+            ~ "loaded as a see-through reference part: @part(\"slategray\", alpha: 0.3, export: false) Solid original() => "
+            ~ "load(\"x.stl\");): the largest, mean and rms distance both ways, where the worst is, the share within "
+            ~ "tolerance, and a picture of part a coloured by its distance from b: green within half the tolerance, "
+            ~ "yellow at it, red at twice it. Correct the model until it is green.",
+            modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
+            ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}`, `["a", "b"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -939,6 +947,37 @@ JSONValue callTool(string name, JSONValue args)
                 isError = true;
                 text(e.msg);
             }
+            break;
+        }
+    case "hcad_compare":
+        {
+            auto run = evaluateModel(options(args));
+            isError = !run.ok;
+            if (!run.ok)
+            {
+                text(run.renderedDiagnostics());
+                break;
+            }
+            import hackerscad.lang.errors : HcadError;
+            size_t ia, ib;
+            try
+            {
+                ia = run.partIndices([arg("a")], true)[0];
+                ib = run.partIndices([arg("b")], true)[0];
+            }
+            catch (HcadError e)
+            {
+                isError = true;
+                text(e.msg ~ (e.diag.suggestion.length ? " (" ~ e.diag.suggestion ~ ")" : ""));
+                break;
+            }
+            double tol = 0.1;
+            if (auto t = "tolerance_mm" in args)
+                tol = t.type == JSONType.integer ? t.integer : t.floating;
+            ubyte[] png;
+            auto j = run.compare(ia, ib, tol, png);
+            text(j.toPrettyString());
+            image(png);
             break;
         }
     case "hcad_measure":

@@ -34,6 +34,10 @@ usage:
   hcad section FILE --plane xy|xz|yz --at MM [--part NAME]
       the section of a mesh, STEP file or model as lines, arcs and circles
       with their sizes, and as a sketch ready to paste
+  hcad compare FILE.hcad --a PART --b PART [--tolerance MM] [-o OUT.png]
+      how far part a is from part b (a remodelled part from the mesh it
+      copies, loaded as a reference part): distances both ways, and a
+      picture of a coloured green, yellow, red by its distance from b
   hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
@@ -161,6 +165,50 @@ int main(string[] args)
             try
                 write(sectionReport(args[1], part, plane, at));
             catch (Exception e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
+            return 0;
+        }
+    case "compare":
+        {
+            string pa, pb, out_;
+            double tol = 0.1;
+            try
+                getopt(args, "a", &pa, "b", &pb, "tolerance", &tol, "o|output", &out_);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2 || pa.length == 0 || pb.length == 0)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            RunOptions ro;
+            ro.path = args[1];
+            auto run = evaluateModel(ro);
+            if (!run.ok)
+            {
+                stderr.write(run.renderedDiagnostics());
+                return 1;
+            }
+            try
+            {
+                ubyte[] png;
+                auto j = run.compare(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], tol, png);
+                writefln("largest distance %.3f mm (a to b %.3f, b to a %.3f), mean %.3f mm, %.0f%% within %g mm",
+                    j["max_mm"].floating, j["a_to_b"]["max_mm"].floating, j["b_to_a"]["max_mm"].floating,
+                    j["a_to_b"]["mean_mm"].floating, 100 * j["a_to_b"]["within_tolerance"].floating, tol);
+                if (out_.length)
+                {
+                    import std.file : write;
+                    write(out_, png);
+                }
+            }
+            catch (HcadError e)
             {
                 stderr.writeln("error: ", e.msg);
                 return 1;
