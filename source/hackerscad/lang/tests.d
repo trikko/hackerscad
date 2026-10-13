@@ -1583,3 +1583,10 @@ unittest
         ~ `.thread(faces.filter(f => f.area > 165 * 1.mm ^^ 2 && f.area < 220 * 1.mm ^^ 2), "M8");`).message.canFind("tap drill"));
     assert(error(`@part Solid p() => box(10, 10, 10).thread(faces.top, "M8");`).message.canFind("cylindrical"));
 }
+
+unittest
+{
+    // a name that exists on its own, used as a member: no "did you mean" the same name
+    auto d = error("@part Solid p() { foreach (f; box(1, 1, 1).faces) {} return box(1, 1, 1); }");
+    assert(d.message.canFind("stands on its own") && !d.suggestion.canFind("'faces'"), d.message ~ " " ~ d.suggestion);
+}

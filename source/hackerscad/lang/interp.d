@@ -1527,8 +1527,15 @@ final class Interp
             candidates = obj.obj.memberNames;
         if (obj.kind == Kind.struct_)
             candidates = obj.st.def.fields.map!(x => x.name).array ~ obj.st.def.methods.keys;
+        // a name that exists on its own (faces, edges, a constant) is not a member: say so, rather
+        // than suggesting the very same name
+        import std.algorithm : canFind, filter;
+        auto all = env.allNames;
+        if (all.canFind(m.name))
+            throw new HcadError(Code.undefined, format("%s has no member '%s': '%s' stands on its own, write it without "
+                ~ "'%s.' in front (e.g. as an argument)", obj.typeName, m.name, m.name, obj.typeName.toLower), m.nameSpan);
         throw new HcadError(Code.undefined, format("%s has no member '%s' and there is no function '%s'", obj.typeName, m.name, m.name),
-            m.nameSpan, suggest(m.name, candidates ~ env.allNames));
+            m.nameSpan, suggest(m.name, (candidates ~ all).filter!(n => n != m.name).array));
     }
 
     /// In D a declared function without required parameters is called when
