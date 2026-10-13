@@ -2411,28 +2411,9 @@ private:
         if (viewport.inRollback)
             return;
         hit.edge = viewport.nearestEdge(hit.part, hit.face, x, y, 12);
-        // right-clicking inside a Shift selection keeps it; elsewhere selects what is under the pointer
-        bool inSelection;
-        foreach (h; viewport.selection())
-            if (Viewport.sameItem(h, hit) || (h.part == hit.part && h.face == hit.face && hit.edge < 0))
-                inSelection = true;
-        if (!inSelection || viewport.selection().length <= 1)
-            picked(hit);
-        contextHit = hit;
+        setContext(hit);
         auto part = last.parts[hit.part];
         auto sel = viewport.selection();
-        selFaces = null;
-        selEdges = null;
-        foreach (h; sel)
-        {
-            if (h.edge >= 0)
-                selEdges ~= h.edge;
-            else if (h.face >= 0)
-                selFaces ~= h.face;
-        }
-        // the face under an edge still offers face operations
-        if (selFaces.length == 0 && hit.face >= 0 && sel.length <= 1)
-            selFaces = [hit.face];
         immutable nf = selFaces.length, ne = selEdges.length;
         alias I = MenuEntry.item, G = MenuEntry.group, H = MenuEntry.heading;
         alias S = MenuEntry.separator;
@@ -2445,19 +2426,16 @@ private:
 
         if (ne)
         {
-            entries ~= I(ne == 1 ? "Fillet edge…" : format("Fillet %d edges…", ne), () => ctxEdges(".fillet(%s, r: 1.mm)", "1.mm"));
-            entries ~= I(ne == 1 ? "Chamfer edge…" : format("Chamfer %d edges…", ne), () => ctxEdges(".chamfer(%s, d: 0.5.mm)",
-                "0.5.mm"));
+            entries ~= I(ne == 1 ? "Fillet edge…" : format("Fillet %d edges…", ne), () => ctx("fillet-edge", "1.mm"));
+            entries ~= I(ne == 1 ? "Chamfer edge…" : format("Chamfer %d edges…", ne), () => ctx("chamfer-edge", "0.5.mm"));
         }
         if (nf)
         {
-            entries ~= I(nf == 1 ? "Fillet face edges…" : "Fillet edges of the faces…",
-                () => ctxFaces(".fillet(edges.of(%s), r: 1.mm)", "1.mm"));
-            entries ~= I(nf == 1 ? "Chamfer face edges…" : "Chamfer edges of the faces…",
-                () => ctxFaces(".chamfer(edges.of(%s), d: 0.5.mm)", "0.5.mm"));
+            entries ~= I(nf == 1 ? "Fillet face edges…" : "Fillet edges of the faces…", () => ctx("fillet-face", "1.mm"));
+            entries ~= I(nf == 1 ? "Chamfer face edges…" : "Chamfer edges of the faces…", () => ctx("chamfer-face", "0.5.mm"));
             entries ~= I(nf == 1 ? "Shell, opening this face…" : format("Shell, opening %d faces…", nf),
-                () => ctxFaces(".shell(open: %s, thickness: 2.mm)", "2.mm"));
-            entries ~= I(nf == 1 ? "Draft face…" : format("Draft %d faces…", nf), () => ctxFaces(".draft(%s, angle: 3.deg)", "3.deg"));
+                () => ctx("shell", "2.mm"));
+            entries ~= I(nf == 1 ? "Draft face…" : format("Draft %d faces…", nf), () => ctx("draft", "3.deg"));
         }
         if (hit.face >= 0)
         {
@@ -2471,8 +2449,8 @@ private:
                 holes ~= G(kind[0], sizes);
             }
             entries ~= G("Hole at point", holes);
-            entries ~= I("Pocket at point…", () => ctxOnFace(".cut(rect(10.mm, 6.mm), on: %s, at: %s, depth: 2.mm)", "2.mm"));
-            entries ~= I("Boss at point…", () => ctxOnFace(".extrude(circle(d: 6.mm), on: %s, at: %s, depth: 3.mm)", "3.mm"));
+            entries ~= I("Pocket at point…", () => ctx("pocket", "2.mm"));
+            entries ~= I("Boss at point…", () => ctx("boss", "3.mm"));
         }
 
         // measurements: values on the right, a click copies them
@@ -2616,20 +2594,76 @@ private:
         return edgesSelector(it, sv, selEdges);
     }
 
-    void ctxFaces(string code, string placeholder) => appendFeature(last.parts[contextHit.part], format(code, facesCode()),
-        placeholder);
-    void ctxEdges(string code, string placeholder) => appendFeature(last.parts[contextHit.part], format(code, edgesCode()),
-        placeholder);
+    /// A right-click menu entry: its code appended, the size `placeholder`
+    /// selected for the user to type over.
+    void ctx(string action, string placeholder, string kind = null, string size = null)
+    {
+        if (auto code = contextCode(action, null, kind, size))
+            appendFeature(last.parts[contextHit.part], code, placeholder);
+    }
 
     Hit contextHit;
 
-    void ctxFeature(string action, string placeholder)
+    /// What the right-click menu acts on, from a hit: inside a Shift
+    /// selection the whole selection, elsewhere what is under the pointer
+    /// (selected then); the face under an edge still offers face operations.
+    void setContext(Hit hit)
     {
-        if (contextHit.part < 0 || contextHit.part >= last.parts.length)
-            return;
-        auto code = featureCode(contextHit, action, null);
-        if (code.length)
-            appendFeature(last.parts[contextHit.part], code, placeholder);
+        bool inSelection;
+        foreach (h; viewport.selection())
+            if (Viewport.sameItem(h, hit) || (h.part == hit.part && h.face == hit.face && hit.edge < 0))
+                inSelection = true;
+        if (!inSelection || viewport.selection().length <= 1)
+            picked(hit);
+        contextHit = hit;
+        auto sel = viewport.selection();
+        selFaces = null;
+        selEdges = null;
+        foreach (h; sel)
+        {
+            if (h.edge >= 0)
+                selEdges ~= h.edge;
+            else if (h.face >= 0)
+                selFaces ~= h.face;
+        }
+        if (selFaces.length == 0 && hit.face >= 0 && sel.length <= 1)
+            selFaces = [hit.face];
+    }
+
+    /// The code the right-click menu's `action` appends for the context
+    /// (see setContext), `value` in place of its default size; null when
+    /// the action does not apply there.
+    string contextCode(string action, string value, string kind, string size)
+    {
+        string or(string def) => value.length ? value : def;
+        immutable edges = selEdges.length > 0, faces = selFaces.length > 0, onFace = contextHit.face >= 0;
+        switch (action)
+        {
+        case "fillet-edge": return edges ? format(".fillet(%s, r: %s)", edgesCode(), or("1.mm")) : null;
+        case "chamfer-edge": return edges ? format(".chamfer(%s, d: %s)", edgesCode(), or("0.5.mm")) : null;
+        case "fillet-face": return faces ? format(".fillet(edges.of(%s), r: %s)", facesCode(), or("1.mm")) : null;
+        case "chamfer-face": return faces ? format(".chamfer(edges.of(%s), d: %s)", facesCode(), or("0.5.mm")) : null;
+        case "shell": return faces ? format(".shell(open: %s, thickness: %s)", facesCode(), or("2.mm")) : null;
+        case "draft": return faces ? format(".draft(%s, angle: %s)", facesCode(), or("3.deg")) : null;
+        case "hole":
+            {
+                import std.algorithm : canFind;
+                if (!onFace || !["clearance", "tap", "insert"].canFind(kind)
+                    || !["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"].canFind(size))
+                    return null;
+                return format("// %s %s hole (through: true goes all the way)\n"
+                    ~ ".cut(circle(d: %g.mm), on: %s, at: %s, depth: %s)", size, kind, holeDiameter(kind, size),
+                    ctxSelector(false), ctxAt(), or("5.mm"));
+            }
+        case "pocket":
+            return onFace ? format(".cut(rect(10.mm, 6.mm), on: %s, at: %s, depth: %s)", ctxSelector(false), ctxAt(),
+                or("2.mm")) : null;
+        case "boss":
+            return onFace ? format(".extrude(circle(d: 6.mm), on: %s, at: %s, depth: %s)", ctxSelector(false), ctxAt(),
+                or("3.mm")) : null;
+        default:
+            return null;
+        }
     }
 
     string ctxSelector(bool edge)
@@ -2656,10 +2690,6 @@ private:
     }
 
     /// `code` with %s for the face selector and %s for the clicked point.
-    void ctxOnFace(string code, string placeholder)
-    {
-        appendFeature(last.parts[contextHit.part], format(code, ctxSelector(false), ctxAt()), placeholder);
-    }
 
     static double holeDiameter(string kind, string size)
     {
@@ -2672,15 +2702,8 @@ private:
     }
 
     // a function of its own: closures made in a loop would all share the last size
-    void delegate() holeAction(string kind, string size) => () => ctxHole(kind, size);
-
-    void ctxHole(string kind, string size)
-    {
-        // a blind hole 5 mm deep at the clicked point: edit the depth, or use through: true
-        appendFeature(last.parts[contextHit.part], format("// %s %s hole (through: true goes all the way)\n"
-            ~ ".cut(circle(d: %g.mm), on: %s, at: %s, depth: 5.mm)", size, kind, holeDiameter(kind, size), ctxSelector(false),
-            ctxAt()), "5.mm");
-    }
+    // a blind hole 5 mm deep at the clicked point: edit the depth, or use through: true
+    void delegate() holeAction(string kind, string size) => () => ctx("hole", "5.mm", kind, size);
 
     /// Area of a B-rep face from its triangles.
     static double faceArea(PartMesh p, int face)
@@ -2704,31 +2727,6 @@ private:
         import std.algorithm : map;
         import std.array : array;
         params.updateParts(last.parts.map!(p => p.name).array, last.parts.map!(p => p.rgb).array, &viewport.isHidden);
-    }
-
-    /// The code a context-menu action appends, or null.
-    string featureCode(Hit hit, string action, string value)
-    {
-        auto part = last.parts[hit.part];
-        auto it = new Interp(part.kernel);
-        auto sv = new SolidVal(part.brep, Span.init);
-        sv.creators = part.creators;
-        string or(string def) => value.length ? value : def;
-        switch (action)
-        {
-        case "fillet-edge":
-            return hit.edge < 0 ? null : ".fillet(" ~ edgeSelector(it, sv, hit.edge) ~ ", r: " ~ or("1.mm") ~ ")";
-        case "chamfer-edge":
-            return hit.edge < 0 ? null : ".chamfer(" ~ edgeSelector(it, sv, hit.edge) ~ ", d: " ~ or("0.5.mm") ~ ")";
-        case "fillet-face":
-            return hit.face < 0 ? null : ".fillet(edges.of(" ~ faceSelector(it, sv, hit.face) ~ "), r: " ~ or("1.mm") ~ ")";
-        case "chamfer-face":
-            return hit.face < 0 ? null : ".chamfer(edges.of(" ~ faceSelector(it, sv, hit.face) ~ "), d: " ~ or("0.5.mm") ~ ")";
-        case "shell":
-            return hit.face < 0 ? null : ".shell(open: " ~ faceSelector(it, sv, hit.face) ~ ", thickness: " ~ or("2.mm") ~ ")";
-        default:
-            return null;
-        }
     }
 
     void copy(string text)
@@ -3644,8 +3642,10 @@ private:
             }
         case "feature":
             {
-                // {"x": 0.5, "y": 0.4, "action": "fillet-edge", "value": "2.mm"}: what the context menu does
-                auto act = arg("action"), value = arg("value");
+                // {"x": 0.5, "y": 0.4, "action": "fillet-edge", "value": "2.mm"}: what the context menu does,
+                // on what is there or (use_selection) on the Shift selection that contains it
+                auto act = arg("action"), value = arg("value"), kind = arg("kind"), size = arg("size");
+                immutable useSelection = has("use_selection") && p["use_selection"].type == JSONType.true_;
                 whenIdle(() {
                     double x, y;
                     if (auto problem = screenPoint(p, x, y))
@@ -3654,10 +3654,14 @@ private:
                     if (hit.part < 0)
                         return reply(JSONValue.init, "nothing under that point");
                     hit.edge = viewport.nearestEdge(hit.part, hit.face, x, y, 12);
-                    auto code = featureCode(hit, act, value);
+                    if (!useSelection)
+                        picked(hit);
+                    setContext(hit);
+                    auto code = contextCode(act, value, kind, size);
                     if (code.length == 0)
-                        return reply(JSONValue.init, "unknown action or no edge there: use fillet-edge, chamfer-edge, "
-                            ~ "fillet-face, chamfer-face or shell");
+                        return reply(JSONValue.init, "unknown action, or it does not apply there: use fillet-edge, "
+                            ~ "chamfer-edge (an edge), fillet-face, chamfer-face, shell, draft (faces), hole (kind: "
+                            ~ "clearance, tap or insert; size: M2 to M8), pocket or boss (a face)");
                     appendFeature(last.parts[hit.part], code, null);
                     whenIdle(() {
                         auto r = state();
