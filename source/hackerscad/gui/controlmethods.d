@@ -137,6 +137,11 @@ mixin template ControlMethods()
                 // what a left drag does, as the two buttons of the view bar
                 if (auto v = arg("drag"))
                     (v == "pan" ? panMode : rotateMode).setActive(true);
+                // the ground grid and the axes, as the eye's menu (kept between runs)
+                if (has("grid"))
+                    gridChoice.setActive(p["grid"].type == JSONType.true_);
+                if (has("axes"))
+                    axesChoice.setActive(p["axes"].type == JSONType.true_);
                 // the parts hidden with the eye of the view bar
                 if (has("hidden"))
                 {

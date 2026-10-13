@@ -12,9 +12,10 @@ bag clip is still open; we use it to try things.
    zoom. Clicking a face selects it and highlights the line of code that made
    it; right-clicking opens the things you can do there.
 2. **The view bar.** The views (Fit, Iso, Top, Front, Right); how a left drag
-   moves the view; the eye, to hide or show the parts; the cube, to choose how
-   the parts are drawn; the section, to cut the model and look inside; the
-   magnifying glass, to see what a line of code makes.
+   moves the view; the eye, to hide or show the parts, the ground grid and
+   the axes; the cube, to choose how the parts are drawn; the section, to cut
+   the model and look inside; the magnifying glass, to see what a line of
+   code makes.
 3. **Parameters and Steps.** Two tabs. *Parameters* has the sizes the model
    lets you change, without touching the code; *Steps* shows how the model is
    built, one step at a time.

@@ -684,6 +684,8 @@ JSONValue[] toolList()
             ~ `"sidebar": {"type": "string", "enum": ["params", "steps"]}, `
             ~ `"cursor": {"type": "integer"}, "code_width": {"type": "integer"}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
+            ~ `"grid": {"type": "boolean", "description": "show the ground grid (the eye's menu; kept between runs)"}, `
+            ~ `"axes": {"type": "boolean", "description": "show the X and Y axes (the eye's menu; kept between runs)"}, `
             ~ `"code": {"type": "boolean"}, "console": {"type": "boolean"}, "view": {"type": "boolean"}, `
             ~ `"params": {"type": "boolean"}, `
             ~ `"theme": {"type": "string", "enum": ["system", "light", "dark"]}, `

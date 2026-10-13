@@ -799,6 +799,16 @@ final class Viewport
         area.queueRender();
     }
 
+    /// The ground grid and the X and Y axes, each shown or not.
+    bool showGrid = true, showAxes = true;
+
+    void setGuides(bool grid, bool axes)
+    {
+        showGrid = grid;
+        showAxes = axes;
+        area.queueRender();
+    }
+
     /// Switches projection; what lies on the plane of the target keeps its size.
     void setOrthographic(bool on)
     {
@@ -1342,13 +1352,17 @@ private:
             glUniform3f(uColor, 0.27f, 0.28f, 0.30f);
         else
             glUniform3f(uColor, 0.80f, 0.81f, 0.84f);
-        glDrawArrays(GL_LINES, 4, gridCount - 4);
-        glLineWidth(2);
-        glUniform3f(uColor, 0.85f, 0.25f, 0.25f);
-        glDrawArrays(GL_LINES, 0, 2);
-        glUniform3f(uColor, 0.25f, 0.65f, 0.3f);
-        glDrawArrays(GL_LINES, 2, 2);
-        glLineWidth(1);
+        if (showGrid)
+            glDrawArrays(GL_LINES, 4, gridCount - 4);
+        if (showAxes)
+        {
+            glLineWidth(2);
+            glUniform3f(uColor, 0.85f, 0.25f, 0.25f);
+            glDrawArrays(GL_LINES, 0, 2);
+            glUniform3f(uColor, 0.25f, 0.65f, 0.3f);
+            glDrawArrays(GL_LINES, 2, 2);
+            glLineWidth(1);
+        }
         glDepthMask(GL_TRUE);
 
         // the section plane cuts the parts, not the grid

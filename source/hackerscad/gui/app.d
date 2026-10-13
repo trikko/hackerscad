@@ -2167,10 +2167,39 @@ private:
             refreshPartList();
         });
         box.append(all);
+        // the ground grid and the axes, kept between runs
+        {
+            import gtk.separator : Separator;
+            import hackerscad.gui.settings : setSetting, setting;
+            box.append(new Separator(Orientation.Horizontal));
+            gridChoice = new CheckButton;
+            gridChoice.setLabel("Ground grid");
+            gridChoice.setTooltipText("The grid of the plane the parts stand on, 10 mm squares");
+            axesChoice = new CheckButton;
+            axesChoice.setLabel("Axes");
+            axesChoice.setTooltipText("The X (red) and Y (green) axes on the ground");
+            gridChoice.setActive(setting("grid", "on") != "off");
+            axesChoice.setActive(setting("axes", "on") != "off");
+            void changed()
+            {
+                setSetting("grid", gridChoice.getActive() ? "on" : "off");
+                setSetting("axes", axesChoice.getActive() ? "on" : "off");
+                if (viewport !is null)
+                    viewport.setGuides(gridChoice.getActive(), axesChoice.getActive());
+            }
+            gridChoice.connectToggled(() => changed());
+            axesChoice.connectToggled(() => changed());
+            box.append(gridChoice);
+            box.append(axesChoice);
+            if (viewport !is null)
+                viewport.setGuides(gridChoice.getActive(), axesChoice.getActive());
+        }
         auto pop = new Popover;
         pop.setChild(box);
         return pop;
     }
+
+    CheckButton gridChoice, axesChoice;   /// in the eye's menu
 
     void refreshPartList()
     {
@@ -3736,6 +3765,8 @@ private:
         JSONValue jc = ["yaw": cam.yaw, "pitch": cam.pitch, "distance": cam.distance];
         jc["target"] = [cam.target.x, cam.target.y, cam.target.z];
         jc["projection"] = cam.orthographic ? "orthographic" : "perspective";
+        jc["grid"] = viewport.showGrid;
+        jc["axes"] = viewport.showAxes;
         jc["style"] = viewport.shading == Shading.wireframe ? "wireframe"
             : viewport.shading == Shading.shaded ? "shaded" : viewport.shading == Shading.printability ? "printability"
             : "edges";
