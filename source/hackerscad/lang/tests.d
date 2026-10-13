@@ -997,6 +997,25 @@ unittest
 
 unittest
 {
+    // a drafted pot with a corner cut off: the kernel's first offset returns a
+    // sound solid that is hardly hollowed, which must not pass for the shell
+    auto r = runModel(q{
+        @part Solid pot() => (box(60.mm, 60.mm, 48.mm)
+            .fillet(edges.parallel(Z), r: 9.mm)
+            .draft(faces.left + faces.front + faces.back + faces.right, angle: -4.deg)
+            .fillet(edges.of(faces.bottom), r: 1.mm)
+            .move(z: 16.mm)
+            - box(40.mm, 40.mm, 200.mm, center: true).rotate(z: 45.deg).move(x: 37.mm, y: 37.mm))
+            .shell(open: faces.top, thickness: 1.6.mm);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    // walls 1.6 mm: about 20 000 mm³, not a block of about 180 000
+    assert(partVolume(r, "pot") < 30_000, format("%s", partVolume(r, "pot")));
+}
+
+unittest
+{
     // selectors combine like solids: + union, - difference, & intersection
     auto r = runModel(q{
         @part Solid a() => box(20, 20, 10).shell(open: faces.left + faces.top, thickness: 2.mm);

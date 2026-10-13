@@ -665,6 +665,18 @@ hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thick
             remove.Append(m(faces[i] + 1));
         GProp_GProps before;
         BRepGProp::VolumeProperties(s->shape, before);
+        // a wall `thickness` thick holds about the area of the kept faces times
+        // the thickness; a result far above that was not hollowed (the offset
+        // can return a sound solid that is the input with only a skin removed)
+        GProp_GProps skin;
+        BRepGProp::SurfaceProperties(s->shape, skin);
+        double open = 0;
+        for (int i = 0; i < nfaces; i++) {
+            GProp_GProps f;
+            BRepGProp::SurfaceProperties(m(faces[i] + 1), f);
+            open += f.Mass();
+        }
+        const double most = 2 * (skin.Mass() - open) * thickness;
         // the offset algorithm has several strategies; some fail (or return a
         // broken solid) where others work: keep the first sound result
         struct Try {
@@ -685,7 +697,7 @@ hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thick
                     continue;
                 GProp_GProps after;
                 BRepGProp::VolumeProperties(r, after);
-                if (after.Mass() <= 0 || after.Mass() >= before.Mass())
+                if (after.Mass() <= 0 || after.Mass() >= before.Mass() || after.Mass() > most)
                     continue;
                 history_record(mk, {&s->shape}, r);
                 return wrap(r);
@@ -754,7 +766,7 @@ hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thick
                 if (planar && !r.IsNull() && BRepCheck_Analyzer(r).IsValid()) {
                     GProp_GProps after;
                     BRepGProp::VolumeProperties(r, after);
-                    if (after.Mass() > 0 && after.Mass() < before.Mass()) {
+                    if (after.Mass() > 0 && after.Mass() < before.Mass() && after.Mass() <= most) {
                         history_new(r);
                         return wrap(r);
                     }
