@@ -17,6 +17,8 @@ immutable tilt = 15.deg;
 // ---- parameters
 // @param puts a value in the Parameters panel (on the right), to change it:
 // the model follows. min and max keep it sensible.
+// Try 1, 3 and 5: the pegs on the plate change, and so do the green
+// markers in front (see `switch` below).
 @param("How many pegs", min: 1, max: 6)
 immutable pegs = 4;
 
@@ -60,7 +62,9 @@ Solid base()
     foreach (i; 0 .. pegs)
     {
         immutable x = -plate / 2 + gap + pitch(pegs) * (i + 0.5);
-        b += peg(pitch(pegs) - 2.mm, round).move(x: x, z: 4.mm);
+        // `min`: as wide as the pitch allows, but never more than 16 mm,
+        // so a few pegs do not grow past the plate's 20 mm depth
+        b += peg(min(pitch(pegs) - 2.mm, 16.mm), round).move(x: x, z: 4.mm);
     }
     return b;
 }
@@ -88,7 +92,8 @@ Solid stairs()
     return s.move(y: 30.mm);
 }
 
-/// `switch`: the shape of the markers changes with how many pegs there are.
+/// `switch`: the green markers in front change shape with the number of
+/// pegs: circles for 1 or 2, triangles for 3, hexagons for 4 to 6.
 @part("seagreen")
 Solid markers()
 {
