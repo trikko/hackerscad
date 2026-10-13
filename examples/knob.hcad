@@ -2,7 +2,7 @@
 // standing up as it is (no overhangs, no supports).
 //
 // Try it:
-//  - drag the sliders in Parameters, or pick a preset;
+//  - change the values in Parameters, or pick a preset;
 //  - edit the code: the view updates as you type;
 //  - right-click a face or an edge to add a fillet, a hole, a pocket...
 //    the GUI writes the code for you.
@@ -11,7 +11,7 @@ module knob;
 import std.shapes;
 import hardware : M3, hole;
 
-// @param puts a slider in the Parameters panel; @preset groups values under a name
+// @param puts a field in the Parameters panel; @preset groups values under a name
 @param("Diameter", min: 16.mm, max: 50.mm)
 @preset("small", 18.mm) @preset("large", 36.mm)
 immutable diameter = 26.mm;

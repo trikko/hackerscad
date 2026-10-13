@@ -32,3 +32,5 @@ docs/STILI.md
 docs/BUG_PROFILI_UNITI.md
 docs/CLEAN_ROOM.md
 bench/
+# built by dub run --single tools/tutorial-shots.d
+tools/tutorial-shots

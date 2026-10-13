@@ -4,7 +4,7 @@
 // Fold the top of the bag and push it into the wavy
 // slot, the teeth hold it. Prints flat. Change the
 // teeth, the gap or the size and print your own:
-// - drag the sliders in Parameters;
+// - change the values in Parameters;
 // - edit the code: the view updates as you type;
 // - right-click a face or an edge for fillets,
 //   holes, pockets...

@@ -65,7 +65,7 @@ open /Applications/hackerscad.app                                    # the appli
 ```
 
 A new file starts from a small example: a clip that keeps bags of biscuits
-closed. Drag its sliders, edit its code, right-click its faces.
+closed. Change its parameters, edit its code, right-click its faces.
 
 ## A model
 
