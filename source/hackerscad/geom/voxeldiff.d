@@ -124,6 +124,19 @@ Region[] differences(const Mesh a, const Mesh b, double h, double minVolume)
     return kept;
 }
 
+/// The volume where `a` and `b` differ (either way), on cubes of side `h`
+/// over the box `lo` … `hi`: one number to make smaller when fitting a copy.
+double mismatch(const Mesh a, const Mesh b, double h, Vec3 lo, Vec3 hi)
+{
+    immutable nx = cast(size_t) ceil((hi.x - lo.x) / h), ny = cast(size_t) ceil((hi.y - lo.y) / h),
+        nz = cast(size_t) ceil((hi.z - lo.z) / h);
+    auto fa = fillGrid(a, lo, h, nx, ny, nz), fb = fillGrid(b, lo, h, nx, ny, nz);
+    size_t n;
+    foreach (q; 0 .. fa.length)
+        n += fa[q] != fb[q];
+    return n * h * h * h;
+}
+
 /// Which cubes of the grid are inside the closed mesh: along each column, a
 /// ray up from below, inside between its first and second crossing, third
 /// and fourth…

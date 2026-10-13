@@ -47,6 +47,10 @@ usage:
   hcad diff FILE.hcad --a PART --b PART [--resolution MM]
       where part a (a copy) differs from part b (the original): the pieces
       of material a lacks and has too much of, with their boxes and volumes
+  hcad fit FILE.hcad --a PART --b PART --param NAME [--param NAME…] [--evaluations N]
+      tunes the named @param lengths so that part a (a copy) matches part b
+      (the original) as closely as it goes: the volume where they differ made
+      as small as possible (downhill simplex)
   hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
@@ -229,6 +233,23 @@ int main(string[] args)
                 writefln("largest distance %.3f mm (a to b %.3f, b to a %.3f), mean %.3f mm, %.0f%% within %g mm",
                     j["max_mm"].floating, j["a_to_b"]["max_mm"].floating, j["b_to_a"]["max_mm"].floating,
                     j["a_to_b"]["mean_mm"].floating, 100 * j["a_to_b"]["within_tolerance"].floating, tol);
+                // the patches, as lines
+                import std.format : format;
+                void patches(string title, JSONValue list)
+                {
+                    if (list.array.length == 0)
+                        return;
+                    writeln(title);
+                    foreach (p; list.array)
+                    {
+                        string v(JSONValue x) => format("(%g, %g, %g)", x[0].get!double, x[1].get!double, x[2].get!double);
+                        writefln("  %g mm² facing %s, %g mm off at most (%g on average): from %s to %s",
+                            p["area_mm2"].get!double, v(p["facing"]), p["worst_mm"].get!double, p["mean_mm"].get!double,
+                            v(p["from"]), v(p["to"]));
+                    }
+                }
+                patches(format("surface of %s (the original) the copy does not follow:", pb), j["b_surface_not_matched"]);
+                patches(format("surface of %s (the copy) the original does not have:", pa), j["a_surface_not_matched"]);
                 if (out_.length)
                 {
                     import std.file : write;
@@ -295,6 +316,33 @@ int main(string[] args)
             try
                 write(run.differences(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], res));
             catch (HcadError e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
+            return 0;
+        }
+    case "fit":
+        {
+            string pa, pb;
+            string[] names;
+            int evaluations = 60;
+            try
+                getopt(args, "a", &pa, "b", &pb, "param", &names, "evaluations", &evaluations);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2 || pa.length == 0 || pb.length == 0)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            import hackerscad.tool.fitting : fit;
+            try
+                write(fit(args[1], pa, pb, names, evaluations, (string s) { stderr.writeln(s); }));
+            catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);
                 return 1;

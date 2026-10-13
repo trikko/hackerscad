@@ -133,7 +133,10 @@ reference first and follow the rules below.
   `hcad section part.stl --plane xy --at 3` (hcad_section) a cut across it
   as lines, arcs and circles, and as a sketch ready to extrude;
   `hcad compare model.hcad --a clone --b original -o map.png` (hcad_compare)
-  how far the remodelled part is from the mesh, with a coloured map.
+  how far the remodelled part is from the mesh, with a coloured map and
+  the surface patches that do not match; `hcad diff` (hcad_diff) the
+  material to add or cut; `hcad scan` (hcad_scan) holes and pockets along
+  an axis; `hcad fit` (hcad_fit) tunes @param lengths to the original.
   `--printability` adds per part the overhangs needing supports and the
   walls too thin to print (marked in the pictures: red stripes, violet
   hatching); with the window, `hcad_gui_view` style `printability`.

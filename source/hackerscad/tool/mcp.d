@@ -267,7 +267,7 @@ JSONValue toolError(string message)
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
     ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
-        "hcad_compare", "hcad_scan", "hcad_diff"].canFind(tool);
+        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -676,6 +676,14 @@ JSONValue[] toolList()
             ~ "full box is a box() to add or cut). Both are filled into cubes of 'resolution' mm (default: the size / "
             ~ "250); differences thinner than two cubes are left out.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "resolution": {"type": "number"}`, `["a", "b"]`),
+        tool("hcad_fit", "Tune measures of a copy to its original: the @param lengths named in 'params' (of the .hcad "
+            ~ "model at 'path') are moved, by the downhill simplex method, to make the volume where part 'a' (the copy) "
+            ~ "and part 'b' (the original) differ as small as it goes. Returns the values found, the volume before and "
+            ~ "after, and the -D overrides; then write them into the model. Each step evaluates the model: a few "
+            ~ "parameters at a time (each evaluation takes a second or two).",
+            `"path": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}, `
+            ~ `"params": {"type": "array", "items": {"type": "string"}}, "evaluations": {"type": "integer"}`,
+            `["path", "a", "b", "params"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -1045,6 +1053,25 @@ JSONValue callTool(string name, JSONValue args)
                     res is null ? 0 : res.type == JSONType.integer ? res.integer : res.floating));
             }
             catch (HcadError e)
+            {
+                isError = true;
+                text(e.msg);
+            }
+            break;
+        }
+    case "hcad_fit":
+        {
+            import hackerscad.tool.fitting : fit;
+            try
+            {
+                string[] names;
+                if (auto ps = "params" in args)
+                    foreach (v; ps.array)
+                        names ~= v.str;
+                auto ev = "evaluations" in args;
+                text(fit(arg("path"), arg("a"), arg("b"), names, ev is null ? 60 : cast(int) ev.integer));
+            }
+            catch (Exception e)
             {
                 isError = true;
                 text(e.msg);

@@ -272,3 +272,84 @@ unittest
     assert(abs(pointTriangle(Vec3(0.5, -2, 0), Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(0, 1, 0)) - 2) < 1e-12);
     assert(abs(pointTriangle(Vec3(0.2, 0.2, 3), Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(0, 1, 0)) - 3) < 1e-12);
 }
+
+/// A patch of a surface that stays away from the other one: what the map
+/// shows red, in numbers.
+struct Patch
+{
+    double area = 0, worst = 0, mean = 0;
+    Vec3 lo, hi, centre, normal;   /// its box, middle, and mean outward normal
+}
+
+/// The patches of `a`'s surface farther than `tol` from `b`'s: its triangles
+/// checked at their corners and middle, joined with their neighbours,
+/// largest first; patches under `minArea` mm² left out.
+Patch[] patches(const Mesh input, const Mesh b, double tol, double minArea)
+{
+    auto a = input.welded(1e-5);
+    auto tree = Nearest(b);
+    immutable n = a.triangleCount;
+    auto far = new bool[n];
+    auto dist = new double[n];
+    foreach (t; 0 .. n)
+    {
+        auto p0 = a.vertex(a.tris[3 * t]), p1 = a.vertex(a.tris[3 * t + 1]), p2 = a.vertex(a.tris[3 * t + 2]);
+        // the middle decides; the corners would mark every triangle touching a patch
+        immutable d = tree.distance((p0 + p1 + p2) / 3);
+        dist[t] = d;
+        far[t] = d > tol;
+    }
+    // neighbours across shared edges
+    uint[][ulong] edgeTris;
+    static ulong key(uint x, uint y) => x < y ? (cast(ulong) x << 32 | y) : (cast(ulong) y << 32 | x);
+    foreach (t; 0 .. n)
+        foreach (k; 0 .. 3)
+            edgeTris[key(a.tris[3 * t + k], a.tris[3 * t + (k + 1) % 3])] ~= cast(uint) t;
+    auto seen = new bool[n];
+    Patch[] r;
+    foreach (s; 0 .. n)
+    {
+        if (!far[s] || seen[s])
+            continue;
+        Patch p;
+        p.lo = Vec3(double.infinity, double.infinity, double.infinity);
+        p.hi = -p.lo;
+        Vec3 centre, normal;
+        double weighted = 0;
+        uint[] stack = [cast(uint) s];
+        seen[s] = true;
+        while (stack.length)
+        {
+            immutable t = stack[$ - 1];
+            stack = stack[0 .. $ - 1];
+            auto p0 = a.vertex(a.tris[3 * t]), p1 = a.vertex(a.tris[3 * t + 1]), p2 = a.vertex(a.tris[3 * t + 2]);
+            auto cr = (p1 - p0).cross(p2 - p0);
+            immutable ar = cr.length / 2;
+            p.area += ar;
+            centre = centre + (p0 + p1 + p2) / 3 * ar;
+            normal = normal + cr / 2;
+            weighted += dist[t] * ar;
+            p.worst = max(p.worst, dist[t]);
+            foreach (q; [p0, p1, p2])
+            {
+                p.lo = Vec3(min(p.lo.x, q.x), min(p.lo.y, q.y), min(p.lo.z, q.z));
+                p.hi = Vec3(max(p.hi.x, q.x), max(p.hi.y, q.y), max(p.hi.z, q.z));
+            }
+            foreach (k; 0 .. 3)
+                foreach (u; edgeTris.get(key(a.tris[3 * t + k], a.tris[3 * t + (k + 1) % 3]), null))
+                    if (far[u] && !seen[u])
+                    {
+                        seen[u] = true;
+                        stack ~= u;
+                    }
+        }
+        if (p.area < minArea)
+            continue;
+        p.centre = centre / p.area;
+        p.mean = weighted / p.area;
+        p.normal = normal.length > 1e-12 ? normal.normalized : Vec3(0, 0, 0);
+        r ~= p;
+    }
+    r.sort!((x, y) => x.area * x.mean > y.area * y.mean);
+    return r;
+}

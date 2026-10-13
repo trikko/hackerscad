@@ -265,6 +265,29 @@ final class Run
             "within_tolerance": JSONValue(ba.within(tol))];
         j["b_to_a"]["worst_at"] = [ba.worstAt.x, ba.worstAt.y, ba.worstAt.z];
         j["tolerance_mm"] = tol;
+        // the places where the surfaces part, in numbers: small things the volumes miss (a chamfer, a
+        // notch, a countersink)
+        import hackerscad.geom.deviation : patches;
+        import hackerscad.geom.meshfeatures : plausible;
+        JSONValue[] list(const Mesh from, const Mesh to)
+        {
+            JSONValue[] r;
+            foreach (i, p; patches(from, to, tol, 0.5))
+            {
+                if (i == 25)
+                    break;
+                JSONValue jp = ["area_mm2": plausible(p.area), "worst_mm": plausible(p.worst), "mean_mm": plausible(p.mean)];
+                jp["from"] = [plausible(p.lo.x), plausible(p.lo.y), plausible(p.lo.z)];
+                jp["to"] = [plausible(p.hi.x), plausible(p.hi.y), plausible(p.hi.z)];
+                jp["centre"] = [plausible(p.centre.x), plausible(p.centre.y), plausible(p.centre.z)];
+                jp["facing"] = [plausible(p.normal.x), plausible(p.normal.y), plausible(p.normal.z)];
+                r ~= jp;
+            }
+            return r;
+        }
+        // on b (the original): what the copy does not follow; on a: what the copy has that b does not
+        j["b_surface_not_matched"] = list(meshes[b], meshes[a]);
+        j["a_surface_not_matched"] = list(meshes[a], meshes[b]);
         uint[] colors;
         auto map = deviationMap(faceMeshes[a], meshes[b], max(0.3, bb.size.length / 150), tol, colors);
         auto s = Shaded(map.welded(1e-6), result.parts[a].rgb, map);
