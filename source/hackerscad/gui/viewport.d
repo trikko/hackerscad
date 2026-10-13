@@ -1211,12 +1211,24 @@ private:
     private uint[2] msaaBuffers;
     private int msaaW, msaaH;
     private bool msaaBroken;
+    private bool antialiasWanted = true;
+
+    /// Antialiasing on or off (the user's choice; off anyway when the
+    /// processor draws or the buffer could not be made).
+    public void setAntialias(bool on)
+    {
+        antialiasWanted = on;
+        area.queueRender();
+    }
+
+    /// Whether the view is drawn antialiased now.
+    public bool antialiasing() const => antialiasWanted && !msaaBroken && !softwareGl();
 
     /// Binds the multisampled buffer, made or resized for the view; returns
     /// the framebuffer to resolve it into at the end, or -1 without one.
     private int beginMultisample()
     {
-        if (offscreen || msaaBroken || softwareGl())
+        if (offscreen || !antialiasing())
             return -1;
         int target;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &target);

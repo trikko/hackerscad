@@ -661,7 +661,8 @@ JSONValue[] toolList()
             ~ "menu of the view bar for a screenshot, none closes them; sidebar shows the params or steps tab; "
             ~ "cursor puts the editor's cursor at the start of a line and scrolls there; code_width sets how wide "
             ~ "the code is (pixels); theme draws the window light or dark for this run (the user's own choice, in the "
-            ~ "main menu, stays); drag is what a left drag does, rotate or pan. "
+            ~ "main menu, stays); drag is what a left drag does, rotate or pan; antialias turns the smoothing of "
+            ~ "edges on or off for this run (hcad_gui_state's graphics tells whether it is on). "
             ~ "hidden lists the parts to hide (the others are shown); code, console, view and params show or hide "
             ~ "those panels. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
@@ -680,7 +681,7 @@ JSONValue[] toolList()
             ~ `"code": {"type": "boolean"}, "console": {"type": "boolean"}, "view": {"type": "boolean"}, `
             ~ `"params": {"type": "boolean"}, `
             ~ `"theme": {"type": "string", "enum": ["system", "light", "dark"]}, `
-            ~ `"drag": {"type": "string", "enum": ["rotate", "pan"]}`, `[]`),
+            ~ `"drag": {"type": "string", "enum": ["rotate", "pan"]}, "antialias": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (a cube with two "
             ~ "holes), parameters and view reset. Refused when the user has unsaved changes, unless force is true "
             ~ "(which discards them: ask the user first).", `"force": {"type": "boolean"}`, `[]`),

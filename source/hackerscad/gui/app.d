@@ -721,6 +721,7 @@ final class MainWindow
         // ---- view and parameters
         buildSectionBar();
         viewport = new Viewport;
+        viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = &picked;
         viewport.onContext = &contextMenu;
         // labels move after the frame, not while the view is being drawn
@@ -1486,6 +1487,7 @@ private:
         import std.process : environment;
         JSONValue g = ["renderer": viewport.glRenderer, "version": viewport.glVersion, "vendor": viewport.glVendor];
         g["software"] = viewport.softwareGl();
+        g["antialias"] = viewport.antialiasing();
         g["draw_ms"] = viewport.drawMs;
         g["frame_interval_ms"] = viewport.frameIntervalMs;
         // how GTK draws the rest, and whether hackerscad fell back on Mesa
@@ -1979,7 +1981,7 @@ private:
     Paned mainPaned;        /// the code on the left, the rest on the right
     import gtk.check_button : CheckButton;
     CheckButton[Shading] shadingChoice;
-    CheckButton perspectiveChoice, orthographicChoice;
+    CheckButton perspectiveChoice, orthographicChoice, antialiasChoice;
 
     /// What the cube of the view bar opens: how the parts are drawn and the projection.
     Popover displayPopover()
@@ -2025,6 +2027,23 @@ private:
         orthographicChoice = choice("Orthographic", "Parallel lines stay parallel: sizes do not change with depth",
             perspectiveChoice, () => viewport.setOrthographic(true));
         perspectiveChoice.setActive(true);
+        box.append(new Separator(Orientation.Horizontal));
+        heading("Quality");
+        // kept between runs: on a slow integrated card the user may want it off
+        {
+            import hackerscad.gui.settings : setSetting, setting;
+            antialiasChoice = new CheckButton;
+            antialiasChoice.setLabel("Smooth edges");
+            antialiasChoice.setTooltipText("Antialiasing: edges and curves without steps. It asks more of the graphics "
+                ~ "card: turn it off if turning the view is slow (it is off when the processor draws)");
+            antialiasChoice.setActive(setting("antialias", "on") != "off");
+            antialiasChoice.connectToggled(() {
+                setSetting("antialias", antialiasChoice.getActive() ? "on" : "off");
+                if (viewport !is null)
+                    viewport.setAntialias(antialiasChoice.getActive());
+            });
+            box.append(antialiasChoice);
+        }
         auto pop = new Popover;
         pop.setChild(box);
         return pop;

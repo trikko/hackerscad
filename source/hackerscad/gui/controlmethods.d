@@ -125,6 +125,9 @@ mixin template ControlMethods()
                         return reply(JSONValue.init, "theme must be system, light or dark");
                     StyleManager.getDefault().setColorScheme(schemeFor(v));
                 }
+                // antialiasing, for this run (the user's choice in the cube menu stays)
+                if (has("antialias"))
+                    viewport.setAntialias(p["antialias"].type == JSONType.true_);
                 // what a left drag does, as the two buttons of the view bar
                 if (auto v = arg("drag"))
                     (v == "pan" ? panMode : rotateMode).setActive(true);
