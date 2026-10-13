@@ -25,7 +25,9 @@ from the original.
 
 ## A hook, ready to print
 
-A hook for the wall: a plate with a hole for a screw, and an arm.
+A hook for the wall: a plate with a hole for a screw, and an arm. It is a
+simplified hook, to show the tools: printed like this, with a 4 mm plate and a
+6 mm arm, it would probably break the first time you hang something on it.
 
 ```d
 module hook;
@@ -76,7 +78,21 @@ Turn the view to see the hook from below:
 ![The underside of the arm and the top of the hole, in red](img/12-hook-print.png)
 
 The whole underside of the arm hangs in the air, and so does the top of the
-screw hole. Two changes fix them.
+screw hole.
+
+The quickest fix is to print it another way round. Add `.rotate(y: 90)` at
+the end of the chain, after the `.extrude(…)` (move the `;` there): the hook
+lies on its side, the L of plate and arm flat on the bed, and everything else
+grows straight up. Nothing hangs any more, but for the top of the small hole,
+which a printer manages anyway. It is also stronger this way: the layers
+follow the L, instead of crossing the joint between plate and arm, where it
+would break.
+
+![On its side: only the screw hole is left](img/12-hook-side.png)
+
+The slicer can turn a model too, so this is a choice for when you print.
+Take the `.rotate(y: 90)` away again: here the hook stays upright, and two
+changes to its shape make it printable that way as well.
 
 - **A slope under the arm.** Right-click the edge where the arm meets the
   plate, below, and choose **Chamfer edge…**: type `26.mm`. An edge that

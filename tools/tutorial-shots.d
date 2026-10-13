@@ -278,6 +278,12 @@ void page12()
     // seen from below, in the printability style
     view(`{"style": "printability", "orbit": [0, -50]}`);
     shot("12-hook-print");
+    // laid on its side, then back upright
+    type("        .extrude(faces.front, depth: 10.mm);", "        .extrude(faces.front, depth: 10.mm)\n        .rotate(y: 90);");
+    view(`{"preset": "iso"}`);
+    shot("12-hook-side", lineOf(".rotate("));
+    type("        .extrude(faces.front, depth: 10.mm)\n        .rotate(y: 90);", "        .extrude(faces.front, depth: 10.mm);");
+    view(`{"preset": "iso", "orbit": [0, -50]}`);
     menu([0, -2, 44], ["Chamfer edge…"]);
     type("d: 0.5.mm", "d: 26.mm");
     clearSelection();
