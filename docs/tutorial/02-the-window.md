@@ -7,21 +7,22 @@ bag clip is still open; we use it to try things.
 
 ![The parts of the window](img/02-window.png)
 
-1. **The code.** A model in hackerscad is a short text, written in a small
-   language. You will rarely start from an empty page: the mouse writes most
-   of it for you, and the few lines to type are given in this tutorial, ready
-   to copy. Every change shows in the view while you type.
-2. **The view.** The model as the code describes it. Clicking a face selects
-   it and highlights the line of code that made it; right-clicking opens the
-   things you can do there.
-3. **The view bar.** The views (Fit, Iso, Top, Front, Right); how a left drag
+1. **The view.** The model as the code describes it. Drag with the right
+   button to turn it, with the middle one to move it, and use the wheel to
+   zoom. Clicking a face selects it and highlights the line of code that made
+   it; right-clicking opens the things you can do there.
+2. **The view bar.** The views (Fit, Iso, Top, Front, Right); how a left drag
    moves the view; the eye, to hide or show the parts; the cube, to choose how
    the parts are drawn; the section, to cut the model and look inside; the
    magnifying glass, to see what a line of code makes.
-4. **Parameters.** The sizes the model lets you change, without touching the
-   code.
-5. **Steps.** How the model is built, one step at a time.
-6. **The console.** What the model writes, its checks, and the messages of
+3. **Parameters and Steps.** Two tabs. *Parameters* has the sizes the model
+   lets you change, without touching the code; *Steps* shows how the model is
+   built, one step at a time.
+4. **The code.** A model in hackerscad is a short text, written in a small
+   language. You will rarely start from an empty page: the mouse writes most
+   of it for you, and the few lines to type are given in this tutorial, ready
+   to copy. Every change shows in the view while you type.
+5. **The console.** What the model writes, its checks, and the messages of
    hackerscad itself (evaluated, saved, exported).
 
 The buttons at the top right show or hide the console, the code, the view and

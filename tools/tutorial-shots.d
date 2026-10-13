@@ -33,7 +33,10 @@ string window;    /// the window driven
 Pid app;
 string work;      /// the model file it edits
 
-void main()
+/// With page numbers (`… tutorial-shots.d 2 10`) only those pages are
+/// redone; the pages from 3 on build on the previous ones, so alone they
+/// make sense only from 1, 2 or 10.
+void main(string[] args)
 {
     mkdirRecurse(img);
     auto dir = buildPath(tempDir, "tutorial");
@@ -46,17 +49,13 @@ void main()
     start(buildPath(dir, "untitled.hcad"));
     scope (exit)
         stop();
-    page1();
-    page2();
-    page3();
-    page4();
-    page5();
-    page6();
-    page7();
-    page8();
-    page9();
-    page10();
-    page11();
+    auto pages = [&page1, &page2, &page3, &page4, &page5, &page6, &page7, &page8, &page9, &page10, &page11];
+    if (args.length > 1)
+        foreach (n; args[1 .. $])
+            pages[n.to!int - 1]();
+    else
+        foreach (page; pages)
+            page();
     writeln("done: ", img);
 }
 
@@ -72,7 +71,8 @@ void page2()
 {
     // the parts of the window, numbered
     shot("02-window");
-    mark("02-window", [[650, 520], [1040, 830], [1040, 118], [1645, 108], [1655, 62], [650, 935]]);
+    // in order of use: the view, its bar, parameters and steps, the code, the console
+    mark("02-window", [[1040, 520], [1037, 70], [1530, 470], [350, 395], [350, 865]]);
     view(`{"menu": "display"}`);
     shot("02-display-menu");
     view(`{"menu": "none"}`);
@@ -513,21 +513,21 @@ void shot(string name, int line = 1)
     writeln("  ", name);
 }
 
-/// Numbered round marks on img/NAME.png, centred on window pixels: each
-/// drawn four times larger, then made small (smooth edges), with a white
-/// border and a soft shadow.
+/// Numbered round marks on img/NAME.png, centred on window pixels, 72
+/// pixels wide: each drawn four times larger, then made small (smooth
+/// edges), with a white border and a soft shadow.
 void mark(string name, int[][] at)
 {
     auto file = buildPath(img, name ~ ".png");
     foreach (i, p; at)
     {
         auto badge = buildPath(tempDir, format("tutorial-badge-%d.png", i + 1));
-        magick(["-size", "176x176", "xc:none", "-fill", "rgba(0,0,0,0.35)", "-draw", "circle 88,94 88,22",
-            "-blur", "0x6", "(", "-size", "176x176", "xc:none", "-fill", "white", "-draw", "circle 88,88 88,16",
-            "-fill", "#e66100", "-draw", "circle 88,88 88,26", ")", "-composite", "-font", "Adwaita-Sans-Bold",
-            "-pointsize", "84", "-fill", "white", "-gravity", "center", "-annotate", "+0+0", (i + 1).to!string,
-            "-resize", "44x44", badge]);
-        magick([file, badge, "-geometry", format("+%d+%d", p[0] - 22, p[1] - 22), "-composite", file]);
+        magick(["-size", "288x288", "xc:none", "-fill", "rgba(0,0,0,0.4)", "-draw", "circle 144,154 144,34",
+            "-blur", "0x10", "(", "-size", "288x288", "xc:none", "-fill", "white", "-draw", "circle 144,144 144,26",
+            "-fill", "#e66100", "-draw", "circle 144,144 144,42", ")", "-composite", "-font", "Adwaita-Sans-Bold",
+            "-pointsize", "150", "-fill", "white", "-gravity", "center", "-annotate", "+0+0", (i + 1).to!string,
+            "-resize", "72x72", badge]);
+        magick([file, badge, "-geometry", format("+%d+%d", p[0] - 36, p[1] - 36), "-composite", file]);
         remove(badge);
     }
 }
