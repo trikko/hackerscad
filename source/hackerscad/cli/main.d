@@ -31,6 +31,9 @@ usage:
       what a mesh (.stl .obj .3mf), a STEP file or a model is made of, to
       remodel it: flat faces, holes and shafts, cones, spheres, roundings,
       patterns of holes, with plausible sizes
+  hcad section FILE --plane xy|xz|yz --at MM [--part NAME]
+      the section of a mesh, STEP file or model as lines, arcs and circles
+      with their sizes, and as a sketch ready to paste
   hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
@@ -131,6 +134,32 @@ int main(string[] args)
                 else
                     write(report(a));
             }
+            catch (Exception e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
+            return 0;
+        }
+    case "section":
+        {
+            string part, plane = "xy";
+            double at = 0;
+            try
+                getopt(args, "part", &part, "plane", &plane, "at", &at);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            import hackerscad.tool.features : sectionReport;
+            try
+                write(sectionReport(args[1], part, plane, at));
             catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);

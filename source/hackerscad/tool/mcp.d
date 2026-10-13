@@ -266,7 +266,7 @@ JSONValue toolError(string message)
 
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
-    ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features"].canFind(tool);
+    ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -645,6 +645,12 @@ JSONValue[] toolList()
             ~ ".hcad model, 'part' one of its parts). Load the mesh as a see-through reference part "
             ~ "(@part(\"slategray\", alpha: 0.3, export: false) Solid original() => load(\"x.stl\");) to compare.",
             `"path": {"type": "string"}, "part": {"type": "string"}`, `["path"]`),
+        tool("hcad_section", "The section of a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and "
+            ~ "its 'part') by a plane xy, xz or yz at 'at' mm along z, y or x: its closed outlines as straight lines, "
+            ~ "arcs and whole circles with their sizes (fitted to the cut, plausibly rounded), and the same as a "
+            ~ "hackerscad sketch ready to paste and extrude. For parts that are extrusions, cut them across.",
+            `"path": {"type": "string"}, "part": {"type": "string"}, "plane": {"type": "string", "enum": ["xy", "xz", "yz"]}, `
+            ~ `"at": {"type": "number", "description": "mm along the plane's normal axis"}`, `["path", "plane", "at"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -911,6 +917,22 @@ JSONValue callTool(string name, JSONValue args)
             {
                 auto a = analyse(meshOf(arg("path"), arg("part")));
                 text(report(a) ~ "\n" ~ featuresJson(a).toPrettyString(JSONOptions.doNotEscapeSlashes));
+            }
+            catch (Exception e)
+            {
+                isError = true;
+                text(e.msg);
+            }
+            break;
+        }
+    case "hcad_section":
+        {
+            import hackerscad.tool.features : sectionReport;
+            try
+            {
+                auto at = "at" in args;
+                text(sectionReport(arg("path"), arg("part"), arg("plane"),
+                    at is null ? 0 : at.type == JSONType.integer ? at.integer : at.floating));
             }
             catch (Exception e)
             {

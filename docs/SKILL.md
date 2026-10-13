@@ -39,7 +39,9 @@ reference first and follow the rules below.
   `-D width=80.mm` and `--preset name` change parameters.
   `hcad features part.stl` lists what a mesh is made of (planes, holes,
   shafts, cones, roundings, hole patterns, with plausible sizes): the start
-  for remodelling a part given as STL (hcad_features with the server).
+  for remodelling a part given as STL (hcad_features with the server);
+  `hcad section part.stl --plane xy --at 3` (hcad_section) a cut across it
+  as lines, arcs and circles, and as a sketch ready to extrude.
   `--printability` adds per part the overhangs needing supports and the
   walls too thin to print (marked in the pictures: red stripes, violet
   hatching); with the window, `hcad_gui_view` style `printability`.

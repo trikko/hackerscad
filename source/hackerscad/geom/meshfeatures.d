@@ -683,7 +683,11 @@ string holeHint(double d)
     return null;
 }
 
-private string mm(double v) => format("%g", plausible(v));
+private string mm(double v)
+{
+    immutable p = plausible(v);
+    return format("%g", p == 0 ? 0.0 : p);   // never "-0"
+}
 private string vec(Vec3 v) => format("(%s, %s, %s)", mm(v.x), mm(v.y), mm(v.z));
 
 /// A short report, one surface a line, largest first; small curved

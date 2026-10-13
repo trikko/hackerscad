@@ -140,3 +140,50 @@ JSONValue featuresJson(const Analysis a)
     j["patterns"] = ps;
     return j;
 }
+
+/// The section of `file` (as for meshOf) by plane `plane` ("xy", "xz" or
+/// "yz") at `at` mm along its third axis (z, y or x): its outlines as lines,
+/// arcs and circles, and the same as a hackerscad sketch in the plane's
+/// axes (x and y for xy, x and z for xz, y and z for yz).
+string sectionReport(string file, string part, string plane, double at)
+{
+    import std.algorithm : sort, max;
+    import std.math : abs;
+    import hackerscad.geom.outlinefit;
+    Vec3 u, v, n;
+    double along = at;
+    switch (plane)
+    {
+    case "xy": u = Vec3(1, 0, 0); v = Vec3(0, 1, 0); break;
+    case "xz": u = Vec3(1, 0, 0); v = Vec3(0, 0, 1); along = -at; break;   // u × v = -Y
+    case "yz": u = Vec3(0, 1, 0); v = Vec3(0, 0, 1); break;
+    default: throw new Exception("the plane is xy, xz or yz");
+    }
+    n = u.cross(v);
+    auto m = meshOf(file, part).welded(1e-5);
+    auto loops = slice(m, n, along, u, v);
+    if (loops.length == 0)
+        throw new Exception(format("the plane %s at %g mm does not cut the part", plane, at));
+    double size = 1;
+    foreach (l; loops)
+        foreach (p; l)
+            size = max(size, abs(p[0]), abs(p[1]));
+    Element[][] fitted;
+    foreach (l; loops)
+        fitted ~= fit(l, 0.01 + 1e-4 * size);
+    // the largest outline first
+    double[] areas;
+    foreach (l; loops)
+        areas ~= abs(area(l));
+    auto order = new size_t[loops.length];
+    foreach (i, ref o; order)
+        o = i;
+    order.sort!((a, b) => areas[a] > areas[b]);
+    Element[][] sorted;
+    foreach (i; order)
+        sorted ~= fitted[i];
+    immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
+    return format("section %s at %g mm (coordinates %s):\n", plane, at, axes) ~ describe(sorted)
+        ~ "\n// as a sketch (" ~ axes ~ " of the plane become its x, y):\n" ~ sketchCode(sorted, "section");
+}
+

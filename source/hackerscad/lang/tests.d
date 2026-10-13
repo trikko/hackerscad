@@ -1632,3 +1632,32 @@ unittest
     assert(report.canFind("hole ⌀10 ") && report.canFind("hole ⌀3.4 = M3 clearance"), report);
     assert(report.canFind("pattern: 6× hole ⌀3.4 on a circle of radius 12") && report.canFind("60° apart"), report);
 }
+
+unittest
+{
+    // a section read back as a sketch: a plate with rounded corners and a hole, as STL, cut across;
+    // the sketch it gives evaluates to the same outline
+    import hackerscad.io.stl : toStl;
+    import hackerscad.tool.features : sectionReport;
+    import std.file : write, mkdirRecurse, rmdirRecurse;
+    import std.string : indexOf;
+    auto dir = buildPath(tempDir, "hcad-section-test");
+    mkdirRecurse(dir);
+    scope (exit)
+        rmdirRecurse(dir);
+    auto plate = kernel.boolean(kernel.extrude(kernel.profileRound(kernel.rect(40, 20), 5), 6, 0),
+        kernel.translate(kernel.cylinder(3, 20), Vec3(8, 0, -5)), BoolOp.cut);
+    write(buildPath(dir, "plate.stl"), toStl(kernel.tessellate(plate, 0.01, 0.1).welded));
+    immutable rep = sectionReport(buildPath(dir, "plate.stl"), null, "xy", 3);
+    assert(rep.canFind("circle ⌀6, centre (8, 0)") && rep.canFind("arc r 5"), rep);
+    auto code = rep[rep.indexOf("/// The section") .. $];
+    auto r = runModel("import std.math;\n" ~ code ~ "@part Solid p() => section().extrude(1.mm);\n"
+        ~ "unittest { writeln(section().area / 1.mm ^^ 2); }\n");
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.conv : to;
+    import std.math : abs, PI;
+    // 40 × 20 less the four corners' squares plus their quarter circles, less the hole
+    immutable expected = 800 - 4 * (25 - PI * 25 / 4) - PI * 9;
+    assert(abs(r.log[0].text.to!double - expected) < 0.5, r.log[0].text);
+}
