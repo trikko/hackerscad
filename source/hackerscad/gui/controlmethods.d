@@ -310,15 +310,36 @@ mixin template ControlMethods()
                             index = cast(int) i;
                     if (index < 0)
                         return reply(JSONValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
+                    // an axis: origin [x, y, z] mm and direction [x, y, z], for hinge
+                    Vec3 hingeAt, hingeAlong;
+                    immutable hasAxis = has("origin") && has("direction");
+                    if (hasAxis)
+                        foreach (i; 0 .. 3)
+                        {
+                            hingeAt[i] = numberOf(p["origin"][i]);
+                            hingeAlong[i] = numberOf(p["direction"][i]);
+                        }
                     if (auto show = arg("show"))
                     {
                         if (show == "none")
                             cancelTransform();
                         else if (show == "move" || show == "rotate")
                             startTransform(show == "move" ? Viewport.Gizmo.move : Viewport.Gizmo.rotate, index);
+                        else if (show == "hinge" && hasAxis && hingeAlong.length > 0)
+                            startHinge(index, hingeAt, hingeAlong, "the axis");
                         else
-                            return reply(JSONValue.init, "show is move, rotate or none");
+                            return reply(JSONValue.init, "show is move, rotate, hinge (with origin and direction) or none");
                         return reply(state(), null);
+                    }
+                    // a turn about any axis: {"hinge": 30, "origin": […], "direction": […]}
+                    if (has("hinge"))
+                    {
+                        if (!hasAxis || hingeAlong.length == 0)
+                            return reply(JSONValue.init, "hinge turns about an axis: give origin [x, y, z] (mm) and direction [x, y, z]");
+                        if (auto problem = writeHinge(index, numberOf(p["hinge"]), hingeAt, hingeAlong))
+                            return reply(JSONValue.init, problem);
+                        whenIdle(() => reply(state(), null));
+                        return;
                     }
                     string kind;
                     Vec3 v;

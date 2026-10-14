@@ -672,7 +672,7 @@ private Edit transformExpr(string source, size_t start, size_t end, bool operato
     immutable r = R(start);
     auto expr = source[start .. end];
     LastCall c;
-    if (!operators && lastCall(expr, c) && c.name == kind)
+    if (!operators && lastCall(expr, c) && !c.positional && c.name == kind)
     {
         // the numbers it holds, or none when one is not plain
         bool plain = true;
@@ -883,6 +883,111 @@ private Edit between(string source, string after, Edit e)
     return r;
 }
 
+/// The axis through `origin` along `dir` as the arguments of rotate after
+/// the angle: the direction (a main one by its name), then around: the
+/// axis's point nearest the world's origin, so one axis always reads the
+/// same. No axis() call: a model may use that name for a value of its own.
+private string axisCode(Vec3 origin, Vec3 dir)
+{
+    import std.math : round;
+    dir = dir.normalized;
+    string number(double x) => format("%.6g", abs(x) < 1e-9 ? 0.0 : round(x * 1e6) / 1e6);
+    string d;
+    foreach (a, name; ["X", "Y", "Z"])
+    {
+        if (abs(dir[a] - 1) < 1e-9)
+            d = name;
+        else if (abs(dir[a] + 1) < 1e-9)
+            d = "-" ~ name;
+    }
+    if (d is null)
+        d = format("vec(%s, %s, %s)", number(dir.x), number(dir.y), number(dir.z));
+    auto o = origin - dir * origin.dot(dir);
+    foreach (a; 0 .. 3)
+        o[a] = round(o[a] * 1000) / 1000;
+    return o.length < 1e-9 ? d : format("%s, around: %s", d, vecMm(o));
+}
+
+/// A turn of `angle` degrees about the axis through `origin` along `dir`
+/// (counter-clockwise looking down it) at the end of the expression at
+/// [start, end): a turn about the same axis already last there takes it in
+/// (and goes when they come to nothing), else `append` adds it.
+private Edit hingeExpr(string source, size_t start, size_t end, bool operators, double angle, Vec3 origin, Vec3 dir,
+    Edit delegate(string call) append)
+{
+    import std.conv : to;
+    import std.regex : matchFirst, regex, escaper;
+    import std.array : array;
+    immutable ax = axisCode(origin, dir);
+    string call(double a) => abs(halfTurn(a)) < 1e-9 ? null : format(".rotate(%s.deg, %s)", format("%.6g", halfTurn(a)), ax);
+    auto expr = source[start .. end];
+    LastCall c;
+    if (!operators && lastCall(expr, c) && c.name == "rotate")
+    {
+        auto m = expr[c.start .. c.end].matchFirst(regex(`^\.rotate\((-?[0-9]+(?:\.[0-9]+)?(?:e-?[0-9]+)?)\.deg,\s*(.*)\)$`));
+        if (!m.empty && m[2] == ax)
+        {
+            Edit e;
+            e.offset = start + c.start;
+            e.length = c.end - c.start;
+            e.text = call(m[1].to!double + angle);
+            if (e.text is null)
+            {
+                // nothing left: the call goes, with the line break before it
+                size_t from = e.offset;
+                while (from > start && (source[from - 1] == ' ' || source[from - 1] == '\t' || source[from - 1] == '\n'))
+                    from--;
+                e.length += e.offset - from;
+                e.offset = from;
+            }
+            e.selectOffset = e.offset + e.text.length;
+            return e;
+        }
+    }
+    auto text = call(angle);
+    if (text is null)
+        throw new CodegenException("nothing to turn");
+    return append(text);
+}
+
+/// Turns the part `part` by `angle` degrees about the axis through `origin`
+/// along `dir` (a face's normal, a hole's axis, an edge), as the hinge ring does.
+Edit hingePart(string source, string file, string part, double angle, Vec3 origin, Vec3 dir)
+{
+    auto r = returned(source, file, part);
+    return hingeExpr(source, r.start, r.end, r.operators, angle, origin, dir,
+        (string call) => appendToPart(source, file, part, call));
+}
+
+/// hingePart for piece `index` of a @parts function: that piece alone.
+Edit hingePiece(string source, string file, string part, size_t index, bool fromSolid, double angle, Vec3 origin, Vec3 dir)
+{
+    size_t a, b;
+    bool ops;
+    auto src = pieceStatement(source, file, part, index, fromSolid, a, b, ops);
+    auto e = hingeExpr(src, a, b, ops, angle, origin, dir, (string call) => appendAt(src, a, b, ops, call));
+    return between(source, e.apply(src), e);
+}
+
+unittest
+{
+    // a turn about an edge: added, joined with the next about the same axis,
+    // gone when they come to nothing; another axis is a new call
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto a = hingePart(src, "m.hcad", "p", 30, Vec3(5, 3, 10), Vec3(0, 1, 0)).apply(src);
+    assert(a.canFind(".rotate(30.deg, Y, around: vec(5.mm, 0.mm, 10.mm))"), a);
+    auto b = hingePart(a, "m.hcad", "p", 15, Vec3(5, 8, 10), Vec3(0, 1, 0)).apply(a);
+    assert(b.canFind(".rotate(45.deg, Y, around: vec(5.mm, 0.mm, 10.mm))") && !b.canFind("30.deg"), b);
+    auto c = hingePart(b, "m.hcad", "p", -45, Vec3(5, 0, 10), Vec3(0, 1, 0)).apply(b);
+    assert(!c.canFind(".rotate("), c);
+    auto d = hingePart(a, "m.hcad", "p", 20, Vec3(0, 0, 0), Vec3(1, 1, 0)).apply(a);
+    assert(d.canFind("30.deg") && d.canFind(".rotate(20.deg, vec(0.707107, 0.707107, 0))"), d);
+    // on a piece
+    auto e = "module m;\n\n@parts\nSolid[] q() => box(10, 10, 10).split(XY.offset(5.mm));\n";
+    auto f = hingePiece(e, "m.hcad", "q", 1, false, 90, Vec3(0, 0, 10), Vec3(0, 0, -1)).apply(e);
+    assert(f.canFind("pieces[1] = pieces[1].rotate(90.deg, -Z);"), f);
+}
+
 /// transformPart for piece `index` of a @parts function: only that piece moves or turns.
 Edit transformPiece(string source, string file, string part, size_t index, bool fromSolid, string kind, Vec3 v,
     Vec3 around = Vec3(0, 0, 0))
@@ -1019,7 +1124,8 @@ private struct LastCall
 {
     size_t start, end;
     string name;
-    string[string] args;
+    string[string] args;   /// the named ones
+    bool positional;       /// some argument has no name
 }
 
 private bool lastCall(string expr, out LastCall c)
@@ -1075,8 +1181,11 @@ private bool lastCall(string expr, out LastCall c)
             continue;
         import std.string : indexOf;
         immutable colon = arg.indexOf(':');
-        if (colon < 0)
-            return false;   // positional: not ours to change
+        if (colon < 0 || arg[0 .. colon].strip.length == 0 || arg.indexOf('(') >= 0 && arg.indexOf('(') < colon)
+        {
+            c.positional = true;   // not a name: before ':' there is a call, or nothing
+            continue;
+        }
         c.args[arg[0 .. colon].strip] = arg[colon + 1 .. $].strip;
     }
     return true;

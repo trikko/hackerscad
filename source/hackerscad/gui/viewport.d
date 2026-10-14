@@ -330,6 +330,7 @@ final class Viewport
         {
             keepPreview = false;
             gizmoPart = -1;
+            hingeAngle = 0;
         }
         hidden = new bool[parts.length];
         foreach (i, q; parts)
@@ -671,7 +672,13 @@ final class Viewport
     // a frame under it, or three rings round it with a knob each. The part
     // is drawn where it goes; the window writes the code.
 
-    enum Gizmo { none, move, rotate }
+    enum Gizmo { none, move, rotate, hinge }
+
+    /// Hinge: one ring about an axis through `hingeOrigin` along `hingeDir`
+    /// (a face's normal, a hole's axis, an edge), turned by `hingeAngle`
+    /// degrees, counter-clockwise looking down the direction.
+    public Vec3 hingeOrigin, hingeDir = Vec3(0, 0, 1);
+    public double hingeAngle = 0;
 
     /// A turn about one axis through the centre (0 X, 1 Y, 2 Z), in degrees.
     struct Turn
@@ -705,6 +712,7 @@ final class Viewport
         gizmoPart = part;
         gizmoMove = Vec3(0, 0, 0);
         gizmoTurns = null;
+        hingeAngle = 0;
         auto b = parts[part].bbox;
         gizmoLo = b.min;
         gizmoHi = b.max;
@@ -713,6 +721,64 @@ final class Viewport
         gizmoGrab = gizmoHover = -1;
         makeRoom();
         redraw();
+    }
+
+    /// The hinge gizmo on part `part`: one ring about the axis through
+    /// `origin` along `dir`, round the part, centred where the part's middle
+    /// faces the axis.
+    public void startHinge(int part, Vec3 origin, Vec3 dir)
+    {
+        hingeOrigin = origin;
+        hingeDir = dir.normalized;
+        startGizmo(Gizmo.hinge, part);
+        gizmoCentre = hingeOrigin + hingeDir * (gizmoCentre - hingeOrigin).dot(hingeDir);
+        makeRoom();
+        redraw();
+    }
+
+    /// The hinge ring's radius: past the part's farthest corner from the axis.
+    private double hingeRadius()
+    {
+        double r = 0;
+        foreach (k; 0 .. 8)
+        {
+            auto c = Vec3(k & 1 ? gizmoHi.x : gizmoLo.x, k & 2 ? gizmoHi.y : gizmoLo.y, k & 4 ? gizmoHi.z : gizmoLo.z) - hingeOrigin;
+            r = max(r, (c - hingeDir * c.dot(hingeDir)).length);
+        }
+        return max(8.0, r * 1.08 + 3);
+    }
+
+    /// The point of the hinge ring at angle a (degrees).
+    private Vec3 hingePoint(double a)
+    {
+        auto u = (abs(hingeDir.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(hingeDir).normalized;
+        auto v = hingeDir.cross(u);
+        immutable r = a * PI / 180;
+        return gizmoCentre + (u * cos(r) + v * sin(r)) * hingeRadius();
+    }
+
+    private Vec3[] hingeRing()
+    {
+        Vec3[] pts;
+        foreach (n; 0 .. 97)
+            pts ~= hingePoint(360.0 * n / 96);
+        return pts;
+    }
+
+    /// The points that outline the gizmo shown, for the buttons and the zoom.
+    private Vec3[] gizmoOutline()
+    {
+        Vec3[] pts;
+        if (gizmo == Gizmo.move)
+            pts = gizmoFrame()[] ~ [arrowTip(0), arrowTip(1), arrowTip(2)];
+        else if (gizmo == Gizmo.rotate)
+            foreach (k; 0 .. 3)
+                foreach (n; 0 .. 24)
+                    pts ~= ringPoint(k, 15.0 * n);
+        else if (gizmo == Gizmo.hinge)
+            foreach (n; 0 .. 24)
+                pts ~= hingePoint(15.0 * n);
+        return pts;
     }
 
     /// Zooms out, if needed, until the tool open (the frame or rings, the
@@ -725,14 +791,8 @@ final class Viewport
             return;
         Vec3[] shown()
         {
-            Vec3[] pts;
-            if (gizmo == Gizmo.move)
-                pts = gizmoFrame()[] ~ [arrowTip(0), arrowTip(1), arrowTip(2)];
-            else if (gizmo == Gizmo.rotate)
-                foreach (k; 0 .. 3)
-                    foreach (n; 0 .. 24)
-                        pts ~= ringPoint(k, 15.0 * n);
-            else if (section && sectionPart >= 0)
+            auto pts = gizmoOutline();
+            if (gizmo == Gizmo.none && section && sectionPart >= 0)
                 pts = sectionQuad()[].dup;
             foreach (which; [ViewButton.sectionClose, ViewButton.sectionAccept, ViewButton.gizmoCancel,
                     ViewButton.gizmoAccept])
@@ -777,7 +837,10 @@ final class Viewport
         gizmoGrab = gizmoHover = -1;
         keepPreview = keep;
         if (!keep)
+        {
             gizmoPart = -1;
+            hingeAngle = 0;
+        }
         redraw();
     }
 
@@ -814,6 +877,28 @@ final class Viewport
                 double v = o[row];
                 foreach (q; 0 .. 3)
                     v -= r[q * 4 + row] * o[q];
+                r[12 + row] = cast(float) v;
+            }
+            m = multiply(r, m);
+        }
+        if (hingeAngle != 0)   // also after ✓, until the new parts come
+        {
+            // about the hinge's axis: Rodrigues' rotation, then back through its origin
+            immutable a = hingeAngle * PI / 180, c = cos(a), sn = sin(a), t = 1 - c;
+            immutable x = hingeDir.x, y = hingeDir.y, z = hingeDir.z;
+            double[3][3] q = [[t * x * x + c, t * x * y - sn * z, t * x * z + sn * y],
+                [t * x * y + sn * z, t * y * y + c, t * y * z - sn * x],
+                [t * x * z - sn * y, t * y * z + sn * x, t * z * z + c]];
+            float[16] r = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+            foreach (row; 0 .. 3)
+                foreach (col; 0 .. 3)
+                    r[col * 4 + row] = cast(float) q[row][col];
+            immutable o = hingeOrigin;
+            foreach (row; 0 .. 3)
+            {
+                double v = o[row];
+                foreach (col; 0 .. 3)
+                    v -= q[row][col] * o[col];
                 r[12 + row] = cast(float) v;
             }
             m = multiply(r, m);
@@ -979,6 +1064,8 @@ final class Viewport
             }
             return inside ? 0 : -1;
         }
+        if (gizmo == Gizmo.hinge)
+            return onKnob(hingePoint(45 + hingeAngle)) || near(hingeRing()) < handlePixels + 1 ? 1 : -1;
         if (gizmo == Gizmo.rotate)
         {
             foreach (k; 0 .. 3)
@@ -1026,6 +1113,11 @@ final class Viewport
         grabMove = gizmoMove;
         if (gizmo == Gizmo.move && gizmoGrab == 0)
             onFloor(x, y, gizmoLo.z + gizmoMove.z, grabPoint);
+        if (gizmo == Gizmo.hinge)
+        {
+            grabAngle = hingeAngle;
+            lastScreenAngle = screenAngle(x, y);
+        }
         if (gizmo == Gizmo.rotate)
         {
             // another axis than the last turn's: a new turn after it
@@ -1094,10 +1186,19 @@ final class Viewport
             while (step < -180)
                 step += 360;
             lastScreenAngle = now;
-            auto turn = &gizmoTurns[$ - 1];
-            immutable facing = axes[turn.axis].dot(basis().eye - gizmoCentre) >= 0 ? 1 : -1;
-            grabAngle += step * facing;
-            turn.angle = rounded(grabAngle, 15, 3, free);
+            if (gizmo == Gizmo.hinge)
+            {
+                immutable facing = hingeDir.dot(basis().eye - gizmoCentre) >= 0 ? 1 : -1;
+                grabAngle += step * facing;
+                hingeAngle = rounded(grabAngle, 15, 3, free);
+            }
+            else
+            {
+                auto turn = &gizmoTurns[$ - 1];
+                immutable facing = axes[turn.axis].dot(basis().eye - gizmoCentre) >= 0 ? 1 : -1;
+                grabAngle += step * facing;
+                turn.angle = rounded(grabAngle, 15, 3, free);
+            }
         }
         if (onGizmo !is null)
             onGizmo(x, y);
@@ -1143,6 +1244,17 @@ final class Viewport
                 drawPolyline([arrowFoot(), arrowTip(a)], c, live(a + 1) ? 4 : 2.5);
                 drawKnob(arrowTip(a), c, live(a + 1) ? handlePixels + 2 : handlePixels);
             }
+            return;
+        }
+        if (gizmo == Gizmo.hinge)
+        {
+            // the axis through the ring, dashed by its two ends, then the ring and its knob
+            immutable hc = gizmoPart >= 0 && gizmoPart < parts.length
+                ? standOut(parts[gizmoPart].rgb, Vec3(0.95, 0.45, 0.1), Vec3(0.2, 0.4, 1.0), 0.32) : Vec3(0.95, 0.45, 0.1);
+            immutable reach = hingeRadius() * 1.3;
+            drawPolyline([gizmoCentre - hingeDir * reach, gizmoCentre + hingeDir * reach], hc, 1.5);
+            drawPolyline(hingeRing(), lit(hc, live(1)), live(1) ? 4 : 2);
+            drawKnob(hingePoint(45 + hingeAngle), lit(hc, live(1)), live(1) ? handlePixels + 2 : handlePixels);
             return;
         }
         foreach (k; 0 .. 3)
@@ -1228,15 +1340,7 @@ final class Viewport
     /// (rotate) as seen, `closeGap` pixels out: where their X goes.
     private Vec3 gizmoCorner()
     {
-        Vec3[] pts;
-        if (gizmo == Gizmo.move)
-        {
-            pts = gizmoFrame()[] ~ [arrowTip(0), arrowTip(1), arrowTip(2)];
-        }
-        else
-            foreach (k; 0 .. 3)
-                foreach (n; 0 .. 24)
-                    pts ~= ringPoint(k, 15.0 * n);
+        auto pts = gizmoOutline();
         int best = -1;
         double bx = 0, by = 0, cx = 0, cy = 0;
         int seen;

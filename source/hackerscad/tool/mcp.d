@@ -789,12 +789,17 @@ JSONValue[] toolList()
         gui("hcad_gui_transform", "Move or turn a part of the user's model, as Move… and Rotate… in the 3D view's "
             ~ "right-click menu: the code is written at the end of the part's chain (a .move() or .rotate() already "
             ~ "there is changed instead). move: [x, y, z] in mm; rotate: {axis, angle in degrees}, about the middle of "
-            ~ "the part's box. show: move or rotate shows the frame or the rings on the part for the user to drag "
-            ~ "(none takes them away), writing nothing. part: its name (needed with several parts).",
+            ~ "the part's box. hinge: degrees about the axis through origin [x, y, z] (mm) along direction "
+            ~ "[x, y, z], as Rotate around its normal / this edge (written as .rotate(30.deg, Y, around: …)). show: move or "
+            ~ "rotate shows the frame or the rings on the part for the user to drag, hinge (with origin and direction) "
+            ~ "one ring about that axis (none takes them away), writing nothing. A piece of @parts moves or turns "
+            ~ "alone. part: its name (needed with several parts).",
             `"part": {"type": "string"}, "move": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"rotate": {"type": "object", "properties": {"axis": {"type": "string", "enum": ["x", "y", "z"]}, `
             ~ `"angle": {"type": "number"}}, "required": ["axis", "angle"]}, `
-            ~ `"show": {"type": "string", "enum": ["move", "rotate", "none"]}`, `[]`),
+            ~ `"hinge": {"type": "number"}, "origin": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
+            ~ `"direction": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
+            ~ `"show": {"type": "string", "enum": ["move", "rotate", "hinge", "none"]}`, `[]`),
         gui("hcad_gui_colour", "Colour a part of the user's model, as Colour in the 3D view's right-click menu: "
             ~ "the colour is written as the first argument of the part's @part (alpha:, name: and export: stay). "
             ~ "colour: one of hackerscad's own colours (bright, alike in brightness under the view's light; Sky Pop "

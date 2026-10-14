@@ -1939,10 +1939,102 @@ private:
         transformBar.setVisible(true);
     }
 
+    /// An axis to turn about, and the words that name it in the menu.
+    struct Axis
+    {
+        Vec3 origin, dir;
+        string about;
+    }
+
+    /// The axes of what is picked on `part`: of one face, its normal through
+    /// its middle (round: its axis); of one edge, along it (round: its axis).
+    Axis[] pickedAxes(PartMesh part)
+    {
+        Axis[] r;
+        Axis a;
+        if (selFaces.length == 1 && pickedAxis(part, true, a.origin, a.dir, a.about))
+            r ~= a;
+        if (selEdges.length == 1 && pickedAxis(part, false, a.origin, a.dir, a.about))
+        {
+            // an edge round like the face it bounds turns about the same axis: once
+            if (a.about != "its axis" || r.length == 0 || r[0].about != "its axis")
+                r ~= a;
+        }
+        return r;
+    }
+
+    /// A menu entry for a turn about `a` (one per call: closures in a loop share one frame).
+    MenuEntry hingeEntry(int index, Axis a) =>
+        MenuEntry.item("Rotate around " ~ a.about ~ "…", () => startHinge(index, a.origin, a.dir, a.about));
+
+    bool pickedAxis(PartMesh part, bool face, out Vec3 origin, out Vec3 dir, out string about)
+    {
+        if (part.kernel is null || part.brep is null)
+            return false;
+        if (face && selFaces.length == 1)
+        {
+            import hackerscad.kernel.brep : CylinderInfo;
+            CylinderInfo cy;
+            if (part.kernel.faceCylinder(part.brep, selFaces[0], cy))
+            {
+                origin = cy.origin;
+                dir = cy.axis;
+                about = "its axis";
+                return true;
+            }
+            auto faces = part.kernel.faces(part.brep);
+            if (selFaces[0] >= faces.length)
+                return false;
+            origin = faces[selFaces[0]].center;
+            dir = faces[selFaces[0]].normal;
+            about = "its normal";
+            return dir.length > 0.5;
+        }
+        if (!face && selEdges.length == 1 && selEdges[0] < part.edgeInfo.length)
+        {
+            auto e = part.edgeInfo[selEdges[0]];
+            if (e.kind == EdgeKind.circle)
+            {
+                origin = e.center;
+                dir = e.axis;
+                about = "its axis";
+            }
+            else if (e.kind == EdgeKind.line)
+            {
+                origin = e.start;
+                dir = e.direction;
+                about = "this edge";
+            }
+            else
+                return false;
+            return dir.length > 0.5;
+        }
+        return false;
+    }
+
+    /// The ring about an axis on part `index`, as a hinge.
+    void startHinge(int index, Vec3 origin, Vec3 dir, string about)
+    {
+        if (index < 0 || index >= last.parts.length)
+            return;
+        auto part = last.parts[index];
+        if (part.span.file != absolutePath(path))
+            return info(format("part '%s' is defined in another file", part.name));
+        if (sectionToggle.getActive() && splitPart >= 0)
+            sectionToggle.setActive(false);
+        transformPartName = part.fn;
+        viewport.startHinge(index, origin, dir);
+        transformTitle.setLabel(format("Rotate %s around %s", part.name, about));
+        transformValue.setLabel(transformText());
+        transformBar.setVisible(true);
+    }
+
     /// What the drag has done so far, as Apply will write it: how far along
     /// X, Y and Z, or the angles about them of all the turns as one.
     string transformText()
     {
+        if (viewport.gizmo == Viewport.Gizmo.hinge)
+            return viewport.hingeAngle == 0 ? "not turned" : format("%+g°", viewport.hingeAngle);
         if (viewport.gizmo == Viewport.Gizmo.move)
         {
             auto m = viewport.gizmoMove;
@@ -2004,6 +2096,19 @@ private:
     {
         if (viewport.gizmo == Viewport.Gizmo.none)
             return;
+        if (viewport.gizmo == Viewport.Gizmo.hinge)
+        {
+            if (viewport.hingeAngle == 0)
+                return cancelTransform();
+            if (auto problem = writeHinge(viewport.gizmoPart, viewport.hingeAngle, viewport.hingeOrigin, viewport.hingeDir))
+            {
+                info(problem);
+                return cancelTransform();
+            }
+            viewport.stopGizmo(true);
+            transformBar.setVisible(false);
+            return;
+        }
         Turn[] steps;
         if (viewport.gizmo == Viewport.Gizmo.move)
         {
@@ -2038,6 +2143,30 @@ private:
     /// in degrees, about `around`) part `name` in the code; the problem, or null.
     string writeTransform(int index, string kind, Vec3 v, Vec3 around) =>
         writeTransforms(index, [Turn(kind, v)], around);
+
+    /// Turns part `index` by `angle` degrees about the axis through `origin`
+    /// along `dir`, in the code (a piece of @parts alone); the problem, or null.
+    string writeHinge(int index, double angle, Vec3 origin, Vec3 dir)
+    {
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        if (index < 0 || index >= last.parts.length)
+            return "no part to turn";
+        try
+        {
+            import hackerscad.tool.codegen : hingePart, hingePiece;
+            auto p = last.parts[index];
+            applyEdit(isPiece(index) ? hingePiece(text(), path, p.fn, p.piece, p.fromSolid, angle, origin, dir)
+                : hingePart(text(), path, p.fn, angle, origin, dir));
+            viewport.setSelection(null);
+            info("");
+            return null;
+        }
+        catch (CodegenException e)
+            return e.msg;
+        catch (HcadError e)
+            return "fix the errors in the code first: " ~ e.msg;
+    }
 
     /// Whether part `index` is one piece of several made by @parts: what is
     /// written for it goes to that piece alone (pieces[k] = pieces[k]…).
@@ -3221,6 +3350,9 @@ private:
         }
         entries ~= I("Move…", () => startTransform(Viewport.Gizmo.move, contextHit.part));
         entries ~= I("Rotate…", () => startTransform(Viewport.Gizmo.rotate, contextHit.part));
+        // a turn about what is picked: a face's normal (a round face's axis), an edge (a hinge)
+        foreach (choice; pickedAxes(part))
+            entries ~= hingeEntry(contextHit.part, choice);
         entries ~= I("Split…", () => startSplit(contextHit.part));
         {
             // hackerscad's own colours (geom/color.d), the default first

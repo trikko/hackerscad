@@ -15,7 +15,9 @@ bag clip is still open; we use it to try things.
    under the part, across), or the knobs of the three rings round it, one
    after the other; the bar reads how far, and the ✓ next to the part
    writes one `.move()` or one `.rotate()` into the code (the X leaves it
-   as it was). **Split…** puts a plane as big as the part on it, moved like
+   as it was). With a face picked, **Rotate around its normal…** (its axis,
+   for a round face) gives one ring around it; with an edge, **Rotate around
+   this edge…** turns the part on it as on a hinge. **Split…** puts a plane as big as the part on it, moved like
    the section's: its ✓ cuts the part there into a part per piece
    (more than two when the plane crosses a slot), each in its colour. **Colour** offers
    hackerscad's own bright colours (Sky Pop, Pink Pop…), and writes the
