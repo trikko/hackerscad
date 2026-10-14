@@ -780,6 +780,15 @@ JSONValue[] toolList()
             ~ "), unsaved. Refused when the user has unsaved "
             ~ "changes, unless force is true (which discards them: ask the user first).",
             `"force": {"type": "boolean"}, "example": {"type": "string", "enum": [` ~ exampleEnum ~ `]}`, `[]`),
+        gui("hcad_gui_transform", "Move or turn a part of the user's model, as Move… and Rotate… in the 3D view's "
+            ~ "right-click menu: the code is written at the end of the part's chain (a .move() or .rotate() already "
+            ~ "there is changed instead). move: [x, y, z] in mm; rotate: {axis, angle in degrees}, about the middle of "
+            ~ "the part's box. show: move or rotate shows the frame or the rings on the part for the user to drag "
+            ~ "(none takes them away), writing nothing. part: its name (needed with several parts).",
+            `"part": {"type": "string"}, "move": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
+            ~ `"rotate": {"type": "object", "properties": {"axis": {"type": "string", "enum": ["x", "y", "z"]}, `
+            ~ `"angle": {"type": "number"}}, "required": ["axis", "angle"]}, `
+            ~ `"show": {"type": "string", "enum": ["move", "rotate", "none"]}`, `[]`),
         gui("hcad_gui_rename", "Rename the user's window (the name in its header bar, which the user and the "
             ~ "'window' argument use): letters, digits and dashes.", `"name": {"type": "string"}`, `["name"]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
@@ -1196,7 +1205,8 @@ JSONValue callTool(string name, JSONValue args)
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
             "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
-            "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet":
+            "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet",
+            "hcad_gui_transform":
         {
             auto method = name["hcad_gui_".length .. $];
             auto r = guiRequest(arg("window"), method, args.type == JSONType.object ? args : JSONValue((JSONValue[string]).init));

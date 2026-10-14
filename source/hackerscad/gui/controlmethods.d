@@ -200,6 +200,58 @@ mixin template ControlMethods()
                 whenIdle(() => reply(state(), null));
                 return;
             }
+        case "transform":
+            {
+                // {"part": "lid", "move": [10, 0, 0]} or {"part": "lid", "rotate": {"axis": "z", "angle": 45}}:
+                // the code Move… and Rotate… write (a turn is about the middle of the part's box);
+                // {"part": "lid", "show": "move"} shows the frame (rotate: the rings), "none" takes it away
+                whenIdle(() {
+                    auto name = arg("part");
+                    int index = -1;
+                    foreach (i, q; last.parts)
+                        if (q.name == name || (name is null && last.parts.length == 1))
+                            index = cast(int) i;
+                    if (index < 0)
+                        return reply(JSONValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
+                    if (auto show = arg("show"))
+                    {
+                        if (show == "none")
+                            cancelTransform();
+                        else if (show == "move" || show == "rotate")
+                            startTransform(show == "move" ? Viewport.Gizmo.move : Viewport.Gizmo.rotate, index);
+                        else
+                            return reply(JSONValue.init, "show is move, rotate or none");
+                        return reply(state(), null);
+                    }
+                    string kind;
+                    Vec3 v;
+                    if (has("move"))
+                    {
+                        kind = "move";
+                        if (p["move"].type != JSONType.array || p["move"].array.length != 3)
+                            return reply(JSONValue.init, "move is [x, y, z] in mm");
+                        foreach (i; 0 .. 3)
+                            v[i] = numberOf(p["move"][i]);
+                    }
+                    else if (has("rotate"))
+                    {
+                        kind = "rotate";
+                        auto r = p["rotate"];
+                        immutable axis = r.type == JSONType.object && "axis" in r && r["axis"].type == JSONType.string
+                            ? ["x": 0, "y": 1, "z": 2].get(r["axis"].str, -1) : -1;
+                        if (axis < 0 || "angle" !in r)
+                            return reply(JSONValue.init, "rotate is {\"axis\": \"x\", \"y\" or \"z\", \"angle\": degrees}");
+                        v[axis] = numberOf(r["angle"]);
+                    }
+                    else
+                        return reply(JSONValue.init, "give move, rotate or show");
+                    cancelTransform();
+                    if (auto problem = writeTransform(last.parts[index].name, kind, v, last.parts[index].bbox.center))
+                        return reply(JSONValue.init, problem);
+                    whenIdle(() => reply(state(), null));
+                });
+                return;
+            }
         case "feature":
             {
                 // {"x": 0.5, "y": 0.4, "action": "fillet-edge", "value": "2.mm"}: what the context menu does,

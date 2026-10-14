@@ -469,8 +469,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
     def("rotate", (ref CallArgs a) {
         // rotate(x:, y:, z:) Euler angles, or rotate(angle, axis:) around a
-        // direction (through the origin) or an Axis (through its own origin)
-        auto x = Args(it, a, "rotate", ["solid", "angle", "axis", "x", "y", "z"]);
+        // direction (through the origin) or an Axis (through its own origin);
+        // around: a point the rotation turns about instead of the origin
+        auto x = Args(it, a, "rotate", ["solid", "angle", "axis", "x", "y", "z", "around"]);
         auto s = x.solid("solid");
         foreach (n; ["x", "y", "z"])
             if (x.has("angle") && x.has(n))
@@ -484,16 +485,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             Vec3 o, d = Vec3(0, 0, 1);
             if (x.has("axis"))
                 axisArg(x, "axis", o, d);
+            if (x.has("around"))
+                o = x.vecLen("around");
             immutable ang = x.angle("angle");
             return transformed(it, a.span, s, b => k.translate(k.rotate(k.translate(b, -o), d, ang), o));
         }
         // Euler angles applied around X, then Y, then Z
         immutable rx = x.angleOr("x", 0), ry = x.angleOr("y", 0), rz = x.angleOr("z", 0);
+        immutable c = x.has("around") ? x.vecLen("around") : Vec3(0, 0, 0);
         return transformed(it, a.span, s, (Brep b) {
+            b = k.translate(b, -c);
             if (rx != 0) b = k.rotate(b, Vec3(1, 0, 0), rx);
             if (ry != 0) b = k.rotate(b, Vec3(0, 1, 0), ry);
             if (rz != 0) b = k.rotate(b, Vec3(0, 0, 1), rz);
-            return b;
+            return k.translate(b, c);
         });
     });
     def("scale", (ref CallArgs a) {

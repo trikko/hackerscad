@@ -1016,6 +1016,25 @@ unittest
     }
 }
 
+unittest
+{
+    // rotate(around:) turns about a point: a part spun in place stays there
+    auto r = runModel(q{
+        @part Solid spun() => box(10.mm, 4.mm, 2.mm).move(x: 20.mm).rotate(z: 90, around: vec(20.mm, 0.mm, 0.mm));
+        @part Solid swung() => box(10.mm, 4.mm, 2.mm).move(x: 20.mm).rotate(90.deg, axis: Z, around: vec(20.mm, 0.mm, 0.mm));
+        @part Solid orbited() => box(10.mm, 4.mm, 2.mm).move(x: 20.mm).rotate(z: 90);
+    });
+    foreach (p; r.parts)
+    {
+        auto b = kernel.bbox(p.solid.brep);
+        immutable c = (b.min + b.max) * 0.5;
+        if (p.name == "orbited")
+            assert(abs(c.x) < 1e-6 && abs(c.y - 20) < 1e-6, p.name);
+        else
+            assert(abs(c.x - 20) < 1e-6 && abs(c.y) < 1e-6 && abs(b.size.x - 4) < 1e-6, p.name);
+    }
+}
+
 /// The area of a mesh's triangles.
 double meshArea(M)(M m)
 {

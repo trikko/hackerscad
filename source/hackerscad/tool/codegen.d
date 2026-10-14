@@ -168,20 +168,28 @@ private string vecMm(Vec3 v) => format("vec(%s, %s, %s)", mm(v.x), mm(v.y), mm(v
 
 // ---------------------------------------------------------------- edits
 
-/// Appends `call` (".fillet(…)") to the value returned by the @part function
-/// `part`; `placeholder` (e.g. "1.mm"), if found in `call`, is selected.
-Edit appendToPart(string source, string file, string part, string call, string placeholder = null)
+/// Where the value returned by the @part function `part` is in the source.
+private struct Returned
+{
+    FuncDecl fn;
+    Token[] toks;
+    size_t first, last;   /// its first token, and the ';' after it
+    bool operators;       /// a top-level operator in it (a - b)
+    size_t start, end;    /// its text, trailing spaces left out
+}
+
+private Returned returned(string source, string file, string part)
 {
     auto prog = parse(source, file);
-    FuncDecl fn;
+    Returned r;
     foreach (d; prog.decls)
         if (auto f = cast(FuncDecl) d)
             if (f.name == part)
-                fn = f;
-    if (fn is null)
+                r.fn = f;
+    if (r.fn is null)
         throw new CodegenException(format("cannot find the function of part '%s' in this file", part));
-
-    auto toks = lex(source, file);
+    auto fn = r.fn;
+    auto toks = r.toks = lex(source, file);
     size_t first;   // index of the first token of the returned expression
     if (fn.exprBody !is null)
     {
@@ -194,8 +202,8 @@ Edit appendToPart(string source, string file, string part, string call, string p
     {
         Return ret;
         foreach (st; fn.body.stmts)
-            if (auto r = cast(Return) st)
-                ret = r;
+            if (auto rt = cast(Return) st)
+                ret = rt;
         if (ret is null || ret.value is null)
             throw new CodegenException(format("part '%s' has no final return statement to add to", part));
         first = tokenAt(toks, ret.span) + 1;
@@ -203,7 +211,6 @@ Edit appendToPart(string source, string file, string part, string call, string p
     // the expression ends at the ';' closing the statement
     size_t last = first;
     int depth;
-    bool operators;
     for (; last < toks.length; last++)
     {
         immutable k = toks[last].kind;
@@ -214,10 +221,25 @@ Edit appendToPart(string source, string file, string part, string call, string p
         else if (k == Tok.rparen || k == Tok.rbracket || k == Tok.rbrace)
             depth--;
         else if (depth == 0 && isOperator(k) && last > first)
-            operators = true;
+            r.operators = true;
     }
     if (last >= toks.length)
         throw new CodegenException("cannot find the end of the returned expression");
+    r.first = first;
+    r.last = last;
+    r.start = offsetOf(source, toks[first].span);
+    r.end = r.start + trimRight(source[r.start .. offsetOf(source, toks[last].span)]).length;
+    return r;
+}
+
+/// Appends `call` (".fillet(…)") to the value returned by the @part function
+/// `part`; `placeholder` (e.g. "1.mm"), if found in `call`, is selected.
+Edit appendToPart(string source, string file, string part, string call, string placeholder = null)
+{
+    auto r = returned(source, file, part);
+    auto fn = r.fn;
+    auto toks = r.toks;
+    immutable first = r.first, last = r.last, operators = r.operators;
     immutable start = offsetOf(source, toks[first].span);
     immutable end = offsetOf(source, toks[last].span);
     auto expr = trimRight(source[start .. end]);
@@ -266,6 +288,243 @@ Edit appendToPart(string source, string file, string part, string call, string p
         }
     }
     return e;
+}
+
+/// An angle (degrees) the short way: from -180 (left out) to 180.
+double halfTurn(double a)
+{
+    import std.math : fmod;
+    auto r = fmod(a, 360);
+    if (r > 180)
+        r -= 360;
+    else if (r <= -180)
+        r += 360;
+    return abs(r) < 1e-9 ? 0 : r;
+}
+
+/// A turn as a matrix: about X by e.x, then Y by e.y, then Z by e.z
+/// (degrees), as rotate(x:, y:, z:) does it.
+double[3][3] turnMatrix(Vec3 e)
+{
+    import std.math : cos, sin, PI;
+    double[3][3] m = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    foreach (k; 0 .. 3)
+    {
+        immutable a = e[k] * PI / 180, c = cos(a), s = sin(a);
+        immutable i = (k + 1) % 3, j = (k + 2) % 3;
+        double[3][3] r = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+        r[i][i] = c;
+        r[j][j] = c;
+        r[j][i] = s;
+        r[i][j] = -s;
+        double[3][3] p;
+        foreach (row; 0 .. 3)
+            foreach (col; 0 .. 3)
+            {
+                p[row][col] = 0;
+                foreach (q; 0 .. 3)
+                    p[row][col] += r[row][q] * m[q][col];
+            }
+        m = p;
+    }
+    return m;
+}
+
+/// The angles about X, then Y, then Z (degrees) of a turn: the inverse of
+/// turnMatrix, rounded to a thousandth of a degree.
+Vec3 turnAngles(double[3][3] m)
+{
+    import std.math : asin, atan2, round, PI;
+    // m = Rz(c) Ry(b) Rx(a): m[2][0] = -sin b
+    immutable sb = -m[2][0] > 1 ? 1.0 : -m[2][0] < -1 ? -1.0 : -m[2][0];
+    double a, b = asin(sb), c;
+    if (abs(sb) < 1 - 1e-9)
+    {
+        a = atan2(m[2][1], m[2][2]);
+        c = atan2(m[1][0], m[0][0]);
+    }
+    else
+    {
+        // straight up or down: X and Z turn about the same line, all of it on X
+        c = 0;
+        a = atan2(sb * m[0][1], m[1][1]);
+    }
+    double deg(double r)
+    {
+        auto d = round(r * 180 / PI * 1000) / 1000;
+        return d == -180 ? 180 : d == 0 ? 0 : d;
+    }
+    return Vec3(deg(a), deg(b), deg(c));
+}
+
+/// Moves the part `part` by `v` (kind "move", mm), or turns it (kind
+/// "rotate": `v` the angles about X, then Y, then Z in degrees) about
+/// `around`. When its chain already ends with such a call holding plain
+/// numbers (for a turn, about the same point), the two make one call, or
+/// none when they come to nothing; otherwise one is added.
+Edit transformPart(string source, string file, string part, string kind, Vec3 v, Vec3 around = Vec3(0, 0, 0))
+{
+    import std.conv : to;
+    import std.regex : matchFirst, regex;
+    immutable num = `^(-?[0-9]+(?:\.[0-9]+)?)`;
+    string number(double x) => format("%.6g", abs(x) < 1e-9 ? 0.0 : x);
+    // turns are written the short way, from -180 to 180 degrees
+    if (kind == "rotate")
+        foreach (i; 0 .. 3)
+            v[i] = halfTurn(v[i]);
+    string callOf(Vec3 w)
+    {
+        string[] args;
+        foreach (i, n; ["x", "y", "z"])
+            if (abs(w[i]) > 1e-9)
+                args ~= n ~ ": " ~ (kind == "move" ? number(w[i]) ~ ".mm" : number(w[i]));
+        if (args.length == 0)
+            return null;
+        if (kind == "rotate")
+            args ~= "around: " ~ vecMm(around);
+        return "." ~ kind ~ "(" ~ args.join(", ") ~ ")";
+    }
+
+    auto r = returned(source, file, part);
+    auto expr = source[r.start .. r.end];
+    LastCall c;
+    if (!r.operators && lastCall(expr, c) && c.name == kind)
+    {
+        // the numbers it holds, or none when one is not plain
+        bool plain = true;
+        Vec3 had;
+        string aroundText;
+        foreach (name, value; c.args)
+        {
+            immutable axis = ["x": 0, "y": 1, "z": 2].get(name, -1);
+            if (axis >= 0)
+            {
+                auto m = value.matchFirst(regex(num ~ (kind == "move" ? `\.mm$` : `(?:\.deg)?$`)));
+                if (m.empty)
+                    plain = false;
+                else
+                    had[axis] = m[1].to!double;
+            }
+            else if (kind == "rotate" && name == "around")
+                aroundText = value;
+            else
+                plain = false;
+        }
+        // turns make one only about the same point
+        if (kind == "rotate")
+            plain = plain && aroundText == vecMm(around);
+        if (plain)
+        {
+            Vec3 sum;
+            if (kind == "move")
+                sum = had + v;
+            else
+            {
+                // the new turn after the one there: one turn, as angles again
+                auto a = turnMatrix(had), b = turnMatrix(v);
+                double[3][3] m;
+                foreach (row; 0 .. 3)
+                    foreach (col; 0 .. 3)
+                    {
+                        m[row][col] = 0;
+                        foreach (q; 0 .. 3)
+                            m[row][col] += b[row][q] * a[q][col];
+                    }
+                sum = turnAngles(m);
+            }
+            auto call = callOf(sum);
+            Edit e;
+            e.offset = r.start + c.start;
+            e.length = c.end - c.start;
+            if (call is null)
+            {
+                // nothing left: the call goes, with the line break before it
+                size_t from = e.offset;
+                while (from > r.start && (source[from - 1] == ' ' || source[from - 1] == '\t' || source[from - 1] == '\n'))
+                    from--;
+                e.length += e.offset - from;
+                e.offset = from;
+                e.text = "";
+            }
+            else
+                e.text = call;
+            e.selectOffset = e.offset + e.text.length;
+            return e;
+        }
+    }
+    auto call = callOf(v);
+    if (call is null)
+        throw new CodegenException("nothing to move or turn");
+    return appendToPart(source, file, part, call);
+}
+
+/// The last call of a chain: `.name(args)` from `start` to `end` in it,
+/// with its named arguments' texts.
+private struct LastCall
+{
+    size_t start, end;
+    string name;
+    string[string] args;
+}
+
+private bool lastCall(string expr, out LastCall c)
+{
+    import std.string : strip;
+    import std.ascii : isAlphaNum;
+    if (expr.length == 0 || expr[$ - 1] != ')')
+        return false;
+    // back to the matching '(' (strings hold no parentheses in what is matched here)
+    int depth;
+    size_t open = size_t.max;
+    foreach_reverse (i, ch; expr)
+    {
+        if (ch == ')')
+            depth++;
+        else if (ch == '(' && --depth == 0)
+        {
+            open = i;
+            break;
+        }
+    }
+    if (open == size_t.max)
+        return false;
+    size_t n = open;
+    while (n > 0 && (isAlphaNum(expr[n - 1]) || expr[n - 1] == '_'))
+        n--;
+    size_t dot = n;
+    while (dot > 0 && (expr[dot - 1] == ' ' || expr[dot - 1] == '\n' || expr[dot - 1] == '\t'))
+        dot--;
+    if (dot == 0 || expr[dot - 1] != '.' || n == open)
+        return false;
+    c.start = dot - 1;
+    c.end = expr.length;
+    c.name = expr[n .. open];
+    // the arguments, split at the commas outside parentheses
+    auto inside = expr[open + 1 .. $ - 1];
+    size_t from;
+    depth = 0;
+    foreach (i; 0 .. inside.length + 1)
+    {
+        if (i < inside.length)
+        {
+            if (inside[i] == '(' || inside[i] == '[')
+                depth++;
+            else if (inside[i] == ')' || inside[i] == ']')
+                depth--;
+            if (inside[i] != ',' || depth)
+                continue;
+        }
+        auto arg = inside[from .. i].strip;
+        from = i + 1;
+        if (arg.length == 0)
+            continue;
+        import std.string : indexOf;
+        immutable colon = arg.indexOf(':');
+        if (colon < 0)
+            return false;   // positional: not ours to change
+        c.args[arg[0 .. colon].strip] = arg[colon + 1 .. $].strip;
+    }
+    return true;
 }
 
 /// `=> expr;` turned into a body with braces, the call added to the
@@ -550,4 +809,55 @@ unittest
     // no group for two edges of different faces: each its own
     auto two = edgesSelector(it, box, [vertical[0], topEdges[0]]);
     assert(two.canFind(" + "), two);
+}
+
+unittest
+{
+    // a move or a turn is added, then changed in place, then dropped when it
+    // comes to nothing; a call it cannot read gets another after it
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto a = transformPart(src, "m.hcad", "p", "move", Vec3(12, -3, 0)).apply(src);
+    assert(a.canFind(".move(x: 12.mm, y: -3.mm)"), a);
+    auto b = transformPart(a, "m.hcad", "p", "move", Vec3(-2, 3, 5)).apply(a);
+    assert(b.canFind(".move(x: 10.mm, z: 5.mm)") && !b.canFind("y:"), b);
+    auto c = transformPart(b, "m.hcad", "p", "move", Vec3(-10, 0, -5)).apply(b);
+    assert(!c.canFind(".move("), c);
+    auto d = transformPart(c, "m.hcad", "p", "rotate", Vec3(0, 0, 45), Vec3(0, 0, 5)).apply(c);
+    assert(d.canFind(".rotate(z: 45, around: vec(0.mm, 0.mm, 5.mm))"), d);
+    auto e = transformPart(d, "m.hcad", "p", "rotate", Vec3(0, 0, 30), Vec3(0, 0, 5)).apply(d);
+    assert(e.canFind(".rotate(z: 75, around:") && !e.canFind("z: 45"), e);
+    // another axis: still one turn, the two combined
+    auto f = transformPart(e, "m.hcad", "p", "rotate", Vec3(90, 0, 0), Vec3(0, 0, 5)).apply(e);
+    import std.algorithm : count;
+    assert(f.count(".rotate(") == 1, f);
+    // turns in the order X, Y, Z keep their numbers
+    auto q = transformPart(c, "m.hcad", "p", "rotate", Vec3(90, 0, 0), Vec3(0, 0, 5)).apply(c);
+    auto q2 = transformPart(q, "m.hcad", "p", "rotate", Vec3(0, 0, 90), Vec3(0, 0, 5)).apply(q);
+    assert(q2.canFind(".rotate(x: 90, z: 90, around:"), q2);
+    // and a turn undone leaves nothing
+    auto q3 = transformPart(q2, "m.hcad", "p", "rotate", Vec3(0, 0, -90), Vec3(0, 0, 5)).apply(q2);
+    auto q4 = transformPart(q3, "m.hcad", "p", "rotate", Vec3(-90, 0, 0), Vec3(0, 0, 5)).apply(q3);
+    assert(!q4.canFind(".rotate("), q4);
+    auto g = "module m;\n\n@part\nSolid p() => box(10, 10, 10).move(x: w);\nimmutable w = 3.mm;\n";
+    auto h = transformPart(g, "m.hcad", "p", "move", Vec3(1, 0, 0)).apply(g);
+    assert(h.canFind(".move(x: w)") && h.canFind(".move(x: 1.mm)"), h);
+}
+
+unittest
+{
+    // turnAngles undoes turnMatrix
+    foreach (e; [Vec3(30, 0, 0), Vec3(0, -45, 0), Vec3(10, 20, 30), Vec3(-120, 35, 170)])
+    {
+        auto back = turnAngles(turnMatrix(e));
+        assert(abs(back.x - e.x) < 1e-6 && abs(back.y - e.y) < 1e-6 && abs(back.z - e.z) < 1e-6);
+    }
+}
+
+unittest
+{
+    assert(halfTurn(270) == -90 && halfTurn(400) == 40 && halfTurn(-190) == 170 && halfTurn(180) == 180
+        && halfTurn(-180) == 180 && halfTurn(720) == 0);
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto a = transformPart(src, "m.hcad", "p", "rotate", Vec3(0, 0, 400)).apply(src);
+    assert(a.canFind(".rotate(z: 40, around:"), a);
 }

@@ -20,6 +20,13 @@ struct Vec3
 
     Vec3 opUnary(string op : "-")() const => Vec3(-x, -y, -z);
 
+    /// The coordinates by index: 0 x, 1 y, 2 z.
+    ref inout(double) opIndex(size_t i) inout return
+    {
+        assert(i < 3, "a Vec3 has three coordinates");
+        return i == 0 ? x : i == 1 ? y : z;
+    }
+
     double dot(Vec3 o) const => x * o.x + y * o.y + z * o.z;
 
     Vec3 cross(Vec3 o) const => Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x);
@@ -47,6 +54,15 @@ struct BBox
         return BBox(Vec3(mn(min.x, o.min.x), mn(min.y, o.min.y), mn(min.z, o.min.z)),
             Vec3(mx(max.x, o.max.x), mx(max.y, o.max.y), mx(max.z, o.max.z)));
     }
+}
+
+unittest
+{
+    auto v = Vec3(1, 2, 3);
+    assert(v[0] == 1 && v[1] == 2 && v[2] == 3);
+    v[1] = 5;
+    v[2] += 1;
+    assert(v == Vec3(1, 5, 4));
 }
 
 unittest

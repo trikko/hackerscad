@@ -112,7 +112,7 @@ final class Viewport
     private uint program, gridVao, gridVbo;
     private int gridCount;
     private float gridExtent, gridZ;
-    private int uMvp, uColor, uEye, uFlat, uAlpha, uClipOn, uClip, uPattern;
+    private int uMvp, uModel, uColor, uEye, uFlat, uAlpha, uClipOn, uClip, uPattern;
 
     // the colours of the window's dark style: background, grid, sketches
     private bool darkStyle;
@@ -133,6 +133,9 @@ final class Viewport
     private int sectionHandle = -1, hoverHandle = -1;
     private double handleStartOffset;
     void delegate(double offset) onSectionDrag;
+    // the X past a corner of the section plane: a click closes the section
+    private bool hoverClose, pressedClose;
+    void delegate() onSectionClose;
 
     // camera: orbit around target, Z up
     private Vec3 target;
@@ -174,8 +177,14 @@ final class Viewport
             else
                 dragPan = (leftMode == DragMode.pan) != shift;
             dragButton = button;
-            // a left drag from a handle of the section plane moves the plane
-            sectionHandle = button == 1 ? handleAt(x, y) : -1;
+            // a left drag on the frame, arrow or rings moving or turning a part
+            gizmoGrab = button == 1 && gizmo != Gizmo.none ? gizmoAt(x, y) : -1;
+            if (gizmoGrab >= 0)
+                grabGizmo(x, y);
+            // a left drag from a handle of the section plane moves the plane;
+            // a click on its X closes it
+            pressedClose = button == 1 && gizmoGrab < 0 && closeAt(x, y);
+            sectionHandle = button == 1 && !pressedClose && gizmoGrab < 0 ? handleAt(x, y) : -1;
             handleStartOffset = sectionOffset;
             startShift = shift;
             startYaw = yaw;
@@ -184,6 +193,14 @@ final class Viewport
             area.grabFocus();
         });
         drag.connectDragUpdate((double dx, double dy, GestureDrag g) {
+            if (gizmoGrab >= 0)
+            {
+                dragging = true;
+                dragGizmo(startX + dx, startY + dy, dx, dy, (g.getCurrentEventState() & ModifierType.ShiftMask) != 0);
+                return;
+            }
+            if (pressedClose)
+                return;
             if (sectionHandle >= 0)
             {
                 dragging = true;
@@ -212,6 +229,22 @@ final class Viewport
             redraw();
         });
         drag.connectDragEnd((double dx, double dy, GestureDrag g) {
+            if (gizmoGrab >= 0)
+            {
+                gizmoGrab = -1;
+                dragging = false;
+                updateHoverCursor();
+                return;
+            }
+            if (pressedClose)
+            {
+                pressedClose = false;
+                // still on the X when released: closed
+                if (closeAt(startX + dx, startY + dy) && onSectionClose !is null)
+                    onSectionClose();
+                updateHoverCursor();
+                return;
+            }
             if (sectionHandle >= 0)
             {
                 sectionHandle = -1;
@@ -269,6 +302,12 @@ final class Viewport
             if (i < hidden.length && hidden[i])
                 was[q.name] = true;
         parts = p;
+        // the parts the confirmed move or turn made: its preview is over
+        if (keepPreview)
+        {
+            keepPreview = false;
+            gizmoPart = -1;
+        }
         hidden = new bool[parts.length];
         foreach (i, q; parts)
             hidden[i] = (q.name in was) !is null;
@@ -523,8 +562,10 @@ final class Viewport
             glStencilOp(GL_KEEP, GL_KEEP, GL_INVERT);
             glUniform1i(uClipOn, 1);
             glUniform1i(uFlat, 1);
+            forPart(i);
             glBindVertexArray(g.vao);
             glDrawElements(GL_TRIANGLES, g.indexCount, GL_UNSIGNED_INT, null);
+            forPart(-1);
             // the cap, where the count is odd
             glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
             glDepthMask(GL_TRUE);
@@ -595,6 +636,437 @@ final class Viewport
         return [c + u * du + v * dv, c - u * du + v * dv, c - u * du - v * dv, c + u * du - v * dv];
     }
 
+    // ---- moving and turning a part by hand (Move… and Rotate… in the
+    // context menu): arrows along X, Y and Z from the middle of the part and
+    // a frame under it, or three rings round it with a knob each. The part
+    // is drawn where it goes; the window writes the code.
+
+    enum Gizmo { none, move, rotate }
+
+    /// A turn about one axis through the centre (0 X, 1 Y, 2 Z), in degrees.
+    struct Turn
+    {
+        int axis;
+        double angle = 0;
+    }
+
+    public Gizmo gizmo;
+    public int gizmoPart = -1;
+    public Vec3 gizmoMove = Vec3(0, 0, 0);   /// how far the part is moved (mm, whole)
+    public Turn[] gizmoTurns;                /// the turns so far, in order (degrees, whole)
+    public Vec3 gizmoCentre;                 /// what it turns about: the middle of its box
+    private Vec3 gizmoLo, gizmoHi;
+    // what is grabbed or under the pointer: move: 0 the frame, 1..3 the X, Y,
+    // Z arrows; rotate: 1..3 the X, Y, Z rings
+    private int gizmoGrab = -1, gizmoHover = -1;
+    private Vec3 grabMove, grabPoint;
+    private double grabAngle, lastScreenAngle;
+    private bool keepPreview;   // confirmed: the preview stays until the new parts come
+    /// Told while the part moves or turns, with the pointer's window position.
+    void delegate(double x, double y) onGizmo;
+
+    static immutable Vec3[3] axes = [Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)];
+    static immutable Vec3[3] axisColours = [Vec3(0.85, 0.2, 0.2), Vec3(0.2, 0.65, 0.25), Vec3(0.2, 0.4, 0.9)];
+
+    /// Shows the arrows and frame (move) or the rings (rotate) on part `part`.
+    public void startGizmo(Gizmo g, int part)
+    {
+        gizmo = g;
+        gizmoPart = part;
+        gizmoMove = Vec3(0, 0, 0);
+        gizmoTurns = null;
+        auto b = parts[part].bbox;
+        gizmoLo = b.min;
+        gizmoHi = b.max;
+        gizmoCentre = (b.min + b.max) * 0.5;
+        keepPreview = false;
+        gizmoGrab = gizmoHover = -1;
+        redraw();
+    }
+
+    /// Takes them away; `keep` leaves the part drawn where it went until the
+    /// model is evaluated again (the code was written).
+    public void stopGizmo(bool keep = false)
+    {
+        gizmo = Gizmo.none;
+        gizmoGrab = gizmoHover = -1;
+        keepPreview = keep;
+        if (!keep)
+            gizmoPart = -1;
+        redraw();
+    }
+
+    /// How far the part is turned about each axis, all turns added.
+    private double turnedAbout(int axis)
+    {
+        double a = 0;
+        foreach (t; gizmoTurns)
+            if (t.axis == axis)
+                a += t.angle;
+        return a;
+    }
+
+    /// Where the moved or turned part is drawn: the matrix that carries it
+    /// (the turns in order about the centre, then the move).
+    private float[16] partMatrix()
+    {
+        float[16] m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+        foreach (t; gizmoTurns)
+        {
+            if (t.angle == 0)
+                continue;
+            // translate(c) * rotate * translate(-c), applied after what came before
+            immutable a = t.angle * PI / 180, c = cos(a), s = sin(a);
+            immutable i = (t.axis + 1) % 3, j = (t.axis + 2) % 3;
+            float[16] r = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+            r[i * 4 + i] = c;
+            r[j * 4 + j] = c;
+            r[i * 4 + j] = s;    // column i, row j
+            r[j * 4 + i] = -s;
+            immutable o = gizmoCentre;
+            foreach (row; 0 .. 3)
+            {
+                double v = o[row];
+                foreach (q; 0 .. 3)
+                    v -= r[q * 4 + row] * o[q];
+                r[12 + row] = cast(float) v;
+            }
+            m = multiply(r, m);
+        }
+        m[12] += gizmoMove.x;
+        m[13] += gizmoMove.y;
+        m[14] += gizmoMove.z;
+        return m;
+    }
+
+    /// Where part i is drawn (none when i is -1): moved or turned in the preview.
+    private void forPart(long i)
+    {
+        static immutable float[16] none = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+        if (previewing(i))
+        {
+            auto m = partMatrix();
+            glUniformMatrix4fv(uModel, 1, GL_FALSE, m.ptr);
+        }
+        else
+            glUniformMatrix4fv(uModel, 1, GL_FALSE, none.ptr);
+    }
+
+    /// Whether part i is drawn moved or turned (the preview).
+    bool previewing(long i) => i >= 0 && i == gizmoPart && (gizmo != Gizmo.none || keepPreview);
+
+    /// A point of the previewed part where it is drawn, and back.
+    Vec3 placed(Vec3 p)
+    {
+        auto m = partMatrix();
+        return Vec3(m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12], m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13],
+            m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]);
+    }
+
+    /// A direction of the previewed part as drawn (turned only), and back.
+    Vec3 placedDir(Vec3 d)
+    {
+        auto m = partMatrix();
+        return Vec3(m[0] * d.x + m[4] * d.y + m[8] * d.z, m[1] * d.x + m[5] * d.y + m[9] * d.z,
+            m[2] * d.x + m[6] * d.y + m[10] * d.z);
+    }
+
+    Vec3 unplacedDir(Vec3 d)
+    {
+        // the turn is a rotation: its inverse is its transpose
+        auto m = partMatrix();
+        return Vec3(m[0] * d.x + m[1] * d.y + m[2] * d.z, m[4] * d.x + m[5] * d.y + m[6] * d.z,
+            m[8] * d.x + m[9] * d.y + m[10] * d.z);
+    }
+
+    Vec3 unplaced(Vec3 p)
+    {
+        auto m = partMatrix();
+        return unplacedDir(p - Vec3(m[12], m[13], m[14]));
+    }
+
+    /// The edge's points where part i draws it (moved or turned in the preview).
+    Vec3[] edgePoints(long i, EdgeInfo e)
+    {
+        auto pts = edgePolyline(e);
+        if (previewing(i))
+            foreach (ref q; pts)
+                q = placed(q);
+        return pts;
+    }
+
+    /// The frame under the moved part.
+    private Vec3[4] gizmoFrame()
+    {
+        immutable m = max(2.0, 0.1 * max(gizmoHi.x - gizmoLo.x, gizmoHi.y - gizmoLo.y));
+        immutable z = gizmoLo.z + gizmoMove.z;
+        immutable x0 = gizmoLo.x - m + gizmoMove.x, x1 = gizmoHi.x + m + gizmoMove.x;
+        immutable y0 = gizmoLo.y - m + gizmoMove.y, y1 = gizmoHi.y + m + gizmoMove.y;
+        return [Vec3(x0, y0, z), Vec3(x1, y0, z), Vec3(x1, y1, z), Vec3(x0, y1, z)];
+    }
+
+    /// Where the arrows start: the middle of the moved part.
+    private Vec3 arrowFoot() => gizmoCentre + gizmoMove;
+
+    /// The tip of the arrow along axis a: past the part's side.
+    private Vec3 arrowTip(int a)
+    {
+        immutable half = (gizmoHi[a] - gizmoLo[a]) / 2;
+        return arrowFoot() + axes[a] * (half + max(6.0, 0.25 * (gizmoHi - gizmoLo).length));
+    }
+
+    private double ringRadius() => max(8.0, 0.6 * (gizmoHi - gizmoLo).length);
+
+    /// The point of ring k (about axis k, through the centre) at angle a (degrees).
+    private Vec3 ringPoint(int k, double a)
+    {
+        auto u = axes[(k + 1) % 3], v = axes[(k + 2) % 3];
+        immutable r = a * PI / 180;
+        return gizmoCentre + (u * cos(r) + v * sin(r)) * ringRadius();
+    }
+
+    private Vec3[] gizmoRing(int k)
+    {
+        Vec3[] pts;
+        foreach (n; 0 .. 97)
+            pts ~= ringPoint(k, 360.0 * n / 96);
+        return pts;
+    }
+
+    /// Where ring k's knob is: it goes round with the turns about its axis.
+    private Vec3 ringKnob(int k) => ringPoint(k, 45 + turnedAbout(k));
+
+    /// What is at window point (x, y): move: 1..3 an arrow (X, Y, Z), 0 the
+    /// frame; rotate: 1..3 a ring. -1: nothing.
+    int gizmoAt(double x, double y)
+    {
+        double near(Vec3[] pts)
+        {
+            double best = double.max;
+            double ax, ay, bx, by;
+            foreach (n; 0 .. pts.length - 1)
+                if (project(pts[n], ax, ay) && project(pts[n + 1], bx, by))
+                {
+                    immutable dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+                    immutable t = l2 > 0 ? clamp(((x - ax) * dx + (y - ay) * dy) / l2, 0.0, 1.0) : 0;
+                    best = min(best, sqrt((ax + t * dx - x) ^^ 2 + (ay + t * dy - y) ^^ 2));
+                }
+            return best;
+        }
+        bool onKnob(Vec3 p)
+        {
+            double px, py;
+            return project(p, px, py) && abs(px - x) <= handlePixels + 2 && abs(py - y) <= handlePixels + 2;
+        }
+        if (gizmo == Gizmo.move)
+        {
+            // the knobs at the tips first, then the shafts, then the frame
+            foreach (a; 0 .. 3)
+                if (onKnob(arrowTip(a)))
+                    return a + 1;
+            int best = -1;
+            double bestD = handlePixels;
+            foreach (a; 0 .. 3)
+            {
+                immutable d = near([arrowFoot(), arrowTip(a)]);
+                if (d <= bestD)
+                {
+                    bestD = d;
+                    best = a + 1;
+                }
+            }
+            if (best >= 0)
+                return best;
+            auto f = gizmoFrame();
+            if (near([f[0], f[1], f[2], f[3], f[0]]) <= handlePixels)
+                return 0;
+            // inside the frame, as seen
+            double[4] px, py;
+            foreach (n; 0 .. 4)
+                if (!project(f[n], px[n], py[n]))
+                    return -1;
+            bool inside;
+            foreach (n; 0 .. 4)
+            {
+                immutable m = (n + 3) % 4;
+                if ((py[n] > y) != (py[m] > y) && x < (px[m] - px[n]) * (y - py[n]) / (py[m] - py[n]) + px[n])
+                    inside = !inside;
+            }
+            return inside ? 0 : -1;
+        }
+        if (gizmo == Gizmo.rotate)
+        {
+            foreach (k; 0 .. 3)
+                if (onKnob(ringKnob(k)))
+                    return k + 1;
+            int best = -1;
+            double bestD = handlePixels + 1;
+            foreach (k; 0 .. 3)
+            {
+                immutable d = near(gizmoRing(k));
+                if (d < bestD)
+                {
+                    bestD = d;
+                    best = k + 1;
+                }
+            }
+            return best;
+        }
+        return -1;
+    }
+
+    /// Where a window point's line of sight meets the plane z = h.
+    private bool onFloor(double x, double y, double h, out Vec3 p)
+    {
+        Vec3 o, d;
+        ray(x, y, o, d);
+        if (abs(d.z) < 0.05)
+            return false;
+        immutable t = (h - o.z) / d.z;
+        p = o + d * t;
+        return t > 0;
+    }
+
+    /// The pointer's angle about the centre as seen (degrees, counter-clockwise).
+    private double screenAngle(double x, double y)
+    {
+        import std.math : atan2;
+        double cx, cy;
+        project(gizmoCentre, cx, cy);
+        return atan2(-(y - cy), x - cx) * 180 / PI;
+    }
+
+    private void grabGizmo(double x, double y)
+    {
+        grabMove = gizmoMove;
+        if (gizmo == Gizmo.move && gizmoGrab == 0)
+            onFloor(x, y, gizmoLo.z + gizmoMove.z, grabPoint);
+        if (gizmo == Gizmo.rotate)
+        {
+            // another axis than the last turn's: a new turn after it
+            immutable axis = gizmoGrab - 1;
+            if (gizmoTurns.length == 0 || gizmoTurns[$ - 1].axis != axis)
+                gizmoTurns ~= Turn(axis, 0);
+            grabAngle = gizmoTurns[$ - 1].angle;
+            lastScreenAngle = screenAngle(x, y);
+        }
+    }
+
+    /// Whole millimetres (or degrees), and, unless Shift is held, the
+    /// nearest multiple of `snap` when within `pull` of it.
+    static double rounded(double v, double snap, double pull, bool free)
+    {
+        import std.math : round;
+        immutable whole = round(v);
+        if (free)
+            return whole;
+        immutable s = round(v / snap) * snap;
+        return abs(v - s) <= pull ? s : whole;
+    }
+
+    private void dragGizmo(double x, double y, double dx, double dy, bool free)
+    {
+        if (gizmo == Gizmo.move && gizmoGrab == 0)
+        {
+            Vec3 p;
+            Vec3 raw;
+            if (onFloor(x, y, gizmoLo.z + grabMove.z, p) && grabPoint.length == grabPoint.length)
+                raw = grabMove + Vec3(p.x - grabPoint.x, p.y - grabPoint.y, 0);
+            else
+            {
+                // the floor seen edge on: along the screen, as a pan
+                auto b = basis();
+                immutable k = mmPerPixelAt(gizmoCentre);
+                auto d = b.right * (dx * k) - b.up * (dy * k);
+                raw = grabMove + Vec3(d.x, d.y, 0);
+            }
+            gizmoMove = Vec3(rounded(raw.x, 5, 1, free), rounded(raw.y, 5, 1, free), grabMove.z);
+        }
+        else if (gizmo == Gizmo.move)
+        {
+            // an arrow: along its axis, as far as the pointer went along it on screen
+            immutable a = gizmoGrab - 1;
+            auto foot = gizmoCentre + grabMove;
+            immutable step = 50 * mmPerPixelAt(foot);
+            double ax, ay, bx, by, moved;
+            if (project(foot, ax, ay) && project(foot + axes[a] * step, bx, by)
+                && (bx - ax) ^^ 2 + (by - ay) ^^ 2 > 25)
+                moved = (dx * (bx - ax) + dy * (by - ay)) / ((bx - ax) ^^ 2 + (by - ay) ^^ 2) * step;
+            else
+                moved = -dy * mmPerPixelAt(foot);
+            auto m = grabMove;
+            m[a] = rounded(grabMove[a] + moved, 5, 1, free);
+            gizmoMove = m;
+        }
+        else
+        {
+            // a turn: how far the pointer went round the centre, as seen;
+            // positive counter-clockwise when the axis points at the viewer
+            auto now = screenAngle(x, y);
+            auto step = now - lastScreenAngle;
+            while (step > 180)
+                step -= 360;
+            while (step < -180)
+                step += 360;
+            lastScreenAngle = now;
+            auto turn = &gizmoTurns[$ - 1];
+            immutable facing = axes[turn.axis].dot(basis().eye - gizmoCentre) >= 0 ? 1 : -1;
+            grabAngle += step * facing;
+            turn.angle = rounded(grabAngle, 15, 3, free);
+        }
+        if (onGizmo !is null)
+            onGizmo(x, y);
+        redraw();
+    }
+
+    /// A knob: a filled square facing the viewer, `pixels` from its middle to its side.
+    private void drawKnob(Vec3 p, Vec3 colour, double pixels)
+    {
+        auto b = basis();
+        immutable r = pixels * mmPerPixelAt(p);
+        auto ru = b.right * r, rv = b.up * r;
+        Vec3[4] c = [p + ru + rv, p - ru + rv, p - ru - rv, p + ru - rv];
+        float[] fill;
+        foreach (i; [0, 1, 2, 0, 2, 3])
+            fill ~= [cast(float) c[i].x, cast(float) c[i].y, cast(float) c[i].z];
+        uploadLines(fill);
+        glUniform1i(uFlat, 1);
+        glUniform1f(uAlpha, 1);
+        glUniform3f(uColor, cast(float) colour.x, cast(float) colour.y, cast(float) colour.z);
+        glDisable(GL_DEPTH_TEST);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glEnable(GL_DEPTH_TEST);
+        drawPolyline([c[0], c[1], c[2], c[3], c[0]], Vec3(1, 1, 1), 1.5);
+    }
+
+    /// The arrows and frame, or the three rings, over everything.
+    private void drawGizmo()
+    {
+        if (gizmo == Gizmo.none)
+            return;
+        bool live(int k) => k == gizmoGrab || (gizmoGrab < 0 && k == gizmoHover);
+        Vec3 lit(Vec3 c, bool on) => on ? c * 0.6 + Vec3(0.4, 0.4, 0.4) : c;
+        if (gizmo == Gizmo.move)
+        {
+            immutable orange = Vec3(0.95, 0.45, 0.1);
+            auto f = gizmoFrame();
+            drawPolyline([f[0], f[1], f[2], f[3], f[0]], lit(orange, live(0)), live(0) ? 4 : 2);
+            foreach (a; 0 .. 3)
+            {
+                auto c = lit(axisColours[a], live(a + 1));
+                drawPolyline([arrowFoot(), arrowTip(a)], c, live(a + 1) ? 4 : 2.5);
+                drawKnob(arrowTip(a), c, live(a + 1) ? handlePixels + 2 : handlePixels);
+            }
+            return;
+        }
+        foreach (k; 0 .. 3)
+        {
+            auto c = lit(axisColours[k], live(k + 1));
+            drawPolyline(gizmoRing(k), c, live(k + 1) ? 4 : 2);
+            drawKnob(ringKnob(k), c, live(k + 1) ? handlePixels + 2 : handlePixels);
+        }
+    }
+
     /// The handle of the section plane at window point (x, y), or -1.
     int handleAt(double x, double y)
     {
@@ -608,6 +1080,39 @@ final class Viewport
                 return k;
         }
         return -1;
+    }
+
+    /// Where the X that closes the section is: past the plane's corner that
+    /// is highest and rightmost on screen, `closeGap` pixels out along the
+    /// diagonal as seen.
+    Vec3 closeSpot()
+    {
+        auto q = sectionQuad();
+        double[4] x, y;
+        foreach (k; 0 .. 4)
+            project(q[k], x[k], y[k]);
+        int best = 0;
+        foreach (k; 1 .. 4)
+            if (x[k] - y[k] > x[best] - y[best])
+                best = k;
+        auto centre = (q[0] + q[2]) * 0.5;
+        double cx, cy;
+        project(centre, cx, cy);
+        immutable dx = x[best] - cx, dy = y[best] - cy, len = max(1e-6, sqrt(dx * dx + dy * dy));
+        auto b = basis();
+        immutable k = closeGap * mmPerPixelAt(q[best]) / len;
+        return q[best] + b.right * (dx * k) - b.up * (dy * k);
+    }
+
+    enum closeGap = 28;
+
+    /// Whether window point (x, y) is on the X that closes the section.
+    bool closeAt(double x, double y)
+    {
+        if (!section)
+            return false;
+        double cx, cy;
+        return project(closeSpot(), cx, cy) && abs(cx - x) <= handlePixels + 2 && abs(cy - y) <= handlePixels + 2;
     }
 
     /// How big a handle is on screen, from its centre to its side (pixels).
@@ -669,6 +1174,33 @@ final class Viewport
             glDrawArrays(GL_LINES, 0, 8);
             glLineWidth(1);
         }
+        // the X that closes the section: a round-cornered square, red under the pointer
+        auto spot = closeSpot();
+        immutable r = (handlePixels + 2) * mmPerPixelAt(spot);
+        auto ru = b.right * r, rv = b.up * r;
+        Vec3[4] c = [spot + ru + rv, spot - ru + rv, spot - ru - rv, spot + ru - rv];
+        float[] fill, cross;
+        foreach (i; [0, 1, 2, 0, 2, 3])
+            fill ~= [cast(float) c[i].x, cast(float) c[i].y, cast(float) c[i].z];
+        foreach (i; [0, 2, 1, 3])
+        {
+            auto e = spot + (c[i] - spot) * 0.55;
+            cross ~= [cast(float) e.x, cast(float) e.y, cast(float) e.z];
+        }
+        uploadLines(fill);
+        if (hoverClose)
+            glUniform3f(uColor, 0.85f, 0.2f, 0.15f);
+        else
+            glUniform3f(uColor, 1.0f, 1.0f, 1.0f);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        uploadLines(cross);
+        if (hoverClose)
+            glUniform3f(uColor, 1.0f, 1.0f, 1.0f);
+        else
+            glUniform3f(uColor, 0.9f, 0.35f, 0.2f);
+        glLineWidth(2);
+        glDrawArrays(GL_LINES, 0, 4);
+        glLineWidth(1);
         glEnable(GL_DEPTH_TEST);
     }
 
@@ -762,7 +1294,7 @@ final class Viewport
         {
             if (face >= 0 && i < p.edgeFaces.length && p.edgeFaces[i][0] != face && p.edgeFaces[i][1] != face)
                 continue;
-            auto pts = edgePolyline(e);
+            auto pts = edgePoints(part, e);
             foreach (k; 0 .. pts.length - 1)
             {
                 double ax, ay, bx, by;
@@ -1018,12 +1550,34 @@ private:
 
     void updateHoverCursor()
     {
-        // over a handle of the section plane: it can be dragged
-        immutable handle = handleAt(pointerX, pointerY);
-        if (handle != hoverHandle)
+        // over a handle of the section plane: it can be dragged; over its X,
+        // a click closes the section
+        if (gizmo != Gizmo.none)
+        {
+            immutable g = gizmoAt(pointerX, pointerY);
+            if (g != gizmoHover)
+            {
+                gizmoHover = g;
+                redraw();
+            }
+            if (g >= 0)
+            {
+                area.setCursorFromName("grab");
+                return;
+            }
+        }
+        immutable onClose = closeAt(pointerX, pointerY);
+        immutable handle = onClose ? -1 : handleAt(pointerX, pointerY);
+        if (handle != hoverHandle || onClose != hoverClose)
         {
             hoverHandle = handle;
+            hoverClose = onClose;
             redraw();
+        }
+        if (onClose)
+        {
+            area.setCursorFromName("pointer");
+            return;
         }
         if (handle >= 0)
         {
@@ -1146,6 +1700,7 @@ private:
         }
         program = buildProgram();
         uMvp = glGetUniformLocation(program, "uMvp");
+        uModel = glGetUniformLocation(program, "uModel");
         uColor = glGetUniformLocation(program, "uColor");
         uEye = glGetUniformLocation(program, "uEye");
         uFlat = glGetUniformLocation(program, "uFlat");
@@ -1188,6 +1743,7 @@ private:
 
     private void drawShaded(size_t i)
     {
+        forPart(i);
         auto c = rgbOf(parts[i].rgb);
         if (i == selected.part && selected.face < 0)
             c = c * 0.6 + Vec3(1, 0.85, 0.2) * 0.4;
@@ -1579,6 +2135,7 @@ private:
 
         glUseProgram(program);
         glUniformMatrix4fv(uMvp, 1, GL_FALSE, mvp.ptr);
+        forPart(-1);
         glUniform3f(uEye, cast(float) b.eye.x, cast(float) b.eye.y, cast(float) b.eye.z);
         glUniform1f(uAlpha, 1);
 
@@ -1678,6 +2235,7 @@ private:
             auto fs = parts[h.part].faceStart;
             if (h.face + 1 < fs.length)
             {
+                forPart(h.part);
                 glUniform3f(uColor, 1.0f, 0.78f, 0.15f);
                 glBindVertexArray(gpu[h.part].vao);
                 glDrawElements(GL_TRIANGLES, cast(int)((fs[h.face + 1] - fs[h.face]) * 3), GL_UNSIGNED_INT,
@@ -1701,6 +2259,7 @@ private:
             foreach (i, g; gpu)
                 if (!isHidden(i))
                 {
+                    forPart(i);
                     glBindVertexArray(g.edgeVao);
                     glDrawArrays(GL_LINES, 0, g.edgeCount + g.tangentCount);
                     glBindVertexArray(g.outlineVao);
@@ -1716,6 +2275,7 @@ private:
         {
             if (isHidden(i) || shading == Shading.shaded)
                 continue;
+            forPart(i);
             if (i == selected.part)
                 glUniform3f(uColor, 0.75f, 0.45f, 0.0f);
             else
@@ -1750,12 +2310,14 @@ private:
             glUniform1f(uAlpha, 1);
         }
 
+        forPart(-1);
         // the picked edges, thick
         foreach (h; selection())
             if (h.edge >= 0 && h.part < parts.length && h.edge < parts[h.part].edgeInfo.length)
-                drawPolyline(edgePolyline(parts[h.part].edgeInfo[h.edge]), Vec3(0.95, 0.45, 0.05), 4);
+                drawPolyline(edgePoints(h.part, parts[h.part].edgeInfo[h.edge]), Vec3(0.95, 0.45, 0.05), 4);
 
         renderSketches();
+        drawGizmo();
         drawHoverMark();
         glBindVertexArray(0);
         if (onFrame !is null)
@@ -2170,6 +2732,7 @@ private:
         {
             if (isHidden(i) || i >= parts.length)
                 continue;
+            forPart(i);
             auto pc = printCheckOf(i);
             if (g.overhangCount < 0)
             {
@@ -2217,6 +2780,7 @@ private:
         }
         glUniform1i(uPattern, 0);
         glBindVertexArray(0);
+        forPart(-1);
     }
 
     private float[] outlineScratch;
@@ -2298,15 +2862,20 @@ private:
         {
             if (isHidden(pi))
                 continue;
+            // the previewed part is hit where it is drawn: the ray carried
+            // into its own place (the move and turn keep lengths, so the
+            // distances along it are the same)
+            immutable moved = previewing(pi);
+            auto from = moved ? unplaced(eye) : eye, along = moved ? unplacedDir(dir) : dir;
             // a part whose box the ray misses, or reaches behind what it
             // already hit, has no triangle to test (hovering picks often)
-            immutable entry = rayBox(eye, dir, p.bbox);
+            immutable entry = rayBox(from, along, p.bbox);
             if (!(entry < best.distance))
                 continue;
             Vec3 vtx(uint i) => Vec3(p.vertices[i * 6], p.vertices[i * 6 + 1], p.vertices[i * 6 + 2]);
             foreach (t; 0 .. p.indices.length / 3)
             {
-                immutable d = intersect(eye, dir, vtx(p.indices[t * 3]), vtx(p.indices[t * 3 + 1]), vtx(p.indices[t * 3 + 2]));
+                immutable d = intersect(from, along, vtx(p.indices[t * 3]), vtx(p.indices[t * 3 + 1]), vtx(p.indices[t * 3 + 2]));
                 if (section && d > 0 && (eye + dir * d).dot(sectionNormal) > sectionOffset)
                     continue;
                 if (d > 0 && d < best.distance)
@@ -2316,6 +2885,8 @@ private:
                     best.face = faceOf(p.faceStart, t);
                     auto a = vtx(p.indices[t * 3]), b = vtx(p.indices[t * 3 + 1]), c = vtx(p.indices[t * 3 + 2]);
                     best.normal = (b - a).cross(c - a).normalized;
+                    if (moved)
+                        best.normal = placedDir(best.normal);
                 }
             }
         }
@@ -2506,13 +3077,15 @@ enum vertexShader = `#version 330 core
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNrm;
 uniform mat4 uMvp;
+uniform mat4 uModel;   // where the part is: moved or turned while previewed, else none
 out vec3 vNrm;
 out vec3 vPos;
 void main()
 {
-    vNrm = aNrm;
-    vPos = aPos;
-    gl_Position = uMvp * vec4(aPos, 1.0);
+    // in the world, so that the section, the light and the eye see it where it is drawn
+    vNrm = mat3(uModel) * aNrm;
+    vPos = (uModel * vec4(aPos, 1.0)).xyz;
+    gl_Position = uMvp * vec4(vPos, 1.0);
 }
 `;
 

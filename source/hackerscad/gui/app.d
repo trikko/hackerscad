@@ -56,13 +56,15 @@ import gtk.scale : Scale;
 import gtk.gesture_click : GestureClick;
 import gtk.event_controller_key : EventControllerKey;
 import gtk.event_controller_motion : EventControllerMotion;
-import gdk.types : ModifierType, KEY_Escape, KEY_space, KEY_Control_L, KEY_Control_R, KEY_Meta_L, KEY_Meta_R;
+import gdk.types : ModifierType, KEY_Escape, KEY_space, KEY_Return, KEY_KP_Enter, KEY_Control_L, KEY_Control_R,
+    KEY_Meta_L, KEY_Meta_R;
 import hackerscad.geom.vec : BBox, Vec3;
 import glib.global : idleAdd;
 
 import hackerscad.geom.mesh;
 import hackerscad.kernel.brep : EdgeKind;
 import hackerscad.examples : examples, exampleNames;
+import hackerscad.tool.codegen : transformPart;
 import hackerscad.lang.errors;
 import hackerscad.io.stl;
 import hackerscad.lang.threading : ThreadSpec, allThreads, fits;
@@ -572,6 +574,8 @@ final class MainWindow
                 ~ " background: alpha(@accent_bg_color, 0.14); border-radius: 0 0 9px 9px; }"
                 ~ " .hcad-modebar label { font-size: 0.9em; font-weight: bold; }"
                 ~ " .hcad-modebar button { min-height: 24px; padding: 1px 10px; }"
+                ~ " .hcad-gizmo-value { background: alpha(@window_bg_color, 0.9); border-radius: 6px; padding: 2px 7px;"
+                ~ " border: 1px solid alpha(currentColor, 0.15); font-weight: bold; }"
                 ~ " popover.hcad-menu > contents { padding: 4px 0; min-width: 210px; border-radius: 6px; }"
                 ~ " popover.hcad-menu button { min-height: 0; padding: 3px 14px; border-radius: 0; font-weight: normal;"
                 ~ " font-size: 0.93em; }"
@@ -733,6 +737,7 @@ final class MainWindow
 
         // ---- view and parameters
         buildSectionBar();
+        buildTransformBar();
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = &picked;
@@ -741,6 +746,9 @@ final class MainWindow
         viewport.onSectionDrag = (double offset) {
             sectionSlider.setValue(sectionFlipped ? -offset : offset);
         };
+        // its X clicked: the section closes, as with the button
+        viewport.onSectionClose = () => sectionToggle.setActive(false);
+        viewport.onGizmo = (double x, double y) => showTransformValue(x, y);
         // labels move after the frame, not while the view is being drawn
         viewport.onFrame = () {
             if (positionQueued || dimButtons.length == 0)
@@ -754,6 +762,13 @@ final class MainWindow
         };
         overlay = new Overlay;
         overlay.setChild(viewport.area);
+        // what floats over the view stays inside it: a long message or bar is
+        // cut, never drawn over the parameters and the steps
+        {
+            import gtk.types : Overflow;
+            overlay.setOverflow(Overflow.Hidden);
+        }
+        overlay.addOverlay(gizmoTip);   // made with the transform bar, before
         // no usable OpenGL, and the application knows what to do: say it
         viewport.onGlFailed = (string help) {
             auto card = new Label(help);
@@ -786,6 +801,17 @@ final class MainWindow
             auto keys = new EventControllerKey;
             // Esc: back from Inspect or a rollback, otherwise (like Space) an empty selection
             keys.connectKeyPressed((uint key, uint code, ModifierType state) {
+                // moving or turning a part: Enter writes it, Esc leaves it
+                if (viewport.gizmo != Viewport.Gizmo.none && (key == KEY_Return || key == KEY_KP_Enter))
+                {
+                    applyTransform();
+                    return true;
+                }
+                if (viewport.gizmo != Viewport.Gizmo.none && key == KEY_Escape)
+                {
+                    cancelTransform();
+                    return true;
+                }
                 if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback))
                 {
                     showFinal();
@@ -834,6 +860,7 @@ final class MainWindow
         tools.setMarginTop(8);
         tools.append(viewBar);
         tools.append(sectionBar);
+        tools.append(transformBar);
         tools.append(modeBar);
         overlay.addOverlay(tools);
         info("");
@@ -1833,6 +1860,200 @@ private:
 
     // ---- section view
 
+    // ---- moving and turning a part by hand
+
+    Box transformBar;
+    Label transformTitle, transformValue, gizmoTip;
+    string transformPartName;
+
+    void buildTransformBar()
+    {
+        transformBar = new Box(Orientation.Horizontal, 8);
+        transformBar.addCssClass("hcad-modebar");
+        transformTitle = new Label("");
+        transformTitle.setEllipsize(EllipsizeMode.End);
+        transformBar.append(transformTitle);
+        transformValue = new Label("");
+        transformValue.addCssClass("numeric");
+        transformValue.setXalign(0);
+        transformValue.setHexpand(true);
+        transformValue.setEllipsize(EllipsizeMode.End);
+        transformBar.append(transformValue);
+        auto cancel = new Button;
+        cancel.setLabel("Cancel");
+        cancel.setTooltipText("Leave the part where it was (Esc)");
+        cancel.connectClicked(() => cancelTransform());
+        transformBar.append(cancel);
+        auto apply = new Button;
+        apply.setLabel("Apply");
+        apply.setTooltipText("Write the move or turn into the code (Enter)");
+        apply.addCssClass("suggested-action");
+        apply.connectClicked(() => applyTransform());
+        transformBar.append(apply);
+        transformBar.setVisible(false);
+        // the value next to the pointer while dragging
+        gizmoTip = new Label("");
+        gizmoTip.addCssClass("hcad-gizmo-value");
+        gizmoTip.setHalign(Align.Start);
+        gizmoTip.setValign(Align.Start);
+        gizmoTip.setCanTarget(false);
+        gizmoTip.setVisible(false);
+    }
+
+    /// The frame (move) or the rings (rotate) on part `index`.
+    void startTransform(Viewport.Gizmo kind, int index)
+    {
+        if (index < 0 || index >= last.parts.length)
+            return;
+        auto part = last.parts[index];
+        if (part.span.file != absolutePath(path))
+            return info(format("part '%s' is defined in another file", part.name));
+        transformPartName = part.name;
+        viewport.startGizmo(kind, index);
+        transformTitle.setLabel((kind == Viewport.Gizmo.move ? "Move " : "Rotate ") ~ part.name);
+        transformValue.setLabel(transformText());
+        transformBar.setVisible(true);
+    }
+
+    /// What the drag has done so far, as words: for the bar (`tip` false)
+    /// how many turns, next to the pointer the turn being made.
+    string transformText(bool tip = false)
+    {
+        if (viewport.gizmo == Viewport.Gizmo.move)
+        {
+            auto m = viewport.gizmoMove;
+            string[] parts;
+            foreach (i, n; ["x", "y", "z"])
+                if (m[i] != 0)
+                    parts ~= format("%s %+g mm", n, m[i]);
+            return parts.length ? parts.join(", ") : "not moved";
+        }
+        size_t turns;
+        foreach (t; viewport.gizmoTurns)
+            turns += t.angle != 0;
+        if (tip && viewport.gizmoTurns.length)
+        {
+            // the short way: a turn and a half reads as half a turn
+            import hackerscad.tool.codegen : halfTurn;
+            auto t = viewport.gizmoTurns[$ - 1];
+            return format("%s %+g°", ["X", "Y", "Z"][t.axis], halfTurn(t.angle));
+        }
+        return turns == 0 ? "not turned" : turns == 1 ? "1 turn" : format("%d turns", turns);
+    }
+
+    /// The value in the bar and next to the pointer at (x, y).
+    void showTransformValue(double x, double y)
+    {
+        transformValue.setLabel(transformText());
+        gizmoTip.setLabel(transformText(true));
+        gizmoTip.setMarginStart(cast(int) x + 18);
+        gizmoTip.setMarginTop(cast(int) y + 18);
+        gizmoTip.setVisible(true);
+    }
+
+    void cancelTransform()
+    {
+        if (viewport is null || transformBar is null)
+            return;
+        viewport.stopGizmo();
+        transformBar.setVisible(false);
+        gizmoTip.setVisible(false);
+    }
+
+    /// Writes the move or turn into the part's code (or nothing, if the part
+    /// did not move), and takes the frame or rings away.
+    void applyTransform()
+    {
+        if (viewport.gizmo == Viewport.Gizmo.none)
+            return;
+        Turn[] steps;
+        if (viewport.gizmo == Viewport.Gizmo.move)
+        {
+            if (viewport.gizmoMove.length > 0)
+                steps ~= Turn("move", viewport.gizmoMove);
+        }
+        else
+        {
+            // all the turns, in order, as one: the angles about X, Y and Z
+            import hackerscad.tool.codegen : turnMatrix, turnAngles;
+            double[3][3] m = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+            foreach (t; viewport.gizmoTurns)
+            {
+                Vec3 e;
+                e[t.axis] = t.angle;
+                auto r = turnMatrix(e);
+                double[3][3] p;
+                foreach (row; 0 .. 3)
+                    foreach (col; 0 .. 3)
+                    {
+                        p[row][col] = 0;
+                        foreach (q; 0 .. 3)
+                            p[row][col] += r[row][q] * m[q][col];
+                    }
+                m = p;
+            }
+            auto angles = turnAngles(m);
+            if (angles.length > 0)
+                steps ~= Turn("rotate", angles);
+        }
+        if (steps.length == 0)
+            return cancelTransform();
+        if (auto problem = writeTransforms(transformPartName, steps, viewport.gizmoCentre))
+        {
+            info(problem);
+            return cancelTransform();
+        }
+        viewport.stopGizmo(true);
+        transformBar.setVisible(false);
+        gizmoTip.setVisible(false);
+    }
+
+    /// A move (by v, mm) or a turn (v the angles about X, Y, Z, degrees).
+    struct Turn
+    {
+        string kind;
+        Vec3 v;
+    }
+
+    /// Moves (kind "move", by v in mm) or turns (kind "rotate", v the angles
+    /// in degrees, about `around`) part `name` in the code; the problem, or null.
+    string writeTransform(string name, string kind, Vec3 v, Vec3 around) =>
+        writeTransforms(name, [Turn(kind, v)], around);
+
+    /// The moves and turns one after the other, in one change of the code.
+    string writeTransforms(string name, Turn[] steps, Vec3 around)
+    {
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        try
+        {
+            import hackerscad.tool.codegen : Edit;
+            auto before = text(), after = before;
+            foreach (st; steps)
+                after = transformPart(after, path, name, st.kind, st.v, around).apply(after);
+            // only what changed is replaced: between what both texts start and end with
+            size_t head, tail;
+            while (head < before.length && head < after.length && before[head] == after[head])
+                head++;
+            while (tail < before.length - head && tail < after.length - head
+                && before[$ - 1 - tail] == after[$ - 1 - tail])
+                tail++;
+            Edit e;
+            e.offset = head;
+            e.length = before.length - head - tail;
+            e.text = after[head .. $ - tail];
+            e.selectOffset = after.length - tail;
+            applyEdit(e);
+            viewport.setSelection(null);
+            info("");
+            return null;
+        }
+        catch (CodegenException e)
+            return e.msg;
+        catch (HcadError e)
+            return "fix the errors in the code first: " ~ e.msg;
+    }
+
     void buildSectionBar()
     {
         buildModeBar();
@@ -2346,6 +2567,7 @@ private:
         sectionPlane.setSelected(0);
         sectionFlip.setActive(false);
         sectionFlipped = false;
+        cancelTransform();
         inspectToggle.setActive(false);
         sketchToggle.setActive(false);
         rotateMode.setActive(true);
@@ -2805,6 +3027,8 @@ private:
             entries ~= G("Export " ~ name, [I("3MF…", () => exportFile("3mf", name)),
                 I("STL…", () => exportFile("stl", name)), I("STEP…", () => exportFile("step", name))]);
         }
+        entries ~= I("Move…", () => startTransform(Viewport.Gizmo.move, contextHit.part));
+        entries ~= I("Rotate…", () => startTransform(Viewport.Gizmo.rotate, contextHit.part));
         entries ~= I("Hide " ~ part.name, () => setPartVisible(contextHit.part, false));
         if (last.parts.length > 1)
             entries ~= I("Show only " ~ part.name, () {
