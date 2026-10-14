@@ -240,6 +240,7 @@ void page9()
     appendSource(check9);
     shot("09-if", lineOf("if (drainage)"));
     req("set", `{"params": {"size": 50}}`);
+    req("test", `{}`);   // F5: the window runs the unittests when asked
     shot("09-check", lineOf("unittest"));
     req("set", `{"preset": ""}`);
     req("set", `{"preset": "basil"}`);

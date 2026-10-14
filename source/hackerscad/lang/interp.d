@@ -116,6 +116,9 @@ struct EvalResult
     TraceEntry[] trace;       /// with Interp.recordTrace: the geometry each call made
     LogLine[] log;
     Diagnostic[] diagnostics;   /// warnings and failed unittests
+    size_t unittests;           /// how many the model has
+    bool unittestsRan;          /// whether they ran (Interp.runUnittests)
+    size_t unittestsFailed;     /// how many of them failed
 }
 
 /// The stack of the thread a model is evaluated on.
@@ -161,6 +164,8 @@ final class Interp
     string[] presetNames;
     FeatureInfo[] features;
     ObjectVal[] sketches;     /// sketches created by the run, for the GUI
+    /// Whether the model's unittests run (the window: only when asked, F5).
+    bool runUnittests = true;
     /// Records in `trace` the geometry the calls of the evaluated file make
     /// (the GUI's Inspect); off by default, it costs time and memory.
     bool recordTrace;
@@ -396,17 +401,23 @@ final class Interp
             diagnostics ~= Diagnostic(Severity.warning, Code.undefined, "the model has no @part function: nothing to export",
                 Span(path, 1, 1));
 
-        // unittests are design checks: failures are reported, geometry is kept
-        if (mod.unittests.length)
+        // unittests are design checks: failures are reported, geometry is kept;
+        // the window runs them when asked (F5), not at every change
+        r.unittests = mod.unittests.length;
+        r.unittestsRan = runUnittests && mod.unittests.length > 0;
+        if (r.unittestsRan)
             stage("checks (unittest)");
-        foreach (s; mod.unittests)
+        foreach (s; runUnittests ? mod.unittests : null)
         {
+            immutable before = diagnostics.length;
             try
                 execBlock(s.body, new Env(mod.env, mod));
             catch (HcadError e)
                 diagnostics ~= e.diag;
             catch (KernelException e)
                 diagnostics ~= Diagnostic(Severity.error, Code.kernel, e.msg, s.span);
+            if (diagnostics.length > before)
+                r.unittestsFailed++;
         }
 
         r.params = params;

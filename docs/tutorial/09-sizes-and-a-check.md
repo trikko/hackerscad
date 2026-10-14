@@ -59,8 +59,10 @@ holes go.
 ## A check
 
 Some sizes do not make sense: a planter so small that the tank holds almost no
-water. A **unittest** is a block of checks that runs every time the model is
-built. Add it at the end of the file:
+water. A **unittest** is a block of checks about the model. In the window it
+runs when you ask, with **F5** or the bug button at the top right of the
+console (its checks can take a while, so not at every change), and on its own
+before an export; `hcad check` always runs it. Add it at the end of the file:
 
 ```d
 unittest
@@ -80,8 +82,11 @@ unittest
   message shows in the console and in a red banner over the view, and the
   line is marked in the code.
 
-The console now says *the tank holds about 45 ml of water*. Set **size** to
-50 in the panel: the check fails and says why.
+A yellow dot on the bug says the checks have not run yet. Press **F5**: the
+console says *the tank holds about 45 ml of water* and the dot goes. Set
+**size** to 50 in the panel: the yellow dot is back, the checks have not run
+on this size; press **F5** again and the check fails and says why (the dot
+turns red).
 
 ![The check failing](img/09-check.png)
 

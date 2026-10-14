@@ -74,7 +74,7 @@ basic construct once, with comments saying what each makes appear; in the applic
   Solid jaws() => clip().halves(cutPlane).above; // jaws1, jaws2: the side above is two bodies
   ```
 - **Colours** are CSS names (`"steelblue"`), hackerscad's own bright colours, alike in brightness under the view's light and offered by the 3D view's right-click menu (`"Sky Pop"` — the default —, `"Blue Pop"`, `"Cyan Pop"`, `"Violet Pop"`, `"Pink Pop"`, `"Rose Pop"`, `"Red Pop"`, `"Orange Pop"`, `"Yellow Pop"`, `"White Pop"`, `"Gray Pop"`: with the space, `"Pink Pop"` is not the web's `"pink"`), `"#RRGGBB"`, `"#RRGGBBAA"` (the last byte is the opacity) or `rgb(r, g, b)` with 0…255 channels, `rgb(r, g, b, alpha: 0.5)`. `solid.color("orange", alpha: 0.5)` works too.
-- **`unittest { assert(…); }`** blocks are design checks. They run after evaluation; a failure does not discard the geometry, but is reported in the GUI, the CLI and to agents.
+- **`unittest { assert(…); }`** blocks are design checks. They run after evaluation; a failure does not discard the geometry, but is reported in the GUI, the CLI and to agents. `hcad check`, `hcad render` and the exports run them every time; the window runs them when asked (F5, the bug button over the console, `hcad_gui_test` for agents) and before an export, not at every change.
 - **Solids and booleans:**
   - `a + b` union, `a - b` difference, `a & b` intersection; `s += x` inside functions.
   - `hull(a, b, …)` or `hull([a, b, …])`: the smallest convex shape around solids and profiles (two spheres make a capsule, four cylinders a plate with round corners); profiles in one plane give a profile, `hull(circle(r: 4.mm), circle(r: 4.mm).move(x: 20.mm))` a slot. Curved surfaces become flat facets within 0.05 mm.

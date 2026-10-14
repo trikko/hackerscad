@@ -32,6 +32,7 @@ struct Request
     string preset;
     double tolerance = 0.02;
     ulong generation;
+    bool tests;   /// run the model's unittests too
 }
 
 /// GPU-ready geometry of one part.
@@ -83,6 +84,9 @@ struct Outcome
     string[string] sources;   /// module path → source, to render diagnostics
     long milliseconds;
     size_t cacheHits, cacheMisses;
+    size_t unittests;          /// how many the model has
+    bool unittestsRan;         /// whether they ran this time
+    size_t unittestsFailed;
 }
 
 final class Evaluator
@@ -264,6 +268,7 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     it.cancel = cancel;
     it.onStage = stage;
     it.recordTrace = true;
+    it.runUnittests = req.tests;
     try
     {
         auto r = it.runSource(req.source, absolutePath(req.path));
@@ -297,6 +302,9 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
         prepared = still;
         o.params = r.params;
         o.presets = r.presets;
+        o.unittests = r.unittests;
+        o.unittestsRan = r.unittestsRan;
+        o.unittestsFailed = r.unittestsFailed;
         o.features = r.features;
         o.trace = r.trace;
         o.log = r.log;

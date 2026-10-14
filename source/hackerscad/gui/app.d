@@ -505,6 +505,9 @@ final class MainWindow
     WindowTitle title;
     import gtk.spinner : Spinner;
     Spinner busyIndicator;
+    Button testsButton;   /// runs the model's unittests (F5)
+    Box testsDot;         /// over its corner: yellow, not run since the last change; red, one failed
+    bool testsNext;       /// the next evaluation runs them
     string statusText;   /// the latest program message (for the control socket)
     ToggleButton paramsToggle, consoleToggle, codeToggle, viewToggle, rotateMode, panMode, sketchToggle, sectionToggle, inspectToggle;
     Box sectionBar, viewBar;
@@ -555,8 +558,9 @@ final class MainWindow
         header.packStart(exportMenu());
         header.packStart(examplesMenu());
         busyIndicator = new Spinner;
-        busyIndicator.setTooltipText("Evaluating the model");
-        busyIndicator.setVisible(false);
+        // always in its place, drawn only while it spins: shown and hidden, it
+        // pushed the window's name aside at every evaluation
+        busyIndicator.setTooltipText(null);
         consoleToggle = toggle("utilities-terminal-symbolic", "Show console (" ~ shortcutKey ~ "+J)", true);
         paramsToggle = toggle("sidebar-show-right-symbolic", "Show parameters (F9)", true);
         codeToggle = toggle("sidebar-show-symbolic", "Show code (F7)", true);
@@ -714,7 +718,7 @@ final class MainWindow
         // Fit on its own, the views in one menu: room for what a click picks
         auto views = new Box(Orientation.Horizontal, 0);
         views.addCssClass("linked");
-        views.append(textButton("Fit", "Frame the model (F5)", () => viewport.fit()));
+        views.append(textButton("Fit", "Frame the model (F6)", () => viewport.fit()));
         {
             import gio.menu : Menu;
             auto list = new Menu;
@@ -868,8 +872,32 @@ final class MainWindow
         auto consoleOverlay = new Overlay;
         consoleOverlay.setChild(consoleScroll);
         consoleOverlay.addOverlay(consoleHint);
+        // the unittests, run when asked: their results come here
+        testsButton = new Button;
+        testsButton.setIconName("hcad-test-symbolic");
+        testsButton.addCssClass("flat");
+        testsButton.addCssClass("hcad-tests");
+        testsButton.setMarginEnd(4);
+        testsButton.setSensitive(false);
+        testsButton.setTooltipText("Run the model's unittests (F5): it has none");
+        testsButton.connectClicked(() => runTests());
+        testsDot = new Box(Orientation.Horizontal, 0);
+        testsDot.addCssClass("hcad-tests-dot");
+        testsDot.setHalign(Align.End);
+        testsDot.setValign(Align.Start);
+        testsDot.setMarginTop(3);
+        testsDot.setMarginEnd(7);
+        testsDot.setCanTarget(false);
+        testsDot.setVisible(false);
+        auto testsCorner = new Overlay;
+        testsCorner.setChild(testsButton);
+        testsCorner.addOverlay(testsDot);
+        consoleTitle.setHexpand(true);
+        auto consoleHead = new Box(Orientation.Horizontal, 0);
+        consoleHead.append(consoleTitle);
+        consoleHead.append(testsCorner);
         auto consolePane = new Box(Orientation.Vertical, 0);
-        consolePane.append(consoleTitle);
+        consolePane.append(consoleHead);
         consolePane.append(consoleOverlay);
         consolePane.setSizeRequest(-1, 70);
         editorScroll.setSizeRequest(300, 200);
@@ -1097,7 +1125,7 @@ final class MainWindow
         action(app, "export-3mf-one", [], () => exportFile("3mf", null, true));
         foreach (e; examples)
             action(app, "example-" ~ e.name, [], exampleAction(e.name));
-        action(app, "fit", ["F5"], () => viewport.fit());
+        action(app, "fit", ["F6"], () => viewport.fit());
         action(app, "view-iso", [], () => viewport.setView(ViewPreset.iso));
         action(app, "view-top", [], () => viewport.setView(ViewPreset.top));
         action(app, "view-front", [], () => viewport.setView(ViewPreset.front));
@@ -1119,6 +1147,7 @@ final class MainWindow
                 inspectToggle.setActive(!inspectToggle.getActive());
         });
         action(app, "about", [], &showAbout);
+        action(app, "run-tests", ["F5"], &runTests);
         action(app, "cheatsheet", ["F1"], &showCheatsheet);
         action(app, "tutorial", [], () => openUri(appWebsite ~ "/blob/main/docs/TUTORIAL.md"));
         action(app, "reference", [], () => openUri(appWebsite ~ "/blob/main/docs/LANGUAGE.md"));
@@ -1513,7 +1542,7 @@ private:
             Source.remove(debounce);
         debounce = timeoutAdd(PRIORITY_DEFAULT, delayMs, () {
             debounce = 0;
-            busyIndicator.setVisible(true);
+            busyIndicator.setTooltipText("Evaluating the model");
             busyIndicator.start();
             startProgress();
             Request r;
@@ -1521,13 +1550,55 @@ private:
             r.path = path;
             r.overrides = params.overrides.dup;
             r.preset = params.preset;
+            r.tests = testsNext;
+            testsNext = false;
             evaluator.request(r);
             return false;
         });
     }
 
+    /// Runs the model's unittests with the next evaluation (F5, the bug
+    /// button, an export, the socket's "test"): the window does not run them
+    /// at every change, they can take seconds.
+    void runTests()
+    {
+        testsNext = true;
+        scheduleEvaluation(0);
+    }
+
+    /// The bug button after an evaluation: how many unittests and how they
+    /// went, or that they have not run since the code or a value changed.
+    void showTests(Outcome o)
+    {
+        testsDot.removeCssClass("hcad-tests-failed");
+        testsDot.setVisible(o.unittests > 0 && (!o.unittestsRan || o.unittestsFailed > 0));
+        testsButton.setSensitive(o.unittests > 0);
+        immutable n = o.unittests == 1 ? "its unittest" : format("its %d unittests", o.unittests);
+        if (o.unittests == 0)
+            testsButton.setTooltipText("Run the model's unittests (F5): it has none");
+        else if (!o.unittestsRan)
+        {
+            testsButton.setTooltipText("Run " ~ n ~ " (F5): not run since the last change");
+        }
+        else if (o.unittestsFailed == 0)
+        {
+            testsButton.setTooltipText(format("%s passed (F5 runs them again)", o.unittests == 1 ? "The unittest"
+                : format("All %d unittests", o.unittests)));
+            note(o.unittests == 1 ? "unittest: passed" : format("unittests: all %d passed", o.unittests));
+        }
+        else
+        {
+            testsDot.addCssClass("hcad-tests-failed");
+            testsButton.setTooltipText(format("%d of %d unittests failed: see the console (F5 runs them again)",
+                o.unittestsFailed, o.unittests));
+            note(format("unittests: %d of %d failed", o.unittestsFailed, o.unittests));
+        }
+    }
+
     void showOutcome(Outcome o)
     {
+        if (o.ok)
+            showTests(o);
         // a failed evaluation leaves the last good model on screen: it is
         // also what Export saves
         if (!o.ok)
@@ -1585,7 +1656,7 @@ private:
         }
         modelOutput = log;
         busyIndicator.stop();
-        busyIndicator.setVisible(false);
+        busyIndicator.setTooltipText(null);
         stopProgress();
         showProblem(haveFirst, first, o.ok);
 
@@ -1978,7 +2049,7 @@ private:
         immutable seconds = (MonoTime.currTime - evalStart).total!"msecs" / 1000.0;
         evaluator.cancel();
         busyIndicator.stop();
-        busyIndicator.setVisible(false);
+        busyIndicator.setTooltipText(null);
         stopProgress();
         note(format("evaluation stopped after %.1f s (at %s): it runs again at the next edit", seconds, stage));
     }
@@ -5202,6 +5273,9 @@ private:
         import std.algorithm : count, find;
         if (last.parts.length == 0)
             return;
+        // the unittests, if they have not run on this model: while the file is chosen
+        if (last.unittests > 0 && !last.unittestsRan)
+            runTests();
         exportFormat = ext;
         auto format = exportFormats.find!(f => f.ext == ext)[0];
         // several parts in STL: a zip, one file each

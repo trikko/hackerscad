@@ -987,6 +987,18 @@ mixin template ControlMethods()
                 reply(JSONValue(["stopped": was]), null);
                 return;
             }
+        case "test":
+            {
+                // runs the model's unittests, as F5: how many, how many failed, the state (problems)
+                runTests();
+                whenIdle(() {
+                    JSONValue j = ["unittests": last.unittests, "failed": last.unittestsFailed];
+                    j["ran"] = last.unittestsRan;
+                    j["state"] = state();
+                    reply(j, null);
+                });
+                return;
+            }
         case "about":
             // {"debug": true}: the debug information About copies, without opening it
             if ("debug" in p && p["debug"].type == JSONType.true_)
