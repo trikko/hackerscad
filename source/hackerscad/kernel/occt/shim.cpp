@@ -95,6 +95,8 @@
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <ShapeFix_Solid.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <ShapeUpgrade_FaceDivideArea.hxx>
+#include <ShapeBuild_ReShape.hxx>
 #include <BRepTools_History.hxx>
 #include <memory>
 #include <TopoDS_Shell.hxx>
@@ -1710,6 +1712,46 @@ static bool plain_triangle(const TopoDS_Face &face, gp_Pnt p[3])
     return true;
 }
 
+// The area of a face's triangulation, 0 without one.
+static double mesh_area(const TopoDS_Face &face)
+{
+    TopLoc_Location loc;
+    auto tri = BRep_Tool::Triangulation(face, loc);
+    if (tri.IsNull())
+        return 0;
+    double a = 0;
+    for (int i = 1; i <= tri->NbTriangles(); i++) {
+        int n1, n2, n3;
+        tri->Triangle(i).Get(n1, n2, n3);
+        a += gp_Vec(tri->Node(n1), tri->Node(n2)).Crossed(gp_Vec(tri->Node(n1), tri->Node(n3))).Magnitude() / 2;
+    }
+    return a;
+}
+
+// WORKAROUND (OpenCascade 7.9.3, BRepMesh): on long freeform faces, such as
+// the flanks of a thread swept along a helix, the mesher can lose a face's
+// trimming loop and cover more than the face, with triangles folded over
+// each other, at some sizes only (an M8 × 25 thread, not × 22 or × 28),
+// though the solid is valid. meshed_badly finds those faces (the area of
+// their mesh differs from theirs) and hc_tessellate meshes them divided.
+// To see whether a newer OpenCascade still needs it: make meshed_badly
+// return false and run the M8 × 25 unittest in lang/tests.d; if it passes,
+// this, mesh_area and the division loop in hc_tessellate can go.
+
+// Whether the mesher got a face wrong (see the WORKAROUND above). Analytic
+// faces mesh well and are not checked.
+static bool meshed_badly(const TopoDS_Face &face)
+{
+    if (BRepAdaptor_Surface(face, false).GetType() <= GeomAbs_Torus)
+        return false;
+    // the plain (Gauss) integration: much faster than the adaptive one, and
+    // close enough for faces meshed 5% too large and more
+    GProp_GProps g;
+    BRepGProp::SurfaceProperties(face, g);
+    const double exact = g.Mass(), meshed = mesh_area(face);
+    return std::abs(meshed - exact) > std::max(0.01, 0.02 * exact);
+}
+
 hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angular_deflection)
 {
     return guarded<>((hc_mesh *)nullptr, [&]() -> hc_mesh * {
@@ -1732,6 +1774,53 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
         if (anyRest)
             BRepMesh_IncrementalMesh(rest, linear_deflection, false, angular_deflection, true);
 
+        // the triangles of each face come from these faces: itself, or the
+        // pieces it is divided into when the mesher got it wrong
+        std::vector<std::vector<TopoDS_Face>> pieces(faces.Extent());
+        std::vector<int> bad;
+        for (int f = 1; f <= faces.Extent(); f++) {
+            pieces[f - 1] = {TopoDS::Face(faces(f))};
+            if (!isPlain[f - 1] && meshed_badly(TopoDS::Face(faces(f))))
+                bad.push_back(f);
+        }
+        // WORKAROUND (see meshed_badly): the faces meshed wrong are divided,
+        // in smaller pieces at each try, and the whole solid meshed again:
+        // through one context, the edges they share with their neighbours
+        // are divided in those too, so that the mesh stays closed. The solid
+        // itself is left as it is.
+        for (int parts = 8; !bad.empty() && parts <= 128; parts *= 4) {
+            Handle(ShapeBuild_ReShape) context = new ShapeBuild_ReShape;
+            for (int f : bad) {
+                const TopoDS_Face &face = TopoDS::Face(faces(f));
+                GProp_GProps g;
+                BRepGProp::SurfaceProperties(face, g);
+                ShapeUpgrade_FaceDivideArea divide(face);
+                divide.SetContext(context);
+                divide.MaxArea() = g.Mass() / parts;
+                divide.Perform();
+                context->Replace(face, divide.Result());
+            }
+            const TopoDS_Shape divided = context->Apply(s->shape);
+            BRepMesh_IncrementalMesh(divided, linear_deflection, false, angular_deflection, true);
+            std::vector<int> still;
+            for (int f = 1; f <= faces.Extent(); f++) {
+                if (isPlain[f - 1])
+                    continue;
+                std::vector<TopoDS_Face> mine;
+                for (TopExp_Explorer e(context->Value(faces(f)), TopAbs_FACE); e.More(); e.Next())
+                    mine.push_back(TopoDS::Face(e.Current()));
+                bool wrong = false;
+                if (std::find(bad.begin(), bad.end(), f) != bad.end())
+                    for (const TopoDS_Face &piece : mine)
+                        wrong = wrong || meshed_badly(piece);
+                if (wrong)
+                    still.push_back(f);
+                if (!mine.empty())
+                    pieces[f - 1] = mine;
+            }
+            bad = still;
+        }
+
         int nv = 0, nt = 0;
         for (int f = 1; f <= faces.Extent(); f++) {
             if (isPlain[f - 1]) {
@@ -1739,12 +1828,14 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
                 nt += 1;
                 continue;
             }
-            TopLoc_Location loc;
-            auto tri = BRep_Tool::Triangulation(TopoDS::Face(faces(f)), loc);
-            if (tri.IsNull())
-                continue;
-            nv += tri->NbNodes();
-            nt += tri->NbTriangles();
+            for (const TopoDS_Face &piece : pieces[f - 1]) {
+                TopLoc_Location loc;
+                auto tri = BRep_Tool::Triangulation(piece, loc);
+                if (tri.IsNull())
+                    continue;
+                nv += tri->NbNodes();
+                nt += tri->NbTriangles();
+            }
         }
 
         hc_mesh *m = new hc_mesh{nv, new float[nv * 3], nt, new int[nt * 3], faces.Extent(),
@@ -1763,30 +1854,31 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
                 vbase += 3;
                 continue;
             }
-            const TopoDS_Face &face = TopoDS::Face(faces(f));
-            TopLoc_Location loc;
-            auto tri = BRep_Tool::Triangulation(face, loc);
-            if (tri.IsNull())
-                continue;
-            const gp_Trsf &t = loc.Transformation();
-            for (int i = 1; i <= tri->NbNodes(); i++) {
-                gp_Pnt p = tri->Node(i).Transformed(t);
-                float *v = m->verts + (vbase + i - 1) * 3;
-                v[0] = (float)p.X();
-                v[1] = (float)p.Y();
-                v[2] = (float)p.Z();
+            for (const TopoDS_Face &face : pieces[f - 1]) {
+                TopLoc_Location loc;
+                auto tri = BRep_Tool::Triangulation(face, loc);
+                if (tri.IsNull())
+                    continue;
+                const gp_Trsf &t = loc.Transformation();
+                for (int i = 1; i <= tri->NbNodes(); i++) {
+                    gp_Pnt p = tri->Node(i).Transformed(t);
+                    float *v = m->verts + (vbase + i - 1) * 3;
+                    v[0] = (float)p.X();
+                    v[1] = (float)p.Y();
+                    v[2] = (float)p.Z();
+                }
+                bool reversed = face.Orientation() == TopAbs_REVERSED;
+                for (int i = 1; i <= tri->NbTriangles(); i++) {
+                    int a, b, c;
+                    tri->Triangle(i).Get(a, b, c);
+                    if (reversed)
+                        std::swap(b, c);
+                    m->tris[ti++] = vbase + a - 1;
+                    m->tris[ti++] = vbase + b - 1;
+                    m->tris[ti++] = vbase + c - 1;
+                }
+                vbase += tri->NbNodes();
             }
-            bool reversed = face.Orientation() == TopAbs_REVERSED;
-            for (int i = 1; i <= tri->NbTriangles(); i++) {
-                int a, b, c;
-                tri->Triangle(i).Get(a, b, c);
-                if (reversed)
-                    std::swap(b, c);
-                m->tris[ti++] = vbase + a - 1;
-                m->tris[ti++] = vbase + b - 1;
-                m->tris[ti++] = vbase + c - 1;
-            }
-            vbase += tri->NbNodes();
         }
         m->face_start[faces.Extent()] = ti / 3;
         return m;

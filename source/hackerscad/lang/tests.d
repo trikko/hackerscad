@@ -997,6 +997,33 @@ unittest
 
 unittest
 {
+    // an M8 × 25 thread: OpenCascade's mesher covered more than its flanks
+    // (triangles folded over each other, 5% more area than the rod), which
+    // hc_tessellate works around by dividing those faces for the mesh
+    auto r = runModel(q{
+        import std.threads : threadedRod;
+        @part Solid rod() => threadedRod(8.mm, 1.25.mm, 25.mm);
+    });
+    auto brep = r.parts[0].solid.brep;
+    // as the 3D view and the exports mesh it
+    foreach (angular; [0.2, 0.25])
+    {
+        auto m = kernel.tessellate(brep, 0.02, angular).welded;
+        assert(m.isClosed);
+        double area = 0;
+        foreach (t; 0 .. m.tris.length / 3)
+        {
+            Vec3 v(size_t k) => Vec3(m.verts[m.tris[t * 3 + k] * 3], m.verts[m.tris[t * 3 + k] * 3 + 1],
+                m.verts[m.tris[t * 3 + k] * 3 + 2]);
+            area += (v(1) - v(0)).cross(v(2) - v(0)).length / 2;
+        }
+        assert(abs(area - kernel.area(brep)) < 0.01 * kernel.area(brep),
+            format("the mesh covers %.1f mm², the rod %.1f mm²", area, kernel.area(brep)));
+    }
+}
+
+unittest
+{
     // cut/extrude on a face of the same solid, at a point
     auto r = runModel(q{
         @part Solid a() => box(20, 20, 10).cut(circle(d: 4), on: faces.top, at: vec(5, 5, 0), depth: 3.mm);
