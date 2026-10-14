@@ -119,6 +119,15 @@ mixin template ControlMethods()
                     auto sh = v == "wireframe" ? Shading.wireframe : v == "shaded" ? Shading.shaded : Shading.edges;
                     shadingChoice[sh].setActive(true);
                 }
+                // what a click picks, as the view bar's four buttons (kept between runs)
+                if (auto v = arg("select"))
+                {
+                    import std.algorithm : countUntil;
+                    immutable at = ["part", "face", "edge", "vertex"].countUntil(v);
+                    if (at < 0)
+                        return reply(JSONValue.init, "select is part, face, edge or vertex");
+                    selectChoice[at].setActive(true);
+                }
                 // how shiny the surfaces are, as the cube's Shine choices (kept between runs)
                 if (auto v = arg("shine"))
                 {
@@ -380,7 +389,8 @@ mixin template ControlMethods()
                     double x, y;
                     if (auto problem = screenPoint(p, x, y))
                         return reply(JSONValue.init, problem);
-                    auto hit = viewport.pickAt(x, y);
+                    // whatever the user's selection mode: the face there, and an edge near the point
+                    auto hit = viewport.pickAny(x, y);
                     if (hit.part < 0)
                         return reply(JSONValue.init, "nothing under that point");
                     hit.edge = viewport.nearestEdge(hit.part, hit.face, x, y, 12);

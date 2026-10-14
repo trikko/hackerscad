@@ -24,8 +24,11 @@ bag clip is still open; we use it to try things.
    name of the one you pick into the part's `@part`; **Other…** opens a
    wheel where every hue is as bright as those, the part showing each one
    until you Apply it (or Cancel).
-2. **The view bar.** The views (Fit, Iso, Top, Front, Right); how a left drag
-   moves the view; the eye, to hide or show the parts, the ground grid and
+2. **The view bar.** Fit, and the views in the **View** menu (Iso, Top,
+   Front, Right); four buttons for what a click picks, **whole parts, faces,
+   edges or vertices** (Alt+1 to Alt+4; the choice is kept): the right-click
+   menu offers what fits it, picked faces are striped, a picked part dotted;
+   how a left drag moves the view; the eye, to hide or show the parts, the ground grid and
    the axes; the cube, to choose how the parts are drawn; the section, to cut
    the model and look inside (parallel to the face you picked, if any; drag
    the squares at the plane's corners to move it, the X past them closes it); the magnifying glass, to see what a line

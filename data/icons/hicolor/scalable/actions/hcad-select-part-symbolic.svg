@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- select whole parts: a solid cube (filled shapes only, for symbolic recolouring) -->
+  <path fill="#2e3436" d="M8 1 L14 4.5 L14 11.5 L8 15 L2 11.5 L2 4.5 Z"/>
+</svg>

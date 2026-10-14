@@ -762,6 +762,7 @@ JSONValue[] toolList()
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe"]}, `
             ~ `"printability": {"type": "boolean"}, `
+            ~ `"select": {"type": "string", "enum": ["part", "face", "edge", "vertex"], "description": "what a click (and hcad_gui_pick, hcad_gui_menu) picks, as the view bar's selection buttons; the right-click menu offers what fits it (kept between runs)"}, `
             ~ `"shine": {"type": "string", "enum": ["none", "normal", "high"], "description": "how shiny the surfaces are: none matte (each flat face one even tone), normal a small highlight on curves, high a shiny material (kept between runs)"}, `
             ~ `"overhang_angle": {"type": "number", "description": "printability: degrees from a wall (45)"}, `
             ~ `"min_wall": {"type": "number", "description": "printability: thinnest wall in mm (0.8)"}, `

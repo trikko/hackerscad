@@ -49,6 +49,15 @@ enum Shine
     high,       /// a shiny material (a matcap): soft highlights on every curve
 }
 
+/// What a click in the view picks: whole parts, faces, edges or vertices.
+enum SelectMode
+{
+    part,
+    face,
+    edge,
+    vertex,
+}
+
 /// What a left-button drag does (right always rotates, middle always pans).
 enum DragMode
 {
@@ -62,6 +71,7 @@ struct Hit
     int part = -1;
     int face = -1;
     int edge = -1;      /// B-rep edge near the pointer, if any
+    int vertex = -1;    /// corner of the part (Viewport.vertices) picked, if any
     Vec3 point;
     Vec3 normal;            /// of the triangle hit
     double x = 0, y = 0;    /// window coordinates of the click
@@ -274,13 +284,13 @@ final class Viewport
             // a left click without movement picks what is under the pointer
             if (!dragging && dragButton == 1 && onPick !is null)
             {
-                auto h = pick(startX, startY);
+                auto h = pickSelect(startX, startY);
                 h.shift = startShift;
                 onPick(h);
             }
             // a right click without movement opens the context menu
             if (!dragging && dragButton == 3 && onContext !is null)
-                onContext(pick(startX, startY), startX, startY);
+                onContext(pickSelect(startX, startY), startX, startY);
             dragging = false;
             updateHoverCursor();
         });
@@ -319,6 +329,7 @@ final class Viewport
     void setParts(PartMesh[] p, bool fitView)
     {
         partsVersion++;
+        vertexCache = null;
         // a part keeps its visibility by name, wherever it moves in the list
         bool[string] was;
         foreach (i, q; parts)
@@ -351,7 +362,8 @@ final class Viewport
         redraw();
     }
 
-    static bool sameItem(Hit a, Hit b) => a.part == b.part && a.edge == b.edge && (a.edge >= 0 || a.face == b.face);
+    static bool sameItem(Hit a, Hit b) => a.part == b.part && a.edge == b.edge && a.vertex == b.vertex
+        && (a.edge >= 0 || a.vertex >= 0 || a.face == b.face);
 
     /// Shift+click: adds the item to the selection, or removes it if already there.
     void toggleSelect(Hit h)
@@ -383,6 +395,128 @@ final class Viewport
         redraw();
     }
 
+    /// What a click picks.
+    public SelectMode selectMode = SelectMode.part;
+
+    public void setSelectMode(SelectMode m)
+    {
+        selectMode = m;
+        hover = Hit.init;
+        redraw();
+    }
+
+    private Vec3[][] vertexCache;   /// per part, its corners (filled when first asked)
+
+    /// The corners of part `i`: where its edges end, each once.
+    Vec3[] vertices(size_t i)
+    {
+        if (i >= parts.length)
+            return null;
+        if (vertexCache.length != parts.length)
+            vertexCache = new Vec3[][parts.length];
+        if (vertexCache[i] is null)
+        {
+            Vec3[] r;
+            void add(Vec3 v)
+            {
+                foreach (q; r)
+                    if ((q - v).length < 1e-6)
+                        return;
+                r ~= v;
+            }
+            foreach (e; parts[i].edgeInfo)
+            {
+                add(e.start);
+                add(e.end);
+            }
+            vertexCache[i] = r.length ? r : [parts[i].bbox.center];
+        }
+        return vertexCache[i];
+    }
+
+    /// Where vertex `v` of part `i` is drawn (a previewed part where it goes).
+    Vec3 vertexAt(size_t i, int v)
+    {
+        auto vs = vertices(i);
+        if (v < 0 || v >= vs.length)
+            return Vec3(0, 0, 0);
+        return previewing(i) ? placed(vs[v]) : vs[v];
+    }
+
+    /// The vertex of a part nearest to window point (x, y) within `within`
+    /// pixels (`part` -1: of any part shown).
+    Hit nearestVertex(int part, double x, double y, double within = 12)
+    {
+        Hit best;
+        double bestD = within;
+        foreach (i; 0 .. parts.length)
+        {
+            if ((part >= 0 && i != part) || isHidden(i))
+                continue;
+            foreach (k, v; vertices(i))
+            {
+                double px, py;
+                if (!project(previewing(i) ? placed(v) : v, px, py))
+                    continue;
+                immutable d = sqrt((px - x) ^^ 2 + (py - y) ^^ 2);
+                // a corner behind the part is not picked (in wireframe it shows, and is)
+                if (d < bestD && (shading == Shading.wireframe || seen(previewing(i) ? placed(v) : v)))
+                {
+                    bestD = d;
+                    best.part = cast(int) i;
+                    best.vertex = cast(int) k;
+                    best.point = previewing(i) ? placed(v) : v;
+                }
+            }
+        }
+        best.x = x;
+        best.y = y;
+        return best;
+    }
+
+    /// What a click at (x, y) picks in the current mode: a part, a face, an
+    /// edge (the nearest, within reach even just off the part) or a vertex.
+    Hit pickSelect(double x, double y)
+    {
+        auto h = pick(x, y);
+        final switch (selectMode)
+        {
+        case SelectMode.part:
+            h.face = h.edge = h.vertex = -1;
+            return h;
+        case SelectMode.face:
+            h.edge = h.vertex = -1;
+            return h;
+        case SelectMode.edge:
+            {
+                // the part hit first, else any part's edge near the pointer
+                int edge = h.part >= 0 ? nearestEdge(h.part, -1, x, y, 14, true) : -1;
+                if (edge < 0)
+                    foreach (i; 0 .. parts.length)
+                        if (!isHidden(i) && (edge = nearestEdge(cast(int) i, -1, x, y, 14, true)) >= 0)
+                        {
+                            h.part = cast(int) i;
+                            break;
+                        }
+                if (edge < 0)
+                    return Hit(-1, -1, -1, -1, Vec3(0, 0, 0), Vec3(0, 0, 0), x, y);
+                h.edge = edge;
+                h.face = h.vertex = -1;
+                return h;
+            }
+        case SelectMode.vertex:
+            {
+                auto v = nearestVertex(h.part, x, y);
+                if (v.part < 0 && h.part >= 0)
+                    v = nearestVertex(-1, x, y);
+                else if (v.part < 0)
+                    v = nearestVertex(-1, x, y);
+                v.shift = h.shift;
+                return v;
+            }
+        }
+    }
+
     /// Everything selected, in picking order (all on one part).
     Hit[] selection() => selected.part >= 0 ? others ~ selected : null;
 
@@ -410,8 +544,11 @@ final class Viewport
         redraw();
     }
 
-    /// What a click at view coordinates (x, y) would pick.
-    Hit pickAt(double x, double y) => pick(x, y);
+    /// What a click at view coordinates (x, y) would pick, in the selection mode.
+    Hit pickAt(double x, double y) => pickSelect(x, y);
+
+    /// What is under view coordinates (x, y), whatever the selection mode: the part and face hit.
+    Hit pickAny(double x, double y) => pick(x, y);
 
     /// Shows the solid left by a feature, with its new faces highlighted
     /// and the final parts as ghosts.
@@ -1573,32 +1710,57 @@ final class Viewport
 
     /// The edge of the part nearest to window point (x, y), among the edges
     /// of `face` (all edges when face is -1), if closer than `within` pixels.
-    int nearestEdge(int part, int face, double x, double y, double within = 10)
+    int nearestEdge(int part, int face, double x, double y, double within = 10, bool visibleOnly = false)
     {
         if (part < 0 || part >= parts.length)
             return -1;
         auto p = parts[part];
-        int best = -1;
-        double bestD = within;
+        // each edge's nearest point on screen, and where that is in space
+        struct Near { double d; int edge; Vec3 at; }
+        Near[] near;
         foreach (i, e; p.edgeInfo)
         {
             if (face >= 0 && i < p.edgeFaces.length && p.edgeFaces[i][0] != face && p.edgeFaces[i][1] != face)
                 continue;
             auto pts = edgePoints(part, e);
+            Near n = Near(within, -1);
             foreach (k; 0 .. pts.length - 1)
             {
                 double ax, ay, bx, by;
                 if (!project(pts[k], ax, ay) || !project(pts[k + 1], bx, by))
                     continue;
                 immutable d = segmentDistance(x, y, ax, ay, bx, by);
-                if (d < bestD)
+                if (d < n.d)
                 {
-                    bestD = d;
-                    best = cast(int) i;
+                    immutable dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+                    immutable t = l2 > 0 ? clamp(((x - ax) * dx + (y - ay) * dy) / l2, 0.0, 1.0) : 0;
+                    n = Near(d, cast(int) i, pts[k] + (pts[k + 1] - pts[k]) * t);
                 }
             }
+            if (n.edge >= 0)
+                near ~= n;
         }
-        return best;
+        import std.algorithm : sort;
+        near.sort!((a, b) => a.d < b.d);
+        // the nearest that nothing hides (in wireframe the hidden ones show, and count)
+        foreach (n; near)
+            if (!visibleOnly || shading == Shading.wireframe || seen(previewing(part) ? placed(n.at) : n.at))
+                return n.edge;
+        return -1;
+    }
+
+    /// Whether point `p` (on a part's surface, an edge or a corner) is in
+    /// sight: no surface between it and the viewer, a hair's breadth allowed.
+    bool seen(Vec3 p)
+    {
+        double x, y;
+        if (!project(p, x, y))
+            return false;
+        Vec3 o, d;
+        ray(x, y, o, d);
+        immutable along = (p - o).dot(d);
+        auto h = pick(x, y);
+        return h.part < 0 || h.distance >= along - max(0.05, along * 2e-3);
     }
 
     /// View size in logical pixels.
@@ -1876,7 +2038,9 @@ private:
             area.setCursorFromName("grab");
             return;
         }
-        auto h = pick(pointerX, pointerY);
+        // edges and vertices light up under the pointer: what a click would pick
+        auto h = selectMode == SelectMode.edge || selectMode == SelectMode.vertex ? pickSelect(pointerX, pointerY)
+            : pick(pointerX, pointerY);
         area.setCursorFromName(null);   // the ring on the surface shows what is under the pointer
         // the point under the pointer is marked on the surface
         if (h.part >= 0 || hover.part >= 0)
@@ -1891,8 +2055,22 @@ private:
     /// A small ring lying on the surface under the pointer, the same size on screen at any zoom.
     void drawHoverMark()
     {
-        if (hover.part < 0 || dragging)
+        if (hover.part < 0 || dragging || hover.part >= parts.length)
             return;
+        // orange under the pointer (picked ones are yellow)
+        immutable mark = standOut(parts[hover.part].rgb, Vec3(1.0, 0.5, 0.0), Vec3(0.3, 0.5, 1.0), 0.32);
+        if (hover.edge >= 0 && hover.edge < parts[hover.part].edgeInfo.length)
+        {
+            forPart(hover.part);
+            drawPolyline(edgePoints(hover.part, parts[hover.part].edgeInfo[hover.edge]), mark, 3);
+            forPart(-1);
+            return;
+        }
+        if (hover.vertex >= 0)
+        {
+            drawKnob(vertexAt(hover.part, hover.vertex), mark, handlePixels - 2);
+            return;
+        }
         auto n = hover.normal;
         if (n.length < 0.5)
             return;
@@ -2043,11 +2221,18 @@ private:
     {
         forPart(i);
         auto c = rgbOf(parts[i].rgb);
-        if (i == selected.part && selected.face < 0)
+        // the whole part picked: tinted and dotted (picked faces are striped)
+        immutable whole = i == selected.part && selected.face < 0 && selected.edge < 0 && selected.vertex < 0;
+        if (whole)
+        {
             c = c * 0.6 + standOut(parts[i].rgb, Vec3(1, 0.85, 0.2), Vec3(0.3, 0.5, 1.0)) * 0.4;
+            glUniform1i(uPattern, 4);
+        }
         glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
         glBindVertexArray(gpu[i].vao);
         glDrawElements(GL_TRIANGLES, gpu[i].indexCount, GL_UNSIGNED_INT, null);
+        if (whole)
+            glUniform1i(uPattern, 0);
     }
 
     /// See-through parts, after the opaque ones: blended, without writing
@@ -2544,9 +2729,12 @@ private:
                 forPart(h.part);
                 auto c = standOut(parts[h.part].rgb, Vec3(1.0, 0.78, 0.15), Vec3(0.3, 0.5, 1.0));
                 glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
+                // striped: several picked faces never look like one coloured part
+                glUniform1i(uPattern, 3);
                 glBindVertexArray(gpu[h.part].vao);
                 glDrawElements(GL_TRIANGLES, cast(int)((fs[h.face + 1] - fs[h.face]) * 3), GL_UNSIGNED_INT,
                     cast(void*)(fs[h.face] * 3 * uint.sizeof));
+                glUniform1i(uPattern, 0);
             }
         }
 
@@ -2587,7 +2775,16 @@ private:
             if (isHidden(i) || shading == Shading.shaded)
                 continue;
             forPart(i);
-            if (i == selected.part)
+            // the outline of a part picked whole (picked faces and edges show themselves);
+            // in wireframe, where no surface shows the pick, thick and yellow
+            immutable whole = i == selected.part && selected.face < 0 && selected.edge < 0 && selected.vertex < 0;
+            if (whole && wire)
+            {
+                auto c = standOut(parts[i].rgb, Vec3(1.0, 0.86, 0.0), Vec3(0.15, 0.35, 0.95), 0.32);
+                glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
+                glLineWidth(2.5);
+            }
+            else if (whole)
             {
                 auto c = standOut(parts[i].rgb, Vec3(0.75, 0.45, 0.0), Vec3(0.12, 0.3, 0.85), 0.32);
                 glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
@@ -2613,6 +2810,7 @@ private:
                 glBindVertexArray(g.outlineVao);
                 glDrawArrays(GL_LINES, 0, g.outlineCount);
             }
+            glLineWidth(1);
             if (faded)
             {
                 glDisable(GL_BLEND);
@@ -2627,11 +2825,16 @@ private:
         }
 
         forPart(-1);
+        // the picked vertices, as dots
+        foreach (h; selection())
+            if (h.vertex >= 0 && h.part >= 0 && h.part < parts.length)
+                drawKnob(vertexAt(h.part, h.vertex),
+                    standOut(parts[h.part].rgb, Vec3(1.0, 0.86, 0.0), Vec3(0.15, 0.35, 0.95), 0.32), handlePixels - 1);
         // the picked edges, thick
         foreach (h; selection())
             if (h.edge >= 0 && h.part < parts.length && h.edge < parts[h.part].edgeInfo.length)
                 drawPolyline(edgePoints(h.part, parts[h.part].edgeInfo[h.edge]),
-                    standOut(parts[h.part].rgb, Vec3(0.95, 0.45, 0.05), Vec3(0.15, 0.35, 0.95), 0.32), 4);
+                    standOut(parts[h.part].rgb, Vec3(1.0, 0.86, 0.0), Vec3(0.15, 0.35, 0.95), 0.32), 4);
 
         renderSketches();
         drawGizmo();
@@ -3451,7 +3654,8 @@ in vec3 vPos;
 uniform vec3 uColor;
 uniform vec3 uEye;
 uniform int uFlat;
-uniform int uPattern;   // 1 diagonal stripes, 2 a cross-hatch: marks that no part colour can be mistaken for
+uniform int uPattern;   // 1 diagonal stripes, 2 a cross-hatch: marks that no part colour can be mistaken for;
+                        // 3 thin dark stripes (picked faces), 4 light dots (a picked part)
 uniform float uAlpha;
 uniform int uClipOn;
 uniform vec4 uClip;   // keeps dot(p, xyz) <= w
@@ -3522,7 +3726,11 @@ void main()
         float specular = uEven == 1 ? 0.0 : pow(max(dot(n, h), 0.0), 48.0) * 0.22;
         lit = uColor * (0.34 + 0.66 * diffuse) + vec3(specular);
     }
-    if (uPattern > 0)
+    if (uPattern == 3)
+        lit = mix(lit, lit * 0.62, mod(gl_FragCoord.x - gl_FragCoord.y, 24.0) < 4.0 ? 1.0 : 0.0);
+    else if (uPattern == 4)
+        lit = mix(lit, vec3(1.0), mod(gl_FragCoord.x, 22.0) < 5.0 && mod(gl_FragCoord.y, 22.0) < 5.0 ? 0.45 : 0.0);
+    else if (uPattern > 0)
     {
         float a = mod(gl_FragCoord.x + gl_FragCoord.y, 10.0) < 4.0 ? 1.0 : 0.0;
         float b = uPattern == 2 && mod(gl_FragCoord.x - gl_FragCoord.y, 10.0) < 4.0 ? 1.0 : 0.0;

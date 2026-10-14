@@ -615,15 +615,50 @@ final class MainWindow
         modes.append(rotateMode);
         modes.append(panMode);
 
+        // Fit on its own, the views in one menu: room for what a click picks
         auto views = new Box(Orientation.Horizontal, 0);
         views.addCssClass("linked");
         views.append(textButton("Fit", "Frame the model (F5)", () => viewport.fit()));
-        views.append(textButton("Iso", "Isometric view", () => viewport.setView(ViewPreset.iso)));
-        views.append(textButton("Top", "Top view", () => viewport.setView(ViewPreset.top)));
-        views.append(textButton("Front", "Front view", () => viewport.setView(ViewPreset.front)));
-        views.append(textButton("Right", "Right view", () => viewport.setView(ViewPreset.right)));
+        {
+            import gio.menu : Menu;
+            auto list = new Menu;
+            list.append("Iso", "win.view-iso");
+            list.append("Top", "win.view-top");
+            list.append("Front", "win.view-front");
+            list.append("Right", "win.view-right");
+            auto viewMenu = new MenuButton;
+            viewMenu.setLabel("View");
+            viewMenu.setTooltipText("Look from a side: iso, top, front, right");
+            viewMenu.setMenuModel(list);
+            views.append(viewMenu);
+        }
         viewBar.append(views);
         viewBar.append(separator());
+        // what a click picks: whole parts, faces, edges or vertices (the last choice kept)
+        {
+            import hackerscad.gui.settings : setSetting, setting;
+            auto picks = new Box(Orientation.Horizontal, 0);
+            picks.addCssClass("linked");
+            static immutable string[4] keys = ["part", "face", "edge", "vertex"];
+            static immutable string[4] tips = ["Click picks whole parts (Alt+1): move, rotate, colour, split…",
+                "Click picks faces (Alt+2): fillet their edges, shell, extrude, holes…",
+                "Click picks edges (Alt+3): fillet, chamfer, turn around them",
+                "Click picks vertices (Alt+4): their position, distances"];
+            immutable saved = setting("select", "part");
+            foreach (i, key; keys)
+            {
+                auto b = toggle("hcad-select-" ~ key ~ "-symbolic", tips[i], key == saved);
+                b.addCssClass("flat");
+                if (i > 0)
+                    b.setGroup(selectChoice[0]);
+                selectChoice[i] = b;
+                picks.append(b);
+            }
+            foreach (i; 0 .. 4)
+                selectChoice[i].connectToggled(selectModeToggled(i));
+            viewBar.append(picks);
+            viewBar.append(separator());
+        }
         viewBar.append(modes);
         viewBar.append(separator());
         partsMenu = new MenuButton;   // its list is added once the parameters panel exists
@@ -755,6 +790,10 @@ final class MainWindow
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = &picked;
+        // the selection mode kept from the last run (its buttons were made before the view)
+        foreach (i, b; selectChoice)
+            if (b !is null && b.getActive())
+                viewport.setSelectMode(cast(SelectMode) i);
         // the shine kept from the last run (the menu was built before the view)
         viewport.setShine(savedShine());
         viewport.onContext = &contextMenu;
@@ -957,6 +996,13 @@ final class MainWindow
         foreach (e; examples)
             action(app, "example-" ~ e.name, [], exampleAction(e.name));
         action(app, "fit", ["F5"], () => viewport.fit());
+        action(app, "view-iso", [], () => viewport.setView(ViewPreset.iso));
+        action(app, "view-top", [], () => viewport.setView(ViewPreset.top));
+        action(app, "view-front", [], () => viewport.setView(ViewPreset.front));
+        action(app, "view-right", [], () => viewport.setView(ViewPreset.right));
+        // the selection mode from the keyboard
+        foreach (i, key; ["part", "face", "edge", "vertex"])
+            action(app, "select-" ~ key, ["<Alt>" ~ format("%d", i + 1)], selectModeKey(i));
         action(app, "params", ["F9"], () => paramsToggle.setActive(!paramsToggle.getActive()));
         action(app, "console", ["<Primary>j"], () => consoleToggle.setActive(!consoleToggle.getActive()));
         action(app, "code", ["F7"], () => codeToggle.setActive(!codeToggle.getActive()));
@@ -1109,6 +1155,27 @@ private:
         b.setTooltipText(tooltip);
         b.connectClicked(onClick);
         return b;
+    }
+
+    ToggleButton[4] selectChoice;   /// part, face, edge, vertex
+
+    void delegate() selectModeKey(size_t i) => () => selectChoice[i].setActive(true);
+
+    /// A selection-mode button turned on: clicks pick that kind, the
+    /// selection is cleared (it was of another kind), the choice is kept.
+    void delegate() selectModeToggled(size_t i)
+    {
+        return () {
+            import hackerscad.gui.settings : setSetting;
+            if (!selectChoice[i].getActive())
+                return;
+            setSetting("select", ["part", "face", "edge", "vertex"][i]);
+            if (viewport !is null)
+            {
+                viewport.setSelectMode(cast(SelectMode) i);
+                viewport.setSelection(null);
+            }
+        };
     }
 
     ToggleButton toggle(string icon, string tooltip, bool active)
@@ -1828,22 +1895,21 @@ private:
         // a click on nothing closes Inspect
         if (hit.part < 0 && viewport.inInspect)
             stopInspect();
-        if (hit.part >= 0 && hit.edge < 0)
-            hit.edge = viewport.nearestEdge(hit.part, hit.face, hit.x, hit.y, 6);
         if (hit.shift && hit.part >= 0)
         {
-            // Shift+click builds a selection of faces and edges for one operation
+            // Shift+click builds a selection of faces, edges or vertices for one operation
             viewport.toggleSelect(hit);
-            auto sel = viewport.selection();
-            size_t nf, ne;
-            foreach (h; sel)
-                (h.edge >= 0 ? ne : nf)++;
-            info(format("%d face%s, %d edge%s selected · right-click for operations", nf, nf == 1 ? "" : "s",
-                ne, ne == 1 ? "" : "s"));
+            auto n = viewport.selection().length;
+            immutable what = ["part", "face", "edge", "vertex"][viewport.selectMode];
+            info(format("%d %s selected · right-click for operations", n,
+                n == 1 ? what : what == "vertex" ? "vertices" : what ~ "s"));
             return;
         }
         viewport.select(hit);
         // a section parallel to the selected face follows the new face
+        // a face picked or dropped: the section offers its plane, or not
+        if (sectionToggle.getActive() && splitPart < 0)
+            refreshPlaneChoices();
         if (sectionToggle.getActive() && sectionPlane.getSelected() == 3 && hit.face >= 0)
             updateSection(true);
         TextIter s, e;
@@ -2223,7 +2289,10 @@ private:
         sectionPlane = DropDown.newFromStrings(["XY plane", "XZ plane", "YZ plane", "Selected face"]);
         sectionPlane.addCssClass("flat");
         sectionPlane.setTooltipText("The cutting plane: parallel to a main plane, or to the face you clicked");
-        sectionPlane.connectNotify("selected", () => updateSection(true));
+        sectionPlane.connectNotify("selected", () {
+            if (!sectionUpdating)
+                updateSection(true);
+        });
         sectionBar.append(sectionPlane);
         sectionSlider = Scale.newWithRange(Orientation.Horizontal, 0, 1, 0.001);
         sectionSlider.setDrawValue(false);
@@ -2270,7 +2339,7 @@ private:
         case 2: n = Vec3(1, 0, 0); break;
         default:
             Vec3 p;
-            if (!viewport.selectedPlane(p, n))
+            if (!facePlane(p, n))
             {
                 info("click a face first, then choose \"Selected face\"");
                 sectionUpdating = true;
@@ -2315,9 +2384,41 @@ private:
     Label sectionTitle;
     int splitPart = -1;
     string splitName;
+    bool splitFace;             /// Split… opened on a face: its plane is offered first
+    Vec3 splitFaceP, splitFaceN;
+
+    /// The face the section's fourth choice is parallel to: the one Split…
+    /// was opened on, else the face picked; false when there is none.
+    bool facePlane(out Vec3 p, out Vec3 n)
+    {
+        if (splitPart >= 0)
+        {
+            p = splitFaceP;
+            n = splitFaceN;
+            return splitFace;
+        }
+        return viewport.selectedPlane(p, n);
+    }
+
+    /// The section's plane choices: the main planes, and a face's only when
+    /// there is one ("Clicked face" for Split…, "Selected face" else).
+    void refreshPlaneChoices()
+    {
+        import gtk.string_list : StringList;
+        Vec3 p, n;
+        immutable face = facePlane(p, n);
+        auto items = ["XY plane", "XZ plane", "YZ plane"];
+        if (face)
+            items ~= splitPart >= 0 ? "Clicked face" : "Selected face";
+        immutable was = sectionPlane.getSelected();
+        sectionUpdating = true;
+        sectionPlane.setModel(new StringList(items));
+        sectionPlane.setSelected(was < items.length ? was : 0);
+        sectionUpdating = false;
+    }
 
     /// The section plane on part `index` alone, to split it where it is.
-    void startSplit(int index)
+    void startSplit(int index, bool onFace = false, Vec3 facePoint = Vec3(0, 0, 0), Vec3 faceNormal = Vec3(0, 0, 1))
     {
         if (index < 0 || index >= last.parts.length)
             return;
@@ -2330,6 +2431,9 @@ private:
         cancelTransform();
         splitPart = index;
         splitName = part.name;
+        splitFace = onFace;
+        splitFaceP = facePoint;
+        splitFaceN = faceNormal.normalized;
         viewport.sectionPart = index;
         sectionTitle.setLabel("Split " ~ part.name);
         sectionTitle.removeCssClass("dim-label");
@@ -2349,7 +2453,8 @@ private:
     void planeFromSelection()
     {
         Vec3 p, n;
-        immutable picked = viewport.selectedPlane(p, n);
+        immutable picked = facePlane(p, n);
+        refreshPlaneChoices();
         immutable want = picked ? 3 : sectionPlane.getSelected() == 3 ? 0 : sectionPlane.getSelected();
         sectionUpdating = true;
         sectionPlane.setSelected(want);
@@ -2362,6 +2467,7 @@ private:
         if (splitPart < 0)
             return;
         splitPart = -1;
+        splitFace = false;
         viewport.sectionPart = -1;
         sectionTitle.setLabel("Section");
         sectionTitle.addCssClass("dim-label");
@@ -3191,18 +3297,19 @@ private:
         }
         if (viewport.inRollback)
             return;
-        hit.edge = viewport.nearestEdge(hit.part, hit.face, x, y, 12);
         setContext(hit);
         auto part = last.parts[hit.part];
         auto sel = viewport.selection();
-        immutable nf = selFaces.length, ne = selEdges.length;
+        immutable nf = selFaces.length, ne = selEdges.length, nv = selVertices.length;
+        immutable mode = viewport.selectMode;
         alias I = MenuEntry.item, G = MenuEntry.group, H = MenuEntry.heading;
         alias S = MenuEntry.separator;
         string count(size_t n, string what) => n == 1 ? what : format("%d %ss", n, what);
 
         MenuEntry[] entries;
-        string title = ne && nf ? format("%s, %s", count(ne, "edge"), count(nf, "face")) : ne ? count(ne, "edge")
-            : nf ? count(nf, "face") : "Part";
+        // what the menu is for follows the selection mode: only what fits it is offered
+        string title = ne ? count(ne, "edge") : nf ? count(nf, "face") : nv == 1 ? "vertex"
+            : nv ? format("%d vertices", nv) : "Part";
         entries ~= H(title.toUpper, part.name);
         // a piece of @parts: what is written goes to the function, so to all its pieces
         if (part.fn != part.name)
@@ -3272,7 +3379,7 @@ private:
                 measures ~= I("Edge diameter", () => copy(dia), dia);
             }
         }
-        if (sel.length == 2)
+        if (sel.length == 2 && nv == 0)
         {
             // between the two selected items
             import hackerscad.gui.measure : measure, faceItem, edgeItem;
@@ -3301,12 +3408,28 @@ private:
         }
         auto sz = part.bbox.size;
         auto size = format("%.4g × %.4g × %.4g", sz.x, sz.y, sz.z);
-        measures ~= I("Part size", () => copy(size), size);
         auto vol = format("%.5g mm³", part.volume);
-        measures ~= I("Part volume", () => copy(vol), vol);
-        auto pt = hit.point;
-        auto point = format("vec(%.4g.mm, %.4g.mm, %.4g.mm)", pt.x, pt.y, pt.z);
-        measures ~= I("Point", () => copy(point), format("%.4g, %.4g, %.4g", pt.x, pt.y, pt.z));
+        if (mode == SelectMode.part)
+        {
+            measures ~= I("Part size", () => copy(size), size);
+            measures ~= I("Part volume", () => copy(vol), vol);
+        }
+        // two vertices: how far apart, and along X, Y and Z
+        if (nv == 2)
+        {
+            auto d = viewport.vertexAt(sel[1].part, sel[1].vertex) - viewport.vertexAt(sel[0].part, sel[0].vertex);
+            auto dv = format("%.4g mm", d.length);
+            measures ~= I("Distance", () => copy(dv), dv);
+            auto dx = format("%.4g, %.4g, %.4g", d.x, d.y, d.z);
+            measures ~= I("Apart along X, Y, Z", () => copy(dx), dx);
+        }
+        if (mode == SelectMode.face || mode == SelectMode.vertex)
+        {
+            auto pt = hit.point;
+            auto point = format("vec(%.4g.mm, %.4g.mm, %.4g.mm)", pt.x, pt.y, pt.z);
+            measures ~= I(mode == SelectMode.vertex ? "Vertex" : "Point", () => copy(point),
+                format("%.4g, %.4g, %.4g", pt.x, pt.y, pt.z));
+        }
 
         MenuEntry[] copies;
         if (nf)
@@ -3317,6 +3440,12 @@ private:
                 copies ~= I("Frame on face", () => copy(".frame(" ~ facesCode() ~ ")"));
                 copies ~= I("Plane of face", () => copy(".plane(" ~ facesCode() ~ ")"));
             }
+        }
+        if (nv)
+        {
+            auto vp = hit.point;
+            auto code = format("vec(%.4g.mm, %.4g.mm, %.4g.mm)", vp.x, vp.y, vp.z);
+            copies ~= I("Point", () => copy(code));
         }
         if (ne)
         {
@@ -3329,6 +3458,7 @@ private:
         if (hit.face >= 0)
         {
             view ~= I("Section parallel to face", () {
+                refreshPlaneChoices();
                 sectionUpdating = true;
                 sectionPlane.setSelected(3);
                 sectionUpdating = false;
@@ -3342,6 +3472,15 @@ private:
             });
         }
 
+        // a turn about what is picked: a face's normal (a round face's axis), an edge (a hinge)
+        auto hinges = pickedAxes(part);
+        if (hinges.length)
+            entries ~= S();
+        foreach (choice; hinges)
+            entries ~= hingeEntry(contextHit.part, choice);
+
+        // what the whole part can do: the menu itself in the Part mode, a group in the others
+        auto whole = entries.length;
         entries ~= S();
         {
             auto name = part.name;
@@ -3350,10 +3489,13 @@ private:
         }
         entries ~= I("Move…", () => startTransform(Viewport.Gizmo.move, contextHit.part));
         entries ~= I("Rotate…", () => startTransform(Viewport.Gizmo.rotate, contextHit.part));
-        // a turn about what is picked: a face's normal (a round face's axis), an edge (a hinge)
-        foreach (choice; pickedAxes(part))
-            entries ~= hingeEntry(contextHit.part, choice);
-        entries ~= I("Split…", () => startSplit(contextHit.part));
+        {
+            // the face under the click gives the plane, whatever the selection mode
+            auto under = viewport.pickAny(x, y);
+            immutable onFace = under.part == contextHit.part && under.face >= 0 && under.normal.length > 0.5;
+            immutable at = under.point, normal = under.normal;
+            entries ~= I("Split…", () => startSplit(contextHit.part, onFace, at, normal));
+        }
         {
             // hackerscad's own colours (geom/color.d), the default first
             import hackerscad.geom.color : partPalette;
@@ -3379,6 +3521,11 @@ private:
                 foreach (i; 0 .. last.parts.length)
                     setPartVisible(i, true);
             });
+        if (mode != SelectMode.part)
+        {
+            auto partOnes = entries[whole + 1 .. $].dup;
+            entries = entries[0 .. whole] ~ S() ~ G("Part " ~ part.name, partOnes);
+        }
         entries ~= S();
         entries ~= G("Measure", measures);
         if (copies.length)
@@ -3449,7 +3596,7 @@ private:
             return "fix the errors in the code first: " ~ e.msg;
     }
 
-    int[] selFaces, selEdges;
+    int[] selFaces, selEdges, selVertices;
 
     /// An interpreter to resolve selectors on `part`, and the part as a
     /// solid value (with where its faces come from, for stable selectors).
@@ -3504,10 +3651,13 @@ private:
         auto sel = viewport.selection();
         selFaces = null;
         selEdges = null;
+        selVertices = null;
         foreach (h; sel)
         {
             if (h.edge >= 0)
                 selEdges ~= h.edge;
+            else if (h.vertex >= 0)
+                selVertices ~= h.vertex;
             else if (h.face >= 0)
                 selFaces ~= h.face;
         }
@@ -4514,6 +4664,7 @@ private:
             : viewport.shading == Shading.shaded ? "shaded" : "edges";
         jc["printability"] = viewport.printability;
         jc["shine"] = ["none", "normal", "high"][viewport.shine];
+        jc["select"] = ["part", "face", "edge", "vertex"][viewport.selectMode];
         j["camera"] = jc;
         if (viewport.printability)
             j["printability"] = printabilityJson();
