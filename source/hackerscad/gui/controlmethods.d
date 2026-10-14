@@ -759,8 +759,73 @@ mixin template ControlMethods()
                 note("saved " ~ path);
                 return reply(state(), null);
             }
+        case "find":
+            {
+                // Find and Replace all of the editor: {"text": "…", "regex": false, "case": false, "word": false}
+                // lists the matches; with "replace": "…" every match is replaced (one step of Undo)
+                import hackerscad.gui.editortools : FoundText;
+                auto what = arg("text");
+                if (what.length == 0)
+                    return reply(JSONValue.init, "find needs text");
+                bool flag(string k) => k in p && p[k].type == JSONType.true_;
+                // "show": true opens the find bar on it, for the user (nothing replaced)
+                if (flag("show"))
+                {
+                    editorTools.showBar(what, has("replace") ? arg("replace") : null);
+                    return reply(state(), null);
+                }
+                FoundText[] found;
+                uint replaced;
+                immutable replacing = has("replace");
+                if (auto problem = editorTools.findText(what, flag("regex"), flag("case"), flag("word"),
+                        replacing ? arg("replace") : null, replacing, found, replaced))
+                    return reply(JSONValue.init, "bad regular expression: " ~ problem);
+                if (replacing)
+                {
+                    JSONValue j = ["replaced": replaced];
+                    whenIdle(() { j["state"] = state(); reply(j, null); });
+                    return;
+                }
+                JSONValue[] list;
+                foreach (f; found)
+                {
+                    JSONValue m = ["text": f.text];
+                    m["line"] = f.line;
+                    m["column"] = f.column;
+                    list ~= m;
+                }
+                JSONValue j = ["matches": JSONValue(list)];
+                j["count"] = list.length;
+                return reply(j, null);
+            }
         case "edit":
             {
+                // the editor's line actions, as their keys: {"action": "comment" | "duplicate" | "delete" |
+                // "move_up" | "move_down" | "indent" | "unindent", "lines": [from, to]}; {"goto": line} shows a line
+                if (has("goto"))
+                {
+                    editorTools.showLine(cast(int) numberOf(p["goto"]));
+                    return reply(state(), null);
+                }
+                if (auto act = arg("action"))
+                {
+                    import hackerscad.gui.editortools : EditorTools;
+                    alias A = EditorTools.LineAction;
+                    immutable A[string] actions = ["comment": A.comment, "duplicate": A.duplicate, "delete": A.remove,
+                        "move_up": A.up, "move_down": A.down, "indent": A.indent, "unindent": A.unindent];
+                    if (!(act in actions))
+                        return reply(JSONValue.init, "action is comment, duplicate, delete, move_up, move_down, indent or unindent");
+                    int from, to;
+                    if (has("lines"))
+                    {
+                        from = cast(int) numberOf(p["lines"][0]);
+                        to = cast(int) numberOf(p["lines"][1]);
+                    }
+                    if (!editorTools.lineAction(actions[act], from, to))
+                        return reply(JSONValue.init, "nothing to do there");
+                    whenIdle(() => reply(state(), null));
+                    return;
+                }
                 // a change of the code, as the user would type it (it can be undone):
                 // {"old": "…", "new": "…"} | {"lines": [from, to], "text": "…"} | {"insert": line, "text": "…"}
                 import std.string : indexOf;

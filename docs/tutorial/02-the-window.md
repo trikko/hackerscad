@@ -89,6 +89,24 @@ The cube in the view bar opens a small menu:
   small highlight on curves; **High**, a shiny material with soft highlights
   on every curve. The choice is kept.
 
+## Editing the code
+
+The editor has the keys of a code editor:
+
+- **Ctrl+F** opens a bar over the code to find text: every match is marked,
+  it says which one is selected ("2 of 3"), **F3** and **Shift+F3** (or Enter
+  and Shift+Enter) go to the next and the previous; **Aa** matches case,
+  **ab|** whole words only, **.\*** takes a regular expression. **Ctrl+H**
+  adds a row to replace the selected match or all of them (one Ctrl+Z
+  undoes it). Esc closes it.
+- **Ctrl+L** goes to a line; **Ctrl+/** comments the selected lines out with
+  `//`, or back in; **Ctrl+D** duplicates the line (or the selection);
+  **Ctrl+Shift+K** deletes the lines; **Alt+Up** and **Alt+Down** move them;
+  **Tab** and **Shift+Tab** indent them in and out.
+- Brackets and quotes close themselves: type `(` and `)` comes after the
+  cursor, type it again and the cursor steps over it; around a selection they
+  enclose it. The bracket matching the one at the cursor is marked.
+
 ## The cheatsheet
 
 Press F1: a window lists everything the language has, one line each, with

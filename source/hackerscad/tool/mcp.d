@@ -907,10 +907,19 @@ JSONValue[] toolList()
         gui("hcad_gui_edit", "Change the code in the user's editor like typing does (Ctrl+Z undoes it, and the window "
             ~ "re-evaluates): old and new replace text that appears exactly once; lines [from, to] and text replace those "
             ~ "lines (1-based, inclusive); insert (a line number) and text insert before that line (one more than the "
-            ~ "line count appends). Returns the state and the lines of the new text.",
+            ~ "line count appends). Returns the state and the lines of the new text. action (comment, duplicate, delete, "
+            ~ "move_up, move_down, indent, unindent) with lines does what the editor's keys do to those lines (Ctrl+/, "
+            ~ "Ctrl+D, Ctrl+Shift+K, Alt+Up, Alt+Down, Tab, Shift+Tab); goto (a line) shows that line.",
             `"old": {"type": "string"}, "new": {"type": "string"}, `
             ~ `"lines": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}, `
-            ~ `"insert": {"type": "integer"}, "text": {"type": "string"}`, `[]`),
+            ~ `"insert": {"type": "integer"}, "text": {"type": "string"}, "goto": {"type": "integer"}, `
+            ~ `"action": {"type": "string", "enum": ["comment", "duplicate", "delete", "move_up", "move_down", "indent", "unindent"]}`, `[]`),
+        gui("hcad_gui_find", "Find in the code of the user's editor, as its find bar (Ctrl+F): the matches of text, with "
+            ~ "line and column (regex, case, word as its options); with replace, every match is replaced, as its "
+            ~ "Replace all (one step of Undo), and the window re-evaluates; show: true opens the find bar on text (and "
+            ~ "replace) for the user instead, replacing nothing.",
+            `"text": {"type": "string"}, "replace": {"type": "string"}, "regex": {"type": "boolean"}, "show": {"type": "boolean"}, `
+            ~ `"case": {"type": "boolean"}, "word": {"type": "boolean"}`, `["text"]`),
         gui("hcad_gui_undo", "Undo the last change of the code in the user's editor (theirs or yours), or redo with "
             ~ "redo: true; steps repeats it.", `"redo": {"type": "boolean"}, "steps": {"type": "integer"}`, `[]`),
         gui("hcad_gui_project", "Convert between the model and the user's 3D view: points (model points in mm) give "
@@ -1259,7 +1268,7 @@ JSONValue callTool(string name, JSONValue args)
             break;
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
-            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_test", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
+            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_test", "hcad_gui_find", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
             "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet",
             "hcad_gui_transform", "hcad_gui_colour", "hcad_gui_split":
         {

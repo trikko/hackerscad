@@ -49,6 +49,7 @@ import adw.types : ColorScheme, ViewSwitcherPolicy;
 import adw.style_manager : StyleManager;
 import gtk.menu_button : MenuButton;
 import gtk.overlay : Overlay;
+import hackerscad.gui.editortools : EditorTools;
 import gtk.popover : Popover;
 import gtk.entry : Entry;
 import gtk.drop_down : DropDown;
@@ -505,6 +506,7 @@ final class MainWindow
     WindowTitle title;
     import gtk.spinner : Spinner;
     Spinner busyIndicator;
+    EditorTools editorTools;   /// the editor's find bar and line actions
     Button testsButton;   /// runs the model's unittests (F5)
     Box testsDot;         /// over its corner: yellow, not run since the last change; red, one failed
     bool testsNext;       /// the next evaluation runs them
@@ -685,6 +687,8 @@ final class MainWindow
                 ~ " button.hcad-problem.warning { background: #e5a50a; color: #1e1e1e; }"
                 ~ " popover.hcad-menu button { min-height: 0; padding: 4px 10px; border-radius: 5px; font-weight: normal; }"
                 ~ " popover.hcad-menu separator { margin: 3px 6px; }"
+                ~ " .hcad-findbar { padding: 6px 8px; border-bottom: 1px solid alpha(currentColor, 0.12); }"
+                ~ " .hcad-findbar button.toggle, .hcad-findbar button { min-width: 0; padding: 2px 7px; }"
                 ~ " .hcad-tests-dot { min-width: 8px; min-height: 8px; border-radius: 50%; background: #f6c90e;"
                 ~ " box-shadow: 0 0 0 1.5px @window_bg_color; }"
                 ~ " .hcad-tests-dot.hcad-tests-failed { background: #e01b24; }"
@@ -832,9 +836,14 @@ final class MainWindow
             completion.libraryDirs = libraryPaths();
         }
         editor.setLeftMargin(4);
+        // find and replace, go to a line, line actions, brackets that close themselves
+        editorTools = new EditorTools(editor, buffer);
         auto editorScroll = new ScrolledWindow;
         editorScroll.setChild(editor);
         editorScroll.setVexpand(true);
+        auto editorPane = new Box(Orientation.Vertical, 0);
+        editorPane.append(editorTools.bar);
+        editorPane.append(editorScroll);
 
         console = new TextView;
         console.setEditable(false);
@@ -903,7 +912,7 @@ final class MainWindow
         editorScroll.setSizeRequest(300, 200);
 
         auto left = new Paned(Orientation.Vertical);
-        left.setStartChild(editorScroll);
+        left.setStartChild(editorPane);
         left.setEndChild(consolePane);
         left.setPosition(700);
         left.setResizeStartChild(true);
@@ -1079,7 +1088,7 @@ final class MainWindow
         // code, console, view and parameters each have a button; what is left fills the window
         void updatePanes(ToggleButton changed)
         {
-            editorScroll.setVisible(codeToggle.getActive());
+            editorPane.setVisible(codeToggle.getActive());
             consolePane.setVisible(consoleToggle.getActive());
             overlay.setVisible(viewToggle.getActive());
             sidebar.setVisible(paramsToggle.getActive());
@@ -1148,6 +1157,11 @@ final class MainWindow
         });
         action(app, "about", [], &showAbout);
         action(app, "run-tests", ["F5"], &runTests);
+        action(app, "find", ["<Primary>f"], () => editorTools.find());
+        action(app, "replace", ["<Primary>h"], () => editorTools.replace());
+        action(app, "find-next", ["F3"], () => editorTools.next());
+        action(app, "find-previous", ["<Shift>F3"], () => editorTools.previous());
+        action(app, "go-to-line", ["<Primary>l"], () => editorTools.goToLine());
         action(app, "cheatsheet", ["F1"], &showCheatsheet);
         action(app, "tutorial", [], () => openUri(appWebsite ~ "/blob/main/docs/TUTORIAL.md"));
         action(app, "reference", [], () => openUri(appWebsite ~ "/blob/main/docs/LANGUAGE.md"));
