@@ -1096,10 +1096,11 @@ unittest
     hc_workaround(HC_WORKAROUND_HELIX_PIECES, 0);
     scope (exit)
         hc_workaround(HC_WORKAROUND_HELIX_PIECES, 1);
-    stillBroken(fails(q{
-        import std.threads : threadedRod;
-        @part Solid rod() => threadedRod(8.mm, 1.25.mm, 100.mm);
-    }), "BuildCurves3d giving a long helix too few pieces to sweep a thread along (shim.cpp, hc_helix_tapered)");
+    // 40 turns on a cylinder 6.64 mm across: a curve that strays from the
+    // helix makes its box wider (with the workaround it is 6.64 exactly)
+    auto box = kernel.bbox(kernel.helix(3.32, 1.25, 40 * 1.25, false)).size;
+    stillBroken(box.x > 6.6401 || box.y > 6.6401,
+        "BuildCurves3d building a wrong 3D curve for a 40-turn helix (shim.cpp, hc_helix_tapered)");
 }
 
 unittest

@@ -2466,13 +2466,15 @@ hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, doub
         double turns = height / pitch;
         double len = turns * std::sqrt(4 * M_PI * M_PI + vPerTurn * vPerTurn);
         TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, surf, 0, len).Edge();
-        // WORKAROUND (OpenCascade 7.9.3, BRepLib::BuildCurves3d): by default
-        // the curve in space of a long helix gets too few pieces to follow it,
-        // and sweeps along it fail (a thread tooth along 80 turns); with a
-        // few pieces per turn they work. The "known bugs" unittest in
-        // lang/tests.d builds it the default way (HC_WORKAROUND_HELIX_PIECES)
-        // and fails once that sweep works; then the plain BuildCurves3d(e)
-        // will do.
+        // WORKAROUND (OpenCascade 7.9.3, BRepLib::BuildCurves3d): with its
+        // default arguments, the curve in space it builds for a long helix
+        // strays from it (0.003 mm after 40 turns of an M8 thread's root,
+        // 9.6 mm after 80) while the edge keeps a tolerance of 1e-5 mm, as if
+        // it were exact: sweeps along it follow the wrong curve, or fail.
+        // With a few pieces per turn the curve stays within 1e-6 mm. The
+        // "known bugs" unittest in lang/tests.d builds it the default way
+        // (HC_WORKAROUND_HELIX_PIECES) and fails once the curve is right;
+        // then the plain BuildCurves3d(e) will do.
         if (workaround(HC_WORKAROUND_HELIX_PIECES)) {
             const int segments = std::max(30, (int)std::ceil(turns * 4));
             BRepLib::BuildCurves3d(e, 1e-6, GeomAbs_C2, 9, segments);
