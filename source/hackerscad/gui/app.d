@@ -733,6 +733,10 @@ final class MainWindow
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = &picked;
         viewport.onContext = &contextMenu;
+        // a handle of the section plane dragged: the slider follows (and moves the plane)
+        viewport.onSectionDrag = (double offset) {
+            sectionSlider.setValue(sectionFlipped ? -offset : offset);
+        };
         // labels move after the frame, not while the view is being drawn
         viewport.onFrame = () {
             if (positionQueued || dimButtons.length == 0)
@@ -2296,9 +2300,11 @@ private:
     }
 
     /// Back to the final model: closes Inspect and rollback.
-    /// A new or another model: the view and the panels as at the start
-    /// (what the previous model left open, selected or hidden goes). The
-    /// panels shown or hidden, and the style, are the user's and stay.
+    /// A new or another model: everything about the view as at the start
+    /// (point of view and zoom with the first result, style, projection,
+    /// section, printability limits, what the previous model left open,
+    /// selected or hidden). Smooth edges, and the preferences kept between
+    /// runs (the panels shown, the theme, grid and axes), stay.
     void resetInterface()
     {
         showFinal();
@@ -2306,10 +2312,17 @@ private:
         completion.close();
         sectionToggle.setActive(false);
         sectionPlane.setSelected(0);
+        sectionFlip.setActive(false);
+        sectionFlipped = false;
         inspectToggle.setActive(false);
         sketchToggle.setActive(false);
         rotateMode.setActive(true);
         shadingChoice[Shading.edges].setActive(true);
+        if (overhangSpin !is null)
+        {
+            overhangSpin.setValue(45);
+            wallSpin.setValue(0.8);
+        }
         perspectiveChoice.setActive(true);
         sideStack.setVisibleChildName("params");
         viewport.showAll();

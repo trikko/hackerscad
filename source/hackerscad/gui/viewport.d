@@ -129,6 +129,11 @@ final class Viewport
     private bool section;
     private Vec3 sectionNormal = Vec3(0, 0, 1);
     private double sectionOffset = 0;
+    // the handles at the corners of the section plane: one dragged moves the
+    // plane along its normal; the window is told the new offset
+    private int sectionHandle = -1, hoverHandle = -1;
+    private double handleStartOffset;
+    void delegate(double offset) onSectionDrag;
 
     // camera: orbit around target, Z up
     private Vec3 target;
@@ -170,6 +175,9 @@ final class Viewport
             else
                 dragPan = (leftMode == DragMode.pan) != shift;
             dragButton = button;
+            // a left drag from a handle of the section plane moves the plane
+            sectionHandle = button == 1 ? handleAt(x, y) : -1;
+            handleStartOffset = sectionOffset;
             startShift = shift;
             startYaw = yaw;
             startPitch = pitch;
@@ -177,6 +185,12 @@ final class Viewport
             area.grabFocus();
         });
         drag.connectDragUpdate((double dx, double dy, GestureDrag g) {
+            if (sectionHandle >= 0)
+            {
+                dragging = true;
+                dragHandle(dx, dy);
+                return;
+            }
             if (!dragging && abs(dx) + abs(dy) < 4)
                 return;
             if (!dragging)
@@ -199,6 +213,13 @@ final class Viewport
             redraw();
         });
         drag.connectDragEnd((double dx, double dy, GestureDrag g) {
+            if (sectionHandle >= 0)
+            {
+                sectionHandle = -1;
+                dragging = false;
+                updateHoverCursor();
+                return;
+            }
             // a left click without movement picks what is under the pointer
             if (!dragging && dragButton == 1 && onPick !is null)
             {
@@ -239,7 +260,8 @@ final class Viewport
         area.addController(scroll);
     }
 
-    /// Replaces the displayed parts; `fitView` frames them.
+    /// Replaces the displayed parts; `fitView` (a new model) puts the view
+    /// back to the default one, framed on them.
     void setParts(PartMesh[] p, bool fitView)
     {
         // a part keeps its visibility by name, wherever it moves in the list
@@ -254,8 +276,9 @@ final class Viewport
         dirty = true;
         if (selected.part >= cast(int) parts.length)
             selected = Hit.init;
+        // a new model starts from the default view, framed
         if (fitView)
-            fit();
+            setView(ViewPreset.iso);
         redraw();
     }
 
@@ -573,6 +596,83 @@ final class Viewport
         return [c + u * du + v * dv, c - u * du + v * dv, c - u * du - v * dv, c + u * du - v * dv];
     }
 
+    /// The handle of the section plane at window point (x, y), or -1.
+    int handleAt(double x, double y)
+    {
+        if (!section)
+            return -1;
+        auto q = sectionQuad();
+        foreach (k; 0 .. 4)
+        {
+            double hx, hy;
+            if (project(q[k], hx, hy) && abs(hx - x) <= handlePixels && abs(hy - y) <= handlePixels)
+                return k;
+        }
+        return -1;
+    }
+
+    /// How big a handle is on screen, from its centre to its side (pixels).
+    enum handlePixels = 7;
+
+    /// Millimetres per pixel at the depth of p.
+    double mmPerPixelAt(Vec3 p)
+    {
+        auto b = basis();
+        immutable z = orthographic ? distance : max(1e-6, (p - b.eye).dot(b.forward));
+        return 2 * z * tan(fovy / 2) / max(1, area.getHeight());
+    }
+
+    /// Moves the section plane with the handle dragged by (dx, dy) pixels:
+    /// along its normal as far as the pointer went along the normal on screen.
+    void dragHandle(double dx, double dy)
+    {
+        auto corner = sectionQuad()[sectionHandle] + sectionNormal * (handleStartOffset - sectionOffset);
+        immutable step = 50 * mmPerPixelAt(corner);
+        double ax, ay, bx, by;
+        double moved;
+        if (project(corner, ax, ay) && project(corner + sectionNormal * step, bx, by)
+            && (bx - ax) ^^ 2 + (by - ay) ^^ 2 > 25)
+            moved = (dx * (bx - ax) + dy * (by - ay)) / ((bx - ax) ^^ 2 + (by - ay) ^^ 2) * step;
+        else
+            // the normal points at the viewer: up moves the plane towards it
+            moved = -dy * mmPerPixelAt(corner);
+        if (onSectionDrag !is null)
+            onSectionDrag(handleStartOffset + moved);
+    }
+
+    /// The handles at the corners of the section plane: squares facing the
+    /// viewer, the same size on screen at any zoom, never hidden by the parts.
+    void drawSectionHandles(Vec3[4] q)
+    {
+        auto b = basis();
+        glDisable(GL_DEPTH_TEST);
+        foreach (k; 0 .. 4)
+        {
+            immutable live = k == sectionHandle || (sectionHandle < 0 && k == hoverHandle);
+            immutable r = (live ? handlePixels + 2 : handlePixels) * mmPerPixelAt(q[k]);
+            auto ru = b.right * r, rv = b.up * r;
+            Vec3[4] c = [q[k] + ru + rv, q[k] - ru + rv, q[k] - ru - rv, q[k] + ru - rv];
+            float[] fill, rim;
+            foreach (i; [0, 1, 2, 0, 2, 3])
+                fill ~= [cast(float) c[i].x, cast(float) c[i].y, cast(float) c[i].z];
+            foreach (i; [0, 1, 1, 2, 2, 3, 3, 0])
+                rim ~= [cast(float) c[i].x, cast(float) c[i].y, cast(float) c[i].z];
+            uploadLines(fill);
+            glUniform1f(uAlpha, 1);
+            if (live)
+                glUniform3f(uColor, 1.0f, 0.55f, 0.35f);
+            else
+                glUniform3f(uColor, 1.0f, 1.0f, 1.0f);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            uploadLines(rim);
+            glUniform3f(uColor, 0.9f, 0.35f, 0.2f);
+            glLineWidth(2);
+            glDrawArrays(GL_LINES, 0, 8);
+            glLineWidth(1);
+        }
+        glEnable(GL_DEPTH_TEST);
+    }
+
     void drawSectionOutline()
     {
         auto q = sectionQuad();
@@ -599,6 +699,7 @@ final class Viewport
         glUniform1f(uAlpha, 1);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
+        drawSectionHandles(q);
     }
 
     void uploadLines(const(float)[] v) => positionBuffer(lineVao, lineVbo, v);
@@ -918,6 +1019,18 @@ private:
 
     void updateHoverCursor()
     {
+        // over a handle of the section plane: it can be dragged
+        immutable handle = handleAt(pointerX, pointerY);
+        if (handle != hoverHandle)
+        {
+            hoverHandle = handle;
+            redraw();
+        }
+        if (handle >= 0)
+        {
+            area.setCursorFromName("grab");
+            return;
+        }
         auto h = pick(pointerX, pointerY);
         area.setCursorFromName(null);   // the ring on the surface shows what is under the pointer
         // the point under the pointer is marked on the surface
