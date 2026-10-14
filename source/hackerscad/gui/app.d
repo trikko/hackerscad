@@ -173,6 +173,10 @@ version (linux) void installDesktopEntry()
             import std.file : setTimes;
             auto now = Clock.currTime;
             setTimes(buildPath(dataHome, "icons", "hicolor"), now, now);
+            // GNOME Shell keeps the icons it drew in memory, by name, until the
+            // applications folder changes: writing the entry again makes it reload
+            if (exists(entry))
+                write(entry, text);
         }
     }
     catch (Exception)
@@ -702,6 +706,9 @@ final class MainWindow
         console.setWrapMode(WrapMode.None);
         console.setLeftMargin(8);
         console.setTopMargin(4);
+        // room for the overlay scroll bars: the last line and the line ends stay readable
+        console.setBottomMargin(14);
+        console.setRightMargin(14);
         auto consoleScroll = new ScrolledWindow;
         consoleScroll.setChild(console);
         consoleScroll.setVexpand(true);
@@ -741,6 +748,8 @@ final class MainWindow
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = &picked;
+        // the shine kept from the last run (the menu was built before the view)
+        viewport.setShine(savedShine());
         viewport.onContext = &contextMenu;
         // a handle of the section plane dragged: the slider follows (and moves the plane)
         viewport.onSectionDrag = (double offset) {
@@ -1618,9 +1627,15 @@ private:
         }
         consoleHint.setVisible(modelOutput.length == 0 && programLog.length == 0);
         // keep the latest lines in view
+        // through a mark: scrolling to an iter now would use the old layout
         TextIter last;
         b.getEndIter(last);
-        console.scrollToIter(last, 0, false, 0, 1);
+        auto end = b.getMark("end");
+        if (end is null)
+            end = b.createMark("end", last, false);
+        else
+            b.moveMark(end, last);
+        console.scrollToMark(end, 0, false, 0, 1);
     }
 
     // ---- what a long evaluation is doing, over the view
@@ -2264,6 +2279,16 @@ private:
     import gtk.check_button : CheckButton;
     CheckButton[Shading] shadingChoice;
     CheckButton perspectiveChoice, orthographicChoice, antialiasChoice, printabilityChoice;
+    CheckButton[3] shineChoice;   /// none, normal, high
+
+    /// The shine chosen last (Normal the first time).
+    static Shine savedShine()
+    {
+        import hackerscad.gui.settings : setting;
+        immutable v = setting("shine", "normal");
+        return v == "none" ? Shine.none : v == "high" ? Shine.high : Shine.normal;
+    }
+
 
     Box printLimits;
     import gtk.spin_button : SpinButton;
@@ -2405,6 +2430,25 @@ private:
         orthographicChoice = choice("Orthographic", "Parallel lines stay parallel: sizes do not change with depth",
             perspectiveChoice, () => viewport.setOrthographic(true));
         perspectiveChoice.setActive(true);
+        box.append(new Separator(Orientation.Horizontal));
+        box.append(new Separator(Orientation.Horizontal));
+        // how shiny the surfaces are, kept between runs like the smoothing of edges
+        heading("Shine");
+        {
+            import hackerscad.gui.settings : setSetting, setting;
+            static immutable string[3] keys = ["none", "normal", "high"];
+            auto pick(Shine sh) => () {
+                setSetting("shine", keys[sh]);
+                viewport.setShine(sh);
+            };
+            shineChoice[Shine.none] = choice("None", "Matte, the light in parallel rays as from the sun: each flat "
+                ~ "face one even tone, no shiny spots", null, pick(Shine.none));
+            shineChoice[Shine.normal] = choice("Normal", "A light from where you look, a small highlight on curves",
+                shineChoice[Shine.none], pick(Shine.normal));
+            shineChoice[Shine.high] = choice("High", "A shiny material: soft highlights on every curve, at any angle",
+                shineChoice[Shine.none], pick(Shine.high));
+            shineChoice[savedShine()].setActive(true);
+        }
         box.append(new Separator(Orientation.Horizontal));
         heading("Quality");
         // kept between runs: on a slow integrated card the user may want it off
@@ -4114,6 +4158,7 @@ private:
         jc["style"] = viewport.shading == Shading.wireframe ? "wireframe"
             : viewport.shading == Shading.shaded ? "shaded" : "edges";
         jc["printability"] = viewport.printability;
+        jc["shine"] = ["none", "normal", "high"][viewport.shine];
         j["camera"] = jc;
         if (viewport.printability)
             j["printability"] = printabilityJson();

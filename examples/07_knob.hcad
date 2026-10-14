@@ -59,7 +59,7 @@ Solid body()
         .revolve();
 }
 
-// @part marks a body to show and export; without a colour it is mint
+// @part marks a body to show and export; without a colour it is sky blue
 @part
 Solid knob()
 {

@@ -157,7 +157,7 @@ h1 { font-size: 22px; margin: 0; font-weight: 600; }
 header p { margin: 2px 0 0; color: #5b6b65; }
 main { columns: 3 380px; column-gap: 22px; }
 section { break-inside: avoid; margin: 0 0 16px; border: 1px solid #cfe7dd; border-radius: 8px; overflow: hidden; }
-h2 { font-size: 13px; margin: 0; padding: 5px 10px; background: #8fcbb4; color: #10382b; }
+h2 { font-size: 13px; margin: 0; padding: 5px 10px; background: #0fc3f2; color: #044a5d; }
 dl { margin: 0; padding: 6px 10px; }
 dt { font: 12px/1.4 ui-monospace, "DejaVu Sans Mono", monospace; color: #0f5540; margin-top: 4px; }
 dd { margin: 0 0 0 12px; color: #4a5a54; }

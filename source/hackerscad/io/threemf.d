@@ -8,13 +8,13 @@ import std.zip : ArchiveMember, ZipArchive, CompressionMethod;
 import std.file : write;
 
 import hackerscad.geom.mesh;
-import hackerscad.geom.color : hexColor;
+import hackerscad.geom.color : defaultPartColor, hexColor;
 
 struct Part
 {
     string name;
     Mesh mesh;   /// should be welded and closed
-    uint rgb = 0x8FCBB4;   /// 0xTTRRGGBB, see hexColor
+    uint rgb = defaultPartColor;   /// 0xTTRRGGBB, see hexColor
 }
 
 /// With `assembly` (a name), the parts are the pieces of one object of

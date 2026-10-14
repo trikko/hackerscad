@@ -65,6 +65,9 @@ The cube in the view bar opens a small menu:
   change the limits, and the status line gives the areas.
 - **Perspective**, as a photo; **Orthographic**, where sizes do not change
   with the distance: the Front, Top and Right views become true drawings.
+- **Shine**: **None**, matte, each flat face one even tone; **Normal**, a
+  small highlight on curves; **High**, a shiny material with soft highlights
+  on every curve. The choice is kept.
 
 ## The cheatsheet
 

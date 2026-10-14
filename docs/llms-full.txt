@@ -144,7 +144,7 @@ basic construct once, with comments saying what each makes appear; in the applic
 - **`@preset("name", value)`** on a parameter gives its value in a named preset (`--preset name`, or the preset menu in the GUI). A preset is the set of values declared under its name; parameters without a value for it keep their default.
   - Parameters never change during an evaluation: their value is decided beforehand, from default, then preset, then explicit override.
   - Like a configuration table: every parameter is a column, every preset a row.
-- **`@part("colour")`** above **`Solid name() { … }`** declares an exported body: a separate object in 3MF, a separate named body in STEP, its own file in a zip of STLs (`name.stl`; a lone `.stl` takes one part). A part is evaluated once per run even when other parts refer to it. Without a colour a part is mint (`#8FCBB4`). `@part("slategray", alpha: 0.4)` makes it see-through; `export: false` makes it a reference part (a shaft, a board, the object a holder is for): drawn in the view and in PNGs, left out of STL, 3MF and STEP. `name: "Tank"` is the part's name in exported files (object, body and file names) instead of the function's; two parts cannot share one.
+- **`@part("colour")`** above **`Solid name() { … }`** declares an exported body: a separate object in 3MF, a separate named body in STEP, its own file in a zip of STLs (`name.stl`; a lone `.stl` takes one part). A part is evaluated once per run even when other parts refer to it. Without a colour a part is sky blue (`#0FC3F2`). `@part("slategray", alpha: 0.4)` makes it see-through; `export: false` makes it a reference part (a shaft, a board, the object a holder is for): drawn in the view and in PNGs, left out of STL, 3MF and STEP. `name: "Tank"` is the part's name in exported files (object, body and file names) instead of the function's; two parts cannot share one.
 - **Colours** are CSS names (`"steelblue"`), `"#RRGGBB"`, `"#RRGGBBAA"` (the last byte is the opacity) or `rgb(r, g, b)` with 0…255 channels, `rgb(r, g, b, alpha: 0.5)`. `solid.color("orange", alpha: 0.5)` works too.
 - **`unittest { assert(…); }`** blocks are design checks. They run after evaluation; a failure does not discard the geometry, but is reported in the GUI, the CLI and to agents.
 - **Solids and booleans:**
@@ -598,7 +598,7 @@ Solid body()
         .revolve();
 }
 
-// @part marks a body to show and export; without a colour it is mint
+// @part marks a body to show and export; without a colour it is sky blue
 @part
 Solid knob()
 {

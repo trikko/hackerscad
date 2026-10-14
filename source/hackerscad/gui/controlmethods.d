@@ -119,6 +119,15 @@ mixin template ControlMethods()
                     auto sh = v == "wireframe" ? Shading.wireframe : v == "shaded" ? Shading.shaded : Shading.edges;
                     shadingChoice[sh].setActive(true);
                 }
+                // how shiny the surfaces are, as the cube's Shine choices (kept between runs)
+                if (auto v = arg("shine"))
+                {
+                    import std.algorithm : countUntil;
+                    immutable at = ["none", "normal", "high"].countUntil(v);
+                    if (at < 0)
+                        return reply(JSONValue.init, "shine must be none, normal or high");
+                    shineChoice[at].setActive(true);
+                }
                 // the printability marks, over any style, as the cube's check box
                 if (has("printability"))
                     printabilityChoice.setActive(p["printability"].type == JSONType.true_);

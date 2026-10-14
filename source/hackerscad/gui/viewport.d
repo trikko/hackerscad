@@ -41,6 +41,14 @@ enum Shading
     wireframe,  /// edges only, the hidden ones faint
 }
 
+/// How shiny the surfaces are.
+enum Shine
+{
+    none,       /// matte, the light in parallel rays: each flat face one even tone
+    normal,     /// a light from the viewer, a small highlight on curves
+    high,       /// a shiny material (a matcap): soft highlights on every curve
+}
+
 /// What a left-button drag does (right always rotates, middle always pans).
 enum DragMode
 {
@@ -112,7 +120,7 @@ final class Viewport
     private uint program, gridVao, gridVbo;
     private int gridCount;
     private float gridExtent, gridZ;
-    private int uMvp, uModel, uColor, uEye, uFlat, uAlpha, uClipOn, uClip, uPattern;
+    private int uMvp, uModel, uColor, uEye, uFlat, uAlpha, uClipOn, uClip, uPattern, uSurface, uRight, uUp, uEven, uForward;
 
     // the colours of the window's dark style: background, grid, sketches
     private bool darkStyle;
@@ -1701,6 +1709,11 @@ private:
         program = buildProgram();
         uMvp = glGetUniformLocation(program, "uMvp");
         uModel = glGetUniformLocation(program, "uModel");
+        uSurface = glGetUniformLocation(program, "uSurface");
+        uEven = glGetUniformLocation(program, "uEven");
+        uForward = glGetUniformLocation(program, "uForward");
+        uRight = glGetUniformLocation(program, "uRight");
+        uUp = glGetUniformLocation(program, "uUp");
         uColor = glGetUniformLocation(program, "uColor");
         uEye = glGetUniformLocation(program, "uEye");
         uFlat = glGetUniformLocation(program, "uFlat");
@@ -2136,6 +2149,14 @@ private:
         glUseProgram(program);
         glUniformMatrix4fv(uMvp, 1, GL_FALSE, mvp.ptr);
         forPart(-1);
+        // how the surfaces look, and the lights that go with the viewer
+        glUniform1i(uSurface, shine == Shine.high ? 1 : 0);
+        glUniform1i(uEven, shine == Shine.none ? 1 : 0);
+        glUniform3f(uForward, cast(float) b.forward.x, cast(float) b.forward.y, cast(float) b.forward.z);
+        {
+            glUniform3f(uRight, cast(float) b.right.x, cast(float) b.right.y, cast(float) b.right.z);
+            glUniform3f(uUp, cast(float) b.up.x, cast(float) b.up.y, cast(float) b.up.z);
+        }
         glUniform3f(uEye, cast(float) b.eye.x, cast(float) b.eye.y, cast(float) b.eye.z);
         glUniform1f(uAlpha, 1);
 
@@ -2255,7 +2276,11 @@ private:
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glUniform1f(uAlpha, 0.85);
-            glUniform3f(uColor, 0.2f, 0.42f, 0.9f);   // blue: not to be taken for the grid
+            // blue: not to be taken for the grid; lighter on the dark background
+            if (darkStyle)
+                glUniform3f(uColor, 0.38f, 0.6f, 1.0f);
+            else
+                glUniform3f(uColor, 0.2f, 0.42f, 0.9f);
             foreach (i, g; gpu)
                 if (!isHidden(i))
                 {
@@ -2278,6 +2303,8 @@ private:
             forPart(i);
             if (i == selected.part)
                 glUniform3f(uColor, 0.75f, 0.45f, 0.0f);
+            else if (wire && darkStyle)   // over the background, not over a surface
+                glUniform3f(uColor, 0.88f, 0.9f, 0.93f);
             else
                 glUniform3f(uColor, 0.13f, 0.14f, 0.16f);
             // the edges of a see-through part fade with it; crowded edges (a
@@ -2672,6 +2699,15 @@ private:
     /// than this (mm), for the printability marks.
     public double overhangAngle = PI / 4, minWall = 0.8;
 
+    /// How shiny the shaded surfaces are.
+    public Shine shine = Shine.normal;
+
+    public void setShine(Shine s)
+    {
+        shine = s;
+        redraw();
+    }
+
     /// Whether the overhangs (red) and thin walls (violet) are marked, over
     /// any style.
     public bool printability;
@@ -3022,7 +3058,10 @@ double segmentDistance(double px, double py, double ax, double ay, double bx, do
     return sqrt(qx * qx + qy * qy);
 }
 
-Vec3 rgbOf(uint rgb) => Vec3(((rgb >> 16) & 0xFF) / 255.0, ((rgb >> 8) & 0xFF) / 255.0, (rgb & 0xFF) / 255.0);
+Vec3 rgbOf(uint rgb)
+{
+    return Vec3(((rgb >> 16) & 0xFF) / 255.0, ((rgb >> 8) & 0xFF) / 255.0, (rgb & 0xFF) / 255.0);
+}
 
 float[16] perspective(double fov, double aspect, double near, double far)
 {
@@ -3099,6 +3138,11 @@ uniform int uPattern;   // 1 diagonal stripes, 2 a cross-hatch: marks that no pa
 uniform float uAlpha;
 uniform int uClipOn;
 uniform vec4 uClip;   // keeps dot(p, xyz) <= w
+uniform int uSurface;   // 0 standard, 1 glossy (a matcap)
+uniform int uEven;      // 1: matte light in parallel rays, a fixed line of sight: each flat face one even tone
+uniform vec3 uForward;  // the line of sight, for that
+uniform vec3 uRight;    // for glossy: the viewer's right and up, to see normals as on the screen
+uniform vec3 uUp;
 out vec4 frag;
 void main()
 {
@@ -3128,11 +3172,39 @@ void main()
     }
     if (dot(n, v) < 0.0)
         n = -n;
+    // light from the eye: the line to it changes over a face, which shades a
+    // little; even light comes in parallel rays and is seen along one line,
+    // so that a flat face takes one tone, highlight and all
+    if (uEven == 1)
+        v = -uForward;
     vec3 l = normalize(v + vec3(0.0, 0.0, 0.6));
     float diffuse = max(dot(n, l), 0.0);
-    vec3 h = normalize(l + v);
-    float specular = pow(max(dot(n, h), 0.0), 48.0) * 0.22;
-    vec3 lit = uColor * (0.34 + 0.66 * diffuse) + vec3(specular);
+    vec3 lit;
+    if (uSurface == 1)
+    {
+        // glossy, as a matcap: the colour of a point from where its normal
+        // points on the screen, as if photographed on a glossy sphere: a soft
+        // highlight up and left, the body darker towards the outline, a faint
+        // second highlight down and right; in linear light, then gamma
+        vec3 base = pow(uColor, vec3(2.2));
+        vec3 s = vec3(dot(n, uRight), dot(n, uUp), dot(n, v));
+        float facing = clamp(s.z, 0.0, 1.0);
+        vec3 spot = normalize(vec3(-0.35, 0.45, 0.82));
+        float near = max(dot(s, spot), 0.0);
+        float highlight = 1.1 * pow(near, 28.0) + 0.25 * pow(near, 5.0);
+        float body = 0.18 + 0.82 * pow(facing, 0.8) * (0.9 + 0.1 * s.y);
+        float bounce = 0.35 * pow(max(dot(s, normalize(vec3(0.5, -0.6, 0.62))), 0.0), 12.0);
+        vec3 linear = base * body + vec3(highlight) + base * bounce;
+        lit = pow(linear, vec3(1.0 / 2.2));
+    }
+    else
+    {
+        // even light is matte: a highlight on a surface curved both ways is a
+        // round spot, whatever the light; without it, only the tone turns
+        vec3 h = normalize(l + v);
+        float specular = uEven == 1 ? 0.0 : pow(max(dot(n, h), 0.0), 48.0) * 0.22;
+        lit = uColor * (0.34 + 0.66 * diffuse) + vec3(specular);
+    }
     if (uPattern > 0)
     {
         float a = mod(gl_FragCoord.x + gl_FragCoord.y, 10.0) < 4.0 ? 1.0 : 0.0;

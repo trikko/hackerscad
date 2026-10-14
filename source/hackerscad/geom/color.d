@@ -1,8 +1,8 @@
 /// Part colours with transparency.
 module hackerscad.geom.color;
 
-/// The colour of parts that do not choose one: a pastel mint.
-enum uint defaultPartColor = 0x8FCBB4;
+/// The colour of parts that do not choose one: a bright sky blue, the logo's.
+enum uint defaultPartColor = 0x0FC3F2;
 
 /// Colours are 0xTTRRGGBB: the top byte is the transparency, so plain
 /// 0xRRGGBB values are opaque.

@@ -762,6 +762,7 @@ JSONValue[] toolList()
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe"]}, `
             ~ `"printability": {"type": "boolean"}, `
+            ~ `"shine": {"type": "string", "enum": ["none", "normal", "high"], "description": "how shiny the surfaces are: none matte (each flat face one even tone), normal a small highlight on curves, high a shiny material (kept between runs)"}, `
             ~ `"overhang_angle": {"type": "number", "description": "printability: degrees from a wall (45)"}, `
             ~ `"min_wall": {"type": "number", "description": "printability: thinnest wall in mm (0.8)"}, `
             ~ `"projection": {"type": "string", "enum": ["perspective", "orthographic"]}, `
