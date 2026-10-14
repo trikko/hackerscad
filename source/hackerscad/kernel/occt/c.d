@@ -20,6 +20,9 @@ enum HC_EDGE_LINE = 0, HC_EDGE_CIRCLE = 1, HC_EDGE_OTHER = 2;
 
 const(char)* hc_last_error();
 
+enum HC_WORKAROUND_MESH_DIVIDE = 0, HC_WORKAROUND_SHELL_STRATEGIES = 1, HC_WORKAROUND_HELIX_PIECES = 2;
+void hc_workaround(int which, int on);
+
 int hc_history_size();
 void hc_history_get(int* input, int* index);
 

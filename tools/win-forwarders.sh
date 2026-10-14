@@ -1,10 +1,14 @@
 #!/bin/sh
-# gid (0.9.13) loads only the first library of a pair such as
-# ["gobject-2.0_0", "glib-2.0_0"] and looks every symbol up in it: on Linux
+# WORKAROUND (gid 0.9.13, library loading): gid loads only the first
+# library of a pair such as ["gobject-2.0_0", "glib-2.0_0"] and looks
+# every symbol up in it: on Linux
 # dlsym also searches its dependencies, on Windows GetProcAddress does not,
 # so the glib, cairo and harfbuzz functions stay unresolved. gid tries the
 # name without "lib" first: a forwarding DLL with that name exports the
-# symbols of both libraries and forwards them to the real DLLs.
+# symbols of both libraries and forwards them to the real DLLs. The "known
+# bugs" unittest in lang/tests.d fails when gid's version changes: then
+# check whether gid looks symbols up in every library of the pair; if so,
+# this script (and its call in packaging/windows/package.sh) can go.
 # Usage: win-forwarders.sh BIN_DIR OUT_DIR  (BIN_DIR holds the real DLLs)
 set -e
 bin="$1"; out="$2"

@@ -25,6 +25,11 @@ enum { HC_EDGE_LINE = 0, HC_EDGE_CIRCLE = 1, HC_EDGE_OTHER = 2 };
 
 const char *hc_last_error(void);
 
+/* Workarounds for bugs of OpenCascade (WORKAROUND in shim.cpp), all on at
+ * start. A test turns one off to see whether the bug is still there. */
+enum { HC_WORKAROUND_MESH_DIVIDE = 0, HC_WORKAROUND_SHELL_STRATEGIES = 1, HC_WORKAROUND_HELIX_PIECES = 2 };
+void hc_workaround(int which, int on);
+
 /* Face history of the last operation on this thread: for every face of the
  * result, the operand it comes from (0 = first, 1 = second) and its face
  * index there, or -1/-1 for faces created by the operation itself. */

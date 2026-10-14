@@ -1045,9 +1045,13 @@ private:
         glReady = true;
     }
 
-    /// The GLArea's error, if any. Not through gid's area.getError(): its
-    /// wrapper frees the error it does not own (gid 0.9.13), and GTK frees it
-    /// again when the view goes, corrupting the heap.
+    /// The GLArea's error, if any.
+    // WORKAROUND (gid 0.9.13, GLArea.getError): its wrapper frees the error
+    // it does not own, and GTK frees it again when the view goes, corrupting
+    // the heap; so the C function is called directly. The "known bugs"
+    // unittest in lang/tests.d fails when gid's version changes: then read
+    // getError in gid's gtk/gl_area.d, and if it no longer frees the error,
+    // area.getError() will do.
     string glError()
     {
         import gtk.c.functions : gtk_gl_area_get_error;

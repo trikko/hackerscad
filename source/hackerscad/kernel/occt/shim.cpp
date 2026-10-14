@@ -82,6 +82,7 @@
 #include <BRepAdaptor_CompCurve.hxx>
 #include <GCPnts_UniformAbscissa.hxx>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <LocOpe_DPrism.hxx>
 #include <BRepOffsetAPI_DraftAngle.hxx>
@@ -116,7 +117,8 @@ struct hc_shape {
 
 static thread_local std::string g_error;
 
-// OCCT reports progress on stdout, which would corrupt --json and MCP output.
+// WORKAROUND (OpenCascade 7.9.3, Message): it reports progress on stdout,
+// which would corrupt --json and MCP output. By design, not a bug: it stays.
 static const bool g_silenced = [] {
     Message::DefaultMessenger()->ChangePrinters().Clear();
     return true;
@@ -233,6 +235,16 @@ static hc_shape *primitive(const TopoDS_Shape &s)
 extern "C" {
 
 const char *hc_last_error(void) { return g_error.c_str(); }
+
+// the WORKAROUNDs below that a test can turn off (hc_workaround)
+static std::atomic<bool> g_workarounds[3] = {{true}, {true}, {true}};
+static bool workaround(int which) { return g_workarounds[which].load(); }
+
+void hc_workaround(int which, int on)
+{
+    if (which >= 0 && which < 3)
+        g_workarounds[which] = on != 0;
+}
 
 int hc_history_size(void) { return (int)g_history.size(); }
 
@@ -599,6 +611,9 @@ hc_shape *hc_offset_solid(const hc_shape *s, double d)
         }
         GProp_GProps p;
         BRepGProp::VolumeProperties(r, p);
+        // WORKAROUND (OpenCascade 7.9.3, BRepOffsetAPI_MakeOffsetShape): it
+        // can return a broken solid instead of failing. No case known today
+        // (no test or example reaches it): it stays as a guard
         if (r.IsNull() || p.Mass() <= 0 || !BRepCheck_Analyzer(r).IsValid()) {
             set_error("offset gave a broken solid: try a smaller distance");
             return nullptr;
@@ -1271,8 +1286,11 @@ int hc_face_info(const hc_shape *s, int index, double out[7])
     });
 }
 
-// Some OCCT features return a broken solid instead of failing: catch it here,
-// or the model silently shows the input unchanged (or garbage).
+// WORKAROUND (OpenCascade 7.9.3, BRepFilletAPI, BRepOffsetAPI_DraftAngle):
+// some features return a broken solid instead of failing; caught here, or
+// the model silently shows the input unchanged (or garbage). No case known
+// today (none of the tests or examples reaches it): it stays as a guard,
+// as cheap as one validity check per feature.
 static void require_valid(const TopoDS_Shape &r, const char *what)
 {
     if (r.IsNull() || !BRepCheck_Analyzer(r).IsValid())
@@ -1357,14 +1375,23 @@ hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thick
             open += f.Mass();
         }
         const double most = 2 * (skin.Mass() - open) * thickness;
-        // the offset algorithm has several strategies; some fail (or return a
-        // broken solid) where others work: keep the first sound result
+        // WORKAROUND (OpenCascade 7.9.3, BRepOffsetAPI_MakeThickSolid): its
+        // strategies fail, or return a broken solid, on shapes others hollow
+        // well (the espresso cup needs the second), and on some shapes all
+        // fail: the first sound result is kept, and the fallback below takes
+        // over after them. The "known bugs" unittest in lang/tests.d turns
+        // this off (HC_WORKAROUND_SHELL_STRATEGIES: the first strategy only,
+        // no fallback) and fails once the cup hollows that way; then the
+        // other strategies, and maybe the fallback, can go.
         struct Try {
             GeomAbs_JoinType join;
             bool intersection;
         };
-        for (Try t : {Try{GeomAbs_Arc, false}, Try{GeomAbs_Intersection, true}, Try{GeomAbs_Arc, true},
-                      Try{GeomAbs_Intersection, false}}) {
+        std::vector<Try> tries = {Try{GeomAbs_Arc, false}};
+        if (workaround(HC_WORKAROUND_SHELL_STRATEGIES))
+            tries = {Try{GeomAbs_Arc, false}, Try{GeomAbs_Intersection, true}, Try{GeomAbs_Arc, true},
+                     Try{GeomAbs_Intersection, false}};
+        for (Try t : tries) {
             try {
                 BRepOffsetAPI_MakeThickSolid mk;
                 // negative thickness keeps the outer skin and grows inwards
@@ -1386,6 +1413,7 @@ hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thick
         }
         // fallback: the solid minus a copy shrunk by the thickness, then a slab
         // as thick as the wall removed under each open (planar) face
+        if (workaround(HC_WORKAROUND_SHELL_STRATEGIES))
         try {
             BRepOffsetAPI_MakeOffsetShape off;
             off.PerformByJoin(s->shape, -thickness, 1e-4, BRepOffset_Skin, false, false, GeomAbs_Arc);
@@ -1633,11 +1661,13 @@ double hc_area(const hc_shape *s)
 int hc_bbox(const hc_shape *s, double out[6])
 {
     return guarded<>(-1, [&] {
-        // AddOptimal is exact and fast, but on tori (the fillets between
-        // planes) it takes ~10 ms per face. Those get the box of a fine
-        // triangulation instead: its vertices lie on the surface, so it is
-        // short by at most the deflection. (Meshing B-splines, such as
-        // threads, is the slow one: they keep AddOptimal.)
+        // WORKAROUND (OpenCascade 7.9.3, BRepBndLib::AddOptimal): exact and
+        // fast, but on tori (the fillets between planes) it takes ~10 ms per
+        // face. Those get the box of a fine triangulation instead: its
+        // vertices lie on the surface, so it is short by at most the
+        // deflection. (Meshing B-splines, such as threads, is the slow one:
+        // they keep AddOptimal.) To see whether it is still needed, time
+        // AddOptimal on a box with its 12 edges filleted.
         Bnd_Box b;
         std::vector<TopoDS_Face> slow;
         for (TopExp_Explorer f(s->shape, TopAbs_FACE); f.More(); f.Next())
@@ -1739,14 +1769,17 @@ static double mesh_area(const TopoDS_Face &face)
 // each other, at some sizes only (an M8 × 25 thread, not × 22 or × 28),
 // though the solid is valid. meshed_badly finds those faces (the area of
 // their mesh differs from theirs) and hc_tessellate meshes them divided.
-// To see whether a newer OpenCascade still needs it: make meshed_badly
-// return false and run the M8 × 25 unittest in lang/tests.d; if it passes,
-// this, mesh_area and the division loop in hc_tessellate can go.
+// Whether a newer OpenCascade still needs it: the "known bugs" unittest in
+// lang/tests.d turns it off (HC_WORKAROUND_MESH_DIVIDE) and fails once the
+// bug is gone; then this, mesh_area and the division loop in hc_tessellate
+// can go.
 
 // Whether the mesher got a face wrong (see the WORKAROUND above). Analytic
 // faces mesh well and are not checked.
 static bool meshed_badly(const TopoDS_Face &face)
 {
+    if (!workaround(HC_WORKAROUND_MESH_DIVIDE))
+        return false;
     if (BRepAdaptor_Surface(face, false).GetType() <= GeomAbs_Torus)
         return false;
     // the plain (Gauss) integration first, much faster; it can be 5% off
@@ -2348,8 +2381,11 @@ static TopoDS_Shape solid_through(const std::vector<TopoDS_Wire> &given, bool ru
         bb.Add(all, w);
     const double span = diagonal(all);
     bool twisted = false;
-    // matching the vertices of the sections first gives better results, but
-    // the matching itself sometimes fails: then loft them as they are
+    // WORKAROUND (OpenCascade 7.9.3, BRepOffsetAPI_ThruSections): matching
+    // the vertices of the sections first gives better results, but the
+    // matching itself sometimes fails: then they are lofted as they are. No
+    // case known today (no test or example reaches the second try): it
+    // stays as a fallback
     for (bool check : {true, false}) {
         try {
             BRepOffsetAPI_ThruSections mk(Standard_True, ruled ? Standard_True : Standard_False);
@@ -2430,10 +2466,18 @@ hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, doub
         double turns = height / pitch;
         double len = turns * std::sqrt(4 * M_PI * M_PI + vPerTurn * vPerTurn);
         TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, surf, 0, len).Edge();
-        // the curve in space follows the line closely only with enough pieces: a few per turn
-        // (by default long helices get too few, and sweeps along them fail)
-        const int segments = std::max(30, (int)std::ceil(turns * 4));
-        BRepLib::BuildCurves3d(e, 1e-6, GeomAbs_C2, 9, segments);
+        // WORKAROUND (OpenCascade 7.9.3, BRepLib::BuildCurves3d): by default
+        // the curve in space of a long helix gets too few pieces to follow it,
+        // and sweeps along it fail (a thread tooth along 80 turns); with a
+        // few pieces per turn they work. The "known bugs" unittest in
+        // lang/tests.d builds it the default way (HC_WORKAROUND_HELIX_PIECES)
+        // and fails once that sweep works; then the plain BuildCurves3d(e)
+        // will do.
+        if (workaround(HC_WORKAROUND_HELIX_PIECES)) {
+            const int segments = std::max(30, (int)std::ceil(turns * 4));
+            BRepLib::BuildCurves3d(e, 1e-6, GeomAbs_C2, 9, segments);
+        } else
+            BRepLib::BuildCurves3d(e);
         return primitive(BRepBuilderAPI_MakeWire(e).Wire());
     });
 }

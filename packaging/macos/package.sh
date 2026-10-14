@@ -34,11 +34,14 @@ dylibbundler -of -cd -b -p @executable_path/../../Frameworks/ -d "$fw/" \
     -x "$app/Contents/Resources/bin/hcad" -x "$app/Contents/Resources/bin/hackerscad" \
     $(for lib in $gidlibs; do printf -- '-x %s ' "$fw/$lib"; done)
 
-# gid (0.9.13) looks the functions of a pair of libraries (gobject and glib,
+# WORKAROUND (gid 0.9.13, library loading): gid looks the functions of a
+# pair of libraries (gobject and glib,
 # cairo-gobject and cairo, harfbuzz-gobject and harfbuzz) up in the first one
 # only, and dlsym on macOS does not search its dependencies. The first one
 # becomes a library re-exporting both; the real one is renamed. The other
-# libraries load it under the old name and still find every symbol.
+# libraries load it under the old name and still find every symbol. When
+# gid's version changes (the "known bugs" unittest in lang/tests.d fails),
+# check whether it looks symbols up in every library; if so, this can go.
 echo > /tmp/hcad-empty.c
 reexport() {   # reexport FIRST SECOND
     real="${1%.dylib}.real.dylib"

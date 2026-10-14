@@ -57,9 +57,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends xvfb mutter imagemagick dbus-x11 libgl1-mesa-dri \
             ubuntu-wallpapers
           chmod +x dist/*.AppImage
-          # GLX: under Xvfb, libGL does not see the EGL contexts GTK would make
+          # WORKAROUND (Mesa's libGL under Xvfb): it does not see the EGL
+          # contexts GTK would make: GLX instead. Retry without GDK_DEBUG
+          # on a newer runner image to see whether it is still needed
           export APPIMAGE_EXTRACT_AND_RUN=1 GDK_BACKEND=x11 GDK_DEBUG=gl-glx
-          # the virtual session sometimes fails to start: up to three tries
+          # WORKAROUND (Xvfb and mutter on the runner): the virtual session
+          # sometimes fails to start: up to three tries
           for try in 1 2 3; do
             xvfb-run -a -s "-screen 0 1920x1080x24" bash -c \
               "dbus-run-session mutter --x11 --replace & sleep 5; tests/screenshot.sh linux dist/hackerscad-*.AppImage" || true

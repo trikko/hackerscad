@@ -1010,16 +1010,96 @@ unittest
     {
         auto m = kernel.tessellate(brep, 0.02, angular).welded;
         assert(m.isClosed);
-        double area = 0;
-        foreach (t; 0 .. m.tris.length / 3)
-        {
-            Vec3 v(size_t k) => Vec3(m.verts[m.tris[t * 3 + k] * 3], m.verts[m.tris[t * 3 + k] * 3 + 1],
-                m.verts[m.tris[t * 3 + k] * 3 + 2]);
-            area += (v(1) - v(0)).cross(v(2) - v(0)).length / 2;
-        }
+        immutable area = meshArea(m);
         assert(abs(area - kernel.area(brep)) < 0.01 * kernel.area(brep),
             format("the mesh covers %.1f mm², the rod %.1f mm²", area, kernel.area(brep)));
     }
+}
+
+/// The area of a mesh's triangles.
+double meshArea(M)(M m)
+{
+    double area = 0;
+    foreach (t; 0 .. m.tris.length / 3)
+    {
+        Vec3 v(size_t k) => Vec3(m.verts[m.tris[t * 3 + k] * 3], m.verts[m.tris[t * 3 + k] * 3 + 1],
+            m.verts[m.tris[t * 3 + k] * 3 + 2]);
+        area += (v(1) - v(0)).cross(v(2) - v(0)).length / 2;
+    }
+    return area;
+}
+
+/// For the known bugs below: fails when a bug of a library, which hackerscad
+/// works around, no longer shows (a new version fixed it). Then try removing
+/// the WORKAROUND it names, and its check here.
+void stillBroken(bool broken, string bug)
+{
+    assert(broken, "fixed upstream? " ~ bug ~ " no longer shows: try removing its WORKAROUND, and this check");
+}
+
+// Whether a model fails: with an error, thrown or reported.
+bool fails(string src)
+{
+    import std.algorithm : any;
+    try
+        return runModel(src).diagnostics.any!(d => d.severity == Severity.error);
+    catch (HcadError)
+        return true;
+}
+
+unittest
+{
+    // gid's bugs cannot be tried here (one corrupts the heap): the
+    // WORKAROUNDs for them (GLArea.getError in gui/viewport.d, the library
+    // pairs in tools/win-forwarders.sh and packaging/macos/package.sh) are
+    // tied to the version they were seen in
+    import std.file : thisExePath, readText;
+    import std.json : parseJSON;
+    import std.path : dirName;
+    auto root = dirName(dirName(dirName(thisExePath)));
+    immutable v = parseJSON(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"].str;
+    assert(v == "0.9.13", "gid is now " ~ v ~ ": check whether GLArea.getError still frees the error it does not own, "
+        ~ "and whether symbols are still looked up in the first library of a pair only; drop the WORKAROUNDs it "
+        ~ "fixed, then put the new version here");
+}
+
+// The known bugs of OpenCascade, each tried with its workaround turned off.
+
+unittest
+{
+    import hackerscad.kernel.occt.c;
+    hc_workaround(HC_WORKAROUND_MESH_DIVIDE, 0);
+    scope (exit)
+        hc_workaround(HC_WORKAROUND_MESH_DIVIDE, 1);
+    auto rod = runModel(q{
+        import std.threads : threadedRod;
+        @part Solid rod() => threadedRod(8.mm, 1.25.mm, 25.mm);
+    }).parts[0].solid.brep;
+    immutable area = meshArea(kernel.tessellate(rod, 0.02, 0.25).welded);
+    stillBroken(abs(area - kernel.area(rod)) > 0.02 * kernel.area(rod),
+        "BRepMesh covering more than the flanks of an M8 × 25 thread (shim.cpp, meshed_badly)");
+}
+
+unittest
+{
+    import hackerscad.kernel.occt.c;
+    hc_workaround(HC_WORKAROUND_SHELL_STRATEGIES, 0);
+    scope (exit)
+        hc_workaround(HC_WORKAROUND_SHELL_STRATEGIES, 1);
+    stillBroken(fails(import("01_cup.hcad")),
+        "MakeThickSolid failing to hollow the espresso cup with its first strategy (shim.cpp, hc_shell)");
+}
+
+unittest
+{
+    import hackerscad.kernel.occt.c;
+    hc_workaround(HC_WORKAROUND_HELIX_PIECES, 0);
+    scope (exit)
+        hc_workaround(HC_WORKAROUND_HELIX_PIECES, 1);
+    stillBroken(fails(q{
+        import std.threads : threadedRod;
+        @part Solid rod() => threadedRod(8.mm, 1.25.mm, 100.mm);
+    }), "BuildCurves3d giving a long helix too few pieces to sweep a thread along (shim.cpp, hc_helix_tapered)");
 }
 
 unittest

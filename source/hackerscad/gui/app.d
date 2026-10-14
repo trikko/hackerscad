@@ -202,7 +202,11 @@ version (Windows)
             n--;
         dir[n .. n + 5] = "mesa\0"w;
         SetDllDirectoryW(dir.ptr);
-        // Mesa's default on Windows (D3D12 on top of WARP) does not draw
+        // WORKAROUND (Mesa, MSYS2 CLANG64 build): its default on Windows,
+        // D3D12 on top of WARP, does not draw. To see whether a newer Mesa
+        // still needs it: on Windows without 3D acceleration (a virtual
+        // machine), start with HCAD_GL=software and these two lines left
+        // out; if the 3D view draws, they can go
         SetEnvironmentVariableW("GALLIUM_DRIVER"w.ptr, "llvmpipe"w.ptr);
         _putenv_s("GALLIUM_DRIVER", "llvmpipe");
     }
@@ -329,8 +333,10 @@ int main(string[] args)
                 stderr.reopen("NUL", "w");
             }
         }
-        // under Wine, Pango's DirectWrite backend draws the wrong glyphs:
-        // use fontconfig (the Windows build is tested with Wine on Linux)
+        // WORKAROUND (Wine, Pango's DirectWrite backend): under Wine it draws
+        // the wrong glyphs: fontconfig instead (the Windows build is tested
+        // with Wine on Linux). To check a newer Wine: run the Windows build
+        // with PANGOCAIRO_BACKEND=win32 and look at the editor's text
         import core.sys.windows.windows : GetModuleHandleA, GetProcAddress;
         import std.process : environment;
         auto ntdll = GetModuleHandleA("ntdll.dll");
