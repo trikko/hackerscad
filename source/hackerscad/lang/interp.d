@@ -366,8 +366,10 @@ final class Interp
                     if (q.label.toLower == partLabel.toLower)
                         throw new HcadError(Code.type, format("two parts would have the same name in exported files, "
                             ~ "'%s': give one a name: of its own", partLabel), f.nameSpan);
-                // an invalid solid exports as a broken mesh: say so instead of "ok"
-                if (!kernel.isValid(item.brep))
+                // an invalid solid exports as a broken mesh: say so instead of "ok";
+                // a reference part is not exported (a phone loaded from a mesh, a face a
+                // triangle: checking it took seconds at every change)
+                if (export_ && !kernel.isValid(item.brep))
                     diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("%s '%s' is not a valid closed solid "
                         ~ "(a self-intersecting outline, overlapping sweep or fold?): exports may be broken", at, name), f.nameSpan);
                 auto pr = PartResult(name, f.name, item, c, f.nameSpan, export_, partLabel);
