@@ -302,8 +302,12 @@ final class Viewport
 
     /// Replaces the displayed parts; `fitView` (a new model) puts the view
     /// back to the default one, framed on them.
+    /// Grows at each setParts: whether the parts are still those of a moment ago.
+    public uint partsVersion;
+
     void setParts(PartMesh[] p, bool fitView)
     {
+        partsVersion++;
         // a part keeps its visibility by name, wherever it moves in the list
         bool[string] was;
         foreach (i, q; parts)
@@ -1056,7 +1060,8 @@ final class Viewport
         Vec3 lit(Vec3 c, bool on) => on ? c * 0.6 + Vec3(0.4, 0.4, 0.4) : c;
         if (gizmo == Gizmo.move)
         {
-            immutable orange = Vec3(0.95, 0.45, 0.1);
+            immutable orange = gizmoPart >= 0 && gizmoPart < parts.length
+                ? standOut(parts[gizmoPart].rgb, Vec3(0.95, 0.45, 0.1), Vec3(0.2, 0.4, 1.0), 0.32) : Vec3(0.95, 0.45, 0.1);
             auto f = gizmoFrame();
             drawPolyline([f[0], f[1], f[2], f[3], f[0]], lit(orange, live(0)), live(0) ? 4 : 2);
             foreach (a; 0 .. 3)
@@ -1631,7 +1636,8 @@ private:
         auto cross2 = [hover.point - v * (r * 0.3), hover.point + v * (r * 0.3)];
         foreach (pass; 0 .. 2)
         {
-            auto c = pass == 0 ? Vec3(0.08, 0.08, 0.1) : Vec3(1.0, 0.6, 0.05);
+            auto c = pass == 0 ? Vec3(0.08, 0.08, 0.1)
+                : standOut(parts[hover.part].rgb, Vec3(1.0, 0.6, 0.05), Vec3(0.3, 0.5, 1.0), 0.32);
             immutable w = pass == 0 ? 4.5f : 2f;
             drawPolyline(ring, c, w);
             drawPolyline(cross1, c, w);
@@ -1759,7 +1765,7 @@ private:
         forPart(i);
         auto c = rgbOf(parts[i].rgb);
         if (i == selected.part && selected.face < 0)
-            c = c * 0.6 + Vec3(1, 0.85, 0.2) * 0.4;
+            c = c * 0.6 + standOut(parts[i].rgb, Vec3(1, 0.85, 0.2), Vec3(0.3, 0.5, 1.0)) * 0.4;
         glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
         glBindVertexArray(gpu[i].vao);
         glDrawElements(GL_TRIANGLES, gpu[i].indexCount, GL_UNSIGNED_INT, null);
@@ -2257,7 +2263,8 @@ private:
             if (h.face + 1 < fs.length)
             {
                 forPart(h.part);
-                glUniform3f(uColor, 1.0f, 0.78f, 0.15f);
+                auto c = standOut(parts[h.part].rgb, Vec3(1.0, 0.78, 0.15), Vec3(0.3, 0.5, 1.0));
+                glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
                 glBindVertexArray(gpu[h.part].vao);
                 glDrawElements(GL_TRIANGLES, cast(int)((fs[h.face + 1] - fs[h.face]) * 3), GL_UNSIGNED_INT,
                     cast(void*)(fs[h.face] * 3 * uint.sizeof));
@@ -2302,7 +2309,10 @@ private:
                 continue;
             forPart(i);
             if (i == selected.part)
-                glUniform3f(uColor, 0.75f, 0.45f, 0.0f);
+            {
+                auto c = standOut(parts[i].rgb, Vec3(0.75, 0.45, 0.0), Vec3(0.12, 0.3, 0.85), 0.32);
+                glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
+            }
             else if (wire && darkStyle)   // over the background, not over a surface
                 glUniform3f(uColor, 0.88f, 0.9f, 0.93f);
             else
@@ -2341,7 +2351,8 @@ private:
         // the picked edges, thick
         foreach (h; selection())
             if (h.edge >= 0 && h.part < parts.length && h.edge < parts[h.part].edgeInfo.length)
-                drawPolyline(edgePoints(h.part, parts[h.part].edgeInfo[h.edge]), Vec3(0.95, 0.45, 0.05), 4);
+                drawPolyline(edgePoints(h.part, parts[h.part].edgeInfo[h.edge]),
+                    standOut(parts[h.part].rgb, Vec3(0.95, 0.45, 0.05), Vec3(0.15, 0.35, 0.95), 0.32), 4);
 
         renderSketches();
         drawGizmo();
@@ -2370,7 +2381,8 @@ private:
         glDrawElements(GL_TRIANGLES, rollbackGpu.indexCount, GL_UNSIGNED_INT, null);
         glDisable(GL_POLYGON_OFFSET_FILL);
         auto fs = rollbackMesh.faceStart;
-        glUniform3f(uColor, 1.0f, 0.62f, 0.1f);
+        auto nc = standOut(rollbackMesh.rgb, Vec3(1.0, 0.62, 0.1), Vec3(0.3, 0.5, 1.0));
+        glUniform3f(uColor, cast(float) nc.x, cast(float) nc.y, cast(float) nc.z);
         foreach (f, id; rollbackMesh.creators)
             if (id == rollbackFeature && f + 1 < fs.length)
                 glDrawElements(GL_TRIANGLES, cast(int)((fs[f + 1] - fs[f]) * 3), GL_UNSIGNED_INT,
@@ -2699,6 +2711,16 @@ private:
     /// than this (mm), for the printability marks.
     public double overhangAngle = PI / 4, minWall = 0.8;
 
+    /// Draws part `i` in colour `rgb` (0xRRGGBB; its transparency stays) until
+    /// the parts are replaced: the colour wheel's preview.
+    public void previewColour(size_t i, uint rgb)
+    {
+        if (i >= parts.length)
+            return;
+        parts[i].rgb = (parts[i].rgb & 0xFF000000) | (rgb & 0xFFFFFF);
+        redraw();
+    }
+
     /// How shiny the shaded surfaces are.
     public Shine shine = Shine.normal;
 
@@ -2800,16 +2822,19 @@ private:
                 g.thinCount = cast(int) thin.length;
             }
             glBindVertexArray(g.printVao);
-            // red with white stripes, violet cross-hatched
+            // red with white stripes, violet cross-hatched; darker on a part of
+            // a near colour (a red part), so the marks keep their meaning
             if (g.overhangCount > 0)
             {
-                glUniform3f(uColor, 0.90f, 0.25f, 0.20f);
+                auto c = standOut(parts[i].rgb, Vec3(0.90, 0.25, 0.20), Vec3(0.55, 0.05, 0.08), 0.2);
+                glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
                 glUniform1i(uPattern, 1);
                 glDrawElements(GL_TRIANGLES, g.overhangCount, GL_UNSIGNED_INT, null);
             }
             if (g.thinCount > 0)
             {
-                glUniform3f(uColor, 0.58f, 0.36f, 0.88f);
+                auto c = standOut(parts[i].rgb, Vec3(0.58, 0.36, 0.88), Vec3(0.32, 0.12, 0.6), 0.2);
+                glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
                 glUniform1i(uPattern, 2);
                 glDrawElements(GL_TRIANGLES, g.thinCount, GL_UNSIGNED_INT, cast(void*)(g.overhangCount * uint.sizeof));
             }
@@ -3056,6 +3081,18 @@ double segmentDistance(double px, double py, double ax, double ay, double bx, do
     t = max(0.0, min(1.0, t));
     immutable qx = ax + t * dx - px, qy = ay + t * dy - py;
     return sqrt(qx * qx + qy * qy);
+}
+
+/// `usual`, or `reserve` when `usual` would hardly show on a part of colour
+/// `rgb` (a yellow face picked on a yellow part): for what is drawn on a part.
+/// `near`: how different they must look (OKLab); striped marks want more,
+/// thin lines more still (an orange edge on a yellow face hardly shows).
+Vec3 standOut(uint rgb, Vec3 usual, Vec3 reserve, double near = 0.15)
+{
+    import std.math : lround;
+    import hackerscad.geom.color : colourDistance;
+    uint packed(Vec3 c) => cast(uint)(lround(c.x * 255) << 16 | lround(c.y * 255) << 8 | lround(c.z * 255));
+    return colourDistance(rgb & 0xFFFFFF, packed(usual)) < near ? reserve : usual;
 }
 
 Vec3 rgbOf(uint rgb)

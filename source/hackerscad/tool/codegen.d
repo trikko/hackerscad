@@ -357,6 +357,103 @@ Vec3 turnAngles(double[3][3] m)
     return Vec3(deg(a), deg(b), deg(c));
 }
 
+/// Gives the part `part` the colour `colour` (a name, "#RRGGBB"), written as
+/// the first argument of its @part: in place of the colour it had, or added;
+/// the named arguments (alpha:, name:, export:) stay. The colour is selected.
+Edit colourPart(string source, string file, string part, string colour)
+{
+    auto prog = parse(source, file);
+    FuncDecl fn;
+    foreach (d; prog.decls)
+        if (auto f = cast(FuncDecl) d)
+            if (f.name == part)
+                fn = f;
+    if (fn is null)
+        throw new CodegenException(format("cannot find the function of part '%s' in this file", part));
+    Attribute at;
+    bool found;
+    foreach (a; fn.attrs)
+        if (a.name == "part")
+        {
+            at = a;
+            found = true;
+        }
+    if (!found)
+        throw new CodegenException(format("'%s' has no @part", part));
+    colour = `"` ~ colour ~ `"`;
+    auto toks = lex(source, file);
+    immutable i = tokenAt(toks, at.span);   // '@', then 'part', then '(' when it has arguments
+    Edit e;
+    if (at.args.length == 0 || i + 2 >= toks.length || toks[i + 2].kind != Tok.lparen)
+    {
+        // @part or @part(): the colour in brackets after the name
+        e.offset = offsetOf(source, toks[i + 1].span) + "part".length;
+        immutable empty = i + 3 < toks.length && toks[i + 2].kind == Tok.lparen && toks[i + 3].kind == Tok.rparen;
+        e.length = empty ? offsetOf(source, toks[i + 3].span) + 1 - e.offset : 0;
+        e.text = "(" ~ colour ~ ")";
+        e.selectOffset = e.offset + 1;
+    }
+    else if (at.args[0].name is null)
+    {
+        // the colour it had, up to the ',' or ')' after it
+        size_t j = tokenAt(toks, at.args[0].span);
+        int depth;
+        for (; j < toks.length; j++)
+        {
+            immutable k = toks[j].kind;
+            if (depth == 0 && (k == Tok.comma || k == Tok.rparen))
+                break;
+            if (k == Tok.lparen || k == Tok.lbracket || k == Tok.lbrace)
+                depth++;
+            else if (k == Tok.rparen || k == Tok.rbracket || k == Tok.rbrace)
+                depth--;
+        }
+        if (j >= toks.length)
+            throw new CodegenException("cannot find the end of the colour of @part");
+        e.offset = offsetOf(source, at.args[0].span);
+        e.length = trimRight(source[e.offset .. offsetOf(source, toks[j].span)]).length;
+        e.text = colour;
+        e.selectOffset = e.offset;
+    }
+    else
+    {
+        // only named arguments: the colour first
+        e.offset = offsetOf(source, toks[i + 2].span) + 1;
+        e.text = colour ~ ", ";
+        e.selectOffset = e.offset;
+    }
+    e.selectLength = colour.length;
+    return e;
+}
+
+unittest
+{
+    // added to a bare @part, to an empty one and before named arguments;
+    // replaced, a name or an expression too, the named arguments kept
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto e = colourPart(src, "m.hcad", "p", "Sky Pop");
+    auto a = e.apply(src);
+    assert(a.canFind(`@part("Sky Pop")` ~ "\nSolid p()"), a);
+    assert(a[e.selectOffset .. e.selectOffset + e.selectLength] == `"Sky Pop"`, a);
+    assert(colourPart(a, "m.hcad", "p", "#FF8A82").apply(a).canFind(`@part("#FF8A82")`));
+    auto b = "module m;\n\n@part()\nSolid p() => box(1, 1, 1);\n";
+    assert(colourPart(b, "m.hcad", "p", "White Pop").apply(b).canFind(`@part("White Pop")` ~ "\n"));
+    auto c = "module m;\n\n@part(name: \"Lid\", alpha: 0.4)\nSolid p() => box(1, 1, 1);\n";
+    assert(colourPart(c, "m.hcad", "p", "Violet Pop").apply(c).canFind(`@part("Violet Pop", name: "Lid", alpha: 0.4)`));
+    auto d = "module m;\n\n@part(\"sienna\" , alpha: 0.5)\nSolid p() => box(1, 1, 1);\n";
+    assert(colourPart(d, "m.hcad", "p", "Cyan Pop").apply(d).canFind(`@part("Cyan Pop" , alpha: 0.5)`));
+    auto f = "module m;\nimmutable string tint = \"red\";\n@part(tint ~ \"\", export: false)\nSolid p() => box(1, 1, 1);\n";
+    assert(colourPart(f, "m.hcad", "p", "Gray Pop").apply(f).canFind(`@part("Gray Pop", export: false)`));
+    // a function that is not a part
+    auto g = "module m;\n\nSolid p() => box(1, 1, 1);\n";
+    bool threw;
+    try
+        colourPart(g, "m.hcad", "p", "Red Pop");
+    catch (CodegenException)
+        threw = true;
+    assert(threw);
+}
+
 /// Moves the part `part` by `v` (kind "move", mm), or turns it (kind
 /// "rotate": `v` the angles about X, then Y, then Z in degrees) about
 /// `around`. When its chain already ends with such a call holding plain

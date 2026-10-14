@@ -31,7 +31,8 @@ The view shows a block at once. What the lines say:
   spheres and the like.
 - `@part("sienna")` says that what follows is a piece to print, and its
   colour: sienna is a terracotta brown. Any colour name of the web works
-  (`"steelblue"`, `"orange"`…), or a code like `"#0FC3F2"`.
+  (`"steelblue"`, `"orange"`…), hackerscad's own (`"Sky Pop"`, `"Pink Pop"`…,
+  the ones the right-click menu offers), or a code like `"#0FC3F2"`.
 - `Solid tank() => box(62.mm, 62.mm, 66.mm);` makes that piece: it is called
   `tank` and it is a box 62 mm wide, 62 mm deep and 66 mm tall. Always write
   the unit, `.mm`, after a size.

@@ -585,6 +585,8 @@ final class MainWindow
                 ~ " font-size: 0.93em; }"
                 ~ " popover.hcad-menu button:hover { background: alpha(@accent_bg_color, 0.14); }"
                 ~ " popover.hcad-menu separator { margin: 4px 0; }"
+                ~ " .hcad-swatch { min-width: 14px; min-height: 14px; border-radius: 50%;"
+                ~ " border: 1px solid alpha(currentColor, 0.3); }"
                 ~ " popover.hcad-menu .hcad-menu-heading { padding: 4px 14px 2px 14px; font-size: 0.78em; font-weight: bold;"
                 ~ " opacity: 0.55; }"
                 ~ " label.hcad-info { padding: 4px 10px; border-radius: 6px; font-size: 0.9em;"
@@ -3073,6 +3075,17 @@ private:
         }
         entries ~= I("Move…", () => startTransform(Viewport.Gizmo.move, contextHit.part));
         entries ~= I("Rotate…", () => startTransform(Viewport.Gizmo.rotate, contextHit.part));
+        {
+            // hackerscad's own colours (geom/color.d), the default first
+            import hackerscad.geom.color : partPalette;
+            MenuEntry[] colours;
+            immutable now = part.rgb & 0xFFFFFF;
+            foreach (c; partPalette)
+                colours ~= colourEntry(c.name, c.rgb, now == c.rgb ? "✓" : null);
+            colours ~= S();
+            colours ~= I("Other…", () => showColourWheel(contextHit.part));
+            entries ~= G("Colour", colours);
+        }
         entries ~= I("Hide " ~ part.name, () => setPartVisible(contextHit.part, false));
         if (last.parts.length > 1)
             entries ~= I("Show only " ~ part.name, () {
@@ -3097,6 +3110,65 @@ private:
     }
 
     Popover contextPopover;
+
+    /// A Colour entry: its sample, and clicking it writes the colour's name on
+    /// the part the menu is for (one entry per call: closures made in a loop share one frame).
+    MenuEntry colourEntry(string name, uint rgb, string detail)
+    {
+        return MenuEntry.colour(name, format("#%06X", rgb), () {
+            if (auto problem = writeColour(last.parts[contextHit.part].name, name))
+                info(problem);
+        }, detail);
+    }
+
+    import hackerscad.gui.colourwheel : ColourWheel;
+    ColourWheel colourWheel;
+
+    /// Colour › Other…: the calibrated wheel, on part `index`'s colour; the
+    /// part shows each colour chosen, Apply writes the last as "#RRGGBB".
+    void showColourWheel(int index)
+    {
+        if (index < 0 || index >= last.parts.length)
+            return;
+        if (colourWheel !is null && colourWheel.win.getVisible())
+            colourWheel.win.close();   // the part it was on takes back its colour
+        auto name = last.parts[index].name;
+        immutable start = last.parts[index].rgb & 0xFFFFFF;
+        // the preview and its undoing touch the parts the wheel opened on: once
+        // the model is evaluated again, the new parts have their own colours
+        immutable version_ = viewport.partsVersion;
+        void show(uint rgb)
+        {
+            if (viewport.partsVersion == version_)
+                viewport.previewColour(index, rgb);
+        }
+        colourWheel = new ColourWheel(window, start, (uint rgb) => show(rgb), (uint rgb) {
+            if (auto problem = writeColour(name, format("#%06X", rgb)))
+            {
+                show(start);
+                info(problem);
+            }
+        }, () => show(start));
+    }
+
+    /// Gives part `name` the colour `colour` (a name, "#RRGGBB") in the code,
+    /// on its @part; the problem, or null.
+    string writeColour(string name, string colour)
+    {
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        try
+        {
+            import hackerscad.tool.codegen : colourPart;
+            applyEdit(colourPart(text(), path, name, colour));
+            info("");
+            return null;
+        }
+        catch (CodegenException e)
+            return e.msg;
+        catch (HcadError e)
+            return "fix the errors in the code first: " ~ e.msg;
+    }
 
     int[] selFaces, selEdges;
 

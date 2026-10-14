@@ -1716,7 +1716,13 @@ uint colorOf(Value v, Span span)
         throw new HcadError(Code.type, format("'%s' is not a hex colour", v.s), span);
     if (auto c = s in namedColors)
         return *c;
-    throw new HcadError(Code.type, format("unknown color '%s'", v.s), span, Interp.suggest(s, namedColors.keys));
+    immutable own = paletteColour(s);
+    if (own >= 0)
+        return cast(uint) own;
+    string[] names = namedColors.keys;
+    foreach (c; partPalette)
+        names ~= c.name.toLower;
+    throw new HcadError(Code.type, format("unknown color '%s'", v.s), span, Interp.suggest(s, names));
 }
 
 immutable uint[string] namedColors;

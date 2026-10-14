@@ -32,12 +32,19 @@ struct MenuEntry
     MenuEntry[] children;
     string detail;      /// right-aligned, dimmed (values)
     bool enabled = true;
+    string swatch;      /// a colour shown before the label, "#RRGGBB"
 
     static MenuEntry item(string label, void delegate() run, string detail = null) =>
         MenuEntry(Kind.item, label, run, null, detail);
     static MenuEntry group(string label, MenuEntry[] children) => MenuEntry(Kind.group, label, null, children);
     static MenuEntry heading(string label, string detail = null) => MenuEntry(Kind.heading, label, null, null, detail);
     static MenuEntry separator() => MenuEntry(Kind.separator);
+    static MenuEntry colour(string label, string rgb, void delegate() run, string detail = null)
+    {
+        auto e = item(label, run, detail);
+        e.swatch = rgb;
+        return e;
+    }
 }
 
 /// Shows `entries` in a popover pointing at (x, y) of `parent`.
@@ -109,7 +116,8 @@ private final class Menu
         pages = new Stack;
         pages.setVhomogeneous(false);
         pages.setHhomogeneous(false);
-        pages.setInterpolateSize(true);
+        // no size animation: the popover takes the new page's size at once (see show)
+        pages.setInterpolateSize(false);
         pages.setTransitionType(StackTransitionType.SlideLeftRight);
         pages.setTransitionDuration(150);
         pages.addNamed(page(entries, null, null, "main"), "main");
@@ -120,6 +128,9 @@ private final class Menu
     {
         current = name;
         pages.setVisibleChildName(name);
+        // a popover grows with its content but does not shrink by itself: a
+        // short page after a long one would keep the long one's height
+        pop.present();
     }
 
     /// A page of entries named `self`; `back` is the name of the page to return to.
@@ -175,6 +186,11 @@ private final class Menu
             break;
         }
         auto row = new Box(Orientation.Horizontal, 16);
+        if (e.swatch.length)
+        {
+            row.setSpacing(10);
+            row.append(swatchDot(e.swatch));
+        }
         auto label = new Label(e.label);
         label.setXalign(0);
         label.setHexpand(true);
@@ -232,6 +248,30 @@ private final class Menu
         }
     }
 
+}
+
+/// A round sample of colour `rgb` ("#RRGGBB"), outlined so that white shows.
+private Widget swatchDot(string rgb)
+{
+    import gdk.display : Display;
+    import gtk.css_provider : CssProvider;
+    import gtk.style_context : StyleContext;
+    import std.string : toLower;
+    immutable cls = "hcad-swatch-" ~ rgb[1 .. $].toLower;
+    // one rule per colour, added the first time it is shown
+    static bool[string] styled;
+    if (cls !in styled)
+    {
+        auto css = new CssProvider;
+        css.loadFromString("." ~ cls ~ " { background: " ~ rgb ~ "; }");
+        StyleContext.addProviderForDisplay(Display.getDefault(), css, 600);
+        styled[cls] = true;
+    }
+    auto dot = new Box(Orientation.Horizontal, 0);
+    dot.addCssClass("hcad-swatch");
+    dot.addCssClass(cls);
+    dot.setValign(imported!"gtk.types".Align.Center);
+    return dot;
 }
 
 /// Draws popover `p`, when open, over a snapshot of `window` at the place

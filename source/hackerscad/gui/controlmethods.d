@@ -209,6 +209,57 @@ mixin template ControlMethods()
                 whenIdle(() => reply(state(), null));
                 return;
             }
+        case "colour":
+            {
+                // {"part": "lid", "colour": "Violet Pop"} or "#C597FE": the colour written on its @part,
+                // as the right-click menu's Colour; {"hue": 250, "lightness": 0.76, "vividness": 0.15}
+                // as its Other… wheel (OKLCH; the last two as the palette's when left out);
+                // {"wheel": true} opens the wheel on the part for the user, writing nothing
+                whenIdle(() {
+                    auto name = arg("part");
+                    int index = -1;
+                    foreach (i, q; last.parts)
+                        if (q.name == name || (name is null && last.parts.length == 1))
+                            index = cast(int) i;
+                    if (index < 0)
+                        return reply(JSONValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
+                    import hackerscad.geom.color : partPalette;
+                    import std.ascii : isHexDigit;
+                    import std.algorithm : all;
+                    import std.uni : sicmp, toUpper;
+                    // a palette name as the palette writes it, or #RRGGBB
+                    if ("wheel" in p && p["wheel"].type == JSONType.true_)
+                    {
+                        showColourWheel(index);
+                        return reply(state(), null);
+                    }
+                    immutable want = arg("colour");
+                    string colour;
+                    if (has("hue"))
+                    {
+                        import hackerscad.geom.color : oklchColour;
+                        immutable l = has("lightness") ? numberOf(p["lightness"]) : 0.76;
+                        immutable ch = has("vividness") ? numberOf(p["vividness"]) : 0.15;
+                        colour = format("#%06X", oklchColour(l, ch, numberOf(p["hue"])));
+                    }
+                    foreach (c; partPalette)
+                        if (colour is null && sicmp(c.name, want) == 0)
+                            colour = c.name;
+                    if (colour is null && want.length == 7 && want[0] == '#' && want[1 .. $].all!isHexDigit)
+                        colour = want.toUpper;
+                    if (colour is null)
+                    {
+                        string[] names;
+                        foreach (c; partPalette)
+                            names ~= c.name;
+                        return reply(JSONValue.init, "colour is one of " ~ names.join(", ") ~ ", or #RRGGBB");
+                    }
+                    if (auto problem = writeColour(last.parts[index].name, colour))
+                        return reply(JSONValue.init, problem);
+                    whenIdle(() => reply(state(), null));
+                });
+                return;
+            }
         case "transform":
             {
                 // {"part": "lid", "move": [10, 0, 0]} or {"part": "lid", "rotate": {"axis": "z", "angle": 45}}:
@@ -837,7 +888,12 @@ mixin template ControlMethods()
                 // the cheatsheet window, when asked for and open
                 if (arg("target") == "cheatsheet" && cheatsheet is null)
                     return reply(JSONValue.init, "the cheatsheet is not open: open it with the cheatsheet method first");
-                auto other = arg("target") == "cheatsheet" ? cheatsheet.widget : null;
+                // the colour wheel (Colour › Other…), when open
+                immutable wheelOpen = colourWheel !is null && colourWheel.win.getVisible();
+                if (arg("target") == "colour" && !wheelOpen)
+                    return reply(JSONValue.init, "the colour wheel is not open: open it with the colour method, wheel: true");
+                imported!"gtk.window".Window other = arg("target") == "cheatsheet" ? cheatsheet.widget
+                    : arg("target") == "colour" ? colourWheel.win : null;
                 // after a change GTK draws the window at its next frame, which
                 // the compositor holds back while the window is hidden or
                 // covered: wait for it a while, then fall back on the 3D view

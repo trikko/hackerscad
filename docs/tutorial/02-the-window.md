@@ -14,7 +14,11 @@ bag clip is still open; we use it to try things.
    **Move…** and **Rotate…**: drag the X, Y and Z arrows (or the frame
    under the part, across), or the knobs of the three rings round it, one
    after the other; read how far next to the pointer, and Apply writes one
-   `.move()` or one `.rotate()` into the code.
+   `.move()` or one `.rotate()` into the code. **Colour** offers
+   hackerscad's own bright colours (Sky Pop, Pink Pop…), and writes the
+   name of the one you pick into the part's `@part`; **Other…** opens a
+   wheel where every hue is as bright as those, the part showing each one
+   until you Apply it (or Cancel).
 2. **The view bar.** The views (Fit, Iso, Top, Front, Right); how a left drag
    moves the view; the eye, to hide or show the parts, the ground grid and
    the axes; the cube, to choose how the parts are drawn; the section, to cut
@@ -62,7 +66,9 @@ The cube in the view bar opens a small menu:
 - **Printability**, a check box over any of these styles, for 3D printing:
   what overhangs more than 45° and needs supports is striped red, walls
   thinner than 0.8 mm are cross-hatched violet; the two fields under it
-  change the limits, and the status line gives the areas.
+  change the limits, and the status line gives the areas. On a part of a
+  near colour these marks turn darker, and what marks a picked face turns
+  blue on a yellow or orange part, so that they always show.
 - **Perspective**, as a photo; **Orthographic**, where sizes do not change
   with the distance: the Front, Top and Right views become true drawings.
 - **Shine**: **None**, matte, each flat face one even tone; **Normal**, a
