@@ -366,23 +366,38 @@ Edit transformPart(string source, string file, string part, string kind, Vec3 v,
 {
     import std.conv : to;
     import std.regex : matchFirst, regex;
-    immutable num = `^(-?[0-9]+(?:\.[0-9]+)?)`;
+    immutable num = `-?[0-9]+(?:\.[0-9]+)?(?:e-?[0-9]+)?`;
     string number(double x) => format("%.6g", abs(x) < 1e-9 ? 0.0 : x);
-    // turns are written the short way, from -180 to 180 degrees
-    if (kind == "rotate")
+    // a turn and the point it turns about, the shortest way to write them
+    string turnCall(Vec3 angles, Vec3 pivot)
+    {
         foreach (i; 0 .. 3)
-            v[i] = halfTurn(v[i]);
-    string callOf(Vec3 w)
+            angles[i] = halfTurn(angles[i]);
+        string[] args;
+        foreach (i, n; ["x", "y", "z"])
+            if (abs(angles[i]) > 1e-9)
+                args ~= n ~ ": " ~ number(angles[i]);
+        if (args.length == 0)
+            return null;
+        // only the pivot's part across the axis matters: along it, it moves nothing
+        auto u = turnAxis(turnMatrix(angles));
+        pivot = pivot - u * pivot.dot(u);
+        foreach (i; 0 .. 3)
+        {
+            import std.math : round;
+            pivot[i] = round(pivot[i] * 1000) / 1000;
+        }
+        if (pivot.length > 1e-6)
+            args ~= "around: " ~ vecMm(pivot);
+        return ".rotate(" ~ args.join(", ") ~ ")";
+    }
+    string moveCall(Vec3 w)
     {
         string[] args;
         foreach (i, n; ["x", "y", "z"])
             if (abs(w[i]) > 1e-9)
-                args ~= n ~ ": " ~ (kind == "move" ? number(w[i]) ~ ".mm" : number(w[i]));
-        if (args.length == 0)
-            return null;
-        if (kind == "rotate")
-            args ~= "around: " ~ vecMm(around);
-        return "." ~ kind ~ "(" ~ args.join(", ") ~ ")";
+                args ~= n ~ ": " ~ number(w[i]) ~ ".mm";
+        return args.length ? ".move(" ~ args.join(", ") ~ ")" : null;
     }
 
     auto r = returned(source, file, part);
@@ -392,47 +407,51 @@ Edit transformPart(string source, string file, string part, string kind, Vec3 v,
     {
         // the numbers it holds, or none when one is not plain
         bool plain = true;
-        Vec3 had;
-        string aroundText;
+        Vec3 had, pivot;
         foreach (name, value; c.args)
         {
             immutable axis = ["x": 0, "y": 1, "z": 2].get(name, -1);
             if (axis >= 0)
             {
-                auto m = value.matchFirst(regex(num ~ (kind == "move" ? `\.mm$` : `(?:\.deg)?$`)));
+                auto m = value.matchFirst(regex("^(" ~ num ~ ")" ~ (kind == "move" ? `\.mm$` : `(?:\.deg)?$`)));
                 if (m.empty)
                     plain = false;
                 else
                     had[axis] = m[1].to!double;
             }
             else if (kind == "rotate" && name == "around")
-                aroundText = value;
+            {
+                auto m = value.matchFirst(regex(`^vec\((` ~ num ~ `)\.mm, (` ~ num ~ `)\.mm, (` ~ num ~ `)\.mm\)$`));
+                if (m.empty)
+                    plain = false;
+                else
+                    pivot = Vec3(m[1].to!double, m[2].to!double, m[3].to!double);
+            }
             else
                 plain = false;
         }
-        // turns make one only about the same point
-        if (kind == "rotate")
-            plain = plain && aroundText == vecMm(around);
+        string call;
+        if (plain && kind == "move")
+            call = moveCall(had + v);
+        else if (plain)
+        {
+            // the turn there, then the new one: one turn about some point, when
+            // there is one (two turns about different points can leave a slide
+            // along the axis, which no single turn makes)
+            auto m1 = turnMatrix(had), m2 = turnMatrix(v);
+            auto m = product(m2, m1);
+            // where each sends the origin: t = (I - R) p
+            auto t = apply(m2, pivot - apply(m1, pivot)) + (around - apply(m2, around));
+            Vec3 p;
+            if (isIdentity(m))
+                plain = t.length < 1e-6;   // undone: nothing left, or a move no turn makes
+            else
+                plain = pivotOf(m, t, p);
+            if (plain && !isIdentity(m))
+                call = turnCall(turnAngles(m), p);
+        }
         if (plain)
         {
-            Vec3 sum;
-            if (kind == "move")
-                sum = had + v;
-            else
-            {
-                // the new turn after the one there: one turn, as angles again
-                auto a = turnMatrix(had), b = turnMatrix(v);
-                double[3][3] m;
-                foreach (row; 0 .. 3)
-                    foreach (col; 0 .. 3)
-                    {
-                        m[row][col] = 0;
-                        foreach (q; 0 .. 3)
-                            m[row][col] += b[row][q] * a[q][col];
-                    }
-                sum = turnAngles(m);
-            }
-            auto call = callOf(sum);
             Edit e;
             e.offset = r.start + c.start;
             e.length = c.end - c.start;
@@ -452,10 +471,74 @@ Edit transformPart(string source, string file, string part, string kind, Vec3 v,
             return e;
         }
     }
-    auto call = callOf(v);
+    auto call = kind == "move" ? moveCall(v) : turnCall(v, around);
     if (call is null)
         throw new CodegenException("nothing to move or turn");
     return appendToPart(source, file, part, call);
+}
+
+private double[3][3] product(double[3][3] a, double[3][3] b)
+{
+    double[3][3] m;
+    foreach (row; 0 .. 3)
+        foreach (col; 0 .. 3)
+        {
+            m[row][col] = 0;
+            foreach (q; 0 .. 3)
+                m[row][col] += a[row][q] * b[q][col];
+        }
+    return m;
+}
+
+private Vec3 apply(double[3][3] m, Vec3 v) => Vec3(m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
+    m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z, m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z);
+
+private bool isIdentity(double[3][3] m)
+{
+    foreach (i; 0 .. 3)
+        foreach (j; 0 .. 3)
+            if (abs(m[i][j] - (i == j)) > 1e-9)
+                return false;
+    return true;
+}
+
+/// The axis of a turn (a unit vector; Z for none).
+Vec3 turnAxis(double[3][3] m)
+{
+    auto w = Vec3(m[2][1] - m[1][2], m[0][2] - m[2][0], m[1][0] - m[0][1]);
+    if (w.length > 1e-9)
+        return w.normalized;
+    if (isIdentity(m))
+        return Vec3(0, 0, 1);
+    // half a turn: the axis is what R + I keeps, its largest column
+    Vec3 best;
+    foreach (j; 0 .. 3)
+    {
+        auto col = Vec3(m[0][j] + (j == 0), m[1][j] + (j == 1), m[2][j] + (j == 2));
+        if (col.length > best.length)
+            best = col;
+    }
+    return best.normalized;
+}
+
+/// The point, nearest the origin, that turn m (moving the origin by t)
+/// turns about: (I - m) p = t. False when there is none: t slides along the axis.
+private bool pivotOf(double[3][3] m, Vec3 t, out Vec3 p)
+{
+    auto u = turnAxis(m);
+    if (abs(t.dot(u)) > 1e-6)
+        return false;
+    // across the axis, (I - m) is a 2 × 2 that can be undone
+    auto e1 = (abs(u.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).cross(u).normalized;
+    auto e2 = u.cross(e1);
+    Vec3 col(Vec3 e) => e - apply(m, e);
+    immutable a = col(e1).dot(e1), b = col(e2).dot(e1), c = col(e1).dot(e2), d = col(e2).dot(e2);
+    immutable det = a * d - b * c;
+    if (abs(det) < 1e-12)
+        return false;
+    immutable t1 = t.dot(e1), t2 = t.dot(e2);
+    p = e1 * ((d * t1 - b * t2) / det) + e2 * ((a * t2 - c * t1) / det);
+    return true;
 }
 
 /// The last call of a chain: `.name(args)` from `start` to `end` in it,
@@ -822,14 +905,31 @@ unittest
     assert(b.canFind(".move(x: 10.mm, z: 5.mm)") && !b.canFind("y:"), b);
     auto c = transformPart(b, "m.hcad", "p", "move", Vec3(-10, 0, -5)).apply(b);
     assert(!c.canFind(".move("), c);
+    // a point on the axis turns nothing more: no around
     auto d = transformPart(c, "m.hcad", "p", "rotate", Vec3(0, 0, 45), Vec3(0, 0, 5)).apply(c);
-    assert(d.canFind(".rotate(z: 45, around: vec(0.mm, 0.mm, 5.mm))"), d);
+    assert(d.canFind(".rotate(z: 45);"), d);
     auto e = transformPart(d, "m.hcad", "p", "rotate", Vec3(0, 0, 30), Vec3(0, 0, 5)).apply(d);
-    assert(e.canFind(".rotate(z: 75, around:") && !e.canFind("z: 45"), e);
-    // another axis: still one turn, the two combined
+    assert(e.canFind(".rotate(z: 75);") && !e.canFind("z: 45"), e);
+    // about another axis and another point: still one turn, about a third point
     auto f = transformPart(e, "m.hcad", "p", "rotate", Vec3(90, 0, 0), Vec3(0, 0, 5)).apply(e);
     import std.algorithm : count;
-    assert(f.count(".rotate(") == 1, f);
+    assert(f.count(".rotate(") == 1 && f.canFind("around:"), f);
+    // unless the two leave a slide along the axis, which no single turn makes:
+    // then a second one
+    auto sl = transformPart(c, "m.hcad", "p", "rotate", Vec3(0, 0, 90)).apply(c);
+    auto sl2 = transformPart(sl, "m.hcad", "p", "rotate", Vec3(60, 0, 0), Vec3(0, 5, 0)).apply(sl);
+    assert(sl2.count(".rotate(") == 2, sl2);
+    // turns about the same axis through different points make one: half a
+    // turn about the point between them
+    auto k = transformPart(c, "m.hcad", "p", "rotate", Vec3(0, 0, 90), Vec3(10, 0, 0)).apply(c);
+    assert(k.canFind(".rotate(z: 90, around: vec(10.mm, 0.mm, 0.mm))"), k);
+    auto k2 = transformPart(k, "m.hcad", "p", "rotate", Vec3(0, 0, 90), Vec3(0, 0, 0)).apply(k);
+    assert(k2.count(".rotate(") == 1 && k2.canFind(".rotate(z: 180, around: vec(5.mm, 5.mm, 0.mm))"), k2);
+    // only the pivot's part across the axis is written
+    auto l = transformPart(c, "m.hcad", "p", "rotate", Vec3(0, 0, -90), Vec3(0, 0, 15)).apply(c);
+    assert(l.canFind(".rotate(z: -90);"), l);
+    auto l2 = transformPart(c, "m.hcad", "p", "rotate", Vec3(0, 0, 45), Vec3(10, 5, 15)).apply(c);
+    assert(l2.canFind(".rotate(z: 45, around: vec(10.mm, 5.mm, 0.mm))"), l2);
     // turns in the order X, Y, Z keep their numbers
     auto q = transformPart(c, "m.hcad", "p", "rotate", Vec3(90, 0, 0), Vec3(0, 0, 5)).apply(c);
     auto q2 = transformPart(q, "m.hcad", "p", "rotate", Vec3(0, 0, 90), Vec3(0, 0, 5)).apply(q);
@@ -859,5 +959,5 @@ unittest
         && halfTurn(-180) == 180 && halfTurn(720) == 0);
     auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
     auto a = transformPart(src, "m.hcad", "p", "rotate", Vec3(0, 0, 400)).apply(src);
-    assert(a.canFind(".rotate(z: 40, around:"), a);
+    assert(a.canFind(".rotate(z: 40);"), a);
 }
