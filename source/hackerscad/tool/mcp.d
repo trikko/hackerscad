@@ -4,8 +4,9 @@
 module hackerscad.tool.mcp;
 
 import hackerscad.about : appVersion;
+import hackerscad.examples : examples;
 import std.algorithm : map, canFind, startsWith;
-import std.array : array;
+import std.array : array, join;
 import std.base64 : Base64;
 import std.conv : to;
 import std.exception : enforce;
@@ -609,6 +610,10 @@ JSONValue[] toolList()
     enum partsProp = `"parts": {"type": "array", "items": {"type": "string"}, "description": "Only these parts, by `
         ~ `function name or @part(name:); default every part but the export: false ones."}`;
 
+    // the Examples menu's models: "bagclip (Bag clip), cup (...)" and their names in JSON
+    auto exampleList = examples.map!(e => e.name ~ " (" ~ e.label ~ ")").join(", ");
+    auto exampleEnum = examples.map!(e => `"` ~ e.name ~ `"`).join(", ");
+
     // every GUI tool can name the window, when several are open
     JSONValue gui(string name, string description, string properties, string required = "[]") =>
         tool(name, description, `"window": {"type": "string", "description": "Name of the hackerscad window (shown in `
@@ -758,10 +763,10 @@ JSONValue[] toolList()
             ~ `"theme": {"type": "string", "enum": ["system", "light", "dark"]}, `
             ~ `"drag": {"type": "string", "enum": ["rotate", "pan"]}, "antialias": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (a cube with two "
-            ~ "holes), parameters and view reset; with example, one of the Examples menu instead (bagclip, cup, "
-            ~ "planter, language: a commented tour of the language), unsaved. Refused when the user has unsaved "
+            ~ "holes), parameters and view reset; with example, one of the Examples menu instead (" ~ exampleList
+            ~ "), unsaved. Refused when the user has unsaved "
             ~ "changes, unless force is true (which discards them: ask the user first).",
-            `"force": {"type": "boolean"}, "example": {"type": "string", "enum": ["bagclip", "cup", "planter", "language"]}`, `[]`),
+            `"force": {"type": "boolean"}, "example": {"type": "string", "enum": [` ~ exampleEnum ~ `]}`, `[]`),
         gui("hcad_gui_rename", "Rename the user's window (the name in its header bar, which the user and the "
             ~ "'window' argument use): letters, digits and dashes.", `"name": {"type": "string"}`, `["name"]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "

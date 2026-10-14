@@ -62,6 +62,7 @@ import glib.global : idleAdd;
 
 import hackerscad.geom.mesh;
 import hackerscad.kernel.brep : EdgeKind;
+import hackerscad.examples : examples, exampleNames;
 import hackerscad.lang.errors;
 import hackerscad.io.stl;
 import hackerscad.lang.threading : ThreadSpec, allThreads, fits;
@@ -104,23 +105,7 @@ else
 
 /// What the window opens on when there is no file: a small model that
 /// shows the main ideas.
-enum startModel = import("bagclip.hcad");
-
-/// The models of the Examples menu: name, label, what it shows, source.
-struct Example
-{
-    string name, label, what, source;
-}
-
-static immutable Example[] examples = [
-    Example("bagclip", "Bag clip", "the model hackerscad starts with: a print-in-place clip", import("bagclip.hcad")),
-    Example("cup", "Espresso cup", "the README's cup: parameters, a preset, a loft, a handle, a check",
-        import("cup.hcad")),
-    Example("planter", "Planter", "the tutorial's planter: parameters, presets, drafts, text, checks",
-        import("tutorial/planter-11.hcad")),
-    Example("language", "Language tour", "if, for, while, switch, functions, structs, arrays: each with what it shows",
-        import("language.hcad")),
-];
+enum startModel = import("00_bagclip.hcad");
 
 /// What New starts with: a part in a few lines, to change into one's own.
 enum newModelTemplate = `// An example: replace what is inside body() with your own.
@@ -3881,7 +3866,7 @@ private:
     {
         auto m = new GMenu;
         foreach (e; examples)
-            m.append(e.label ~ " — " ~ e.what, "win.example-" ~ e.name);
+            m.append(e.what.length ? e.label ~ " — " ~ e.what : e.label, "win.example-" ~ e.name);
         auto b = new MenuButton;
         b.setLabel("Examples");
         b.setAlwaysShowArrow(true);

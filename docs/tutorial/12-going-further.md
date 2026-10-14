@@ -12,8 +12,9 @@ model over it, and change it as you like.
 ## Start from an example
 
 **Examples**, next to Export, opens ready models: the bag clip, the
-espresso cup of the README, the planter of this tutorial, and a **tour of
-the language**. The tour uses each thing the language has once (`if`, `for`,
+espresso cup of the README, the planter of this tutorial, a **tour of
+the language**, and the other models of the [examples](../../examples)
+folder. The tour uses each thing the language has once (`if`, `for`,
 `while`, `switch`, functions, structs, lists) and says in a comment what
 each one makes appear in the view or in the console. Change a number and
 watch.
@@ -275,7 +276,7 @@ Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);
   `"countersink"`).
 - `threads`: real ISO threads; `gears`: gears and racks; `hinges`, `snaps`,
   `enclosures`: print-in-place hinges, snap-fit hooks, boxes with lids.
-  [examples/library.hcad](../../examples/library.hcad) shows them all.
+  [examples/09_library.hcad](../../examples/09_library.hcad) shows them all.
 - Your own functions go in a file next to the model (`lib/name.hcad`, then
   `import lib.name;`), or in your personal library folder, to use them in
   every project.
@@ -290,7 +291,7 @@ exports:
 Solid bottle() => cylinder(d: 13.6.mm, h: 60.mm).move(z: 4.mm);
 ```
 
-[examples/knob.hcad](../../examples/knob.hcad) is a knob on the shaft of a
+[examples/07_knob.hcad](../../examples/07_knob.hcad) is a knob on the shaft of a
 potentiometer, drawn this way.
 
 ## Technical drawings

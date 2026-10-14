@@ -24,7 +24,7 @@ subPackage {
 	dependency "gid:adw1" version="~>0.9.11"
 	dependency "bindbc-opengl" version="~>1.0.5"
 	versions "GL_33"
-	stringImportPaths "examples" "docs"
+	stringImportPaths "examples" "docs" "build/gen"
 	// Windows: the logo as the executable's icon
 	preBuildCommands "sh \"$PACKAGE_DIR/tools/win-resources.sh\"" platform="windows"
 	lflags "$PACKAGE_DIR/build/win/native/hackerscad.res" platform="windows"
@@ -39,7 +39,9 @@ subPackage {
 	sourcePaths "source/hackerscad"
 	importPaths "source"
 	excludedSourceFiles "source/hackerscad/cli/*" "source/hackerscad/gui/*"
-	stringImportPaths "docs" "examples" "lib"
+	stringImportPaths "docs" "examples" "lib" "build/gen"
+	// the list of the Examples menu, from the files in examples/
+	preBuildCommands "sh \"$PACKAGE_DIR/tools/examples-list.sh\""
 	extraDependencyFiles "source/hackerscad/kernel/occt/shim.cpp" "source/hackerscad/kernel/occt/shim.h" "tools/build-native.sh"
 	// Linux and macOS: the OpenCascade shim linked statically
 	preBuildCommands "$PACKAGE_DIR/tools/build-native.sh" platform="posix"

@@ -73,6 +73,7 @@ across it.
 ## A model
 
 ```d
+// Espresso cup: the README's cup, with parameters, a preset, a loft, a handle and a check
 /+ A cup. Comments are the usual D ones: // to the
    end of the line, /* blocks */, and /+ nested +/
    blocks like this one. +/

@@ -1,4 +1,4 @@
-// A simple USB flash drive: plastic body, USB-A plug and keyring hole.
+// USB stick: plastic body, USB-A plug and keyring hole
 module usbstick;
 
 import std.shapes;

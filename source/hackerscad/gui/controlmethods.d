@@ -235,7 +235,7 @@ mixin template ControlMethods()
             if (auto ex = arg("example"))
             {
                 if (!startExample(ex))
-                    return reply(JSONValue.init, "no example named '" ~ ex ~ "': bagclip, cup, planter or language");
+                    return reply(JSONValue.init, "no example named '" ~ ex ~ "': " ~ exampleNames());
             }
             else
                 startNew();

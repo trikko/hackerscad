@@ -22,9 +22,12 @@ awk '/^## A model/{f=1} f&&/^```d/{g=1;next} g&&/^```/{exit} g' README.md > buil
 bin/hcad check build/readme-cup.hcad >/dev/null
 # the language tour in the reference is the one of the Examples menu
 awk '/^## A tour of the language/{f=1} f&&/^```d/{g=1;next} g&&/^```/{exit} g' docs/LANGUAGE.md > build/tour.hcad
-cmp -s build/tour.hcad examples/language.hcad || { echo "the tour in docs/LANGUAGE.md differs from examples/language.hcad"; exit 1; }
+cmp -s build/tour.hcad examples/03_language.hcad || { echo "the tour in docs/LANGUAGE.md differs from examples/03_language.hcad"; exit 1; }
 # the same cup is in the Examples menu: the two must not drift apart
-cmp -s build/readme-cup.hcad examples/cup.hcad || { echo "examples/cup.hcad differs from the README's cup"; exit 1; }
+cmp -s build/readme-cup.hcad examples/01_cup.hcad || { echo "examples/01_cup.hcad differs from the README's cup"; exit 1; }
+# and the tutorial's finished planter, but for the first line (the menu's entry)
+tail -n +2 examples/02_planter.hcad | cmp -s - docs/tutorial/planter-11.hcad \
+    || { echo "examples/02_planter.hcad differs from docs/tutorial/planter-11.hcad"; exit 1; }
 # the tutorial's planter: the model at the end of each page must check; the
 # pictures of the index from page 9's (the finished planter, before the agent
 # of page 11 writes a name on it), whole and with the pot lifted out

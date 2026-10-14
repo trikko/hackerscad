@@ -1,4 +1,4 @@
-// Parametric box with lid: the first example in the D-like style.
+// Box with lid: parametric, the first example in the D-like style
 module box;
 
 import std.shapes;

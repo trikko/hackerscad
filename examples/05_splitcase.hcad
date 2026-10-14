@@ -1,3 +1,4 @@
+// Split case: a case cut in two halves, with pins that align them
 // A small case cut in two halves, with pins that keep them
 // aligned: split() cuts a solid with a plane, frame() gives a
 // coordinate system on a face to build on. The pins stand on

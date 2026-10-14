@@ -153,10 +153,11 @@ Solid block() => box(40, 30, 20)
 Every basic construct once (values and units, parameters, functions, structs, `if`, `foreach`,
 `while`, `for` with `continue`, `switch`, lists with `map`, `?:`, `unittest`, `writeln`), each
 with a comment on what it makes appear in the view or in the console. It is
-[examples/language.hcad](../examples/language.hcad), and **Examples › Language tour** in the
+[examples/03_language.hcad](../examples/03_language.hcad), and **Examples › Language tour** in the
 application: open it there, change the numbers and watch.
 
 ```d
+// Language tour: if, for, while, switch, functions, structs and arrays, each with what it shows
 /// A tour of the language: every basic construct once, each with what it
 /// makes appear in the 3D view or in the Console below the editor.
 /// Read it top to bottom, change the numbers, and watch what happens.
@@ -304,4 +305,4 @@ unittest
 ```
 
 ## Example
-See [examples/box.hcad](../examples/box.hcad).
+See [examples/04_box.hcad](../examples/04_box.hcad).

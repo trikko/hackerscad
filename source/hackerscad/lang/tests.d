@@ -479,7 +479,7 @@ unittest
     import std.file : thisExePath, exists;
     import std.path : dirName;
 
-    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "examples", "box.hcad");
+    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "examples", "04_box.hcad");
     assert(exists(path), path);
     auto it = make();
     auto r = it.run(path);

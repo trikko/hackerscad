@@ -252,8 +252,8 @@ string librarySection()
 /// The full reference (llms.txt), or the parts matching `topic`.
 string reference(string topic = null)
 {
-    auto full = agentGuide ~ "\n" ~ import("LANGUAGE.md") ~ "\n## Example: box with lid\n\n```d\n" ~ import("box.hcad")
-        ~ "```\n\n## Example: knob on a shaft\n\n```d\n" ~ import("knob.hcad") ~ "```\n" ~ librarySection;
+    auto full = agentGuide ~ "\n" ~ import("LANGUAGE.md") ~ "\n## Example: box with lid\n\n```d\n" ~ import("04_box.hcad")
+        ~ "```\n\n## Example: knob on a shaft\n\n```d\n" ~ import("07_knob.hcad") ~ "```\n" ~ librarySection;
     if (topic.length == 0)
         return full;
 

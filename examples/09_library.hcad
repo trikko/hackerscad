@@ -1,3 +1,4 @@
+// Library tour: the built-in hardware, gears and printable mechanisms
 // A tour of the built-in libraries, one row each: hardware,
 // gears, printable mechanisms. Under every object, its name
 // (a reference part: drawn, never exported).
