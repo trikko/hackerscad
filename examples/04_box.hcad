@@ -24,25 +24,47 @@ immutable wall = 2.mm;
 @preset("small", 4.mm)
 immutable radius = 6.mm;
 
-/// Post for a self-tapping screw, with a pilot hole.
-Solid post(Length h, Screw screw = M3)
+/// The outside of the box: its vertical edges rounded.
+Solid outside() => box(width, depth, height)
+    .fillet(edges.filter(e => e.isParallel(Z)), r: radius);
+
+/// How far each screw's axis is from the outside faces: as near the corner
+/// as it can be, with 1.2 mm of wall outside its hole (across the rounded
+/// corner too) and its head on the lid. On thick walls it is inside them.
+Length screwInset(Screw screw = M3)
 {
-    return cylinder(d: screw.d * 2.2, h: h) - cylinder(d: screw.tap, h: h + 1.mm);
+    immutable keep = max(screw.tap / 2 + 1.2.mm, screw.head / 2 + 0.5.mm);
+    // across the corner, the round edge is nearer than the faces
+    immutable corner = keep > radius ? radius : radius - (radius - keep) / sqrt(2.0);
+    return max(keep, corner);
+}
+
+/// Post for a self-tapping screw in the corner towards sx, sy (each -1 or
+/// 1), up to the rim: the cylinder and the corner behind it, trimmed by the
+/// outside, so that it is one piece with the walls.
+Solid post(int sx, int sy, Screw screw = M3)
+{
+    immutable dx = width / 2 - screwInset(screw), dy = depth / 2 - screwInset(screw);
+    auto round = cylinder(d: screw.d * 2.2, h: height)
+        .move(x: sx * dx, y: sy * dy);
+    auto corner = box(width / 2 - dx, depth / 2 - dy, height)
+        .move(x: sx * (dx + width / 2) / 2, y: sy * (dy + depth / 2) / 2);
+    return (round + corner) & outside;
 }
 
 @part("steelblue")
 Solid body()
 {
-    auto s = box(width, depth, height)
-        .fillet(edges.filter(e => e.isParallel(Z)), r: radius)
-        .shell(open: faces.top, thickness: wall);
-
-    // one post in each corner, centred on the corner fillet
-    immutable dx = width / 2 - radius, dy = depth / 2 - radius;
+    auto s = outside.shell(open: faces.top, thickness: wall);
+    immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
     foreach (sx; [-1, 1])
         foreach (sy; [-1, 1])
-            s += post(height - 3.mm).move(x: sx * dx, y: sy * dy);
-
+        {
+            s += post(sx, sy);
+            // the pilot hole, from the rim down to the floor
+            s -= cylinder(d: M3.tap, h: height - wall + 1.mm)
+                .move(x: sx * dx, y: sy * dy, z: wall);
+        }
     return s;
 }
 
@@ -53,7 +75,7 @@ Solid lid()
         .fillet(edges.parallel(Z), r: radius)
         .chamfer(edges.filter(e => e.mid.z > wall / 2), d: 0.6.mm);   // the whole top edge
 
-    immutable dx = width / 2 - radius, dy = depth / 2 - radius;
+    immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
     foreach (sx; [-1, 1])
         foreach (sy; [-1, 1])
             c -= cylinder(d: M3.clearance, h: 3 * wall, center: true).move(x: sx * dx, y: sy * dy);

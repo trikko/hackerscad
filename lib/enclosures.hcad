@@ -33,17 +33,41 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
         max(r - 2 * wall, 0.5.mm)).move(z: -lidHeight);
     lid += lip.move(z: wall);
 
-    // posts: tapped for the screw in the base, clearance holes in the lid
-    // a little into the walls: posts only tangent to them would touch along a line
-    immutable px = inner.x / 2 - screw.d * 1.1, py = inner.y / 2 - screw.d * 1.1;
+    // posts: tapped for the screw in the base, clearance holes in the lid.
+    // The screw's axis is as near the corner as it can be: its hole keeps
+    // 1.2 mm of wall outside it, across the rounded corner too, and its head
+    // stays on the lid. With thick walls the axis is inside the wall and the
+    // post all but disappears into the corner
+    immutable postR = screw.tap / 2 + screw.d * 0.8;
+    immutable keep = max(screw.tap / 2 + 1.2.mm, screw.head / 2 + 0.5.mm);   // from the axis to the outside
+    // the axis' distance from the inner faces (negative: inside the walls)
+    auto inset = keep - wall;
+    if (keep > r)
+        inset = max(inset, r - wall);
+    else
+        inset = max(inset, r - wall - (r - keep) / sqrt(2.0));
+    immutable px = inner.x / 2 - inset, py = inner.y / 2 - inset;
+    immutable postH = inner.z + wall - lidHeight - clearance;
+    // from the axis to the middle of the walls: the post is one piece with
+    // the corner it stands in, with no gap behind it
+    immutable reach = inset + wall / 2;
     foreach (sx; [-1, 1])
         foreach (sy; [-1, 1])
         {
-            auto post = cylinder(d: screw.d * 2.4, h: inner.z + wall - lidHeight - clearance);
-            base += post.move(x: sx * px, y: sy * py);
-            base -= hole(screw, inner.z, "tap").move(x: sx * px, y: sy * py, z: inner.z + wall - lidHeight - clearance);
+            auto post = cylinder(r: postR, h: postH);
+            if (reach > 0.1.mm)
+                post += box(reach, reach, postH).move(x: sx * reach / 2, y: sy * reach / 2);
+            // near the corner the post would stick out: trimmed by the box's outside
+            base += post.move(x: sx * px, y: sy * py) & roundedBox(ox, oy, postH, r);
+            // from the rim (the screw may go through the wall) down to the floor
+            base -= hole(screw, inner.z, "tap").move(x: sx * px, y: sy * py, z: inner.z + wall);
             lid -= cylinder(d: screw.clearance, h: 10 * wall, center: true).move(x: sx * px, y: sy * py);
-            lid -= cylinder(d: screw.d * 2.4 + 2 * clearance, h: lidHeight * 2).move(x: sx * px, y: sy * py, z: wall);
+            // room for the post in the lip, the clearance all round it; the
+            // square reaches past the lip, which stops short of the corner
+            immutable out = max(inset, 0.mm) + wall + clearance;
+            auto room = cylinder(r: postR + clearance, h: lidHeight * 2)
+                + box(out, out, lidHeight * 2).move(x: sx * out / 2, y: sy * out / 2);
+            lid -= room.move(x: sx * px, y: sy * py, z: wall);
         }
     return Enclosure(base, lid);
 }

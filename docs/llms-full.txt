@@ -235,10 +235,11 @@ Solid block() => box(40, 30, 20)
 Every basic construct once (values and units, parameters, functions, structs, `if`, `foreach`,
 `while`, `for` with `continue`, `switch`, lists with `map`, `?:`, `unittest`, `writeln`), each
 with a comment on what it makes appear in the view or in the console. It is
-[examples/language.hcad](../examples/language.hcad), and **Examples › Language tour** in the
+[examples/03_language.hcad](../examples/03_language.hcad), and **Examples › Language tour** in the
 application: open it there, change the numbers and watch.
 
 ```d
+// Language tour: if, for, while, switch, functions, structs and arrays, each with what it shows
 /// A tour of the language: every basic construct once, each with what it
 /// makes appear in the 3D view or in the Console below the editor.
 /// Read it top to bottom, change the numbers, and watch what happens.
@@ -386,12 +387,12 @@ unittest
 ```
 
 ## Example
-See [examples/box.hcad](../examples/box.hcad).
+See [examples/04_box.hcad](../examples/04_box.hcad).
 
 ## Example: box with lid
 
 ```d
-// Parametric box with lid: the first example in the D-like style.
+// Box with lid: parametric, the first example in the D-like style
 module box;
 
 import std.shapes;
@@ -417,25 +418,47 @@ immutable wall = 2.mm;
 @preset("small", 4.mm)
 immutable radius = 6.mm;
 
-/// Post for a self-tapping screw, with a pilot hole.
-Solid post(Length h, Screw screw = M3)
+/// The outside of the box: its vertical edges rounded.
+Solid outside() => box(width, depth, height)
+    .fillet(edges.filter(e => e.isParallel(Z)), r: radius);
+
+/// How far each screw's axis is from the outside faces: as near the corner
+/// as it can be, with 1.2 mm of wall outside its hole (across the rounded
+/// corner too) and its head on the lid. On thick walls it is inside them.
+Length screwInset(Screw screw = M3)
 {
-    return cylinder(d: screw.d * 2.2, h: h) - cylinder(d: screw.tap, h: h + 1.mm);
+    immutable keep = max(screw.tap / 2 + 1.2.mm, screw.head / 2 + 0.5.mm);
+    // across the corner, the round edge is nearer than the faces
+    immutable corner = keep > radius ? radius : radius - (radius - keep) / sqrt(2.0);
+    return max(keep, corner);
+}
+
+/// Post for a self-tapping screw in the corner towards sx, sy (each -1 or
+/// 1), up to the rim: the cylinder and the corner behind it, trimmed by the
+/// outside, so that it is one piece with the walls.
+Solid post(int sx, int sy, Screw screw = M3)
+{
+    immutable dx = width / 2 - screwInset(screw), dy = depth / 2 - screwInset(screw);
+    auto round = cylinder(d: screw.d * 2.2, h: height)
+        .move(x: sx * dx, y: sy * dy);
+    auto corner = box(width / 2 - dx, depth / 2 - dy, height)
+        .move(x: sx * (dx + width / 2) / 2, y: sy * (dy + depth / 2) / 2);
+    return (round + corner) & outside;
 }
 
 @part("steelblue")
 Solid body()
 {
-    auto s = box(width, depth, height)
-        .fillet(edges.filter(e => e.isParallel(Z)), r: radius)
-        .shell(open: faces.top, thickness: wall);
-
-    // one post in each corner, centred on the corner fillet
-    immutable dx = width / 2 - radius, dy = depth / 2 - radius;
+    auto s = outside.shell(open: faces.top, thickness: wall);
+    immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
     foreach (sx; [-1, 1])
         foreach (sy; [-1, 1])
-            s += post(height - 3.mm).move(x: sx * dx, y: sy * dy);
-
+        {
+            s += post(sx, sy);
+            // the pilot hole, from the rim down to the floor
+            s -= cylinder(d: M3.tap, h: height - wall + 1.mm)
+                .move(x: sx * dx, y: sy * dy, z: wall);
+        }
     return s;
 }
 
@@ -446,7 +469,7 @@ Solid lid()
         .fillet(edges.parallel(Z), r: radius)
         .chamfer(edges.filter(e => e.mid.z > wall / 2), d: 0.6.mm);   // the whole top edge
 
-    immutable dx = width / 2 - radius, dy = depth / 2 - radius;
+    immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
     foreach (sx; [-1, 1])
         foreach (sy; [-1, 1])
             c -= cylinder(d: M3.clearance, h: 3 * wall, center: true).move(x: sx * dx, y: sy * dy);
@@ -464,6 +487,7 @@ unittest
 ## Example: knob on a shaft
 
 ```d
+// Knob: fluted, for a potentiometer's D shaft
 // A fluted knob for a potentiometer with a 6 mm D shaft, printable
 // standing up as it is (no overhangs, no supports).
 //
@@ -932,17 +956,41 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
         max(r - 2 * wall, 0.5.mm)).move(z: -lidHeight);
     lid += lip.move(z: wall);
 
-    // posts: tapped for the screw in the base, clearance holes in the lid
-    // a little into the walls: posts only tangent to them would touch along a line
-    immutable px = inner.x / 2 - screw.d * 1.1, py = inner.y / 2 - screw.d * 1.1;
+    // posts: tapped for the screw in the base, clearance holes in the lid.
+    // The screw's axis is as near the corner as it can be: its hole keeps
+    // 1.2 mm of wall outside it, across the rounded corner too, and its head
+    // stays on the lid. With thick walls the axis is inside the wall and the
+    // post all but disappears into the corner
+    immutable postR = screw.tap / 2 + screw.d * 0.8;
+    immutable keep = max(screw.tap / 2 + 1.2.mm, screw.head / 2 + 0.5.mm);   // from the axis to the outside
+    // the axis' distance from the inner faces (negative: inside the walls)
+    auto inset = keep - wall;
+    if (keep > r)
+        inset = max(inset, r - wall);
+    else
+        inset = max(inset, r - wall - (r - keep) / sqrt(2.0));
+    immutable px = inner.x / 2 - inset, py = inner.y / 2 - inset;
+    immutable postH = inner.z + wall - lidHeight - clearance;
+    // from the axis to the middle of the walls: the post is one piece with
+    // the corner it stands in, with no gap behind it
+    immutable reach = inset + wall / 2;
     foreach (sx; [-1, 1])
         foreach (sy; [-1, 1])
         {
-            auto post = cylinder(d: screw.d * 2.4, h: inner.z + wall - lidHeight - clearance);
-            base += post.move(x: sx * px, y: sy * py);
-            base -= hole(screw, inner.z, "tap").move(x: sx * px, y: sy * py, z: inner.z + wall - lidHeight - clearance);
+            auto post = cylinder(r: postR, h: postH);
+            if (reach > 0.1.mm)
+                post += box(reach, reach, postH).move(x: sx * reach / 2, y: sy * reach / 2);
+            // near the corner the post would stick out: trimmed by the box's outside
+            base += post.move(x: sx * px, y: sy * py) & roundedBox(ox, oy, postH, r);
+            // from the rim (the screw may go through the wall) down to the floor
+            base -= hole(screw, inner.z, "tap").move(x: sx * px, y: sy * py, z: inner.z + wall);
             lid -= cylinder(d: screw.clearance, h: 10 * wall, center: true).move(x: sx * px, y: sy * py);
-            lid -= cylinder(d: screw.d * 2.4 + 2 * clearance, h: lidHeight * 2).move(x: sx * px, y: sy * py, z: wall);
+            // room for the post in the lip, the clearance all round it; the
+            // square reaches past the lip, which stops short of the corner
+            immutable out = max(inset, 0.mm) + wall + clearance;
+            auto room = cylinder(r: postR + clearance, h: lidHeight * 2)
+                + box(out, out, lidHeight * 2).move(x: sx * out / 2, y: sy * out / 2);
+            lid -= room.move(x: sx * px, y: sy * py, z: wall);
         }
     return Enclosure(base, lid);
 }
