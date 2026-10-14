@@ -1578,6 +1578,11 @@ static bool triangle_properties(const hc_shape *s, double &volume, double &area)
     return true;
 }
 
+// The relative accuracy of the volumes, areas and moments reported: the
+// plain (Gauss) integration is off by 5% and more on long freeform faces
+// (an M8 × 50 thread came out 1967 mm³ for 2066), the adaptive one is not.
+static const double mass_accuracy = 1e-5;
+
 double hc_volume(const hc_shape *s)
 {
     return guarded<>(-1.0, [&] {
@@ -1585,7 +1590,7 @@ double hc_volume(const hc_shape *s)
         if (triangle_properties(s, volume, area))
             return volume;
         GProp_GProps p;
-        BRepGProp::VolumeProperties(s->shape, p);
+        BRepGProp::VolumeProperties(s->shape, p, mass_accuracy);
         return p.Mass();
     });
 }
@@ -1596,7 +1601,7 @@ int hc_mass_props(const hc_shape *s, double out[7])
 {
     return guarded<>(-1, [&]() -> int {
         GProp_GProps p;
-        BRepGProp::VolumeProperties(s->shape, p);
+        BRepGProp::VolumeProperties(s->shape, p, mass_accuracy);
         if (p.Mass() <= 0) {
             set_error("the solid has no volume");
             return -1;
@@ -1620,7 +1625,7 @@ double hc_area(const hc_shape *s)
         if (triangle_properties(s, volume, area))
             return area;
         GProp_GProps p;
-        BRepGProp::SurfaceProperties(s->shape, p);
+        BRepGProp::SurfaceProperties(s->shape, p, mass_accuracy);
         return p.Mass();
     });
 }
@@ -1744,12 +1749,18 @@ static bool meshed_badly(const TopoDS_Face &face)
 {
     if (BRepAdaptor_Surface(face, false).GetType() <= GeomAbs_Torus)
         return false;
-    // the plain (Gauss) integration: much faster than the adaptive one, and
-    // close enough for faces meshed 5% too large and more
-    GProp_GProps g;
-    BRepGProp::SurfaceProperties(face, g);
-    const double exact = g.Mass(), meshed = mesh_area(face);
-    return std::abs(meshed - exact) > std::max(0.01, 0.02 * exact);
+    // the plain (Gauss) integration first, much faster; it can be 5% off
+    // itself on long faces, so a face it finds wrong is measured again with
+    // the adaptive one before it counts
+    const double meshed = mesh_area(face);
+    auto off = [&](double exact) { return std::abs(meshed - exact) > std::max(0.01, 0.02 * exact); };
+    GProp_GProps quick;
+    BRepGProp::SurfaceProperties(face, quick);
+    if (!off(quick.Mass()))
+        return false;
+    GProp_GProps exact;
+    BRepGProp::SurfaceProperties(face, exact, mass_accuracy);
+    return off(exact.Mass());
 }
 
 hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angular_deflection)
@@ -1793,7 +1804,7 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
             for (int f : bad) {
                 const TopoDS_Face &face = TopoDS::Face(faces(f));
                 GProp_GProps g;
-                BRepGProp::SurfaceProperties(face, g);
+                BRepGProp::SurfaceProperties(face, g, mass_accuracy);
                 ShapeUpgrade_FaceDivideArea divide(face);
                 divide.SetContext(context);
                 divide.MaxArea() = g.Mass() / parts;
