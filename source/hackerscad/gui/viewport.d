@@ -1439,7 +1439,7 @@ final class Viewport
         return q[best] + b.right * (dx * k) - b.up * (dy * k);
     }
 
-    enum closeGap = 28;
+    enum closeGap = 40;   // pixels from the corner: clear of the handles and arrows
 
     /// `spot` moved `pixels` along the screen's right (negative: left).
     private Vec3 besideOnScreen(Vec3 spot, double pixels) => spot + basis().right * (pixels * mmPerPixelAt(spot));
@@ -1447,7 +1447,7 @@ final class Viewport
     /// Where button `which` is, if it is shown.
     bool buttonSpot(ViewButton which, out Vec3 spot)
     {
-        enum step = 2 * handlePixels + 12;   // from one button to the next, pixels
+        enum step = 2 * handlePixels + 16;   // from one button to the next, pixels
         final switch (which)
         {
         case ViewButton.none:
@@ -1514,7 +1514,7 @@ final class Viewport
             Vec3 spot;
             double cx, cy;
             if (buttonSpot(which, spot) && project(spot, cx, cy)
-                && abs(cx - x) <= handlePixels + 2 && abs(cy - y) <= handlePixels + 2)
+                && abs(cx - x) <= handlePixels + 4 && abs(cy - y) <= handlePixels + 4)
                 return which;
         }
         return ViewButton.none;
@@ -1538,7 +1538,7 @@ final class Viewport
                 continue;
             immutable accept = which == ViewButton.sectionAccept || which == ViewButton.gizmoAccept;
             immutable live = which == hoverButton;
-            immutable r = (handlePixels + 2) * mmPerPixelAt(spot);
+            immutable r = (handlePixels + 4) * mmPerPixelAt(spot);
             auto ru = b.right * r, rv = b.up * r;
             Vec3[4] c = [spot + ru + rv, spot - ru + rv, spot - ru - rv, spot + ru - rv];
             float[] fill, mark;
@@ -1546,23 +1546,35 @@ final class Viewport
                 fill ~= [cast(float) c[i].x, cast(float) c[i].y, cast(float) c[i].z];
             Vec3[] strokes;
             if (accept)
-                // a tick: down to the bottom third, then up to the right
-                strokes = [spot - ru * 0.5, spot - rv * 0.45 - ru * 0.1, spot - rv * 0.45 - ru * 0.1, spot + ru * 0.55 + rv * 0.5];
+            {
+                // a tick: down to the bottom third, then up to the right; each
+                // stroke runs a little past the corner, so thick lines meet without a notch
+                auto start = spot - ru * 0.5 + rv * 0.05, corner = spot - ru * 0.1 - rv * 0.35, end = spot + ru * 0.55 + rv * 0.5;
+                auto past = (corner - start).normalized * (0.12 * r), back = (corner - end).normalized * (0.12 * r);
+                strokes = [start, corner + past, corner + back, end];
+            }
             else
                 strokes = [spot + (c[0] - spot) * 0.55, spot + (c[2] - spot) * 0.55, spot + (c[1] - spot) * 0.55,
                     spot + (c[3] - spot) * 0.55];
             foreach (e; strokes)
                 mark ~= [cast(float) e.x, cast(float) e.y, cast(float) e.z];
+            // on the dark style a dark square with brighter marks: a white one glares there
             immutable Vec3 colour = accept ? Vec3(0.2, 0.62, 0.3) : Vec3(0.85, 0.2, 0.15);
-            immutable Vec3 ink = accept ? Vec3(0.2, 0.62, 0.3) : Vec3(0.9, 0.35, 0.2);
+            immutable Vec3 ink = darkStyle ? (accept ? Vec3(0.45, 0.88, 0.5) : Vec3(1.0, 0.45, 0.4))
+                : (accept ? Vec3(0.15, 0.55, 0.25) : Vec3(0.85, 0.25, 0.15));
+            immutable Vec3 paper = darkStyle ? Vec3(0.17, 0.18, 0.2) : Vec3(1, 1, 1);
             uploadLines(fill);
-            auto f = live ? colour : Vec3(1, 1, 1);
+            auto f = live ? colour : paper;
             glUniform3f(uColor, cast(float) f.x, cast(float) f.y, cast(float) f.z);
             glDrawArrays(GL_TRIANGLES, 0, 6);
+            // a rim, so the square shows on any background
+            drawPolyline([c[0], c[1], c[2], c[3], c[0]], live ? colour : darkStyle ? Vec3(0.55, 0.57, 0.6) : Vec3(0.7, 0.71, 0.73), 1.5);
+            glDisable(GL_DEPTH_TEST);   // the rim turned it back on
             uploadLines(mark);
+            glUniform1i(uFlat, 1);
             auto m = live ? Vec3(1, 1, 1) : ink;
             glUniform3f(uColor, cast(float) m.x, cast(float) m.y, cast(float) m.z);
-            glLineWidth(2);
+            glLineWidth(3);
             glDrawArrays(GL_LINES, 0, 4);
             glLineWidth(1);
         }
