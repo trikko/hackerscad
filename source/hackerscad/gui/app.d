@@ -186,7 +186,23 @@ version (linux) void installDesktopEntry()
 }
 
 version (Windows)
+{
     extern (C) private int _putenv_s(const(char)* name, const(char)* value) nothrow @nogc;
+    extern (C) private int _wputenv_s(const(wchar)* name, const(wchar)* value) nothrow @nogc;
+}
+
+/// Whether hackerscad runs under Wine (its ntdll has wine_get_version).
+bool underWine()
+{
+    version (Windows)
+    {
+        import core.sys.windows.windows : GetModuleHandleA, GetProcAddress;
+        auto ntdll = GetModuleHandleA("ntdll.dll");
+        return ntdll !is null && GetProcAddress(ntdll, "wine_get_version") !is null;
+    }
+    else
+        return false;
+}
 
 version (Windows)
 {
@@ -220,6 +236,49 @@ version (Windows)
 
 version (Windows)
 {
+    /// Text laid out with fontconfig, in Adwaita Sans and Mono from the
+    /// package (share\fonts\adwaita, etc\fonts), as on Linux: with
+    /// DirectWrite, Windows' own way, the letters are smaller (Segoe UI, 9
+    /// points) and under Wine every label takes ages to draw. Set before GTK
+    /// starts; a value already set is kept (PANGOCAIRO_BACKEND=win32 brings
+    /// DirectWrite back).
+    pragma(crt_constructor)
+    extern (C) private void hcadFonts() nothrow @nogc
+    {
+        import core.sys.windows.windows : GetEnvironmentVariableW, GetModuleFileNameW, MAX_PATH,
+            SetEnvironmentVariableW;
+        wchar[8] v;
+        if (GetEnvironmentVariableW("PANGOCAIRO_BACKEND"w.ptr, v.ptr, cast(uint) v.length) != 0)
+            return;
+        // the folder of the package: bin\..
+        wchar[MAX_PATH + 32] dir;
+        auto n = GetModuleFileNameW(null, dir.ptr, MAX_PATH);
+        while (n > 0 && dir[n - 1] != '\\')
+            n--;
+        if (n > 0)
+            n--;
+        while (n > 0 && dir[n - 1] != '\\')
+            n--;
+        immutable base = n;
+        // Windows' copy and the C runtime's, which fontconfig reads
+        void set(const(wchar)* name, const(wchar)* value)
+        {
+            SetEnvironmentVariableW(name, value);
+            _wputenv_s(name, value);
+        }
+        void put(const(wchar)* name, const(wchar)[] tail)
+        {
+            n = base;
+            foreach (c; tail)
+                dir[n++] = c;
+            dir[n] = 0;
+            set(name, dir.ptr);
+        }
+        put("FONTCONFIG_FILE"w.ptr, "etc\\fonts\\fonts.conf"w);
+        put("FONTCONFIG_PATH"w.ptr, "etc\\fonts"w);
+        set("PANGOCAIRO_BACKEND"w.ptr, "fc"w.ptr);
+    }
+
     /// Whether the system's OpenGL can run GTK: version 3.2 at least, and not
     /// Windows' own software one ("GDI Generic"). opengl32.dll is loaded here
     /// by hand: linked to the program, Windows would load the system's before
@@ -551,6 +610,14 @@ final class MainWindow
         import gtk.icon_theme : IconTheme;
         import gdk.display : Display;
         IconTheme.getForDisplay(Display.getDefault()).addSearchPath(dataDir("icons"));
+        version (Windows)
+        {
+            // laid out by fontconfig (see hcadFonts), in the font that comes with the package
+            import std.process : environment;
+            import gtk.settings : Settings;
+            if (environment.get("PANGOCAIRO_BACKEND") == "fc")
+                Settings.getDefault().gtkFontName = "Adwaita Sans 11";
+        }
         version (OSX)
         {
             // laid out by fontconfig (see the bundle's launcher), the system
@@ -613,8 +680,25 @@ final class MainWindow
                 ~ " button.hcad-problem.error { background: #c01c28; color: white; }"
                 ~ " button.hcad-problem.warning { background: #e5a50a; color: #1e1e1e; }"
                 ~ " popover.hcad-menu button { min-height: 0; padding: 4px 10px; border-radius: 5px; font-weight: normal; }"
-                ~ " popover.hcad-menu separator { margin: 3px 6px; }");
+                ~ " popover.hcad-menu separator { margin: 3px 6px; }"
+                ~ " .hcad-tests-dot { min-width: 8px; min-height: 8px; border-radius: 50%; background: #f6c90e;"
+                ~ " box-shadow: 0 0 0 1.5px @window_bg_color; }"
+                ~ " .hcad-tests-dot.hcad-tests-failed { background: #e01b24; }"
+                ~ " .hcad-about-version { padding: 2px 12px; border-radius: 999px; font-weight: bold;"
+                ~ " color: @accent_color; background: alpha(@accent_bg_color, 0.15); }");
             StyleContext.addProviderForDisplay(Display.getDefault(), css, 600);
+            if (underWine())
+            {
+                // Wine cannot blend a window's own transparent pixels with
+                // the desktop: the band GTK leaves round windows, menus and
+                // tooltips for their shadows comes out black. Without the
+                // shadows there is no band
+                auto flat = new CssProvider;
+                flat.loadFromString("window, window.csd, window.csd:backdrop, window.solid-csd { box-shadow: none; margin: 0; }"
+                    ~ " popover > contents, popover.background > contents, popover.menu > contents { box-shadow: none; }"
+                    ~ " tooltip, tooltip.background { box-shadow: none; }");
+                StyleContext.addProviderForDisplay(Display.getDefault(), flat, 700);
+            }
         }
         auto modes = new Box(Orientation.Horizontal, 0);
         modes.addCssClass("linked");
@@ -1361,52 +1445,19 @@ private:
 
     /// The About window: version, author, what hackerscad is built with
     /// and the licences of those libraries.
+    /// The About window while it is open: asked again, it comes forward
+    /// instead of a second one opening.
+    import hackerscad.gui.aboutwindow : AboutWindow;
+    AboutWindow aboutDialog;
+
     void showAbout()
     {
-        import adw.about_dialog : AboutDialog;
-        import gtk.types : License;
-        import std.array : array;
-        import std.algorithm : map;
-        auto d = new AboutDialog;
-        d.setApplicationName(appName);
-        d.setApplicationIcon("it.andreafontana.hackerscad.gui");
-        d.setVersion(appVersion);
-        d.setDeveloperName(appAuthor);
-        d.setDevelopers([appAuthor]);
-        d.setCopyright(appCopyright);
-        d.setComments("The hacker's CAD: solid models written as code in a small language, "
-            ~ "edited with the mouse too, driven by AI agents through MCP.");
-        d.setWebsite(appWebsite);
-        d.setIssueUrl(appIssues);
-        d.setLicenseType(License.Gpl30Only);
-        d.addLegalSection("Models and their output", null, License.Custom, appModelException);
-        d.addCreditSection("Built with", components.map!(c => c.name ~ " " ~ c.url).array);
-        d.addCreditSection("Inspired by", ["OpenSCAD https://openscad.org", "Onshape https://www.onshape.com"]);
-        foreach (c; components)
-        {
-            License t;
-            string text;
-            switch (c.license)
-            {
-            case "Apache-2.0": t = License.Apache20; break;
-            case "MIT": t = License.MitX11; break;
-            case "LGPL-2.1-or-later": t = License.Lgpl21; break;
-            default:
-                t = License.Custom;
-                text = c.license ~ " (" ~ c.url ~ ")";
-            }
-            d.addLegalSection(c.name, c.copyright, t, text);
-        }
-        import std.system : os;
-        import std.conv : to;
-        auto g = graphicsJson();
-        d.setDebugInfo(appName ~ " " ~ appVersion ~ "\n" ~ os.to!string ~ "\n" ~ path ~ "\n\n3D view: OpenGL "
-            ~ viewport.glVersion ~ " on " ~ viewport.glRenderer ~ " (" ~ viewport.glVendor ~ ")"
-            ~ (viewport.softwareGl() ? ", drawn by the processor" : "")
-            ~ frameText(viewport.frameStats())
-            ~ ("GSK_RENDERER" in g ? "\nGSK_RENDERER=" ~ g["GSK_RENDERER"].str : "")
-            ~ ("HCAD_GL" in g ? "\nHCAD_GL=" ~ g["HCAD_GL"].str : ""));
-        d.present(window);
+        if (aboutDialog !is null)
+            return aboutDialog.present();
+        aboutDialog = new AboutWindow(window, debugReport());
+        aboutDialog.onClosed = () { aboutDialog = null; };
+        aboutDialog.openUri = (string uri) => openUri(uri);
+        aboutDialog.present();
     }
 
     /// app.quit, once per application: closes every window, each asking
@@ -1674,6 +1725,109 @@ private:
 
     /// The frame figures for About: average / worst over the frames drawn
     /// while the view moved.
+    /// What to paste into a problem report: hackerscad and the libraries,
+    /// the system, the screen, what draws the window and the 3D view and how
+    /// fast, the fonts, how heavy the model is, the settings that change how
+    /// it draws. No file names: reports are public.
+    string debugReport()
+    {
+        import std.process : environment;
+        import std.system : os;
+        import std.conv : to;
+        import gdk.display : Display;
+        import gdk.rectangle : Rectangle;
+        import gtk.settings : Settings;
+        string[] r = [format("%s %s", appName, appVersion), "system: " ~ systemText(),
+            format("GTK %s.%s.%s, libadwaita %s.%s.%s", imported!"gtk.global".getMajorVersion(),
+                imported!"gtk.global".getMinorVersion(), imported!"gtk.global".getMicroVersion(),
+                imported!"adw.global".getMajorVersion(), imported!"adw.global".getMinorVersion(),
+                imported!"adw.global".getMicroVersion())];
+        auto display = Display.getDefault();
+        string screen = "display: " ~ typeOf(display);
+        if (auto surface = window.getSurface())
+        {
+            screen ~= format(", window scale %g (%d)", surface.getScale(), window.getScaleFactor());
+            if (auto m = display.getMonitorAtSurface(surface))
+            {
+                Rectangle g;
+                m.getGeometry(g);
+                screen ~= format(", monitor %d×%d at %g Hz, scale %d", g.width, g.height, m.getRefreshRate() / 1000.0,
+                    m.getScaleFactor());
+            }
+        }
+        r ~= screen;
+        r ~= format("window %d×%d, drawn by %s", window.getWidth(), window.getHeight(),
+            window.getRenderer() is null ? "?" : typeOf(window.getRenderer()));
+        r ~= format("3D view: %d×%d pixels, OpenGL %s on %s (%s)%s, antialiasing %s",
+            viewport.area.getWidth() * viewport.area.getScaleFactor(), viewport.area.getHeight() * viewport.area.getScaleFactor(),
+            viewport.glVersion, viewport.glRenderer, viewport.glVendor,
+            viewport.softwareGl() ? ", drawn by the processor" : "", viewport.antialiasing() ? "on" : "off");
+        r ~= frameText(viewport.frameStats())[1 .. $];
+        size_t triangles;
+        foreach (part; last.parts)
+            triangles += part.indices.length / 3;
+        r ~= format("model: %d parts, %d triangles", last.parts.length, triangles);
+        r ~= "font: " ~ Settings.getDefault().gtkFontName;
+        r ~= "theme: " ~ imported!"hackerscad.gui.settings".setting("theme", "system");
+        foreach (name; ["GSK_RENDERER", "GDK_BACKEND", "GDK_DEBUG", "GDK_SCALE", "HCAD_GL", "PANGOCAIRO_BACKEND",
+                "GALLIUM_DRIVER", "LIBGL_ALWAYS_SOFTWARE", "LANG"])
+            if (auto v = environment.get(name))
+                r ~= name ~ "=" ~ v;
+        return r.join("\n");
+    }
+
+    /// The system: its name and version, Wine's when under Wine, the
+    /// desktop on Linux.
+    static string systemText()
+    {
+        import std.process : environment;
+        import std.system : os;
+        import std.conv : to;
+        version (Windows)
+        {
+            import core.sys.windows.windows : GetModuleHandleA, GetProcAddress;
+            import std.string : fromStringz;
+            auto ntdll = GetModuleHandleA("ntdll.dll");
+            struct Info { uint size, major, minor, build, platform; wchar[128] sp; }
+            Info v;
+            v.size = Info.sizeof;
+            alias RtlGetVersion = extern (Windows) int function(Info*) nothrow @nogc;
+            auto get = cast(RtlGetVersion) GetProcAddress(ntdll, "RtlGetVersion");
+            string text = get !is null && get(&v) == 0 ? format("Windows %d.%d build %d", v.major, v.minor, v.build) : "Windows";
+            alias WineVersion = extern (C) const(char)* function() nothrow @nogc;
+            if (auto wine = cast(WineVersion) GetProcAddress(ntdll, "wine_get_version"))
+                text ~= " under Wine " ~ wine().fromStringz.idup;
+            return text;
+        }
+        else
+        {
+            string text = os.to!string;
+            version (linux)
+            {
+                import std.file : readText;
+                import std.string : lineSplitter, startsWith, strip;
+                try
+                    foreach (line; readText("/etc/os-release").lineSplitter)
+                        if (line.startsWith("PRETTY_NAME="))
+                            text = line["PRETTY_NAME=".length .. $].strip(`"`);
+                catch (Exception)
+                {
+                }
+                text ~= ", " ~ environment.get("XDG_CURRENT_DESKTOP", "?") ~ " on " ~ environment.get("XDG_SESSION_TYPE", "?");
+            }
+            return text;
+        }
+    }
+
+    /// The GObject type of `o`: which display, which renderer.
+    static string typeOf(imported!"gobject.object".ObjectWrap o)
+    {
+        import gobject.c.functions : g_type_name_from_instance;
+        import gobject.c.types : GTypeInstance;
+        import std.string : fromStringz;
+        return g_type_name_from_instance(cast(GTypeInstance*) o._cPtr).fromStringz.idup;
+    }
+
     static string frameText(Viewport.FrameStats f)
     {
         if (f.frames == 0)

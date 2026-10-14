@@ -52,8 +52,17 @@ cp -r "$sys/share/icons/Adwaita" "$sys/share/icons/hicolor" "$out/share/icons/"
 cp -r "$sys/share/gtksourceview-5" "$out/share/"
 cp -r "$sys/lib/gdk-pixbuf-2.0/2.10.0" "$out/lib/gdk-pixbuf-2.0/"
 rm -f "$out"/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll.a
-# fontconfig: Pango uses it under Wine (on Windows it uses DirectWrite)
+# fontconfig, which Pango lays text out with (see hcadFonts in gui/app.d),
+# and Adwaita Sans and Mono, the fonts hackerscad has on Linux
 cp -r "$sys/etc/fonts" "$out/etc/"
+cp packaging/windows/fonts-windows.conf "$out/etc/fonts/conf.d/45-hackerscad-windows.conf"
+adwaita=51.0
+mkdir -p "$root/build/win/dl" "$out/share/fonts/adwaita"
+[ -f "$root/build/win/dl/adwaita-fonts-$adwaita.tar.xz" ] || curl -fsSL -o "$root/build/win/dl/adwaita-fonts-$adwaita.tar.xz" \
+    "https://download.gnome.org/sources/adwaita-fonts/${adwaita%.*}/adwaita-fonts-$adwaita.tar.xz"
+tar -xJf "$root/build/win/dl/adwaita-fonts-$adwaita.tar.xz" -C "$out/share/fonts/adwaita" --strip-components=2 \
+    --wildcards "adwaita-fonts-$adwaita/sans/*.ttf" "adwaita-fonts-$adwaita/mono/*.ttf"
+tar -xJf "$root/build/win/dl/adwaita-fonts-$adwaita.tar.xz" -O "adwaita-fonts-$adwaita/LICENSE" > "$out/share/fonts/adwaita/LICENSE"
 if ! [ -f "$out/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache" ]; then
     echo "missing loaders.cache: run gdk-pixbuf-query-loaders --update-cache" >&2
     exit 1

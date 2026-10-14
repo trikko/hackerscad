@@ -933,11 +933,14 @@ JSONValue[] toolList()
             `"path": {"type": "string"}, "force": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_stop", "Stop the evaluation running in the user's window (hcad_gui_state tells whether one is "
             ~ "running and at which stage); it runs again at the next edit.", ``),
-        gui("hcad_gui_about", "Open the About window of the user's hackerscad (version, credits, licences).", ``),
+        gui("hcad_gui_about", "Open the About window of the user's hackerscad (version, credits, licences); close: true "
+            ~ "closes it; debug: true returns the debug information its Copy button copies (versions, system, screen, "
+            ~ "renderer, frame times, fonts, model size) without opening it.",
+            `"close": {"type": "boolean"}, "debug": {"type": "boolean"}`),
         gui("hcad_gui_screenshot", "Picture of the user's hackerscad window, after the current evaluation finishes; "
             ~ "target cheatsheet pictures the cheatsheet window instead (open it with hcad_gui_cheatsheet), colour "
-            ~ "the colour wheel (open it with hcad_gui_colour, wheel: true).",
-            `"target": {"type": "string", "enum": ["window", "cheatsheet", "colour"]}`, `[]`),
+            ~ "the colour wheel (open it with hcad_gui_colour, wheel: true), about the About window (hcad_gui_about).",
+            `"target": {"type": "string", "enum": ["window", "cheatsheet", "colour", "about"]}`, `[]`),
         gui("hcad_gui_state", "State of the user's window: file, parameters, parts, camera, problems, version; "
             ~ "user_changed tells which lines the user changed since your previous hcad_gui_* call. It waits for the "
             ~ "running evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) "

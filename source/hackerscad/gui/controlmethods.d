@@ -988,6 +988,21 @@ mixin template ControlMethods()
                 return;
             }
         case "about":
+            // {"debug": true}: the debug information About copies, without opening it
+            if ("debug" in p && p["debug"].type == JSONType.true_)
+            {
+                reply(JSONValue(["debug": debugReport()]), null);
+                return;
+            }
+            // {"close": true} closes it
+            if ("close" in p && p["close"].type == JSONType.true_)
+            {
+                immutable was = aboutDialog !is null;
+                if (was)
+                    aboutDialog.close();
+                reply(JSONValue(["closed": was]), null);
+                return;
+            }
             showAbout();
             reply(JSONValue(["opened": true]), null);
             return;
@@ -1003,8 +1018,11 @@ mixin template ControlMethods()
                 immutable wheelOpen = colourWheel !is null && colourWheel.win.getVisible();
                 if (arg("target") == "colour" && !wheelOpen)
                     return reply(JSONValue.init, "the colour wheel is not open: open it with the colour method, wheel: true");
+                // the About window, when open
+                if (arg("target") == "about" && aboutDialog is null)
+                    return reply(JSONValue.init, "the About window is not open: open it with the about method first");
                 imported!"gtk.window".Window other = arg("target") == "cheatsheet" ? cheatsheet.widget
-                    : arg("target") == "colour" ? colourWheel.win : null;
+                    : arg("target") == "colour" ? colourWheel.win : arg("target") == "about" ? aboutDialog.window : null;
                 // after a change GTK draws the window at its next frame, which
                 // the compositor holds back while the window is hidden or
                 // covered: wait for it a while, then fall back on the 3D view

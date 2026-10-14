@@ -37,6 +37,8 @@ immutable Component[] components = [
     Component("giD", "GTK bindings for D", "© Kymorphia, PBC", "MIT", "https://github.com/Kymorphia/gid"),
     Component("bindbc-opengl", "OpenGL bindings for D", "© Michael D. Parker", "BSL-1.0",
         "https://github.com/BindBC/bindbc-opengl"),
+    Component("Adwaita fonts", "Adwaita Sans and Mono, the letters (Windows package)", "© The GNOME Project",
+        "OFL-1.1", "https://gitlab.gnome.org/GNOME/adwaita-fonts"),
     Component("Mesa", "software OpenGL where the machine has none (Windows package)", "© The Mesa authors", "MIT",
         "https://mesa3d.org"),
     Component("Visual C++ runtime", "vcruntime140.dll (Windows package)", "© Microsoft Corporation",
