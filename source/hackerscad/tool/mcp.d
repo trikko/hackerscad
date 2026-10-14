@@ -71,7 +71,19 @@ void serve()
             restart(line, worker);
         process(line, worker);
     }
+    // stdin closed: the answers on their way are sent first (a client may
+    // close its end and read on), for two minutes at most; then out without
+    // the runtime tearing down the threads, which crashed with a GUI call
+    // still running in one
+    import core.thread : Thread;
+    import core.time : MonoTime, minutes, msecs;
+    immutable until = MonoTime.currTime + 2.minutes;
+    while ((!worker.idle || atomicLoad(guiCalls) > 0) && MonoTime.currTime < until)
+        Thread.sleep(50.msecs);
     worker.stop();
+    stdout.flush();
+    import core.stdc.stdlib : _Exit;
+    _Exit(0);
 }
 
 /// The executable, as it was when the server started.

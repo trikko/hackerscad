@@ -15,7 +15,7 @@ import glib.global : idleAdd;
 import glib.types : PRIORITY_DEFAULT;
 
 import hackerscad.tool.guiclient : socketPath, controlDir, controlSocket, windowAlive, normalizeWindowName,
-    randomWindowName;
+    randomWindowName, removeStaleChannels;
 
 /// Called on the main thread; must eventually call `reply` exactly once.
 alias Handler = void delegate(string method, JSONValue params, void delegate(JSONValue result, string error) reply);
@@ -39,6 +39,7 @@ final class ControlServer
     bool start(Handler h)
     {
         handler = h;
+        removeStaleChannels();
         foreach (attempt; 0 .. 50)
         {
             auto candidate = randomWindowName();

@@ -74,6 +74,48 @@ bool windowAlive(string window)
         return false;
 }
 
+/// Whether nothing listens on `window`'s channel any more: the connection is
+/// refused. A window that is open but busy still accepts it.
+private bool channelGone(string window)
+{
+    try
+    {
+        auto probe = controlSocket();
+        scope (exit)
+            probe.close();
+        probe.connect(controlAddress(window));
+        return false;
+    }
+    catch (SocketOSException e)
+    {
+        version (Windows)
+            enum refused = 10061;   // WSAECONNREFUSED
+        else
+            import core.stdc.errno : refused = ECONNREFUSED;
+        return e.errorCode == refused;
+    }
+    catch (SocketException)
+        return false;
+}
+
+/// Removes the channels of windows that are gone: a window killed or crashed
+/// leaves its file behind, and they piled up. Called when a window starts.
+void removeStaleChannels()
+{
+    import std.file : dirEntries, exists, isDir, remove, SpanMode;
+    import std.path : baseName, stripExtension;
+    auto dir = controlDir();
+    if (!exists(dir) || !isDir(dir))
+        return;
+    foreach (e; dirEntries(dir, "*" ~ controlExtension, SpanMode.shallow))
+        if (channelGone(e.name.baseName.stripExtension))
+            try
+                remove(e.name);
+            catch (Exception)
+            {
+            }
+}
+
 /// Names of the open windows, sorted.
 string[] openWindows()
 {
@@ -220,4 +262,36 @@ unittest
         auto n = randomWindowName();
         assert(normalizeWindowName(n) == n);
     }
+}
+
+version (Posix) unittest
+{
+    // the file of a window that is gone goes away; a live window's stays
+    import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir;
+    import std.conv : text;
+    import std.process : thisProcessID;
+    auto saved = environment.get("XDG_RUNTIME_DIR");
+    auto dir = buildPath(tempDir, text("hcad-stale-", thisProcessID));
+    environment["XDG_RUNTIME_DIR"] = dir;
+    scope (exit)
+    {
+        if (saved is null)
+            environment.remove("XDG_RUNTIME_DIR");
+        else
+            environment["XDG_RUNTIME_DIR"] = saved;
+        rmdirRecurse(dir);
+    }
+    mkdirRecurse(controlDir());
+    auto dead = controlSocket();
+    dead.bind(new UnixAddress(socketPath("dead-window")));
+    dead.close();
+    auto live = controlSocket();
+    live.bind(new UnixAddress(socketPath("live-window")));
+    live.listen(1);
+    scope (exit)
+        live.close();
+    assert(exists(socketPath("dead-window")));
+    removeStaleChannels();
+    assert(!exists(socketPath("dead-window")));
+    assert(exists(socketPath("live-window")));
 }
