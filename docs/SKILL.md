@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-96228389`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-23f27d4d`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-96228389`:** this text is up to date.
+- **It prints `0.3.1-23f27d4d`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -64,7 +64,12 @@ format stamp):
   in its header bar; with several open, hcad_gui_windows lists them and the
   user may tell you which one ("work in blue-otter"). With none open, or to
   show your work in a window of its own, hcad_gui_launch opens one on the
-  user's screen (on a model, or a new one) and gives its name. While a window shows a
+  user's screen (on a model, or a new one) and gives its name. To show an
+  example or a trial, launch it with code (the model's text) or copy (a
+  file whose text is copied in), not path: the window works on no file, so
+  the user can try things and Save asks for a name, where a window on a file
+  (an example of the project, a model of the user's) would save over it.
+  While a window shows a
   model, change its code with hcad_gui_edit, never by writing its .hcad file:
   the user may have unsaved changes (moving a part with the mouse edits the
   code), and a file rewritten under them makes the window ask which to keep.

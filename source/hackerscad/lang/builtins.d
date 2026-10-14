@@ -157,6 +157,51 @@ void installPrelude(Interp it, Env env)
             throw new HcadError(Code.units, "atan2 needs two numbers with the same unit", a.span);
         return Value.number(atan2(y.n.value, xx.n.value), Dim.angle);
     });
+    // ---- noise: smooth randomness for textures
+    double plainOrMm(Value v, string what, Span span)
+    {
+        if (!v.isNum)
+            throw new HcadError(Code.type, format("%s must be a number, not %s", what, v.typeName), span);
+        return v.n.value;   // a length counts in mm
+    }
+    def("noise", (ref CallArgs a) {
+        // noise(x, y, z, seed: 3): smooth, about -1…1, features about one unit across
+        import hackerscad.geom.noise : simplex;
+        auto x = Args(it, a, "noise", ["x", "y", "z", "seed"]);
+        return Value.number(simplex(plainOrMm(x.get("x"), "x", x.spanOf("x")),
+            x.has("y") ? plainOrMm(x.get("y"), "y", x.spanOf("y")) : 0,
+            x.has("z") ? plainOrMm(x.get("z"), "z", x.spanOf("z")) : 0,
+            x.has("seed") ? cast(long) x.num("seed") : 0));
+    });
+    def("random", (ref CallArgs a) {
+        // random(lo, hi, seed: 7): uniform between lo and hi (lengths, angles or plain numbers),
+        // the next of the seed's stream: the same numbers, in the same order, at every run
+        auto x = Args(it, a, "random", ["lo", "hi", "seed"]);
+        auto lo = x.has("lo") ? x.get("lo") : Value.number(0), hi = x.has("hi") ? x.get("hi") : Value.number(1);
+        if (!lo.isNum || !hi.isNum || lo.n.dim != hi.n.dim)
+            throw new HcadError(Code.units, "random(lo, hi): two numbers of the same kind (lengths, angles or plain)", a.span);
+        immutable seed = x.has("seed") ? cast(long) x.num("seed") : 0;
+        auto state = seed in it.randomStreams;
+        if (state is null)
+        {
+            it.randomStreams[seed] = cast(ulong) seed * 0x9E3779B97F4A7C15UL + 0xD1B54A32D192ED03UL;
+            state = seed in it.randomStreams;
+        }
+        // xorshift64*: 53 bits of it make a double in 0…1
+        *state ^= *state >> 12;
+        *state ^= *state << 25;
+        *state ^= *state >> 27;
+        immutable u = ((*state * 0x2545F4914F6CDD1DUL) >> 11) * (1.0 / (1UL << 53));
+        return Value.number(lo.n.value + (hi.n.value - lo.n.value) * u, lo.n.dim);
+    });
+    def("loopNoise", (ref CallArgs a) {
+        // loopNoise(around, along, bumps: 6): round a loop (0…1), no seam where it closes
+        import hackerscad.geom.noise : loopNoise;
+        auto x = Args(it, a, "loopNoise", ["around", "along", "bumps", "seed"]);
+        return Value.number(loopNoise(x.num("around"), x.has("along") ? plainOrMm(x.get("along"), "along", x.spanOf("along")) : 0,
+            x.has("bumps") ? x.num("bumps") : 4, x.has("seed") ? cast(long) x.num("seed") : 0));
+    });
+
     def("min", (ref CallArgs a) => extreme(it, a, "min", false));
     def("max", (ref CallArgs a) => extreme(it, a, "max", true));
     def("minElement", (ref CallArgs a) => extreme(it, a, "minElement", false));
@@ -802,8 +847,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return flat(k.circle(r), "circle", a.span);
     });
     def("polygon", (ref CallArgs a) {
-        // polygon([vec(0, 0), vec(30, 0), vec(0, 20)]) or [[0, 0], [30, 0], [0, 20]]
-        auto x = Args(it, a, "polygon", ["points"]);
+        // polygon([vec(0, 0), vec(30, 0), vec(0, 20)]) or [[0, 0], [30, 0], [0, 20]];
+        // smooth: true, a smooth closed curve through the points instead of straight sides
+        auto x = Args(it, a, "polygon", ["points", "smooth"]);
         auto pts = x.get("points");
         if (pts.kind != Kind.array || pts.arr.length < 3)
             throw new HcadError(Code.type, "polygon needs an array of at least 3 points", x.spanOf("points"));
@@ -823,6 +869,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 throw new HcadError(Code.type, "polygon points must be finite numbers", x.spanOf("points"));
             xy ~= [v.v.v.x * f, v.v.v.y * f];
         }
+        if (x.flag("smooth", false))
+            return flat(k.splineProfile(xy), "polygon", a.span);
         polygonCheck(xy, x.spanOf("points"));
         return flat(k.polygon(xy), "polygon", a.span);
     });
@@ -1003,10 +1051,57 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     def("loft", (ref CallArgs a) {
         // loft([circle(r: 20), rect(30).move(z: 40), circle(r: 10).move(z: 80)]): a solid through
         // profiles placed in space; ruled: true gives flat sides between them
-        auto x = Args(it, a, "loft", ["profiles", "ruled"]);
+        auto x = Args(it, a, "loft", ["profiles", "ruled", "inside"]);
         auto v = x.get("profiles");
         if (v.kind != Kind.array || v.arr.length < 2)
             throw new HcadError(Code.type, "loft needs an array of at least 2 profiles", x.spanOf("profiles"));
+        // rings of points (Vec3[] each, the same count): one smooth surface through every
+        // point, closed round each ring, the end rings filled flat; fast where a loft
+        // through as many smooth profiles would take seconds
+        if (v.arr[0].kind == Kind.array)
+        {
+            // every ring with `per` points (the first ring's count when 0)
+            Vec3[] ringsOf(Value w, string arg, ref size_t per)
+            {
+                Vec3[] pts;
+                if (w.kind != Kind.array || w.arr.length < 2)
+                    throw new HcadError(Code.type, "loft through rings of points needs 2 rings at least", x.spanOf(arg));
+                foreach (r, ring; w.arr)
+                {
+                    if (ring.kind != Kind.array || ring.arr.length < 3)
+                        throw new HcadError(Code.type, "loft through rings of points: each ring is an array of 3 points or more",
+                            x.spanOf(arg));
+                    if (per == 0)
+                        per = ring.arr.length;
+                    else if (ring.arr.length != per)
+                        throw new HcadError(Code.type, format("loft through rings of points: a ring has %d points, the first %d; "
+                            ~ "give them all the same count", ring.arr.length, per), x.spanOf(arg));
+                    foreach (q; ring.arr)
+                    {
+                        if (q.kind != Kind.vec || (q.v.dim != Dim.length && q.v.dim != Dim.none))
+                            throw new HcadError(Code.type, format("loft rings hold points (vec(x, y, z) in mm), not %s", q.typeName),
+                                x.spanOf(arg));
+                        immutable f = q.v.dim == Dim.none ? x.unitFactor : 1;
+                        pts ~= q.v.v * f;
+                    }
+                }
+                return pts;
+            }
+            size_t per;
+            auto pts = ringsOf(v, "profiles", per);
+            if (x.flag("ruled", false))
+                throw new HcadError(Code.type, "rings of points make a smooth surface: for flat sides, loft polygons with ruled: true",
+                    x.spanOf("ruled"));
+            // inside: rings for the inner wall: hollow, a floor at the inner first ring, open between the last two
+            if (x.has("inside"))
+            {
+                auto w = x.get("inside");
+                auto innerPts = ringsOf(w, "inside", per);
+                return Value.of(primitive(it, k.gridHollow(pts, cast(int) v.arr.length, innerPts, cast(int) w.arr.length,
+                    cast(int) per), "loft", a.span));
+            }
+            return Value.of(primitive(it, k.gridSolid(pts, cast(int) v.arr.length, cast(int) per), "loft", a.span));
+        }
         Brep[] bs;
         SolidVal[] ins;
         foreach (p; v.arr)
@@ -1418,8 +1513,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
     def("placeOn", (ref CallArgs a) {
         // a solid built on XY with Z up, moved onto a frame (Z along its normal)
-        // or onto a plane (its origin, X projected on it)
-        auto x = Args(it, a, "placeOn", ["solid", "frame"]);
+        // or onto a plane (its origin, X projected on it); from: a face of the
+        // solid (or a frame) laid against it instead, at: a point of that face
+        auto x = Args(it, a, "placeOn", ["solid", "frame", "from", "at"]);
         auto s = x.solid("solid");
         Vec3 o, ax, ay, az;
         auto v = x.get("frame");
@@ -1431,12 +1527,45 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         }
         else
             frameArg(x, "frame", o, ax, ay, az);
+        if (x.has("at") && !x.has("from"))
+            throw new HcadError(Code.type, "at: is a point of the from: face", x.spanOf("at"));
+        // the frame carried onto it: the world's (XY, Z up), or one on the solid's
+        // face, outwards, turned to face into the target (X kept, Y and Z reversed)
+        Vec3 fo = Vec3(0, 0, 0), fx = Vec3(1, 0, 0), fy = Vec3(0, 1, 0), fz = Vec3(0, 0, 1);
+        if (x.has("from"))
+        {
+            auto f = x.get("from");
+            if (f.kind == Kind.selector)
+            {
+                auto idx = resolveSelector(it, x.selector("from", true), s, x.spanOf("from"));
+                if (idx.length != 1)
+                    throw new HcadError(Code.type, format("from: needs exactly one face, the selector matched %d",
+                        idx.length), x.spanOf("from"));
+                auto face = flatFace(it, s, idx[0], "placeOn", x.spanOf("from"));
+                fo = face.center;
+                fz = face.normal;
+                fx = faceXAxis(fz);
+                fy = fz.cross(fx);
+            }
+            else
+                frameArg(x, "from", fo, fx, fy, fz);
+            if (x.has("at"))
+            {
+                auto q = x.vecLen("at");
+                fo = q - fz * (q - fo).dot(fz);
+            }
+            fy = fy * -1;
+            fz = fz * -1;
+        }
+        // the turn taking fx, fy, fz to ax, ay, az: its columns, the world axes turned
+        Vec3 col(Vec3 e) => ax * fx.dot(e) + ay * fy.dot(e) + az * fz.dot(e);
         Vec3 axis;
-        immutable angle = axisAngle(ax, ay, az, axis);
+        immutable angle = axisAngle(col(Vec3(1, 0, 0)), col(Vec3(0, 1, 0)), col(Vec3(0, 0, 1)), axis);
+        immutable shift = o - col(Vec3(1, 0, 0)) * fo.x - col(Vec3(0, 1, 0)) * fo.y - col(Vec3(0, 0, 1)) * fo.z;
         return transformed(it, a.span, s, (Brep b) {
             if (angle > 1e-12)
                 b = k.rotate(b, axis, angle);
-            return k.translate(b, o);
+            return k.translate(b, shift);
         });
     });
 
@@ -1500,6 +1629,168 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             r ~= Value.of(p);
         return Value.of(r);
     });
+}
+
+/// `n` frames evenly along path `s` by length, ends included: origin, X, Y,
+/// Z, with Z along the path. They turn as little as a frame can while
+/// following it (rotation-minimising, by double reflection), so profiles
+/// placed on them do not twist round the path; on a closed path what twist
+/// is left is spread evenly, so the last matches the first.
+Vec3[4][] pathFrames(Interp it, SolidVal s, int n)
+{
+    import std.math : atan2;
+    Vec3[] p, t;
+    it.kernel.pathSample(s.brep, n, p, t);
+    Vec3[4][] r;
+    // the first X: across the path, level when it can be
+    auto z0 = t[0].normalized;
+    auto x0 = (abs(z0.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(z0).normalized;
+    Vec3[] xs = [x0];
+    foreach (i; 0 .. n - 1)
+    {
+        auto v1 = p[i + 1] - p[i];
+        immutable c1 = v1.dot(v1);
+        if (c1 < 1e-18)
+        {
+            xs ~= xs[i];
+            continue;
+        }
+        auto rL = xs[i] - v1 * (2 / c1 * v1.dot(xs[i]));
+        auto tL = t[i] - v1 * (2 / c1 * v1.dot(t[i]));
+        auto v2 = t[i + 1] - tL;
+        immutable c2 = v2.dot(v2);
+        auto x1 = c2 < 1e-18 ? rL : rL - v2 * (2 / c2 * v2.dot(rL));
+        // kept square to the tangent against rounding
+        xs ~= (x1 - t[i + 1] * x1.dot(t[i + 1])).normalized;
+    }
+    // closed: the turn left between the last X and the first, spread along
+    double spread = 0;
+    if ((p[0] - p[$ - 1]).length < 1e-6 && n > 2)
+    {
+        auto a = xs[0], b = xs[$ - 1], tz = t[$ - 1].normalized;
+        spread = atan2(tz.dot(b.cross(a)), b.dot(a));
+    }
+    foreach (i; 0 .. n)
+    {
+        auto z = t[i].normalized, x = xs[i];
+        if (spread != 0)
+        {
+            // turn X about Z by its share of the spread
+            immutable g = spread * i / (n - 1), c = cos(g), sn = sin(g);
+            x = x * c + z.cross(x) * sn + z * (z.dot(x) * (1 - c));
+        }
+        r ~= [p[i], x, z.cross(x), z];
+    }
+    return r;
+}
+
+/// What `outline(n)` gives for each point: where it is, its outward
+/// normal (smoothed over corners) and how far round the outline (0…1).
+StructDef outlinePointDef()
+{
+    __gshared StructDef def;
+    if (def is null)
+    {
+        def = new StructDef;
+        def.name = "OutlinePoint";
+        foreach (f; [["at", "Vec2"], ["normal", "Vec2"], ["around", "double"]])
+        {
+            auto t = new TypeRef;
+            t.name = f[1];
+            def.fields ~= StructDef.FieldInfo(f[0], t, null);
+        }
+    }
+    return def;
+}
+
+/// `n` points evenly spaced round the outer outline of profile `s`,
+/// counter-clockwise from its point nearest +X: each with its outward normal,
+/// taken across a little stretch either side so it turns smoothly round a
+/// corner (a texture pushed out along it does not cross itself there), and
+/// its share of the way round.
+Value[] outlinePoints(Interp it, SolidVal s, size_t n, Span span, double round = 0)
+{
+    import std.math : atan2;
+    auto loops = it.kernel.faceLoops(s.brep, 0, 0.01);
+    if (loops.length == 0)
+        throw new HcadError(Code.kernel, "this profile has no outline", span);
+    // the outer loop: the largest area; counter-clockwise
+    double areaOf(Vec3[] l)
+    {
+        double a = 0;
+        foreach (i; 0 .. l.length)
+            a += l[i].x * l[(i + 1) % l.length].y - l[(i + 1) % l.length].x * l[i].y;
+        return a / 2;
+    }
+    auto loop = loops[0];
+    foreach (l; loops[1 .. $])
+        if (abs(areaOf(l)) > abs(areaOf(loop)))
+            loop = l;
+    loop = loop.dup;
+    if (loop.length > 1 && (loop[0] - loop[$ - 1]).length < 1e-9)
+        loop = loop[0 .. $ - 1];
+    if (areaOf(loop) < 0)
+    {
+        import std.algorithm : reverse;
+        reverse(loop);
+    }
+    // lengths along it
+    double[] at = [0];
+    foreach (i; 0 .. loop.length)
+        at ~= at[$ - 1] + (loop[(i + 1) % loop.length] - loop[i]).length;
+    immutable per = at[$ - 1];
+    // start where a line from the middle towards +X meets the outline: the
+    // same place whatever the outline's own first point (a stable start)
+    Vec3 mid = Vec3(0, 0, 0);
+    foreach (p; loop)
+        mid = mid + p;
+    mid = mid * (1.0 / loop.length);
+    double start = 0, nearest = double.infinity;
+    foreach (i; 0 .. loop.length)
+    {
+        auto a = loop[i] - mid, b = loop[(i + 1) % loop.length] - mid;
+        if ((a.y <= 0) == (b.y <= 0) || a.y == b.y)
+            continue;
+        immutable f = -a.y / (b.y - a.y), x = a.x + (b.x - a.x) * f;
+        if (x > 0 && x < nearest)
+        {
+            nearest = x;
+            start = at[i] + (at[i + 1] - at[i]) * f;
+        }
+    }
+    Vec3 pointAt(double d)
+    {
+        while (d < 0)
+            d += per;
+        while (d >= per)
+            d -= per;
+        size_t lo = 0, hi = loop.length;
+        while (hi - lo > 1)
+        {
+            immutable m = (lo + hi) / 2;
+            if (at[m] <= d)
+                lo = m;
+            else
+                hi = m;
+        }
+        immutable len = at[lo + 1] - at[lo];
+        immutable f = len > 0 ? (d - at[lo]) / len : 0;
+        return loop[lo] + (loop[(lo + 1) % loop.length] - loop[lo]) * f;
+    }
+    // the normal across a stretch either side (the spacing, or a quarter round of
+    // a fillet `round` big): corners turn smoothly, an inward push under `round` keeps clear
+    immutable step = per / n, reach = max(step * 1.5, round * PI / 2);
+    Value[] r;
+    foreach (i; 0 .. n)
+    {
+        immutable d = start + per * i / n;
+        auto p = pointAt(d);
+        auto tangent = pointAt(d + reach) - pointAt(d - reach);
+        auto normal = Vec3(tangent.y, -tangent.x, 0).normalized;
+        r ~= Value.make(Kind.struct_, StructVal(outlinePointDef, [Value.vector(Vec3(p.x, p.y, 0), 2, Dim.length),
+            Value.vector(normal, 2, Dim.none), Value.number(cast(double) i / n)]));
+    }
+    return r;
 }
 
 /// What a list of solids has (`s.pieces.below(p)`, `.largest`, `.top`):
@@ -1883,6 +2174,7 @@ shared static this()
     cast(void) frameDef();
     cast(void) planeDef();
     cast(void) halvesDef();
+    cast(void) outlinePointDef();
     cast(void) bboxDef();
     // the CSS colour names
     namedColors = [
@@ -2041,6 +2333,41 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
                 result = Value.vector(it.kernel.massProps(s.brep).centroid, 3, Dim.length);
                 return true;
             case "isEmpty": result = Value.of(s.brep is null); return true;
+            case "frames":
+                {
+                    // frames(n): n frames evenly along a path, Z along it, turning as little as they can
+                    result = method((ref CallArgs a) {
+                        auto x = Args(it, a, "frames", ["path", "n"]);
+                        if (!s.path)
+                            throw new HcadError(Code.type, "frames are along a path (path, spline, helix)", span);
+                        immutable n = x.has("n") ? cast(int) x.num("n") : 32;
+                        if (n < 2 || n > 10_000)
+                            throw new HcadError(Code.type, "frames takes from 2 to 10000", x.spanOf("n"));
+                        Value[] r;
+                        foreach (f; pathFrames(it, s, n))
+                            r ~= frameValue(f[0], f[1], f[2], f[3]);
+                        return Value.of(r);
+                    });
+                    return true;
+                }
+            case "outline":
+                {
+                    // a profile's outline as n points evenly round it, each with its outward normal
+                    result = method((ref CallArgs a) {
+                        auto x = Args(it, a, "outline", ["profile", "n", "round"]);
+                        if (!s.flat)
+                            throw new HcadError(Code.type, "outline is of a profile (a 2D shape): this is a solid", span);
+                        immutable n = x.has("n") ? cast(size_t) x.num("n") : 64;
+                        if (n < 3 || n > 100_000)
+                            throw new HcadError(Code.type, "outline takes from 3 to 100000 points", x.spanOf("n"));
+                        Value[] r;
+                        // round: the normals turn round a corner as on a fillet that big
+                        foreach (q; outlinePoints(it, s, n, span, x.has("round") ? x.len("round") : 0))
+                            r ~= q;
+                        return Value.of(r);
+                    });
+                    return true;
+                }
             case "pieces":
                 {
                     Value[] r;
@@ -3175,6 +3502,23 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
             if (!(angle >= 0 && angle < PI / 2))
                 throw new HcadError(Code.type, "the overhang angle is from a vertical wall: 0 to 90°", x.spanOf("angle"));
             return with_((size_t i, ref SelectCtx c) => c.overhangShares(angle)[i] > 0.01);
+        });
+    case "farthest":
+        // faces.farthest(Z): the face whose centre lies farthest that way, whatever way it faces
+        // (a vase's tilted mouth); among the faces selected so far
+        return fn((ref CallArgs a) {
+            auto x = Args(it, a, "farthest", ["selector", "axis"]);
+            auto ax = x.dir("axis");
+            auto prefix = copy(sel);
+            return with_((size_t i, ref SelectCtx c) {
+                auto candidates = c.resolve(prefix);
+                if (!candidates.canFind(cast(int) i))
+                    return false;
+                double best = -double.infinity;
+                foreach (j; candidates)
+                    best = max(best, c.faces[j].center.dot(ax));
+                return c.faces[i].center.dot(ax) >= best - 1e-6;
+            });
         });
     case "normal":
         return fn((ref CallArgs a) {

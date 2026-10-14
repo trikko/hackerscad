@@ -43,6 +43,8 @@
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepLProp_SLProps.hxx>
 #include <Poly_Triangulation.hxx>
+#include <Poly_PolygonOnTriangulation.hxx>
+#include <Geom_Plane.hxx>
 #include <STEPControl_Writer.hxx>
 #include <STEPControl_Reader.hxx>
 #include <Interface_Static.hxx>
@@ -72,6 +74,10 @@
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepTools.hxx>
 #include <BRepLib.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <TColStd_HArray1OfReal.hxx>
+#include <TColgp_Array2OfPnt.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <GeomAPI_Interpolate.hxx>
@@ -390,6 +396,40 @@ hc_shape *hc_polygon(const double *xy, int n)
         BRepBuilderAPI_MakeFace f(poly.Wire(), Standard_True);
         if (!f.IsDone()) {
             set_error("the polygon is not a valid planar outline");
+            return nullptr;
+        }
+        return primitive(upward(f.Face()));
+    });
+}
+
+// A smooth closed curve through the points (x, y pairs) on XY, filled: a
+// profile with curved sides, as the polygon with straight ones.
+hc_shape *hc_spline_profile(const double *xy, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        if (n < 3) {
+            set_error("a smooth outline needs at least 3 points");
+            return nullptr;
+        }
+        Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, n);
+        for (int i = 0; i < n; i++)
+            pts->SetValue(i + 1, gp_Pnt(xy[2 * i], xy[2 * i + 1], 0));
+        GeomAPI_Interpolate interp(pts, Standard_True, 1e-7);
+        interp.Perform();
+        if (!interp.IsDone()) {
+            set_error("cannot fit a smooth outline through these points (repeated points?)");
+            return nullptr;
+        }
+        BRepBuilderAPI_MakeWire wire(BRepBuilderAPI_MakeEdge(interp.Curve()).Edge());
+        BRepBuilderAPI_MakeFace f(wire.Wire(), Standard_True);
+        if (!f.IsDone()) {
+            set_error("the smooth outline is not a valid planar outline");
+            return nullptr;
+        }
+        // a curve through the points can still cross itself: say so here, not at the loft
+        BRepCheck_Analyzer check(f.Face());
+        if (!check.IsValid()) {
+            set_error("the smooth outline crosses itself: give the points in order around it, not too close");
             return nullptr;
         }
         return primitive(upward(f.Face()));
@@ -1811,6 +1851,11 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
         for (int f = 1; f <= faces.Extent(); f++) {
             isPlain[f - 1] = plain_triangle(TopoDS::Face(faces(f)), plain[f - 1].data());
             if (!isPlain[f - 1]) {
+                // already meshed at least as finely (a solid through rings comes with its own): kept
+                TopLoc_Location loc;
+                auto own = BRep_Tool::Triangulation(TopoDS::Face(faces(f)), loc);
+                if (!own.IsNull() && own->Deflection() <= linear_deflection && own->Deflection() < 1e-6)
+                    continue;
                 bb.Add(rest, faces(f));
                 anyRest = true;
             }
@@ -2538,6 +2583,429 @@ int hc_path_frame(const hc_shape *path, int at_end, double out[6])
         double v[6] = {p.X(), p.Y(), p.Z(), t.X(), t.Y(), t.Z()};
         for (int i = 0; i < 6; i++)
             out[i] = v[i];
+        return 1;
+    });
+}
+
+// Triangles filling a closed polygon in a plane (ear clipping), wound
+// counter-clockwise about `normal`: indices into `pts`.
+static std::vector<std::array<int, 3>> fill_polygon(const std::vector<gp_Pnt> &pts, const gp_Dir &normal)
+{
+    const int n = (int)pts.size();
+    gp_Dir x = std::abs(normal.Z()) < 0.9 ? gp_Dir(gp_Vec(0, 0, 1).Crossed(gp_Vec(normal))) : gp_Dir(gp_Vec(1, 0, 0).Crossed(gp_Vec(normal)));
+    gp_Dir y = normal.Crossed(x);
+    std::vector<double> u(n), v(n);
+    for (int i = 0; i < n; i++) {
+        gp_Vec d(pts[0], pts[i]);
+        u[i] = d.Dot(gp_Vec(x));
+        v[i] = d.Dot(gp_Vec(y));
+    }
+    std::vector<int> ring(n);
+    double area = 0;
+    for (int i = 0; i < n; i++) {
+        ring[i] = i;
+        int j = (i + 1) % n;
+        area += u[i] * v[j] - u[j] * v[i];
+    }
+    if (area < 0)
+        std::reverse(ring.begin(), ring.end());
+    auto cross = [&](int a, int b, int c) { return (u[b] - u[a]) * (v[c] - v[a]) - (v[b] - v[a]) * (u[c] - u[a]); };
+    std::vector<std::array<int, 3>> tris;
+    int guard = 0;
+    while (ring.size() > 3 && guard++ < 100000) {
+        const int m = (int)ring.size();
+        bool cut = false;
+        for (int k = 0; k < m && !cut; k++) {
+            int a = ring[(k + m - 1) % m], b = ring[k], c = ring[(k + 1) % m];
+            if (cross(a, b, c) <= 1e-12)
+                continue;   // a reflex corner, or none
+            bool empty = true;
+            for (int q : ring) {
+                if (q == a || q == b || q == c)
+                    continue;
+                if (cross(a, b, q) >= 0 && cross(b, c, q) >= 0 && cross(c, a, q) >= 0) {
+                    empty = false;
+                    break;
+                }
+            }
+            if (!empty)
+                continue;
+            tris.push_back({a, b, c});
+            ring.erase(ring.begin() + k);
+            cut = true;
+        }
+        if (!cut) {
+            // nothing clean left (points in a line): a fan of what remains
+            for (size_t k = 1; k + 1 < ring.size(); k++)
+                tris.push_back({ring[0], ring[k], ring[k + 1]});
+            ring.clear();
+        }
+    }
+    if (ring.size() == 3)
+        tris.push_back({ring[0], ring[1], ring[2]});
+    return tris;
+}
+
+// ---- solids through rings of points (loft of Vec3[][]): one smooth
+// B-spline surface through every point, periodic round the rings, built as
+// a tensor product (a periodic curve through each ring, all with the same
+// parameters so the same knots, then a curve through each column of their
+// poles across the rings); no sections to match, as a loft through so many
+// would. Each face comes with its own triangles, from the grid (see
+// attach_mesh), so drawing and export do not wait on the mesher, which
+// takes seconds on a surface of so many patches.
+
+static Handle(Geom_BSplineSurface) grid_surface(const double *xyz, int rings, int per)
+{
+    auto P = [&](int r, int i) { const double *v = xyz + 3 * (r * per + i); return gp_Pnt(v[0], v[1], v[2]); };
+    // round each ring: periodic, the same parameters 0 … per for all (a closed
+    // curve takes one more, where it comes back to its first point)
+    Handle(TColStd_HArray1OfReal) up = new TColStd_HArray1OfReal(1, per + 1);
+    for (int i = 0; i <= per; i++)
+        up->SetValue(i + 1, i);
+    std::vector<Handle(Geom_BSplineCurve)> round(rings);
+    for (int r = 0; r < rings; r++) {
+        Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, per);
+        for (int i = 0; i < per; i++)
+            pts->SetValue(i + 1, P(r, i));
+        GeomAPI_Interpolate fit(pts, up, Standard_True, 1e-9);
+        fit.Perform();
+        if (!fit.IsDone()) {
+            set_error("cannot fit a smooth ring through these points (repeated points?)");
+            return nullptr;
+        }
+        round[r] = fit.Curve();
+    }
+    const int nu = round[0]->NbPoles();
+    for (int r = 1; r < rings; r++)
+        if (round[r]->NbPoles() != nu) {
+            set_error("the rings do not match: give each the same number of points");
+            return nullptr;
+        }
+    // across the rings: a curve through each column of poles, the same parameters for all
+    Handle(TColStd_HArray1OfReal) vp = new TColStd_HArray1OfReal(1, rings);
+    for (int r = 0; r < rings; r++)
+        vp->SetValue(r + 1, r);
+    std::vector<Handle(Geom_BSplineCurve)> across(nu);
+    for (int j = 0; j < nu; j++) {
+        Handle(TColgp_HArray1OfPnt) col = new TColgp_HArray1OfPnt(1, rings);
+        for (int r = 0; r < rings; r++)
+            col->SetValue(r + 1, round[r]->Pole(j + 1));
+        if (rings == 2) {
+            // two rings: straight across
+            TColgp_Array1OfPnt poles(1, 2);
+            poles(1) = col->Value(1);
+            poles(2) = col->Value(2);
+            TColStd_Array1OfReal knots(1, 2);
+            knots(1) = 0;
+            knots(2) = 1;
+            TColStd_Array1OfInteger mults(1, 2);
+            mults(1) = mults(2) = 2;
+            across[j] = new Geom_BSplineCurve(poles, knots, mults, 1);
+            continue;
+        }
+        GeomAPI_Interpolate fit(col, vp, Standard_False, 1e-9);
+        fit.Perform();
+        if (!fit.IsDone()) {
+            set_error("cannot fit a smooth surface across these rings");
+            return nullptr;
+        }
+        across[j] = fit.Curve();
+    }
+    const Handle(Geom_BSplineCurve) &c0 = round[0], &a0 = across[0];
+    const int nv = a0->NbPoles();
+    TColgp_Array2OfPnt poles(1, nu, 1, nv);
+    for (int j = 0; j < nu; j++)
+        for (int k = 0; k < nv; k++)
+            poles(j + 1, k + 1) = across[j]->Pole(k + 1);
+    TColStd_Array1OfReal uk(1, c0->NbKnots()), vk(1, a0->NbKnots());
+    TColStd_Array1OfInteger um(1, c0->NbKnots()), vm(1, a0->NbKnots());
+    c0->Knots(uk);
+    c0->Multiplicities(um);
+    a0->Knots(vk);
+    a0->Multiplicities(vm);
+    return new Geom_BSplineSurface(poles, uk, vk, um, vm, c0->Degree(), a0->Degree(), Standard_True, Standard_False);
+}
+
+// where a grid surface is sampled for its triangles: two samples a knot span
+struct GridSamples {
+    std::vector<double> us, vs;   // us round (no repeat of the first), vs across, ends included
+    double period;
+};
+
+static GridSamples grid_samples(const Handle(Geom_BSplineSurface) &surf)
+{
+    GridSamples g;
+    double u0, u1, v0, v1;
+    surf->Bounds(u0, u1, v0, v1);
+    g.period = u1 - u0;
+    for (int i = 1; i < surf->NbUKnots(); i++) {
+        double a = surf->UKnot(i), b = surf->UKnot(i + 1);
+        g.us.push_back(a);
+        g.us.push_back((a + b) / 2);
+    }
+    for (int i = 1; i < surf->NbVKnots(); i++) {
+        double a = surf->VKnot(i), b = surf->VKnot(i + 1);
+        g.vs.push_back(a);
+        g.vs.push_back((a + b) / 2);
+    }
+    g.vs.push_back(surf->VKnot(surf->NbVKnots()));
+    return g;
+}
+
+static std::vector<gp_Pnt> grid_ring(const Handle(Geom_BSplineSurface) &surf, const GridSamples &g, double v)
+{
+    std::vector<gp_Pnt> r;
+    for (double u : g.us)
+        r.push_back(surf->Value(u, v));
+    return r;
+}
+
+// the side's triangles: nu + 1 columns, the last the first again (u + period), so the seam has its own nodes
+static Handle(Poly_Triangulation) grid_side_mesh(const Handle(Geom_BSplineSurface) &surf, const GridSamples &g)
+{
+    const int nu = (int)g.us.size(), nv = (int)g.vs.size();
+    Handle(Poly_Triangulation) side = new Poly_Triangulation((nu + 1) * nv, 2 * nu * (nv - 1), Standard_True);
+    auto node = [&](int i, int j) { return j * (nu + 1) + i + 1; };
+    for (int j = 0; j < nv; j++)
+        for (int i = 0; i <= nu; i++) {
+            side->SetNode(node(i, j), surf->Value(g.us[i % nu], g.vs[j]));
+            side->SetUVNode(node(i, j), gp_Pnt2d(i < nu ? g.us[i] : g.us[0] + g.period, g.vs[j]));
+        }
+    int t = 1;
+    for (int j = 0; j + 1 < nv; j++)
+        for (int i = 0; i < nu; i++) {
+            side->SetTriangle(t++, Poly_Triangle(node(i, j), node(i + 1, j), node(i + 1, j + 1)));
+            side->SetTriangle(t++, Poly_Triangle(node(i, j), node(i + 1, j + 1), node(i, j + 1)));
+        }
+    side->Deflection(1e-7);
+    return side;
+}
+
+// a flat end filled from its boundary points, wound about `normal`
+static Handle(Poly_Triangulation) cap_mesh(const std::vector<gp_Pnt> &ring, const gp_Dir &normal)
+{
+    auto tris = fill_polygon(ring, normal);
+    Handle(Poly_Triangulation) cap = new Poly_Triangulation((int)ring.size(), (int)tris.size(), Standard_False);
+    for (size_t i = 0; i < ring.size(); i++)
+        cap->SetNode((int)i + 1, ring[i]);
+    for (size_t k = 0; k < tris.size(); k++)
+        cap->SetTriangle((int)k + 1, Poly_Triangle(tris[k][0] + 1, tris[k][1] + 1, tris[k][2] + 1));
+    cap->Deflection(1e-7);
+    return cap;
+}
+
+// a flat ring between two rings of as many points (the rim of a hollow
+// solid), each quad split in two, wound about `normal`
+static Handle(Poly_Triangulation) rim_mesh(const std::vector<gp_Pnt> &outer, const std::vector<gp_Pnt> &inner, const gp_Dir &normal)
+{
+    const int n = (int)outer.size();
+    Handle(Poly_Triangulation) rim = new Poly_Triangulation(2 * n, 2 * n, Standard_False);
+    for (int i = 0; i < n; i++) {
+        rim->SetNode(i + 1, outer[i]);
+        rim->SetNode(n + i + 1, inner[i]);
+    }
+    // the way round the outer ring goes, seen down the normal
+    gp_Vec turn(0, 0, 0);
+    for (int i = 0; i < n; i++)
+        turn += gp_Vec(outer[i].XYZ()).Crossed(gp_Vec(outer[(i + 1) % n].XYZ()));
+    const bool ccw = turn.Dot(gp_Vec(normal)) > 0;
+    int t = 1;
+    for (int i = 0; i < n; i++) {
+        int a = i + 1, b = (i + 1) % n + 1, c = n + (i + 1) % n + 1, d = n + i + 1;
+        if (ccw) {
+            rim->SetTriangle(t++, Poly_Triangle(a, b, c));
+            rim->SetTriangle(t++, Poly_Triangle(a, c, d));
+        } else {
+            rim->SetTriangle(t++, Poly_Triangle(a, c, b));
+            rim->SetTriangle(t++, Poly_Triangle(a, d, c));
+        }
+    }
+    rim->Deflection(1e-7);
+    return rim;
+}
+
+static TopoDS_Wire iso_wire(const Handle(Geom_BSplineSurface) &surf, double v)
+{
+    return BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(surf->VIso(v)).Edge()).Wire();
+}
+
+// faces sewn into one closed solid, facing out
+static TopoDS_Shape close_solid(const std::vector<TopoDS_Face> &faces)
+{
+    BRepBuilderAPI_Sewing sew(1e-5);
+    for (const TopoDS_Face &f : faces)
+        sew.Add(f);
+    sew.Perform();
+    TopoDS_Shell shell;
+    for (TopExp_Explorer e(sew.SewedShape(), TopAbs_SHELL); e.More(); e.Next()) {
+        shell = TopoDS::Shell(e.Current());
+        break;
+    }
+    if (shell.IsNull()) {
+        set_error("the rings do not close into a solid");
+        return TopoDS_Shape();
+    }
+    TopoDS_Solid solid = BRepBuilderAPI_MakeSolid(shell).Solid();
+    BRepClass3d_SolidClassifier inside(solid);
+    inside.PerformInfinitePoint(1e-7);
+    if (inside.State() == TopAbs_IN)
+        solid.Reverse();
+    ShapeFix_Solid fix(solid);
+    fix.Perform();
+    return fix.Solid();
+}
+
+// Each face of `solid` gets its triangles: a grid side (by its surface), a
+// flat face by what it is near: an end ring (filled), or the rim between the
+// two top rings. Set on the faces only (not the edges: the check of the
+// solid would hold their points against the sewn edges' own parameters),
+// marked as fine as can be: hc_tessellate takes them as they are.
+static void attach_mesh(const TopoDS_Shape &solid, const std::vector<Handle(Geom_BSplineSurface)> &sides,
+    const std::vector<std::vector<gp_Pnt>> &ends, const std::vector<gp_Pnt> &rimOuter, const std::vector<gp_Pnt> &rimInner)
+{
+    BRep_Builder bb;
+    for (TopExp_Explorer f(solid, TopAbs_FACE); f.More(); f.Next()) {
+        const TopoDS_Face &face = TopoDS::Face(f.Current());
+        TopLoc_Location loc;
+        Handle(Geom_Surface) gs = BRep_Tool::Surface(face, loc);
+        bool done = false;
+        for (const auto &side : sides)
+            if (gs == side) {
+                bb.UpdateFace(face, grid_side_mesh(side, grid_samples(side)));
+                done = true;
+            }
+        if (done)
+            continue;
+        Handle(Geom_Plane) plane = Handle(Geom_Plane)::DownCast(gs);
+        if (plane.IsNull())
+            continue;
+        gp_Pln pl = plane->Pln();
+        const gp_Dir n = pl.Axis().Direction();
+        int wires = 0;
+        for (TopExp_Explorer w(face, TopAbs_WIRE); w.More(); w.Next())
+            wires++;
+        if (wires == 2 && !rimOuter.empty()) {
+            bb.UpdateFace(face, rim_mesh(rimOuter, rimInner, n));
+            continue;
+        }
+        // the end ring lying in this plane
+        const std::vector<gp_Pnt> *best = nullptr;
+        double far = 1e300;
+        for (const auto &e : ends) {
+            double d = 0;
+            for (const gp_Pnt &p : e)
+                d = std::max(d, pl.Distance(p));
+            if (d < far) {
+                far = d;
+                best = &e;
+            }
+        }
+        if (best)
+            bb.UpdateFace(face, cap_mesh(*best, n));
+    }
+}
+
+// A solid through rings of points: `rings` rings of `per` points each
+// (x y z), every ring closed on itself; the first and the last ring, which
+// must each lie in a plane, filled flat.
+hc_shape *hc_grid_solid(const double *xyz, int rings, int per)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        if (rings < 2 || per < 3) {
+            set_error("a solid through rings needs 2 rings of 3 points at least");
+            return nullptr;
+        }
+        Handle(Geom_BSplineSurface) surf = grid_surface(xyz, rings, per);
+        if (surf.IsNull())
+            return nullptr;
+        double u0, u1, v0, v1;
+        surf->Bounds(u0, u1, v0, v1);
+        BRepBuilderAPI_MakeFace bottom(iso_wire(surf, v0), Standard_True), top(iso_wire(surf, v1), Standard_True);
+        if (!bottom.IsDone() || !top.IsDone()) {
+            set_error("the first and the last ring must each lie in a plane, to be closed flat");
+            return nullptr;
+        }
+        TopoDS_Shape result = close_solid({BRepBuilderAPI_MakeFace(surf, 1e-7).Face(), bottom.Face(), top.Face()});
+        if (result.IsNull())
+            return nullptr;
+        auto g = grid_samples(surf);
+        attach_mesh(result, {surf}, {grid_ring(surf, g, v0), grid_ring(surf, g, v1)}, {}, {});
+        return primitive(result);
+    });
+}
+
+// A hollow solid through two sets of rings, outer and inner, as many points
+// in every ring: the walls through them, the outer first ring filled flat
+// (the foot), the inner first ring filled flat (the floor inside), and the
+// two last rings joined by a flat rim: the last rings must lie in one
+// plane, open between them. A vase with its own walls, no offset nor
+// boolean to compute.
+hc_shape *hc_grid_hollow(const double *outer, int outerRings, const double *inner, int innerRings, int per)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        if (outerRings < 2 || innerRings < 2 || per < 3) {
+            set_error("a hollow solid through rings needs 2 rings of 3 points at least, outside and inside");
+            return nullptr;
+        }
+        Handle(Geom_BSplineSurface) out = grid_surface(outer, outerRings, per);
+        if (out.IsNull())
+            return nullptr;
+        Handle(Geom_BSplineSurface) in = grid_surface(inner, innerRings, per);
+        if (in.IsNull())
+            return nullptr;
+        double u0, u1, ov0, ov1, iv0, iv1;
+        out->Bounds(u0, u1, ov0, ov1);
+        in->Bounds(u0, u1, iv0, iv1);
+        BRepBuilderAPI_MakeFace foot(iso_wire(out, ov0), Standard_True), floor(iso_wire(in, iv0), Standard_True);
+        BRepBuilderAPI_MakeFace rim(iso_wire(out, ov1), Standard_True);
+        if (!foot.IsDone() || !floor.IsDone() || !rim.IsDone()) {
+            set_error("the first rings and the last ones must each lie in a plane");
+            return nullptr;
+        }
+        TopoDS_Wire hole = iso_wire(in, iv1);
+        hole.Reverse();
+        rim.Add(hole);
+        if (!rim.IsDone()) {
+            set_error("the last outer and inner rings must lie in one plane, the inner one inside");
+            return nullptr;
+        }
+        TopoDS_Shape result = close_solid({BRepBuilderAPI_MakeFace(out, 1e-7).Face(), BRepBuilderAPI_MakeFace(in, 1e-7).Face(),
+            foot.Face(), floor.Face(), rim.Face()});
+        if (result.IsNull())
+            return nullptr;
+        auto go = grid_samples(out), gi = grid_samples(in);
+        attach_mesh(result, {out, in}, {grid_ring(out, go, ov0), grid_ring(in, gi, iv0)}, grid_ring(out, go, ov1),
+            grid_ring(in, gi, iv1));
+        return primitive(result);
+    });
+}
+
+// `n` points evenly along a path by length, ends included, each with its
+// unit tangent: out holds 6 doubles per point (x y z tx ty tz).
+int hc_path_sample(const hc_shape *path, int n, double *out)
+{
+    return guarded<>(0, [&]() -> int {
+        if (n < 2) {
+            set_error("a path is sampled at 2 points at least");
+            return 0;
+        }
+        BRepAdaptor_CompCurve c(single_wire(path->shape));
+        GCPnts_UniformAbscissa even(c, n);
+        if (!even.IsDone() || even.NbPoints() != n) {
+            set_error("cannot space points evenly along this path");
+            return 0;
+        }
+        for (int i = 0; i < n; i++) {
+            gp_Pnt p;
+            gp_Vec t;
+            c.D1(even.Parameter(i + 1), p, t);
+            if (t.Magnitude() > 1e-12)
+                t.Normalize();
+            double v[6] = {p.X(), p.Y(), p.Z(), t.X(), t.Y(), t.Z()};
+            for (int k = 0; k < 6; k++)
+                out[6 * i + k] = v[k];
+        }
         return 1;
     });
 }

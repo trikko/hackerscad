@@ -113,6 +113,8 @@ interface BrepKernel
     Brep rect(double w, double h);
     Brep circle(double r);
     Brep polygon(const(double)[] xy);
+    /// A smooth closed curve through the points on XY, filled.
+    Brep splineProfile(const(double)[] xy);
     Brep text(string s, double size, string font);
     /// Rounds the corners of a profile.
     Brep profileRound(Brep s, double r);
@@ -141,6 +143,14 @@ interface BrepKernel
     Brep helix(double r, double pitch, double height, bool left, double taper = 0);
     /// Point and tangent at the start (or end) of a path.
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent);
+    /// A solid through `rings` rings of `per` points each (ring after ring),
+    /// one smooth surface closed round them, the end rings filled flat.
+    Brep gridSolid(const(Vec3)[] pts, int rings, int per);
+    /// A hollow solid through outer and inner rings: walls, a foot, a floor
+    /// inside, and a flat rim joining the last rings (which lie in one plane).
+    Brep gridHollow(const(Vec3)[] outer, int outerRings, const(Vec3)[] inner, int innerRings, int per);
+    /// `n` points evenly along a path by length, ends included, with unit tangents.
+    void pathSample(Brep path, int n, out Vec3[] points, out Vec3[] tangents);
     /// `twist`: radians the profile turns about the path from its start to
     /// its end, evenly along it.
     Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0);

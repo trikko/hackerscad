@@ -61,6 +61,7 @@ final class CachingKernel : BrepKernel
     Brep rect(double w, double h) => op(key("rect", w, h), inner.rect(w, h));
     Brep circle(double r) => op(key("circle", r), inner.circle(r));
     Brep polygon(const(double)[] xy) => op(key("polygon", xy), inner.polygon(xy));
+    Brep splineProfile(const(double)[] xy) => op(key("splineProfile", xy), inner.splineProfile(xy));
     Brep text(string t, double size, string font) => op(key("text", t, size, font), inner.text(t, size, font));
     Brep profileRound(Brep s, double r) => op(key("round", s, r), inner.profileRound(s, r));
     Brep profileOffset(Brep s, double d) => op(key("offset", s, d), inner.profileOffset(s, d));
@@ -74,6 +75,11 @@ final class CachingKernel : BrepKernel
     Brep helix(double r, double pitch, double height, bool left, double taper = 0) =>
         op(key("helix", r, pitch, height, left, taper), inner.helix(r, pitch, height, left, taper));
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent) => inner.pathFrame(path, atEnd, point, tangent);
+    void pathSample(Brep path, int n, out Vec3[] points, out Vec3[] tangents) => inner.pathSample(path, n, points, tangents);
+    Brep gridSolid(const(Vec3)[] pts, int rings, int per) => op(key("gridSolid", flatten(pts), rings, per), inner.gridSolid(pts, rings, per));
+    Brep gridHollow(const(Vec3)[] outside, int outerRings, const(Vec3)[] inside, int innerRings, int per) =>
+        op(key("gridHollow", flatten(outside), outerRings, flatten(inside), innerRings, per),
+            inner.gridHollow(outside, outerRings, inside, innerRings, per));
     Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0) =>
         op(key("sweep", profile, path, frenet, twist), inner.sweep(profile, path, frenet, twist));
     Brep loft(Brep[] profiles, bool ruled)

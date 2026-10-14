@@ -21,7 +21,9 @@ bag clip is still open; we use it to try things.
    a point of the face you clicked (a corner, the middle of an edge or of
    the face: the green point) onto one of another face, onto the origin or
    onto the ground: the two faces end up against each other, and a ring
-   spins the part about them. **Split…** puts a plane as big as the part on it, moved like
+   spins the part about them. When both faces are flat it writes a
+   `placeOn` onto the other part's face (`.placeOn(vase().frame(faces.farthest(Z)), from: faces.bottom)`),
+   so the part follows that face when the other part changes. **Split…** puts a plane as big as the part on it, moved like
    the section's: its ✓ cuts the part there into a part per piece
    (more than two when the plane crosses a slot), each in its colour. **Colour** offers
    hackerscad's own bright colours (Sky Pop, Pink Pop…), and writes the

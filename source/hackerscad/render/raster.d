@@ -312,8 +312,17 @@ void edgeSets(const Mesh m, double angleDeg, out uint[2][] sharp, out uint[2][] 
         }
     });
     eachEdge((a, b, ts) {
-        if (ts.length != 2 || normals[ts[0]].dot(normals[ts[1]]) < limit)
+        if (ts.length != 2)
             sharp ~= [a, b];
+        else if (normals[ts[0]].dot(normals[ts[1]]) < limit)
+        {
+            // a fold inside one face is the mesh's, not an edge: a face of
+            // the solid is smooth (deep ripples bent between two triangles
+            // would show as dashes)
+            immutable f0 = face[ts[0]], f1 = face[ts[1]];
+            if (f0 != f1 || f0 < 0)
+                sharp ~= [a, b];
+        }
         else
         {
             immutable f0 = face[ts[0]], f1 = face[ts[1]];

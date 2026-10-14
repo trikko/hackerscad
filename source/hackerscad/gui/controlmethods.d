@@ -449,8 +449,18 @@ mixin template ControlMethods()
             if (modified && !("force" in p && p["force"].type == JSONType.true_))
                 return reply(JSONValue.init, "the model has unsaved changes: save it, or pass force: true to discard "
                     ~ "them (ask the user first)");
+            // with "source": that code, in a model of no file (Save asks for a name): to show
+            // an example the user can try things in without overwriting anything
+            if ("source" in p && p["source"].type == JSONType.string)
+            {
+                startNew();
+                agentText = null;
+                buffer.setText(p["source"].str);
+                modified = false;
+                updateTitle();
+            }
             // with "example": that example model instead of the template, as the Examples menu
-            if (auto ex = arg("example"))
+            else if (auto ex = arg("example"))
             {
                 if (!startExample(ex))
                     return reply(JSONValue.init, "no example named '" ~ ex ~ "': " ~ exampleNames());

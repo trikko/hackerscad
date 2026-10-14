@@ -30,7 +30,9 @@ enum serverVersion = appVersion;
 enum instructions = "hackerscad is a parametric CAD for code-defined models (.hcad, a sandboxed subset of D). "
     ~ "Call hcad_docs first, then iterate with hcad_render (it returns dimensions, problems and pictures) "
     ~ "until the model matches the request, then hcad_export. If the user has hackerscad open, "
-    ~ "hcad_gui_* tools show your work in their window.";
+    ~ "hcad_gui_* tools show your work in their window. To show an example in a window of its own, "
+    ~ "hcad_gui_launch it with code (or copy: a file), not path: a window of no file, which a Save cannot "
+    ~ "overwrite.";
 
 /// Runs the server until stdin closes. Models are evaluated in a worker
 /// process (`hcad mcp --worker`): a cancelled or timed out evaluation, or one
@@ -785,8 +787,12 @@ JSONValue[] toolList()
         tool("hcad_gui_launch", "Open a new hackerscad window on the user's screen, on the model at path (or a new "
             ~ "one), named name (or a random name): it returns once the window answers and has evaluated the model, "
             ~ "with its state; pass its window name to the other hcad_gui_* tools. Use it when the user wants to see "
-            ~ "the work and no window is open (hcad_gui_windows), or wants a window of its own for it.",
-            `"path": {"type": "string"}, "name": {"type": "string", "description": "letters, digits and dashes"}`),
+            ~ "the work and no window is open (hcad_gui_windows), or wants a window of its own for it. To show an "
+            ~ "example or a trial, pass code (the model's text) or copy (a file whose text is copied in) instead of "
+            ~ "path: the window then works on no file, and the user's Save asks for a name, where a window on a file "
+            ~ "(an example, the user's model) would save over it as they try things.",
+            `"path": {"type": "string"}, "code": {"type": "string"}, "copy": {"type": "string"}, `
+            ~ `"name": {"type": "string", "description": "letters, digits and dashes"}`),
         gui("hcad_gui_transform", "Move or turn a part of the user's model, as Move… and Rotate… in the 3D view's "
             ~ "right-click menu: the code is written at the end of the part's chain (a .move() or .rotate() already "
             ~ "there is changed instead). move: [x, y, z] in mm; rotate: {axis, angle in degrees}, about the middle of "
@@ -796,7 +802,9 @@ JSONValue[] toolList()
             ~ "one ring about that axis (none takes them away), writing nothing. place: {from, from_normal, to, "
             ~ "to_normal, spin} as Place on…: the part turned so the face of outward normal from_normal lies against the "
             ~ "surface of outward normal to_normal, the point from on the point to (corners and middles of faces, or a "
-            ~ "point of the ground with to_normal [0, 0, 1]), then spun by spin degrees about to_normal; with show: true "
+            ~ "point of the ground with to_normal [0, 0, 1]), then spun by spin degrees about to_normal: written as "
+            ~ ".placeOn(other().frame(faces…), from: faces…) when both faces are flat (it follows the other part), else as "
+            ~ "turns and a move; with show: true "
             ~ "inside place, previewed with its ring for the user to spin and confirm, writing nothing. A piece of @parts moves or turns "
             ~ "alone. part: its name (needed with several parts).",
             `"part": {"type": "string"}, "move": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
@@ -1256,7 +1264,18 @@ JSONValue callTool(string name, JSONValue args)
         }
     case "hcad_gui_launch":
         {
-            auto r = launchWindow(arg("path"), arg("name"));
+            // code, or a copy of a file: a model of no file, so the user's Save cannot overwrite anything
+            string code = arg("code");
+            if (code is null && arg("copy") !is null)
+            {
+                import std.file : exists, readText;
+                if (!exists(arg("copy")))
+                    return toolError("no file " ~ arg("copy") ~ " to copy");
+                code = readText(arg("copy"));
+            }
+            if (code !is null && arg("path") !is null)
+                return toolError("give path (the window works on that file) or code / copy (a window of no file), not both");
+            auto r = launchWindow(code !is null ? null : arg("path"), arg("name"), code);
             if (r.type == JSONType.string)
                 return toolError(r.str);
             text(r.toPrettyString(JSONOptions.doNotEscapeSlashes));
@@ -1409,7 +1428,7 @@ string[] guiCommand()
 /// Starts a window on `path` (none: a new model) named `name` (none: a
 /// random free name) and waits until it answers with its first evaluation:
 /// its state and name, or (a string) why it could not.
-JSONValue launchWindow(string path, string name)
+JSONValue launchWindow(string path, string name, string code = null)
 {
     import core.thread : Thread;
     import core.time : MonoTime, msecs, seconds;
@@ -1437,6 +1456,15 @@ JSONValue launchWindow(string path, string name)
             name = randomWindowName();
         while (windowAlive(name));
     auto args = cmd ~ ("--name=" ~ name);
+    // code: through a file of its own, opened as a model of no file (--copy)
+    if (code !is null)
+    {
+        import std.file : tempDir, write;
+        import std.path : buildPath;
+        auto file = buildPath(tempDir, format("hackerscad-code-%s.hcad", randomName()));
+        write(file, code);
+        args ~= "--copy=" ~ file;
+    }
     if (path.length)
     {
         import std.file : exists;

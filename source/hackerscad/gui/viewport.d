@@ -148,7 +148,8 @@ final class Viewport
     private double sectionOffset = 0;
     // the handles at the corners of the section plane: one dragged moves the
     // plane along its normal; the window is told the new offset
-    private int sectionHandle = -1, hoverHandle = -1;
+    private int sectionHandle = -1, hoverHandle = -1;   /// 0…3 a corner, 4 the plane itself
+    private Vec3 sectionGrab;                            /// where the plane itself was grabbed
     private double handleStartOffset;
     void delegate(double offset) onSectionDrag;
     // the X past a corner of the section plane: a click closes the section
@@ -171,6 +172,11 @@ final class Viewport
     private uint dragButton;
     private double startYaw, startPitch, startX, startY;
     private Vec3 startTarget;
+    // a rotation turns the view about this point: the part under the pointer
+    // where the drag began, else the middle of what is drawn (never a target
+    // that zooming has carried far off), with the view's axes as they were then
+    private Vec3 orbitPivot, startRight, startUp, startForward;
+    private double panScale = 1;   /// mm per pixel of a pan: at the depth of what was grabbed
 
     this()
     {
@@ -213,6 +219,29 @@ final class Viewport
             startYaw = yaw;
             startPitch = pitch;
             startTarget = target;
+            if (dragPan)
+            {
+                // what is under the pointer follows it: the part grabbed, or
+                // the model's middle (not the target, which can lie a few mm
+                // ahead after zooming in on nothing, and crawl)
+                auto under = pick(x, y);
+                Vec3 lo, hi;
+                auto at = under.part >= 0 ? under.point : drawnBox(lo, hi) ? (lo + hi) * 0.5 : target;
+                auto b = basis();
+                if (!orthographic && (at - b.eye).dot(b.forward) < 1e-3)
+                    at = target;
+                panScale = mmPerPixelAt(at);
+            }
+            else
+            {
+                auto under = pick(x, y);
+                Vec3 lo, hi;
+                orbitPivot = under.part >= 0 ? under.point : drawnBox(lo, hi) ? (lo + hi) * 0.5 : target;
+                auto b0 = basis();
+                startRight = b0.right;
+                startUp = b0.up;
+                startForward = b0.forward;
+            }
             area.grabFocus();
         });
         drag.connectDragUpdate((double dx, double dy, GestureDrag g) {
@@ -240,13 +269,17 @@ final class Viewport
             if (dragPan)
             {
                 auto c = basis();
-                immutable k = mmPerPixel();
-                target = startTarget - c.right * (dx * k) + c.up * (dy * k);
+                target = startTarget - c.right * (dx * panScale) + c.up * (dy * panScale);
             }
             else
             {
                 yaw = startYaw - dx * 0.008;
                 pitch = max(-PI / 2 + 0.01, min(PI / 2 - 0.01, startPitch + dy * 0.008));
+                // the target goes round the pivot with the view: what was at
+                // the pivot stays there on screen
+                auto v = startTarget - orbitPivot;
+                auto b1 = basis();
+                target = orbitPivot + b1.right * v.dot(startRight) + b1.up * v.dot(startUp) + b1.forward * v.dot(startForward);
             }
             moved();
             redraw();
@@ -876,25 +909,21 @@ final class Viewport
         return r;
     }
 
-    /// The smallest turn (axis, degrees) that sets a face of outward normal
-    /// `fromN` against a surface of outward normal `toN`: the face's normal
-    /// then points into it.
+    /// The turn (axis, degrees) that sets a face of outward normal `fromN`
+    /// against a surface of outward normal `toN`, the face's normal then
+    /// pointing into it: the frame on the face (as body.frame gives it) onto
+    /// the frame on the surface, X onto X, so that placeOn writes it as it is.
     static void faceTurn(Vec3 fromN, Vec3 toN, out Vec3 axis, out double angle)
     {
-        import std.math : acos;
+        import hackerscad.lang.builtins : axisAngle, faceXAxis;
         fromN = fromN.normalized;
-        auto want = toN.normalized * -1;
-        auto a = fromN.cross(want);
-        immutable c = clamp(fromN.dot(want), -1.0, 1.0);
-        if (a.length < 1e-9)
-        {
-            // already facing (no turn), or exactly away: half a turn about any axis across it
-            a = (abs(fromN.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(fromN);
-            angle = c > 0 ? 0 : 180;
-        }
-        else
-            angle = acos(c) * 180 / PI;
-        axis = a.normalized;
+        toN = toN.normalized;
+        auto xf = faceXAxis(fromN), yf = fromN.cross(xf);
+        auto xt = faceXAxis(toN), yt = toN.cross(xt) * -1, zt = toN * -1;
+        Vec3 col(Vec3 e) => xt * xf.dot(e) + yt * yf.dot(e) + zt * fromN.dot(e);
+        angle = axisAngle(col(Vec3(1, 0, 0)), col(Vec3(0, 1, 0)), col(Vec3(0, 0, 1)), axis) * 180 / PI;
+        if (angle < 1e-9)
+            axis = Vec3(0, 0, 1);
     }
 
     /// Starts Place on… for part `part`: `from` (an anchor of its face) and that face's normal.
@@ -1670,7 +1699,25 @@ final class Viewport
             if (project(q[k], hx, hy) && abs(hx - x) <= handlePixels && abs(hy - y) <= handlePixels)
                 return k;
         }
-        return -1;
+        // anywhere on the plane, where no part is in front of it
+        Vec3 o, d;
+        ray(x, y, o, d);
+        auto n = sectionNormal.normalized;
+        immutable denom = d.dot(n);
+        if (abs(denom) < 1e-9)
+            return -1;
+        immutable t = (q[0] - o).dot(n) / denom;
+        if (t <= 0)
+            return -1;
+        auto at = o + d * t;
+        foreach (k; 0 .. 4)
+            if ((q[(k + 1) % 4] - q[k]).cross(at - q[k]).dot(n) * (q[1] - q[0]).cross(q[2] - q[1]).dot(n) < 0)
+                return -1;
+        auto under = pick(x, y);
+        if (under.part >= 0 && (under.point - o).dot(d) < t - 1e-6)
+            return -1;
+        sectionGrab = at;
+        return 4;
     }
 
     /// Where the X that closes the section is: past the plane's corner that
@@ -1852,7 +1899,8 @@ final class Viewport
     /// along its normal as far as the pointer went along the normal on screen.
     void dragHandle(double dx, double dy)
     {
-        auto corner = sectionQuad()[sectionHandle] + sectionNormal * (handleStartOffset - sectionOffset);
+        auto corner = (sectionHandle == 4 ? sectionGrab : sectionQuad()[sectionHandle])
+            + sectionNormal * (handleStartOffset - sectionOffset);
         immutable step = 50 * mmPerPixelAt(corner);
         double ax, ay, bx, by;
         double moved;
@@ -2252,15 +2300,31 @@ private:
     {
         auto b = basis();
         auto hit = pick(x, y);
-        Vec3 p;
+        Vec3 p, lo, hi;
+        double cx, cy;
         if (hit.part >= 0)
             p = hit.point;
+        else if (factor > 1 && drawnBox(lo, hi) && project((lo + hi) * 0.5, cx, cy)
+            && cx >= 0 && cy >= 0 && cx <= area.getWidth() && cy <= area.getHeight())
+            // out, over nothing: about the middle of what is drawn, or the
+            // view drifts away from the model at every notch; only while that
+            // middle is on screen, in front: about one behind the camera or
+            // off the side, each notch would carry the view farther from it
+            p = (lo + hi) * 0.5;
+        else if (factor > 1)
+            p = target;
         else
         {
+            // in, over nothing: towards the pointer at the depth of the model's
+            // middle (of the target when there is none in front): at the
+            // target's, the view would close in on empty space, a few mm away
             Vec3 o, d;
             ray(x, y, o, d);
+            auto depthOf = target;
+            if (drawnBox(lo, hi) && ((lo + hi) * 0.5 - b.eye).dot(b.forward) > 1e-3)
+                depthOf = (lo + hi) * 0.5;
             immutable denom = d.dot(b.forward);
-            p = abs(denom) > 1e-9 ? o + d * ((target - o).dot(b.forward) / denom) : target;
+            p = abs(denom) > 1e-9 ? o + d * ((depthOf - o).dot(b.forward) / denom) : target;
         }
         // scaling the camera about p keeps p at the same place on screen
         target = p + (target - p) * factor;

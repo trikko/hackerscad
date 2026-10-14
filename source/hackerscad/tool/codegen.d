@@ -48,10 +48,64 @@ string faceSelector(Interp it, SolidVal s, int face)
         "faces.largest"];
     if (auto ax = axisName(info.normal))
         candidates ~= ["faces.normal(" ~ ax ~ ").largest"];
+    // the face farthest one way, whichever way it faces (a tilted top), before its position
+    candidates ~= ["faces.farthest(Z)", "faces.farthest(-Z)", "faces.farthest(X)", "faces.farthest(-X)",
+        "faces.farthest(Y)", "faces.farthest(-Y)"];
     foreach (c; candidates)
         if (unique(it, c, s, face))
             return c;
     return format("faces.filter(f => distance(f.center, %s) < 0.01.mm)", vecMm(info.center));
+}
+
+/// Place on…'s call: the placed part's face `from` (a selector) laid
+/// against the frame `onto`, `at` the point of it carried when that is not
+/// its middle (null), turned by `turn` degrees about the frame's Z.
+string placeOnCall(string onto, string from, string at, double turn)
+{
+    import std.math : round;
+    // whole degrees stay whole, and a turn reads between -180 and 180
+    auto t = turn - 360 * round(turn / 360);
+    t = abs(t - round(t)) < 1e-6 ? round(t) : round(t * 1e6) / 1e6;
+    if (t == -180)
+        t = 180;
+    if (t != 0)
+        onto ~= format(".turn(%g.deg)", t);
+    return format(".placeOn(%s, from: %s%s)", onto, from, at is null ? "" : ", at: " ~ at);
+}
+
+/// A frame on face `face` (a selector) of what `of` gives, its origin
+/// `origin` when that is not the face's middle (null).
+string frameExpr(string of, string face, string origin) =>
+    format("%s.frame(%s%s)", of, face, origin is null ? "" : ", origin: " ~ origin);
+
+/// The frame on the ground at `p` (its z ignored): World, moved there.
+string groundFrame(Vec3 p)
+{
+    import std.math : round;
+    string[] moved;
+    foreach (i, n; ["x", "y"])
+        if (abs(round(p[i] * 1000) / 1000) > 0)
+            moved ~= n ~ ": " ~ mm(round(p[i] * 1000) / 1000);
+    return moved.length ? "World.at(" ~ moved.join(", ") ~ ")" : "World";
+}
+
+/// A point to the thousandth of a millimetre, for placeOnCall and frameExpr.
+string pointMm(Vec3 v)
+{
+    import std.math : round;
+    foreach (i; 0 .. 3)
+        v[i] = round(v[i] * 1000) / 1000;
+    return vecMm(v);
+}
+
+unittest
+{
+    assert(placeOnCall("vase().frame(faces.farthest(Z))", "faces.bottom", null, 0)
+        == ".placeOn(vase().frame(faces.farthest(Z)), from: faces.bottom)");
+    assert(placeOnCall(groundFrame(Vec3(10, 0.00001, 0)), "faces.right", "vec(2.mm, 3.mm, 8.mm)", -270.0000001)
+        == ".placeOn(World.at(x: 10.mm).turn(90.deg), from: faces.right, at: vec(2.mm, 3.mm, 8.mm))");
+    assert(placeOnCall(groundFrame(Vec3(0, 0, 0)), "faces.top", null, -180) == ".placeOn(World.turn(180.deg), from: faces.top)");
+    assert(frameExpr("base()", "faces.top", null) == "base().frame(faces.top)");
 }
 
 /// A selector expression that picks exactly edge `edge` of `s`.

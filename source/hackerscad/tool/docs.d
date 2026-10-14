@@ -155,7 +155,12 @@ format stamp):
   in its header bar; with several open, hcad_gui_windows lists them and the
   user may tell you which one ("work in blue-otter"). With none open, or to
   show your work in a window of its own, hcad_gui_launch opens one on the
-  user's screen (on a model, or a new one) and gives its name. While a window shows a
+  user's screen (on a model, or a new one) and gives its name. To show an
+  example or a trial, launch it with code (the model's text) or copy (a
+  file whose text is copied in), not path: the window works on no file, so
+  the user can try things and Save asks for a name, where a window on a file
+  (an example of the project, a model of the user's) would save over it.
+  While a window shows a
   model, change its code with hcad_gui_edit, never by writing its .hcad file:
   the user may have unsaved changes (moving a part with the mouse edits the
   code), and a file rewritten under them makes the window ask which to keep.

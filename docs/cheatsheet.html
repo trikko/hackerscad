@@ -90,6 +90,9 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>atan2(y, x) → Angle</dt><dd>The angle of the point (x, y).</dd>
 <dt>min(a, b…)</dt><dd>The smallest argument.</dd>
 <dt>max(a, b…)</dt><dd>The largest argument.</dd>
+<dt>random(lo: number, hi: number, seed: int)</dt><dd>Uniform between lo and hi (lengths, angles or plain numbers), the next of the seed's stream: the same at every run; change the seed for others.</dd>
+<dt>noise(x: number, y: number, z: number, seed: int) → double</dt><dd>Smooth noise, about -1…1, features about one unit across; lengths count in mm.</dd>
+<dt>loopNoise(around: number, along: number, bumps: number, seed: int) → double</dt><dd>Noise round a loop: around 0…1, along across it, about bumps features round; no seam where it closes.</dd>
 <dt>xs.minElement()</dt><dd>The smallest element of a list.</dd>
 <dt>xs.maxElement()</dt><dd>The largest element of a list.</dd>
 <dt>clamp(value, lo, hi)</dt><dd>value limited to lo … hi.</dd>
@@ -150,14 +153,14 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.align(other: Solid, x: string, y: string, z: string) → Solid</dt><dd>Aligns bounding boxes per axis: "min", "center" or "max".</dd>
 <dt>s.linearPattern(n: int, step: Vec) → Solid</dt><dd>n copies, step apart, as one solid.</dd>
 <dt>s.circularPattern(n: int, axis: Axis, angle: Angle) → Solid</dt><dd>n copies around an axis, as one solid.</dd>
-<dt>s.placeOn(frame: Frame) → Solid</dt><dd>A solid built on XY (Z up) moved onto a frame or plane.</dd>
+<dt>s.placeOn(frame: Frame, from: Faces, at: Vec) → Solid</dt><dd>A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin).</dd>
 <dt>s.split(plane: Plane) → Solid[]</dt><dd>Cuts with a plane into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…</dd>
 <dt>s.halves(plane: Plane) → Halves</dt><dd>Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.</dd>
 </dl></section>
 <section><h2>Profiles (2D)</h2><dl>
 <dt>rect(w: Length, h: Length) → Profile</dt><dd>A rectangle centred on the origin.</dd>
 <dt>circle(r: Length, d: Length) → Profile</dt><dd>A circle centred on the origin.</dd>
-<dt>polygon(points: Vec[]) → Profile</dt><dd>A polygon through the points.</dd>
+<dt>polygon(points: Vec[], smooth: bool) → Profile</dt><dd>A polygon through the points; smooth: true, a smooth closed curve through them instead.</dd>
 <dt>regularPolygon(n: int, r: Length, d: Length) → Profile</dt><dd>regularPolygon(6, d: 10.mm): d/r through the corners.</dd>
 <dt>slot(length: Length, width: Length) → Profile</dt><dd>A stadium along X.</dd>
 <dt>teardrop(r | d: Length, angle: Angle, flat: bool) → Profile</dt><dd>A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.</dd>
@@ -168,7 +171,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle) → Solid</dt><dd>A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly.</dd>
 <dt>p.revolve(axis: Axis, angle: Angle) → Solid</dt><dd>Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.</dd>
 <dt>p.sweep(path: Path, frenet: bool, twist: Angle) → Solid</dt><dd>Moves the profile along a path; twist: 360.deg turns it once around the path on the way.</dd>
-<dt>loft(profiles: Profile[], ruled: bool) → Solid</dt><dd>A solid through profiles placed in space.</dd>
+<dt>loft(profiles: Profile[], ruled: bool, inside: Vec3[][]) → Solid</dt><dd>A solid through profiles placed in space; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane).</dd>
 <dt>hull(shapes…) → Solid</dt><dd>The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.</dd>
 <dt>minkowski(a, b) → Solid</dt><dd>a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.</dd>
 <dt>s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid</dt><dd>Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).</dd>
@@ -205,6 +208,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.isEmpty → bool</dt><dd>Whether nothing is left.</dd>
 <dt>s.isValid → bool</dt><dd>Whether the solid is a valid closed solid.</dd>
 <dt>s.pieces → Solid[]</dt><dd>The separate bodies, ordered along X, then Y, then Z.</dd>
+<dt>x.frames(n: int) → Frame[]</dt><dd>n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft.</dd>
+<dt>p.outline(n: int, round: Length) → OutlinePoint[]</dt><dd>n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1).</dd>
 <dt>xs.above(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).</dd>
 <dt>xs.below(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the other side of the plane.</dd>
 <dt>xs.crossing(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those the plane cuts through.</dd>
@@ -237,6 +242,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>faces.right → Faces</dt><dd>The face(s) facing +X.</dd>
 <dt>faces.largest → Faces</dt><dd>The largest face.</dd>
 <dt>faces.normal(dir: Direction) → Faces</dt><dd>The faces with that normal: faces.normal(X).</dd>
+<dt>faces.farthest(dir: Direction) → Faces</dt><dd>The face whose centre lies farthest that way, whichever way it faces: faces.farthest(Z), a tilted top.</dd>
 <dt>faces.overhanging(angle: Angle) → Faces</dt><dd>The faces (or parts of them) facing down more steeply than the angle from a wall (45° by default), off the bed: where a printer needs supports.</dd>
 <dt>faces.from(tool: Solid) → Faces</dt><dd>The faces created by a tool or feature: faces.from(holes).</dd>
 <dt>edges.parallel(axis: Direction) → Edges</dt><dd>The straight edges along an axis: edges.parallel(Z).</dd>

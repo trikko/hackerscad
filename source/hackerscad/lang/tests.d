@@ -625,6 +625,36 @@ unittest
 
 unittest
 {
+    // placeOn from: a face of the solid laid against the frame, at: a point of it onto the origin
+    auto r = runModel(q{
+        immutable body = box(40, 20, 10);
+        immutable top = body.frame(faces.top);
+        @part Solid lying() => box(4, 6, 8).placeOn(top, from: faces.right);
+        @part Solid corner() => box(4, 6, 8).placeOn(top, from: faces.right, at: vec(2, 3, 8));
+        @part Solid same() => box(4, 6, 8).placeOn(top.turn(30.deg), from: faces.bottom);
+        @part Solid plain() => box(4, 6, 8).placeOn(top.turn(30.deg));
+        unittest
+        {
+            writeln(body.frame(faces.farthest(Z)).origin, " ", body.frame(faces.farthest(X)).origin);
+        }
+    });
+    bool near(double a, double b) => abs(a - b) < 1e-6;
+    auto l = kernel.bbox(r.parts[0].solid.brep);
+    // its Y along X, its Z along Y, its X up, the right face's middle on the top's
+    assert(near(l.size.x, 6) && near(l.size.y, 8) && near(l.size.z, 4), format("%s", l.size));
+    assert(near(l.min.z, 10) && near(l.center.x, 0) && near(l.center.y, 0));
+    auto c = kernel.bbox(r.parts[1].solid.brep).center;
+    assert(near(c.x, -3) && near(c.y, 4) && near(c.z, 12), format("%s", c));
+    // the bottom face from: is the same as building on XY
+    auto s1 = kernel.bbox(r.parts[2].solid.brep), s2 = kernel.bbox(r.parts[3].solid.brep);
+    assert((s1.min - s2.min).length < 1e-6 && (s1.max - s2.max).length < 1e-6);
+    assert(r.log[0].text == "[0 mm, 0 mm, 10 mm] [20 mm, 0 mm, 5 mm]", r.log[0].text);
+    assert(error("@part Solid p() => box(1, 1, 1).placeOn(XY, at: vec(0, 0, 0));").code == Code.type);
+    assert(error("@part Solid p() => box(1, 1, 1).placeOn(XY, from: faces.normal(Z) + faces.normal(-Z));").code == Code.type);
+}
+
+unittest
+{
     // axes, plane constructors, mirroring across planes
     auto r = runModel(q{
         immutable cube = box(2, 2, 2, center: true);
@@ -2169,4 +2199,72 @@ unittest
         writeln(ps.nearest(vec(11.mm, 0.mm, 0.mm)).centroid.x, " ", ps.left.centroid.x);
     }, "3 1 2 0\n64 mm^3 8 mm^3 12 mm 10 mm\n10 mm 0 mm");
     assert(errorIn("auto x = box(1, 1, 1).pieces[0 .. 0].largest;").message.canFind("empty list"));
+}
+
+unittest
+{
+    // noise: repeatable, in range, seeded; loopNoise closes on itself; an
+    // outline's points: evenly round, normals outward, round corners kept clear
+    expectOut(q{
+        writeln(noise(1.37, 2.71, 0.43, seed: 2) == noise(1.37, 2.71, 0.43, seed: 2), " ",
+            noise(1.37, 2.71, 0.43, seed: 2) != noise(1.37, 2.71, 0.43, seed: 3), " ",
+            abs(noise(0.3, 0.7, 0.1)) <= 1);
+        writeln(abs(loopNoise(0, 2, bumps: 6) - loopNoise(1, 2, bumps: 6)) < 1e-9);
+        auto o = rect(40.mm, 20.mm).outline(120);
+        writeln(o.length, " ", o[0].around, " ", o[60].around);
+        // the first point faces +X (the middle of the right side), its normal outwards
+        writeln(o[0].at.x, " ", o[0].normal.x);
+        writeln(polygon([vec(0, 0), vec(10, 0), vec(10, 10), vec(0, 10)], smooth: true).area > 0.mm ^^ 2);
+    }, "true true true\ntrue\n120 0 0.5\n20 mm 1\ntrue", "import std.math;");
+    // pushed in along the normals, a sharp box stays clear with round: as deep as the push
+    auto r = runModel(q{
+        Profile ring(Length z) {
+            Vec2[] pts;
+            foreach (q; rect(40.mm, 30.mm).outline(120, round: 2.mm))
+                pts ~= q.at - q.normal * 1.5.mm;
+            return polygon(pts, smooth: true).move(z: z);
+        }
+        @part Solid p() => loft([ring(0.mm), ring(10.mm), ring(20.mm)]);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
+
+unittest
+{
+    // frames along a path: evenly spaced, Z along it, X and Y square; on a
+    // straight line they do not turn; a closed path's last frame is its first
+    expectOut(q{
+        auto f = path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 40.mm)]).frames(5);
+        writeln(f.length, " ", f[1].origin.z, " ", f[4].z.z, " ", f[0].x == f[4].x);
+        auto ring = spline([vec(10.mm, 0.mm, 0.mm), vec(0.mm, 10.mm, 0.mm), vec(-10.mm, 0.mm, 0.mm),
+            vec(0.mm, -10.mm, 0.mm)], closed: true).frames(30);
+        writeln(abs(ring[0].x.dot(ring[29].x) - 1) < 1e-6, " ", abs(ring[7].x.dot(ring[7].z)) < 1e-9);
+    }, "5 10 mm 1 true\ntrue true", "import std.math;");
+}
+
+unittest
+{
+    // a loft through rings of points: one smooth closed surface, the ends flat;
+    // a cylinder's rings give a cylinder's volume; rings of different counts are refused
+    auto r = runModel(q{
+        import std.math;
+        Vec3[] ring(Length z) {
+            Vec3[] pts;
+            foreach (i; 0 .. 48)
+                pts ~= vec(10.mm * cos(i * 360.deg / 48), 10.mm * sin(i * 360.deg / 48), z);
+            return pts;
+        }
+        @part Solid c() {
+            Vec3[][] rings;
+            foreach (k; 0 .. 6)
+                rings ~= [ring(4.mm * k)];
+            return loft(rings);
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(isClose(partVolume(r, "c"), PI * 100 * 20, 1e-3), "a cylinder through rings");
+    assert(error("@part Solid p() => loft([[vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0)], "
+        ~ "[vec(0, 0, 1), vec(1, 0, 1), vec(0, 1, 1), vec(1, 1, 1)]]);").message.canFind("the same count"));
 }

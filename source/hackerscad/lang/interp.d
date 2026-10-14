@@ -155,6 +155,8 @@ final class Interp
 
     LogLine[] log;
     Diagnostic[] diagnostics;
+    /// random(…, seed:): where each seed's stream has got to, from the start at every run
+    ulong[long] randomStreams;
     ParamInfo[] params;
     string[] presetNames;
     FeatureInfo[] features;
@@ -230,6 +232,7 @@ final class Interp
         if (root is null)
             root = dirName(absolutePath(path));
         traceFile = path;
+        randomStreams = null;   // the same seed, the same numbers, every run
         auto mod = loadModule(source, path, baseName(path));
         EvalResult r;
 
@@ -297,6 +300,9 @@ final class Interp
                 throw new HcadError(Code.type, many ? format("@parts '%s' must return a Solid (a part per separate body) "
                     ~ "or a Solid[] (a part per element), not %s", f.name, v.typeName)
                     : format("@part '%s' must return a Solid, not %s", f.name, v.typeName), f.nameSpan);
+            // an empty Solid[]: no part this time (a part to choose: `lid ? [makeLid()] : []`)
+            if (items.length == 0 && v.kind == Kind.array)
+                continue;
             if (items.length == 0)
                 throw new HcadError(Code.kernel, format("@parts '%s' has no solid to make a part of", f.name), f.nameSpan);
             // @part("colour", alpha: 0.5, export: false, name: "Tank"); @parts also varied: true
@@ -2215,6 +2221,13 @@ final class Interp
                     return v;
                 if (objectTypes.canFind(t.name))
                     fail();
+                // the built-in structs (frames, planes, axes…) by their names
+                if (structTypes.canFind(t.name))
+                {
+                    if (v.kind != Kind.struct_ || v.st.def.name != t.name)
+                        fail();
+                    return v;
+                }
                 Value tv;
                 if (tryLookup(t.name, types ? types.env : prelude, tv) && tv.kind == Kind.type && tv.type.def !is null)
                 {
@@ -2228,6 +2241,9 @@ final class Interp
             }
         }
     }
+
+    /// Names of the built-in struct types, usable in declarations.
+    static immutable string[] structTypes = ["Frame", "Plane", "Axis", "Halves", "BBox", "OutlinePoint"];
 
     /// Names of the built-in object types, usable in declarations.
     static immutable string[] objectTypes = ["Sketch", "SketchPoint", "SketchLine", "SketchArc", "SketchCircle",

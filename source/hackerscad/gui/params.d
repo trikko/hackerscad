@@ -15,6 +15,7 @@ import gtk.switch_ : Switch;
 import gtk.drop_down : DropDown;
 import gtk.entry : Entry;
 import gtk.button : Button;
+import gtk.separator : Separator;
 import gtk.widget : Widget;
 import gtk.types : Orientation, Align;
 
@@ -48,7 +49,8 @@ final class ParamsPanel
         title.addCssClass("heading");
         title.setHalign(Align.Start);
         widget.append(title);
-        rows = new Box(Orientation.Vertical, 6);
+        // no spacing: each parameter has its own margins, a line between them
+        rows = new Box(Orientation.Vertical, 0);
         widget.append(rows);
         auto reset = new Button;
         reset.setLabel("Reset to defaults");
@@ -165,30 +167,61 @@ final class ParamsPanel
                 if (onChange)
                     onChange();
             });
-            rows.append(row("preset", null, dd));
+            add(row("preset", null, dd));
         }
         foreach (p; params)
-            rows.append(row(p.name, p.doc, editor(p)));
+            add(row(p.name, p.doc, editor(p)));
     }
 
 private:
 
+    /// A parameter's block, after a line when others come before it: which
+    /// name and description go with which control reads at a glance.
+    void add(Widget block)
+    {
+        if (rows.getFirstChild() !is null)
+            rows.append(new Separator(Orientation.Horizontal));
+        rows.append(block);
+    }
+
+    /// The name, its description below, the control below them; a switch
+    /// stands at the end of the name's line instead.
     Widget row(string name, string doc, Widget editor)
     {
-        auto box = new Box(Orientation.Vertical, 2);
+        auto box = new Box(Orientation.Vertical, 3);
+        box.setMarginTop(8);
+        box.setMarginBottom(10);
         auto label = new Label(name);
         label.setHalign(Align.Start);
         label.addCssClass("caption-heading");
-        box.append(label);
+        auto isSwitch = cast(Switch) editor !is null;
+        if (isSwitch)
+        {
+            auto line = new Box(Orientation.Horizontal, 6);
+            label.setHexpand(true);
+            label.setValign(Align.Center);
+            editor.setValign(Align.Center);
+            line.append(label);
+            line.append(editor);
+            box.append(line);
+        }
+        else
+            box.append(label);
         if (doc.length)
         {
             auto d = new Label(doc);
             d.setHalign(Align.Start);
+            d.setXalign(0);
+            // on as many lines as it takes: a long description must not hold the column wide
+            d.setWrap(true);
+            d.setWidthChars(12);
+            d.setMaxWidthChars(40);
             d.addCssClass("dim-label");
             d.addCssClass("caption");
             box.append(d);
         }
-        box.append(editor);
+        if (!isSwitch)
+            box.append(editor);
         return box;
     }
 

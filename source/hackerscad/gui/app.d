@@ -10,7 +10,7 @@ import std.string : toLower, toUpper;
 import std.array : join;
 import std.algorithm : endsWith;
 import std.math : abs, PI;
-import std.algorithm : min, max, canFind;
+import std.algorithm : min, max, canFind, clamp;
 
 import adw.application : AdwApplication = Application;
 import adw.application_window : ApplicationWindow;
@@ -367,7 +367,9 @@ int main(string[] args)
     // --size=WIDTHxHEIGHT opens the window that big (for pictures of it);
     // --theme=light|dark|system for this run only (the menu's choice is kept);
     // --name=NAME names the window (for agents and scripts that start it:
-    // they know its name before it opens), when no open window has it
+    // they know its name before it opens), when no open window has it;
+    // --copy=FILE opens that file's text in a model of no file (Save asks
+    // for a name): an example to try things in, overwriting nothing
     string path, shot, theme;
     foreach (a; args[1 .. $])
     {
@@ -377,6 +379,16 @@ int main(string[] args)
             theme = a[8 .. $];
         else if (a.length > 7 && a[0 .. 7] == "--name=")
             MainWindow.startName = a[7 .. $];
+        else if (a.length > 7 && a[0 .. 7] == "--copy=")
+        {
+            try
+                MainWindow.startText = readText(a[7 .. $]);
+            catch (Exception e)
+            {
+                import std.stdio : stderr;
+                stderr.writeln("hackerscad: cannot read ", a[7 .. $], ": ", e.msg);
+            }
+        }
         else if (a.length > 7 && a[0 .. 7] == "--size=")
         {
             import std.array : split;
@@ -1040,7 +1052,15 @@ final class MainWindow
             updateTitle();
             idleAdd(PRIORITY_DEFAULT, () { refuseFile(refused, why); return false; });
         }
-        buffer.setText(exists(path) ? readText(path) : startModel);
+        // --copy: that code, as a model of no file (Save asks for a name)
+        if (startText !is null)
+        {
+            path = this.path = buildPath(dirName(path), "untitled.hcad");
+            buffer.setText(startText);
+            startText = null;
+        }
+        else
+            buffer.setText(exists(path) ? readText(path) : startModel);
         modified = false;
         updateTitle();
         buffer.connectChanged(() {
@@ -2246,7 +2266,7 @@ private:
             return "no part to place";
         try
         {
-            import hackerscad.tool.codegen : hingePart, hingePiece, transformPiece;
+            import hackerscad.tool.codegen : appendToPiece, hingePart, hingePiece, transformPiece;
             import std.math : round;
             auto p = last.parts[index];
             immutable piece = isPiece(index);
@@ -2256,15 +2276,23 @@ private:
             auto move = to - from;
             foreach (i; 0 .. 3)
                 move[i] = round(move[i] * 1000) / 1000;
-            if (abs(a) > 1e-6)
-                after = (piece ? hingePiece(after, path, p.fn, p.piece, p.fromSolid, a, from, axis)
-                    : hingePart(after, path, p.fn, a, from, axis)).apply(after);
-            if (move.length > 1e-6)
-                after = (piece ? transformPiece(after, path, p.fn, p.piece, p.fromSolid, "move", move)
-                    : transformPart(after, path, p.fn, "move", move)).apply(after);
-            if (abs(spin) > 1e-6)
-                after = (piece ? hingePiece(after, path, p.fn, p.piece, p.fromSolid, spin, to, toN)
-                    : hingePart(after, path, p.fn, spin, to, toN)).apply(after);
+            // a placeOn onto the face (or the ground) when both faces are flat: it
+            // follows the other part when that changes; otherwise the turns and the move
+            if (auto call = placeCode(index, from, axis, angle, to, spin, toN))
+                after = (piece ? appendToPiece(after, path, p.fn, p.piece, p.fromSolid, call)
+                    : appendToPart(after, path, p.fn, call)).apply(after);
+            else
+            {
+                if (abs(a) > 1e-6)
+                    after = (piece ? hingePiece(after, path, p.fn, p.piece, p.fromSolid, a, from, axis)
+                        : hingePart(after, path, p.fn, a, from, axis)).apply(after);
+                if (move.length > 1e-6)
+                    after = (piece ? transformPiece(after, path, p.fn, p.piece, p.fromSolid, "move", move)
+                        : transformPart(after, path, p.fn, "move", move)).apply(after);
+                if (abs(spin) > 1e-6)
+                    after = (piece ? hingePiece(after, path, p.fn, p.piece, p.fromSolid, spin, to, toN)
+                        : hingePart(after, path, p.fn, spin, to, toN)).apply(after);
+            }
             if (after == before)
                 return "it is there already";
             size_t head, tail;
@@ -2286,6 +2314,134 @@ private:
             return e.msg;
         catch (HcadError e)
             return "fix the errors in the code first: " ~ e.msg;
+    }
+
+    /// Place on…'s placeOn call, or null when it cannot be one: the face of
+    /// part `index` that `from` lies on (facing -toN once turned by `angle`
+    /// about `axis`) laid against the face of another part that `to` lies on
+    /// (or the ground), both flat and named by selectors, turned about the
+    /// target's normal so that it lies as the preview showed it (`spin` more).
+    string placeCode(int index, Vec3 from, Vec3 axis, double angle, Vec3 to, double spin, Vec3 toN)
+    {
+        import hackerscad.tool.codegen : faceSelector, frameExpr, groundFrame, placeOnCall, pointMm;
+        import hackerscad.lang.builtins : faceXAxis;
+        import std.math : atan2;
+        toN = toN.normalized;
+        auto p = last.parts[index];
+        auto fromN = turned(axis, -angle, toN * -1);
+        immutable sf = faceAt(p, from, fromN);
+        if (sf < 0 || !isFlat(p, sf))
+            return null;
+        SolidVal sv;
+        auto fromSel = faceSelector(selectorInterp(p, sv), sv, sf);
+        auto fi = p.kernel.faces(p.brep)[sf];
+        auto at = (from - fi.center).length < 1e-3 ? null : pointMm(from);
+        // where it goes: a face of another part of this file, or the ground
+        string onto;
+        foreach (j, q; last.parts)
+        {
+            if (j == index)
+                continue;
+            immutable tf = faceAt(q, to, toN);
+            if (tf < 0)
+                continue;
+            if (q.piece >= 0 || q.span.file != absolutePath(path) || !isFlat(q, tf))
+                return null;
+            SolidVal tv;
+            auto ti = q.kernel.faces(q.brep)[tf];
+            onto = frameExpr(q.fn ~ "()", faceSelector(selectorInterp(q, tv), tv, tf),
+                (to - ti.center).length < 1e-3 ? null : pointMm(to));
+            break;
+        }
+        if (onto is null)
+        {
+            if (abs(to.z) > 1e-6 || toN.z < 1 - 1e-6)
+                return null;
+            onto = groundFrame(to);
+        }
+        // the frame's X carried as the preview carries it, and how far round from the target's X
+        auto xf = turned(toN, spin, turned(axis, angle, faceXAxis(fromN)));
+        auto xt = faceXAxis(toN), yt = toN.cross(xt);
+        return placeOnCall(onto, fromSel, at, atan2(xf.dot(yt), xf.dot(xt)) * 180 / PI);
+    }
+
+    /// `v` turned by `degrees` about the unit direction `k` (counter-clockwise looking down it).
+    static Vec3 turned(Vec3 k, double degrees, Vec3 v)
+    {
+        import std.math : cos, sin;
+        immutable r = degrees * PI / 180;
+        k = k.normalized;
+        return v * cos(r) + k.cross(v) * sin(r) + k * (k.dot(v) * (1 - cos(r)));
+    }
+
+    /// The face of `p` that point `at` lies on with outward normal `n`, or -1.
+    static int faceAt(PartMesh p, Vec3 at, Vec3 n)
+    {
+        if (p.kernel is null || p.brep is null || p.flat || p.path)
+            return -1;
+        auto fs = p.kernel.faces(p.brep);
+        double best = 1e-3 * max(1.0, p.bbox.size.length);
+        int r = -1;
+        foreach (f, info; fs)
+        {
+            if (info.normal.dot(n.normalized) < 1 - 1e-4 || f + 1 >= p.faceStart.length)
+                continue;
+            // its middle, an anchor even where it is not on the face (a rim's, in the hole)
+            if ((at - info.center).length < best)
+            {
+                best = (at - info.center).length;
+                r = cast(int) f;
+            }
+            foreach (t; p.faceStart[f] .. p.faceStart[f + 1])
+            {
+                Vec3 corner(uint c)
+                {
+                    immutable q = p.indices[3 * t + c] * 6;
+                    return Vec3(p.vertices[q], p.vertices[q + 1], p.vertices[q + 2]);
+                }
+                immutable d = triangleDistance(at, corner(0), corner(1), corner(2));
+                if (d < best)
+                {
+                    best = d;
+                    r = cast(int) f;
+                }
+            }
+        }
+        return r;
+    }
+
+    /// How far `p` is from the triangle a b c.
+    static double triangleDistance(Vec3 p, Vec3 a, Vec3 b, Vec3 c)
+    {
+        auto n = (b - a).cross(c - a);
+        if (n.length > 1e-12)
+        {
+            n = n.normalized;
+            auto q = p - n * (p - a).dot(n);
+            // inside when on the same side of every edge
+            immutable s1 = (b - a).cross(q - a).dot(n), s2 = (c - b).cross(q - b).dot(n), s3 = (a - c).cross(q - c).dot(n);
+            if (s1 >= 0 && s2 >= 0 && s3 >= 0)
+                return abs((p - a).dot(n));
+        }
+        double segment(Vec3 u, Vec3 v)
+        {
+            auto d = v - u;
+            immutable t = d.length < 1e-12 ? 0 : clamp((p - u).dot(d) / d.dot(d), 0.0, 1.0);
+            return (p - (u + d * t)).length;
+        }
+        return min(segment(a, b), segment(b, c), segment(c, a));
+    }
+
+    /// Whether face `face` of `p` is flat (a frame can stand on it).
+    static bool isFlat(PartMesh p, int face)
+    {
+        auto f = p.kernel.faces(p.brep)[face];
+        immutable size = max(1.0, p.bbox.size.length);
+        foreach (loop; p.kernel.faceLoops(p.brep, face, 1e-3 * size))
+            foreach (q; loop)
+                if (abs((q - f.center).dot(f.normal)) > 1e-6 * size)
+                    return false;
+        return true;
     }
 
     /// Place on… from a face of part `index`, `at` the point clicked on it:
@@ -2760,6 +2916,7 @@ private:
     ViewStack sideStack;    /// the sidebar: Parameters and Steps
     static int[2] startSize = [1440, 880];   /// of the window (--size=WxH)
     static string startName;   /// the first window's name (--name=NAME), if free
+    static string startText;   /// the first window's code, in a model of no file (--copy=FILE)
     Paned mainPaned;        /// the code on the left, the rest on the right
     import gtk.check_button : CheckButton;
     CheckButton[Shading] shadingChoice;

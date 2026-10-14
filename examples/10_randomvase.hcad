@@ -1,0 +1,181 @@
+// Random vase: a new vase for every seed
+// The vase follows a spine that leaves the origin straight up and bends
+// aside as it rises, to a random point 5 to 10 cm up and up to 5 cm aside;
+// its rings, square to the spine, widen towards the mouth and ripple with
+// a sine or with noise; it is hollow, open at the top.
+// Change the seed for another vase: the same seed always gives the same
+// one, so a vase you like can be made again.
+//
+// Try it:
+//  - change Seed (or any value in Parameters);
+//  - switch Noise on and off: the same vase, another surface;
+//  - edit `ripple`: another formula, another surface;
+//  - the lid is made for the mouth and placed on it with placeOn wherever
+//    the seed puts it; switch Lid on the bed to lay it beside the vase face
+//    down, to print it;
+//  - print it as it is, or in vase mode without the shell.
+module randomvase;
+
+import std.shapes;
+import std.math;
+
+@param("Noise instead of the sine")
+immutable noisy = false;
+
+@param("Ripples fade out up the vase: a round mouth")
+immutable fade = false;
+
+@param("The lid on the bed beside the vase, face down, to print it")
+immutable lidOnBed = false;
+
+@param("Seed: another one, another vase", min: 0, max: 9999, step: 1)
+immutable seed = 42;
+
+@param("Radius at the foot", min: 10.mm, max: 40.mm)
+immutable foot = 22.mm;
+
+@param("How much wider at the mouth", min: 0.mm, max: 40.mm)
+immutable flare = 18.mm;
+
+@param("Ripple depth", min: 0.mm, max: 4.mm)
+immutable depth = 1.5.mm;
+
+// hollow with a wall this thick (false: solid, for vase mode), through
+// this many rings along the spine
+immutable hollow = true;
+immutable wall = 2.mm;
+immutable rings = 30;
+
+// the spine: a parabola-like branch, aside = lean * (z / height)^bend,
+// upright at the foot (its start tangent to the vertical, so the first ring
+// is level and the vase stands), leaning more and more as it rises; its
+// height, lean, direction and bend are random, from the seed
+immutable height = random(50.mm, 100.mm, seed: seed);
+immutable lean = 50.mm * sqrt(random(0, 1, seed: seed));
+immutable towards = random(0.deg, 360.deg, seed: seed);
+immutable bend = random(1.5, 3, seed: seed);
+
+immutable spine = spline(parabola());
+
+Vec3[] parabola()
+{
+    Vec3[] pts;
+    foreach (i; 0 .. 31)
+    {
+        immutable z = height * i / 30;
+        immutable aside = lean * (z / height) ^^ bend;
+        pts ~= vec(aside * cos(towards), aside * sin(towards), z);
+    }
+    return pts;
+}
+
+// the ripple at a point of a ring: `around` 0…1 round it, `along` 0…1 up
+// the spine. A sine, 12 crests round, turning a little as it rises; or
+// noise, about 8 bumps round and as many every 15 mm up (no seam where the
+// ring closes). With Fade it dies away smoothly to nothing at the mouth.
+Length ripple(double around, double along)
+{
+    immutable wave = noisy
+        ? loopNoise(around, along * height / 15.mm, bumps: 8, seed: seed)
+        : sin((around * 12 + along * 3) * 360.deg);
+    immutable fading = fade ? (1 + cos(PI * along)) / 2 : 1;
+    return depth * fading * wave;
+}
+
+// a ring of points across the spine at `o` (its axes x and y), wider
+// towards the mouth; `inset` makes it that much smaller, for the inside
+Vec3[] ring(Vec3 o, Vec3 x, Vec3 y, double along, Length inset)
+{
+    immutable r = foot + flare * along * along - inset;
+    Vec3[] pts;
+    foreach (q; circle(r: r).outline(120, round: depth))
+    {
+        auto p = q.at + q.normal * ripple(q.around, along);
+        pts ~= o + x * p.x + y * p.y;
+    }
+    return pts;
+}
+
+@part
+Solid vase()
+{
+    immutable frames = spine.frames(rings);
+    immutable last = frames.length - 1;
+    Vec3[][] outside, inside;
+    Length gone = 0.mm;   // how far along the spine
+    foreach (k, f; frames)
+    {
+        if (k > 0)
+            gone += (f.origin - frames[k - 1].origin).length;
+        immutable along = k * 1.0 / last;
+        // rings square to the spine, centred on it
+        outside ~= [ring(f.origin, f.x, f.y, along, 0.mm)];
+        // the inside starts a wall above the foot (the bottom)
+        if (gone >= wall)
+            inside ~= [ring(f.origin, f.x, f.y, along, wall)];
+    }
+    // hollow: the inner wall through the same rings a wall smaller (as even
+    // as the ripples, no offset to compute), a flat rim between the last
+    // rings; solid, for vase mode
+    return hollow ? loft(outside, inside: inside) : loft(outside);
+}
+
+// the lid: a cap with the mouth's outline, built on XY
+// and placed with placeOn on the frame where the spine ends (the mouth's
+// middle, Z out of the vase), wherever the seed puts it and however it
+// leans; and a plug that fits inside. Or, to print it, the same lid laid on
+// the bed beside the vase with its top face down (placeOn from: that face).
+@part("Pink Pop")
+Solid lid()
+{
+    immutable onMouth = cap().placeOn(mouth()) + plug();
+    if (lidOnBed)
+        return onMouth.placeOn(World.at(x: vase().bbox.max.x + foot + flare + depth + 10.mm),
+            from: faces.farthest(mouth().z));
+    return onMouth;
+}
+
+// the frame where the spine ends, the vase's last ring on it
+Frame mouth() => spine.frames(rings)[rings - 1];
+
+// the cap: the vase's outline at the mouth, ripples and all, 2 mm thick
+Solid cap()
+{
+    Vec2[] pts;
+    foreach (p; ring(vec(0.mm, 0.mm, 0.mm), vec(1, 0, 0), vec(0, 1, 0), 1, 0.mm))
+        pts ~= vec(p.x, p.y);
+    return polygon(pts, smooth: true).extrude(2.mm);
+}
+
+// the plug under the lid, a band that holds it: outside, the vase's inside
+// (ripples and all) 0.4 mm smaller, through the last rings (four times as
+// close as the vase's) so that it bends as the vase does and its outline is
+// the mouth's; inside, a circle 2 mm within the deepest ripple. Lofted from
+// the mouth down, hollow: a thin floor under the disc, open at the bottom.
+Solid plug()
+{
+    immutable frames = spine.frames(rings * 4);
+    immutable last = frames.length - 1;
+    Vec3[][] outside, inside;
+    foreach_reverse (k; last - 8 .. last + 1)
+    {
+        immutable f = frames[k], along = k * 1.0 / last;
+        outside ~= [ring(f.origin, f.x, f.y, along, wall + 0.4.mm)];
+        if (k < last)
+        {
+            immutable r = foot + flare * along * along - wall - 0.4.mm - depth - 2.mm;
+            Vec3[] pts;
+            foreach (q; circle(r: r).outline(120))
+                pts ~= f.origin + f.x * q.at.x + f.y * q.at.y;
+            inside ~= [pts];
+        }
+    }
+    return loft(outside, inside: inside);
+}
+
+unittest
+{
+    // on the mouth, the lid's plug stays clear of the vase's wall: it fits
+    // without forcing, whatever the seed
+    assert(distance(vase(), plug()) > 0.1.mm, "the lid's plug touches the vase: make it narrower");
+}

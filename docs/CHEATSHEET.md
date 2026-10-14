@@ -59,6 +59,9 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `atan2(y, x) → Angle` — The angle of the point (x, y).
 - `min(a, b…)` — The smallest argument.
 - `max(a, b…)` — The largest argument.
+- `random(lo: number, hi: number, seed: int)` — Uniform between lo and hi (lengths, angles or plain numbers), the next of the seed's stream: the same at every run; change the seed for others.
+- `noise(x: number, y: number, z: number, seed: int) → double` — Smooth noise, about -1…1, features about one unit across; lengths count in mm.
+- `loopNoise(around: number, along: number, bumps: number, seed: int) → double` — Noise round a loop: around 0…1, along across it, about bumps features round; no seam where it closes.
 - `xs.minElement()` — The smallest element of a list.
 - `xs.maxElement()` — The largest element of a list.
 - `clamp(value, lo, hi)` — value limited to lo … hi.
@@ -126,7 +129,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.align(other: Solid, x: string, y: string, z: string) → Solid` — Aligns bounding boxes per axis: "min", "center" or "max".
 - `s.linearPattern(n: int, step: Vec) → Solid` — n copies, step apart, as one solid.
 - `s.circularPattern(n: int, axis: Axis, angle: Angle) → Solid` — n copies around an axis, as one solid.
-- `s.placeOn(frame: Frame) → Solid` — A solid built on XY (Z up) moved onto a frame or plane.
+- `s.placeOn(frame: Frame, from: Faces, at: Vec) → Solid` — A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin).
 - `s.split(plane: Plane) → Solid[]` — Cuts with a plane into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…
 - `s.halves(plane: Plane) → Halves` — Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.
 
@@ -134,7 +137,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 - `rect(w: Length, h: Length) → Profile` — A rectangle centred on the origin.
 - `circle(r: Length, d: Length) → Profile` — A circle centred on the origin.
-- `polygon(points: Vec[]) → Profile` — A polygon through the points.
+- `polygon(points: Vec[], smooth: bool) → Profile` — A polygon through the points; smooth: true, a smooth closed curve through them instead.
 - `regularPolygon(n: int, r: Length, d: Length) → Profile` — regularPolygon(6, d: 10.mm): d/r through the corners.
 - `slot(length: Length, width: Length) → Profile` — A stadium along X.
 - `teardrop(r | d: Length, angle: Angle, flat: bool) → Profile` — A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.
@@ -145,7 +148,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle) → Solid` — A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly.
 - `p.revolve(axis: Axis, angle: Angle) → Solid` — Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.
 - `p.sweep(path: Path, frenet: bool, twist: Angle) → Solid` — Moves the profile along a path; twist: 360.deg turns it once around the path on the way.
-- `loft(profiles: Profile[], ruled: bool) → Solid` — A solid through profiles placed in space.
+- `loft(profiles: Profile[], ruled: bool, inside: Vec3[][]) → Solid` — A solid through profiles placed in space; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane).
 - `hull(shapes…) → Solid` — The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.
 - `minkowski(a, b) → Solid` — a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.
 - `s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid` — Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).
@@ -185,6 +188,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.isEmpty → bool` — Whether nothing is left.
 - `s.isValid → bool` — Whether the solid is a valid closed solid.
 - `s.pieces → Solid[]` — The separate bodies, ordered along X, then Y, then Z.
+- `x.frames(n: int) → Frame[]` — n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft.
+- `p.outline(n: int, round: Length) → OutlinePoint[]` — n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1).
 - `xs.above(plane: Plane) → Solid[]` — Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).
 - `xs.below(plane: Plane) → Solid[]` — Of a list of solids, those on the other side of the plane.
 - `xs.crossing(plane: Plane) → Solid[]` — Of a list of solids, those the plane cuts through.
@@ -218,6 +223,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `faces.right → Faces` — The face(s) facing +X.
 - `faces.largest → Faces` — The largest face.
 - `faces.normal(dir: Direction) → Faces` — The faces with that normal: faces.normal(X).
+- `faces.farthest(dir: Direction) → Faces` — The face whose centre lies farthest that way, whichever way it faces: faces.farthest(Z), a tilted top.
 - `faces.overhanging(angle: Angle) → Faces` — The faces (or parts of them) facing down more steeply than the angle from a wall (45° by default), off the bed: where a printer needs supports.
 - `faces.from(tool: Solid) → Faces` — The faces created by a tool or feature: faces.from(holes).
 - `edges.parallel(axis: Direction) → Edges` — The straight edges along an axis: edges.parallel(Z).

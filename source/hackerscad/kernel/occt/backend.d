@@ -46,6 +46,7 @@ final class OcctKernel : BrepKernel
     Brep rect(double w, double h) => wrap(hc_rect(w, h), "rect");
     Brep circle(double r) => wrap(hc_circle(r), "circle");
     Brep polygon(const(double)[] xy) => wrap(hc_polygon(xy.ptr, cast(int)(xy.length / 2)), "polygon");
+    Brep splineProfile(const(double)[] xy) => wrap(hc_spline_profile(xy.ptr, cast(int)(xy.length / 2)), "smooth outline");
     Brep text(string s, double size, string font) => wrap(hc_text(s.toStringz, size, font.toStringz), "text");
     Brep profileRound(Brep s, double r) => wrap(hc_profile_round(h(s), r), "round");
     Brep profileOffset(Brep s, double d) => wrap(hc_profile_offset(h(s), d), "offset");
@@ -66,6 +67,21 @@ final class OcctKernel : BrepKernel
         wrap(hc_spline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "spline");
     Brep helix(double r, double pitch, double height, bool left, double taper = 0) =>
         wrap(hc_helix_tapered(r, pitch, height, left, taper), "helix");
+    Brep gridSolid(const(Vec3)[] pts, int rings, int per) =>
+        wrap(hc_grid_solid(cast(const(double)*) pts.ptr, rings, per), "solid through rings");
+    Brep gridHollow(const(Vec3)[] outer, int outerRings, const(Vec3)[] inner, int innerRings, int per) =>
+        wrap(hc_grid_hollow(cast(const(double)*) outer.ptr, outerRings, cast(const(double)*) inner.ptr, innerRings, per),
+            "hollow solid through rings");
+    void pathSample(Brep path, int n, out Vec3[] points, out Vec3[] tangents)
+    {
+        auto v = new double[6 * n];
+        check(hc_path_sample(h(path), n, v.ptr) == 1, "path sampling");
+        foreach (i; 0 .. n)
+        {
+            points ~= Vec3(v[6 * i], v[6 * i + 1], v[6 * i + 2]);
+            tangents ~= Vec3(v[6 * i + 3], v[6 * i + 4], v[6 * i + 5]);
+        }
+    }
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent)
     {
         double[6] v;
