@@ -780,6 +780,11 @@ JSONValue[] toolList()
             ~ "), unsaved. Refused when the user has unsaved "
             ~ "changes, unless force is true (which discards them: ask the user first).",
             `"force": {"type": "boolean"}, "example": {"type": "string", "enum": [` ~ exampleEnum ~ `]}`, `[]`),
+        tool("hcad_gui_launch", "Open a new hackerscad window on the user's screen, on the model at path (or a new "
+            ~ "one), named name (or a random name): it returns once the window answers and has evaluated the model, "
+            ~ "with its state; pass its window name to the other hcad_gui_* tools. Use it when the user wants to see "
+            ~ "the work and no window is open (hcad_gui_windows), or wants a window of its own for it.",
+            `"path": {"type": "string"}, "name": {"type": "string", "description": "letters, digits and dashes"}`),
         gui("hcad_gui_transform", "Move or turn a part of the user's model, as Move… and Rotate… in the 3D view's "
             ~ "right-click menu: the code is written at the end of the part's chain (a .move() or .rotate() already "
             ~ "there is changed instead). move: [x, y, z] in mm; rotate: {axis, angle in degrees}, about the middle of "
@@ -1213,6 +1218,14 @@ JSONValue callTool(string name, JSONValue args)
             text(r.toPrettyString(JSONOptions.doNotEscapeSlashes));
             break;
         }
+    case "hcad_gui_launch":
+        {
+            auto r = launchWindow(arg("path"), arg("name"));
+            if (r.type == JSONType.string)
+                return toolError(r.str);
+            text(r.toPrettyString(JSONOptions.doNotEscapeSlashes));
+            break;
+        }
     case "hcad_gui_windows":
         {
             JSONValue[] list;
@@ -1233,7 +1246,8 @@ JSONValue callTool(string name, JSONValue args)
                 }
             }
             text(list.length ? JSONValue(list).toPrettyString(JSONOptions.doNotEscapeSlashes)
-                : "no hackerscad window is open: the user can start one with `hackerscad model.hcad`");
+                : "no hackerscad window is open: open one with hcad_gui_launch (or the user starts it with "
+                ~ "`hackerscad model.hcad`)");
             break;
         }
     case "hcad_gui_screenshot":
@@ -1330,4 +1344,93 @@ unittest
         "arguments": {"source": "@part Solid p() => box(10, 20, 30).fillet(edges, radius: 1);"}}}`));
     assert(bad["result"]["isError"].boolean);
     assert(bad["result"]["content"][0]["text"].str.canFind("did you mean 'r'?"));
+}
+
+/// The desktop application next to this program: the AppImage this runs
+/// from, the launcher of the macOS bundle (it sets the environment GTK
+/// needs), or hackerscad beside hcad; HCAD_GUI names it otherwise.
+string[] guiCommand()
+{
+    import std.file : thisExePath, exists;
+    import std.path : dirName, buildNormalizedPath;
+    import std.process : environment;
+    import std.string : indexOf;
+    if (auto gui = environment.get("HCAD_GUI"))
+        return [gui];
+    if (auto image = environment.get("APPIMAGE"))
+        return [image];
+    auto exe = thisExePath;
+    auto bundle = exe.indexOf(".app/Contents/Resources/bin/");
+    if (bundle >= 0)
+        return [buildNormalizedPath(exe[0 .. bundle] ~ ".app/Contents/MacOS/hackerscad")];
+    version (Windows)
+        auto beside = buildPath(dirName(exe), "hackerscad.exe");
+    else
+        auto beside = buildPath(dirName(exe), "hackerscad");
+    return exists(beside) ? [beside] : null;
+}
+
+/// Starts a window on `path` (none: a new model) named `name` (none: a
+/// random free name) and waits until it answers with its first evaluation:
+/// its state and name, or (a string) why it could not.
+JSONValue launchWindow(string path, string name)
+{
+    import core.thread : Thread;
+    import core.time : MonoTime, msecs, seconds;
+    import std.path : absolutePath;
+    import std.process : environment, spawnProcess, Config;
+    import std.stdio : File;
+    version (linux)
+        if (environment.get("WAYLAND_DISPLAY") is null && environment.get("DISPLAY") is null)
+            return JSONValue("no screen here (neither WAYLAND_DISPLAY nor DISPLAY is set): the user has to open "
+                ~ "hackerscad on their computer");
+    auto cmd = guiCommand();
+    if (cmd is null)
+        return JSONValue("cannot find the hackerscad application next to this hcad: set HCAD_GUI to its path");
+    if (name.length)
+    {
+        auto n = normalizeWindowName(name);
+        if (n is null)
+            return JSONValue("a window name is letters, digits and dashes");
+        if (windowAlive(n))
+            return JSONValue("a window is already called " ~ n ~ ": use it, or choose another name");
+        name = n;
+    }
+    else
+        do
+            name = randomWindowName();
+        while (windowAlive(name));
+    auto args = cmd ~ ("--name=" ~ name);
+    if (path.length)
+    {
+        import std.file : exists;
+        if (!exists(path))
+            return JSONValue("no file at " ~ path);
+        args ~= absolutePath(path);
+    }
+    version (Windows)
+        enum nowhere = "NUL";
+    else
+        enum nowhere = "/dev/null";
+    try
+    {
+        auto pid = spawnProcess(args, File(nowhere, "r"), File(nowhere, "w"), File(nowhere, "w"), null,
+            Config.detached | Config.suppressConsole);
+    }
+    catch (Exception e)
+        return JSONValue("cannot start " ~ args[0] ~ ": " ~ e.msg);
+    // the window answers once GTK is up; a slow first start (the AppImage
+    // unpacking, the font cache) can take a while
+    immutable until = MonoTime.currTime + 60.seconds;
+    while (!windowAlive(name))
+    {
+        if (MonoTime.currTime > until)
+            return JSONValue("the window did not answer within a minute");
+        Thread.sleep(200.msecs);
+    }
+    // its state after the first evaluation
+    auto st = guiRequest(name, "state", JSONValue((JSONValue[string]).init));
+    if (st.type == JSONType.object)
+        st["window"] = name;
+    return st;
 }

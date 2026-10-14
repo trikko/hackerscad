@@ -174,7 +174,8 @@ JSONValue guiRequest(string window, string method, JSONValue params)
 {
     import std.array : join;
     import std.algorithm : canFind;
-    enum notRunning = "hackerscad is not running: start it with `hackerscad model.hcad`";
+    enum notRunning = "hackerscad is not running: open a window with hcad_gui_launch (or the user starts it "
+        ~ "with `hackerscad model.hcad`)";
     auto open = openWindows();
     if (window.length == 0)
     {
