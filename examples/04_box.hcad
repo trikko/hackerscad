@@ -24,6 +24,15 @@ immutable wall = 2.mm;
 @preset("small", 4.mm)
 immutable radius = 6.mm;
 
+// screws: posts in the corners; lip: a rim under the lid fits inside the
+// box; flush: the lid sits in a step cut in the rim, level with it
+@param("Closure", choices: ["screws", "lip", "flush"])
+immutable closure = "screws";
+
+// the gap between lid and box, for printed parts
+immutable fit = 0.2.mm;
+immutable lipHeight = 4.mm;
+
 /// The outside of the box: its vertical edges rounded.
 Solid outside() => box(width, depth, height)
     .fillet(edges.filter(e => e.isParallel(Z)), r: radius);
@@ -56,35 +65,76 @@ Solid post(int sx, int sy, Screw screw = M3)
 Solid body()
 {
     auto s = outside.shell(open: faces.top, thickness: wall);
-    immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
-    foreach (sx; [-1, 1])
-        foreach (sy; [-1, 1])
-        {
-            s += post(sx, sy);
-            // the pilot hole, from the rim down to the floor
-            s -= cylinder(d: M3.tap, h: height - wall + 1.mm)
-                .move(x: sx * dx, y: sy * dy, z: wall);
-        }
+    if (closure == "screws")
+    {
+        immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
+        foreach (sx; [-1, 1])
+            foreach (sy; [-1, 1])
+            {
+                s += post(sx, sy);
+                // the pilot hole, from the rim down to the floor
+                s -= cylinder(d: M3.tap, h: height - wall + 1.mm)
+                    .move(x: sx * dx, y: sy * dy, z: wall);
+            }
+    }
+    else if (closure == "flush")
+    {
+        // the step: half the wall, as deep as the lid is thick
+        s -= box(width - wall, depth - wall, wall + 1.mm)
+            .fillet(edges.parallel(Z), r: radius - wall / 2)
+            .move(z: height - wall);
+    }
     return s;
 }
 
-@part("orange")
-Solid lid()
+/// A rounded plate, `inset` in from the box's outline all round.
+Solid plate(Length inset, Length h) => box(width - 2 * inset, depth - 2 * inset, h)
+    .fillet(edges.parallel(Z), r: max(radius - inset, 0.5.mm));
+
+/// The lid as it is printed, at the origin.
+Solid lidShape()
 {
-    auto c = box(width, depth, wall)
-        .fillet(edges.parallel(Z), r: radius)
-        .chamfer(edges.filter(e => e.mid.z > wall / 2), d: 0.6.mm);   // the whole top edge
-
-    immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
-    foreach (sx; [-1, 1])
-        foreach (sy; [-1, 1])
-            c -= cylinder(d: M3.clearance, h: 3 * wall, center: true).move(x: sx * dx, y: sy * dy);
-
-    return c.nextTo(body, X, gap: 10.mm);
+    Solid c;
+    switch (closure)
+    {
+    case "flush":
+        // inside the step, with the gap all round
+        c = plate(wall / 2 + fit, wall);
+        break;
+    case "lip":
+        // printed upside down: the rim stands on the plate
+        auto rim = plate(wall + fit, lipHeight) - plate(2 * wall + fit, 3 * lipHeight).move(z: -lipHeight);
+        c = plate(0.mm, wall)
+            .chamfer(edges.filter(e => e.mid.z < wall / 2), d: 0.6.mm)
+            + rim.move(z: wall);
+        break;
+    default:
+        c = plate(0.mm, wall)
+            .chamfer(edges.filter(e => e.mid.z > wall / 2), d: 0.6.mm);   // the whole top edge
+        immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
+        foreach (sx; [-1, 1])
+            foreach (sy; [-1, 1])
+                c -= cylinder(d: M3.clearance, h: 3 * wall, center: true).move(x: sx * dx, y: sy * dy);
+    }
+    return c;
 }
+
+/// The lid where it closes the box.
+Solid closedLid()
+{
+    if (closure == "flush")
+        return lidShape.move(z: height - wall);
+    if (closure == "lip")
+        return lidShape.rotate(x: 180).move(z: height + wall);
+    return lidShape.move(z: height);
+}
+
+@part("orange")
+Solid lid() => lidShape.nextTo(body, X, gap: 10.mm);
 
 unittest
 {
     assert(body.bbox.size.z <= 40.mm, "must fit in the drawer");
+    assert((body & closedLid).isEmpty, "the lid must close without running into the box");
     writeln("body volume: $(format("%.1f", body.volume / 1.cm ^^ 3)) cm³");
 }
