@@ -2891,13 +2891,13 @@ static void attach_mesh(const TopoDS_Shape &solid, const std::vector<Handle(Geom
         }
         // the end ring lying in this plane
         const std::vector<gp_Pnt> *best = nullptr;
-        double far = 1e300;
+        double closest = 1e300;   // not "far": a macro in the Windows headers
         for (const auto &e : ends) {
             double d = 0;
             for (const gp_Pnt &p : e)
                 d = std::max(d, pl.Distance(p));
-            if (d < far) {
-                far = d;
+            if (d < closest) {
+                closest = d;
                 best = &e;
             }
         }
