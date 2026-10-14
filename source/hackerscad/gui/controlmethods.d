@@ -496,6 +496,9 @@ mixin template ControlMethods()
                 {
                     j["signature"] = r.signature;
                     j["activeParam"] = r.activeParam;
+                    // the ways to call it, when its parameters are alternatives
+                    if (r.forms.length)
+                        j["forms"] = r.forms;
                 }
                 if ("show" in p && p["show"].boolean)
                 {

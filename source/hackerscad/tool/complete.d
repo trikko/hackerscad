@@ -30,6 +30,7 @@ struct CompletionResult
     string signature;      /// inside a call: the callee's signature
     int activeParam = -1;  /// and which argument the cursor is on
     string signatureDoc;
+    string forms;          /// its ways to be called, when they are alternatives (Ref.usage)
 }
 
 /// What to offer at byte offset `cursor` of `source` (the file at `path`).
@@ -101,18 +102,28 @@ string[2] describeAt(string source, size_t at, string path, const string[] libra
                 return [d.signature, d.doc];
         foreach (ref r; reference)
             if (r.name == word && r.on.length && (recv.length == 0 || applies(r.on, recv)))
-                return [r.signature, r.doc];
+                return [r.usage, withArguments(r)];
     }
     foreach (d; ctx.all)
         if (d.name == word && d.kind != Decl.Kind.field)
             return [d.signature, d.doc];
     foreach (ref r; reference)
         if (r.name == word && r.on.length == 0)
-            return [r.kind == RefKind.annotation ? "@" ~ r.signature : r.signature, r.doc];
+            return [r.kind == RefKind.annotation ? "@" ~ r.signature : r.usage, withArguments(r)];
     foreach (ref r; reference)
         if (r.name == word)
-            return [r.signature, r.doc];
+            return [r.usage, withArguments(r)];
     return [null, null];
+}
+
+/// A built-in's documentation, and for one called with arguments how they
+/// go: in order, or by name in any order.
+private string withArguments(const ref Ref r)
+{
+    if ((r.kind != RefKind.function_ && r.kind != RefKind.method) || r.paramNames.length < 2)
+        return r.doc;
+    import std.array : join;
+    return r.doc ~ "\nArguments in order (" ~ r.paramNames.join(", ") ~ "), or by name in any order: name: value.";
 }
 
 /// Whether `text` ends with a number (30, 2.5), not a name like M3.
@@ -651,6 +662,7 @@ private void signatureAt(ref Context ctx, string before, ref CompletionResult r)
             {
                 r.signature = e.signature;
                 r.signatureDoc = e.doc;
+                r.forms = e.forms.length ? e.usage : null;
                 params = e.paramNames;
                 break;
             }
@@ -795,4 +807,18 @@ unittest
     src = "module m;\nimport hardware;\n@part Solid a() => hole(M3, ";
     r = complete(src, src.length, "", null);
     assert(r.signature.startsWith("hole(s: Screw") && r.activeParam == 1, r.signature);
+}
+
+unittest
+{
+    // a name whose parameters are alternatives shows its forms, simplest first
+    auto src = "module m;\n@part Solid p() => box(1, 1, 1).rotate(z: 45);\n";
+    import std.string : indexOf;
+    auto d = describeAt(src, src.indexOf("rotate") + 2, "", null);
+    assert(d[0].indexOf("s.rotate(z: 45)") == 0, d[0]);
+    assert(d[0].indexOf("around: p") > 0 && d[0].indexOf("\n") > 0, d[0]);
+    assert(d[1].indexOf("Arguments in order") > 0, d[1]);
+    // one without forms keeps its signature
+    auto b = describeAt(src, src.indexOf("box") + 1, "", null);
+    assert(b[0].indexOf("box(x: Length") == 0, b[0]);
 }

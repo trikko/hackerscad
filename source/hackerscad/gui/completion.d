@@ -345,7 +345,10 @@ private:
             sig.popdown();
             return;
         }
-        sigLabel.setMarkup(highlighted(res.signature, res.activeParam));
+        // the ways to call it under the signature, when they are alternatives
+        import glib.global : markupEscapeText;
+        sigLabel.setMarkup(highlighted(res.signature, res.activeParam)
+            ~ (res.forms.length ? "\n<small>" ~ markupEscapeText(res.forms) ~ "</small>" : ""));
         TextIter it;
         buffer.getIterAtMark(it, buffer.getInsert());
         auto src = text();

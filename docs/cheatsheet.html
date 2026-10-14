@@ -131,7 +131,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 </dl></section>
 <section><h2>Transforms</h2><dl>
 <dt>s.move(v: Vec, x: Length, y: Length, z: Length)</dt><dd>Moves: move(x: 10.mm) or move(vec(…)).</dd>
-<dt>s.rotate(angle: Angle, axis: Axis, x: Angle, y: Angle, z: Angle)</dt><dd>rotate(z: 45) in degrees, or rotate(angle, axis: a) around any axis.</dd>
+<dt>s.rotate(angle: Angle, axis: Axis, x: Angle, y: Angle, z: Angle, around: Vec)</dt><dd>Turns about the origin, or about the point given as around:.</dd>
 <dt>s.scale(factor: number)</dt><dd>Scales around the origin.</dd>
 <dt>s.mirror(plane: Plane)</dt><dd>mirror(X): across the plane through the origin with that normal, or any plane.</dd>
 <dt>s.color(color: Color, alpha: 0..1) → Solid</dt><dd>Sets the colour: "steelblue", "#RRGGBB", rgb(…).</dd>

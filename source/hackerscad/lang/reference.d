@@ -27,6 +27,35 @@ struct Ref
     string doc;
     RefKind kind = RefKind.function_;
     string group;      /// section of the cheatsheet
+    /// The ways to call it, simplest first, each with a comment after
+    /// "//": for names whose parameters are alternatives (r or d; an angle
+    /// and an axis, or angles about X, Y, Z), which the signature, listing
+    /// them all, does not tell.
+    string[] forms;
+
+    /// The forms, one per line with their comments lined up; the signature
+    /// when there are none.
+    string usage() const
+    {
+        import std.algorithm : map, maxElement;
+        import std.array : join;
+        import std.string : indexOf, leftJustify, strip;
+        if (forms.length == 0)
+            return signature();
+        size_t width;
+        foreach (f; forms)
+        {
+            immutable c = f.indexOf("//");
+            width = c < 0 ? width : (f[0 .. c].strip.length > width ? f[0 .. c].strip.length : width);
+        }
+        string[] lines;
+        foreach (f; forms)
+        {
+            immutable c = f.indexOf("//");
+            lines ~= c < 0 ? f : f[0 .. c].strip.leftJustify(width) ~ "  " ~ f[c .. $];
+        }
+        return lines.join("\n");
+    }
 
     /// "fillet(edges: Edges, r: Length) → Solid"
     string signature() const
@@ -64,6 +93,12 @@ private Ref[] group(string title, Ref[] entries)
 
 private alias F = (string name, string on, string[] params, string type, string doc) =>
     Ref(name, on, params, type, doc, on.length ? RefKind.method : RefKind.function_);
+/// The same with its forms (see Ref.forms).
+private Ref withForms(Ref r, string[] forms)
+{
+    r.forms = forms;
+    return r;
+}
 private alias P = (string name, string on, string type, string doc) => Ref(name, on, null, type, doc, RefKind.property);
 private alias C = (string name, string type, string doc) => Ref(name, "", null, type, doc, RefKind.constant);
 private alias U = (string name, string doc) => Ref(name, "number", null, "Length or Angle", doc, RefKind.unit);
@@ -161,18 +196,36 @@ immutable Ref[] reference =
     ]) ~
     group("Solids", [
     F("box", "", ["x: Length", "y: Length", "z: Length", "center: bool"], "Solid", "A box standing on XY, centred in X and Y."),
-    F("cylinder", "", ["r: Length", "h: Length", "d: Length", "center: bool"], "Solid", "A cylinder along Z standing on XY; give r or d, and h."),
-    F("cone", "", ["r1: Length", "r2: Length", "h: Length", "d1: Length", "d2: Length", "center: bool"], "Solid",
-        "A cone (or truncated cone) along Z."),
-    F("sphere", "", ["r: Length", "d: Length"], "Solid", "A sphere centred on the origin."),
+    withForms(F("cylinder", "", ["r: Length", "h: Length", "d: Length", "center: bool"], "Solid",
+        "A cylinder along Z standing on XY; give r or d, and h."), [
+        "cylinder(5.mm, 20.mm)          // radius and height",
+        "cylinder(d: 10.mm, h: 20.mm)   // diameter and height",
+        "cylinder(r: 5.mm, h: 20.mm, center: true)   // centred on the origin"]),
+    withForms(F("cone", "", ["r1: Length", "r2: Length", "h: Length", "d1: Length", "d2: Length", "center: bool"], "Solid",
+        "A cone (or truncated cone) along Z."), [
+        "cone(10.mm, 5.mm, 20.mm)              // radii at the base and top, height",
+        "cone(d1: 20.mm, d2: 10.mm, h: 20.mm)   // diameters",
+        "cone(r1: 10.mm, r2: 0.mm, h: 20.mm)    // to a point"]),
+    withForms(F("sphere", "", ["r: Length", "d: Length"], "Solid", "A sphere centred on the origin."), [
+        "sphere(5.mm)        // radius",
+        "sphere(d: 10.mm)    // diameter"]),
     F("load", "", ["path: string", "scale: number"], "Solid", "A part from an STL, OBJ, 3MF or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm)."),
     ]) ~
     group("Transforms", [
-    F("move", "Shape", ["v: Vec", "x: Length", "y: Length", "z: Length"], "", "Moves: move(x: 10.mm) or move(vec(…))."),
-    F("rotate", "Shape", ["angle: Angle", "axis: Axis", "x: Angle", "y: Angle", "z: Angle"], "",
-        "rotate(z: 45) in degrees, or rotate(angle, axis: a) around any axis."),
+    withForms(F("move", "Shape", ["v: Vec", "x: Length", "y: Length", "z: Length"], "", "Moves: move(x: 10.mm) or move(vec(…))."), [
+        "s.move(x: 10.mm)                   // along one axis",
+        "s.move(vec(10.mm, 0.mm, 5.mm))     // by a vector",
+        "s.move(x: 10.mm, y: 5.mm, z: 2.mm) // along several"]),
+    withForms(F("rotate", "Shape", ["angle: Angle", "axis: Axis", "x: Angle", "y: Angle", "z: Angle", "around: Vec"], "",
+        "Turns about the origin, or about the point given as around:."), [
+        "s.rotate(z: 45)                    // about X, Y or Z, in degrees",
+        "s.rotate(30.deg, X)                // an angle about an axis: X, a vec, or an Axis",
+        "s.rotate(x: 30, y: 10, z: 45)      // about X, then Y, then Z",
+        "s.rotate(z: 45, around: p)         // about point p instead of the origin"]),
     F("scale", "Shape", ["factor: number"], "", "Scales around the origin."),
-    F("mirror", "Shape", ["plane: Plane"], "", "mirror(X): across the plane through the origin with that normal, or any plane."),
+    withForms(F("mirror", "Shape", ["plane: Plane"], "", "mirror(X): across the plane through the origin with that normal, or any plane."), [
+        "s.mirror(X)                     // across the plane through the origin, normal X",
+        "s.mirror(body.plane(faces.top)) // across any plane"]),
     F("color", "Solid", ["color: Color", "alpha: 0..1"], "Solid", "Sets the colour: \"steelblue\", \"#RRGGBB\", rgb(…)."),
     F("centered", "Shape", [], "", "Moved so its bounding box is centred on the origin."),
     ]) ~
@@ -196,7 +249,9 @@ immutable Ref[] reference =
     ]) ~
     group("Profiles (2D)", [
     F("rect", "", ["w: Length", "h: Length"], "Profile", "A rectangle centred on the origin."),
-    F("circle", "", ["r: Length", "d: Length"], "Profile", "A circle centred on the origin."),
+    withForms(F("circle", "", ["r: Length", "d: Length"], "Profile", "A circle centred on the origin."), [
+        "circle(5.mm)        // radius",
+        "circle(d: 10.mm)    // diameter"]),
     F("polygon", "", ["points: Vec[]"], "Profile", "A polygon through the points."),
     F("regularPolygon", "", ["n: int", "r: Length", "d: Length"], "Profile", "regularPolygon(6, d: 10.mm): d/r through the corners."),
     F("slot", "", ["length: Length", "width: Length"], "Profile", "A stadium along X."),
@@ -228,11 +283,20 @@ immutable Ref[] reference =
     group("Paths, sweeps and lofts", [
     F("path", "", ["points: Vec[]", "closed: bool"], "Path", "Straight segments through the points."),
     F("spline", "", ["points: Vec[]", "closed: bool"], "Path", "A smooth curve through the points."),
-    F("helix", "", ["r: Length", "d: Length", "pitch: Length", "height: Length", "left: bool"], "Path", "A helix around +Z."),
+    withForms(F("helix", "", ["r: Length", "d: Length", "pitch: Length", "height: Length", "left: bool"], "Path", "A helix around +Z."), [
+        "helix(r: 4.mm, pitch: 1.mm, height: 20.mm)            // radius",
+        "helix(d: 8.mm, pitch: 1.mm, height: 20.mm)            // diameter",
+        "helix(d: 8.mm, pitch: 1.mm, height: 20.mm, left: true) // left-handed"]),
     ]) ~
     group("Planes, axes and frames", [
-    F("plane", "", ["origin: Vec", "normal: Direction"], "Plane", "plane(origin:, normal:), plane(p1, p2, p3), or body.plane(faces.top)."),
-    F("axis", "", ["origin: Vec", "direction: Direction"], "Axis", "axis(origin:, direction:), axis(p1, p2), or body.axis(edges…)."),
+    withForms(F("plane", "", ["origin: Vec", "normal: Direction"], "Plane", "plane(origin:, normal:), plane(p1, p2, p3), or body.plane(faces.top)."), [
+        "plane(origin: p, normal: Z)   // a point and a normal",
+        "plane(p1, p2, p3)             // through three points",
+        "body.plane(faces.top)         // the plane of a face"]),
+    withForms(F("axis", "", ["origin: Vec", "direction: Direction"], "Axis", "axis(origin:, direction:), axis(p1, p2), or body.axis(edges…)."), [
+        "axis(origin: p, direction: Z)   // a point and a direction",
+        "axis(p1, p2)                    // through two points",
+        "body.axis(edges.of(faces.top))  // along an edge"]),
     F("frame", "Solid", ["face: Faces", "origin: Vec", "x: Direction"], "Frame", "A frame on a face: origin at its centre, Z outwards."),
     F("at", "Frame", ["x: Length", "y: Length", "z: Length"], "Frame", "The frame with its origin moved, in local coordinates."),
     F("turn", "Frame", ["angle: Angle"], "Frame", "The frame turned around its Z."),

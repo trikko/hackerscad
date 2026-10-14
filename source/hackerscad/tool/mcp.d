@@ -839,7 +839,8 @@ JSONValue[] toolList()
             `"path": {"type": "string"}, ` ~ partsProp ~ `, ` ~ oneObjectProp, `["path"]`),
         gui("hcad_gui_complete", "What the editor's completion offers in the user's window: at the cursor, or at "
             ~ "line and col (1-based). Gives the proposals with their signature and documentation, and inside a call "
-            ~ "the callee's signature and the argument the cursor is on.",
+            ~ "the callee's signature and the argument the cursor is on, with forms: its ways to be called, simplest "
+            ~ "first, when its parameters are alternatives (rotate, cylinder, move…).",
             `"line": {"type": "integer"}, "col": {"type": "integer"}, `
             ~ `"show": {"type": "boolean", "description": "also move the cursor there and open the list in the window"}, `
             ~ `"select": {"type": "string", "description": "with show, the entry to select in the list"}`, `[]`),
