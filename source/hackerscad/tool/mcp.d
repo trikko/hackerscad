@@ -744,8 +744,8 @@ JSONValue[] toolList()
             ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
             ~ "stays still). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
-            ~ "faint), or printability: overhangs needing supports in red, walls under min_wall in violet (then "
-            ~ "hcad_gui_state has their areas per part); projection is perspective or orthographic; menu opens the parts (eye) or display (cube) "
+            ~ "faint); printability marks, over any style, the overhangs needing supports in red and the walls under "
+            ~ "min_wall in violet (then hcad_gui_state has their areas per part); projection is perspective or orthographic; menu opens the parts (eye) or display (cube) "
             ~ "menu of the view bar, or the header bar's examples or export menu, for a screenshot, none closes them; sidebar shows the params or steps tab; "
             ~ "cursor puts the editor's cursor at the start of a line and scrolls there; code_width sets how wide "
             ~ "the code is (pixels); theme draws the window light or dark for this run (the user's own choice, in the "
@@ -760,7 +760,8 @@ JSONValue[] toolList()
             ~ `"pan": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"zoom": {"type": "number"}, `
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
-            ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe", "printability"]}, `
+            ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe"]}, `
+            ~ `"printability": {"type": "boolean"}, `
             ~ `"overhang_angle": {"type": "number", "description": "printability: degrees from a wall (45)"}, `
             ~ `"min_wall": {"type": "number", "description": "printability: thinnest wall in mm (0.8)"}, `
             ~ `"projection": {"type": "string", "enum": ["perspective", "orthographic"]}, `

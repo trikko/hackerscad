@@ -54,10 +54,10 @@ The cube in the view bar opens a small menu:
 - **Shaded with edges**, the usual way; **Shaded**, without the edges;
   **Wireframe**, only the edges, the hidden ones fainter: useful to see
   inside.
-- **Printability**, for 3D printing: what overhangs more than 45° and needs
-  supports is striped red, walls thinner than 0.8 mm are cross-hatched violet;
-  the two fields under it change the limits, and the status line gives the
-  areas.
+- **Printability**, a check box over any of these styles, for 3D printing:
+  what overhangs more than 45° and needs supports is striped red, walls
+  thinner than 0.8 mm are cross-hatched violet; the two fields under it
+  change the limits, and the status line gives the areas.
 - **Perspective**, as a photo; **Orthographic**, where sizes do not change
   with the distance: the Front, Top and Right views become true drawings.
 

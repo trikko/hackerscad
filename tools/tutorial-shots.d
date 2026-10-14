@@ -291,8 +291,8 @@ void page12()
     clearSelection();
     view(`{"preset": "iso"}`);
     shot("12-hook-longer", lineOf(".extrude("));
-    // seen from below, in the printability style
-    view(`{"style": "printability", "orbit": [0, -50]}`);
+    // seen from below, with the printability marks
+    view(`{"printability": true, "orbit": [0, -50]}`);
     shot("12-hook-print");
     // laid on its back, where it stays
     type("        .extrude(faces.front, depth: 10.mm);", "        .extrude(faces.front, depth: 10.mm)\n        .rotate(x: -90);");
@@ -302,7 +302,7 @@ void page12()
     type("    return (plate + arm)\n", gussets12);
     view(`{"preset": "iso"}`);
     shot("12-hook-final", lineOf("auto gusset"));
-    view(`{"style": "edges"}`);
+    view(`{"printability": false}`);
     write(buildPath(docs, "12-hook.hcad"), source());
 
     // a label from a drawing, and the models of the other sections

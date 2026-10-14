@@ -116,11 +116,13 @@ mixin template ControlMethods()
                 // drawing style and projection, as the cube of the view bar
                 if (auto v = arg("style"))
                 {
-                    auto sh = v == "wireframe" ? Shading.wireframe : v == "shaded" ? Shading.shaded
-                        : v == "printability" ? Shading.printability : Shading.edges;
+                    auto sh = v == "wireframe" ? Shading.wireframe : v == "shaded" ? Shading.shaded : Shading.edges;
                     shadingChoice[sh].setActive(true);
                 }
-                // the printability style's limits, as its two fields
+                // the printability marks, over any style, as the cube's check box
+                if (has("printability"))
+                    printabilityChoice.setActive(p["printability"].type == JSONType.true_);
+                // the printability marks' limits, as their two fields
                 if (has("overhang_angle"))
                     overhangSpin.setValue(num(p["overhang_angle"]));
                 if (has("min_wall"))

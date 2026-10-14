@@ -39,7 +39,6 @@ enum Shading
     edges,      /// shaded, with their edges outlined
     shaded,     /// shaded, without edges
     wireframe,  /// edges only, the hidden ones faint
-    printability,   /// shaded with edges, overhangs in red and thin walls in violet
 }
 
 /// What a left-button drag does (right always rotates, middle always pans).
@@ -936,7 +935,7 @@ private:
         /// total edge length and the two largest sizes (mm): how crowded the
         /// edges get on screen at a given zoom
         double edgeLength = 0, spanA = 1, spanB = 1;
-        /// the printability style: the overhanging triangles' indices,
+        /// the printability marks: the overhanging triangles' indices,
         /// then the thin walls', for the limits they were found with
         uint printVao, printEbo;
         int overhangCount, thinCount;
@@ -1668,8 +1667,8 @@ private:
         if (!ghost && !wire)
             renderTransparent();
 
-        if (shading == Shading.printability)
-            drawPrintability();
+        if (printability)
+            drawPrintability(wire);
 
         // the picked faces, in highlight colour (an item near an edge is the edge)
         foreach (h; selection())
@@ -2108,10 +2107,21 @@ private:
     }
 
     /// Overhangs steeper than this from a wall (radians), and walls thinner
-    /// than this (mm), in the printability style.
+    /// than this (mm), for the printability marks.
     public double overhangAngle = PI / 4, minWall = 0.8;
 
-    /// Sets the printability style's limits.
+    /// Whether the overhangs (red) and thin walls (violet) are marked, over
+    /// any style.
+    public bool printability;
+
+    /// Marks the overhangs and thin walls, or not.
+    public void setPrintability(bool on)
+    {
+        printability = on;
+        redraw();
+    }
+
+    /// Sets the printability marks' limits.
     public void setPrintLimits(double angle, double wall)
     {
         overhangAngle = angle;
@@ -2121,7 +2131,7 @@ private:
         redraw();
     }
 
-    /// What the printability style finds in part i (computed if needed: it
+    /// What the printability marks find in part i (computed if needed: it
     /// takes a moment on large meshes).
     public PrintCheck printCheckOf(size_t i)
     {
@@ -2140,9 +2150,22 @@ private:
     }
 
     /// The overhanging triangles in red and those over thin walls in violet,
-    /// over the shaded parts (pushed back like for the picked faces).
-    private void drawPrintability()
+    /// over the shaded parts (pushed back like for the picked faces); in
+    /// wireframe, where the surfaces are not drawn, see-through.
+    private void drawPrintability(bool wire)
     {
+        if (wire)
+        {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glUniform1f(uAlpha, 0.55);
+        }
+        scope (exit)
+            if (wire)
+            {
+                glDisable(GL_BLEND);
+                glUniform1f(uAlpha, 1);
+            }
         foreach (i, ref g; gpu)
         {
             if (isHidden(i) || i >= parts.length)

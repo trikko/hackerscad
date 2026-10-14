@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-62cc5c85`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-a6c8c2f8`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-62cc5c85`:** this text is up to date.
+- **It prints `0.3.1-a6c8c2f8`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -91,7 +91,7 @@ format stamp):
   an axis; `hcad fit` (hcad_fit) tunes @param lengths to the original.
   `--printability` adds per part the overhangs needing supports and the
   walls too thin to print (marked in the pictures: red stripes, violet
-  hatching); with the window, `hcad_gui_view` style `printability`.
+  hatching); with the window, `hcad_gui_view` with `printability: true`.
 - The loop: write the model, check it, render and look, compare sizes and
   pictures with the request, fix, then export. Put the request's
   requirements in unittest blocks so the checks repeat them.

@@ -72,8 +72,9 @@ that, the slicer adds supports, which you cut away afterwards. Walls thinner
 than two lines of the nozzle (0.8 mm for a 0.4 mm nozzle) do not print
 well either.
 
-The cube in the view bar, **Printability**: what overhangs is striped red,
-thin walls are cross-hatched violet, and the status line gives their areas.
+In the cube of the view bar, tick **Printability**: what overhangs is
+striped red, thin walls are cross-hatched violet, and the status line gives
+their areas.
 Turn the view to see the hook from below:
 
 ![The underside of the arm and the top of the hole, in red](img/12-hook-print.png)

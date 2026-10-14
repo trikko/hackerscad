@@ -1388,7 +1388,7 @@ private:
             note(format("%s %d part%s in %d ms%s%s", errors ? "evaluated with problems:" : "evaluated:", o.parts.length,
                 o.parts.length == 1 ? "" : "s", o.milliseconds,
                 total ? format(" (%d%% from cache)", o.cacheHits * 100 / total) : "", sketchSummary()), true);
-            if (viewport.shading == Shading.printability)
+            if (viewport.printability)
                 printSummary();
         }
         else
@@ -2022,7 +2022,7 @@ private:
     Paned mainPaned;        /// the code on the left, the rest on the right
     import gtk.check_button : CheckButton;
     CheckButton[Shading] shadingChoice;
-    CheckButton perspectiveChoice, orthographicChoice, antialiasChoice;
+    CheckButton perspectiveChoice, orthographicChoice, antialiasChoice, printabilityChoice;
 
     Box printLimits;
     import gtk.spin_button : SpinButton;
@@ -2105,13 +2105,26 @@ private:
         style(Shading.edges, "Shaded with edges", "Surfaces with their edges outlined");
         style(Shading.shaded, "Shaded", "Surfaces only, without edges");
         style(Shading.wireframe, "Wireframe", "Edges only, the hidden ones faint");
-        style(Shading.printability, "Printability", "For 3D printing: in red what overhangs and needs supports, "
-            ~ "in violet the walls thinner than the nozzle can print (the part rests on its lowest face)");
-        shadingChoice[Shading.printability].connectToggled(() {
-            printLimits.setVisible(shadingChoice[Shading.printability].getActive());
-            if (shadingChoice[Shading.printability].getActive() && viewport !is null)
+        import gtk.separator : Separator;
+        box.append(new Separator(Orientation.Horizontal));
+        heading("Check");
+        // over any style: marks, not a way of drawing
+        printabilityChoice = new CheckButton;
+        printabilityChoice.setLabel("Printability");
+        printabilityChoice.setTooltipText("For 3D printing: in red what overhangs and needs supports, in violet "
+            ~ "the walls thinner than the nozzle can print (the part rests on its lowest face), in any style");
+        printabilityChoice.connectToggled(() {
+            immutable on = printabilityChoice.getActive();
+            printLimits.setVisible(on);
+            if (viewport is null)
+                return;
+            viewport.setPrintability(on);
+            if (on)
                 printSummary();
+            else
+                info("");
         });
+        box.append(printabilityChoice);
         {
             // the limits: the steepest overhang from a wall, the thinnest wall
             import gtk.spin_button : SpinButton;
@@ -2130,7 +2143,7 @@ private:
                 if (viewport is null)
                     return;
                 viewport.setPrintLimits(overhangSpin.getValue() * PI / 180, wallSpin.getValue());
-                if (viewport.shading == Shading.printability)
+                if (viewport.printability)
                     printSummary();
             }
             overhangSpin.connectValueChanged(() => changed());
@@ -2144,7 +2157,6 @@ private:
         }
         // built before the view: its defaults
         shadingChoice[Shading.edges].setActive(true);
-        import gtk.separator : Separator;
         box.append(new Separator(Orientation.Horizontal));
         heading("Projection");
         perspectiveChoice = choice("Perspective", "Far things look smaller, as in a photo", null,
@@ -2318,6 +2330,7 @@ private:
         sketchToggle.setActive(false);
         rotateMode.setActive(true);
         shadingChoice[Shading.edges].setActive(true);
+        printabilityChoice.setActive(false);
         if (overhangSpin !is null)
         {
             overhangSpin.setValue(45);
@@ -3855,10 +3868,10 @@ private:
         jc["grid"] = viewport.showGrid;
         jc["axes"] = viewport.showAxes;
         jc["style"] = viewport.shading == Shading.wireframe ? "wireframe"
-            : viewport.shading == Shading.shaded ? "shaded" : viewport.shading == Shading.printability ? "printability"
-            : "edges";
+            : viewport.shading == Shading.shaded ? "shaded" : "edges";
+        jc["printability"] = viewport.printability;
         j["camera"] = jc;
-        if (viewport.shading == Shading.printability)
+        if (viewport.printability)
             j["printability"] = printabilityJson();
         j["graphics"] = graphicsJson();
         string problems;

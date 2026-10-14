@@ -182,7 +182,7 @@ format stamp):
   an axis; `hcad fit` (hcad_fit) tunes @param lengths to the original.
   `--printability` adds per part the overhangs needing supports and the
   walls too thin to print (marked in the pictures: red stripes, violet
-  hatching); with the window, `hcad_gui_view` style `printability`.
+  hatching); with the window, `hcad_gui_view` with `printability: true`.
 - The loop: write the model, check it, render and look, compare sizes and
   pictures with the request, fix, then export. Put the request's
   requirements in unittest blocks so the checks repeat them.
