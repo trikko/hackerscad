@@ -3311,9 +3311,6 @@ private:
         string title = ne ? count(ne, "edge") : nf ? count(nf, "face") : nv == 1 ? "vertex"
             : nv ? format("%d vertices", nv) : "Part";
         entries ~= H(title.toUpper, part.name);
-        // a piece of @parts: what is written goes to the function, so to all its pieces
-        if (part.fn != part.name)
-            entries ~= H("A PIECE OF " ~ part.fn.toUpper, "changes go to all its pieces");
 
         if (ne)
         {
@@ -3494,7 +3491,9 @@ private:
             auto under = viewport.pickAny(x, y);
             immutable onFace = under.part == contextHit.part && under.face >= 0 && under.normal.length > 0.5;
             immutable at = under.point, normal = under.normal;
-            entries ~= I("Split…", () => startSplit(contextHit.part, onFace, at, normal));
+            // a piece of @parts is split where its pieces are made, in the code
+            if (!isPiece(contextHit.part))
+                entries ~= I("Split…", () => startSplit(contextHit.part, onFace, at, normal));
         }
         {
             // hackerscad's own colours (geom/color.d), the default first
@@ -3505,7 +3504,8 @@ private:
                 colours ~= colourEntry(c.name, c.rgb, now == c.rgb ? "✓" : null);
             colours ~= S();
             colours ~= I("Other…", () => showColourWheel(contextHit.part));
-            entries ~= G("Colour", colours);
+            // a piece's colour is its @parts annotation's: all the pieces take it
+            entries ~= G(isPiece(contextHit.part) ? "Colour of all pieces" : "Colour", colours);
         }
         entries ~= I("Hide " ~ part.name, () => setPartVisible(contextHit.part, false));
         if (last.parts.length > 1)
