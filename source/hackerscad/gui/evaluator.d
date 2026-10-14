@@ -38,6 +38,9 @@ struct Request
 struct PartMesh
 {
     string name;
+    string fn;      /// the @part or @parts function it comes from (name, or for @parts its own)
+    int piece = -1; /// @parts: which piece of what fn returns
+    bool fromSolid; /// @parts: fn returns a Solid made into pieces (else a Solid[])
     string label;   /// the name in exported files: @part(name:), or `name`
     uint rgb;
     bool export_ = true;   /// false for reference parts
@@ -131,7 +134,7 @@ final class Evaluator
             if (ms[0].vertices.length == 0)
                 return;
             auto m = ms[0];
-            m.name = name;
+            m.name = m.fn = name;
             m.span = f.span;
             done(m);
         });
@@ -273,6 +276,9 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
             {
                 m = *old;
                 m.name = p.name;
+                m.fn = p.fn;
+                m.piece = p.piece;
+                m.fromSolid = p.fromSolid;
                 m.label = p.label;
                 m.rgb = p.rgb;
                 m.export_ = p.export_;
@@ -337,6 +343,9 @@ PartMesh prepare(BrepKernel k, PartResult p, double tolerance)
 {
     PartMesh m;
     m.name = p.name;
+    m.fn = p.fn;
+    m.piece = p.piece;
+    m.fromSolid = p.fromSolid;
     m.label = p.label;
     m.rgb = p.rgb;
     m.export_ = p.export_;

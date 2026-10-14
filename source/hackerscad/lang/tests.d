@@ -549,13 +549,13 @@ unittest
 
 unittest
 {
-    // planes, split and pieces
+    // planes, halves and pieces
     auto r = runModel(q{
         immutable block = box(40, 20, 30);
-        immutable halves = block.split(block.plane(faces.top).offset(-10));
-        @part Solid above() => halves.above;
-        @part Solid below() => halves.below;
-        @part Solid tilted() => box(10, 10, 10).split(plane(origin: vec(0, 0, 5), normal: vec(1, 0, 1))).below;
+        immutable cut = block.halves(block.plane(faces.top).offset(-10));
+        @part Solid above() => cut.above;
+        @part Solid below() => cut.below;
+        @part Solid tilted() => box(10, 10, 10).halves(plane(origin: vec(0, 0, 5), normal: vec(1, 0, 1))).below;
         immutable sides = (cylinder(d: 30, h: 6) - cylinder(d: 20, h: 6) - box(3, 40, 20)).pieces;
         @part Solid left() => sides[0];
         unittest
@@ -574,7 +574,19 @@ unittest
     auto kinds = r.parts[0].solid.creators.map!(c => r.features[c - 1].kind).array;
     assert(kinds.canFind("split") && kinds.canFind("box"));
 
-    assert(error("@part Solid p() => box(1, 1, 1).split(Z).above;").code == Code.type);
+    assert(error("@part Solid p() => box(1, 1, 1).halves(Z).above;").code == Code.type);
+    // split: the pieces of both sides, in order; .above without a plane points at halves
+    auto s = runModel(q{
+        immutable ring = cylinder(d: 30, h: 6) - cylinder(d: 20, h: 6);
+        @parts Solid[] bits() => ring.split(plane(origin: vec(0, 0, 0), normal: X));
+        @parts Solid[] four() => ring.split(XZ).above(XZ).sort((a, b) => a.volume > b.volume);
+    });
+    foreach (d; s.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(s.parts.length == 3 && s.parts[0].name == "bits1" && s.parts[2].name == "four");
+    assert(kernel.bbox(s.parts[0].solid.brep).center.x < kernel.bbox(s.parts[1].solid.brep).center.x);
+    auto noPlane = error("@part Solid p() => box(10, 10, 10).split(XY.offset(5.mm)).above;");
+    assert(noPlane.message.canFind("s.halves(plane).above"), noPlane.message);
     assert(error("@part Solid p() => box(1, 1, 1).plane(faces.normal(X).filter(f => false));").code == Code.kernel);
 }
 
@@ -2117,4 +2129,44 @@ unittest
     assert(error("@part Solid p() => teardrop(r: 5, angle: 91.deg).extrude(1);").message.canFind("between 3° and 90°"));
     foreach (size; ["0", "-2", "1e-6"])
         assert(error(`@part Solid p() => text("A", size: ` ~ size ~ `).extrude(1);`).message.canFind("text size"), size);
+}
+
+unittest
+{
+    // @parts: a part per separate body of a Solid, or per element of a Solid[];
+    // numbered when there are several, in the order of .pieces
+    auto r = runModel(q{
+        immutable apart = box(4, 4, 4) + box(4, 4, 4).move(x: 10) + box(4, 4, 4).move(x: 20);
+        @parts("Red Pop", varied: true) Solid cubes() => apart;
+        @parts Solid[] two() => [box(1, 1, 1).move(y: 30), box(2, 2, 2).move(y: 40)];
+        @parts Solid lone() => box(1, 1, 1).move(z: 50);
+        @part Solid whole() => apart.move(z: 70);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.algorithm : all, canFind;
+    auto names = r.parts.map!(p => p.name).array;
+    assert(names == ["cubes1", "cubes2", "cubes3", "two1", "two2", "lone", "whole"], names.join(" "));
+    assert(r.parts.all!(p => names.canFind(p.name)) && r.parts[2].fn == "cubes" && r.parts[5].fn == "lone");
+    // varied: the first in the given colour, the others different; without it all the same
+    assert(r.parts[0].rgb == 0xFF8A82 && r.parts[1].rgb != r.parts[0].rgb && r.parts[2].rgb != r.parts[1].rgb);
+    assert(r.parts[3].rgb == r.parts[4].rgb);
+    assert(isClose(partVolume(r, "cubes2"), 64, 1e-6) && isClose(partVolume(r, "whole"), 192, 1e-6));
+    // @part on a list points at @parts; @parts on what is not solid says what it takes
+    assert(error("@part Solid[] p() => [box(1, 1, 1)];").message.canFind("@parts makes a part of each"));
+    assert(error("@parts int p() => 3;").message.canFind("a Solid (a part per separate body)"));
+    assert(error("@part(varied: true) Solid p() => box(1, 1, 1);").message.canFind("@part takes"));
+}
+
+unittest
+{
+    // a list of solids says which are where
+    expectOut(q{
+        auto ps = (box(2, 2, 2) + box(2, 2, 2).move(x: 10) + box(4, 4, 4).move(z: 10)).pieces;
+        auto p = plane(origin: vec(5.mm, 0.mm, 0.mm), normal: X);
+        writeln(ps.length, " ", ps.above(p).length, " ", ps.below(p).length, " ", ps.crossing(XY).length);
+        writeln(ps.largest.volume, " ", ps.smallest.volume, " ", ps.top.centroid.z, " ", ps.right.centroid.x);
+        writeln(ps.nearest(vec(11.mm, 0.mm, 0.mm)).centroid.x, " ", ps.left.centroid.x);
+    }, "3 1 2 0\n64 mm^3 8 mm^3 12 mm 10 mm\n10 mm 0 mm");
+    assert(errorIn("auto x = box(1, 1, 1).pieces[0 .. 0].largest;").message.canFind("empty list"));
 }

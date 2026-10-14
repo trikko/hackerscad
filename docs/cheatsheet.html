@@ -29,7 +29,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top))</dt><dd>Build on a face</dd>
 <dt>lid.nextTo(body, X, gap: 10.mm)</dt><dd>Put one part beside another</dd>
 <dt>text("ABC", size: 5.mm).centered.extrude(0.6.mm)</dt><dd>Text in relief</dd>
-<dt>s.split(XY.offset(10.mm)).below</dt><dd>Cut with a plane and keep one side</dd>
+<dt>s.halves(XY.offset(10.mm)).below</dt><dd>Cut with a plane and keep one side</dd>
+<dt>s.split(XY.offset(10.mm))</dt><dd>Cut with a plane into pieces</dd>
 <dt>@part("slategray", alpha: 0.4, export: false)</dt><dd>A reference part, shown but not exported</dd>
 <dt>@param("Width", min: 10.mm, max: 100.mm) immutable width = 40.mm;</dt><dd>A parameter in the side panel</dd>
 <dt>unittest { assert(body.bbox.size.z &lt;= 40.mm, "too tall"); }</dt><dd>Check a requirement</dd>
@@ -47,7 +48,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>Axis</dt><dd>A line in space: an origin and a direction (axis(…), body.axis(edges…)); rotations and circular patterns.</dd>
 <dt>Frame</dt><dd>A coordinate system on a face or plane: origin, X, Y and Z (body.frame(faces.top)); placeOn builds on it.</dd>
 <dt>BBox</dt><dd>A solid's bounding box: min, max, size, center.</dd>
-<dt>Split</dt><dd>What split gives: .above (where the plane's normal points) and .below.</dd>
+<dt>Halves</dt><dd>What halves gives: .above (where the plane's normal points) and .below.</dd>
 <dt>Edges</dt><dd>A selection of a solid's edges, for fillet and chamfer: edges.parallel(Z), edges.of(faces.top)…</dd>
 <dt>Faces</dt><dd>A selection of a solid's faces, for shell, draft, frames: faces.top, faces.normal(X)…</dd>
 <dt>Edge</dt><dd>One edge, inside a selector predicate: edges.filter(e =&gt; e.isCircle &amp;&amp; e.radius == 3.mm).</dd>
@@ -150,7 +151,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.linearPattern(n: int, step: Vec) → Solid</dt><dd>n copies, step apart, as one solid.</dd>
 <dt>s.circularPattern(n: int, axis: Axis, angle: Angle) → Solid</dt><dd>n copies around an axis, as one solid.</dd>
 <dt>s.placeOn(frame: Frame) → Solid</dt><dd>A solid built on XY (Z up) moved onto a frame or plane.</dd>
-<dt>s.split(plane: Plane) → Split</dt><dd>Cuts with a plane: .above (where the normal points) and .below.</dd>
+<dt>s.split(plane: Plane) → Solid[]</dt><dd>Cuts with a plane into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…</dd>
+<dt>s.halves(plane: Plane) → Halves</dt><dd>Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.</dd>
 </dl></section>
 <section><h2>Profiles (2D)</h2><dl>
 <dt>rect(w: Length, h: Length) → Profile</dt><dd>A rectangle centred on the origin.</dd>
@@ -203,8 +205,15 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.isEmpty → bool</dt><dd>Whether nothing is left.</dd>
 <dt>s.isValid → bool</dt><dd>Whether the solid is a valid closed solid.</dd>
 <dt>s.pieces → Solid[]</dt><dd>The separate bodies, ordered along X, then Y, then Z.</dd>
-<dt>s.split(…).above → Solid</dt><dd>The side of the cut the normal points to.</dd>
-<dt>s.split(…).below → Solid</dt><dd>The other side of the cut.</dd>
+<dt>xs.above(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).</dd>
+<dt>xs.below(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the other side of the plane.</dd>
+<dt>xs.crossing(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those the plane cuts through.</dd>
+<dt>xs.nearest(point: Vec3) → Solid</dt><dd>Of a list of solids, the one closest to a point.</dd>
+<dt>xs.largest → Solid</dt><dd>Of a list of solids, the biggest by volume (smallest: the least).</dd>
+<dt>xs.smallest → Solid</dt><dd>Of a list of solids, the least by volume.</dd>
+<dt>xs.top → Solid</dt><dd>Of a list of solids, the highest (bottom, left, right, front, back alike).</dd>
+<dt>s.halves(…).above → Solid</dt><dd>The side of the cut the normal points to.</dd>
+<dt>s.halves(…).below → Solid</dt><dd>The other side of the cut.</dd>
 <dt>s.bbox.min → Vec</dt><dd>The lowest corner.</dd>
 <dt>s.bbox.max → Vec</dt><dd>The highest corner.</dd>
 <dt>s.bbox.size → Vec</dt><dd>Width, depth and height.</dd>
@@ -314,6 +323,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 </dl></section>
 <section><h2>Annotations</h2><dl>
 <dt>@part(color, alpha: 0..1, export: bool, name: string)</dt><dd>A body to show and export: @part("steelblue"); name: its name in exported files.</dd>
+<dt>@parts(color, alpha: 0..1, export: bool, name: string, varied: bool)</dt><dd>A part per separate body of the Solid returned (or per element of a Solid[]), named clip1, clip2…; varied: true, each in its own colour.</dd>
 <dt>@param(description, min:, max:, step:, choices:)</dt><dd>A parameter with a field in the panel.</dd>
 <dt>@preset(name, value)</dt><dd>The parameter's value in a named preset.</dd>
 <dt>@drawing</dt><dd>A function returning a technical drawing.</dd>

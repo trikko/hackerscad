@@ -37,12 +37,15 @@ struct ParamInfo
 
 struct PartResult
 {
-    string name;
+    string name;    /// the function's name; for @parts, with the piece's number (clip2)
+    string fn;      /// the @part or @parts function it comes from
     SolidVal solid;
     uint rgb;       /// see alphaOf
     Span span;
     bool export_ = true;   /// false: shown, but left out of STL/3MF/STEP (a reference part)
     string label;   /// the name in exported files: @part(name:), or `name`
+    int piece = -1; /// @parts: which piece of what the function returns (from 0)
+    bool fromSolid; /// @parts: the function returns a Solid, made into its pieces (else a Solid[])
 }
 
 /// A modelling operation that creates faces, with the code that ran it.
@@ -254,46 +257,79 @@ final class Interp
                 throw new HcadError(Code.undefined, format("'%s' is not a @param of this model", name), Span(path),
                     suggest(name, params.map!(p => p.name).array));
 
-        // parts
+        // parts: @part, a body; @parts, a part per body of a Solid or per element of a Solid[]
         size_t partCount, partIndex;
         foreach (f; collectOrdered!FuncDecl(mod))
-            partCount += findAttr(f.attrs, "part") !is null;
+            partCount += findAttr(f.attrs, "part") !is null || findAttr(f.attrs, "parts") !is null;
         foreach (f; collectOrdered!FuncDecl(mod))
         {
             auto a = findAttr(f.attrs, "part");
+            immutable many = a is null;
+            if (many)
+                a = findAttr(f.attrs, "parts");
             if (a is null)
                 continue;
+            immutable at = many ? "@parts" : "@part";
             stage(format("part %d of %d: %s", ++partIndex, partCount, f.name));
             auto v = callPart(f, mod);
-            if (v.kind != Kind.solid)
-                throw new HcadError(Code.type, format("@part '%s' must return a Solid, not %s", f.name, v.typeName), f.nameSpan);
-            if (v.solid.brep is null)
-                throw new HcadError(Code.kernel, format("@part '%s' is empty (did a boolean remove everything?)", f.name), f.nameSpan);
-            if (v.solid.path)
-                throw new HcadError(Code.type, format("@part '%s' returns a Path: sweep a profile along it", f.name), f.nameSpan);
-            if (v.solid.flat)
-                throw new HcadError(Code.type, format("@part '%s' returns a 2D profile: extrude or revolve it", f.name), f.nameSpan);
-            // @part("colour", alpha: 0.5, export: false, name: "Tank")
+            SolidVal[] items;
+            import std.algorithm : all;
+            if (v.kind == Kind.array && v.arr.all!(e => e.kind == Kind.solid))
+            {
+                if (!many)
+                    throw new HcadError(Code.type, format("@part '%s' returns %d solids: @parts makes a part of each",
+                        f.name, v.arr.length), f.nameSpan);
+                foreach (e; v.arr)
+                    items ~= e.solid;
+            }
+            else if (v.kind == Kind.solid)
+            {
+                if (v.solid.brep is null)
+                    throw new HcadError(Code.kernel, format("%s '%s' is empty (did a boolean remove everything?)", at, f.name), f.nameSpan);
+                if (v.solid.path)
+                    throw new HcadError(Code.type, format("%s '%s' returns a Path: sweep a profile along it", at, f.name), f.nameSpan);
+                if (v.solid.flat)
+                    throw new HcadError(Code.type, format("%s '%s' returns a 2D profile: extrude or revolve it", at, f.name), f.nameSpan);
+                import hackerscad.lang.builtins : piecesOf;
+                items = many ? piecesOf(this, v.solid, f.nameSpan) : [v.solid];
+            }
+            else
+                throw new HcadError(Code.type, many ? format("@parts '%s' must return a Solid (a part per separate body) "
+                    ~ "or a Solid[] (a part per element), not %s", f.name, v.typeName)
+                    : format("@part '%s' must return a Solid, not %s", f.name, v.typeName), f.nameSpan);
+            if (items.length == 0)
+                throw new HcadError(Code.kernel, format("@parts '%s' has no solid to make a part of", f.name), f.nameSpan);
+            // @part("colour", alpha: 0.5, export: false, name: "Tank"); @parts also varied: true
             import hackerscad.lang.builtins : colorOf;
-            uint rgb = v.solid.hasColor ? v.solid.rgb : defaultPartColor;
-            bool export_ = true;
+            uint rgb = defaultPartColor;
+            bool coloured, export_ = true, varied;
+            double alpha = double.nan;
             string label = f.name;
             foreach (i, arg; a.args)
             {
                 auto val = eval(arg.value, mod.env);
                 if (arg.name.length == 0 && i == 0)
+                {
                     rgb = colorOf(val, arg.span);
+                    coloured = true;
+                }
                 else if (arg.name == "alpha")
                 {
                     if (!val.isNum || val.n.value < 0 || val.n.value > 1)
                         throw new HcadError(Code.type, "alpha goes from 0 (invisible) to 1 (opaque)", arg.span);
-                    rgb = withAlpha(rgb, val.n.value);
+                    alpha = val.n.value;
                 }
                 else if (arg.name == "export")
                 {
                     if (val.kind != Kind.bool_)
                         throw new HcadError(Code.type, "export must be true or false", arg.span);
                     export_ = val.b;
+                }
+                else if (arg.name == "varied" && many)
+                {
+                    if (val.kind != Kind.bool_)
+                        throw new HcadError(Code.type, "varied must be true or false", arg.span);
+                    varied = val.b;
                 }
                 else if (arg.name == "name")
                 {
@@ -303,18 +339,39 @@ final class Interp
                     label = val.s.strip;
                 }
                 else
-                    throw new HcadError(Code.type, "@part takes a colour, alpha:, export: and name:", arg.span,
-                        suggest(arg.name, ["alpha", "export", "name"]));
+                    throw new HcadError(Code.type, many ? "@parts takes a colour, alpha:, export:, name: and varied:"
+                        : "@part takes a colour, alpha:, export: and name:", arg.span,
+                        suggest(arg.name, many ? ["alpha", "export", "name", "varied"] : ["alpha", "export", "name"]));
             }
-            foreach (q; r.parts)
-                if (q.label.toLower == label.toLower)
-                    throw new HcadError(Code.type, format("two parts would have the same name in exported files, "
-                        ~ "'%s': give one a name: of its own", label), f.nameSpan);
-            // an invalid solid exports as a broken mesh: say so instead of "ok"
-            if (!kernel.isValid(v.solid.brep))
-                diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("@part '%s' is not a valid closed solid "
-                    ~ "(a self-intersecting outline, overlapping sweep or fold?): exports may be broken", f.name), f.nameSpan);
-            r.parts ~= PartResult(f.name, v.solid, rgb, f.nameSpan, export_, label);
+            // varied: the pieces in colours that tell apart, the first in the part's
+            auto tints = variedColours(coloured ? rgb : items[0].hasColor ? items[0].rgb : rgb, items.length);
+            foreach (k, item; items)
+            {
+                immutable one = items.length == 1;
+                immutable name = one ? f.name : format("%s%d", f.name, k + 1);
+                immutable partLabel = one ? label : format("%s%d", label, k + 1);
+                // the annotation's colour, else the solid's own, else the default
+                uint c = coloured ? rgb : item.hasColor ? item.rgb : rgb;
+                if (varied && !(item.hasColor && !coloured))
+                    c = tints[k];
+                if (alpha == alpha)
+                    c = withAlpha(c, alpha);
+                foreach (q; r.parts)
+                    if (q.label.toLower == partLabel.toLower)
+                        throw new HcadError(Code.type, format("two parts would have the same name in exported files, "
+                            ~ "'%s': give one a name: of its own", partLabel), f.nameSpan);
+                // an invalid solid exports as a broken mesh: say so instead of "ok"
+                if (!kernel.isValid(item.brep))
+                    diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("%s '%s' is not a valid closed solid "
+                        ~ "(a self-intersecting outline, overlapping sweep or fold?): exports may be broken", at, name), f.nameSpan);
+                auto pr = PartResult(name, f.name, item, c, f.nameSpan, export_, partLabel);
+                if (many)
+                {
+                    pr.piece = cast(int) k;
+                    pr.fromSolid = v.kind == Kind.solid;
+                }
+                r.parts ~= pr;
+            }
         }
         // drawings: collected here, projected only when exported
         foreach (f; collectOrdered!FuncDecl(mod))
@@ -488,7 +545,7 @@ final class Interp
                 declare(s, mod);
         else if (auto f = cast(FuncDecl) d)
         {
-            checkAttrs(f.attrs, ["part", "drawing"]);
+            checkAttrs(f.attrs, ["part", "parts", "drawing"]);
             define(f.name, Value.make(Kind.func, closureOf(f, env, mod)), f.nameSpan, f.isPrivate);
         }
         else if (auto s = cast(StructDecl) d)
@@ -2048,7 +2105,7 @@ final class Interp
         c.mod = mod;
         c.span = f.nameSpan;
         c.decl = f;
-        c.isPart = hasAttr(f.attrs, "part");
+        c.isPart = hasAttr(f.attrs, "part") || hasAttr(f.attrs, "parts");
         return c;
     }
 

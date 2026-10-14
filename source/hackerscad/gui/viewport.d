@@ -142,8 +142,13 @@ final class Viewport
     private double handleStartOffset;
     void delegate(double offset) onSectionDrag;
     // the X past a corner of the section plane: a click closes the section
-    private bool hoverClose, pressedClose;
-    void delegate() onSectionClose;
+    /// The round buttons drawn in the view: an X closes or cancels, a ✓
+    /// accepts (the section's X; the split's ✓; Move and Rotate's X and ✓).
+    enum ViewButton { none, sectionClose, sectionAccept, gizmoCancel, gizmoAccept }
+    private ViewButton hoverButton, pressedButton;
+    void delegate() onSectionClose, onSectionAccept, onGizmoCancel, onGizmoAccept;
+    /// Split: the section plane covers this part only, and has a ✓ too.
+    public int sectionPart = -1;
 
     // camera: orbit around target, Z up
     private Vec3 target;
@@ -186,13 +191,13 @@ final class Viewport
                 dragPan = (leftMode == DragMode.pan) != shift;
             dragButton = button;
             // a left drag on the frame, arrow or rings moving or turning a part
-            gizmoGrab = button == 1 && gizmo != Gizmo.none ? gizmoAt(x, y) : -1;
+            gizmoGrab = button == 1 && gizmo != Gizmo.none && buttonAt(x, y) == ViewButton.none ? gizmoAt(x, y) : -1;
             if (gizmoGrab >= 0)
                 grabGizmo(x, y);
             // a left drag from a handle of the section plane moves the plane;
-            // a click on its X closes it
-            pressedClose = button == 1 && gizmoGrab < 0 && closeAt(x, y);
-            sectionHandle = button == 1 && !pressedClose && gizmoGrab < 0 ? handleAt(x, y) : -1;
+            // a click on an X or a ✓ closes or accepts
+            pressedButton = button == 1 && gizmoGrab < 0 ? buttonAt(x, y) : ViewButton.none;
+            sectionHandle = button == 1 && pressedButton == ViewButton.none && gizmoGrab < 0 ? handleAt(x, y) : -1;
             handleStartOffset = sectionOffset;
             startShift = shift;
             startYaw = yaw;
@@ -207,7 +212,7 @@ final class Viewport
                 dragGizmo(startX + dx, startY + dy, dx, dy, (g.getCurrentEventState() & ModifierType.ShiftMask) != 0);
                 return;
             }
-            if (pressedClose)
+            if (pressedButton != ViewButton.none)
                 return;
             if (sectionHandle >= 0)
             {
@@ -244,12 +249,18 @@ final class Viewport
                 updateHoverCursor();
                 return;
             }
-            if (pressedClose)
+            if (pressedButton != ViewButton.none)
             {
-                pressedClose = false;
-                // still on the X when released: closed
-                if (closeAt(startX + dx, startY + dy) && onSectionClose !is null)
-                    onSectionClose();
+                // still on the button when released: what it does
+                immutable b = pressedButton;
+                pressedButton = ViewButton.none;
+                if (buttonAt(startX + dx, startY + dy) == b)
+                {
+                    auto run = b == ViewButton.sectionClose ? onSectionClose : b == ViewButton.sectionAccept
+                        ? onSectionAccept : b == ViewButton.gizmoCancel ? onGizmoCancel : onGizmoAccept;
+                    if (run !is null)
+                        run();
+                }
                 updateHoverCursor();
                 return;
             }
@@ -513,14 +524,15 @@ final class Viewport
         redraw();
     }
 
-    /// Where the parts start and end along a direction (for the section slider).
-    void extentAlong(Vec3 n, out double lo, out double hi)
+    /// Where the parts start and end along a direction (for the section
+    /// slider); `only`: that part alone (split).
+    void extentAlong(Vec3 n, out double lo, out double hi, long only = -1)
     {
         lo = double.infinity;
         hi = -double.infinity;
         foreach (i, p; parts)
         {
-            if (isHidden(i))
+            if (isHidden(i) || (only >= 0 && i != only))
                 continue;
             foreach (cx; [p.bbox.min.x, p.bbox.max.x])
                 foreach (cy; [p.bbox.min.y, p.bbox.max.y])
@@ -629,7 +641,13 @@ final class Viewport
         auto u = (abs(n.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(n).normalized;
         auto v = n.cross(u);
         Vec3 lo, hi;
-        if (!drawnBox(lo, hi))
+        if (sectionPart >= 0 && sectionPart < parts.length)
+        {
+            // split: the part alone
+            lo = parts[sectionPart].bbox.min;
+            hi = parts[sectionPart].bbox.max;
+        }
+        else if (!drawnBox(lo, hi))
             lo = hi = Vec3(0, 0, 0);
         // the corners of the box, along u and v
         double u0 = double.max, u1 = -double.max, v0 = double.max, v1 = -double.max;
@@ -693,7 +711,62 @@ final class Viewport
         gizmoCentre = (b.min + b.max) * 0.5;
         keepPreview = false;
         gizmoGrab = gizmoHover = -1;
+        makeRoom();
         redraw();
+    }
+
+    /// Zooms out, if needed, until the tool open (the frame or rings, the
+    /// split's plane) and its buttons show whole, 30 pixels in from the
+    /// sides: once, when the tool opens; never closer, never while dragging.
+    public void makeRoom()
+    {
+        immutable w = area.getWidth(), h = area.getHeight();
+        if (w <= 0 || h <= 0)
+            return;
+        Vec3[] shown()
+        {
+            Vec3[] pts;
+            if (gizmo == Gizmo.move)
+                pts = gizmoFrame()[] ~ [arrowTip(0), arrowTip(1), arrowTip(2)];
+            else if (gizmo == Gizmo.rotate)
+                foreach (k; 0 .. 3)
+                    foreach (n; 0 .. 24)
+                        pts ~= ringPoint(k, 15.0 * n);
+            else if (section && sectionPart >= 0)
+                pts = sectionQuad()[].dup;
+            foreach (which; [ViewButton.sectionClose, ViewButton.sectionAccept, ViewButton.gizmoCancel,
+                    ViewButton.gizmoAccept])
+            {
+                Vec3 spot;
+                if (buttonSpot(which, spot))
+                    pts ~= spot;
+            }
+            return pts;
+        }
+        enum margin = 30;
+        bool zoomed;
+        foreach (_; 0 .. 40)
+        {
+            bool fits = true;
+            foreach (p; shown())
+            {
+                double x, y;
+                if (!project(p, x, y) || x < margin || y < margin || x > w - margin || y > h - margin)
+                {
+                    fits = false;
+                    break;
+                }
+            }
+            if (fits)
+                break;
+            distance *= 1.12;
+            zoomed = true;
+        }
+        if (zoomed)
+        {
+            moved();
+            redraw();
+        }
     }
 
     /// Takes them away; `keep` leaves the part drawn where it went until the
@@ -1119,13 +1192,140 @@ final class Viewport
 
     enum closeGap = 28;
 
-    /// Whether window point (x, y) is on the X that closes the section.
-    bool closeAt(double x, double y)
+    /// `spot` moved `pixels` along the screen's right (negative: left).
+    private Vec3 besideOnScreen(Vec3 spot, double pixels) => spot + basis().right * (pixels * mmPerPixelAt(spot));
+
+    /// Where button `which` is, if it is shown.
+    bool buttonSpot(ViewButton which, out Vec3 spot)
     {
-        if (!section)
+        enum step = 2 * handlePixels + 12;   // from one button to the next, pixels
+        final switch (which)
+        {
+        case ViewButton.none:
             return false;
-        double cx, cy;
-        return project(closeSpot(), cx, cy) && abs(cx - x) <= handlePixels + 2 && abs(cy - y) <= handlePixels + 2;
+        // past the corner, out of the handle's way: the ✓ first, the X on its right
+        case ViewButton.sectionClose:
+            if (!section)
+                return false;
+            spot = sectionPart >= 0 ? besideOnScreen(closeSpot(), step) : closeSpot();
+            return true;
+        case ViewButton.sectionAccept:
+            if (!section || sectionPart < 0)
+                return false;
+            spot = closeSpot();
+            return true;
+        case ViewButton.gizmoCancel, ViewButton.gizmoAccept:
+            if (gizmo == Gizmo.none)
+                return false;
+            spot = gizmoCorner();
+            if (which == ViewButton.gizmoCancel)
+                spot = besideOnScreen(spot, step);
+            return true;
+        }
+    }
+
+    /// Past the top right of the frame and arrows (move) or the rings
+    /// (rotate) as seen, `closeGap` pixels out: where their X goes.
+    private Vec3 gizmoCorner()
+    {
+        Vec3[] pts;
+        if (gizmo == Gizmo.move)
+        {
+            pts = gizmoFrame()[] ~ [arrowTip(0), arrowTip(1), arrowTip(2)];
+        }
+        else
+            foreach (k; 0 .. 3)
+                foreach (n; 0 .. 24)
+                    pts ~= ringPoint(k, 15.0 * n);
+        int best = -1;
+        double bx = 0, by = 0, cx = 0, cy = 0;
+        int seen;
+        foreach (i, p; pts)
+        {
+            double x, y;
+            if (!project(p, x, y))
+                continue;
+            cx += x;
+            cy += y;
+            seen++;
+            if (best < 0 || x - y > bx - by)
+            {
+                best = cast(int) i;
+                bx = x;
+                by = y;
+            }
+        }
+        if (best < 0)
+            return gizmoCentre;
+        cx /= seen;
+        cy /= seen;
+        immutable dx = bx - cx, dy = by - cy, len = max(1e-6, sqrt(dx * dx + dy * dy));
+        auto b = basis();
+        immutable k = closeGap * mmPerPixelAt(pts[best]) / len;
+        return pts[best] + b.right * (dx * k) - b.up * (dy * k);
+    }
+
+    /// The button at window point (x, y), if any.
+    ViewButton buttonAt(double x, double y)
+    {
+        foreach (which; [ViewButton.gizmoAccept, ViewButton.gizmoCancel, ViewButton.sectionAccept, ViewButton.sectionClose])
+        {
+            Vec3 spot;
+            double cx, cy;
+            if (buttonSpot(which, spot) && project(spot, cx, cy)
+                && abs(cx - x) <= handlePixels + 2 && abs(cy - y) <= handlePixels + 2)
+                return which;
+        }
+        return ViewButton.none;
+    }
+
+    /// Whether window point (x, y) is on the X that closes the section.
+    bool closeAt(double x, double y) => buttonAt(x, y) == ViewButton.sectionClose;
+
+    /// The buttons shown: a square facing the viewer, the same size at any
+    /// zoom, with an X (red under the pointer) or a ✓ (green under it).
+    void drawButtons()
+    {
+        auto b = basis();
+        glDisable(GL_DEPTH_TEST);
+        glUniform1i(uFlat, 1);
+        glUniform1f(uAlpha, 1);
+        foreach (which; [ViewButton.sectionClose, ViewButton.sectionAccept, ViewButton.gizmoCancel, ViewButton.gizmoAccept])
+        {
+            Vec3 spot;
+            if (!buttonSpot(which, spot))
+                continue;
+            immutable accept = which == ViewButton.sectionAccept || which == ViewButton.gizmoAccept;
+            immutable live = which == hoverButton;
+            immutable r = (handlePixels + 2) * mmPerPixelAt(spot);
+            auto ru = b.right * r, rv = b.up * r;
+            Vec3[4] c = [spot + ru + rv, spot - ru + rv, spot - ru - rv, spot + ru - rv];
+            float[] fill, mark;
+            foreach (i; [0, 1, 2, 0, 2, 3])
+                fill ~= [cast(float) c[i].x, cast(float) c[i].y, cast(float) c[i].z];
+            Vec3[] strokes;
+            if (accept)
+                // a tick: down to the bottom third, then up to the right
+                strokes = [spot - ru * 0.5, spot - rv * 0.45 - ru * 0.1, spot - rv * 0.45 - ru * 0.1, spot + ru * 0.55 + rv * 0.5];
+            else
+                strokes = [spot + (c[0] - spot) * 0.55, spot + (c[2] - spot) * 0.55, spot + (c[1] - spot) * 0.55,
+                    spot + (c[3] - spot) * 0.55];
+            foreach (e; strokes)
+                mark ~= [cast(float) e.x, cast(float) e.y, cast(float) e.z];
+            immutable Vec3 colour = accept ? Vec3(0.2, 0.62, 0.3) : Vec3(0.85, 0.2, 0.15);
+            immutable Vec3 ink = accept ? Vec3(0.2, 0.62, 0.3) : Vec3(0.9, 0.35, 0.2);
+            uploadLines(fill);
+            auto f = live ? colour : Vec3(1, 1, 1);
+            glUniform3f(uColor, cast(float) f.x, cast(float) f.y, cast(float) f.z);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            uploadLines(mark);
+            auto m = live ? Vec3(1, 1, 1) : ink;
+            glUniform3f(uColor, cast(float) m.x, cast(float) m.y, cast(float) m.z);
+            glLineWidth(2);
+            glDrawArrays(GL_LINES, 0, 4);
+            glLineWidth(1);
+        }
+        glEnable(GL_DEPTH_TEST);
     }
 
     /// How big a handle is on screen, from its centre to its side (pixels).
@@ -1187,33 +1387,6 @@ final class Viewport
             glDrawArrays(GL_LINES, 0, 8);
             glLineWidth(1);
         }
-        // the X that closes the section: a round-cornered square, red under the pointer
-        auto spot = closeSpot();
-        immutable r = (handlePixels + 2) * mmPerPixelAt(spot);
-        auto ru = b.right * r, rv = b.up * r;
-        Vec3[4] c = [spot + ru + rv, spot - ru + rv, spot - ru - rv, spot + ru - rv];
-        float[] fill, cross;
-        foreach (i; [0, 1, 2, 0, 2, 3])
-            fill ~= [cast(float) c[i].x, cast(float) c[i].y, cast(float) c[i].z];
-        foreach (i; [0, 2, 1, 3])
-        {
-            auto e = spot + (c[i] - spot) * 0.55;
-            cross ~= [cast(float) e.x, cast(float) e.y, cast(float) e.z];
-        }
-        uploadLines(fill);
-        if (hoverClose)
-            glUniform3f(uColor, 0.85f, 0.2f, 0.15f);
-        else
-            glUniform3f(uColor, 1.0f, 1.0f, 1.0f);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-        uploadLines(cross);
-        if (hoverClose)
-            glUniform3f(uColor, 1.0f, 1.0f, 1.0f);
-        else
-            glUniform3f(uColor, 0.9f, 0.35f, 0.2f);
-        glLineWidth(2);
-        glDrawArrays(GL_LINES, 0, 4);
-        glLineWidth(1);
         glEnable(GL_DEPTH_TEST);
     }
 
@@ -1563,9 +1736,12 @@ private:
 
     void updateHoverCursor()
     {
-        // over a handle of the section plane: it can be dragged; over its X,
-        // a click closes the section
-        if (gizmo != Gizmo.none)
+        // over a handle of the section plane: it can be dragged; over an X or
+        // a ✓, a click closes or accepts (before the gizmo, which lies near)
+        immutable onButton = buttonAt(pointerX, pointerY);
+        if (onButton != ViewButton.none && gizmoHover != -1)
+            gizmoHover = -1;
+        if (gizmo != Gizmo.none && onButton == ViewButton.none)
         {
             immutable g = gizmoAt(pointerX, pointerY);
             if (g != gizmoHover)
@@ -1579,15 +1755,14 @@ private:
                 return;
             }
         }
-        immutable onClose = closeAt(pointerX, pointerY);
-        immutable handle = onClose ? -1 : handleAt(pointerX, pointerY);
-        if (handle != hoverHandle || onClose != hoverClose)
+        immutable handle = onButton != ViewButton.none ? -1 : handleAt(pointerX, pointerY);
+        if (handle != hoverHandle || onButton != hoverButton)
         {
             hoverHandle = handle;
-            hoverClose = onClose;
+            hoverButton = onButton;
             redraw();
         }
-        if (onClose)
+        if (onButton != ViewButton.none)
         {
             area.setCursorFromName("pointer");
             return;
@@ -2357,6 +2532,7 @@ private:
         renderSketches();
         drawGizmo();
         drawHoverMark();
+        drawButtons();
         glBindVertexArray(0);
         if (onFrame !is null)
             onFrame();

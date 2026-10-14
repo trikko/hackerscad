@@ -1,6 +1,6 @@
 // Split case: a case cut in two halves, with pins that align them
 // A small case cut in two halves, with pins that keep them
-// aligned: split() cuts a solid with a plane, frame() gives a
+// aligned: halves() cuts a solid with a plane, frame() gives a
 // coordinate system on a face to build on. The pins stand on
 // posts in the inner corners, easy to print.
 module splitcase;
@@ -49,15 +49,15 @@ Solid closed()
     return c;
 }
 
-// cut halfway up: .below and .above are the two halves
-immutable halves = closed().split(plane(origin: vec(0.mm, 0.mm, height / 2), normal: Z));
+// cut halfway up: .below and .above are the two sides
+immutable sides = closed().halves(plane(origin: vec(0.mm, 0.mm, height / 2), normal: Z));
 
 @part
 Solid base()
 {
     // the frame of the cut face: origin at its centre, Z pointing up
-    auto f = halves.below.frame(faces.top);
-    auto b = halves.below;
+    auto f = sides.below.frame(faces.top);
+    auto b = sides.below;
     // the pins, chamfered at the tip so they find their holes
     auto pin = cylinder(d: pinD, h: pinH)
         .chamfer(edges.of(faces.top), d: 0.6.mm);
@@ -70,8 +70,8 @@ Solid base()
 Solid lid()
 {
     // the same spots on the lid's cut face (its normal points down)
-    auto f = halves.above.frame(faces.bottom);
-    auto l = halves.above;
+    auto f = sides.above.frame(faces.bottom);
+    auto l = sides.above;
     immutable d = pinD + 2 * clearance;
     // (its frame's Y points the other way: the lid is seen from below)
     foreach (p; corners)

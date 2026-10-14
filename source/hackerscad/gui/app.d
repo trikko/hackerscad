@@ -525,6 +525,11 @@ final class MainWindow
         sectionToggle = toggle("hcad-section-symbolic", "Section view: cut the model with a plane you can slide", false);
         sectionToggle.connectToggled(() {
             sectionBar.setVisible(sectionToggle.getActive());
+            // closed: a split under way ends too
+            if (!sectionToggle.getActive())
+                endSplit();
+            else
+                planeFromSelection();
             updateSection(true);
         });
         inspectToggle = toggle("edit-find-symbolic", "Inspect (" ~ shortcutKey ~ "+I): click a line of code to see the solids and "
@@ -759,7 +764,15 @@ final class MainWindow
         };
         // its X clicked: the section closes, as with the button
         viewport.onSectionClose = () => sectionToggle.setActive(false);
+        // the split's ✓: the cut written into the code
+        viewport.onSectionAccept = () {
+            if (auto problem = applySplit())
+                info(problem);
+        };
         viewport.onGizmo = (double x, double y) => showTransformValue(x, y);
+        // the ✓ and the X next to a part being moved or turned
+        viewport.onGizmoAccept = () => applyTransform();
+        viewport.onGizmoCancel = () => cancelTransform();
         // labels move after the frame, not while the view is being drawn
         viewport.onFrame = () {
             if (positionQueued || dimButtons.length == 0)
@@ -779,7 +792,6 @@ final class MainWindow
             import gtk.types : Overflow;
             overlay.setOverflow(Overflow.Hidden);
         }
-        overlay.addOverlay(gizmoTip);   // made with the transform bar, before
         // no usable OpenGL, and the application knows what to do: say it
         viewport.onGlFailed = (string help) {
             auto card = new Label(help);
@@ -1437,6 +1449,17 @@ private:
         {
             viewport.setParts(o.parts, firstResult);
             firstResult = false;
+            // a split under way follows its part by name; gone (split, renamed), it ends
+            if (splitPart >= 0)
+            {
+                splitPart = -1;
+                foreach (i, q; o.parts)
+                    if (q.name == splitName)
+                        splitPart = cast(int) i;
+                viewport.sectionPart = splitPart;
+                if (splitPart < 0)
+                    sectionToggle.setActive(false);
+            }
             noteGraphics();
             import std.algorithm : map;
             import std.array : array;
@@ -1880,7 +1903,7 @@ private:
     // ---- moving and turning a part by hand
 
     Box transformBar;
-    Label transformTitle, transformValue, gizmoTip;
+    Label transformTitle, transformValue;
     string transformPartName;
 
     void buildTransformBar()
@@ -1896,25 +1919,9 @@ private:
         transformValue.setHexpand(true);
         transformValue.setEllipsize(EllipsizeMode.End);
         transformBar.append(transformValue);
-        auto cancel = new Button;
-        cancel.setLabel("Cancel");
-        cancel.setTooltipText("Leave the part where it was (Esc)");
-        cancel.connectClicked(() => cancelTransform());
-        transformBar.append(cancel);
-        auto apply = new Button;
-        apply.setLabel("Apply");
-        apply.setTooltipText("Write the move or turn into the code (Enter)");
-        apply.addCssClass("suggested-action");
-        apply.connectClicked(() => applyTransform());
-        transformBar.append(apply);
+        // applied and cancelled by the ✓ and the X next to the part
+        transformBar.setTooltipText("✓ or Enter writes it into the code, X or Esc leaves the part as it was");
         transformBar.setVisible(false);
-        // the value next to the pointer while dragging
-        gizmoTip = new Label("");
-        gizmoTip.addCssClass("hcad-gizmo-value");
-        gizmoTip.setHalign(Align.Start);
-        gizmoTip.setValign(Align.Start);
-        gizmoTip.setCanTarget(false);
-        gizmoTip.setVisible(false);
     }
 
     /// The frame (move) or the rings (rotate) on part `index`.
@@ -1925,47 +1932,62 @@ private:
         auto part = last.parts[index];
         if (part.span.file != absolutePath(path))
             return info(format("part '%s' is defined in another file", part.name));
-        transformPartName = part.name;
+        transformPartName = part.fn;   // a piece of @parts moves with all its function makes
         viewport.startGizmo(kind, index);
         transformTitle.setLabel((kind == Viewport.Gizmo.move ? "Move " : "Rotate ") ~ part.name);
         transformValue.setLabel(transformText());
         transformBar.setVisible(true);
     }
 
-    /// What the drag has done so far, as words: for the bar (`tip` false)
-    /// how many turns, next to the pointer the turn being made.
-    string transformText(bool tip = false)
+    /// What the drag has done so far, as Apply will write it: how far along
+    /// X, Y and Z, or the angles about them of all the turns as one.
+    string transformText()
     {
         if (viewport.gizmo == Viewport.Gizmo.move)
         {
             auto m = viewport.gizmoMove;
             string[] parts;
-            foreach (i, n; ["x", "y", "z"])
+            foreach (i, n; ["X", "Y", "Z"])
                 if (m[i] != 0)
                     parts ~= format("%s %+g mm", n, m[i]);
-            return parts.length ? parts.join(", ") : "not moved";
+            return parts.length ? parts.join("   ") : "not moved";
         }
-        size_t turns;
-        foreach (t; viewport.gizmoTurns)
-            turns += t.angle != 0;
-        if (tip && viewport.gizmoTurns.length)
-        {
-            // the short way: a turn and a half reads as half a turn
-            import hackerscad.tool.codegen : halfTurn;
-            auto t = viewport.gizmoTurns[$ - 1];
-            return format("%s %+g°", ["X", "Y", "Z"][t.axis], halfTurn(t.angle));
-        }
-        return turns == 0 ? "not turned" : turns == 1 ? "1 turn" : format("%d turns", turns);
+        auto angles = combinedTurn();
+        string[] parts;
+        foreach (i, n; ["X", "Y", "Z"])
+            if (angles[i] != 0)
+                parts ~= format("%s %+g°", n, angles[i]);
+        return parts.length ? parts.join("   ") : "not turned";
     }
 
-    /// The value in the bar and next to the pointer at (x, y).
+    /// All the turns made, in order, as one: the angles about X, Y and Z
+    /// (degrees, between -180 and 180).
+    Vec3 combinedTurn()
+    {
+        import hackerscad.tool.codegen : turnMatrix, turnAngles;
+        double[3][3] m = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+        foreach (t; viewport.gizmoTurns)
+        {
+            Vec3 e;
+            e[t.axis] = t.angle;
+            auto r = turnMatrix(e);
+            double[3][3] p;
+            foreach (row; 0 .. 3)
+                foreach (col; 0 .. 3)
+                {
+                    p[row][col] = 0;
+                    foreach (q; 0 .. 3)
+                        p[row][col] += r[row][q] * m[q][col];
+                }
+            m = p;
+        }
+        return turnAngles(m);
+    }
+
+    /// The values in the bar, while the part moves or turns.
     void showTransformValue(double x, double y)
     {
         transformValue.setLabel(transformText());
-        gizmoTip.setLabel(transformText(true));
-        gizmoTip.setMarginStart(cast(int) x + 18);
-        gizmoTip.setMarginTop(cast(int) y + 18);
-        gizmoTip.setVisible(true);
     }
 
     void cancelTransform()
@@ -1974,7 +1996,6 @@ private:
             return;
         viewport.stopGizmo();
         transformBar.setVisible(false);
-        gizmoTip.setVisible(false);
     }
 
     /// Writes the move or turn into the part's code (or nothing, if the part
@@ -1991,38 +2012,19 @@ private:
         }
         else
         {
-            // all the turns, in order, as one: the angles about X, Y and Z
-            import hackerscad.tool.codegen : turnMatrix, turnAngles;
-            double[3][3] m = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-            foreach (t; viewport.gizmoTurns)
-            {
-                Vec3 e;
-                e[t.axis] = t.angle;
-                auto r = turnMatrix(e);
-                double[3][3] p;
-                foreach (row; 0 .. 3)
-                    foreach (col; 0 .. 3)
-                    {
-                        p[row][col] = 0;
-                        foreach (q; 0 .. 3)
-                            p[row][col] += r[row][q] * m[q][col];
-                    }
-                m = p;
-            }
-            auto angles = turnAngles(m);
+            auto angles = combinedTurn();
             if (angles.length > 0)
                 steps ~= Turn("rotate", angles);
         }
         if (steps.length == 0)
             return cancelTransform();
-        if (auto problem = writeTransforms(transformPartName, steps, viewport.gizmoCentre))
+        if (auto problem = writeTransforms(viewport.gizmoPart, steps, viewport.gizmoCentre))
         {
             info(problem);
             return cancelTransform();
         }
         viewport.stopGizmo(true);
         transformBar.setVisible(false);
-        gizmoTip.setVisible(false);
     }
 
     /// A move (by v, mm) or a turn (v the angles about X, Y, Z, degrees).
@@ -2034,20 +2036,30 @@ private:
 
     /// Moves (kind "move", by v in mm) or turns (kind "rotate", v the angles
     /// in degrees, about `around`) part `name` in the code; the problem, or null.
-    string writeTransform(string name, string kind, Vec3 v, Vec3 around) =>
-        writeTransforms(name, [Turn(kind, v)], around);
+    string writeTransform(int index, string kind, Vec3 v, Vec3 around) =>
+        writeTransforms(index, [Turn(kind, v)], around);
+
+    /// Whether part `index` is one piece of several made by @parts: what is
+    /// written for it goes to that piece alone (pieces[k] = pieces[k]…).
+    bool isPiece(size_t index) => index < last.parts.length && last.parts[index].piece >= 0
+        && (last.parts[index].name != last.parts[index].fn || !last.parts[index].fromSolid);
 
     /// The moves and turns one after the other, in one change of the code.
-    string writeTransforms(string name, Turn[] steps, Vec3 around)
+    string writeTransforms(int index, Turn[] steps, Vec3 around)
     {
         if (busy())
             return "wait for the evaluation to finish, then try again";
         try
         {
-            import hackerscad.tool.codegen : Edit;
+            import hackerscad.tool.codegen : Edit, transformPiece;
             auto before = text(), after = before;
+            if (index < 0 || index >= last.parts.length)
+                return "no part to move";
+            auto p = last.parts[index];
             foreach (st; steps)
-                after = transformPart(after, path, name, st.kind, st.v, around).apply(after);
+                // a piece of @parts moves alone; any other part, all its function makes
+                after = (isPiece(index) ? transformPiece(after, path, p.fn, p.piece, p.fromSolid, st.kind, st.v, around)
+                    : transformPart(after, path, p.fn, st.kind, st.v, around)).apply(after);
             // only what changed is replaced: between what both texts start and end with
             size_t head, tail;
             while (head < before.length && head < after.length && before[head] == after[head])
@@ -2076,9 +2088,9 @@ private:
         buildModeBar();
         sectionBar = new Box(Orientation.Horizontal, 8);
         sectionBar.addCssClass("hcad-sectionbar");
-        auto title = new Label("Section");
-        title.addCssClass("dim-label");
-        sectionBar.append(title);
+        sectionTitle = new Label("Section");
+        sectionTitle.addCssClass("dim-label");
+        sectionBar.append(sectionTitle);
         sectionPlane = DropDown.newFromStrings(["XY plane", "XZ plane", "YZ plane", "Selected face"]);
         sectionPlane.addCssClass("flat");
         sectionPlane.setTooltipText("The cutting plane: parallel to a main plane, or to the face you clicked");
@@ -2147,7 +2159,7 @@ private:
         }
         immutable old = sectionSlider.getValue();
         double lo, hi;
-        viewport.extentAlong(n, lo, hi);
+        viewport.extentAlong(n, lo, hi, splitPart);
         sectionNormal = n;
         sectionUpdating = true;
         immutable margin = (hi - lo) * 0.001 + 1e-6;
@@ -2166,6 +2178,137 @@ private:
         sectionFlip.setActive(sectionFlipped);
         sectionUpdating = false;
         applySection();
+    }
+
+    // ---- splitting a part in two (Split… in the right-click menu): the
+    // section, its plane as big as the part, and a ✓ that writes the cut
+
+    Label sectionTitle;
+    int splitPart = -1;
+    string splitName;
+
+    /// The section plane on part `index` alone, to split it where it is.
+    void startSplit(int index)
+    {
+        if (index < 0 || index >= last.parts.length)
+            return;
+        auto part = last.parts[index];
+        if (part.span.file != absolutePath(path))
+            return info(format("part '%s' is defined in another file", part.name));
+        if (part.fn != part.name)
+            return info(format("%s is a piece of %s (@parts): split what %s returns in the code, or each piece "
+                ~ "in its own @part", part.name, part.fn, part.fn));
+        cancelTransform();
+        splitPart = index;
+        splitName = part.name;
+        viewport.sectionPart = index;
+        sectionTitle.setLabel("Split " ~ part.name);
+        sectionTitle.removeCssClass("dim-label");
+        if (sectionToggle.getActive())
+        {
+            planeFromSelection();
+            updateSection(true);
+        }
+        else
+            sectionToggle.setActive(true);
+        viewport.makeRoom();
+        info(format("move the plane, then ✓ splits %s into a part per piece (X leaves it whole)", part.name));
+    }
+
+    /// Opening the section or Split…: a face picked gives the plane, else a
+    /// main plane (the last one chosen, or XY).
+    void planeFromSelection()
+    {
+        Vec3 p, n;
+        immutable picked = viewport.selectedPlane(p, n);
+        immutable want = picked ? 3 : sectionPlane.getSelected() == 3 ? 0 : sectionPlane.getSelected();
+        sectionUpdating = true;
+        sectionPlane.setSelected(want);
+        sectionUpdating = false;
+    }
+
+    /// Back to a plain section (or none).
+    void endSplit()
+    {
+        if (splitPart < 0)
+            return;
+        splitPart = -1;
+        viewport.sectionPart = -1;
+        sectionTitle.setLabel("Section");
+        sectionTitle.addCssClass("dim-label");
+    }
+
+    /// Writes the split where the plane is; the problem, or null.
+    string applySplit()
+    {
+        if (splitPart < 0)
+            return null;
+        return writeSplit(splitPart, sectionNormal, sectionSlider.getValue());
+    }
+
+    /// How many separate bodies part `index` leaves below and above the
+    /// plane of normal `n` at `at` mm along it (0: none, the plane misses it).
+    int[2] splitPieces(int index, Vec3 n, double at)
+    {
+        import std.math : PI, acos;
+        import hackerscad.kernel.brep : BoolOp;
+        auto part = last.parts[index];
+        auto k = part.kernel;
+        if (k is null || part.brep is null)
+            return [1, 1];
+        n = n.normalized;
+        auto o = n * at;
+        auto bb = k.bbox(part.brep);
+        immutable size = 4 * (bb.size.length + (bb.center - o).length) + 10;
+        // a box covering what lies on side `d` of the plane, as split() makes it
+        auto half(Vec3 d)
+        {
+            auto b = k.translate(k.box(size, size, size), Vec3(-size / 2, -size / 2, 0));
+            immutable c = d.dot(Vec3(0, 0, 1));
+            if (c < -1 + 1e-12)
+                b = k.rotate(b, Vec3(1, 0, 0), PI);
+            else if (c < 1 - 1e-12)
+                b = k.rotate(b, Vec3(0, 0, 1).cross(d), acos(c));
+            return k.translate(b, o);
+        }
+        int count(Vec3 d)
+        {
+            auto rest = k.boolean(part.brep, half(d), BoolOp.cut);
+            return rest is null ? 0 : cast(int) k.solids(rest).length;
+        }
+        return [count(n), count(n * -1)];
+    }
+
+    /// Splits part `index` along the plane of normal `n` at `at` mm along it,
+    /// in the code, a part per body; the problem, or null.
+    string writeSplit(int index, Vec3 n, double at)
+    {
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        if (last.parts[index].fn != last.parts[index].name)
+            return format("%s is a piece of %s (@parts): split what %s returns in the code", last.parts[index].name,
+                last.parts[index].fn, last.parts[index].fn);
+        int[2] pieces;
+        try
+            pieces = splitPieces(index, n, at);
+        catch (Exception e)
+            return "cannot cut the part there: " ~ e.msg;
+        if (pieces[0] == 0 || pieces[1] == 0)
+            return format("the plane does not cut %s: move it inside the part", last.parts[index].name);
+        try
+        {
+            import hackerscad.tool.codegen : splitPart;
+            applyEdit(splitPart(text(), path, last.parts[index].name, n, at));
+        }
+        catch (CodegenException e)
+            return e.msg;
+        catch (HcadError e)
+            return "fix the errors in the code first: " ~ e.msg;
+        // done: Split… closes, whoever wrote it
+        if (splitPart >= 0)
+            sectionToggle.setActive(false);
+        info(format("%s split into %d parts, one per piece", last.parts[index].name, pieces[0] + pieces[1]));
+        return null;
     }
 
     void applySection()
@@ -2932,6 +3075,9 @@ private:
         string title = ne && nf ? format("%s, %s", count(ne, "edge"), count(nf, "face")) : ne ? count(ne, "edge")
             : nf ? count(nf, "face") : "Part";
         entries ~= H(title.toUpper, part.name);
+        // a piece of @parts: what is written goes to the function, so to all its pieces
+        if (part.fn != part.name)
+            entries ~= H("A PIECE OF " ~ part.fn.toUpper, "changes go to all its pieces");
 
         if (ne)
         {
@@ -3075,6 +3221,7 @@ private:
         }
         entries ~= I("Move…", () => startTransform(Viewport.Gizmo.move, contextHit.part));
         entries ~= I("Rotate…", () => startTransform(Viewport.Gizmo.rotate, contextHit.part));
+        entries ~= I("Split…", () => startSplit(contextHit.part));
         {
             // hackerscad's own colours (geom/color.d), the default first
             import hackerscad.geom.color : partPalette;
@@ -3116,7 +3263,7 @@ private:
     MenuEntry colourEntry(string name, uint rgb, string detail)
     {
         return MenuEntry.colour(name, format("#%06X", rgb), () {
-            if (auto problem = writeColour(last.parts[contextHit.part].name, name))
+            if (auto problem = writeColour(last.parts[contextHit.part].fn, name))
                 info(problem);
         }, detail);
     }
@@ -3132,7 +3279,7 @@ private:
             return;
         if (colourWheel !is null && colourWheel.win.getVisible())
             colourWheel.win.close();   // the part it was on takes back its colour
-        auto name = last.parts[index].name;
+        auto name = last.parts[index].fn;
         immutable start = last.parts[index].rgb & 0xFFFFFF;
         // the preview and its undoing touch the parts the wheel opened on: once
         // the model is evaluated again, the new parts have their own colours
@@ -3391,7 +3538,11 @@ private:
             return info(format("part '%s' is defined in another file", part.name));
         try
         {
-            applyEdit(appendToPart(text(), path, part.name, call, placeholder));
+            // on a piece of @parts, that piece alone
+            import std.algorithm : countUntil;
+            immutable at = last.parts.countUntil!(q => q.name == part.name);
+            applyEdit(at >= 0 && isPiece(at) ? appendToPiece(text(), path, part.fn, part.piece, part.fromSolid, call, placeholder)
+                : appendToPart(text(), path, part.fn, call, placeholder));
             // the feature changes the faces and edges: the selection would
             // point at others
             viewport.setSelection(null);

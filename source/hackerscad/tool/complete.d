@@ -794,7 +794,7 @@ unittest
     assert(r.items.canFind!(c => c.label == "mm"));
     src = "@pa";
     r = complete(src, src.length, "", null);
-    assert(r.items.length == 2 && r.items[0].label == "part");
+    assert(r.items.length == 3 && r.items[0].label == "part" && r.items.canFind!(c => c.label == "parts"));
 
     // hover: a built-in, a method after a dot, a library function
     src = "module m;\nimport hardware;\n@part Solid a() => box(1, 2, 3).fillet(edges.parallel(Z), r: 1) - hole(M3, 2);";

@@ -209,6 +209,43 @@ mixin template ControlMethods()
                 whenIdle(() => reply(state(), null));
                 return;
             }
+        case "split":
+            {
+                // {"part": "clip", "plane": "xy", "at": 7.5}: the part cut in two there in the code, as
+                // Split…'s ✓ (the upper half in another colour); {"part": "clip", "show": true} opens
+                // Split… on it for the user to place the plane, writing nothing; "show": false closes it
+                whenIdle(() {
+                    if ("show" in p && p["show"].type == JSONType.false_)
+                    {
+                        if (splitPart >= 0)
+                            sectionToggle.setActive(false);
+                        return reply(state(), null);
+                    }
+                    auto name = arg("part");
+                    int index = -1;
+                    foreach (i, q; last.parts)
+                        if (q.name == name || (name is null && last.parts.length == 1))
+                            index = cast(int) i;
+                    if (index < 0)
+                        return reply(JSONValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
+                    if ("show" in p && p["show"].type == JSONType.true_)
+                    {
+                        startSplit(index);
+                        return reply(state(), null);
+                    }
+                    immutable plane = arg("plane");
+                    auto n = plane == "xy" ? Vec3(0, 0, 1) : plane == "xz" ? Vec3(0, 1, 0) : plane == "yz" ? Vec3(1, 0, 0)
+                        : Vec3(0, 0, 0);
+                    if (n.length == 0)
+                        return reply(JSONValue.init, "plane is xy, xz or yz");
+                    if (!has("at"))
+                        return reply(JSONValue.init, "at: where the plane is, in mm along its normal (z for xy)");
+                    if (auto problem = writeSplit(index, n, numberOf(p["at"])))
+                        return reply(JSONValue.init, problem);
+                    whenIdle(() => reply(state(), null));
+                });
+                return;
+            }
         case "colour":
             {
                 // {"part": "lid", "colour": "Violet Pop"} or "#C597FE": the colour written on its @part,
@@ -254,7 +291,7 @@ mixin template ControlMethods()
                             names ~= c.name;
                         return reply(JSONValue.init, "colour is one of " ~ names.join(", ") ~ ", or #RRGGBB");
                     }
-                    if (auto problem = writeColour(last.parts[index].name, colour))
+                    if (auto problem = writeColour(last.parts[index].fn, colour))
                         return reply(JSONValue.init, problem);
                     whenIdle(() => reply(state(), null));
                 });
@@ -306,7 +343,7 @@ mixin template ControlMethods()
                     else
                         return reply(JSONValue.init, "give move, rotate or show");
                     cancelTransform();
-                    if (auto problem = writeTransform(last.parts[index].name, kind, v, last.parts[index].bbox.center))
+                    if (auto problem = writeTransform(index, kind, v, last.parts[index].bbox.center))
                         return reply(JSONValue.init, problem);
                     whenIdle(() => reply(state(), null));
                 });

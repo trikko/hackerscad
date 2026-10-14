@@ -373,7 +373,7 @@ Edit colourPart(string source, string file, string part, string colour)
     Attribute at;
     bool found;
     foreach (a; fn.attrs)
-        if (a.name == "part")
+        if (a.name == "part" || a.name == "parts")
         {
             at = a;
             found = true;
@@ -387,7 +387,7 @@ Edit colourPart(string source, string file, string part, string colour)
     if (at.args.length == 0 || i + 2 >= toks.length || toks[i + 2].kind != Tok.lparen)
     {
         // @part or @part(): the colour in brackets after the name
-        e.offset = offsetOf(source, toks[i + 1].span) + "part".length;
+        e.offset = offsetOf(source, toks[i + 1].span) + toks[i + 1].text.length;
         immutable empty = i + 3 < toks.length && toks[i + 2].kind == Tok.lparen && toks[i + 3].kind == Tok.rparen;
         e.length = empty ? offsetOf(source, toks[i + 3].span) + 1 - e.offset : 0;
         e.text = "(" ~ colour ~ ")";
@@ -444,6 +444,11 @@ unittest
     assert(colourPart(d, "m.hcad", "p", "Cyan Pop").apply(d).canFind(`@part("Cyan Pop" , alpha: 0.5)`));
     auto f = "module m;\nimmutable string tint = \"red\";\n@part(tint ~ \"\", export: false)\nSolid p() => box(1, 1, 1);\n";
     assert(colourPart(f, "m.hcad", "p", "Gray Pop").apply(f).canFind(`@part("Gray Pop", export: false)`));
+    // @parts too
+    auto h = "module m;\n\n@parts\nSolid p() => box(1, 1, 1);\n";
+    assert(colourPart(h, "m.hcad", "p", "Red Pop").apply(h).canFind(`@parts("Red Pop")` ~ "\nSolid p()"));
+    auto i = "module m;\n\n@parts(varied: true)\nSolid p() => box(1, 1, 1);\n";
+    assert(colourPart(i, "m.hcad", "p", "Red Pop").apply(i).canFind(`@parts("Red Pop", varied: true)`));
     // a function that is not a part
     auto g = "module m;\n\nSolid p() => box(1, 1, 1);\n";
     bool threw;
@@ -454,12 +459,179 @@ unittest
     assert(threw);
 }
 
+/// Splits the part `part` along the plane of normal `n` at `offset` (mm
+/// along it): the part becomes a plain function, an immutable keeps the plane,
+/// and `<part>Pieces` takes its place, `@parts(varied: true)` on what
+/// `split` gives: a part of each piece, however many the cut leaves (a cut
+/// across a slot makes more than two), each in its own colour.
+Edit splitPart(string source, string file, string part, Vec3 n, double offset)
+{
+    import std.math : round;
+    import std.regex : regex, replaceAll;
+    import std.string : strip;
+    auto prog = parse(source, file);
+    FuncDecl fn;
+    bool[string] taken;
+    foreach (d; prog.decls)
+    {
+        if (auto f = cast(FuncDecl) d)
+        {
+            taken[f.name] = true;
+            if (f.name == part)
+                fn = f;
+        }
+        else if (auto v = cast(VarDecl) d)
+            taken[v.name] = true;
+    }
+    if (fn is null)
+        throw new CodegenException(format("cannot find the function of part '%s' in this file", part));
+    Attribute at;
+    bool found;
+    foreach (a; fn.attrs)
+        if (a.name == "part")
+        {
+            at = a;
+            found = true;
+        }
+    if (!found)
+        throw new CodegenException(format("'%s' has no @part", part));
+    string fresh(string want)
+    {
+        auto name = want;
+        for (int k = 2; name in taken; k++)
+            name = format("%s%d", want, k);
+        taken[name] = true;
+        return name;
+    }
+    immutable cutName = fresh(part ~ "Cut"), pieces = fresh(part ~ "Pieces");
+
+    auto toks = lex(source, file);
+    immutable i = tokenAt(toks, at.span);
+    // the annotation's text, up to its ')' or its name
+    size_t attrEnd;
+    if (i + 2 < toks.length && toks[i + 2].kind == Tok.lparen)
+    {
+        size_t j = i + 2;
+        int depth;
+        for (; j < toks.length; j++)
+        {
+            if (toks[j].kind == Tok.lparen)
+                depth++;
+            else if (toks[j].kind == Tok.rparen && --depth == 0)
+                break;
+        }
+        attrEnd = offsetOf(source, toks[j].span) + 1;
+    }
+    else
+        attrEnd = offsetOf(source, toks[i + 1].span) + toks[i + 1].text.length;
+    immutable attrStart = offsetOf(source, at.span);
+    // two parts cannot share a name: a name: of the part's own stays behind;
+    // @part becomes @parts, its pieces in colours that tell apart
+    auto args = source[attrStart .. attrEnd].replaceAll(regex(`^@parts?\s*\(?`), "").replaceAll(regex(`\)$`), "")
+        .replaceAll(regex(`,?\s*name:\s*"[^"]*"`), "").replaceAll(regex(`,?\s*varied:\s*\w+`), "")
+        .replaceAll(regex(`^\s*,\s*`), "").strip;
+    immutable attr = "@parts(" ~ (args.length ? args ~ ", " : "") ~ "varied: true)";
+    // the annotation and the line break after it go
+    size_t cut = attrEnd;
+    while (cut < source.length && (source[cut] == ' ' || source[cut] == '\t'))
+        cut++;
+    if (cut < source.length && source[cut] == '\n')
+        cut++;
+
+    // where the function ends: its ';' (=> body) or its closing '}'
+    size_t k = tokenAt(toks, fn.nameSpan);
+    while (k < toks.length && toks[k].kind != Tok.arrow && toks[k].kind != Tok.lbrace)
+        k++;
+    int depth;
+    for (; k < toks.length; k++)
+    {
+        immutable kind = toks[k].kind;
+        if (kind == Tok.lparen || kind == Tok.lbracket || kind == Tok.lbrace)
+            depth++;
+        else if (kind == Tok.rparen || kind == Tok.rbracket || kind == Tok.rbrace)
+        {
+            if (--depth == 0 && kind == Tok.rbrace && fn.exprBody is null)
+                break;
+        }
+        else if (depth == 0 && kind == Tok.semicolon && fn.exprBody !is null)
+            break;
+    }
+    if (k >= toks.length)
+        throw new CodegenException(format("cannot find the end of the function of part '%s'", part));
+    immutable fnEnd = offsetOf(source, toks[k].span) + 1;
+
+    // the plane: a main axis by its name, else the normal's numbers
+    n = n.normalized;
+    string number(double x) => format("%.6g", abs(x) < 1e-9 ? 0.0 : round(x * 1e6) / 1e6);
+    string normal;
+    foreach (a, name; ["X", "Y", "Z"])
+    {
+        if (abs(n[a] - 1) < 1e-9)
+            normal = name;
+        else if (abs(n[a] + 1) < 1e-9)
+            normal = "-" ~ name;
+    }
+    if (normal is null)
+        normal = format("vec(%s, %s, %s)", number(n.x), number(n.y), number(n.z));
+    auto origin = n * offset;
+    foreach (a; 0 .. 3)
+        origin[a] = round(origin[a] * 1000) / 1000;
+    immutable code = format("\n\n// %s, cut by Split… in the 3D view: a part of each piece the cut leaves,\n"
+        ~ "// however many, each in its own colour\n"
+        ~ "immutable %s = plane(origin: %s, normal: %s);\n\n%s\nSolid[] %s() => %s().split(%s);",
+        part, cutName, vecMm(origin), normal, attr, pieces, part, cutName);
+    auto after = source[0 .. attrStart] ~ source[cut .. fnEnd] ~ code ~ source[fnEnd .. $];
+    // only what changed is replaced: between what both texts start and end with
+    size_t head, tail;
+    while (head < source.length && head < after.length && source[head] == after[head])
+        head++;
+    while (tail < source.length - head && tail < after.length - head && source[$ - 1 - tail] == after[$ - 1 - tail])
+        tail++;
+    Edit e;
+    e.offset = head;
+    e.length = source.length - head - tail;
+    e.text = after[head .. $ - tail];
+    e.selectOffset = after.length - tail;
+    return e;
+}
+
+unittest
+{
+    // the part becomes a function, its pieces @parts in varied colours; a
+    // name of its own left out
+    auto src = "module m;\n\nimport std.shapes;\n\n@part(\"Sky Pop\", name: \"Clip\")\nSolid clip()\n{\n"
+        ~ "    return box(10.mm, 10.mm, 10.mm);\n}\n\n@part\nSolid other() => clip().move(x: 20.mm);\n";
+    auto a = splitPart(src, "m.hcad", "clip", Vec3(0, 0, 1), 5).apply(src);
+    assert(a.canFind("Solid clip()\n{") && !a.canFind(`name: "Clip"`), a);
+    assert(a.canFind("immutable clipCut = plane(origin: vec(0.mm, 0.mm, 5.mm), normal: Z);"), a);
+    assert(a.canFind("@parts(\"Sky Pop\", varied: true)\nSolid[] clipPieces() => clip().split(clipCut);"), a);
+    assert(a.canFind("@part\nSolid other()"), a);
+    // an => part without arguments, a slanted plane, names already taken
+    auto b = "module m;\n\n@part\nSolid p() => box(1.mm, 1.mm, 1.mm);\n\nimmutable pCut = 3;\n";
+    auto c = splitPart(b, "m.hcad", "p", Vec3(1, 0, 1), 0).apply(b);
+    assert(c.canFind("Solid p() => box(1.mm, 1.mm, 1.mm);\n\n// p, cut"), c);
+    assert(c.canFind("immutable pCut2 = plane(origin: vec(0.mm, 0.mm, 0.mm), normal: vec(0.707107, 0, 0.707107));"), c);
+    assert(c.canFind("@parts(varied: true)\nSolid[] pPieces() => p().split(pCut2);"), c);
+    assert(!c.canFind("@part\nSolid p()"), c);
+}
+
 /// Moves the part `part` by `v` (kind "move", mm), or turns it (kind
 /// "rotate": `v` the angles about X, then Y, then Z in degrees) about
 /// `around`. When its chain already ends with such a call holding plain
 /// numbers (for a turn, about the same point), the two make one call, or
 /// none when they come to nothing; otherwise one is added.
 Edit transformPart(string source, string file, string part, string kind, Vec3 v, Vec3 around = Vec3(0, 0, 0))
+{
+    auto r = returned(source, file, part);
+    return transformExpr(source, r.start, r.end, r.operators, kind, v, around,
+        (string call) => appendToPart(source, file, part, call));
+}
+
+/// The core of transformPart, on the expression at [start, end) of `source`
+/// (`operators`: a top-level operator in it): its last call changed when it is
+/// such a move or turn, else `append` adds the call.
+private Edit transformExpr(string source, size_t start, size_t end, bool operators, string kind, Vec3 v, Vec3 around,
+    Edit delegate(string call) append)
 {
     import std.conv : to;
     import std.regex : matchFirst, regex;
@@ -496,11 +668,11 @@ Edit transformPart(string source, string file, string part, string kind, Vec3 v,
                 args ~= n ~ ": " ~ number(w[i]) ~ ".mm";
         return args.length ? ".move(" ~ args.join(", ") ~ ")" : null;
     }
-
-    auto r = returned(source, file, part);
-    auto expr = source[r.start .. r.end];
+    struct R { size_t start; }
+    immutable r = R(start);
+    auto expr = source[start .. end];
     LastCall c;
-    if (!r.operators && lastCall(expr, c) && c.name == kind)
+    if (!operators && lastCall(expr, c) && c.name == kind)
     {
         // the numbers it holds, or none when one is not plain
         bool plain = true;
@@ -571,7 +743,210 @@ Edit transformPart(string source, string file, string part, string kind, Vec3 v,
     auto call = kind == "move" ? moveCall(v) : turnCall(v, around);
     if (call is null)
         throw new CodegenException("nothing to move or turn");
-    return appendToPart(source, file, part, call);
+    return append(call);
+}
+
+/// Piece `index` of the @parts function `part` (`fromSolid`: it returns a
+/// Solid, made into pieces): the source with a statement
+/// `pieces[index] = pieces[index]…;` before its return, the function made a
+/// block that takes its pieces apart first if it is not one yet, and where
+/// that statement's right side is. A move, a turn or a feature of one piece
+/// goes there, and the list is returned with it changed.
+string pieceStatement(string source, string file, string part, size_t index, bool fromSolid,
+    out size_t rhsStart, out size_t rhsEnd, out bool operators)
+{
+    import std.regex : matchFirst, regex;
+    import std.string : strip;
+    auto r = returned(source, file, part);
+    auto fn = r.fn;
+    auto toks = r.toks;
+    immutable expr = source[r.start .. r.end].strip;
+    immutable from = tokenAt(toks, fn.nameSpan);
+    // the list is in a variable of the body, returned as it is (a Solid is made into pieces first)
+    string var;
+    if (!fromSolid && fn.exprBody is null && !expr.matchFirst(regex(`^[A-Za-z_]\w*$`)).empty)
+        foreach (j; from .. r.first)
+            if (toks[j].kind == Tok.ident && toks[j].text == expr && j > 0 && toks[j - 1].kind == Tok.kwAuto)
+                var = expr;
+    if (var is null)
+    {
+        // reshape: auto pieces = <what it returned>; return pieces;
+        bool[string] used;
+        foreach (j; from .. toks.length)
+            if (toks[j].kind == Tok.ident)
+                used[toks[j].text] = true;
+        string name = "pieces";
+        for (int k = 2; name in used; k++)
+            name = format("pieces%d", k);
+        immutable list = expr ~ (fromSolid ? ".pieces" : "");
+        string after;
+        immutable semi = offsetOf(source, toks[r.last].span) + 1;
+        if (fn.exprBody !is null)
+        {
+            size_t arrow = r.first - 1;
+            size_t cut = offsetOf(source, toks[arrow].span);
+            while (cut > 0 && (source[cut - 1] == ' ' || source[cut - 1] == '\t' || source[cut - 1] == '\n'))
+                cut--;
+            after = source[0 .. cut] ~ format("\n{\n    auto %s = %s;\n    return %s;\n}", name, list, name) ~ source[semi .. $];
+        }
+        else
+        {
+            immutable ret = offsetOf(source, toks[r.first - 1].span);   // the 'return'
+            size_t lineStart = ret;
+            while (lineStart > 0 && source[lineStart - 1] != '\n')
+                lineStart--;
+            immutable indent = source[lineStart .. ret];
+            after = source[0 .. ret] ~ format("auto %s = %s;\n%sreturn %s;", name, list, indent, name) ~ source[semi .. $];
+        }
+        // a Solid split into pieces returns a list now
+        if (fromSolid && fn.returnType !is null && fn.returnType.name == "Solid" && !fn.returnType.isArray)
+        {
+            immutable t = offsetOf(source, fn.returnType.span) + "Solid".length;
+            after = after[0 .. t] ~ "[]" ~ after[t .. $];
+        }
+        return pieceStatement(after, file, part, index, false, rhsStart, rhsEnd, operators);
+    }
+    // its statement for this piece, or one made before the return
+    immutable want = format("%d", index);
+    foreach (j; from .. r.first)
+        if (j + 5 < toks.length && toks[j].kind == Tok.ident && toks[j].text == var && toks[j + 1].kind == Tok.lbracket
+            && toks[j + 2].kind == Tok.intLit && toks[j + 2].text == want && toks[j + 3].kind == Tok.rbracket
+            && toks[j + 4].kind == Tok.assign && (j == 0 || toks[j - 1].kind == Tok.semicolon || toks[j - 1].kind == Tok.lbrace
+                || toks[j - 1].kind == Tok.rbrace))
+        {
+            size_t k = j + 5;
+            int depth;
+            for (; k < toks.length; k++)
+            {
+                immutable kind = toks[k].kind;
+                if (depth == 0 && kind == Tok.semicolon)
+                    break;
+                if (kind == Tok.lparen || kind == Tok.lbracket || kind == Tok.lbrace)
+                    depth++;
+                else if (kind == Tok.rparen || kind == Tok.rbracket || kind == Tok.rbrace)
+                    depth--;
+                else if (depth == 0 && isOperator(kind) && k > j + 5)
+                    operators = true;
+            }
+            rhsStart = offsetOf(source, toks[j + 5].span);
+            rhsEnd = rhsStart + trimRight(source[rhsStart .. offsetOf(source, toks[k].span)]).length;
+            return source;
+        }
+    immutable ret = offsetOf(source, toks[r.first - 1].span);
+    size_t lineStart = ret;
+    while (lineStart > 0 && source[lineStart - 1] != '\n')
+        lineStart--;
+    immutable indent = source[lineStart .. ret];
+    auto after = source[0 .. lineStart] ~ format("%s%s[%d] = %s[%d];\n", indent, var, index, var, index) ~ source[lineStart .. $];
+    return pieceStatement(after, file, part, index, false, rhsStart, rhsEnd, operators);
+}
+
+/// `call` added at the end of the expression at [start, end) (wrapped when
+/// it has an operator), `placeholder` in it selected.
+private Edit appendAt(string source, size_t start, size_t end, bool operators, string call, string placeholder = null)
+{
+    auto expr = source[start .. end];
+    auto body = operators ? "(" ~ expr ~ ")" : expr;
+    Edit e;
+    e.offset = start;
+    e.length = expr.length;
+    e.text = body ~ call;
+    e.selectOffset = start + e.text.length;
+    if (placeholder.length)
+    {
+        import std.string : lastIndexOf;
+        auto at = call.lastIndexOf(placeholder);
+        if (at >= 0)
+        {
+            e.selectOffset = start + body.length + at;
+            e.selectLength = placeholder.length;
+        }
+    }
+    return e;
+}
+
+/// One edit from `source` to `after`, between what both start and end with;
+/// the selection of `e`, made on the way to `after`, kept.
+private Edit between(string source, string after, Edit e)
+{
+    size_t head, tail;
+    while (head < source.length && head < after.length && source[head] == after[head])
+        head++;
+    while (tail < source.length - head && tail < after.length - head && source[$ - 1 - tail] == after[$ - 1 - tail])
+        tail++;
+    Edit r;
+    r.offset = head;
+    r.length = source.length - head - tail;
+    r.text = after[head .. $ - tail];
+    r.selectOffset = e.selectOffset;
+    r.selectLength = e.selectLength;
+    return r;
+}
+
+/// transformPart for piece `index` of a @parts function: only that piece moves or turns.
+Edit transformPiece(string source, string file, string part, size_t index, bool fromSolid, string kind, Vec3 v,
+    Vec3 around = Vec3(0, 0, 0))
+{
+    size_t a, b;
+    bool ops;
+    auto src = pieceStatement(source, file, part, index, fromSolid, a, b, ops);
+    auto e = transformExpr(src, a, b, ops, kind, v, around, (string call) => appendAt(src, a, b, ops, call));
+    return between(source, e.apply(src), e);
+}
+
+/// appendToPart for piece `index` of a @parts function: the feature on that piece only.
+Edit appendToPiece(string source, string file, string part, size_t index, bool fromSolid, string call,
+    string placeholder = null)
+{
+    import std.string : strip;
+    size_t a, b;
+    bool ops;
+    auto src = pieceStatement(source, file, part, index, fromSolid, a, b, ops);
+    auto e = appendAt(src, a, b, ops, call.strip, placeholder);
+    return between(source, e.apply(src), e);
+}
+
+unittest
+{
+    // a piece of a list: the function takes its pieces apart, that one turns,
+    // the list is returned; a second turn joins the first; another piece gets its own line
+    auto src = "module m;
+
+@parts
+Solid[] p() => box(10, 10, 10).split(XY.offset(5.mm));
+";
+    auto a = transformPiece(src, "m.hcad", "p", 1, false, "rotate", Vec3(0, 0, 90)).apply(src);
+    assert(a.canFind("Solid[] p()
+{
+    auto pieces = box(10, 10, 10).split(XY.offset(5.mm));
+"
+        ~ "    pieces[1] = pieces[1].rotate(z: 90);
+    return pieces;
+}"), a);
+    auto b = transformPiece(a, "m.hcad", "p", 1, false, "rotate", Vec3(0, 0, 30)).apply(a);
+    assert(b.canFind("pieces[1] = pieces[1].rotate(z: 120);") && !b.canFind("z: 90"), b);
+    auto c = transformPiece(b, "m.hcad", "p", 0, false, "move", Vec3(5, 0, 0)).apply(b);
+    assert(c.canFind("    pieces[0] = pieces[0].move(x: 5.mm);
+    return pieces;"), c);
+    // a Solid made into pieces: .pieces, and a list it returns now
+    auto d = "module m;
+
+@parts
+Solid jaws()
+{
+    auto s = box(4, 4, 4) + box(4, 4, 4).move(x: 10);
+    return s;
+}
+";
+    auto e = transformPiece(d, "m.hcad", "jaws", 0, true, "move", Vec3(0, 0, 3)).apply(d);
+    assert(e.canFind("Solid[] jaws()") && e.canFind("auto pieces = s.pieces;
+    pieces[0] = pieces[0].move(z: 3.mm);
+    return pieces;"), e);
+    // a feature on a piece, its size selected
+    auto f = appendToPiece(src, "m.hcad", "p", 0, false, ".fillet(edges, r: 1.mm)", "1.mm");
+    auto g = f.apply(src);
+    assert(g.canFind("pieces[0] = pieces[0].fillet(edges, r: 1.mm);"), g);
+    assert(g[f.selectOffset .. f.selectOffset + f.selectLength] == "1.mm", g);
 }
 
 private double[3][3] product(double[3][3] a, double[3][3] b)

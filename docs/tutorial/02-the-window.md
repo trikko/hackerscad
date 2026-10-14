@@ -13,8 +13,11 @@ bag clip is still open; we use it to try things.
    it; right-clicking opens the things you can do there, among them
    **Move…** and **Rotate…**: drag the X, Y and Z arrows (or the frame
    under the part, across), or the knobs of the three rings round it, one
-   after the other; read how far next to the pointer, and Apply writes one
-   `.move()` or one `.rotate()` into the code. **Colour** offers
+   after the other; the bar reads how far, and the ✓ next to the part
+   writes one `.move()` or one `.rotate()` into the code (the X leaves it
+   as it was). **Split…** puts a plane as big as the part on it, moved like
+   the section's: its ✓ cuts the part there into a part per piece
+   (more than two when the plane crosses a slot), each in its colour. **Colour** offers
    hackerscad's own bright colours (Sky Pop, Pink Pop…), and writes the
    name of the one you pick into the part's `@part`; **Other…** opens a
    wheel where every hue is as bright as those, the part showing each one
@@ -22,8 +25,8 @@ bag clip is still open; we use it to try things.
 2. **The view bar.** The views (Fit, Iso, Top, Front, Right); how a left drag
    moves the view; the eye, to hide or show the parts, the ground grid and
    the axes; the cube, to choose how the parts are drawn; the section, to cut
-   the model and look inside (drag the squares at the plane's corners to move
-   it, the X past them closes it); the magnifying glass, to see what a line
+   the model and look inside (parallel to the face you picked, if any; drag
+   the squares at the plane's corners to move it, the X past them closes it); the magnifying glass, to see what a line
    of code makes.
 3. **Parameters and Steps.** Two tabs. *Parameters* has the sizes the model
    lets you change, without touching the code; *Steps* shows how the model is

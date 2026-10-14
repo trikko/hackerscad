@@ -56,7 +56,7 @@ private string receiverName(string on)
     case "Axis": return "a";
     case "Vec": return "v";
     case "BBox": return "s.bbox";
-    case "Split": return "s.split(…)";
+    case "Halves": return "s.halves(…)";
     case "Edges": return "edges";
     case "Faces": return "faces";
     case "Edge": return "e";

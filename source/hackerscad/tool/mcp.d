@@ -807,6 +807,15 @@ JSONValue[] toolList()
             ~ `Violet Pop, Pink Pop, Rose Pop, Red Pop, Orange Pop, Yellow Pop, White Pop, Gray Pop, or #RRGGBB"}, `
             ~ `"hue": {"type": "number"}, "lightness": {"type": "number"}, "vividness": {"type": "number"}, `
             ~ `"wheel": {"type": "boolean"}`, `[]`),
+        gui("hcad_gui_split", "Split a part of the user's model, as Split… in the 3D view's right-click menu: the "
+            ~ "part becomes a plain function, an immutable keeps the plane, and @parts(varied: true) Solid[] "
+            ~ "<part>Pieces() => <part>().split(plane) takes its place: a part of each piece the cut leaves (more than "
+            ~ "two when the plane crosses a slot), each in its own colour. plane: xy, xz or yz; at: where it is, in mm "
+            ~ "along its normal (z for xy). show: true opens Split… "
+            ~ "on the part for the user to place the plane and confirm with its ✓, writing nothing (false closes it). "
+            ~ "part: its name (needed with several parts).",
+            `"part": {"type": "string"}, "plane": {"type": "string", "enum": ["xy", "xz", "yz"]}, `
+            ~ `"at": {"type": "number"}, "show": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_rename", "Rename the user's window (the name in its header bar, which the user and the "
             ~ "'window' argument use): letters, digits and dashes.", `"name": {"type": "string"}`, `["name"]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
@@ -1225,7 +1234,7 @@ JSONValue callTool(string name, JSONValue args)
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
             "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
             "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet",
-            "hcad_gui_transform", "hcad_gui_colour":
+            "hcad_gui_transform", "hcad_gui_colour", "hcad_gui_split":
         {
             auto method = name["hcad_gui_".length .. $];
             auto r = guiRequest(arg("window"), method, args.type == JSONType.object ? args : JSONValue((JSONValue[string]).init));

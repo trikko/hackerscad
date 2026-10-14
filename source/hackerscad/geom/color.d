@@ -22,6 +22,32 @@ immutable PaletteColour[] partPalette = [
 /// The colour of parts that do not choose one: Sky Pop, the logo's.
 enum uint defaultPartColor = 0x0FC3F2;
 
+/// `n` colours for parts that should tell apart (the pieces of a split):
+/// `base` first, then the palette's colours least like it, from the least
+/// like (white and grey left out: they hardly differ from a pale part).
+uint[] variedColours(uint base, size_t n)
+{
+    import std.algorithm : sort;
+    uint[] others;
+    foreach (c; partPalette)
+        if (c.name != "White Pop" && c.name != "Gray Pop" && colourDistance(base & 0xFFFFFF, c.rgb) > 0.1)
+            others ~= c.rgb;
+    others.sort!((a, b) => colourDistance(base & 0xFFFFFF, a) > colourDistance(base & 0xFFFFFF, b));
+    uint[] r = [base];
+    foreach (i; 1 .. n)
+        r ~= others.length ? others[(i - 1) % others.length] | (base & 0xFF000000) : base;
+    return r[0 .. n];
+}
+
+/// The palette name of 0xRRGGBB `rgb`, or null.
+string paletteName(uint rgb)
+{
+    foreach (c; partPalette)
+        if (c.rgb == (rgb & 0xFFFFFF))
+            return c.name;
+    return null;
+}
+
 /// The palette colour named `name` (any case), or -1.
 long paletteColour(string name)
 {
@@ -34,8 +60,13 @@ long paletteColour(string name)
 
 unittest
 {
+    import std.algorithm : canFind;
     assert(partPalette[0].rgb == defaultPartColor);
     assert(paletteColour("pink pop") == 0xF587C2 && paletteColour("Pink") == -1);
+    // the first keeps the colour, the next is far from it, none is grey
+    auto v = variedColours(0x0FC3F2, 4);
+    assert(v.length == 4 && v[0] == 0x0FC3F2 && colourDistance(v[0], v[1]) > 0.25 && !v.canFind(0xD3D7DC));
+    assert(variedColours(0x0FC3F2, 1) == [0x0FC3F2u]);
 }
 
 /// Colours are 0xTTRRGGBB: the top byte is the transparency, so plain

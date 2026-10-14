@@ -1472,17 +1472,171 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         planeArg(x, "plane", o, n);
         return planeValue(o, -n);
     });
-    def("split", (ref CallArgs a) {
-        // s.split(plane): .above is on the side the normal points to, .below the other
-        auto x = Args(it, a, "split", ["solid", "plane"]);
+    // s.halves(plane): the two sides of a cut, .above where the normal points, .below the other
+    Value[2] cutSides(ref CallArgs a, string name)
+    {
+        auto x = Args(it, a, name, ["solid", "plane"]);
         auto s = x.solid("solid");
         Vec3 o, n;
         planeArg(x, "plane", o, n);
         auto half = halfSpace(it, nonEmpty(s, a.span), o, n, a.span);
-        auto above = solidBoolean(it, s, half, BoolOp.common, a.span);
-        auto below = solidBoolean(it, s, half, BoolOp.cut, a.span);
-        return Value.make(Kind.struct_, StructVal(halvesDef, [above, below]));
+        return [solidBoolean(it, s, half, BoolOp.common, a.span), solidBoolean(it, s, half, BoolOp.cut, a.span)];
+    }
+    def("halves", (ref CallArgs a) {
+        auto sides = cutSides(a, "halves");
+        // a copy: sides lives on this call's stack
+        return Value.make(Kind.struct_, StructVal(halvesDef, sides[].dup));
     });
+    // s.split(plane): the pieces the cut leaves, both sides, along X, then Y, then Z
+    def("split", (ref CallArgs a) {
+        auto sides = cutSides(a, "split");
+        SolidVal[] all;
+        foreach (side; sides)
+            if (side.kind == Kind.solid && side.solid.brep !is null)
+                all ~= piecesOf(it, side.solid, a.span);
+        sortPieces(it, all);
+        Value[] r;
+        foreach (p; all)
+            r ~= Value.of(p);
+        return Value.of(r);
+    });
+}
+
+/// What a list of solids has (`s.pieces.below(p)`, `.largest`, `.top`):
+/// which of them lie where.
+bool solidsMember(Interp it, Value[] xs, string name, Span span, out Value result, Value delegate(BuiltinImpl) method)
+{
+    auto k = it.kernel;
+    Vec3 centre(Value v) => v.solid.brep is null ? Vec3(0, 0, 0) : k.massProps(v.solid.brep).centroid;
+    Value one(string what, bool delegate(Value, Value) better)
+    {
+        if (xs.length == 0)
+            throw new HcadError(Code.index, format("%s of an empty list: no solid to choose", what), span);
+        auto best = xs[0];
+        foreach (v; xs[1 .. $])
+            if (better(v, best))
+                best = v;
+        return best;
+    }
+    // the solids on the normal's side of a plane (by their centre of mass), or cut by it
+    Value side(string what, int want)
+    {
+        return method((ref CallArgs a) {
+            // the receiver is the first argument: no plane after it is the old split(p).above
+            if (a.positional.length + a.named.length < 2)
+                throw new HcadError(Code.arity, format("%s(plane) chooses among solids: say which plane. For the two "
+                    ~ "sides of a cut, s.halves(plane).%s; s.split(plane) gives the pieces", what, what == "crossing" ? "above" : what), span);
+            auto x = Args(it, a, what, ["list", "plane"]);
+            Vec3 o, n;
+            planeArg(x, "plane", o, n);
+            Value[] r;
+            foreach (v; xs)
+            {
+                if (v.solid.brep is null)
+                    continue;
+                bool keep;
+                if (want == 0)
+                {
+                    // both sides keep something: the plane goes through it
+                    keep = !k.boolean(v.solid.brep, sideBox(k, v.solid.brep, o, n), BoolOp.cut).isEmptyBrep(k)
+                        && !k.boolean(v.solid.brep, sideBox(k, v.solid.brep, o, n * -1), BoolOp.cut).isEmptyBrep(k);
+                }
+                else
+                    keep = (centre(v) - o).dot(n) * want > 0;
+                if (keep)
+                    r ~= v;
+            }
+            return Value.of(r);
+        });
+    }
+    switch (name)
+    {
+    case "above": result = side("above", 1); return true;
+    case "below": result = side("below", -1); return true;
+    case "crossing": result = side("crossing", 0); return true;
+    case "nearest":
+        result = method((ref CallArgs a) {
+            auto x = Args(it, a, "nearest", ["list", "point"]);
+            auto p = x.vecLen("point");
+            // a speck at the point: the distance to each solid's surface
+            auto speck = k.translate(k.box(1e-3, 1e-3, 1e-3), p - Vec3(5e-4, 5e-4, 5e-4));
+            double dist(Value v)
+            {
+                Vec3 a1, b1;
+                return v.solid.brep is null ? double.infinity : k.distance(v.solid.brep, speck, a1, b1);
+            }
+            return one("nearest", (v, best) => dist(v) < dist(best));
+        });
+        return true;
+    case "largest", "smallest":
+        {
+            immutable big = name == "largest";
+            double vol(Value v) => v.solid.brep is null ? 0 : k.massProps(v.solid.brep).volume;
+            result = one(name, (v, best) => big ? vol(v) > vol(best) : vol(v) < vol(best));
+            return true;
+        }
+    case "top", "bottom", "right", "left", "back", "front":
+        {
+            // the highest, lowest, …: by centre of mass, as faces.top is the one facing up
+            immutable axis = name == "top" || name == "bottom" ? 2 : name == "right" || name == "left" ? 0 : 1;
+            immutable sign = name == "top" || name == "right" || name == "back" ? 1 : -1;
+            result = one(name, (v, best) => centre(v)[axis] * sign > centre(best)[axis] * sign);
+            return true;
+        }
+    default:
+        return false;
+    }
+}
+
+/// A box covering what lies on the normal's side of the plane through `o`,
+/// around `near`: what split() and crossing() cut with.
+Brep sideBox(BrepKernel k, Brep near, Vec3 o, Vec3 n)
+{
+    auto bb = k.bbox(near);
+    immutable size = 4 * (bb.size.length + (bb.center - o).length) + 10;
+    auto b = k.translate(k.box(size, size, size), Vec3(-size / 2, -size / 2, 0)); // above XY
+    immutable c = n.normalized.dot(Vec3(0, 0, 1));
+    if (c < -1 + 1e-12)
+        b = k.rotate(b, Vec3(1, 0, 0), PI);
+    else if (c < 1 - 1e-12)
+        b = k.rotate(b, Vec3(0, 0, 1).cross(n.normalized), acos(c));
+    return k.translate(b, o);
+}
+
+private bool isEmptyBrep(Brep b, BrepKernel k) => b is null || k.solids(b).length == 0;
+
+/// The separate bodies of `s`, ordered by position along X, then Y, then Z
+/// (`.pieces`, and @parts on a Solid). A body keeps the colour of `s`.
+SolidVal[] piecesOf(Interp it, SolidVal s, Span span)
+{
+    SolidVal[] r;
+    if (s.brep is null)
+        return r;
+    foreach (b; it.kernel.solids(s.brep))
+    {
+        auto p = derived(it, b, [s], "pieces", span);
+        if (s.hasColor)
+        {
+            p.hasColor = true;
+            p.rgb = s.rgb;
+        }
+        r ~= p;
+    }
+    sortPieces(it, r);
+    return r;
+}
+
+/// Puts solids in the order of `.pieces`: along X, then Y, then Z (by the
+/// middle of their boxes).
+void sortPieces(Interp it, SolidVal[] r)
+{
+    auto key(SolidVal v) => it.kernel.bbox(v.brep).center;
+    sort!((p, q) {
+        auto a = key(p), b = key(q);
+        if (abs(a.x - b.x) > 1e-6) return a.x < b.x;
+        if (abs(a.y - b.y) > 1e-6) return a.y < b.y;
+        return a.z < b.z;
+    })(r);
 }
 
 /// A box covering everything on the normal's side of the plane (seen from
@@ -1490,17 +1644,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
 SolidVal halfSpace(Interp it, Brep near, Vec3 o, Vec3 n, Span span)
 {
 
-    auto k = it.kernel;
-    auto bb = k.bbox(near);
-    immutable size = 4 * (bb.size.length + (bb.center - o).length) + 10;
-    auto b = k.translate(k.box(size, size, size), Vec3(-size / 2, -size / 2, 0)); // above XY
-    immutable c = n.dot(Vec3(0, 0, 1));
-    if (c < -1 + 1e-12)
-        b = k.rotate(b, Vec3(1, 0, 0), PI);
-    else if (c < 1 - 1e-12)
-        b = k.rotate(b, Vec3(0, 0, 1).cross(n), acos(c));
-    b = k.translate(b, o);
-    return primitive(it, b, "split", span);
+    return primitive(it, sideBox(it.kernel, near, o, n), "split", span);
 }
 
 Value axisValue(Vec3 origin, Vec3 direction) => Value.make(Kind.struct_, StructVal(axisDef,
@@ -1836,6 +1980,10 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
     case Kind.array:
         if (name == "length") { result = Value.integer(obj.arr.length); return true; }
         if (name == "empty") { result = Value.of(obj.arr.length == 0); return true; }
+        // a list of solids (s.pieces): which are where
+        import std.algorithm : all;
+        if (obj.arr.all!(e => e.kind == Kind.solid))
+            return solidsMember(it, obj.arr, name, span, result, &method);
         return false;
     case Kind.str:
         if (name == "length") { result = Value.integer(obj.s.length); return true; }
@@ -1895,18 +2043,9 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
             case "isEmpty": result = Value.of(s.brep is null); return true;
             case "pieces":
                 {
-                    // separate bodies, ordered by position along X, then Y, then Z
                     Value[] r;
-                    if (s.brep !is null)
-                        foreach (b; it.kernel.solids(s.brep))
-                            r ~= Value.of(derived(it, b, [s], "pieces", span));
-                    auto key(Value v) => it.kernel.bbox(v.solid.brep).center;
-                    sort!((p, q) {
-                        auto a = key(p), b = key(q);
-                        if (abs(a.x - b.x) > 1e-6) return a.x < b.x;
-                        if (abs(a.y - b.y) > 1e-6) return a.y < b.y;
-                        return a.z < b.z;
-                    })(r);
+                    foreach (p; piecesOf(it, s, span))
+                        r ~= Value.of(p);
                     result = Value.of(r);
                     return true;
                 }

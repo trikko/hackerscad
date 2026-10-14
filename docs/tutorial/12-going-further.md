@@ -295,6 +295,29 @@ Solid bottle() => cylinder(d: 13.6.mm, h: 60.mm).move(z: 4.mm);
 [examples/07_knob.hcad](../../examples/07_knob.hcad) is a knob on the shaft of a
 potentiometer, drawn this way.
 
+## Many parts from one function
+
+`@part` makes one part of what a function returns, however many bodies it
+has: two halves of a cut become one object to print. `@parts` makes a part of
+each separate body instead, and finds how many there are each time the model
+is evaluated:
+
+```d
+immutable cutPlane = plane(origin: vec(cut, 0.mm, 0.mm), normal: X);
+
+@parts("Yellow Pop", varied: true)
+Solid jaws() => clip().halves(cutPlane).above;
+```
+
+`halves` cuts in two sides, `.above` and `.below`. Where the cut crosses the
+slot of the clip, the side above is two jaws, and the parts list shows `jaws1`
+and `jaws2`, each in its colour (`varied: true`); move `cut` past the slot and
+there is one, `jaws`. `split` instead gives every piece of both sides as a list
+(`Solid[]`), a part per element with `@parts`: that is what **Split…** in the
+right-click menu writes for you. To pick pieces in code, `.above(plane)`,
+`.below(plane)`, `.largest`, `.top`… choose among them, and `.pieces` lists the
+bodies of any solid.
+
 ## Technical drawings
 
 A function marked `@drawing` makes a sheet with views, dimensions and

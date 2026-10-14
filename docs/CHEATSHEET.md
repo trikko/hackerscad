@@ -15,7 +15,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `Axis` — A line in space: an origin and a direction (axis(…), body.axis(edges…)); rotations and circular patterns.
 - `Frame` — A coordinate system on a face or plane: origin, X, Y and Z (body.frame(faces.top)); placeOn builds on it.
 - `BBox` — A solid's bounding box: min, max, size, center.
-- `Split` — What split gives: .above (where the plane's normal points) and .below.
+- `Halves` — What halves gives: .above (where the plane's normal points) and .below.
 - `Edges` — A selection of a solid's edges, for fillet and chamfer: edges.parallel(Z), edges.of(faces.top)…
 - `Faces` — A selection of a solid's faces, for shell, draft, frames: faces.top, faces.normal(X)…
 - `Edge` — One edge, inside a selector predicate: edges.filter(e => e.isCircle && e.radius == 3.mm).
@@ -127,7 +127,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.linearPattern(n: int, step: Vec) → Solid` — n copies, step apart, as one solid.
 - `s.circularPattern(n: int, axis: Axis, angle: Angle) → Solid` — n copies around an axis, as one solid.
 - `s.placeOn(frame: Frame) → Solid` — A solid built on XY (Z up) moved onto a frame or plane.
-- `s.split(plane: Plane) → Split` — Cuts with a plane: .above (where the normal points) and .below.
+- `s.split(plane: Plane) → Solid[]` — Cuts with a plane into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…
+- `s.halves(plane: Plane) → Halves` — Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.
 
 ## Profiles (2D)
 
@@ -184,8 +185,15 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.isEmpty → bool` — Whether nothing is left.
 - `s.isValid → bool` — Whether the solid is a valid closed solid.
 - `s.pieces → Solid[]` — The separate bodies, ordered along X, then Y, then Z.
-- `s.split(…).above → Solid` — The side of the cut the normal points to.
-- `s.split(…).below → Solid` — The other side of the cut.
+- `xs.above(plane: Plane) → Solid[]` — Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).
+- `xs.below(plane: Plane) → Solid[]` — Of a list of solids, those on the other side of the plane.
+- `xs.crossing(plane: Plane) → Solid[]` — Of a list of solids, those the plane cuts through.
+- `xs.nearest(point: Vec3) → Solid` — Of a list of solids, the one closest to a point.
+- `xs.largest → Solid` — Of a list of solids, the biggest by volume (smallest: the least).
+- `xs.smallest → Solid` — Of a list of solids, the least by volume.
+- `xs.top → Solid` — Of a list of solids, the highest (bottom, left, right, front, back alike).
+- `s.halves(…).above → Solid` — The side of the cut the normal points to.
+- `s.halves(…).below → Solid` — The other side of the cut.
 - `s.bbox.min → Vec` — The lowest corner.
 - `s.bbox.max → Vec` — The highest corner.
 - `s.bbox.size → Vec` — Width, depth and height.
@@ -302,6 +310,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 ## Annotations
 
 - `@part(color, alpha: 0..1, export: bool, name: string)` — A body to show and export: @part("steelblue"); name: its name in exported files.
+- `@parts(color, alpha: 0..1, export: bool, name: string, varied: bool)` — A part per separate body of the Solid returned (or per element of a Solid[]), named clip1, clip2…; varied: true, each in its own colour.
 - `@param(description, min:, max:, step:, choices:)` — A parameter with a field in the panel.
 - `@preset(name, value)` — The parameter's value in a named preset.
 - `@drawing` — A function returning a technical drawing.
@@ -366,7 +375,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - Build on a face: `cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top))`
 - Put one part beside another: `lid.nextTo(body, X, gap: 10.mm)`
 - Text in relief: `text("ABC", size: 5.mm).centered.extrude(0.6.mm)`
-- Cut with a plane and keep one side: `s.split(XY.offset(10.mm)).below`
+- Cut with a plane and keep one side: `s.halves(XY.offset(10.mm)).below`
+- Cut with a plane into pieces: `s.split(XY.offset(10.mm))`
 - A reference part, shown but not exported: `@part("slategray", alpha: 0.4, export: false)`
 - A parameter in the side panel: `@param("Width", min: 10.mm, max: 100.mm) immutable width = 40.mm;`
 - Check a requirement: `unittest { assert(body.bbox.size.z <= 40.mm, "too tall"); }`
