@@ -885,7 +885,10 @@ JSONValue[] toolList()
             ~ "the Steps panel row by row. params give value, default, type, min, max, step and choices; revision "
             ~ "counts the evaluations, log is what the model printed, outdated says the window should be restarted; "
             ~ "graphics tells what draws the 3D view (OpenGL renderer, software: true when the processor draws it) "
-            ~ "and how fast (draw_ms, frame_interval_ms while moving).",
+            ~ "and how fast: frames gives, over the last frames drawn while the view moved (hcad_gui_view counts), "
+            ~ "the wait from the movement to the frame (wait_ms; slow counts those over 33 ms, the jerks a user "
+            ~ "sees), the time apart (interval_ms: also long when the movements come slowly), on the processor "
+            ~ "(draw_ms) and on the graphics card (gpu_ms, -1 when not known), each with its _max_ms.",
             `"now": {"type": "boolean"}, "source": {"type": "boolean"}`, `[]`),
     ];
 }

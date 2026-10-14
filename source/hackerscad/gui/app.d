@@ -1231,7 +1231,7 @@ private:
         d.setDebugInfo(appName ~ " " ~ appVersion ~ "\n" ~ os.to!string ~ "\n" ~ path ~ "\n\n3D view: OpenGL "
             ~ viewport.glVersion ~ " on " ~ viewport.glRenderer ~ " (" ~ viewport.glVendor ~ ")"
             ~ (viewport.softwareGl() ? ", drawn by the processor" : "")
-            ~ format("\nframe: %.1f ms to draw, %.1f ms apart while moving", viewport.drawMs, viewport.frameIntervalMs)
+            ~ frameText(viewport.frameStats())
             ~ ("GSK_RENDERER" in g ? "\nGSK_RENDERER=" ~ g["GSK_RENDERER"].str : "")
             ~ ("HCAD_GL" in g ? "\nHCAD_GL=" ~ g["HCAD_GL"].str : ""));
         d.present(window);
@@ -1489,6 +1489,20 @@ private:
 
     bool graphicsNoted;
 
+    /// The frame figures for About: average / worst over the frames drawn
+    /// while the view moved.
+    static string frameText(Viewport.FrameStats f)
+    {
+        if (f.frames == 0)
+            return "\nframes: none measured yet (turn the view for a few seconds, then open About again)";
+        return format("\nframes, average / worst over the last %d while moving:", f.frames)
+            ~ format("\n  %.1f / %.1f ms waiting to start, %d slow (over 33 ms: jerks)", f.waitMs, f.waitMaxMs, f.slow)
+            ~ format("\n  %.1f / %.1f ms apart (16.7: 60 a second)", f.intervalMs, f.intervalMaxMs)
+            ~ format("\n  %.2f / %.2f ms on the processor", f.drawMs, f.drawMaxMs)
+            ~ (f.gpuMs < 0 ? "\n  graphics card time: not known" : format("\n  %.2f / %.2f ms on the graphics card",
+                f.gpuMs, f.gpuMaxMs));
+    }
+
     /// What draws the window, for diagnosis (state, About).
     JSONValue graphicsJson()
     {
@@ -1496,8 +1510,17 @@ private:
         JSONValue g = ["renderer": viewport.glRenderer, "version": viewport.glVersion, "vendor": viewport.glVendor];
         g["software"] = viewport.softwareGl();
         g["antialias"] = viewport.antialiasing();
-        g["draw_ms"] = viewport.drawMs;
-        g["frame_interval_ms"] = viewport.frameIntervalMs;
+        auto f = viewport.frameStats();
+        JSONValue frames = ["frames": f.frames, "slow": f.slow];
+        frames["draw_ms"] = f.drawMs;
+        frames["draw_max_ms"] = f.drawMaxMs;
+        frames["gpu_ms"] = f.gpuMs;
+        frames["gpu_max_ms"] = f.gpuMaxMs;
+        frames["wait_ms"] = f.waitMs;
+        frames["wait_max_ms"] = f.waitMaxMs;
+        frames["interval_ms"] = f.intervalMs;
+        frames["interval_max_ms"] = f.intervalMaxMs;
+        g["frames"] = frames;
         // how GTK draws the rest, and whether hackerscad fell back on Mesa
         foreach (name; ["GSK_RENDERER", "GDK_DEBUG", "HCAD_GL"])
             if (auto v = environment.get(name))

@@ -4,7 +4,7 @@
 module hackerscad.gui.viewport;
 
 import hackerscad.geom.printability : PrintCheck, checkPrint;
-import core.time : MonoTime;
+import core.time : MonoTime, msecs;
 import std.math : sin, cos, tan, atan, PI, abs, pow, sqrt;
 import std.algorithm : clamp, min, max;
 import std.string : toStringz;
@@ -122,7 +122,7 @@ final class Viewport
     void setDark(bool on)
     {
         darkStyle = on;
-        area.queueRender();
+        redraw();
     }
 
     // section plane: what lies where dot(p, sectionNormal) > sectionOffset is hidden
@@ -195,7 +195,8 @@ final class Viewport
                 yaw = startYaw - dx * 0.008;
                 pitch = max(-PI / 2 + 0.01, min(PI / 2 - 0.01, startPitch + dy * 0.008));
             }
-            area.queueRender();
+            moved();
+            redraw();
         });
         drag.connectDragEnd((double dx, double dy, GestureDrag g) {
             // a left click without movement picks what is under the pointer
@@ -222,7 +223,7 @@ final class Viewport
         });
         motion.connectLeave(() {
             hover = Hit.init;
-            area.queueRender();
+            redraw();
         });
         area.addController(motion);
 
@@ -231,6 +232,7 @@ final class Viewport
             // a wheel notch zooms by 10%; touchpads and smooth wheels report pixels: about 10% per 40 px
             import gdk.types : ScrollUnit;
             immutable steps = s.getUnit() == ScrollUnit.Wheel ? dy : dy / 40;
+            moved();
             zoomAt(pointerX, pointerY, pow(1.1, max(-2.0, min(2.0, steps))));
             return true;
         });
@@ -254,14 +256,14 @@ final class Viewport
             selected = Hit.init;
         if (fitView)
             fit();
-        area.queueRender();
+        redraw();
     }
 
     void select(Hit h)
     {
         selected = h;
         others = null;
-        area.queueRender();
+        redraw();
     }
 
     static bool sameItem(Hit a, Hit b) => a.part == b.part && a.edge == b.edge && (a.edge >= 0 || a.face == b.face);
@@ -293,7 +295,7 @@ final class Viewport
             selected = kept[$ - 1];
             others = kept[0 .. $ - 1];
         }
-        area.queueRender();
+        redraw();
     }
 
     /// Everything selected, in picking order (all on one part).
@@ -304,14 +306,14 @@ final class Viewport
     {
         selected = items.length ? items[$ - 1] : Hit.init;
         others = items.length ? items[0 .. $ - 1].dup : null;
-        area.queueRender();
+        redraw();
     }
 
     void setHidden(size_t part, bool hide)
     {
         if (part < hidden.length)
             hidden[part] = hide;
-        area.queueRender();
+        redraw();
     }
 
     bool isHidden(size_t part) => part < hidden.length && hidden[part];
@@ -320,7 +322,7 @@ final class Viewport
     void showAll()
     {
         hidden[] = false;
-        area.queueRender();
+        redraw();
     }
 
     /// What a click at view coordinates (x, y) would pick.
@@ -336,13 +338,13 @@ final class Viewport
         rollbackMesh = m;
         rollbackFeature = feature;
         rollbackDirty = true;
-        area.queueRender();
+        redraw();
     }
 
     void clearRollback()
     {
         rollback = false;
-        area.queueRender();
+        redraw();
     }
 
     bool inRollback() const => rollback;
@@ -382,7 +384,7 @@ final class Viewport
         inspectDirty = true;
         if (inspectItems.length)
             frameIfOutside(inspectItems);
-        area.queueRender();
+        redraw();
     }
 
     void clearInspect()
@@ -391,7 +393,7 @@ final class Viewport
         inspectItems = null;
         inspectColors = null;
         inspectDirty = true;
-        area.queueRender();
+        redraw();
     }
 
     bool inInspect() const => inspecting;
@@ -435,7 +437,7 @@ final class Viewport
         section = on;
         sectionNormal = normal.normalized;
         sectionOffset = offset;
-        area.queueRender();
+        redraw();
     }
 
     /// Where the parts start and end along a direction (for the section slider).
@@ -622,13 +624,13 @@ final class Viewport
     {
         sketches = s;
         sketchDirty = true;
-        area.queueRender();
+        redraw();
     }
 
     void setSketchMode(bool on)
     {
         sketchMode = on;
-        area.queueRender();
+        redraw();
     }
 
     /// Window coordinates of a model point; false when behind the camera.
@@ -690,7 +692,7 @@ final class Viewport
             applyFit(cast(double) area.getWidth() / area.getHeight());
         else
             fitPending = true;
-        area.queueRender();
+        redraw();
     }
 
     /// Looks at the model from direction `n` (pointing towards the viewer).
@@ -719,7 +721,7 @@ final class Viewport
     void zoom(double factor)
     {
         distance = max(1e-3, distance * factor);
-        area.queueRender();
+        redraw();
     }
 
     /// Turns the camera around what it looks at, like a drag: yaw around
@@ -728,7 +730,7 @@ final class Viewport
     {
         yaw -= yawDeg * PI / 180;
         pitch = max(-PI / 2 + 0.01, min(PI / 2 - 0.01, pitch + pitchDeg * PI / 180));
-        area.queueRender();
+        redraw();
     }
 
     /// Moves the model on screen by fractions of the view's size, like a
@@ -739,7 +741,7 @@ final class Viewport
         immutable h = max(1, area.getHeight());
         immutable k = mmPerPixel();
         target = target - c.right * (fx * area.getWidth() * k) + c.up * (fy * h * k);
-        area.queueRender();
+        redraw();
     }
 
     /// Zooms like the mouse wheel at a point of the view (fractions of its
@@ -761,7 +763,7 @@ final class Viewport
             immutable fov = min(fovy, 2 * atan(tan(fovy / 2) * w / h));
             distance = size / 2 / tan(fov / 2);
         }
-        area.queueRender();
+        redraw();
     }
 
     /// Where model point `p` appears, as fractions of the view's size;
@@ -796,7 +798,7 @@ final class Viewport
     void setShading(Shading s)
     {
         shading = s;
-        area.queueRender();
+        redraw();
     }
 
     /// The ground grid and the X and Y axes, each shown or not.
@@ -806,14 +808,14 @@ final class Viewport
     {
         showGrid = grid;
         showAxes = axes;
-        area.queueRender();
+        redraw();
     }
 
     /// Switches projection; what lies on the plane of the target keeps its size.
     void setOrthographic(bool on)
     {
         orthographic = on;
-        area.queueRender();
+        redraw();
     }
 
 private:
@@ -911,7 +913,7 @@ private:
         // scaling the camera about p keeps p at the same place on screen
         target = p + (target - p) * factor;
         distance = max(1e-3, distance * factor);
-        area.queueRender();
+        redraw();
     }
 
     void updateHoverCursor()
@@ -922,7 +924,7 @@ private:
         if (h.part >= 0 || hover.part >= 0)
         {
             hover = h;
-            area.queueRender();
+            redraw();
         }
     }
 
@@ -1039,6 +1041,7 @@ private:
         uAlpha = glGetUniformLocation(program, "uAlpha");
         uClipOn = glGetUniformLocation(program, "uClipOn");
         uClip = glGetUniformLocation(program, "uClip");
+        glGenQueries(cast(int) timerQueries.length, timerQueries.ptr);
         glReady = true;
     }
 
@@ -1136,7 +1139,7 @@ private:
             glViewport(port[0], port[1], port[2], port[3]);
             glDeleteFramebuffers(2, fbo.ptr);
             glDeleteRenderbuffers(3, rb.ptr);
-            area.queueRender();
+            redraw();
         }
         // drawn multisampled, then resolved into a plain buffer to read back
         glBindRenderbuffer(GL_RENDERBUFFER, rb[0]);
@@ -1216,11 +1219,123 @@ private:
             .canFind!(w => r.canFind(w));
     }
 
-    /// Average time spent drawing a frame (ms, on the processor: issuing
-    /// the commands), and between frames while they come one after the
-    /// other (turning or zooming): 16.7 is 60 frames a second.
-    public double drawMs = 0, frameIntervalMs = 0;
-    private MonoTime lastFrame;
+    /// How fast the view draws, over the last frames drawn while the user
+    /// moved it (turning, panning, zooming): for diagnosis, in About and the
+    /// agents' state. Times in ms; 16.7 is 60 frames a second.
+    public struct FrameStats
+    {
+        int frames;                      /// how many frames the figures are over
+        double drawMs = 0, drawMaxMs = 0;   /// processor: issuing the commands, antialiasing included
+        double gpuMs = -1, gpuMaxMs = -1;   /// graphics card (-1: not known yet, or it cannot tell)
+        double waitMs = 0, waitMaxMs = 0;   /// from asking for a frame to starting it
+        double intervalMs = 0, intervalMaxMs = 0;   /// from one frame to the next
+        // the wait is what the user sees as jerks: the time apart also grows
+        // when the movements come slowly (an agent's), with nothing wrong
+        int slow;                        /// frames waited for more than 33 ms (under 30 a second)
+    }
+
+    private enum statFrames = 120;
+    private double[statFrames] cpuTimes, waitTimes, gapTimes, gpuTimes;
+    private int statCount, statNext, gpuCount, gpuNext;
+    private MonoTime lastFrame, requestedAt, lastInput;
+    private bool lastFrameMoving;
+    // GPU time: a few timer queries in turn, read back frames later, never waited for
+    private uint[4] timerQueries;
+    private bool[4] timerPending, timerMoving;
+    private int timerNext;
+
+    /// The figures, over the last frames drawn while moving.
+    public FrameStats frameStats() const
+    {
+        import std.algorithm : maxElement, sum;
+        FrameStats f;
+        f.frames = statCount;
+        if (statCount)
+        {
+            auto c = cpuTimes[0 .. statCount], w = waitTimes[0 .. statCount], g = gapTimes[0 .. statCount];
+            f.drawMs = c.sum / statCount;
+            f.drawMaxMs = c.maxElement;
+            f.waitMs = w.sum / statCount;
+            f.waitMaxMs = w.maxElement;
+            int gaps;
+            double total = 0;
+            foreach (i; 0 .. statCount)
+            {
+                if (g[i] > 0)
+                {
+                    gaps++;
+                    total += g[i];
+                    f.intervalMaxMs = max(f.intervalMaxMs, g[i]);
+                }
+                if (w[i] > 33.4)
+                    f.slow++;
+            }
+            f.intervalMs = gaps ? total / gaps : 0;
+        }
+        if (gpuCount)
+        {
+            f.gpuMs = gpuTimes[0 .. gpuCount].sum / gpuCount;
+            f.gpuMaxMs = gpuTimes[0 .. gpuCount].maxElement;
+        }
+        return f;
+    }
+
+    /// Asks GTK for a frame, noting when: the wait until it starts is part
+    /// of the figures.
+    private void redraw()
+    {
+        if (requestedAt == MonoTime.init)
+            requestedAt = MonoTime.currTime;
+        area.queueRender();
+    }
+
+    /// The user (or an agent, as the user would) moved the view: frames
+    /// drawn soon after count in the figures.
+    public void moved()
+    {
+        lastInput = MonoTime.currTime;
+    }
+
+    /// Reads the timer queries that have finished, without waiting.
+    private void collectGpuTimes()
+    {
+        foreach (i, q; timerQueries)
+        {
+            if (!timerPending[i])
+                continue;
+            int available;
+            glGetQueryObjectiv(q, GL_QUERY_RESULT_AVAILABLE, &available);
+            if (!available)
+                continue;
+            ulong ns;
+            glGetQueryObjectui64v(q, GL_QUERY_RESULT, &ns);
+            timerPending[i] = false;
+            if (!timerMoving[i])
+                continue;
+            gpuTimes[gpuNext] = ns / 1e6;
+            gpuNext = (gpuNext + 1) % statFrames;
+            gpuCount = min(gpuCount + 1, statFrames);
+        }
+    }
+
+    /// Notes a frame drawn on screen: started at `started`, issued in `cpu`
+    /// ms. Only frames drawn while the user moves the view count.
+    private void noteFrame(MonoTime started, double cpu, bool moving)
+    {
+        immutable wait = requestedAt == MonoTime.init ? 0 : (started - requestedAt).total!"usecs" / 1000.0;
+        requestedAt = MonoTime.init;
+        // a pause between two movements is not a slow frame
+        immutable gap = lastFrameMoving && moving ? (started - lastFrame).total!"usecs" / 1000.0 : 0;
+        lastFrame = started;
+        lastFrameMoving = moving;
+        if (!moving)
+            return;
+        cpuTimes[statNext] = cpu;
+        waitTimes[statNext] = wait;
+        gapTimes[statNext] = gap < 1000 ? gap : 0;
+        statNext = (statNext + 1) % statFrames;
+        statCount = min(statCount + 1, statFrames);
+    }
 
     // ---- antialiasing on screen: GtkGLArea has no multisampling, so the
     // view is drawn into a multisampled buffer of its own, then resolved
@@ -1237,7 +1352,7 @@ private:
     public void setAntialias(bool on)
     {
         antialiasWanted = on;
-        area.queueRender();
+        redraw();
     }
 
     /// Whether the view is drawn antialiased now.
@@ -1301,20 +1416,29 @@ private:
     {
         if (!glReady)
             return false;
+        // the figures: the scope(exit)s run in reverse, so the timings take
+        // in the antialiasing resolved at the end
+        immutable started = MonoTime.currTime;
+        immutable moving = !offscreen && (dragging || started - lastInput < 300.msecs);
+        scope (exit)
+            if (!offscreen)
+                noteFrame(started, (MonoTime.currTime - started).total!"usecs" / 1000.0, moving);
+        immutable timer = timerQueries[0] && !offscreen && !timerPending[timerNext] ? timerNext : -1;
+        if (timerQueries[0] && !offscreen)
+            collectGpuTimes();
+        if (timer >= 0)
+        {
+            glBeginQuery(GL_TIME_ELAPSED, timerQueries[timer]);
+            timerPending[timer] = true;
+            timerMoving[timer] = moving;
+            timerNext = (timerNext + 1) % cast(int) timerQueries.length;
+        }
+        scope (exit)
+            if (timer >= 0)
+                glEndQuery(GL_TIME_ELAPSED);
         immutable resolveInto = beginMultisample();
         scope (exit)
             endMultisample(resolveInto);
-        immutable started = MonoTime.currTime;
-        scope (exit)
-        {
-            // averages over the last few dozen frames
-            immutable now = MonoTime.currTime;
-            drawMs = drawMs * 0.95 + (now - started).total!"usecs" / 1000.0 * 0.05;
-            immutable gap = (started - lastFrame).total!"usecs" / 1000.0;
-            if (lastFrame != MonoTime.init && gap < 250)
-                frameIntervalMs = frameIntervalMs == 0 ? gap : frameIntervalMs * 0.9 + gap * 0.1;
-            lastFrame = started;
-        }
         if (dirty)
             upload();
 
@@ -1877,7 +2001,7 @@ private:
         minWall = wall;
         foreach (ref g; gpu)
             g.printValid = false;
-        area.queueRender();
+        redraw();
     }
 
     /// What the printability style finds in part i (computed if needed: it

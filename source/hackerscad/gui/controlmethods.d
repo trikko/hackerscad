@@ -86,6 +86,9 @@ mixin template ControlMethods()
             {
                 import std.conv : to;
                 alias num = numberOf;
+                // moved as the user moves it: the frames count in graphics' figures
+                if (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom") || has("size"))
+                    viewport.moved();
                 // in the order a user would: frame, turn, move, zoom
                 if (auto v = arg("preset"))
                 {
