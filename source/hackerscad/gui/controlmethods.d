@@ -340,6 +340,39 @@ mixin template ControlMethods()
                             return reply(JSONValue.init, "show is move, rotate, hinge (with origin and direction) or none");
                         return reply(state(), null);
                     }
+                    // Place on…: {"place": {"from": […], "from_normal": […], "to": […], "to_normal": […], "spin": 0}}
+                    if (has("place"))
+                    {
+                        auto q = p["place"];
+                        Vec3 v3(string k)
+                        {
+                            Vec3 r;
+                            foreach (i; 0 .. 3)
+                                r[i] = numberOf(q[k][i]);
+                            return r;
+                        }
+                        foreach (k; ["from", "from_normal", "to", "to_normal"])
+                            if (q.type != JSONType.object || !(k in q) || q[k].type != JSONType.array || q[k].array.length != 3)
+                                return reply(JSONValue.init, "place needs from, from_normal, to and to_normal, each [x, y, z]");
+                        Vec3 axis;
+                        double angle;
+                        Viewport.faceTurn(v3("from_normal"), v3("to_normal"), axis, angle);
+                        immutable spin = "spin" in q ? numberOf(q["spin"]) : 0;
+                        // show: the placing previewed with its ring, for the user to spin and confirm
+                        if ("show" in q && q["show"].type == JSONType.true_)
+                        {
+                            viewport.startPlace(index, v3("from"), v3("from_normal"));
+                            viewport.previewPlace(v3("to"), v3("to_normal"));
+                            transformTitle.setLabel("Place " ~ last.parts[index].name);
+                            transformValue.setLabel(transformText());
+                            transformBar.setVisible(true);
+                            return reply(state(), null);
+                        }
+                        if (auto problem = writePlace(index, v3("from"), axis, angle, v3("to"), spin, v3("to_normal").normalized))
+                            return reply(JSONValue.init, problem);
+                        whenIdle(() => reply(state(), null));
+                        return;
+                    }
                     // a turn about any axis: {"hinge": 30, "origin": […], "direction": […]}
                     if (has("hinge"))
                     {

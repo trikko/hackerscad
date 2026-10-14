@@ -281,6 +281,15 @@ final class Viewport
                 updateHoverCursor();
                 return;
             }
+            // placing: a left click puts the anchor where the pointer is
+            if (!dragging && dragButton == 1 && placing)
+            {
+                hoverPlace(startX, startY);
+                choosePlace();
+                dragging = false;
+                updateHoverCursor();
+                return;
+            }
             // a left click without movement picks what is under the pointer
             if (!dragging && dragButton == 1 && onPick !is null)
             {
@@ -342,7 +351,10 @@ final class Viewport
             keepPreview = false;
             gizmoPart = -1;
             hingeAngle = 0;
+            placeActive = false;
         }
+        if (placing)
+            stopPlace();
         hidden = new bool[parts.length];
         foreach (i, q; parts)
             hidden[i] = (q.name in was) !is null;
@@ -811,6 +823,217 @@ final class Viewport
 
     enum Gizmo { none, move, rotate, hinge }
 
+    // ---- Place on…: a corner or the centre of a face onto one of another
+    // face (or the ground), the faces against each other, then the hinge
+    // ring to spin the part about the target's normal
+
+    /// 1 choosing where the anchor goes, 0 none.
+    public int placing;
+    public int placePart = -1;
+    public Vec3 placeFrom, placeFromN;            /// the anchor carried, and its face's outward normal
+    public Vec3 placeTo, placeToN;                /// where it goes, and the normal out of what it lies on
+    public Vec3 placeAxis = Vec3(0, 0, 1);        /// the turn that sets the faces against each other, about placeFrom
+    public double placeAngle = 0;
+    public bool placeActive;                      /// that turn and the move are in the preview
+    private Hit placeHover;                       /// the anchor under the pointer (part -1: the ground)
+    private Vec3[] placeHoverDots;                /// the anchors of the face under the pointer
+    void delegate(Vec3 to, Vec3 toNormal) onPlaceTarget;
+
+    /// The anchors of face `face` of part `i`: the corners of its edges, their
+    /// middles, the centres of its round edges, and its middle; with its
+    /// outward normal.
+    Vec3[] faceAnchors(size_t i, int face, out Vec3 normal)
+    {
+        Vec3[] r;
+        if (i >= parts.length || face < 0)
+            return r;
+        auto p = parts[i];
+        void add(Vec3 v)
+        {
+            foreach (q; r)
+                if ((q - v).length < 1e-6)
+                    return;
+            r ~= v;
+        }
+        foreach (k, e; p.edgeInfo)
+            if (k < p.edgeFaces.length && (p.edgeFaces[k][0] == face || p.edgeFaces[k][1] == face))
+            {
+                add(e.start);
+                add(e.end);
+                add(e.kind == EdgeKind.line ? (e.start + e.end) * 0.5 : e.mid);
+                if (e.kind == EdgeKind.circle)
+                    add(e.center);
+            }
+        if (p.kernel !is null && p.brep !is null)
+        {
+            auto fs = p.kernel.faces(p.brep);
+            if (face < fs.length)
+            {
+                add(fs[face].center);
+                normal = fs[face].normal;
+            }
+        }
+        return r;
+    }
+
+    /// The smallest turn (axis, degrees) that sets a face of outward normal
+    /// `fromN` against a surface of outward normal `toN`: the face's normal
+    /// then points into it.
+    static void faceTurn(Vec3 fromN, Vec3 toN, out Vec3 axis, out double angle)
+    {
+        import std.math : acos;
+        fromN = fromN.normalized;
+        auto want = toN.normalized * -1;
+        auto a = fromN.cross(want);
+        immutable c = clamp(fromN.dot(want), -1.0, 1.0);
+        if (a.length < 1e-9)
+        {
+            // already facing (no turn), or exactly away: half a turn about any axis across it
+            a = (abs(fromN.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(fromN);
+            angle = c > 0 ? 0 : 180;
+        }
+        else
+            angle = acos(c) * 180 / PI;
+        axis = a.normalized;
+    }
+
+    /// Starts Place on… for part `part`: `from` (an anchor of its face) and that face's normal.
+    public void startPlace(int part, Vec3 from, Vec3 fromNormal)
+    {
+        stopGizmo();
+        placing = 1;
+        placePart = part;
+        placeFrom = from;
+        placeFromN = fromNormal.normalized;
+        placeHover = Hit.init;
+        placeHoverDots = null;
+        redraw();
+    }
+
+    public void stopPlace()
+    {
+        placing = 0;
+        placeHover = Hit.init;
+        placeHoverDots = null;
+        redraw();
+    }
+
+    /// The anchor nearest the pointer on the face under it, or the ground below it.
+    private void hoverPlace(double x, double y)
+    {
+        auto h = pick(x, y);
+        placeHover = Hit.init;
+        placeHoverDots = null;
+        if (h.part >= 0 && h.part != placePart && h.face >= 0)
+        {
+            Vec3 n;
+            placeHoverDots = faceAnchors(h.part, h.face, n);
+            double best = double.infinity;
+            foreach (a; placeHoverDots)
+            {
+                double ax, ay;
+                if (project(a, ax, ay) && (ax - x) ^^ 2 + (ay - y) ^^ 2 < best)
+                {
+                    best = (ax - x) ^^ 2 + (ay - y) ^^ 2;
+                    placeHover = h;
+                    placeHover.point = a;
+                    placeHover.normal = n.length > 0.5 ? n : h.normal;
+                }
+            }
+        }
+        else if (h.part < 0)
+        {
+            // the ground: whole millimetres, the normal up
+            Vec3 g;
+            if (onFloor(x, y, 0, g))
+            {
+                import std.math : round;
+                placeHover.part = -1;
+                placeHover.face = -2;   // the ground
+                placeHover.point = Vec3(round(g.x), round(g.y), 0);
+                placeHover.normal = Vec3(0, 0, 1);
+                // the origin takes the pointer when near it
+                double ox, oy;
+                if (project(Vec3(0, 0, 0), ox, oy) && (ox - x) ^^ 2 + (oy - y) ^^ 2 < 18 * 18)
+                    placeHover.point = Vec3(0, 0, 0);
+            }
+        }
+        redraw();
+    }
+
+    /// The anchors while placing: the one carried, those of the face under the pointer, the one it would go to.
+    private void drawPlace()
+    {
+        if (placing == 0)
+            return;
+        immutable carried = Vec3(0.2, 0.75, 0.35), dot = Vec3(0.55, 0.57, 0.6), target = Vec3(1.0, 0.5, 0.0);
+        drawKnob(placeFrom, carried, handlePixels - 1);
+        drawKnob(Vec3(0, 0, 0), dot, handlePixels - 3);   // the origin, a place to go too
+        foreach (a; placeHoverDots)
+            drawKnob(a, dot, handlePixels - 3);
+        if (placeHover.face >= 0 || placeHover.face == -2)
+        {
+            drawKnob(placeHover.point, target, handlePixels);
+            drawPolyline([placeFrom, placeHover.point], target, 1.5);
+        }
+    }
+
+    /// The anchor clicked: the turn that sets the faces against each other,
+    /// the move, then the ring about the target's normal.
+    private void choosePlace()
+    {
+        if (!(placeHover.face >= 0 || placeHover.face == -2) || onPlaceTarget is null)
+            return;
+        auto to = placeHover.point, toN = placeHover.normal.normalized;
+        placing = 0;
+        placeHoverDots = null;
+        onPlaceTarget(to, toN);
+    }
+
+    /// The preview of a placing: `to` and `toN` chosen; the hinge ring about
+    /// toN through to spins it further.
+    public void previewPlace(Vec3 to, Vec3 toN)
+    {
+        placeTo = to;
+        placeToN = toN;
+        faceTurn(placeFromN, toN, placeAxis, placeAngle);
+        placeActive = true;
+        placing = 0;   // the anchors are no longer chosen: the ring is shown
+        placeHoverDots = null;
+        // the ring round the part where it now lies, not where it was: from
+        // far away its box would make a huge ring, and the view zoom right out
+        gizmo = Gizmo.hinge;
+        gizmoPart = placePart;
+        gizmoMove = Vec3(0, 0, 0);
+        gizmoTurns = null;
+        hingeAngle = 0;
+        hingeOrigin = to;
+        hingeDir = toN.normalized;
+        keepPreview = false;
+        gizmoGrab = gizmoHover = -1;
+        auto turn = axisTurn(placeAxis, placeAngle, placeFrom);
+        auto b = parts[placePart].bbox;
+        Vec3 lo = Vec3(double.max, double.max, double.max), hi = Vec3(-double.max, -double.max, -double.max);
+        foreach (k; 0 .. 8)
+        {
+            auto c = Vec3(k & 1 ? b.max.x : b.min.x, k & 2 ? b.max.y : b.min.y, k & 4 ? b.max.z : b.min.z);
+            auto q = Vec3(turn[0] * c.x + turn[4] * c.y + turn[8] * c.z + turn[12],
+                turn[1] * c.x + turn[5] * c.y + turn[9] * c.z + turn[13],
+                turn[2] * c.x + turn[6] * c.y + turn[10] * c.z + turn[14]) + (to - placeFrom);
+            foreach (i; 0 .. 3)
+            {
+                lo[i] = min(lo[i], q[i]);
+                hi[i] = max(hi[i], q[i]);
+            }
+        }
+        gizmoLo = lo;
+        gizmoHi = hi;
+        auto middle = (lo + hi) * 0.5;
+        gizmoCentre = hingeOrigin + hingeDir * (middle - hingeOrigin).dot(hingeDir);
+        makeRoom();
+        redraw();
+    }
+
     /// Hinge: one ring about an axis through `hingeOrigin` along `hingeDir`
     /// (a face's normal, a hole's axis, an edge), turned by `hingeAngle`
     /// degrees, counter-clockwise looking down the direction.
@@ -858,6 +1081,29 @@ final class Viewport
         gizmoGrab = gizmoHover = -1;
         makeRoom();
         redraw();
+    }
+
+    /// The matrix (column-major, for OpenGL) of a turn of `degrees` about the
+    /// axis through `origin` along `dir`.
+    static float[16] axisTurn(Vec3 dir, double degrees, Vec3 origin)
+    {
+        immutable a = degrees * PI / 180, c = cos(a), sn = sin(a), t = 1 - c;
+        immutable x = dir.x, y = dir.y, z = dir.z;
+        double[3][3] q = [[t * x * x + c, t * x * y - sn * z, t * x * z + sn * y],
+            [t * x * y + sn * z, t * y * y + c, t * y * z - sn * x],
+            [t * x * z - sn * y, t * y * z + sn * x, t * z * z + c]];
+        float[16] r = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+        foreach (row; 0 .. 3)
+            foreach (col; 0 .. 3)
+                r[col * 4 + row] = cast(float) q[row][col];
+        foreach (row; 0 .. 3)
+        {
+            double v = origin[row];
+            foreach (col; 0 .. 3)
+                v -= q[row][col] * origin[col];
+            r[12 + row] = cast(float) v;
+        }
+        return r;
     }
 
     /// The hinge gizmo on part `part`: one ring about the axis through
@@ -977,6 +1223,7 @@ final class Viewport
         {
             gizmoPart = -1;
             hingeAngle = 0;
+            placeActive = false;
         }
         redraw();
     }
@@ -1017,6 +1264,15 @@ final class Viewport
                 r[12 + row] = cast(float) v;
             }
             m = multiply(r, m);
+        }
+        if (placeActive)
+        {
+            // the turn about the anchor, then the anchor onto its target
+            m = multiply(axisTurn(placeAxis, placeAngle, placeFrom), m);
+            auto to = placeTo - placeFrom;
+            m[12] += to.x;
+            m[13] += to.y;
+            m[14] += to.z;
         }
         if (hingeAngle != 0)   // also after ✓, until the new parts come
         {
@@ -2050,6 +2306,12 @@ private:
             area.setCursorFromName("grab");
             return;
         }
+        if (placing)
+        {
+            area.setCursorFromName("crosshair");
+            hoverPlace(pointerX, pointerY);
+            return;
+        }
         // edges and vertices light up under the pointer: what a click would pick
         auto h = selectMode == SelectMode.edge || selectMode == SelectMode.vertex ? pickSelect(pointerX, pointerY)
             : pick(pointerX, pointerY);
@@ -2850,7 +3112,10 @@ private:
 
         renderSketches();
         drawGizmo();
-        drawHoverMark();
+        if (placing)
+            drawPlace();
+        else
+            drawHoverMark();
         drawButtons();
         glBindVertexArray(0);
         if (onFrame !is null)

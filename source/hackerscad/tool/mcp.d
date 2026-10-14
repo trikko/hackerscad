@@ -793,11 +793,18 @@ JSONValue[] toolList()
             ~ "the part's box. hinge: degrees about the axis through origin [x, y, z] (mm) along direction "
             ~ "[x, y, z], as Rotate around its normal / this edge (written as .rotate(30.deg, Y, around: …)). show: move or "
             ~ "rotate shows the frame or the rings on the part for the user to drag, hinge (with origin and direction) "
-            ~ "one ring about that axis (none takes them away), writing nothing. A piece of @parts moves or turns "
+            ~ "one ring about that axis (none takes them away), writing nothing. place: {from, from_normal, to, "
+            ~ "to_normal, spin} as Place on…: the part turned so the face of outward normal from_normal lies against the "
+            ~ "surface of outward normal to_normal, the point from on the point to (corners and middles of faces, or a "
+            ~ "point of the ground with to_normal [0, 0, 1]), then spun by spin degrees about to_normal; with show: true "
+            ~ "inside place, previewed with its ring for the user to spin and confirm, writing nothing. A piece of @parts moves or turns "
             ~ "alone. part: its name (needed with several parts).",
             `"part": {"type": "string"}, "move": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"rotate": {"type": "object", "properties": {"axis": {"type": "string", "enum": ["x", "y", "z"]}, `
             ~ `"angle": {"type": "number"}}, "required": ["axis", "angle"]}, `
+            ~ `"place": {"type": "object", "properties": {"from": {"type": "array", "items": {"type": "number"}}, `
+            ~ `"from_normal": {"type": "array", "items": {"type": "number"}}, "to": {"type": "array", "items": {"type": "number"}}, `
+            ~ `"to_normal": {"type": "array", "items": {"type": "number"}}, "spin": {"type": "number"}, "show": {"type": "boolean"}}}, `
             ~ `"hinge": {"type": "number"}, "origin": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"direction": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"show": {"type": "string", "enum": ["move", "rotate", "hinge", "none"]}`, `[]`),

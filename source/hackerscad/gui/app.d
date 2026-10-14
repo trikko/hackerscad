@@ -811,6 +811,12 @@ final class MainWindow
         viewport.onGizmo = (double x, double y) => showTransformValue(x, y);
         // the ✓ and the X next to a part being moved or turned
         viewport.onGizmoAccept = () => applyTransform();
+        // Place on…: where the anchor goes was clicked; the ring now spins it
+        viewport.onPlaceTarget = (Vec3 to, Vec3 toN) {
+            viewport.previewPlace(to, toN);
+            transformValue.setLabel(transformText());
+            info("turn it with the ring if you like, then ✓ (X leaves it where it was)");
+        };
         viewport.onGizmoCancel = () => cancelTransform();
         // labels move after the frame, not while the view is being drawn
         viewport.onFrame = () {
@@ -869,7 +875,7 @@ final class MainWindow
                     applyTransform();
                     return true;
                 }
-                if (viewport.gizmo != Viewport.Gizmo.none && key == KEY_Escape)
+                if ((viewport.gizmo != Viewport.Gizmo.none || viewport.placing) && key == KEY_Escape)
                 {
                     cancelTransform();
                     return true;
@@ -2099,8 +2105,13 @@ private:
     /// X, Y and Z, or the angles about them of all the turns as one.
     string transformText()
     {
+        // the short way round: several turns of the ring read as what they come to
+        import hackerscad.tool.codegen : halfTurn;
+        immutable spin = halfTurn(viewport.hingeAngle);
+        if (viewport.gizmo == Viewport.Gizmo.hinge && viewport.placeActive)
+            return spin == 0 ? "placed" : format("placed, turned %+g°", spin);
         if (viewport.gizmo == Viewport.Gizmo.hinge)
-            return viewport.hingeAngle == 0 ? "not turned" : format("%+g°", viewport.hingeAngle);
+            return spin == 0 ? "not turned" : format("%+g°", spin);
         if (viewport.gizmo == Viewport.Gizmo.move)
         {
             auto m = viewport.gizmoMove;
@@ -2152,6 +2163,7 @@ private:
     {
         if (viewport is null || transformBar is null)
             return;
+        viewport.stopPlace();
         viewport.stopGizmo();
         transformBar.setVisible(false);
     }
@@ -2162,9 +2174,22 @@ private:
     {
         if (viewport.gizmo == Viewport.Gizmo.none)
             return;
+        if (viewport.gizmo == Viewport.Gizmo.hinge && viewport.placeActive)
+        {
+            if (auto problem = writePlace(viewport.gizmoPart, viewport.placeFrom, viewport.placeAxis, viewport.placeAngle,
+                    viewport.placeTo, viewport.hingeAngle, viewport.placeToN))
+            {
+                info(problem);
+                return cancelTransform();
+            }
+            viewport.stopGizmo(true);
+            transformBar.setVisible(false);
+            return;
+        }
         if (viewport.gizmo == Viewport.Gizmo.hinge)
         {
-            if (viewport.hingeAngle == 0)
+            import hackerscad.tool.codegen : halfTurn;
+            if (halfTurn(viewport.hingeAngle) == 0)
                 return cancelTransform();
             if (auto problem = writeHinge(viewport.gizmoPart, viewport.hingeAngle, viewport.hingeOrigin, viewport.hingeDir))
             {
@@ -2209,6 +2234,86 @@ private:
     /// in degrees, about `around`) part `name` in the code; the problem, or null.
     string writeTransform(int index, string kind, Vec3 v, Vec3 around) =>
         writeTransforms(index, [Turn(kind, v)], around);
+
+    /// Place on…'s code for part `index`: the turn of `angle` degrees about
+    /// `axis` through `from`, the move from `from` to `to`, then the spin
+    /// about `toN` through `to`, as one change; the problem, or null.
+    string writePlace(int index, Vec3 from, Vec3 axis, double angle, Vec3 to, double spin, Vec3 toN)
+    {
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        if (index < 0 || index >= last.parts.length)
+            return "no part to place";
+        try
+        {
+            import hackerscad.tool.codegen : hingePart, hingePiece, transformPiece;
+            import std.math : round;
+            auto p = last.parts[index];
+            immutable piece = isPiece(index);
+            auto before = text(), after = before;
+            // the angle and the move rounded where they are whole (a cube's face turns by 90)
+            auto a = abs(angle - round(angle)) < 1e-6 ? round(angle) : angle;
+            auto move = to - from;
+            foreach (i; 0 .. 3)
+                move[i] = round(move[i] * 1000) / 1000;
+            if (abs(a) > 1e-6)
+                after = (piece ? hingePiece(after, path, p.fn, p.piece, p.fromSolid, a, from, axis)
+                    : hingePart(after, path, p.fn, a, from, axis)).apply(after);
+            if (move.length > 1e-6)
+                after = (piece ? transformPiece(after, path, p.fn, p.piece, p.fromSolid, "move", move)
+                    : transformPart(after, path, p.fn, "move", move)).apply(after);
+            if (abs(spin) > 1e-6)
+                after = (piece ? hingePiece(after, path, p.fn, p.piece, p.fromSolid, spin, to, toN)
+                    : hingePart(after, path, p.fn, spin, to, toN)).apply(after);
+            if (after == before)
+                return "it is there already";
+            size_t head, tail;
+            while (head < before.length && head < after.length && before[head] == after[head])
+                head++;
+            while (tail < before.length - head && tail < after.length - head && before[$ - 1 - tail] == after[$ - 1 - tail])
+                tail++;
+            Edit e;
+            e.offset = head;
+            e.length = before.length - head - tail;
+            e.text = after[head .. $ - tail];
+            e.selectOffset = after.length - tail;
+            applyEdit(e);
+            viewport.setSelection(null);
+            info("");
+            return null;
+        }
+        catch (CodegenException e)
+            return e.msg;
+        catch (HcadError e)
+            return "fix the errors in the code first: " ~ e.msg;
+    }
+
+    /// Place on… from a face of part `index`, `at` the point clicked on it:
+    /// the face's anchor nearest that point is carried.
+    void startPlaceOn(int index, int face, Vec3 at)
+    {
+        if (index < 0 || index >= last.parts.length)
+            return;
+        auto part = last.parts[index];
+        if (part.span.file != absolutePath(path))
+            return info(format("part '%s' is defined in another file", part.name));
+        if (sectionToggle.getActive() && splitPart >= 0)
+            sectionToggle.setActive(false);
+        cancelTransform();
+        Vec3 n;
+        auto anchors = viewport.faceAnchors(index, face, n);
+        if (anchors.length == 0 || n.length < 0.5)
+            return info("that face has no corner or middle to place from");
+        auto from = anchors[0];
+        foreach (a; anchors)
+            if ((a - at).length < (from - at).length)
+                from = a;
+        viewport.startPlace(index, from, n);
+        transformTitle.setLabel("Place " ~ part.name);
+        transformValue.setLabel("click where the green point goes: a corner or the middle of a face, or the ground");
+        transformBar.setVisible(true);
+        info("Place " ~ part.name ~ ": click a corner or the middle of another face, or the ground · Esc cancels");
+    }
 
     /// Turns part `index` by `angle` degrees about the axis through `origin`
     /// along `dir`, in the code (a piece of @parts alone); the problem, or null.
@@ -3475,6 +3580,17 @@ private:
             entries ~= S();
         foreach (choice; hinges)
             entries ~= hingeEntry(contextHit.part, choice);
+
+        // Place on…: from the face under the click (any mode)
+        {
+            auto under = viewport.pickAny(x, y);
+            if (under.part == contextHit.part && under.face >= 0)
+            {
+                immutable index = contextHit.part, face = under.face;
+                immutable at = under.point;
+                entries ~= I("Place on…", () => startPlaceOn(index, face, at));
+            }
+        }
 
         // what the whole part can do: the menu itself in the Part mode, a group in the others
         auto whole = entries.length;
