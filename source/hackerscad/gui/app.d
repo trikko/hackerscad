@@ -359,7 +359,9 @@ int main(string[] args)
         installDesktopEntry();
     // --screenshot=FILE.png saves the window after the first evaluation and quits;
     // --size=WIDTHxHEIGHT opens the window that big (for pictures of it);
-    // --theme=light|dark|system for this run only (the menu's choice is kept)
+    // --theme=light|dark|system for this run only (the menu's choice is kept);
+    // --name=NAME names the window (for agents and scripts that start it:
+    // they know its name before it opens), when no open window has it
     string path, shot, theme;
     foreach (a; args[1 .. $])
     {
@@ -367,6 +369,8 @@ int main(string[] args)
             shot = a[13 .. $];
         else if (a.length > 8 && a[0 .. 8] == "--theme=")
             theme = a[8 .. $];
+        else if (a.length > 7 && a[0 .. 7] == "--name=")
+            MainWindow.startName = a[7 .. $];
         else if (a.length > 7 && a[0 .. 7] == "--size=")
         {
             import std.array : split;
@@ -1004,8 +1008,23 @@ final class MainWindow
         catch (Exception)
             exeAtStart = null;
         control = new ControlServer;
-        if (control.start(&handleControl))
+        immutable wanted = startName;
+        startName = null;   // the first window only: the others get their own
+        if (control.start(&handleControl, wanted))
+        {
             showWindowName();
+            // whoever started it (a script, an agent) learns which window is theirs
+            try
+            {
+                import std.stdio : stdout;
+                stdout.writeln("hackerscad: window ", control.name);
+                stdout.flush();
+            }
+            catch (Exception)
+            {
+                // no console (Windows): nobody to tell
+            }
+        }
         else
             control = null;
         window.connectCloseRequest(() {
@@ -2019,6 +2038,7 @@ private:
     MenuButton displayMenu; /// the cube of the view bar: drawing style and projection
     ViewStack sideStack;    /// the sidebar: Parameters and Steps
     static int[2] startSize = [1440, 880];   /// of the window (--size=WxH)
+    static string startName;   /// the first window's name (--name=NAME), if free
     Paned mainPaned;        /// the code on the left, the rest on the right
     import gtk.check_button : CheckButton;
     CheckButton[Shading] shadingChoice;

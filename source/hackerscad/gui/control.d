@@ -35,11 +35,36 @@ final class ControlServer
 
     string name() const => name_;
 
-    /// Starts listening under a free random name.
-    bool start(Handler h)
+    /// Starts listening under the name `wanted` when it is free and usable,
+    /// otherwise under a free random one.
+    bool start(Handler h, string wanted = null)
     {
         handler = h;
         removeStaleChannels();
+        if (wanted.length)
+        {
+            auto n = normalizeWindowName(wanted);
+            string why = n is null ? "use letters, digits and dashes" : windowAlive(n) ? "another window has it" : null;
+            if (why is null)
+                try
+                {
+                    listener = bindAs(n);
+                    name_ = n;
+                    path = socketPath(n);
+                    thread = new Thread(&acceptLoop);
+                    thread.isDaemon = true;
+                    thread.start();
+                    return true;
+                }
+                catch (Exception e)
+                    why = e.msg;
+            import std.stdio : stderr;
+            try
+                stderr.writeln("hackerscad: cannot name the window '", wanted, "' (", why, "): a random name instead");
+            catch (Exception)
+            {
+            }
+        }
         foreach (attempt; 0 .. 50)
         {
             auto candidate = randomWindowName();
