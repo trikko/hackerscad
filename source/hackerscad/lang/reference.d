@@ -234,7 +234,8 @@ immutable Ref[] reference =
         "s.rotate(30.deg, X)                // an angle about an axis: X, a vec, or an Axis",
         "s.rotate(x: 30, y: 10, z: 45)      // about X, then Y, then Z",
         "s.rotate(z: 45, around: p)         // about point p instead of the origin"]),
-    F("scale", "Shape", ["factor: number"], "", "Scales around the origin."),
+    F("scale", "Shape", ["factor: number", "x: number", "y: number", "z: number"], "",
+        "Scales around the origin: scale(2), or a factor each, scale(x: 2, y: 0.5) (an ellipsoid from a sphere)."),
     withForms(F("mirror", "Shape", ["plane: Plane"], "", "mirror(X): across the plane through the origin with that normal, or any plane."), [
         "s.mirror(X)                     // across the plane through the origin, normal X",
         "s.mirror(body.plane(faces.top)) // across any plane"]),

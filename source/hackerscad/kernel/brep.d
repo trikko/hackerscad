@@ -166,6 +166,8 @@ interface BrepKernel
     /// Rotation around an axis through the origin.
     Brep rotate(Brep s, Vec3 axis, double angleRad);
     Brep scale(Brep s, double factor);
+    /// A scale by its own factor along each axis, about the origin.
+    Brep scaleXyz(Brep s, double sx, double sy, double sz);
     /// Mirror across the plane through the origin with the given normal.
     Brep mirror(Brep s, Vec3 normal);
 

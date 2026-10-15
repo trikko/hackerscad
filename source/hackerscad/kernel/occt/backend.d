@@ -171,6 +171,7 @@ final class OcctKernel : BrepKernel
         wrap(hc_rotate(h(s), axis.x, axis.y, axis.z, angleRad), "rotate");
 
     Brep scale(Brep s, double factor) => wrap(hc_scale(h(s), factor), "scale");
+    Brep scaleXyz(Brep s, double sx, double sy, double sz) => wrap(hc_scale_xyz(h(s), sx, sy, sz), "scale");
 
     Brep mirror(Brep s, Vec3 n) => wrap(hc_mirror(h(s), n.x, n.y, n.z), "mirror");
 

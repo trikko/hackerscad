@@ -600,12 +600,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         });
     });
     def("scale", (ref CallArgs a) {
-        auto x = Args(it, a, "scale", ["solid", "factor"]);
+        // scale(k) the same way along every axis; scale(x: 2, y: 0.5) a factor
+        // each (the ones not given stay 1): an ellipsoid from a sphere
+        auto x = Args(it, a, "scale", ["solid", "factor", "x", "y", "z"]);
         auto s = x.solid("solid");
-        immutable f = x.num("factor");
-        if (f <= 0)
-            throw new HcadError(Code.type, "scale factor must be positive", x.spanOf("factor"));
-        return transformed(it, a.span, s, b => k.scale(b, f));
+        if (x.has("factor") && (x.has("x") || x.has("y") || x.has("z")))
+            throw new HcadError(Code.type, "scale takes one factor, or x:, y:, z:, not both", x.spanOf("factor"));
+        immutable f = x.has("factor") ? x.num("factor") : 1.0;
+        immutable sx = x.has("x") ? x.num("x") : f, sy = x.has("y") ? x.num("y") : f, sz = x.has("z") ? x.num("z") : f;
+        foreach (k_, v; ["factor": f, "x": sx, "y": sy, "z": sz])
+            if (v <= 0)
+                throw new HcadError(Code.type, "scale factors must be positive", x.has(k_) ? x.spanOf(k_) : a.span);
+        if (sx == sy && sy == sz)
+            return transformed(it, a.span, s, b => k.scale(b, sx));
+        return transformed(it, a.span, s, b => k.scaleXyz(b, sx, sy, sz));
     });
     def("mirror", (ref CallArgs a) {
         // mirror(X) across the plane through the origin with that normal, or

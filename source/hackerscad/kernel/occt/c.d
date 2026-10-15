@@ -49,6 +49,7 @@ hc_shape* hc_revolve(const(hc_shape)* s, double ox, double oy, double oz, double
 hc_shape* hc_translate(const(hc_shape)* s, double x, double y, double z);
 hc_shape* hc_rotate(const(hc_shape)* s, double ax, double ay, double az, double angle_rad);
 hc_shape* hc_scale(const(hc_shape)* s, double factor);
+hc_shape* hc_scale_xyz(const(hc_shape)* s, double sx, double sy, double sz);
 hc_shape* hc_mirror(const(hc_shape)* s, double nx, double ny, double nz);
 
 hc_shape* hc_boolean(const(hc_shape)* a, const(hc_shape)* b, int op);

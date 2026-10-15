@@ -95,6 +95,7 @@ final class CachingKernel : BrepKernel
     Brep translate(Brep s, Vec3 v) => op(key("translate", s, v), inner.translate(s, v));
     Brep rotate(Brep s, Vec3 axis, double angle) => op(key("rotate", s, axis, angle), inner.rotate(s, axis, angle));
     Brep scale(Brep s, double f) => op(key("scale", s, f), inner.scale(s, f));
+    Brep scaleXyz(Brep s, double sx, double sy, double sz) => op(key("scaleXyz", s, sx, sy, sz), inner.scaleXyz(s, sx, sy, sz));
     Brep mirror(Brep s, Vec3 n) => op(key("mirror", s, n), inner.mirror(s, n));
     Brep boolean(Brep a, Brep b, BoolOp o) => op(key("boolean", a, b, cast(int) o), inner.boolean(a, b, o));
     Brep booleanMerged(Brep a, Brep b, BoolOp o) =>

@@ -1148,6 +1148,23 @@ unittest
     assert(error("@part Solid p() => torus(5.mm, 6.mm);").code == Code.type);
 }
 
+unittest
+{
+    // scale with a factor each: an ellipsoid from a sphere, a squashed box, an oval profile
+    auto r = runModel(q{
+        @part Solid egg() => sphere(10.mm).scale(x: 2, y: 1.5);
+        @part Solid low() => box(10.mm, 10.mm, 10.mm).scale(z: 0.5);
+        @part Solid oval() => circle(10.mm).scale(y: 0.4).extrude(3.mm);
+    });
+    assert(isClose(partVolume(r, "egg"), 4.0 / 3 * PI * 20 * 15 * 10, 1e-4));
+    assert(isClose(partVolume(r, "low"), 500, 1e-6));
+    assert(isClose(partVolume(r, "oval"), PI * 10 * 4 * 3, 2e-3));
+    auto egg = kernel.bbox(r.parts[0].solid.brep);
+    assert(isClose(egg.size.x, 40, 1e-4) && isClose(egg.size.y, 30, 1e-4) && isClose(egg.size.z, 20, 1e-4));
+    assert(error("@part Solid p() => box(1, 1, 1).scale(2, x: 3);").code == Code.type);
+    assert(error("@part Solid p() => box(1, 1, 1).scale(y: 0);").code == Code.type);
+}
+
 // The known bugs of OpenCascade, each tried with its workaround turned off.
 
 unittest

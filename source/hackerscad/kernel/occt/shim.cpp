@@ -26,6 +26,8 @@
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
+#include <BRepBuilderAPI_GTransform.hxx>
+#include <gp_GTrsf.hxx>
 #include <gp_Elips.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -973,6 +975,22 @@ hc_shape *hc_scale(const hc_shape *s, double factor)
     gp_Trsf t;
     t.SetScale(gp_Pnt(0, 0, 0), factor);
     return transformed(s, t);
+}
+
+// A scale by its own factor along X, Y and Z, about the origin: an
+// ellipsoid from a sphere. The faces become freeform (B-splines): circles
+// stretched are ellipses, and OCCT keeps no analytic surface for them.
+hc_shape *hc_scale_xyz(const hc_shape *s, double sx, double sy, double sz)
+{
+    return guarded<>((hc_shape *)nullptr, [&] {
+        gp_GTrsf t;
+        t.SetValue(1, 1, sx);
+        t.SetValue(2, 2, sy);
+        t.SetValue(3, 3, sz);
+        BRepBuilderAPI_GTransform mk(s->shape, t, true);
+        history_record(mk, {&s->shape}, mk.Shape());
+        return wrap(mk.Shape());
+    });
 }
 
 hc_shape *hc_mirror(const hc_shape *s, double nx, double ny, double nz)

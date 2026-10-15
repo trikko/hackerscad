@@ -119,7 +119,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 - `s.move(v: Vec, x: Length, y: Length, z: Length)` — Moves: move(x: 10.mm) or move(vec(…)).
 - `s.rotate(angle: Angle, axis: Axis, x: Angle, y: Angle, z: Angle, around: Vec)` — Turns about the origin, or about the point given as around:.
-- `s.scale(factor: number)` — Scales around the origin.
+- `s.scale(factor: number, x: number, y: number, z: number)` — Scales around the origin: scale(2), or a factor each, scale(x: 2, y: 0.5) (an ellipsoid from a sphere).
 - `s.mirror(plane: Plane)` — mirror(X): across the plane through the origin with that normal, or any plane.
 - `s.color(color: Color, alpha: 0..1) → Solid` — Sets the colour: "steelblue", "#RRGGBB", rgb(…).
 - `s.centered()` — Moved so its bounding box is centred on the origin.
