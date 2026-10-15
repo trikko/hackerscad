@@ -2301,23 +2301,14 @@ private:
         auto b = basis();
         auto hit = pick(x, y);
         Vec3 p, lo, hi;
-        double cx, cy;
         if (hit.part >= 0)
             p = hit.point;
-        else if (factor > 1 && drawnBox(lo, hi) && project((lo + hi) * 0.5, cx, cy)
-            && cx >= 0 && cy >= 0 && cx <= area.getWidth() && cy <= area.getHeight())
-            // out, over nothing: about the middle of what is drawn, or the
-            // view drifts away from the model at every notch; only while that
-            // middle is on screen, in front: about one behind the camera or
-            // off the side, each notch would carry the view farther from it
-            p = (lo + hi) * 0.5;
-        else if (factor > 1)
-            p = target;
         else
         {
-            // in, over nothing: towards the pointer at the depth of the model's
-            // middle (of the target when there is none in front): at the
-            // target's, the view would close in on empty space, a few mm away
+            // over nothing: the point under the pointer at the depth of the
+            // model's middle (of the target when there is none in front), in
+            // and out alike: what is under the pointer stays there. At the
+            // target's depth the view closed in on empty space a few mm away
             Vec3 o, d;
             ray(x, y, o, d);
             auto depthOf = target;
