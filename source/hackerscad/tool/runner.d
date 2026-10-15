@@ -311,38 +311,78 @@ final class Run
     string differences(size_t a, size_t b, double resolution)
     {
         import std.algorithm : max;
-        import hackerscad.geom.voxeldiff : differences;
+        import hackerscad.geom.voxeldiff : allDifferences, Region;
         import hackerscad.geom.meshfeatures : plausible;
         partMeshes();
         auto bb = kernel.bbox(result.parts[b].solid.brep);
         immutable h = resolution > 0 ? resolution : max(0.2, max(bb.size.x, bb.size.y, bb.size.z) / 250);
-        auto regions = differences(meshes[a], meshes[b], h, max(1.0, 8 * h * h * h));
+        auto found = allDifferences(meshes[a], meshes[b], h, max(1.0, 8 * h * h * h));
+        auto regions = found.regions;
         string mm(double v)
         {
             immutable p = plausible(v);
             return format("%g", p == 0 ? 0.0 : p);
         }
+        string where(Region g)
+        {
+            auto size = g.hi - g.lo;
+            return format("from (%s, %s, %s) to (%s, %s, %s), %s × %s × %s, centre of mass (%s, %s, %s)", mm(g.lo.x),
+                mm(g.lo.y), mm(g.lo.z), mm(g.hi.x), mm(g.hi.y), mm(g.hi.z), mm(size.x), mm(size.y), mm(size.z),
+                mm(g.centroid.x), mm(g.centroid.y), mm(g.centroid.z));
+        }
+        // the section across its longest side, through its centre of mass: the
+        // profile of what differs, the copy's drawn on the original's
+        string cut(Region g)
+        {
+            auto size = g.hi - g.lo;
+            if (size.x >= size.y && size.x >= size.z)
+                return format("plane: yz, at: %s", mm(g.centroid.x));
+            if (size.y >= size.z)
+                return format("plane: xz, at: %s", mm(g.centroid.y));
+            return format("plane: xy, at: %s", mm(g.centroid.z));
+        }
         string s = format("%s against %s, on cubes of %s mm:\n", result.parts[a].name, result.parts[b].name, mm(h));
         if (regions.length == 0)
-            return s ~ "  no differences thicker than two cubes\n";
-        double lacks = 0, extra = 0;
-        foreach (g; regions)
-            (g.missing ? lacks : extra) += g.volume;
-        s ~= format("  %s lacks %s mm³ and has %s mm³ too much, in %d regions; the largest:\n", result.parts[a].name,
-            mm(lacks), mm(extra), regions.length);
-        foreach (i, g; regions)
+            s ~= "  no differences thicker than two cubes\n";
+        else
         {
-            if (i == 30)
+            double lacks = 0, extra = 0;
+            foreach (g; regions)
+                (g.missing ? lacks : extra) += g.volume;
+            s ~= format("  %s lacks %s mm³ and has %s mm³ too much, in %d regions; the largest:\n", result.parts[a].name,
+                mm(lacks), mm(extra), regions.length);
+            foreach (i, g; regions)
             {
-                s ~= format("  and %d smaller ones\n", regions.length - 30);
-                break;
+                if (i == 30)
+                {
+                    s ~= format("  and %d smaller ones\n", regions.length - 30);
+                    break;
+                }
+                s ~= format("  %s %s mm³: %s%s\n", g.missing ? "to add" : "to cut", mm(g.volume), where(g),
+                    g.fill > 0.85 ? format(", a box (fills %d%%)", cast(int)(g.fill * 100))
+                        : format(", fills %d%% of its box", cast(int)(g.fill * 100)));
+                if (i < 5)
+                    s ~= format("      to see its shape: hcad_section with part %s, compare %s, %s\n",
+                        result.parts[a].name, result.parts[b].name, cut(g));
             }
-            auto size = g.hi - g.lo;
-            s ~= format("  %s %s mm³: from (%s, %s, %s) to (%s, %s, %s), %s × %s × %s, centre of mass (%s, %s, %s)%s\n",
-                g.missing ? "to add" : "to cut", mm(g.volume), mm(g.lo.x), mm(g.lo.y), mm(g.lo.z), mm(g.hi.x), mm(g.hi.y),
-                mm(g.hi.z), mm(size.x), mm(size.y), mm(size.z), mm(g.centroid.x), mm(g.centroid.y), mm(g.centroid.z),
-                g.fill > 0.85 ? format(", a box (fills %d%%)", cast(int)(g.fill * 100))
-                    : format(", fills %d%% of its box", cast(int)(g.fill * 100)));
+        }
+        if (found.thin.length)
+        {
+            double thin = 0;
+            foreach (g; found.thin)
+                thin += g.volume;
+            s ~= format("  and %s mm³ in %d differences thinner than two cubes (chamfers, letterings, notches for "
+                ~ "printing): hcad_lines shows them, or resolution: %s measures them; the largest:\n", mm(thin),
+                found.thin.length, mm(h / 2));
+            foreach (i, g; found.thin)
+            {
+                if (i == 10)
+                {
+                    s ~= format("  and %d smaller ones\n", found.thin.length - 10);
+                    break;
+                }
+                s ~= format("  %s %s mm³: %s\n", g.missing ? "to add" : "to cut", mm(g.volume), where(g));
+            }
         }
         return s;
     }

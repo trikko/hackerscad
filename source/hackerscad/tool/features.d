@@ -589,8 +589,8 @@ string matchReport(string file, string a, string b)
     foreach (axis; ["x", "y", "z"])
     {
         auto sa = scan(ma, axis, 0), sb = scan(mb, axis, 0);
-        string where(const ScanRun r) => format("along %s from %s to %s (%s deep): %s", axis, mm(r.from), mm(r.to),
-            mm(r.to - r.from), r.shape.toString);
+        string where(const ScanRun r, string note = "") => format("along %s from %s to %s (%s deep): %s%s", axis,
+            mm(r.from), mm(r.to), mm(r.to - r.from), r.shape.toString, note);
         double volume(const ScanRun r) => r.shape.a * r.shape.b * (r.to - r.from);
         bool overlaps(const ScanRun x, const ScanRun y) => x.from <= y.to + 0.1 && y.from <= x.to + 0.1;
         bool near(const ScanRun x, const ScanRun y)
@@ -599,15 +599,63 @@ string matchReport(string file, string a, string b)
             immutable d = sqrt((x.shape.center[0] - y.shape.center[0]) ^^ 2 + (x.shape.center[1] - y.shape.center[1]) ^^ 2);
             return d < 0.3 + 0.1 * max(x.shape.a, y.shape.a) && overlaps(x, y);
         }
-        ScanRun[] ha, hb;
-        foreach (r; sa.runs)
-            if (r.hole && r.to - r.from > 0.2)
-                ha ~= r;
-        foreach (r; sb.runs)
-            if (r.hole && r.to - r.from > 0.2)
-                hb ~= r;
+        // one hole cut in steps (a tapered nut trap, a countersink in layers)
+        // is one run: the slices of the same shape round the same centre,
+        // end to end, joined, the longest one's shape kept and the steps told
+        string[] notesA, notesB;
+        ScanRun[] holes(const ScanRun[] runs, ref string[] notes)
+        {
+            import std.algorithm : sort;
+            import std.math : sqrt;
+            ScanRun[] hs;
+            foreach (r; runs)
+                if (r.hole && r.to - r.from > 0.2)
+                    hs ~= r;
+            hs.sort!((x, y) => x.from < y.from);
+            ScanRun[] out_;
+            bool[] taken = new bool[hs.length];
+            foreach (i; 0 .. hs.length)
+            {
+                if (taken[i])
+                    continue;
+                ScanRun[] group = [hs[i]];
+                taken[i] = true;
+                foreach (j; i + 1 .. hs.length)
+                {
+                    auto last = group[$ - 1], y = hs[j];
+                    immutable d = sqrt((last.shape.center[0] - y.shape.center[0]) ^^ 2
+                        + (last.shape.center[1] - y.shape.center[1]) ^^ 2);
+                    // the same shape, or the same size seen as another (an
+                    // outline where a slice met a notch)
+                    immutable sameKind = y.shape.kind == last.shape.kind && y.shape.kind != "outline";
+                    immutable sameSize = abs(y.shape.a - last.shape.a) < 0.15 && abs(y.shape.b - last.shape.b) < 0.15;
+                    if (!taken[j] && (sameKind || sameSize) && d < 0.1 && y.from <= last.to + 0.35)
+                    {
+                        group ~= y;
+                        taken[j] = true;
+                    }
+                }
+                auto longest = group[0];
+                foreach (g; group)
+                    if (g.to - g.from > longest.to - longest.from)
+                        longest = g;
+                ScanRun m = longest;
+                m.from = group[0].from;
+                foreach (g; group)
+                    m.to = max(m.to, g.to);
+                string note;
+                if (group.length > 1 && group[0].shape.kind == group[$ - 1].shape.kind
+                    && abs(group[0].shape.a - group[$ - 1].shape.a) > 0.15)
+                    note = format(", stepped from %s to %s in %d layers%s", mm(group[0].shape.a),
+                        mm(group[$ - 1].shape.a), group.length, group.length > 2 ? " (tapered)" : "");
+                out_ ~= m;
+                notes ~= note;
+            }
+            return out_;
+        }
+        auto ha = holes(sa.runs, notesA), hb = holes(sb.runs, notesB);
         auto used = new bool[ha.length];
-        foreach (y; hb)
+        foreach (yi, y; hb)
         {
             ptrdiff_t same = -1, close = -1;
             foreach (i, x; ha)
@@ -621,18 +669,20 @@ string matchReport(string file, string a, string b)
             {
                 used[same] = true;
                 auto x = ha[same];
-                if (abs(x.from - y.from) > 0.15 || abs(x.to - y.to) > 0.15)
-                    different ~= Item(format("%s\n      the copy: from %s to %s", where(y), mm(x.from), mm(x.to)),
-                        y.shape.a * y.shape.b * (abs(x.from - y.from) + abs(x.to - y.to)));
+                if (abs(x.from - y.from) > 0.15 || abs(x.to - y.to) > 0.15 || notesA[same] != notesB[yi])
+                    different ~= Item(format("%s\n      the copy: from %s to %s%s", where(y, notesB[yi]), mm(x.from),
+                        mm(x.to), notesA[same]),
+                        y.shape.a * y.shape.b * (abs(x.from - y.from) + abs(x.to - y.to))
+                            + (notesA[same] != notesB[yi] ? 0.2 * volume(y) : 0));
             }
             else if (close >= 0)
             {
                 used[close] = true;
-                different ~= Item(format("%s\n      the copy: %s", where(y), where(ha[close])),
+                different ~= Item(format("%s\n      the copy: %s", where(y, notesB[yi]), where(ha[close], notesA[close])),
                     abs(volume(y) - volume(ha[close])) + 0.2 * volume(y));
             }
             else
-                onlyB ~= Item(where(y), volume(y));
+                onlyB ~= Item(where(y, notesB[yi]), volume(y));
         }
         foreach (i, x; ha)
             if (!used[i])
@@ -641,20 +691,27 @@ string matchReport(string file, string a, string b)
                 foreach (y; hb)
                     any = any || near(x, y);
                 if (!any)
-                    onlyA ~= Item(where(x), volume(x));
+                    onlyA ~= Item(where(x, notesA[i]), volume(x));
             }
     }
     string s = format("%s (the copy) against %s (the original):\n", a, b);
+    // the largest first; under 1 mm² or 1 mm³ only counted (a sliver of a
+    // face, a scan's thin step): what matters to a person comes first
     void list(string title, Item[] items)
     {
         import std.algorithm : sort;
         items.sort!((x, y) => x.weight > y.weight);
-        s ~= format("%s (%d, the largest first)\n", title, items.length);
-        foreach (i, it; items)
+        Item[] shown;
+        foreach (it; items)
+            if (it.weight >= 1)
+                shown ~= it;
+        s ~= format("%s (%d, the largest first%s)\n", title, shown.length,
+            items.length > shown.length ? format("; %d under 1 mm² or mm³ left out", items.length - shown.length) : "");
+        foreach (i, it; shown)
         {
-            if (i == 25)
+            if (i == 15)
             {
-                s ~= format("  and %d smaller ones\n", items.length - 25);
+                s ~= format("  and %d smaller ones\n", shown.length - 15);
                 break;
             }
             s ~= "  " ~ it.text ~ "\n";

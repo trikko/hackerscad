@@ -178,11 +178,31 @@ string fit(string file, string a, string b, string[] params, int evaluations, vo
         if (f[i] < f[best])
             best = i;
     string s = format("fitted in %d evaluations, on cubes of %.2f mm: the parts differ by %.1f mm³, %.1f mm³ before\n",
-        count, h, f[best], startCost);
+        count, h, f[best], startCost) ~ verdict(startCost, f[best]);
     foreach (i, name; params)
         s ~= format("  %s: %.3f mm (was %.3f)\n", name, pts[best][i], x0[i]);
     s ~= "  as overrides:";
     foreach (i, name; params)
         s ~= format(" -D %s=%.2f.mm", name, pts[best][i]);
     return s ~ "\n";
+}
+
+/// What the fit says about the copy's shape: when the sizes take away little
+/// of the difference, it is the shape that differs, and no size will fix it.
+string verdict(double before, double after)
+{
+    if (before > 0 && after > 1 && after > 0.8 * before)
+        return "  the sizes explain little of the difference: the shape itself differs (a surface revolved, tilted "
+            ~ "or stepped where the copy has it straight); cut a section through the largest hcad_diff region, and "
+            ~ "another away from it, before fitting again\n";
+    return "";
+}
+
+unittest
+{
+    import std.algorithm : canFind;
+    assert(verdict(139.4, 130.1).canFind("the shape itself differs"));
+    assert(verdict(139.4, 20).length == 0);
+    assert(verdict(0, 0).length == 0);
+    assert(verdict(1.2, 0.9).length == 0);   // under 1 mm³: nothing left to explain
 }

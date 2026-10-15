@@ -2607,6 +2607,29 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
+    // hcad match: a nut trap cut in three steps is one hole, told as stepped,
+    // not three slivers; the copy's straight one is the same hole, different
+    import hackerscad.tool.features : matchReport;
+    import std.file : write, mkdirRecurse, rmdirRecurse;
+    auto dir = buildPath(tempDir, "hcad-match-test");
+    mkdirRecurse(dir);
+    scope (exit)
+        rmdirRecurse(dir);
+    immutable model = buildPath(dir, "trap.hcad");
+    write(model, q{
+        import hardware : hexPrism;
+        @part Solid copy() => box(20, 20, 10) - hexPrism(5.45, 9).move(z: 2);
+        @part Solid original() => box(20, 20, 10) - hexPrism(5.45, 9).move(z: 2)
+            - hexPrism(5.6, 4).move(z: 7) - hexPrism(5.75, 3).move(z: 8.5);
+    });
+    immutable rep = matchReport(model, "copy", "original");
+    assert(rep.canFind("stepped from 5.45 to 5.75 in 3 layers (tapered)"), rep);
+    assert(rep.canFind("in both, different"), rep);
+}
+
+unittest
+{
     // how far two solids are: a block against the same block 0.5 mm taller
     auto r = runModel(q{
         import std.math;

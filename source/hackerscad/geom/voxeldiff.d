@@ -23,7 +23,21 @@ struct Region
 /// The regions where `a` (a copy) differs from `b` (the original), on cubes
 /// of side `h`; regions thinner than two cubes or smaller than `minVolume`
 /// are left out (an edge a hair off makes a skin, not a region).
-Region[] differences(const Mesh a, const Mesh b, double h, double minVolume)
+Region[] differences(const Mesh a, const Mesh b, double h, double minVolume) =>
+    allDifferences(a, b, h, minVolume).regions;
+
+/// What `allDifferences` finds.
+struct Differences
+{
+    Region[] regions;  /// thicker than two cubes, the largest first
+    Region[] thin;     /// thinner, but not a scatter of cubes: a lettering, a chamfer, a notch
+}
+
+/// The regions as `differences` gives them, and also the thin ones: cubes
+/// that differ the same way, joined, outside every region, together at least
+/// `minVolume` (a surface a hair off scatters cubes one here, one there; a
+/// lettering 0.5 mm deep is hundreds of them side by side).
+Differences allDifferences(const Mesh a, const Mesh b, double h, double minVolume)
 {
     Vec3 lo = Vec3(double.infinity, double.infinity, double.infinity), hi = -lo;
     foreach (m; [a, b])
@@ -64,64 +78,70 @@ Region[] differences(const Mesh a, const Mesh b, double h, double minVolume)
                     core[q] = 0;
             }
 
-    // regions: grown from the core through every cube that differs the same way
+    // regions: grown from the core through every cube that differs the same
+    // way; then, from what is left, the thin ones
     auto label = new int[diff.length];
     label[] = -1;
-    Region[] r;
-    foreach (k; 0 .. nz)
-        foreach (j; 0 .. ny)
-            foreach (i; 0 .. nx)
+    Region grow(size_t q0, int id)
+    {
+        immutable kind = diff[q0];
+        Region g;
+        g.missing = kind == 1;
+        g.lo = Vec3(double.infinity, double.infinity, double.infinity);
+        g.hi = -g.lo;
+        Vec3 sum;
+        size_t count;
+        size_t[] stack = [q0];
+        label[q0] = id;
+        while (stack.length)
+        {
+            immutable q = stack[$ - 1];
+            stack = stack[0 .. $ - 1];
+            immutable ii = q % nx, jj = (q / nx) % ny, kk = q / (nx * ny);
+            auto c = lo + Vec3((ii + 0.5) * h, (jj + 0.5) * h, (kk + 0.5) * h);
+            g.lo = Vec3(min(g.lo.x, c.x - h / 2), min(g.lo.y, c.y - h / 2), min(g.lo.z, c.z - h / 2));
+            g.hi = Vec3(max(g.hi.x, c.x + h / 2), max(g.hi.y, c.y + h / 2), max(g.hi.z, c.z + h / 2));
+            sum = sum + c;
+            count++;
+            void visit(size_t o)
             {
-                immutable q0 = idx(i, j, k);
-                if (!core[q0] || label[q0] >= 0)
-                    continue;
-                immutable kind = diff[q0];
-                immutable id = cast(int) r.length;
-                Region g;
-                g.missing = kind == 1;
-                g.lo = Vec3(double.infinity, double.infinity, double.infinity);
-                g.hi = -g.lo;
-                Vec3 sum;
-                size_t count;
-                size_t[] stack = [q0];
-                label[q0] = id;
-                while (stack.length)
+                if (diff[o] == kind && label[o] < 0)
                 {
-                    immutable q = stack[$ - 1];
-                    stack = stack[0 .. $ - 1];
-                    immutable ii = q % nx, jj = (q / nx) % ny, kk = q / (nx * ny);
-                    auto c = lo + Vec3((ii + 0.5) * h, (jj + 0.5) * h, (kk + 0.5) * h);
-                    g.lo = Vec3(min(g.lo.x, c.x - h / 2), min(g.lo.y, c.y - h / 2), min(g.lo.z, c.z - h / 2));
-                    g.hi = Vec3(max(g.hi.x, c.x + h / 2), max(g.hi.y, c.y + h / 2), max(g.hi.z, c.z + h / 2));
-                    sum = sum + c;
-                    count++;
-                    void visit(size_t o)
-                    {
-                        if (diff[o] == kind && label[o] < 0)
-                        {
-                            label[o] = id;
-                            stack ~= o;
-                        }
-                    }
-                    if (ii > 0) visit(q - 1);
-                    if (ii + 1 < nx) visit(q + 1);
-                    if (jj > 0) visit(q - nx);
-                    if (jj + 1 < ny) visit(q + nx);
-                    if (kk > 0) visit(q - nx * ny);
-                    if (kk + 1 < nz) visit(q + nx * ny);
+                    label[o] = id;
+                    stack ~= o;
                 }
-                g.volume = count * h * h * h;
-                g.centroid = sum / count;
-                auto box = g.hi - g.lo;
-                g.fill = g.volume / max(1e-12, box.x * box.y * box.z);
-                r ~= g;
             }
-    Region[] kept;
+            if (ii > 0) visit(q - 1);
+            if (ii + 1 < nx) visit(q + 1);
+            if (jj > 0) visit(q - nx);
+            if (jj + 1 < ny) visit(q + nx);
+            if (kk > 0) visit(q - nx * ny);
+            if (kk + 1 < nz) visit(q + nx * ny);
+        }
+        g.volume = count * h * h * h;
+        g.centroid = sum / count;
+        auto box = g.hi - g.lo;
+        g.fill = g.volume / max(1e-12, box.x * box.y * box.z);
+        return g;
+    }
+    Region[] r;
+    foreach (q0; 0 .. diff.length)
+        if (core[q0] && label[q0] < 0)
+            r ~= grow(q0, cast(int) r.length);
+    Region[] t;
+    foreach (q0; 0 .. diff.length)
+        if (diff[q0] && label[q0] < 0)
+            t ~= grow(q0, cast(int)(r.length + t.length));
+    Differences res;
     foreach (g; r)
         if (g.volume >= minVolume)
-            kept ~= g;
-    kept.sort!((x, y) => x.volume > y.volume);
-    return kept;
+            res.regions ~= g;
+    foreach (g; t)
+        if (g.volume >= minVolume)
+            res.thin ~= g;
+    res.regions.sort!((x, y) => x.volume > y.volume);
+    res.thin.sort!((x, y) => x.volume > y.volume);
+    return res;
 }
 
 /// The volume where `a` and `b` differ (either way), on cubes of side `h`
@@ -210,4 +230,34 @@ unittest
     assert(r.length == 1 && r[0].missing, "one region missing");
     assert(abs(r[0].volume - 160) < 160 * 0.1, "its volume");
     assert(abs(r[0].lo.x - 6) < 0.3 && abs(r[0].hi.y - 10) < 0.3 && r[0].fill > 0.8, "its box");
+}
+
+unittest
+{
+    import std.math : abs;
+    // a 20 mm cube against the same cube with a groove 10 × 2 × 0.4 cut in
+    // its top: too thin for a region, found as a thin difference
+    Mesh cube(double x0, double y0, double z0, double x1, double y1, double z1)
+    {
+        Mesh m;
+        foreach (k; 0 .. 8)
+            m.verts ~= [cast(float)(k & 1 ? x1 : x0), cast(float)(k & 2 ? y1 : y0), cast(float)(k & 4 ? z1 : z0)];
+        m.tris = [0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6, 0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 4, 6, 0, 6, 2, 1, 3, 7, 1, 7, 5];
+        return m;
+    }
+    auto whole = cube(0, 0, 0, 20, 20, 20);
+    // the grooved one: the cube 0.4 lower, and the top layer less the groove as four blocks
+    auto grooved = cube(0, 0, 0, 20, 20, 19.6);
+    foreach (blk; [cube(0, 0, 19.6, 5, 20, 20), cube(15, 0, 19.6, 20, 20, 20), cube(5, 0, 19.6, 15, 9, 20),
+            cube(5, 11, 19.6, 15, 20, 20)])
+    {
+        immutable base = cast(uint) grooved.vertexCount;
+        grooved.verts ~= blk.verts;
+        foreach (t; blk.tris)
+            grooved.tris ~= base + t;
+    }
+    auto d = allDifferences(grooved, whole, 0.25, 1);
+    assert(d.regions.length == 0, "no region thicker than two cubes");
+    assert(d.thin.length == 1 && d.thin[0].missing, "one thin difference");
+    assert(abs(d.thin[0].volume - 8) < 8 * 0.5, "its volume");
 }
