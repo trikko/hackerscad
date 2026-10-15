@@ -328,6 +328,3 @@ unittest
         ", three is ", names[3]);
 }
 ```
-
-## Example
-See [examples/04_box.hcad](../examples/04_box.hcad).

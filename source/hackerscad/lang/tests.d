@@ -483,8 +483,8 @@ unittest
     assert(exists(path), path);
     auto it = make();
     auto r = it.run(path);
-    assert(r.parts.map!(p => p.name).array == ["body", "lid"]);
-    assert(r.params.length == 6 && r.presets == ["small", "large"]);
+    assert(r.parts.map!(p => p.name).array == ["base", "lid"]);
+    assert(r.params.length == 8 && r.presets == ["small", "flat"]);
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
     assert(kernel.isValid(r.parts[0].solid.brep) && kernel.isValid(r.parts[1].solid.brep));

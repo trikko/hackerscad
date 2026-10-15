@@ -411,151 +411,190 @@ unittest
 }
 ```
 
-## Example
-See [examples/04_box.hcad](../examples/04_box.hcad).
-
 ## Example: box with lid
 
 ```d
-// Box with lid: parametric, the first example in the D-like style
+// Box with lid: rounded corners, and a lid that snaps on, sits on a lip,
+// screws down or lies flush
+// A box with rounded corners and a lid to choose: Snap, a lip under the
+// lid goes into the box and a ridge round it clicks into a groove inside
+// the wall; Lip, the same lip without the click; Screws, M3 posts in the
+// corners; Flush, the lid sits in a step cut in the rim, level with it.
+// A thin tab on the front gives a finger something to lift the lid with;
+// the flush lid has a hole in the middle for it instead.
+// Both print without supports: the box standing as it is, the lid upside
+// down, its top on the bed.
+//
+// Try it:
+//  - change the sizes in Parameters, or pick a preset (a small cube, a
+//    flat tray): the lid follows;
+//  - pick another Closure;
+//  - switch Lid on the box to see it closed, off to lay it out to print;
+//  - too tight or too loose once printed? Change Lid fit clearance;
+//  - the snap is `ridge`: a profile grown and extruded with a 45° taper,
+//    added to the lip and cut out of the wall.
 module box;
 
 import std.shapes;
 import hardware : M3, Screw;
 
 // Each parameter lists its own presets: @preset("name", value).
-@param("Outer width", min: 20.mm, max: 200.mm)
-@preset("small", 40.mm) @preset("large", 120.mm)
-immutable width = 60.mm;
+@param("Inner width", min: 30.mm, max: 200.mm)
+@preset("small", 40.mm) @preset("flat", 160.mm)
+immutable innerW = 80.mm;
 
-@param("Outer depth", min: 20.mm, max: 200.mm)
-@preset("small", 30.mm)
-immutable depth = 40.mm;
+@param("Inner depth", min: 30.mm, max: 200.mm)
+@preset("small", 40.mm) @preset("flat", 110.mm)
+immutable innerD = 60.mm;
 
-@param("Height", min: 10.mm, max: 100.mm)
-@preset("large", 40.mm)
-immutable height = 25.mm;
+@param("Inner height", min: 15.mm, max: 150.mm)
+@preset("small", 40.mm) @preset("flat", 18.mm)
+immutable innerH = 40.mm;
 
-@param("Wall thickness", min: 1.2.mm, max: 4.mm)
+@param("Wall", min: 1.2.mm, max: 4.mm)
 immutable wall = 2.mm;
 
-@param("Corner radius", min: 3.mm, max: 15.mm)
-@preset("small", 4.mm)
-immutable radius = 6.mm;
+@param("Corner radius", min: 3.mm, max: 20.mm)
+@preset("small", 6.mm) @preset("flat", 12.mm)
+immutable cornerR = 8.mm;
 
-// screws: posts in the corners; lip: a rim under the lid fits inside the
-// box; flush: the lid sits in a step cut in the rim, level with it
-@param("Closure", choices: ["screws", "lip", "flush"])
-immutable closure = "screws";
+// snap: a lip that clicks in; lip: a lip alone; screws: M3 posts in the
+// corners; flush: the lid in a step cut in the rim
+@param("Closure", choices: ["snap", "lip", "screws", "flush"])
+immutable closure = "snap";
 
-// the gap between lid and box, for printed parts
-immutable fit = 0.2.mm;
-immutable lipHeight = 4.mm;
+@param("Lid fit clearance", min: 0.mm, max: 0.5.mm)
+immutable clearance = 0.2.mm;
 
-/// The outside of the box: its vertical edges rounded.
-Solid outside() => box(width, depth, height)
-    .fillet(edges.filter(e => e.isParallel(Z)), r: radius);
+@param("Lid on the box (off: laid out to print)")
+immutable closed = false;
 
-/// How far each screw's axis is from the outside faces: as near the corner
-/// as it can be, with 1.2 mm of wall outside its hole (across the rounded
-/// corner too) and its head on the lid. On thick walls it is inside them.
+immutable floorT = 2.mm;
+immutable lidT = 2.4.mm;      // the lid plate
+immutable lipH = 7.mm;        // the lip that goes into the box
+immutable lipT = 1.6.mm;
+immutable bead = 0.4.mm;      // the snap: a ridge round the lip, a groove in the wall
+immutable beadZ = 3.mm;       // its height above the bottom of the lip
+immutable tabT = 1.6.mm;
+immutable tabOut = 5.mm;      // how far the tab sticks out
+immutable tabD = 12.mm;       // the width of the tab
+immutable edge = 0.8.mm;      // chamfers on the outer edges
+
+immutable outerW = innerW + 2 * wall, outerD = innerD + 2 * wall;
+immutable outerH = floorT + innerH;
+immutable hasLip = closure == "snap" || closure == "lip";
+
+Profile outer() => rect(outerW, outerD).round(cornerR);
+Profile inner() => outer().offset(-wall);
+
+/// The lid outline: the box's, with a rounded tongue out of the front edge
+/// when it has a lip to pull out; the step's, a gap smaller, when flush.
+Profile lidOutline()
+{
+    if (closure == "flush")
+        return outer().offset(-wall / 2 - clearance);
+    if (!hasLip)
+        return outer();
+    immutable y = outerD / 2 + tabD / 2 - tabOut;
+    return (outer() + circle(d: tabD).move(vec(0.mm, -y))).round(2.mm);
+}
+
+/// A ridge with 45° sides standing out of an outline, its middle at z = 0
+/// (a ring: only what lies outside the outline, less a wall's width inside).
+Solid ridge(Profile p, Length d)
+{
+    auto half = p.offset(d).extrude(d, taper: 45.deg);
+    return (half + half.mirror(Z)) - p.offset(-1.mm).extrude(4 * d, symmetric: true);
+}
+
+/// How far each screw's axis is in from the outside: as near the corner as
+/// it can be, with 1.2 mm of wall outside its hole, across the rounded
+/// corner too, and its head on the lid.
 Length screwInset(Screw screw = M3)
 {
     immutable keep = max(screw.tap / 2 + 1.2.mm, screw.head / 2 + 0.5.mm);
     // across the corner, the round edge is nearer than the faces
-    immutable corner = keep > radius ? radius : radius - (radius - keep) / sqrt(2.0);
+    immutable corner = keep > cornerR ? cornerR : cornerR - (cornerR - keep) / sqrt(2.0);
     return max(keep, corner);
 }
 
-/// Post for a self-tapping screw in the corner towards sx, sy (each -1 or
-/// 1), up to the rim: the cylinder and the corner behind it, trimmed by the
-/// outside, so that it is one piece with the walls.
-Solid post(int sx, int sy, Screw screw = M3)
+/// Where the screws go: the four corners, `screwInset` in.
+Vec2[] screwSpots()
 {
-    immutable dx = width / 2 - screwInset(screw), dy = depth / 2 - screwInset(screw);
-    auto round = cylinder(d: screw.d * 2.2, h: height)
-        .move(x: sx * dx, y: sy * dy);
-    auto corner = box(width / 2 - dx, depth / 2 - dy, height)
-        .move(x: sx * (dx + width / 2) / 2, y: sy * (dy + depth / 2) / 2);
-    return (round + corner) & outside;
+    immutable dx = outerW / 2 - screwInset, dy = outerD / 2 - screwInset;
+    return [vec(-dx, -dy), vec(dx, -dy), vec(-dx, dy), vec(dx, dy)];
 }
 
-@part("steelblue")
-Solid body()
+@part("#F2EDE4")
+Solid base()
 {
-    auto s = outside.shell(open: faces.top, thickness: wall);
-    if (closure == "screws")
-    {
-        immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
-        foreach (sx; [-1, 1])
-            foreach (sy; [-1, 1])
-            {
-                s += post(sx, sy);
-                // the pilot hole, from the rim down to the floor
-                s -= cylinder(d: M3.tap, h: height - wall + 1.mm)
-                    .move(x: sx * dx, y: sy * dy, z: wall);
-            }
-    }
-    else if (closure == "flush")
-    {
-        // the step: half the wall, as deep as the lid is thick
-        s -= box(width - wall, depth - wall, wall + 1.mm)
-            .fillet(edges.parallel(Z), r: radius - wall / 2)
-            .move(z: height - wall);
-    }
-    return s;
-}
-
-/// A rounded plate, `inset` in from the box's outline all round.
-Solid plate(Length inset, Length h) => box(width - 2 * inset, depth - 2 * inset, h)
-    .fillet(edges.parallel(Z), r: max(radius - inset, 0.5.mm));
-
-/// The lid as it is printed, at the origin.
-Solid lidShape()
-{
-    Solid c;
-    switch (closure)
-    {
-    case "flush":
-        // inside the step, with the gap all round
-        c = plate(wall / 2 + fit, wall);
-        break;
-    case "lip":
-        // printed upside down: the rim stands on the plate
-        auto rim = plate(wall + fit, lipHeight) - plate(2 * wall + fit, 3 * lipHeight).move(z: -lipHeight);
-        c = plate(0.mm, wall)
-            .chamfer(edges.filter(e => e.mid.z < wall / 2), d: 0.6.mm)
-            + rim.move(z: wall);
-        break;
-    default:
-        c = plate(0.mm, wall)
-            .chamfer(edges.filter(e => e.mid.z > wall / 2), d: 0.6.mm);   // the whole top edge
-        immutable dx = width / 2 - screwInset, dy = depth / 2 - screwInset;
-        foreach (sx; [-1, 1])
-            foreach (sy; [-1, 1])
-                c -= cylinder(d: M3.clearance, h: 3 * wall, center: true).move(x: sx * dx, y: sy * dy);
-    }
-    return c;
-}
-
-/// The lid where it closes the box.
-Solid closedLid()
-{
+    immutable outside = outer().extrude(outerH)
+        .chamfer(edges.of(faces.bottom), d: edge)
+        .chamfer(edges.of(faces.top), d: edge / 2);
+    auto b = outside - inner().extrude(innerH + 1.mm).move(z: floorT);
+    if (closure == "snap")
+        b -= ridge(inner(), bead + 0.1.mm).move(z: outerH - lipH + beadZ);
     if (closure == "flush")
-        return lidShape.move(z: height - wall);
-    if (closure == "lip")
-        return lidShape.rotate(x: 180).move(z: height + wall);
-    return lidShape.move(z: height);
+        // the step: half the wall, as deep as the lid is thick
+        b -= outer().offset(-wall / 2).extrude(lidT + 1.mm).move(z: outerH - lidT);
+    if (closure == "screws")
+        foreach (p; screwSpots())
+        {
+            // a post in the corner, one piece with the walls, and its pilot hole
+            immutable sx = p.x > 0.mm ? 1 : -1, sy = p.y > 0.mm ? 1 : -1;
+            auto post = cylinder(d: M3.d * 2.2, h: outerH).move(x: p.x, y: p.y)
+                + box(outerW / 2 - abs(p.x), outerD / 2 - abs(p.y), outerH)
+                    .move(x: (p.x + sx * outerW / 2) / 2, y: (p.y + sy * outerD / 2) / 2);
+            b += post & outside;
+            b -= cylinder(d: M3.tap, h: innerH + 1.mm).move(x: p.x, y: p.y, z: floorT);
+        }
+    return b;
 }
 
-@part("orange")
-Solid lid() => lidShape.nextTo(body, X, gap: 10.mm);
+/// The lid as it sits on the box, its plate on z = 0.
+Solid lidInPlace()
+{
+    auto l = lidOutline().extrude(lidT)
+        .chamfer(edges.of(faces.top), d: closure == "flush" ? edge / 2 : edge);
+    if (hasLip)
+    {
+        immutable lipOut = inner().offset(-clearance);
+        // the tongue is thinner than the plate: a finger gets under it
+        l -= (lidOutline() - outer()).offset(0.5.mm).extrude(lidT - tabT).move(z: -0.01.mm) - outer().extrude(lidT);
+        l += (lipOut - lipOut.offset(-lipT)).extrude(lipH).move(z: -lipH);
+        if (closure == "snap")
+            l += ridge(lipOut, bead).move(z: -lipH + beadZ);
+    }
+    if (closure == "screws")
+        foreach (p; screwSpots())
+            l -= cylinder(d: M3.clearance, h: 3 * lidT, center: true).move(x: p.x, y: p.y);
+    if (closure == "flush")
+    {
+        // a hole in the middle for a finger to lift it by, its rims softened
+        immutable hole = min(18.mm, innerD / 2);
+        l = l.cut(circle(d: hole), on: faces.top, through: true)
+            .chamfer(edges.filter(e => e.isCircle && e.radius == hole / 2), d: 0.6.mm);
+    }
+    return l;
+}
+
+/// The lid where it closes the box: on the rim, or in its step when flush.
+Solid closedLid() => lidInPlace().move(z: closure == "flush" ? outerH - lidT : outerH);
+
+/// On the box to see it closed, or beside it upside down (its top on the
+/// bed) to print, turned about Y so that its tab stays at the front.
+@part("#C9A27E")
+Solid lid() => closed
+    ? closedLid()
+    : lidInPlace().rotate(y: 180.deg).move(x: outerW + 15.mm, z: lidT);
 
 unittest
 {
-    assert(body.bbox.size.z <= 40.mm, "must fit in the drawer");
-    assert((body & closedLid).isEmpty, "the lid must close without running into the box");
-    writeln("body volume: $(format("%.1f", body.volume / 1.cm ^^ 3)) cm³");
+    writeln("base ", base.bbox.size, "  lid ", lid.bbox.size);
+    // the lid closes without running into the box: only the snap's ridge
+    // overlaps the wall, by the bead
+    immutable overlap = (closedLid() & base).volume;
+    assert(overlap < (closure == "snap" ? 200.mm ^^ 3 : 1.mm ^^ 3), "the lid does not fit the box");
 }
 ```
 
