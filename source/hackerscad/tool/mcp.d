@@ -672,7 +672,8 @@ JSONValue[] toolList()
             ~ "plausible rounded sizes and the measured ones. 'path' is an .stl, .obj, .3mf or .step file (or an "
             ~ ".hcad model, 'part' one of its parts). Load the mesh as a see-through reference part "
             ~ "(@part(\"slategray\", alpha: 0.3, export: false) Solid original() => load(\"x.stl\");) to compare.",
-            `"path": {"type": "string"}, "part": {"type": "string"}`, `["path"]`),
+            `"path": {"type": "string"}, "part": {"type": "string"}, `
+            ~ `"json": {"type": "boolean", "description": "every surface as data too (long)"}`, `["path"]`),
         tool("hcad_section", "The section of a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and "
             ~ "its 'part') by a plane xy, xz or yz at 'at' mm along z, y or x: its closed outlines as straight lines, "
             ~ "arcs and whole circles with their sizes (fitted to the cut, plausibly rounded), and the same as a "
@@ -689,7 +690,8 @@ JSONValue[] toolList()
             ~ "tolerance, and a picture of part a coloured by its distance from b: green within half the tolerance, "
             ~ "yellow at it, red at twice it. Correct the model until it is green.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
-            ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}`, `["a", "b"]`),
+            ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}, `
+            ~ `"json": {"type": "boolean", "description": "the whole comparison as data, every patch (long)"}`, `["a", "b"]`),
         tool("hcad_scan", "Cut a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and its 'part') "
             ~ "all along an axis, every 'step' mm: each hole and pocket met with its shape (circle, rectangle, rounded "
             ~ "rectangle, hexagon (a nut trap), teardrop with the direction of its point, slot, D) and where it starts "
@@ -1160,7 +1162,13 @@ JSONValue callTool(string name, JSONValue args)
             try
             {
                 auto a = analyse(meshOf(arg("path"), arg("part")));
-                text(report(a) ~ "\n" ~ featuresJson(a).toPrettyString(JSONOptions.doNotEscapeSlashes));
+                if (auto js = "json" in args)
+                    if (js.type == JSONType.true_)
+                    {
+                        text(report(a) ~ "\n" ~ featuresJson(a).toPrettyString(JSONOptions.doNotEscapeSlashes));
+                        break;
+                    }
+                text(report(a) ~ "(json: true gives every surface as data)\n");
             }
             catch (Exception e)
             {
@@ -1227,7 +1235,9 @@ JSONValue callTool(string name, JSONValue args)
                 tol = t.type == JSONType.integer ? t.integer : t.floating;
             ubyte[] png;
             auto j = run.compare(ia, ib, tol, png);
-            text(j.toPrettyString());
+            auto js = "json" in args;
+            text(js && js.type == JSONType.true_ ? j.toPrettyString()
+                : Run.compareText(j, run.result.parts[ia].name, run.result.parts[ib].name));
             image(png);
             break;
         }
@@ -1508,6 +1518,29 @@ unittest
         "arguments": {"source": "@part Solid p() => box(10, 20, 30).fillet(edges, radius: 1);"}}}`));
     assert(bad["result"]["isError"].boolean);
     assert(bad["result"]["content"][0]["text"].str.canFind("did you mean 'r'?"));
+
+    // features and compare answer in a few lines; json: true gives the data
+    import std.file : tempDir, write, remove;
+    immutable model = buildPath(tempDir, "hcad-mcp-compact.hcad");
+    write(model, "@part Solid copy() => box(20, 20, 10) - cylinder(d: 5, h: 30, center: true);\n"
+        ~ "@part Solid original() => box(20, 20, 10.5) - cylinder(d: 5.5, h: 30, center: true);\n");
+    scope (exit)
+        remove(model);
+    JSONValue callTool(string tool, string args)
+    {
+        auto r = handle(parseJSON(`{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "` ~ tool
+            ~ `", "arguments": ` ~ args ~ `}}`));
+        assert(!r["result"]["isError"].boolean, r.toString);
+        return r["result"]["content"];
+    }
+    immutable where = `"path": ` ~ JSONValue(model).toString;
+    auto features = callTool("hcad_features", `{` ~ where ~ `, "part": "copy"}`)[0]["text"].str;
+    assert(features.canFind("hole ⌀5") && !features.canFind(`"kind"`), features);
+    assert(callTool("hcad_features", `{` ~ where ~ `, "part": "copy", "json": true}`)[0]["text"].str.canFind(`"kind"`));
+    auto compared = callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original"}`)[0]["text"].str;
+    assert(compared.canFind("within tolerance") && !compared.canFind(`"a_to_b"`), compared);
+    assert(callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original", "json": true}`)[0]["text"].str
+        .canFind(`"a_to_b"`));
 }
 
 /// The desktop application next to this program: the AppImage this runs

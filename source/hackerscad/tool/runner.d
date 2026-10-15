@@ -305,6 +305,49 @@ final class Run
         return j;
     }
 
+    /// The comparison `compare` gives, as a few lines of text: the distances
+    /// both ways, where the worst is, and the largest patches of each surface
+    /// the other does not follow (`patches` of them), one line each.
+    static string compareText(JSONValue j, string na, string nb, size_t patches = 8)
+    {
+        import hackerscad.geom.meshfeatures : plausible;
+        string mm(double v)
+        {
+            immutable p = plausible(v);
+            return format("%g", p == 0 ? 0.0 : p);
+        }
+        double num(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
+        string vec(JSONValue v) => format("(%s, %s, %s)", mm(num(v[0])), mm(num(v[1])), mm(num(v[2])));
+        immutable tol = num(j["tolerance_mm"]);
+        string s = format("%s against %s, tolerance %s mm:\n", na, nb, mm(tol));
+        foreach (way; [["a_to_b", na ~ " to " ~ nb], ["b_to_a", nb ~ " to " ~ na]])
+        {
+            auto d = j[way[0]];
+            s ~= format("  %s: %d%% within tolerance, mean %s mm, rms %s mm, largest %s mm at %s\n", way[1],
+                cast(int)(num(d["within_tolerance"]) * 100 + 0.5), mm(num(d["mean_mm"])), mm(num(d["rms_mm"])),
+                mm(num(d["max_mm"])), vec(d["worst_at"]));
+        }
+        foreach (side; [["b_surface_not_matched", "on " ~ nb ~ ", what " ~ na ~ " does not follow"],
+                ["a_surface_not_matched", "on " ~ na ~ ", what " ~ nb ~ " does not have"]])
+        {
+            auto list = j[side[0]].array;
+            if (list.length == 0)
+                continue;
+            s ~= format("  %s (%d patches, the largest first):\n", side[1], list.length);
+            foreach (i, p; list)
+            {
+                if (i == patches)
+                {
+                    s ~= format("    and %d smaller ones (json: true lists them)\n", list.length - patches);
+                    break;
+                }
+                s ~= format("    %s mm² from %s to %s, facing %s, off by %s mm (at most %s)\n", mm(num(p["area_mm2"])),
+                    vec(p["from"]), vec(p["to"]), vec(p["facing"]), mm(num(p["mean_mm"])), mm(num(p["worst_mm"])));
+            }
+        }
+        return s;
+    }
+
     /// Where part `a` (a copy) differs from part `b` (the original), as pieces
     /// of material: what a lacks (to add) and what it has too much of (to cut),
     /// largest first, each with its box, volume and how much of the box it fills.

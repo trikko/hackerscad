@@ -3,6 +3,7 @@
 module hackerscad.tool.docs;
 
 import std.algorithm : canFind;
+import std.format : format;
 import std.string : lineSplitter, strip, startsWith;
 import std.uni : toLower;
 
@@ -405,22 +406,23 @@ string reference(string topic = null)
         return full;
 
     // whole blocks (a bullet with its continuation lines, a code block, a
-    // paragraph) that mention the topic, under their heading
+    // paragraph) that mention the topic, under their heading; a heading that
+    // names it brings its whole section
     auto t = topic.toLower;
-    string heading, r, block;
-    bool headingShown, inCode;
+    struct Found
+    {
+        string heading, text;
+        bool longCode;   /// a code block over 40 lines: an example, a library
+    }
+    Found[] found;
+    string heading, block;
+    bool inCode, sectionNamed;
 
     void flush()
     {
-        if (block.length && block.toLower.canFind(t))
-        {
-            if (!headingShown && heading.length)
-            {
-                r ~= "\n" ~ heading ~ "\n";
-                headingShown = true;
-            }
-            r ~= block;
-        }
+        import std.algorithm : count;
+        if (block.length && (sectionNamed || block.toLower.canFind(t)))
+            found ~= Found(heading, block, block.startsWith("```") && block.count('\n') > 40);
         block = null;
     }
 
@@ -450,7 +452,7 @@ string reference(string topic = null)
         {
             flush();
             heading = line;
-            headingShown = false;
+            sectionNamed = line.toLower.canFind(t);
             continue;
         }
         if (line.strip.length == 0 || line.startsWith("- "))
@@ -459,6 +461,32 @@ string reference(string topic = null)
             block ~= line ~ "\n";
     }
     flush();
+
+    // whole examples and library sources only when nothing else says it
+    bool prose;
+    foreach (f; found)
+        prose = prose || !f.longCode;
+    enum cap = 12_000;
+    string r, shownHeading;
+    size_t left;
+    foreach (f; found)
+    {
+        if (prose && f.longCode)
+            continue;
+        if (r.length + f.text.length > cap && r.length)
+        {
+            left++;
+            continue;
+        }
+        if (f.heading != shownHeading && f.heading.length)
+        {
+            r ~= "\n" ~ f.heading ~ "\n";
+            shownHeading = f.heading;
+        }
+        r ~= f.text;
+    }
+    if (left)
+        r ~= format("\n(%d more passages mention '%s': call without a topic for the full reference)\n", left, topic);
     return r.length ? r : "nothing found for '" ~ topic ~ "'; call without a topic for the full reference";
 }
 
@@ -468,6 +496,9 @@ unittest
     auto f = reference("fillet");
     assert(f.canFind("before cutting holes; a fillet radius must be smaller than the faces next\n  to the edge."));
     assert(reference("zzzz").canFind("nothing found"));
+    // a short excerpt, not the whole tour, the examples and the libraries
+    auto e = reference("extrude");
+    assert(e.length <= 13_000 && !e.canFind("A tour of the language"), e[0 .. 200]);
 }
 
 unittest
