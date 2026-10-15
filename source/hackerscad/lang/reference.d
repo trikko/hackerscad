@@ -145,7 +145,11 @@ immutable Ref[] reference =
     F("writeln", "", ["values…"], "", "Prints to the console (and to the JSON output for agents)."),
     F("write", "", ["values…"], "", "Prints without a newline."),
     F("format", "", ["fmt: string", "values…"], "string", "Formats like D's format: format(\"%.1f\", x)."),
-    F("to", "", ["value"], "", "Converts: x.to!string, s.to!int."),
+    withForms(F("to", "", ["value"], "", "Converts: x.to!string, s.to!int; a Length to the bare number that means it in this file (mm, or inches under @unit(inch); Area and Volume squared, cubed), an Angle to degrees."), [
+        "x.to!string",
+        "\"42\".to!int",
+        "8.05.mm.to!double   // 8.05: as 8.05.mm / 1.mm (0.317 under @unit(inch))",
+        "30.deg.to!double   // 30"]),
     ]) ~
     group("Math", [
     F("sqrt", "", ["x: number"], "number", "Square root."),
@@ -304,8 +308,12 @@ immutable Ref[] reference =
     F("round", "Profile", ["r: Length"], "Profile", "Rounds every corner, outward and inward, holes too; an error names a corner r is too large for."),
     F("offset", "Profile", ["distance: Length"], "Profile", "Grows (d > 0) or shrinks the outline; on a plane, the parallel plane."),
     F("offset", "Solid", ["distance: Length"], "Solid", "Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened)."),
-    F("extrude", "Profile", ["height: Length", "taper: Angle", "symmetric: bool", "twist: Angle"], "Solid",
-        "A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly."),
+    withForms(F("extrude", "Profile", ["height: Length", "taper: Angle", "symmetric: bool", "twist: Angle", "along: X | Y"], "Solid",
+        "A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly. along: X or Y stands the profile up across that axis and pushes it along it. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is."), [
+        "rect(40.mm, 20.mm).extrude(5.mm)   // z 0 .. 5",
+        "rect(40.mm, 20.mm).extrude(5.mm, along: Y)   // its x along X, y up Z: y 0 .. 5",
+        "rect(40.mm, 20.mm).extrude(5.mm, along: X)   // its x along Y, y up Z: x 0 .. 5",
+        "body.section(XZ.offset(10.mm)).extrude(2.mm)   // from the cut, along its normal"]),
     F("revolve", "Profile", ["axis: Axis", "angle: Angle"], "Solid",
         "Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z."),
     F("sweep", "Profile", ["path: Path", "frenet: bool", "twist: Angle"], "Solid",

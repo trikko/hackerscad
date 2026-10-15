@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-bb5b895d`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-2a429eb1`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-bb5b895d`:** this text is up to date.
+- **It prints `0.3.1-2a429eb1`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -123,7 +123,8 @@ format stamp):
       @part("slategray", alpha: 0.4, export: false)
 - Lengths: write units (60.mm, 2.5.cm, 1.inch). Bare numbers passed to
   geometry are millimetres. Never add a bare number to a length (60.mm + 5 is
-  an error; write 60.mm + 5.mm).
+  an error; write 60.mm + 5.mm, or d.to!double for the bare number a length
+  stands for in this file).
 - Angles: rotate(z: 45) uses degrees; 30.deg is explicit.
 - Primitives stand on the XY plane and are centred in X and Y:
   box(x, y, z) spans z = 0 .. z; cylinder(r: or d:, h:) also; center: true
@@ -136,7 +137,9 @@ format stamp):
   .chamfer(edges.filter(e => e.mid.z > 5.mm), d: 1.mm),
   .shell(open: faces.top, thickness: 2.mm). Apply fillets before shell and
   before cutting holes; a fillet radius must be smaller than the faces next
-  to the edge.
+  to the edge. When one fails, its error names the edges that fail and, when
+  that is why, the face beside them too narrow for the size (round before
+  the cut that narrows it, or make the size smaller).
 - To round or chamfer the edges a cut left behind, select them by provenance:
   .fillet(edges.between(faces.from(holes), faces.top), r: 0.5.mm).
 - Cut with planes: body.split(body.plane(faces.top).offset(-10.mm)) gives
@@ -147,7 +150,9 @@ format stamp):
   polygon(6, d: 13.mm, fit: "sides"), slot(p, q, w: 6.mm)), polygon(points),
   text; combined with + - &, moved, turned, scaled, mirrored like solids,
   .round(r), .offset(d); turn them into solids with .extrude(h) or
-  .revolve(axis: Y). On a face: body.extrude(profile, on: frame, depth:)
+  .revolve(axis: Y). A prism along X or Y: .extrude(h, along: Y) (the
+  profile's x along X, its y up Z); a profile in another plane (a section,
+  one turned) extrudes across its own plane, from where it lies. On a face: body.extrude(profile, on: frame, depth:)
   adds, body.cut(profile, on: frame, depth: | through: true) removes.
 - Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
@@ -185,7 +190,8 @@ format stamp):
   font (name it), or tracing the letters as a sketch (lines and arcs sized
   from the picture), or load("letters.svg") if they can give a vector
   tracing; never swap the font before the user has chosen (saying so
-  afterwards is not enough). Logos, engraved or hand-drawn
+  afterwards is not enough). Working with no one to ask (a task run on its
+  own): trace the letters as a sketch, and say so in the report. Logos, engraved or hand-drawn
   lettering are traced as a sketch.
 - Constants are immutable; module-level values cannot be modified.
 - Expose the dimensions a user may want to change as parameters:

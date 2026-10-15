@@ -859,7 +859,7 @@ unittest
 
     assert(error("@part Solid p() => rect(10, 10);").code == Code.type);
     assert(error("@part Solid p() => box(1, 1, 1) + rect(1, 1);").code == Code.type);
-    assert(error("@part Solid p() => rect(10, 10).rotate(x: 90).extrude(5);").code == Code.type);
+    assert(error("@part Solid p() => (rect(10, 10) + rect(10, 10).rotate(x: 90)).extrude(5);").code == Code.type);
     assert(error("@part Solid p() => box(1, 1, 1).extrude(3);").code == Code.type);
     assert(error("@part Solid p() => polygon([vec(0, 0), vec(1, 0)]).extrude(1);").code == Code.type);
 }
@@ -3216,3 +3216,76 @@ unittest
     assert(error(base ~ "@part Solid p() { auto s = body.sketch(faces.filter(f => f.normal.z > -2)); return body; }")
         .message.canFind("exactly one face"));
 }
+
+unittest
+{
+    // along: X or Y, a prism across that axis; a profile in another plane, extruded from there
+    auto r = runModel(q{
+        @part Solid ay() => rect(10, 20).extrude(5.mm, along: Y);
+        @part Solid ax() => rect(10, 20).extrude(-5.mm, along: X).move(y: 40);
+        @part Solid sec() => box(20, 10, 30).section(XZ.offset(2.mm)).extrude(3.mm).move(y: 80);
+        @part Solid turned() => rect(10, 20).rotate(x: 90).move(z: 10).extrude(3.mm).move(y: 120);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    Vec3[2] box(string name)
+    {
+        foreach (p; r.parts)
+            if (p.name == name)
+            {
+                auto b = kernel.bbox(p.solid.brep);
+                return [b.min, b.max];
+            }
+        assert(0, name);
+    }
+    bool near(Vec3 a, Vec3 b) => (a - b).length < 1e-6;
+    assert(near(box("ay")[0], Vec3(-5, 0, -10)) && near(box("ay")[1], Vec3(5, 5, 10)));
+    assert(near(box("ax")[0], Vec3(-5, 35, -10)) && near(box("ax")[1], Vec3(0, 45, 10)));
+    assert(near(box("sec")[0], Vec3(-10, 82, 0)) && near(box("sec")[1], Vec3(10, 85, 30)));
+    assert(near(box("turned")[0], Vec3(-5, 117, 0)) && near(box("turned")[1], Vec3(5, 120, 20)));
+    assert(isClose(partVolume(r, "ay"), 1000, 1e-9) && isClose(partVolume(r, "sec"), 1800, 1e-9));
+    assert(error("@part Solid p() => rect(1, 1).extrude(1, along: vec(1, 1, 0));").message.canFind("X, Y or Z"));
+    assert(error("@part Solid p() { auto s = sketch(XZ); s.circle(s.origin, d: 2); return s.profile.extrude(1, along: Y); }")
+        .message.canFind("leave along: out"));
+}
+
+unittest
+{
+    // to! of a quantity: its number in mm (mm², mm³), an angle in degrees
+    auto r = runModel(q{
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            assert(8.05.mm.to!double == 8.05 && 1.inch.to!double == 25.4 && 12.mm.to!int == 12);
+            assert(30.deg.to!double == 30 && (2.mm * 3.mm).to!double == 6);
+            assert(vec(6.25, 31.5).y + 8.mm.to!double / 2 == 35.5);
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error("@part Solid p() { writeln(12.5.mm.to!int); return box(1, 1, 1); }").message.canFind("not an integer"));
+    // in a file in inches: the number in inches, as its bare numbers are
+    auto inch = runModel("@unit(inch) module m;\n@part Solid p() => box(1, 1, 1);\n"
+        ~ "unittest { assert(1.inch.to!double == 1 && 25.4.mm.to!int == 1 && (2.inch * 3.inch).to!double == 6); }");
+    foreach (d; inch.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+
+}
+
+unittest
+{
+    mixin(slowTest);
+    // a failed fillet names the edges that fail, and the face beside them too
+    // narrow for the radius: a roof 1.5 mm wide beside the channel
+    enum src = "immutable roof = cylinder(r: 9.5.mm, h: 10.mm, center: true).rotate(y: 90).move(z: 15.mm);\n"
+        ~ "immutable channel = box(7, 14, 40).move(z: 15.mm);\n"
+        ~ "immutable block = box(20, 30, 40) - box(10, 19, 16).move(z: -1.mm) - (roof & box(10, 19, 30)) - channel;\n"
+        ~ "immutable seam = edges.between(faces.from(channel), faces.from(roof)).filter(e => !e.isLine);\n";
+    auto d = error(src ~ "@part Solid p() => block.fillet(seam, r: 2.9.mm);");
+    assert(d.message.canFind("fillet failed on the curved edge at (3.5, 0, 24.5)"), d.message);
+    assert(d.suggestion.canFind("only 1.5 mm wide") && d.suggestion.canFind("smaller than 1.5 mm"), d.suggestion);
+    auto r = runModel(src ~ "@part Solid p() => block.fillet(seam, r: 1.4.mm);");
+    foreach (x; r.diagnostics)
+        assert(x.severity != Severity.error, x.message);
+}
+

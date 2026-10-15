@@ -14,7 +14,8 @@ dimensions and pictures, compare them with the request, fix, then export.
       @part("slategray", alpha: 0.4, export: false)
 - Lengths: write units (60.mm, 2.5.cm, 1.inch). Bare numbers passed to
   geometry are millimetres. Never add a bare number to a length (60.mm + 5 is
-  an error; write 60.mm + 5.mm).
+  an error; write 60.mm + 5.mm, or d.to!double for the bare number a length
+  stands for in this file).
 - Angles: rotate(z: 45) uses degrees; 30.deg is explicit.
 - Primitives stand on the XY plane and are centred in X and Y:
   box(x, y, z) spans z = 0 .. z; cylinder(r: or d:, h:) also; center: true
@@ -27,7 +28,9 @@ dimensions and pictures, compare them with the request, fix, then export.
   .chamfer(edges.filter(e => e.mid.z > 5.mm), d: 1.mm),
   .shell(open: faces.top, thickness: 2.mm). Apply fillets before shell and
   before cutting holes; a fillet radius must be smaller than the faces next
-  to the edge.
+  to the edge. When one fails, its error names the edges that fail and, when
+  that is why, the face beside them too narrow for the size (round before
+  the cut that narrows it, or make the size smaller).
 - To round or chamfer the edges a cut left behind, select them by provenance:
   .fillet(edges.between(faces.from(holes), faces.top), r: 0.5.mm).
 - Cut with planes: body.split(body.plane(faces.top).offset(-10.mm)) gives
@@ -38,7 +41,9 @@ dimensions and pictures, compare them with the request, fix, then export.
   polygon(6, d: 13.mm, fit: "sides"), slot(p, q, w: 6.mm)), polygon(points),
   text; combined with + - &, moved, turned, scaled, mirrored like solids,
   .round(r), .offset(d); turn them into solids with .extrude(h) or
-  .revolve(axis: Y). On a face: body.extrude(profile, on: frame, depth:)
+  .revolve(axis: Y). A prism along X or Y: .extrude(h, along: Y) (the
+  profile's x along X, its y up Z); a profile in another plane (a section,
+  one turned) extrudes across its own plane, from where it lies. On a face: body.extrude(profile, on: frame, depth:)
   adds, body.cut(profile, on: frame, depth: | through: true) removes.
 - Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
@@ -76,7 +81,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   font (name it), or tracing the letters as a sketch (lines and arcs sized
   from the picture), or load("letters.svg") if they can give a vector
   tracing; never swap the font before the user has chosen (saying so
-  afterwards is not enough). Logos, engraved or hand-drawn
+  afterwards is not enough). Working with no one to ask (a task run on its
+  own): trace the letters as a sketch, and say so in the report. Logos, engraved or hand-drawn
   lettering are traced as a sketch.
 - Constants are immutable; module-level values cannot be modified.
 - Expose the dimensions a user may want to change as parameters:
@@ -258,6 +264,7 @@ basic construct once, with comments saying what each makes appear; in the applic
   - Values carry a dimension (`Length`, `Angle`, `Area`, `Volume`), and arithmetic checks it: `Length * Length` is an `Area`, while `60.mm + 45.deg` is an error.
   - **Bare numbers** passed where a length is expected use the file's default unit: `mm`, or the unit set with `@unit(inch) module name;`. Values keep their unit, so libraries written with different default units combine correctly.
   - Mixing bare and dimensioned numbers in arithmetic (`60.mm + 5`) is an error. Scaling is fine (`2 * 60.mm`).
+  - A dimensioned number as a bare one: `d.to!double` is the bare number that means it in this file, a length in the file's unit (millimetres, as `d / 1.mm`, or inches under `@unit(inch)`; squared for an area, cubed for a volume), an angle in degrees (as `a / 1.deg`); `d.to!int` the same when it is whole. To mix it with bare numbers: `c.y + d.to!double / 2`, or give the other side its unit: `vec(6.25.mm, 31.5.mm)`.
   - Bare angles passed to features (`rotate(z: 45)`) are degrees. `sin`/`cos` take radians for bare numbers, as in D.
 - **Vectors:** `vec(10.mm, 5.mm)`, `vec(x, y, z)`, with `.x .y .z .xy .length .normalized`, `dot`, `cross`, `distance`. Vectors compare with a small tolerance.
 - **Directions:** `X`, `Y`, `Z`, `-X`…
@@ -296,7 +303,7 @@ basic construct once, with comments saying what each makes appear; in the applic
   - The shapes are those of a sketch (below), with the same names and arguments: a profile's shape is a one-shape sketch with everything given, centred on the origin unless a point is given (a vector, `vec(10, 5)` or `[10, 5]`). `rect(w, h)` (`rect(20.mm)`, a square), `rect(p, q)` (two opposite corners), `rect(p, w:, h:)` (from its lower left corner) or `rect(center: c, w:, h:)`, with `angle: 30.deg` (turned, its first side that far from X) and `corner: 3.mm` (the four corners rounded); `circle(r | d)` or `circle(c, r | d)`; `ellipse(rx, ry)` or `ellipse(c, rx:, ry:)`, with `angle:`; `polygon(6, d: 10.mm)` or `polygon(c, 6, d: 10.mm)`, regular (d/r through the corners; `fit: "sides"`: the circle the sides touch, `d` across the flats; `angle:` the direction of its first corner, else its first side lies at the bottom, horizontal); `slot(length, w)` (a stadium, length end to end along X; `angle:` turned, `center:` elsewhere) or `slot(p, q, w:)` (round two centres); `teardrop(r | d, angle:, flat:)` or `teardrop(c, r | d, …)` (see Printing).
   - Not sketch shapes: `polygon([vec(0, 0), vec(30, 0), vec(0, 20)])` (through the points; `smooth: true`, a smooth closed curve through them), `text("text", size: 10.mm, font: "Sans")` (starting at the origin on the baseline) and `load("outline.svg")` (see Importing parts).
   - Combine with `+ - &`: profiles overlap, add up and cut each other, where a sketch draws one outline; a sketch's `s.profile` is a Profile too, so the two mix (`s.profile - circle(d: 5.mm)`). Profiles move, turn, scale and mirror like solids: `p.move(x: 10.mm, y: 5.mm)`, `p.rotate(30.deg)` or `p.rotate(z: 30)` (in its plane, about the origin; `around: q` about a point), `p.scale(2)` or `p.scale(x: 2, y: 3)`, `p.mirror(X)` (across the line through the origin with that normal). `.round(r)` rounds the corners; `.offset(d)` grows (d > 0) or shrinks it; `.area`.
-  - `.extrude(h)` makes a solid along +Z (negative h goes down); options `taper: 3.deg` (the sides lean in towards the top, staying flat and meeting at sharp edges: the outline narrows and the holes widen; a negative taper the other way; `h` is still the height along Z, and an edge or hole of the profile that would close up before the top is an error), `symmetric: true`, `twist: 90.deg` (the profile turns around Z as it rises, evenly: twisted vases, spiral columns; `twist: 2 * 360.deg` two turns; not with `taper`). Extrude while the profile lies on XY, then place the solid.
+  - `.extrude(h)` makes a solid along +Z (negative h goes down); options `taper: 3.deg` (the sides lean in towards the top, staying flat and meeting at sharp edges: the outline narrows and the holes widen; a negative taper the other way; `h` is still the height along Z, and an edge or hole of the profile that would close up before the top is an error), `symmetric: true`, `twist: 90.deg` (the profile turns around Z as it rises, evenly: twisted vases, spiral columns; `twist: 2 * 360.deg` two turns; not with `taper`). `along: Y` stands the profile up across Y (its x along X, its y up Z) and pushes it towards +Y, `along: X` across X (its x along Y, its y up Z) towards +X; a negative height goes the other way: a prism along X or Y without turning anything. A profile lying in another plane, a section (`body.section(XZ.offset(10.mm)).extrude(2.mm)`), one turned or moved whole, or one drawn on a face, is extruded across its own plane, along its normal, from where it lies.
   - `.revolve()`: turned around the axis, standing up: the profile's x is the radius and its y the height along Z (pots, bottles, knobs). `.revolve(axis: X, angle: 180.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`), without standing up; `angle:` turns less than all the way.
   - On a face or plane, add or remove material in one step: `carlo().extrude(circle(d: 6.mm), on: frame, depth: 5.mm)` grows outwards along the frame's Z; `carlo().cut(circle(d: 6.mm), on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. Both accept `taper:`.
   - Threads: `body.thread(face, "M8")` cuts a thread on a cylindrical face: on the outside of a shaft (made at the thread's nominal diameter, ⌀8) the grooves, on the wall of a hole (made at the tap drill, about ⌀6.8 for M8) the thread a screw fits. The size names the standard: ISO metric `"M8"` (coarse) or `"M8x1"` (fine), unified inch `"1/4-20 UNC"`, `"1/4 UNF"`, `"#10-32"`, trapezoidal for lead screws `"Tr12x3"`, BSP pipe threads `"G1/2"` (parallel) and `"R1/2"` (tapered), and `"1/2 NPT"` (tapered; the shaft is the pipe's outside diameter). Tapered threads have their nominal size at the fixed end and narrow by 1 in 16 on the diameter towards the tip of a shaft, or into a hole. `pitch: 1.mm` alone puts a 60° thread of that pitch on the cylinder's own diameter. The thread covers the whole face, or `length: 10.mm` or `turns: 8` from the free end (the tip of a shaft, the opening of a hole; `flip: true` the other end). `starts: 2` for multi-start threads, `left: true` left-handed, `clearance: 0.2.mm` the play for printed parts (0.15 mm by default in holes, none on shafts), `chamfer: false` without the 45° bevel at the free end. In the 3D view, right-click a cylinder: **Thread** lists the sizes that fit it. The `threads` library (`threadedRod`, `tappedHole`) makes loose rods and tools to cut.

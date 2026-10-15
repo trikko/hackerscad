@@ -41,7 +41,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `writeln(values…)` — Prints to the console (and to the JSON output for agents).
 - `write(values…)` — Prints without a newline.
 - `format(fmt: string, values…) → string` — Formats like D's format: format("%.1f", x).
-- `to(value)` — Converts: x.to!string, s.to!int.
+- `to(value)` — Converts: x.to!string, s.to!int; a Length to the bare number that means it in this file (mm, or inches under @unit(inch); Area and Volume squared, cubed), an Angle to degrees.
 
 ## Math
 
@@ -154,7 +154,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `p.round(r: Length) → Profile` — Rounds every corner, outward and inward, holes too; an error names a corner r is too large for.
 - `p.offset(distance: Length) → Profile` — Grows (d > 0) or shrinks the outline; on a plane, the parallel plane.
 - `s.offset(distance: Length) → Solid` — Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened).
-- `p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle) → Solid` — A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly.
+- `p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle, along: X | Y) → Solid` — A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly. along: X or Y stands the profile up across that axis and pushes it along it. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is.
 - `p.revolve(axis: Axis, angle: Angle) → Solid` — Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.
 - `p.sweep(path: Path, frenet: bool, twist: Angle) → Solid` — Moves the profile along a path; twist: 360.deg turns it once around the path on the way.
 - `loft(profiles: Profile[], ruled: bool, inside: Vec3[][]) → Solid` — A solid through profiles placed in space; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane).

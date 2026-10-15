@@ -667,7 +667,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (!(r > 0))
             throw new HcadError(Code.type, "the fillet radius r must be greater than 0", x.spanOf("r"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("edges"));
-        return edgeFeature(it, a, s, idx, "fillet", "r", b => k.fillet(b, idx, r));
+        return edgeFeature(it, a, s, idx, "fillet", "r", r, (b, e) => k.fillet(b, e, r));
     });
     def("chamfer", (ref CallArgs a) {
         auto x = Args(it, a, "chamfer", ["solid", "edges", "d"]);
@@ -677,7 +677,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (!(d > 0))
             throw new HcadError(Code.type, "the chamfer size d must be greater than 0", x.spanOf("d"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("edges"));
-        return edgeFeature(it, a, s, idx, "chamfer", "d", b => k.chamfer(b, idx, d));
+        return edgeFeature(it, a, s, idx, "chamfer", "d", d, (b, e) => k.chamfer(b, e, d));
     });
     def("shell", (ref CallArgs a) {
         auto x = Args(it, a, "shell", ["solid", "open", "thickness"]);
@@ -977,23 +977,53 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // body.extrude(profile, on: frame, depth: 5.mm) to add material on a face
         if (a.positional.length && a.positional[0].kind == Kind.solid && !a.positional[0].solid.flat)
             return pushesFace(a) ? pushFace(it, a, false) : onFace(it, a, false);
-        auto x = Args(it, a, "extrude", ["profile", "height", "taper", "symmetric", "twist"]);
+        auto x = Args(it, a, "extrude", ["profile", "height", "taper", "symmetric", "twist", "along"]);
         auto p = profileArg(x, "profile");
         immutable h = x.len("height"), taper = x.angleOr("taper", 0), twist = x.angleOr("twist", 0);
         immutable sym = x.flag("symmetric", false);
-        requireXY(it, p, a.span);
         if (twist != 0 && taper != 0)
             throw new HcadError(Code.type, "an extrusion is either twisted or tapered, not both", x.spanOf("twist"));
+        // along: X or Y, the profile stood up across that axis and pushed along it
+        int along = 2;
+        if (x.has("along"))
+        {
+            auto d = x.dir("along");
+            foreach (i; 0 .. 3)
+                if (abs(abs(d[i]) - 1) < 1e-9 && d[i] > 0)
+                    along = i;
+            if (abs(d[along] - 1) > 1e-9)
+                throw new HcadError(Code.type, "along: is X, Y or Z (towards -X, a negative height)", x.spanOf("along"));
+            if (p.placed)
+                throw new HcadError(Code.type, "this profile was drawn on a face or plane: it is extruded across "
+                    ~ "it, leave along: out", x.spanOf("along"));
+        }
+        // a profile that lies in another plane (a section, a profile turned): extruded
+        // across that plane, from where it is; on XY or drawn on a face, as it is
+        auto base = nonEmpty(p, a.span);
+        Vec3[4] tilt;
+        immutable tilted = !p.placed && tiltedProfile(it, p, a.span, tilt);
+        if (tilted && along != 2)
+            throw new HcadError(Code.type, "this profile does not lie on XY: it is extruded across its own plane, "
+                ~ "leave along: out", x.spanOf("along"));
+        if (tilted)
+            base = fromPlace(k, tilt, base);
         // twisted: a sweep up a straight line, the profile turning around Z as it rises
-        auto sv = derived(it, twist != 0 ? k.sweep(nonEmpty(p, a.span), k.polyline([Vec3(0, 0, 0), Vec3(0, 0, h)], false),
-            false, h < 0 ? -twist : twist) : k.extrude(nonEmpty(p, a.span), h, taper), [p], "extrude", a.span);
+        auto sv = derived(it, twist != 0 ? k.sweep(base, k.polyline([Vec3(0, 0, 0), Vec3(0, 0, h)], false),
+            false, h < 0 ? -twist : twist) : k.extrude(base, h, taper), [p], "extrude", a.span);
         sv.flat = false;
         sv.placed = false;
         if (sym)
             sv = transformed(it, a.span, sv, b => k.translate(b, Vec3(0, 0, -h / 2))).solid;
-        // a profile drawn on a face: the solid stands on that face
-        if (p.placed)
-            return transformed(it, a.span, sv, b => toPlace(k, p.place, b));
+        // along X: the profile's x along Y and its y up Z, pushed towards +X (a turn of
+        // 120° about the diagonal); along Y: its x along X and y up Z, towards +Y (Y and Z
+        // swapped: a mirror)
+        if (along == 0)
+            sv = transformed(it, a.span, sv, b => k.rotate(b, Vec3(1, 1, 1).normalized, 2 * PI / 3)).solid;
+        else if (along == 1)
+            sv = transformed(it, a.span, sv, b => k.mirror(b, Vec3(0, 1, -1).normalized)).solid;
+        // a profile drawn on a face, or lying in a plane: the solid stands there
+        if (p.placed || tilted)
+            return transformed(it, a.span, sv, b => toPlace(k, p.placed ? p.place : tilt, b));
         return Value.of(sv);
     });
     def("thread", (ref CallArgs a) {
@@ -2129,6 +2159,45 @@ Brep toPlace(BrepKernel k, Vec3[4] place, Brep b)
     return k.translate(b, place[0]);
 }
 
+/// `b`, lying on the frame `place`, brought onto XY in the frame's
+/// coordinates: the opposite of toPlace.
+Brep fromPlace(BrepKernel k, Vec3[4] place, Brep b)
+{
+    b = k.translate(b, -place[0]);
+    Vec3 axis;
+    immutable angle = axisAngle(place[1], place[2], place[3], axis);
+    if (angle > 1e-12)
+        b = k.rotate(b, axis, -angle);
+    return b;
+}
+
+/// Whether profile `p` lies flat in a plane other than XY (a section, a
+/// profile turned or moved up), and the frame of that plane: its normal the
+/// faces' own, its origin under the middle of the profile, its axes those of
+/// a frame on a face with that normal. An error when it is not flat at all.
+bool tiltedProfile(Interp it, SolidVal p, Span span, out Vec3[4] place)
+{
+    auto k = it.kernel;
+    auto bb = k.bbox(nonEmpty(p, span));
+    auto fs = k.faces(p.brep);
+    bool onXY = abs(bb.min.z) < 1e-6 && abs(bb.max.z) < 1e-6;
+    foreach (f; fs)
+        onXY = onXY && abs(abs(f.normal.z) - 1) < 1e-9;
+    if (onXY || fs.length == 0)
+        return false;
+    auto n = fs[0].normal.normalized;
+    immutable size = max(bb.size.length, 1e-3);
+    foreach (f; fs)
+        if (abs(abs(f.normal.normalized.dot(n)) - 1) > 1e-7 || abs((f.center - fs[0].center).dot(n)) > 1e-6 * size)
+            throw new HcadError(Code.type, "this profile is not flat in one plane: extrude a profile that lies in a "
+                ~ "plane (a section, a drawing, a profile moved or turned whole)", span);
+    auto c = bb.center;
+    auto o = c - n * (c - fs[0].center).dot(n);
+    auto ax = faceXAxis(n);
+    place = [o, ax, n.cross(ax), n];
+    return true;
+}
+
 /// Axis and angle of the rotation whose matrix has columns x, y, z.
 double axisAngle(Vec3 x, Vec3 y, Vec3 z, out Vec3 axis)
 {
@@ -2837,20 +2906,154 @@ struct Args
 }
 
 /// Fillet and chamfer: kernel failures get a message that says what to try.
-Value edgeFeature(Interp it, ref CallArgs a, SolidVal s, int[] idx, string kind, string size, Brep delegate(Brep) f)
+/// OpenCascade only says "not done": the edges are tried one by one to find
+/// those that fail, and beside those, a face narrower than the size asked
+/// (a rounding needs that much room on each face) is named with its width.
+Value edgeFeature(Interp it, ref CallArgs a, SolidVal s, int[] idx, string kind, string size, double value,
+    Brep delegate(Brep, const(int)[]) f)
 {
     try
-        return transformed(it, a.span, s, f, kind);
+        return transformed(it, a.span, s, (Brep b) => f(b, idx), kind);
     catch (KernelException e)
     {
-        string hint;
-        immutable bodies = s.brep is null ? 0 : it.kernel.solids(s.brep).length;
+        auto k = it.kernel;
+        immutable bodies = s.brep is null ? 0 : k.solids(s.brep).length;
         if (bodies > 1)
-            hint = format("the solid is made of %s separate bodies touching each other; fuse them first", bodies);
+            throw new HcadError(Code.kernel, e.msg, a.span, format("the solid is made of %s separate bodies touching "
+                ~ "each other; fuse them first", bodies));
+        // which edges fail on their own (not too many tries: each is a fillet)
+        int[] failing;
+        immutable tried = idx.length <= 24;
+        if (tried)
+            foreach (i; idx)
+            {
+                try
+                    f(s.brep, [i]);
+                catch (KernelException)
+                    failing ~= i;
+            }
+        auto infos = k.edges(s.brep);
+        string where(const(int)[] es)
+        {
+            string[] r;
+            foreach (i; es[0 .. min($, 3)])
+                r ~= format("%s at (%s)", infos[i].kind == EdgeKind.line ? "the straight edge" : infos[i].kind
+                    == EdgeKind.circle ? "the curved edge" : "the edge", fmtPoint(infos[i].mid));
+            return r.join(", ") ~ (es.length > 3 ? format(" and %d more", es.length - 3) : "");
+        }
+        if (tried && failing.length == 0)
+            throw new HcadError(Code.kernel, format("%s failed: each of the %d edges takes it on its own, not all together",
+                kind, idx.length), a.span, format("where they meet the %s does not close: %s them in groups, or try "
+                ~ "a smaller %s", kind, kind, size));
+        auto bad = tried ? failing : idx;
+        // the narrowest face beside the failing edges
+        immutable narrow = narrowestBeside(it, s.brep, bad);
+        string msg = format("%s failed%s", kind, tried ? format(" on %s", where(bad)) : "");
+        string hint;
+        if (narrow < value)
+            hint = format("a face beside %s is only %s mm wide there, and a %s of %s %s needs that much room on it: "
+                ~ "make %s smaller than %s mm (or %s before the cut that narrows that face)", bad.length > 1 ? "them"
+                : "it", fmtNum(narrow), kind, size, fmtNum(value), size, fmtNum(narrow), kind);
         else
             hint = format("try a smaller %s, or apply it to fewer edges at a time (%s edges selected)", size, idx.length);
-        throw new HcadError(Code.kernel, e.msg, a.span, hint);
+        // OpenCascade's own words, without the "fillet failed:" they start with
+        import std.algorithm : findSplitAfter;
+        auto said = e.msg.findSplitAfter(": ");
+        throw new HcadError(Code.kernel, msg ~ " (" ~ (said ? said[1] : e.msg) ~ ")", a.span, hint);
     }
+}
+
+private string fmtNum(double v) => format("%.3g", v);
+private string fmtPoint(Vec3 p)
+{
+    import std.math : round;
+    double c(double v) => abs(v) < 1e-6 ? 0.0 : round(v * 1000) / 1000;
+    return format("%g, %g, %g", c(p.x), c(p.y), c(p.z));
+}
+
+/// How wide the narrowest face beside edges `es` is, near them: the
+/// shortest distance from points along each edge to the rest of the outline
+/// of the faces it joins (the parts of that outline on the edge itself left
+/// out). Infinity when it cannot tell.
+double narrowestBeside(Interp it, Brep b, const(int)[] es)
+{
+    import std.math : acos;
+    auto k = it.kernel;
+    auto infos = k.edges(b);
+    auto ends = k.edgeFaces(b);
+    immutable size = k.bbox(b).size.length;
+    immutable tol = 1e-4 * size;
+    double best = double.infinity;
+    foreach (i; es)
+    {
+        auto e = infos[i];
+        // points along the edge, and whether a point lies on it
+        Vec3[] along;
+        bool delegate(Vec3) on;
+        if (e.kind == EdgeKind.circle)
+        {
+            auto ax = e.axis.normalized, c = e.center;
+            auto u = (e.start - c) - ax * (e.start - c).dot(ax);
+            u = u.normalized;
+            auto v = ax.cross(u);
+            double ang(Vec3 p) { auto d = p - c; return atan2(d.dot(v), d.dot(u)); }
+            double a1 = ang(e.end), am = ang(e.mid);
+            if (a1 <= 1e-9)
+                a1 += 2 * PI;
+            if (am < 0)
+                am += 2 * PI;
+            if (am > a1)   // runs the other way round
+                a1 -= 2 * PI;
+            foreach (t; 0 .. 9)
+            {
+                immutable th = a1 * t / 8;
+                along ~= c + (u * cos(th) + v * sin(th)) * e.radius;
+            }
+            on = (Vec3 p) {
+                auto d = p - c;
+                immutable h = d.dot(ax);
+                return abs(h) < tol && abs((d - ax * h).length - e.radius) < tol;
+            };
+        }
+        else
+        {
+            foreach (t; 0 .. 5)
+                along ~= e.start + (e.end - e.start) * (t / 4.0);
+            if (e.kind != EdgeKind.line)
+                along ~= e.mid;
+            auto pts = e.kind == EdgeKind.line ? [e.start, e.end] : [e.start, e.mid, e.end];
+            on = (Vec3 p) {
+                foreach (j; 0 .. pts.length - 1)
+                    if (segmentDistance(p, pts[j], pts[j + 1]) < (e.kind == EdgeKind.line ? tol : 0.05 * e.length + tol))
+                        return true;
+                return false;
+            };
+        }
+        foreach (face; ends[i])
+        {
+            if (face < 0)
+                continue;
+            foreach (loop; k.faceLoops(b, face, 1e-3 * size))
+                foreach (j; 0 .. loop.length)
+                {
+                    auto p = loop[j], q = loop[(j + 1) % loop.length];
+                    if (on(p) || on(q))
+                        continue;
+                    foreach (x; along)
+                        best = min(best, segmentDistance(x, p, q));
+                }
+        }
+    }
+    return best;
+}
+
+/// Distance from point `x` to the segment p–q.
+private double segmentDistance(Vec3 x, Vec3 p, Vec3 q)
+{
+    auto d = q - p;
+    immutable l2 = d.dot(d);
+    immutable t = l2 > 0 ? max(0.0, min(1.0, (x - p).dot(d) / l2)) : 0;
+    return (x - (p + d * t)).length;
 }
 
 /// Applies an operation to one solid, keeping colour and face provenance;
@@ -3776,6 +3979,17 @@ Value convert(Interp it, ref CallArgs a)
     auto t = a.templateArgs[0];
     string target = t.kind == Kind.type ? t.type.name : t.kind == Kind.str ? t.s : null;
     auto v = a.positional[0];
+    // a quantity as the bare number that means it in this file: lengths in its unit
+    // (mm, or the one of @unit(inch); squared for an area, cubed for a volume),
+    // angles in degrees, as bare angles are in rotate
+    immutable fileUnit = a.caller ? a.caller.unitFactor : 1;
+    // (to 12 significant digits: 30.deg is 30, not 29.999999999999996)
+    double plain(Value q)
+    {
+        immutable v = q.n.value / (PI / 180) ^^ q.n.dim.ang / fileUnit ^^ q.n.dim.len;
+        static import std.conv;
+        return isFinite(v) ? std.conv.to!double(format("%.12g", v)) : v;
+    }
     switch (target)
     {
     case "string": return Value.of(v.toString);
@@ -3791,6 +4005,8 @@ Value convert(Interp it, ref CallArgs a)
             }
             else if (v.isNum && v.n.dim == Dim.none)
                 x = v.n.value;
+            else if (v.isNum)
+                x = plain(v);
             else
                 break;
             if (x != floor(x))
@@ -3809,6 +4025,8 @@ Value convert(Interp it, ref CallArgs a)
         }
         if (v.isNum && v.n.dim == Dim.none)
             return Value.number(v.n.value);
+        if (v.isNum)
+            return Value.number(plain(v));
         break;
     default:
         break;

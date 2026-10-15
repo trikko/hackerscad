@@ -73,7 +73,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>writeln(values…)</dt><dd>Prints to the console (and to the JSON output for agents).</dd>
 <dt>write(values…)</dt><dd>Prints without a newline.</dd>
 <dt>format(fmt: string, values…) → string</dt><dd>Formats like D's format: format("%.1f", x).</dd>
-<dt>to(value)</dt><dd>Converts: x.to!string, s.to!int.</dd>
+<dt>to(value)</dt><dd>Converts: x.to!string, s.to!int; a Length to the bare number that means it in this file (mm, or inches under @unit(inch); Area and Volume squared, cubed), an Angle to degrees.</dd>
 </dl></section>
 <section><h2>Math</h2><dl>
 <dt>sqrt(x: number) → number</dt><dd>Square root.</dd>
@@ -177,7 +177,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>p.round(r: Length) → Profile</dt><dd>Rounds every corner, outward and inward, holes too; an error names a corner r is too large for.</dd>
 <dt>p.offset(distance: Length) → Profile</dt><dd>Grows (d &gt; 0) or shrinks the outline; on a plane, the parallel plane.</dd>
 <dt>s.offset(distance: Length) → Solid</dt><dd>Grows (d &gt; 0) or shrinks the solid, round where it turns (its walls thickened).</dd>
-<dt>p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle) → Solid</dt><dd>A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly.</dd>
+<dt>p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle, along: X | Y) → Solid</dt><dd>A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly. along: X or Y stands the profile up across that axis and pushes it along it. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is.</dd>
 <dt>p.revolve(axis: Axis, angle: Angle) → Solid</dt><dd>Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.</dd>
 <dt>p.sweep(path: Path, frenet: bool, twist: Angle) → Solid</dt><dd>Moves the profile along a path; twist: 360.deg turns it once around the path on the way.</dd>
 <dt>loft(profiles: Profile[], ruled: bool, inside: Vec3[][]) → Solid</dt><dd>A solid through profiles placed in space; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane).</dd>
