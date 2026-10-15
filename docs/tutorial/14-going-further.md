@@ -55,7 +55,7 @@ Solid hook()
 The arm is a little short. Right-click its end, the small face in front,
 and choose **Extrude face…**: type `10.mm` over the value. The face moves
 10 mm out and the arm grows with it, its sides still one face each.
-**Push face in…** does the opposite, into the material.
+**Cut face…** does the opposite, into the material.
 
 ![The arm, 10 mm longer](img/14-hook-longer.png)
 
