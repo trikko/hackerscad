@@ -25,6 +25,8 @@
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepPrimAPI_MakeTorus.hxx>
+#include <gp_Elips.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -284,6 +286,13 @@ hc_shape *hc_sphere(double r)
     return guarded<>((hc_shape *)nullptr, [&] { return primitive(BRepPrimAPI_MakeSphere(r).Shape()); });
 }
 
+// A torus round Z, centred on the origin: `major` from the axis to the
+// middle of the tube, `minor` the tube's radius.
+hc_shape *hc_torus(double major, double minor)
+{
+    return guarded<>((hc_shape *)nullptr, [&] { return primitive(BRepPrimAPI_MakeTorus(major, minor).Shape()); });
+}
+
 // ---------------------------------------------------------------- profiles
 
 static TopoDS_Shape compound_of(const std::vector<TopoDS_Shape> &parts)
@@ -322,6 +331,20 @@ hc_shape *hc_circle(double r)
     return guarded<>((hc_shape *)nullptr, [&] {
         gp_Circ c(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), r);
         BRepBuilderAPI_MakeWire w(BRepBuilderAPI_MakeEdge(c).Edge());
+        return primitive(BRepBuilderAPI_MakeFace(w.Wire(), Standard_True).Face());
+    });
+}
+
+// An ellipse centred on the origin, rx along X and ry along Y (exact: one
+// elliptic edge; OCCT wants the major radius first, so a taller one is
+// turned a quarter round Z).
+hc_shape *hc_ellipse(double rx, double ry)
+{
+    return guarded<>((hc_shape *)nullptr, [&] {
+        const bool wide = rx >= ry;
+        gp_Ax2 ax(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1), wide ? gp_Dir(1, 0, 0) : gp_Dir(0, 1, 0));
+        gp_Elips e(ax, wide ? rx : ry, wide ? ry : rx);
+        BRepBuilderAPI_MakeWire w(BRepBuilderAPI_MakeEdge(e).Edge());
         return primitive(BRepBuilderAPI_MakeFace(w.Wire(), Standard_True).Face());
     });
 }

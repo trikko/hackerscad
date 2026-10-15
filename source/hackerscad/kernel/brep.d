@@ -106,12 +106,14 @@ interface BrepKernel
     Brep cone(double r1, double r2, double h);
     /// Sphere centred at the origin.
     Brep sphere(double r);
+    Brep torus(double major, double minor);
 
     /// Profiles: planar faces on XY. Rectangle and circle are centred on the
     /// origin; polygon takes x0 y0 x1 y1 …; text starts at the origin on its
     /// baseline (`font`: family name or font file path).
     Brep rect(double w, double h);
     Brep circle(double r);
+    Brep ellipse(double rx, double ry);
     Brep polygon(const(double)[] xy);
     /// A smooth closed curve through the points on XY, filled.
     Brep splineProfile(const(double)[] xy);

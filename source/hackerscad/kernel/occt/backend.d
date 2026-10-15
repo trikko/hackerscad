@@ -42,9 +42,11 @@ final class OcctKernel : BrepKernel
     Brep cylinder(double r, double h) => wrap(hc_cylinder(r, h), "cylinder");
     Brep cone(double r1, double r2, double h) => wrap(hc_cone(r1, r2, h), "cone");
     Brep sphere(double r) => wrap(hc_sphere(r), "sphere");
+    Brep torus(double major, double minor) => wrap(hc_torus(major, minor), "torus");
 
     Brep rect(double w, double h) => wrap(hc_rect(w, h), "rect");
     Brep circle(double r) => wrap(hc_circle(r), "circle");
+    Brep ellipse(double rx, double ry) => wrap(hc_ellipse(rx, ry), "ellipse");
     Brep polygon(const(double)[] xy) => wrap(hc_polygon(xy.ptr, cast(int)(xy.length / 2)), "polygon");
     Brep splineProfile(const(double)[] xy) => wrap(hc_spline_profile(xy.ptr, cast(int)(xy.length / 2)), "smooth outline");
     Brep text(string s, double size, string font) => wrap(hc_text(s.toStringz, size, font.toStringz), "text");

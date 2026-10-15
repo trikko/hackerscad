@@ -33,9 +33,11 @@ hc_shape* hc_box(double dx, double dy, double dz);
 hc_shape* hc_cylinder(double r, double h);
 hc_shape* hc_cone(double r1, double r2, double h);
 hc_shape* hc_sphere(double r);
+hc_shape* hc_torus(double major, double minor);
 
 hc_shape* hc_rect(double w, double h);
 hc_shape* hc_circle(double r);
+hc_shape* hc_ellipse(double rx, double ry);
 hc_shape* hc_polygon(const(double)* xy, int n);
 hc_shape* hc_spline_profile(const(double)* xy, int n);
 hc_shape* hc_text(const(char)* utf8, double size, const(char)* font);

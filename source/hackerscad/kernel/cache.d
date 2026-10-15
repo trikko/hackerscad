@@ -57,9 +57,11 @@ final class CachingKernel : BrepKernel
     Brep cylinder(double r, double h) => op(key("cylinder", r, h), inner.cylinder(r, h));
     Brep cone(double r1, double r2, double h) => op(key("cone", r1, r2, h), inner.cone(r1, r2, h));
     Brep sphere(double r) => op(key("sphere", r), inner.sphere(r));
+    Brep torus(double major, double minor) => op(key("torus", major, minor), inner.torus(major, minor));
 
     Brep rect(double w, double h) => op(key("rect", w, h), inner.rect(w, h));
     Brep circle(double r) => op(key("circle", r), inner.circle(r));
+    Brep ellipse(double rx, double ry) => op(key("ellipse", rx, ry), inner.ellipse(rx, ry));
     Brep polygon(const(double)[] xy) => op(key("polygon", xy), inner.polygon(xy));
     Brep splineProfile(const(double)[] xy) => op(key("splineProfile", xy), inner.splineProfile(xy));
     Brep text(string t, double size, string font) => op(key("text", t, size, font), inner.text(t, size, font));

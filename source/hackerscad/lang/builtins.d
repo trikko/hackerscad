@@ -4,7 +4,7 @@ module hackerscad.lang.builtins;
 
 import std.conv : to, ConvException;
 import std.format : format;
-import std.math : PI, abs, sqrt, floor, ceil, round, sin, cos, tan, asin, acos, atan, atan2, isFinite;
+import std.math : PI, E, abs, sqrt, floor, ceil, round, sin, cos, tan, asin, acos, atan, atan2, isFinite, exp, log, log10, log2, hypot;
 import std.algorithm : canFind, map, sort, max, min;
 import std.array : array, join;
 import std.uni : toLower;
@@ -105,6 +105,7 @@ void installPrelude(Interp it, Env env)
 
     // ---- constants
     constant("PI", Value.number(PI));
+    constant("E", Value.number(E));
     constant("X", Value.vector(Vec3(1, 0, 0), 3, Dim.none));
     constant("Y", Value.vector(Vec3(0, 1, 0), 3, Dim.none));
     constant("Z", Value.vector(Vec3(0, 0, 1), 3, Dim.none));
@@ -150,6 +151,48 @@ void installPrelude(Interp it, Env env)
     def("asin", (ref CallArgs a) => Value.number(asin(plain(a, "asin")), Dim.angle));
     def("acos", (ref CallArgs a) => Value.number(acos(plain(a, "acos")), Dim.angle));
     def("atan", (ref CallArgs a) => Value.number(atan(plain(a, "atan")), Dim.angle));
+    def("pow", (ref CallArgs a) {
+        // pow(x, y) is x ^^ y: a length squared is an area, a length to 1.5 an error
+        import hackerscad.lang.lexer : Tok;
+        auto x = Args(it, a, "pow", ["x", "y"]);
+        return it.applyBinary(Tok.pow, x.get("x"), x.get("y"), a.span);
+    });
+    def("exp", (ref CallArgs a) => Value.number(exp(plain(a, "exp"))));
+    def("log", (ref CallArgs a) {
+        // the natural logarithm; log(x, base) in another base
+        auto x = Args(it, a, "log", ["x", "base"]);
+        immutable v = x.num("x");
+        if (!(v > 0))
+            throw new HcadError(Code.type, "log of a number that is not above 0", x.spanOf("x"));
+        if (!x.has("base"))
+            return Value.number(log(v));
+        immutable b = x.num("base");
+        if (!(b > 0) || b == 1)
+            throw new HcadError(Code.type, "a logarithm's base is above 0 and not 1", x.spanOf("base"));
+        return Value.number(log(v) / log(b));
+    });
+    def("log10", (ref CallArgs a) => Value.number(log10(plain(a, "log10"))));
+    def("log2", (ref CallArgs a) => Value.number(log2(plain(a, "log2"))));
+    def("hypot", (ref CallArgs a) {
+        // the length of the hypotenuse: hypot(3.mm, 4.mm) is 5 mm
+        auto x = Args(it, a, "hypot", ["a", "b"]);
+        auto p = x.get("a"), q = x.get("b");
+        if (!p.isNum || !q.isNum || p.n.dim != q.n.dim)
+            throw new HcadError(Code.units, "hypot needs two numbers with the same unit", a.span);
+        return Value.number(hypot(p.n.value, q.n.value), p.n.dim);
+    });
+    def("sign", (ref CallArgs a) {
+        auto v = num(a, "sign");
+        return Value.integer(v.n.value > 0 ? 1 : v.n.value < 0 ? -1 : 0);
+    });
+    def("lerp", (ref CallArgs a) {
+        // lerp(a, b, t): from a (t = 0) to b (t = 1), in a straight line; numbers or vectors
+        auto x = Args(it, a, "lerp", ["a", "b", "t"]);
+        import hackerscad.lang.lexer : Tok;
+        auto from = x.get("a"), to = x.get("b");
+        auto t = Value.number(x.num("t"));
+        return it.applyBinary(Tok.plus, from, it.applyBinary(Tok.mul, it.applyBinary(Tok.minus, to, from, a.span), t, a.span), a.span);
+    });
     def("atan2", (ref CallArgs a) {
         auto x = Args(it, a, "atan2", ["y", "x"]);
         auto y = x.get("y"), xx = x.get("x");
@@ -498,6 +541,16 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             return solid(k.translate(k.cylinder(r1, h), shift), "cone", a.span);
         return solid(k.translate(k.cone(r1, r2, h), shift), "cone", a.span);
     });
+    def("torus", (ref CallArgs a) {
+        // torus(major, minor): round Z, centred on the origin; major from the axis
+        // to the middle of the tube, minor the tube's radius
+        auto x = Args(it, a, "torus", ["major", "minor"]);
+        immutable major = x.len("major"), minor = x.len("minor");
+        positive(a, [major, minor], "torus radius");
+        if (minor >= major)
+            throw new HcadError(Code.type, "a torus's tube (minor) must be thinner than its ring (major)", x.spanOf("minor"));
+        return solid(k.torus(major, minor), "torus", a.span);
+    });
     def("sphere", (ref CallArgs a) {
         auto x = Args(it, a, "sphere", ["r", "d"]);
         auto r = x.radius("r", "d");
@@ -839,6 +892,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         immutable w = x.len("w"), h = x.has("h") ? x.len("h") : w;
         positive(a, [w, h], "rect sizes");
         return flat(k.rect(w, h), "rect", a.span);
+    });
+    def("ellipse", (ref CallArgs a) {
+        // ellipse(rx, ry): centred on the origin, rx along X, ry along Y (exact)
+        auto x = Args(it, a, "ellipse", ["rx", "ry"]);
+        immutable rx = x.len("rx"), ry = x.len("ry");
+        positive(a, [rx, ry], "ellipse radius");
+        return flat(rx == ry ? k.circle(rx) : k.ellipse(rx, ry), "ellipse", a.span);
     });
     def("circle", (ref CallArgs a) {
         auto x = Args(it, a, "circle", ["r", "d"]);

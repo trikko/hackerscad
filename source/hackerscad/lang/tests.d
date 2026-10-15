@@ -1124,6 +1124,30 @@ unittest
         ~ "fixed, then put the new version here");
 }
 
+unittest
+{
+    // the basics: powers, logarithms, the hypotenuse, sign, lerp, e; an ellipse and a torus, exact
+    auto r = runModel(q{
+        import std.math;
+        @part Solid ring() => torus(20.mm, 4.mm);
+        @part Solid oval() => ellipse(15.mm, 8.mm).extrude(5.mm);
+        @part Solid tall() => ellipse(6.mm, 12.mm).extrude(1.mm);
+        unittest
+        {
+            writeln(pow(2, 10), " ", pow(3.mm, 2), " ", log(8, 2), " ", log10(1000), " ", log2(32), " ", log(E));
+            writeln(hypot(3.mm, 4.mm), " ", sign(-2.mm), " ", lerp(10.mm, 20.mm, 0.25), " ", lerp(vec(0, 0, 0), vec(10, 20, 0), 0.5));
+        }
+    });
+    assert(r.log[0].text == "1024 9 mm^2 3 3 5 1", r.log[0].text);
+    assert(r.log[1].text == "5 mm -1 12.5 mm [5, 10, 0]", r.log[1].text);
+    assert(isClose(partVolume(r, "ring"), 2 * PI * PI * 20 * 16, 1e-6));
+    assert(isClose(partVolume(r, "oval"), PI * 15 * 8 * 5, 1e-4));
+    auto tall = kernel.bbox(r.parts[2].solid.brep);
+    assert(isClose(tall.size.x, 12, 1e-6) && isClose(tall.size.y, 24, 1e-6));
+    assert(error("import std.math;\n@part Solid p() => box(1, 1, 1);\nunittest { writeln(pow(3.mm, 1.5)); }").code == Code.units);
+    assert(error("@part Solid p() => torus(5.mm, 6.mm);").code == Code.type);
+}
+
 // The known bugs of OpenCascade, each tried with its workaround turned off.
 
 unittest

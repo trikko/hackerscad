@@ -159,6 +159,14 @@ immutable Ref[] reference =
     F("acos", "", ["x: number"], "Angle", "Arc cosine."),
     F("atan", "", ["x: number"], "Angle", "Arc tangent."),
     F("atan2", "", ["y", "x"], "Angle", "The angle of the point (x, y)."),
+    F("pow", "", ["x", "y"], "", "x to the power y, as x ^^ y: a length squared is an area."),
+    F("exp", "", ["x: number"], "number", "e to the power x."),
+    F("log", "", ["x: number", "base: number"], "number", "The natural logarithm; log(x, base) in another base."),
+    F("log10", "", ["x: number"], "number", "The logarithm in base 10."),
+    F("log2", "", ["x: number"], "number", "The logarithm in base 2."),
+    F("hypot", "", ["a", "b"], "", "The hypotenuse: hypot(3.mm, 4.mm) is 5 mm."),
+    F("sign", "", ["x"], "int", "-1, 0 or 1."),
+    F("lerp", "", ["a", "b", "t: number"], "", "From a (t = 0) to b (t = 1) in a straight line: numbers, lengths or vectors."),
     F("min", "", ["a", "b…"], "", "The smallest argument."),
     F("max", "", ["a", "b…"], "", "The largest argument."),
     F("random", "", ["lo: number", "hi: number", "seed: int"], "", "Uniform between lo and hi (lengths, angles or plain numbers), the next of the seed's stream: the same at every run; change the seed for others."),
@@ -209,6 +217,7 @@ immutable Ref[] reference =
         "cone(10.mm, 5.mm, 20.mm)              // radii at the base and top, height",
         "cone(d1: 20.mm, d2: 10.mm, h: 20.mm)   // diameters",
         "cone(r1: 10.mm, r2: 0.mm, h: 20.mm)    // to a point"]),
+    F("torus", "", ["major: Length", "minor: Length"], "Solid", "A ring round Z centred on the origin: major to the middle of the tube, minor the tube's radius."),
     withForms(F("sphere", "", ["r: Length", "d: Length"], "Solid", "A sphere centred on the origin."), [
         "sphere(5.mm)        // radius",
         "sphere(d: 10.mm)    // diameter"]),
@@ -254,6 +263,7 @@ immutable Ref[] reference =
     ]) ~
     group("Profiles (2D)", [
     F("rect", "", ["w: Length", "h: Length"], "Profile", "A rectangle centred on the origin."),
+    F("ellipse", "", ["rx: Length", "ry: Length"], "Profile", "An ellipse centred on the origin, rx along X, ry along Y."),
     withForms(F("circle", "", ["r: Length", "d: Length"], "Profile", "A circle centred on the origin."), [
         "circle(5.mm)        // radius",
         "circle(d: 10.mm)    // diameter"]),
@@ -427,6 +437,7 @@ immutable Ref[] reference =
     C("YZ", "Plane", "The YZ plane."),
     C("World", "Frame", "The global frame."),
     C("PI", "number", "π."),
+    C("E", "number", "e, the base of the natural logarithm."),
     C("nothing", "Solid", "The empty solid (also Solid.init): start of a union built in a loop."),
     C("edges", "Edges", "The edges of the solid a feature applies to: edges.parallel(Z)."),
     C("faces", "Faces", "The faces of the solid a feature applies to: faces.top."),

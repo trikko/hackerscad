@@ -88,6 +88,14 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>acos(x: number) → Angle</dt><dd>Arc cosine.</dd>
 <dt>atan(x: number) → Angle</dt><dd>Arc tangent.</dd>
 <dt>atan2(y, x) → Angle</dt><dd>The angle of the point (x, y).</dd>
+<dt>pow(x, y)</dt><dd>x to the power y, as x ^^ y: a length squared is an area.</dd>
+<dt>exp(x: number) → number</dt><dd>e to the power x.</dd>
+<dt>log(x: number, base: number) → number</dt><dd>The natural logarithm; log(x, base) in another base.</dd>
+<dt>log10(x: number) → number</dt><dd>The logarithm in base 10.</dd>
+<dt>log2(x: number) → number</dt><dd>The logarithm in base 2.</dd>
+<dt>hypot(a, b)</dt><dd>The hypotenuse: hypot(3.mm, 4.mm) is 5 mm.</dd>
+<dt>sign(x) → int</dt><dd>-1, 0 or 1.</dd>
+<dt>lerp(a, b, t: number)</dt><dd>From a (t = 0) to b (t = 1) in a straight line: numbers, lengths or vectors.</dd>
 <dt>min(a, b…)</dt><dd>The smallest argument.</dd>
 <dt>max(a, b…)</dt><dd>The largest argument.</dd>
 <dt>random(lo: number, hi: number, seed: int)</dt><dd>Uniform between lo and hi (lengths, angles or plain numbers), the next of the seed's stream: the same at every run; change the seed for others.</dd>
@@ -130,6 +138,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>box(x: Length, y: Length, z: Length, center: bool) → Solid</dt><dd>A box standing on XY, centred in X and Y.</dd>
 <dt>cylinder(r: Length, h: Length, d: Length, center: bool) → Solid</dt><dd>A cylinder along Z standing on XY; give r or d, and h.</dd>
 <dt>cone(r1: Length, r2: Length, h: Length, d1: Length, d2: Length, center: bool) → Solid</dt><dd>A cone (or truncated cone) along Z.</dd>
+<dt>torus(major: Length, minor: Length) → Solid</dt><dd>A ring round Z centred on the origin: major to the middle of the tube, minor the tube's radius.</dd>
 <dt>sphere(r: Length, d: Length) → Solid</dt><dd>A sphere centred on the origin.</dd>
 <dt>load(path: string, scale: number) → Solid</dt><dd>A part from an STL, OBJ, 3MF or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm).</dd>
 </dl></section>
@@ -159,6 +168,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 </dl></section>
 <section><h2>Profiles (2D)</h2><dl>
 <dt>rect(w: Length, h: Length) → Profile</dt><dd>A rectangle centred on the origin.</dd>
+<dt>ellipse(rx: Length, ry: Length) → Profile</dt><dd>An ellipse centred on the origin, rx along X, ry along Y.</dd>
 <dt>circle(r: Length, d: Length) → Profile</dt><dd>A circle centred on the origin.</dd>
 <dt>polygon(points: Vec[], smooth: bool) → Profile</dt><dd>A polygon through the points; smooth: true, a smooth closed curve through them instead.</dd>
 <dt>regularPolygon(n: int, r: Length, d: Length) → Profile</dt><dd>regularPolygon(6, d: 10.mm): d/r through the corners.</dd>
@@ -304,6 +314,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>YZ: Plane</dt><dd>The YZ plane.</dd>
 <dt>World: Frame</dt><dd>The global frame.</dd>
 <dt>PI: number</dt><dd>π.</dd>
+<dt>E: number</dt><dd>e, the base of the natural logarithm.</dd>
 <dt>nothing: Solid</dt><dd>The empty solid (also Solid.init): start of a union built in a loop.</dd>
 <dt>edges: Edges</dt><dd>The edges of the solid a feature applies to: edges.parallel(Z).</dd>
 <dt>faces: Faces</dt><dd>The faces of the solid a feature applies to: faces.top.</dd>
