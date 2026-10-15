@@ -1297,21 +1297,25 @@ final class SketchVal : ObjectVal
             import std.algorithm : sort;
             import std.array : join;
             bool[string] seen;
-            string[] points;
+            string[] pieces;   // one per segment, whichever way the loop runs or starts
             foreach (g; segs)
             {
                 if (g.kind != OutlineSeg.Kind.end)
                 {
-                    foreach (c; [g.ax, g.ay, g.bx, g.by, g.mx, g.my])
-                        points ~= format("%.6f", c + 0.0);
+                    // each value kept with its own coordinate (sorting them all
+                    // together would mix x and y: circles at (12, 0) and (0, 12)
+                    // would look the same); the two ends in either order
+                    string pt(double x, double y) => format("%.6f,%.6f", x + 0.0, y + 0.0);
+                    auto ends = [pt(g.ax, g.ay), pt(g.bx, g.by)].sort.release;
+                    pieces ~= format("%d %s %s %s", cast(int) g.kind, ends[0], ends[1], pt(g.mx, g.my));
                     continue;
                 }
-                auto key = points.sort.release.join(" ");
+                auto key = pieces.sort.release.join(" ");
                 if (key in seen)
                     throw new HcadError(Code.sketch, "two outlines of the sketch lie on each other (two equal circles?): "
                         ~ "they would cancel out", span);
                 seen[key] = true;
-                points = null;
+                pieces = null;
             }
         }
 

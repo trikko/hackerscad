@@ -3042,3 +3042,27 @@ unittest
         .message.canFind("not sketch geometry"));
     assert(errorIn(`auto p = slot(vec(0, 0), vec(9, 0), w: 2.mm, length: 9.mm);`).message.canFind("by its length"));
 }
+
+unittest
+{
+    // two equal circles in different places are two holes, not "outlines on each other" (the check
+    // once mixed x and y); the same circle twice still is an error
+    import std.algorithm : canFind;
+    auto r = runModel(`import std.shapes;
+@part Solid a()
+{
+    auto s = sketch();
+    s.rect(center: s.point(0, 0, fixed: true), w: 60.mm, h: 60.mm);
+    s.circle(s.point(12, 0, fixed: true), d: 6.mm);
+    s.circle(s.point(0, 12, fixed: true), d: 6.mm);
+    return s.profile.extrude(1.mm);
+}
+`);
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.math : PI;
+    assert(isClose(partVolume(r, "a"), 3600 - 2 * PI * 9, 1e-6));
+    auto e = errorIn(`auto s = sketch(); s.circle(s.point(0, 0), d: 6.mm); s.circle(s.point(0, 0), d: 6.mm);
+auto p = s.profile;`, "import std.shapes;");
+    assert(e.message.canFind("on each other"), e.message);
+}
