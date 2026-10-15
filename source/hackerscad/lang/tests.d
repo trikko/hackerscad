@@ -490,6 +490,20 @@ unittest
     assert(isClose(partVolume(r, "chamfered"), 1000 - (100 - (64 + 100 + 80) / 3.0), 1e-6));
     assert(r.log[0].text == "20 mm true");
 
+    // a union leaves no seam where two faces lie on one plane: chamfering the
+    // edges round the joined top is the same as on one box
+    auto joined = runModel(q{
+        @part Solid joined() => (box(10, 10, 10).move(x: -5) + box(10, 10, 10).move(x: 5))
+            .chamfer(edges.of(faces.top), d: 1);
+        @part Solid whole() => box(20, 10, 10).chamfer(edges.of(faces.top), d: 1);
+        @part Solid overlapping() => (box(10, 10, 10).move(x: -4) + box(12, 10, 10).move(x: 5))
+            .chamfer(edges.of(faces.filter(f => f.center.y < -4.9.mm)), d: 1);
+        @part Solid single() => box(20, 10, 10).move(x: 1)
+            .chamfer(edges.of(faces.filter(f => f.center.y < -4.9.mm)), d: 1);
+    });
+    assert(isClose(partVolume(joined, "joined"), partVolume(joined, "whole"), 1e-6));
+    assert(isClose(partVolume(joined, "overlapping"), partVolume(joined, "single"), 1e-6));
+
     assert(error("@part Solid p() { return box(1, 1, 1).fillet(edges.filter(e => e.length > 5.mm), r: 0.1); }").code == Code.kernel);
     assert(error("@part Solid p() { return box(1, 1, 1).fillet(faces.top, r: 0.1); }").code == Code.type);
     assert(error("@part Solid p() { return box(1, 1, 1).fillet(edges!(e => e.isLine), r: 0.1); }").code == Code.syntax);
