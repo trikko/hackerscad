@@ -807,8 +807,11 @@ JSONValue[] toolList()
             ~ "the work and no window is open (hcad_gui_windows), or wants a window of its own for it. To show an "
             ~ "example or a trial, pass code (the model's text) or copy (a file whose text is copied in) instead of "
             ~ "path: the window then works on no file, and the user's Save asks for a name, where a window on a file "
-            ~ "(an example, the user's model) would save over it as they try things.",
+            ~ "(an example, the user's model) would save over it as they try things. A window of no file works in "
+            ~ "the copied file's folder (or dir), so what the model loads (load(\"part.stl\")) is found there.",
             `"path": {"type": "string"}, "code": {"type": "string"}, "copy": {"type": "string"}, `
+            ~ `"dir": {"type": "string", "description": "the folder a window of no file works in: load() reads `
+            ~ `there and below (default: the copied file's folder; with code, the server's)"}, `
             ~ `"name": {"type": "string", "description": "letters, digits and dashes"}`),
         gui("hcad_gui_transform", "Move, turn or scale a part of the user's model, as Move…, Rotate… and Scale… in the "
             ~ "3D view's right-click menu: the code is written at the end of the part's chain (a .move(), .rotate() or "
@@ -1385,16 +1388,31 @@ JSONValue callTool(string name, JSONValue args)
         {
             // code, or a copy of a file: a model of no file, so the user's Save cannot overwrite anything
             string code = arg("code");
+            string dir = arg("dir");
             if (code is null && arg("copy") !is null)
             {
                 import std.file : exists, readText;
+                import std.path : absolutePath, dirName;
                 if (!exists(arg("copy")))
                     return toolError("no file " ~ arg("copy") ~ " to copy");
                 code = readText(arg("copy"));
+                // in the copied file's folder: what it loads is found as it is there
+                if (dir is null)
+                    dir = dirName(absolutePath(arg("copy")));
             }
             if (code !is null && arg("path") !is null)
                 return toolError("give path (the window works on that file) or code / copy (a window of no file), not both");
-            auto r = launchWindow(code !is null ? null : arg("path"), arg("name"), code);
+            if (dir !is null)
+            {
+                import std.file : exists, isDir;
+                import std.path : absolutePath;
+                if (arg("path") !is null)
+                    return toolError("dir is for a window of no file (code or copy): a window on a file works in its folder");
+                if (!exists(dir) || !isDir(dir))
+                    return toolError("no folder " ~ dir);
+                dir = absolutePath(dir);
+            }
+            auto r = launchWindow(code !is null ? null : arg("path"), arg("name"), code, dir);
             if (r.type == JSONType.string)
                 return toolError(r.str);
             text(r.toPrettyString(JSONOptions.doNotEscapeSlashes));
@@ -1541,6 +1559,14 @@ unittest
     assert(compared.canFind("within tolerance") && !compared.canFind(`"a_to_b"`), compared);
     assert(callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original", "json": true}`)[0]["text"].str
         .canFind(`"a_to_b"`));
+
+    // a window's folder is checked before any window opens
+    auto launch(string args) => handle(parseJSON(`{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": `
+        ~ `{"name": "hcad_gui_launch", "arguments": ` ~ args ~ `}}`))["result"];
+    auto noDir = launch(`{"code": "@part Solid p() => box(1, 1, 1);", "dir": "/no/such/folder"}`);
+    assert(noDir["isError"].boolean && noDir["content"][0]["text"].str.canFind("no folder"));
+    auto onFile = launch(`{` ~ where ~ `, "dir": ` ~ JSONValue(tempDir).toString ~ `}`);
+    assert(onFile["isError"].boolean && onFile["content"][0]["text"].str.canFind("window on a file"));
 }
 
 /// The desktop application next to this program: the AppImage this runs
@@ -1569,8 +1595,10 @@ string[] guiCommand()
 
 /// Starts a window on `path` (none: a new model) named `name` (none: a
 /// random free name) and waits until it answers with its first evaluation:
-/// its state and name, or (a string) why it could not.
-JSONValue launchWindow(string path, string name, string code = null)
+/// its state and name, or (a string) why it could not. `dir`: the folder a
+/// window of no file works in (its untitled model is there, and load() reads
+/// the files there and below); none, the server's.
+JSONValue launchWindow(string path, string name, string code = null, string dir = null)
 {
     import core.thread : Thread;
     import core.time : MonoTime, msecs, seconds;
@@ -1621,7 +1649,7 @@ JSONValue launchWindow(string path, string name, string code = null)
     try
     {
         auto pid = spawnProcess(args, File(nowhere, "r"), File(nowhere, "w"), File(nowhere, "w"), null,
-            Config.detached | Config.suppressConsole);
+            Config.detached | Config.suppressConsole, dir);
     }
     catch (Exception e)
         return JSONValue("cannot start " ~ args[0] ~ ": " ~ e.msg);
