@@ -7,7 +7,7 @@
 // one, so a vase you like can be made again.
 //
 // Try it:
-//  - change Seed (or any value in Parameters);
+//  - change Seed (or any value in Parameters); Straight stands it upright;
 //  - switch Noise on and off: the same vase, another surface;
 //  - edit `ripple`: another formula, another surface;
 //  - the lid is made for the mouth and placed on it with placeOn wherever
@@ -18,6 +18,9 @@ module randomvase;
 
 import std.shapes;
 import std.math;
+
+@param("Straight: the spine upright, no lean")
+immutable straight = false;
 
 @param("Noise instead of the sine")
 immutable noisy = false;
@@ -37,6 +40,9 @@ immutable foot = 22.mm;
 @param("How much wider at the mouth", min: 0.mm, max: 40.mm)
 immutable flare = 18.mm;
 
+@param("Ripple twist: how far the ripples turn from foot to mouth (0: straight ribs)", min: 0.deg, max: 180.deg)
+immutable twist = 90.deg;
+
 @param("Ripple depth", min: 0.mm, max: 4.mm)
 immutable depth = 1.5.mm;
 
@@ -51,7 +57,7 @@ immutable rings = 30;
 // is level and the vase stands), leaning more and more as it rises; its
 // height, lean, direction and bend are random, from the seed
 immutable height = random(50.mm, 100.mm, seed: seed);
-immutable lean = 50.mm * sqrt(random(0, 1, seed: seed));
+immutable lean = (straight ? 0 : 1) * 50.mm * sqrt(random(0, 1, seed: seed));
 immutable towards = random(0.deg, 360.deg, seed: seed);
 immutable bend = random(1.5, 3, seed: seed);
 
@@ -70,14 +76,14 @@ Vec3[] parabola()
 }
 
 // the ripple at a point of a ring: `around` 0…1 round it, `along` 0…1 up
-// the spine. A sine, 12 crests round, turning a little as it rises; or
+// the spine. A sine, 12 crests round, turning by Ripple twist as it rises; or
 // noise, about 8 bumps round and as many every 15 mm up (no seam where the
 // ring closes). With Fade it dies away smoothly to nothing at the mouth.
 Length ripple(double around, double along)
 {
     immutable wave = noisy
         ? loopNoise(around, along * height / 15.mm, bumps: 8, seed: seed)
-        : sin((around * 12 + along * 3) * 360.deg);
+        : sin((around * 12 + along * twist / 30.deg) * 360.deg);
     immutable fading = fade ? (1 + cos(PI * along)) / 2 : 1;
     return depth * fading * wave;
 }
