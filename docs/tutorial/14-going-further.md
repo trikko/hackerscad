@@ -308,14 +308,21 @@ each separate body instead, and finds how many there are each time the model
 is evaluated:
 
 ```d
+import carlo;
+
+@param("Where to cut", min: -5.mm, max: 25.mm)
+immutable cut = 10.mm;
+
 immutable cutPlane = plane(origin: vec(cut, 0.mm, 0.mm), normal: X);
 
 @parts("Yellow Pop", varied: true)
-Solid jaws() => clip().halves(cutPlane).above;
+Solid jaws() => carlo().halves(cutPlane).above;
 ```
 
-`halves` cuts in two sides, `.above` and `.below`. Where the cut crosses the
-slot of the clip, the side above is two jaws, and the parts list shows `jaws1`
+Carlo, the clip of [chapter 13](13-carlo.md), is a good object to try things
+on: `import carlo;` and `carlo()` make one. `halves` cuts in two sides,
+`.above` and `.below`. Where the cut crosses Carlo's slot, the side above is
+two jaws, and the parts list shows `jaws1`
 and `jaws2`, each in its colour (`varied: true`); move `cut` past the slot and
 there is one, `jaws`. `split` instead gives every piece of both sides as a list
 (`Solid[]`), a part per element with `@parts`: that is what **Split…** in the
