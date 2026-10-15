@@ -281,6 +281,18 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.profile → Profile` — Solves the sketch and gives its outline.
 - `sk.dof → int` — Degrees of freedom left.
 - `sk.solved → bool` — Whether the constraints are satisfied.
+- `pt.x → Length` — Where the point is across, solved (y: up).
+- `pt.y → Length` — Where the point is up, solved.
+- `pt.pos → Vec` — Where the point is, solved: vec(x, y).
+- `line.start → SketchPoint` — Its first point (end: the other one); an arc's too.
+- `line.end → SketchPoint` — Its last point; an arc's too.
+- `line.length → Length` — How long it is, solved.
+- `line.mid → Vec` — Its middle, solved.
+- `circ.center → SketchPoint` — The centre of a circle, an arc or an ellipse.
+- `circ.radius → Length` — The radius of a circle or an arc, solved.
+- `ell.rx → Length` — The radius along the ellipse's own x axis, solved.
+- `ell.ry → Length` — The radius across, solved.
+- `ell.angle → Angle` — How far the ellipse's x axis is turned from X, solved.
 
 ## Drawings
 

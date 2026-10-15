@@ -20,7 +20,8 @@ struct Ref
     string name;
     /// For methods and properties, what they apply to: Solid, Profile,
     /// Shape (both), Path, Frame, Plane, Axis, Vec, BBox, Edges, Faces,
-    /// Edge, Face, list, number, Sketch, Drawing. Empty for free names.
+    /// Edge, Face, list, number, Sketch, SketchPoint, SketchLine, SketchCircle,
+    /// SketchEllipse, Drawing. Empty for free names.
     string on;
     string[] params;   /// "name: Type", in order; named arguments use the name
     string type;       /// what it gives
@@ -495,6 +496,19 @@ immutable Ref[] reference =
     P("profile", "Sketch", "Profile", "Solves the sketch and gives its outline."),
     P("dof", "Sketch", "int", "Degrees of freedom left."),
     P("solved", "Sketch", "bool", "Whether the constraints are satisfied."),
+    // what the geometry of a sketch reads back, once solved
+    P("x", "SketchPoint", "Length", "Where the point is across, solved (y: up)."),
+    P("y", "SketchPoint", "Length", "Where the point is up, solved."),
+    P("pos", "SketchPoint", "Vec", "Where the point is, solved: vec(x, y)."),
+    P("start", "SketchLine", "SketchPoint", "Its first point (end: the other one); an arc's too."),
+    P("end", "SketchLine", "SketchPoint", "Its last point; an arc's too."),
+    P("length", "SketchLine", "Length", "How long it is, solved."),
+    P("mid", "SketchLine", "Vec", "Its middle, solved."),
+    P("center", "SketchCircle", "SketchPoint", "The centre of a circle, an arc or an ellipse."),
+    P("radius", "SketchCircle", "Length", "The radius of a circle or an arc, solved."),
+    P("rx", "SketchEllipse", "Length", "The radius along the ellipse's own x axis, solved."),
+    P("ry", "SketchEllipse", "Length", "The radius across, solved."),
+    P("angle", "SketchEllipse", "Angle", "How far the ellipse's x axis is turned from X, solved."),
     ]) ~
     group("Drawings", [
     F("drawing", "", ["size: string", "title: string", "author: string", "material: string", "projection: string",

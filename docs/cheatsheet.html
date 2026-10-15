@@ -299,6 +299,18 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.profile → Profile</dt><dd>Solves the sketch and gives its outline.</dd>
 <dt>sk.dof → int</dt><dd>Degrees of freedom left.</dd>
 <dt>sk.solved → bool</dt><dd>Whether the constraints are satisfied.</dd>
+<dt>pt.x → Length</dt><dd>Where the point is across, solved (y: up).</dd>
+<dt>pt.y → Length</dt><dd>Where the point is up, solved.</dd>
+<dt>pt.pos → Vec</dt><dd>Where the point is, solved: vec(x, y).</dd>
+<dt>line.start → SketchPoint</dt><dd>Its first point (end: the other one); an arc's too.</dd>
+<dt>line.end → SketchPoint</dt><dd>Its last point; an arc's too.</dd>
+<dt>line.length → Length</dt><dd>How long it is, solved.</dd>
+<dt>line.mid → Vec</dt><dd>Its middle, solved.</dd>
+<dt>circ.center → SketchPoint</dt><dd>The centre of a circle, an arc or an ellipse.</dd>
+<dt>circ.radius → Length</dt><dd>The radius of a circle or an arc, solved.</dd>
+<dt>ell.rx → Length</dt><dd>The radius along the ellipse's own x axis, solved.</dd>
+<dt>ell.ry → Length</dt><dd>The radius across, solved.</dd>
+<dt>ell.angle → Angle</dt><dd>How far the ellipse's x axis is turned from X, solved.</dd>
 </dl></section>
 <section><h2>Drawings</h2><dl>
 <dt>drawing(size: string, title: string, author: string, material: string, projection: string, scale: number, landscape: bool) → Drawing</dt><dd>A technical sheet, returned by a @drawing function.</dd>

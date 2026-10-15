@@ -63,6 +63,11 @@ private string receiverName(string on)
     case "Face": return "f";
     case "list": return "xs";
     case "Sketch": return "sk";
+    // what a sketch's geometry reads back: a point, a line, a circle or arc, an ellipse
+    case "SketchPoint": return "pt";
+    case "SketchLine": return "line";
+    case "SketchCircle": return "circ";
+    case "SketchEllipse": return "ell";
     case "Drawing": return "d";
     default: return "x";
     }

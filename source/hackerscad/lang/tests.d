@@ -3086,3 +3086,33 @@ immutable cut = plane(origin: vec(0, 0, 0), normal: X);
     assert(r.diagnostics.canFind!(d => d.severity == Severity.warning && d.message.canFind("no way to go")));
 }
 
+
+unittest
+{
+    // every name the language offers has its entry in the reference (hcad docs, the cheatsheet, the
+    // agents' docs): the built-in functions and methods, a sketch's and a drawing's methods, the
+    // members of sketch entities, and the public functions of the libraries
+    import std.algorithm : canFind, sort, uniq;
+    import std.array : array;
+    import hackerscad.lang.reference : reference;
+    import hackerscad.lang.value : Kind;
+    import std.array : join;
+    bool documented(string name) => reference.canFind!(r => r.name == name);
+    string[] missing;
+    auto it = make();
+    foreach (name, v; it.prelude.vars)
+        if (v.kind == Kind.builtin && !documented(name))
+            missing ~= name;
+    foreach (name; ["point", "line", "arc", "circle", "ellipse", "polyline", "rect", "polygon", "slot", "teardrop",
+        "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
+        "perpendicular", "angle", "equal", "radius", "diameter", "tangent", "midpoint", "symmetric", "fillet",
+        "profile", "dof", "solved", "standardViews", "view", "section", "dimension", "note"])
+        if (!documented(name))
+            missing ~= name;
+    // what sketch geometry reads back: an entry for the entity itself, not a namesake of a solid's
+    foreach (name; ["x", "y", "pos", "start", "end", "length", "mid", "center", "radius", "rx", "ry", "angle"])
+        if (!reference.canFind!(r => r.name == name && r.on.length > 6 && r.on[0 .. 6] == "Sketch"))
+            missing ~= name ~ " (of a sketch entity)";
+    assert(missing.length == 0, "not in the reference (source/hackerscad/lang/reference.d): "
+        ~ missing.sort.uniq.array.join(", "));
+}
