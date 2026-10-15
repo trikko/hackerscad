@@ -21,7 +21,7 @@ immutable size = 62.mm;
 immutable height = 66.mm;
 ```
 
-The Parameters panel gets a **preset** menu: *herbs* is the size we built,
+The Parameters panel gets a **Preset** menu: *herbs* is the size we built,
 for a pot of parsley or chives; *basil* a larger one, 80 by 90 mm; *chili*
 the largest, 96 by 110 mm, for a small pepper plant. A preset can set some parameters and leave
 the others as they are.
@@ -84,7 +84,7 @@ unittest
 
 A yellow dot on the bug says the checks have not run yet. Press **F5**: the
 console says *the tank holds about 45 ml of water* and the dot goes. Set
-**size** to 50 in the panel: the yellow dot is back, the checks have not run
+**Size** to 50 in the panel: the yellow dot is back, the checks have not run
 on this size; press **F5** again and the check fails and says why (the dot
 turns red).
 

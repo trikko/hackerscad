@@ -24,8 +24,8 @@ and in the box use the names instead of the numbers:
     return box(size, size, height)
 ```
 
-Nothing changes in the view, but the Parameters panel now has **size** and
-**height**.
+Nothing changes in the view, but the Parameters panel now has **Size** and
+**Height**.
 
 ![The parameters](img/05-params.png)
 
@@ -36,14 +36,15 @@ What the lines say:
   built: a name that stays put.
 - `@param("Size", min: 50.mm, max: 120.mm)`, on the line above, makes it a
   parameter: it shows in the panel, labelled *Size*, and the panel keeps it
-  between 50 and 120 mm.
+  between 50 and 120 mm. Point at the label to see the name in the code,
+  `size`; click it to go to its line.
 
 The tank is `size` wide and deep, and `height` tall: the names say what the
 numbers are for, which also makes the code easier to read.
 
 ## Try them
 
-In the panel, set **size** to 80 and **height** to 50. The tank changes, and
+In the panel, set **Size** to 80 and **Height** to 50. The tank changes, and
 everything the mouse made follows: the rounded corners, the sides leaning out,
 the shell. They were made on the edges and faces by name (the upright edges,
 the top face), not on points in space, so they stay right on a different

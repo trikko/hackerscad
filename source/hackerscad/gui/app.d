@@ -654,6 +654,8 @@ final class MainWindow
             auto css = new CssProvider;
             css.loadFromString("button.hcad-dimension { padding: 1px 5px; min-height: 0; min-width: 0; font-size: 0.85em;"
                 ~ " border-radius: 4px; }"
+                // a parameter's ↺, no taller than its label
+                ~ " button.hcad-param-reset { min-height: 0; min-width: 0; padding: 0 4px; margin: 0; }"
                 ~ " .hcad-progress { padding: 10px 10px 10px 16px; }"
                 ~ " .hcad-gl-help { padding: 18px 22px; margin: 24px; }"
                 ~ " popover.hcad-completion > contents { padding: 0; }"
@@ -1040,6 +1042,7 @@ final class MainWindow
         params = new ParamsPanel;
         partsMenu.setPopover(partsPopover());
         params.onChange = () => scheduleEvaluation(0);
+        params.onGoto = (int line) => editorTools.showLine(line);
         params.onVisibility = (size_t part, bool visible) => viewport.setHidden(part, !visible);
         auto paramsScroll = new ScrolledWindow;
         paramsScroll.setChild(params.widget);

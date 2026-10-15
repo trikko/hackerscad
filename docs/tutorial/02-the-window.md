@@ -62,11 +62,12 @@ system is set.
 
 ## Change a size
 
-In **Parameters**, find **teeth** ("Teeth per jaw") and click **+**: the clip
+In **Parameters**, find **Teeth per jaw** and click **+**: the clip
 gets one more tooth on each jaw. The code does not change: parameters are
-values you try on the model. **Reset to defaults** brings back the ones in the
-code, and the **preset** menu at the top chooses ready-made sets of values
-(here *small* and *large*).
+values you try on the model. A value you changed is marked with a dot, and
+the ↺ at the end of its line brings back the one in the code; **Reset to
+defaults** brings back all of them, and the **Preset** menu at the top
+chooses ready-made sets of values (here *small* and *large*).
 
 ## How the parts are drawn
 

@@ -27,6 +27,7 @@ final class ParamsPanel
     Box widget;
     void delegate() onChange;
     void delegate(size_t part, bool visible) onVisibility;
+    void delegate(int line) onGoto;   /// a click on a parameter's label: show its line in the code
     string[string] overrides;   /// name → .hcad expression
     string preset;
 
@@ -37,6 +38,10 @@ final class ParamsPanel
     private string signature;   /// names and types: rebuild only when they change
     private string[] presets;
     private bool updating;
+    /// each parameter's label and reset button, marked when it is changed by hand
+    private Label[string] labels;
+    private Button[string] resets;
+    private string[string] texts;   /// the labels' text, without the mark
 
     this()
     {
@@ -140,6 +145,8 @@ final class ParamsPanel
     void update(ParamInfo[] params, string[] presetNames)
     {
         auto sig = presetNames.to!string ~ params.map!(p => p.name ~ ":" ~ p.value.typeName).array.to!string;
+        scope (exit)
+            markChanged();
         if (sig == signature)
             return;
         signature = sig;
@@ -150,6 +157,9 @@ final class ParamsPanel
 
         for (auto c = rows.getFirstChild(); c !is null; c = rows.getFirstChild())
             rows.remove(c);
+        labels = null;
+        resets = null;
+        texts = null;
 
         if (presets.length)
         {
@@ -167,10 +177,36 @@ final class ParamsPanel
                 if (onChange)
                     onChange();
             });
-            add(row("preset", null, dd));
+            add(row("Preset", null, 0, dd, null));
         }
         foreach (p; params)
-            add(row(p.name, p.doc, editor(p)));
+            add(row(p.doc.length ? p.doc : p.name, p.name, p.span.line, editor(p), p.defaultValue.toString));
+    }
+
+    /// Marks the parameters changed by hand (a dot, the accent colour) and
+    /// shows their reset buttons.
+    void markChanged()
+    {
+        foreach (name, label; labels)
+        {
+            immutable changed = (name in overrides) !is null;
+            label.setText(changed ? "● " ~ texts[name] : texts[name]);
+            if (changed)
+                label.addCssClass("accent");
+            else
+                label.removeCssClass("accent");
+            resets[name].setOpacity(changed ? 1 : 0);
+            resets[name].setCanTarget(changed);
+        }
+    }
+
+    /// Back to the code's value (or the preset's) for one parameter.
+    void reset(string name)
+    {
+        overrides.remove(name);
+        signature = null;   // the control shows the value again
+        if (onChange)
+            onChange();
     }
 
 private:
@@ -184,42 +220,72 @@ private:
         rows.append(block);
     }
 
-    /// The name, its description below, the control below them; a switch
-    /// stands at the end of the name's line instead.
-    Widget row(string name, string doc, Widget editor)
+    /// The label (the description, or the name when there is none) above
+    /// the control; a switch stands at the end of the label's line instead.
+    /// The variable's name is in the tooltip, and a click on the label shows
+    /// its line in the code (`line` 0: neither).
+    Widget row(string text, string name, int line, Widget editor, string defaultText)
     {
+        import gtk.gesture_click : GestureClick;
+
         auto box = new Box(Orientation.Vertical, 3);
         box.setMarginTop(8);
         box.setMarginBottom(10);
-        auto label = new Label(name);
+        import pango.types : EllipsizeMode;
+
+        auto label = new Label(text);
         label.setHalign(Align.Start);
+        label.setXalign(0);
+        // on one line: a long description ends in "…" rather than holding
+        // the column wide, and reads whole in the tooltip
+        label.setEllipsize(EllipsizeMode.End);
         label.addCssClass("caption-heading");
+        if (line > 0)
+        {
+            label.setTooltipText(format("%s\n%s · line %d: click to see it in the code", text, name, line));
+            label.setCursorFromName("pointer");
+            auto click = new GestureClick;
+            click.connectReleased(() {
+                if (onGoto)
+                    onGoto(line);
+            });
+            label.addController(click);
+        }
+        // the label's line: the label, the reset button when the value is
+        // changed by hand, a switch at its end
+        auto bar = new Box(Orientation.Horizontal, 6);
+        label.setHexpand(true);
+        label.setValign(Align.Center);
+        bar.append(label);
+        if (line > 0)
+        {
+            import gtk.image : Image;
+
+            // small, and always in its place (hidden by its opacity): the
+            // line keeps its height whether it shows or not
+            auto icon = Image.newFromIconName("edit-undo-symbolic");
+            icon.setPixelSize(12);
+            auto undo = new Button;
+            undo.setChild(icon);
+            undo.addCssClass("flat");
+            undo.addCssClass("hcad-param-reset");
+            undo.setValign(Align.Center);
+            undo.setTooltipText("Back to " ~ (preset.length ? "the preset's value" : "the default: " ~ defaultText));
+            undo.setOpacity(0);
+            undo.setCanTarget(false);
+            undo.connectClicked(() => reset(name));
+            bar.append(undo);
+            labels[name] = label;
+            resets[name] = undo;
+            texts[name] = text;
+        }
         auto isSwitch = cast(Switch) editor !is null;
         if (isSwitch)
         {
-            auto line = new Box(Orientation.Horizontal, 6);
-            label.setHexpand(true);
-            label.setValign(Align.Center);
             editor.setValign(Align.Center);
-            line.append(label);
-            line.append(editor);
-            box.append(line);
+            bar.append(editor);
         }
-        else
-            box.append(label);
-        if (doc.length)
-        {
-            auto d = new Label(doc);
-            d.setHalign(Align.Start);
-            d.setXalign(0);
-            // on as many lines as it takes: a long description must not hold the column wide
-            d.setWrap(true);
-            d.setWidthChars(12);
-            d.setMaxWidthChars(40);
-            d.addCssClass("dim-label");
-            d.addCssClass("caption");
-            box.append(d);
-        }
+        box.append(bar);
         if (!isSwitch)
             box.append(editor);
         return box;

@@ -731,10 +731,12 @@ JSONValue[] toolList()
             `"path": {"type": "string"}, "force": {"type": "boolean"}`, `["path"]`),
         gui("hcad_gui_set", "Change the model shown in the user's window: replace its source, set parameter "
             ~ "overrides or a preset (preset \"\" goes back to the defaults, as Reset to defaults). A preset clears the "
-            ~ "values set before; params given in the same call apply on top of it. The window re-evaluates and shows "
-            ~ "the result.",
+            ~ "values set before; params given in the same call apply on top of it; reset lists parameters to take "
+            ~ "back to the code's value (or the preset's), as the ↺ next to a changed parameter. The window "
+            ~ "re-evaluates and shows the result; the state's overrides are the values changed by hand.",
             `"source": {"type": "string"}, "params": {"type": "object", "description": "Parameter values, name to value: `
-            ~ `numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\"."}, "preset": {"type": "string"}`),
+            ~ `numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\"."}, "preset": {"type": "string"}, `
+            ~ `"reset": {"type": "array", "items": {"type": "string"}, "description": "parameter names back to their default"}`),
         gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: the "
             ~ "face is highlighted and the editor jumps to the feature that created it. Returns part, face, the point and "
             ~ "normal hit, and a selector expression for that face (e.g. faces.top) to use in code.",

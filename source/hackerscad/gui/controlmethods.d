@@ -39,6 +39,10 @@ mixin template ControlMethods()
             if ("params" in p)
                 foreach (k, v; toOverrides(p["params"]))
                     params.overrides[k] = v;
+            // the parameters' ↺: back to the code's value (or the preset's)
+            if ("reset" in p && p["reset"].type == JSONType.array)
+                foreach (n; p["reset"].array)
+                    params.overrides.remove(n.str);
             params.invalidate();
             firstResult = true; // frame the changed model
             scheduleEvaluation(0);
