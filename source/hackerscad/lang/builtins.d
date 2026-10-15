@@ -898,28 +898,15 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return Value.of(sv);
     }
 
-    def("rect", (ref CallArgs a) {
-        auto x = Args(it, a, "rect", ["w", "h"]);
-        immutable w = x.len("w"), h = x.has("h") ? x.len("h") : w;
-        positive(a, [w, h], "rect sizes");
-        return flat(k.rect(w, h), "rect", a.span);
-    });
-    def("ellipse", (ref CallArgs a) {
-        // ellipse(rx, ry): centred on the origin, rx along X, ry along Y (exact)
-        auto x = Args(it, a, "ellipse", ["rx", "ry"]);
-        immutable rx = x.len("rx"), ry = x.len("ry");
-        positive(a, [rx, ry], "ellipse radius");
-        return flat(rx == ry ? k.circle(rx) : k.ellipse(rx, ry), "ellipse", a.span);
-    });
-    def("circle", (ref CallArgs a) {
-        auto x = Args(it, a, "circle", ["r", "d"]);
-        auto r = x.radius("r", "d");
-        positive(a, [r], "circle radius");
-        return flat(k.circle(r), "circle", a.span);
-    });
+    // rect, circle, ellipse, slot, teardrop and the regular polygon are the profiles of one-shape
+    // sketches with everything given: sketchval.d builds them, with the sketch's own methods
     def("polygon", (ref CallArgs a) {
         // polygon([vec(0, 0), vec(30, 0), vec(0, 20)]) or [[0, 0], [30, 0], [0, 20]];
-        // smooth: true, a smooth closed curve through the points instead of straight sides
+        // smooth: true, a smooth closed curve through the points instead of straight sides.
+        // polygon(6, d: 10.mm), polygon(c, 6, d: 10.mm): a regular one, a sketch's shape
+        import hackerscad.lang.sketchval : shapeParams, shapeProfile;
+        if (shapeParams("polygon", a, 0)[0] != "points")
+            return shapeProfile(it, a, "polygon");
         auto x = Args(it, a, "polygon", ["points", "smooth"]);
         auto pts = x.get("points");
         if (pts.kind != Kind.array || pts.arr.length < 3)
@@ -944,47 +931,6 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             return flat(k.splineProfile(xy), "polygon", a.span);
         polygonCheck(xy, x.spanOf("points"));
         return flat(k.polygon(xy), "polygon", a.span);
-    });
-    def("regularPolygon", (ref CallArgs a) {
-        // regularPolygon(6, d: 10.mm): d/r measure the corners (the circle through them); fit: "sides"
-        // the sides instead (the circle they touch: d across the flats, a nut's spanner size)
-        auto x = Args(it, a, "regularPolygon", ["n", "r", "d", "fit"]);
-        immutable n = count(x, "n"), given = x.radius("r", "d");
-        if (n < 3)
-            throw new HcadError(Code.type, "a regular polygon has at least 3 sides", x.spanOf("n"));
-        immutable r = polygonFit(x) ? given / cos(PI / n) : given;
-        double[] xy;
-        foreach (i; 0 .. n)
-            xy ~= [r * cos(2 * PI * i / n), r * sin(2 * PI * i / n)];
-        return flat(k.polygon(xy), "polygon", a.span);
-    });
-    def("slot", (ref CallArgs a) {
-        // a stadium: length end to end along X, width along Y
-        auto x = Args(it, a, "slot", ["length", "width"]);
-        immutable l = x.len("length"), w = x.len("width");
-        if (l < w)
-            throw new HcadError(Code.type, "a slot must be at least as long as it is wide", a.span);
-        auto c = k.circle(w / 2);
-        auto shape = k.boolean(k.boolean(k.rect(l - w, w), k.translate(c, Vec3(-(l - w) / 2, 0, 0)), BoolOp.fuse),
-            k.translate(c, Vec3((l - w) / 2, 0, 0)), BoolOp.fuse);
-        return flat(shape, "slot", a.span);
-    });
-    def("teardrop", (ref CallArgs a) {
-        // teardrop(d: 5.mm, angle: 45.deg, flat: false): a round hole with a point towards +Y, so that a
-        // hole through a wall prints without supports; flat: true cuts the point at the circle's top
-        auto x = Args(it, a, "teardrop", ["r", "d", "angle", "flat"]);
-        immutable r = x.radius("r", "d"), ang = x.angleOr("angle", PI / 4);
-        positive(a, [r], "the teardrop's radius");
-        if (!(ang >= PI / 60 - 1e-9 && ang <= PI / 2 + 1e-9))
-            throw new HcadError(Code.type, "the point's angle is from the vertical: between 3° and 90°", x.spanOf("angle"));
-        // the sides are tangent to the circle and meet above it, at r / sin(angle); at 90° they
-        // meet on it, and the teardrop is the circle
-        immutable tip = r / sin(ang);
-        auto shape = r * cos(ang) < 1e-6 ? k.circle(r) : k.boolean(k.circle(r),
-            k.polygon([-r * cos(ang), r * sin(ang), r * cos(ang), r * sin(ang), 0, tip]), BoolOp.fuse);
-        if (x.flag("flat", false))
-            shape = k.boolean(shape, k.rect(4 * r, 2 * r), BoolOp.common);
-        return flat(shape, "teardrop", a.span);
     });
     def("text", (ref CallArgs a) {
         // text("hello", size: 10.mm, font: "Sans"): a text outline starting at the

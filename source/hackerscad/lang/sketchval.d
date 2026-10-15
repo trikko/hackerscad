@@ -24,6 +24,58 @@ void installSketch(Interp it, void delegate(string, BuiltinImpl) def)
         Args(it, a, "sketch", []);
         return Value.make(Kind.object_, new SketchVal(it, a.span));
     });
+    // the profiles of the shapes a sketch has: one-shape sketches with everything given (polygon's
+    // form through points is in builtins.d, and comes here for a regular one)
+    foreach (name; ["rect", "circle", "ellipse", "slot", "teardrop"])
+        def(name, shapeBuiltin(it, name));
+}
+
+/// rect(…), circle(…)…: the profile of a one-shape sketch with everything given, made by the
+/// sketch's own method (the centre, when not given, at the origin).
+BuiltinImpl shapeBuiltin(Interp it, string name) => (ref CallArgs a) => shapeProfile(it, a, name);
+
+/// ditto
+Value shapeProfile(Interp it, ref CallArgs a, string name)
+{
+    auto sv = new SketchVal(it, a.span, true);
+    auto x = Args(it, a, name, shapeParams(name, a, 0));
+    sv.shape(name, x, a.span);
+    return sv.shapeProfile(name, a.span);
+}
+
+/// Whether a value stands for a point: a vector, a SketchPoint, or [x, y].
+bool isPointArg(Value v)
+{
+    import std.algorithm : all;
+    if (v.kind == Kind.vec)
+        return true;
+    if (v.kind == Kind.object_)
+        return cast(SketchEntityVal) v.obj !is null;
+    return v.kind == Kind.array && (v.arr.length == 2 || v.arr.length == 3) && v.arr.all!(e => e.isNum);
+}
+
+/// The parameters of a shape (the same for the profile and the sketch's method), in the order its
+/// positional arguments fill them from argument `first` on: those of the form by its size when
+/// that argument is a number (rect(w, h), circle(r), polygon(n, …), slot(length, w)…), of the
+/// form from points when it is a point (rect(p, q), circle(c, r), slot(p, q, w:)…), and for
+/// polygon an array of points, polygon([p1, p2, p3]).
+string[] shapeParams(string name, ref CallArgs a, size_t first)
+{
+    immutable sized = a.positional.length > first && a.positional[first].isNum;
+    if (name == "polygon" && (a.positional.length > first ? !sized && !isPointArg(a.positional[first])
+            : ("points" in a.named) !is null))
+        return ["points", "smooth"];
+    switch (name)
+    {
+    case "rect": return sized ? ["w", "h", "center", "angle", "corner", "p", "q"]
+        : ["p", "q", "center", "w", "h", "angle", "corner"];
+    case "circle": return sized ? ["r", "d", "center"] : ["center", "r", "d"];
+    case "ellipse": return sized ? ["rx", "ry", "angle", "center"] : ["center", "rx", "ry", "angle"];
+    case "polygon": return sized ? ["n", "r", "d", "fit", "angle", "center"] : ["center", "n", "r", "d", "fit", "angle"];
+    case "slot": return sized ? ["length", "w", "center", "angle", "p", "q"] : ["p", "q", "w", "length", "center", "angle"];
+    case "teardrop": return sized ? ["r", "d", "angle", "flat", "center"] : ["center", "r", "d", "angle", "flat"];
+    default: assert(0, name);
+    }
 }
 
 final class SketchVal : ObjectVal
@@ -38,20 +90,23 @@ final class SketchVal : ObjectVal
     string[] constraintKinds; /// by tag: the method that made it ("tangent", "fillet"…)
     size_t[][] constraintRefs;   /// by tag: the entities it involves
     Span[] profileSpans;      /// where `.profile` was read
+    bool asProfile;           /// a profile's one-shape sketch: everything given, not shown as a sketch
     private bool warned;
     private string calling;   /// the constraint method running
 
-    this(Interp it, Span span)
+    this(Interp it, Span span, bool asProfile = false)
     {
         this.it = it;
         this.span = span;
+        this.asProfile = asProfile;
         sk = new Sketch;
         constraintSpans ~= span;   // tag 0: implicit constraints
         valueSpans ~= Span.init;
         diameters ~= false;
         constraintKinds ~= "";
         constraintRefs ~= null;
-        it.sketches ~= this;
+        if (!asProfile)
+            it.sketches ~= this;
     }
 
     override string typeName() const => "Sketch";
@@ -64,7 +119,7 @@ final class SketchVal : ObjectVal
     }
 
     override string[] memberNames() => ["point", "line", "arc", "circle", "ellipse", "polyline", "rect", "polygon",
-        "slot", "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
+        "slot", "teardrop", "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
         "perpendicular", "angle", "equal", "radius", "diameter", "tangent", "midpoint", "symmetric", "fillet",
         "profile", "dof", "solved"];
 
@@ -115,290 +170,17 @@ final class SketchVal : ObjectVal
                 return made(a.span, () => sk.arc(pointArg(x, "center"), pointArg(x, "start"), pointArg(x, "end"),
                     x.flag("construction", false)));
             };
-        case "circle":
-            return (ref CallArgs a) {
-                // s.circle(c, r: 5.mm) has that radius; without r/d the radius is left to the constraints
-                auto x = Args(it, a, "circle", ["sketch", "center", "r", "d", "construction"]);
-                immutable given = x.has("r") || x.has("d");
-                immutable r = given ? x.radius("r", "d") : 10;
-                if (given && !(r > 0))
-                    throw new HcadError(Code.type, "a circle's radius must be positive", x.spanOf(x.has("r") ? "r" : "d"));
-                auto ctr = pointOrNew(x, "center", a.span);
-                auto c = made(a.span, () => sk.circle(ctr, r, x.flag("construction", false)));
-                calling = x.has("d") ? "diameter" : "radius";
-                if (given)
-                    add(ConstraintKind.radius, [idOf(c)], a.span, r, 0, x.spanOf(x.has("r") ? "r" : "d"), x.has("d"));
-                return c;
-            };
         case "polyline":
             return (ref CallArgs a) {
                 // s.polyline([p1, p2, p3], closed: true): lines between consecutive points (SketchPoints or
                 // vectors, which become new points)
                 auto x = Args(it, a, "polyline", ["sketch", "points", "closed", "construction"]);
-                auto v = x.get("points");
-                if (v.kind != Kind.array || v.arr.length < 2)
-                    throw new HcadError(Code.type, "polyline needs an array of at least 2 points", x.spanOf("points"));
-                size_t[] ps;
-                foreach (p; v.arr)
-                {
-                    if (p.kind == Kind.object_ && cast(SketchEntityVal) p.obj)
-                        ps ~= pointOf(p, x.spanOf("points"));
-                    else
-                    {
-                        auto q = vecOf(x, p, x.spanOf("points"));
-                        ps ~= sk.point(q.x, q.y);
-                        entitySpans.length = sk.entities.length;
-                        entitySpans[ps[$ - 1]] = a.span;
-                    }
-                }
-                immutable closed = x.flag("closed", true), cons = x.flag("construction", false);
-                Value[] lines;
-                foreach (i; 0 .. closed ? ps.length : ps.length - 1)
-                    lines ~= made(a.span, () => sk.line(ps[i], ps[(i + 1) % ps.length], cons));
-                return Value.of(lines);
+                return polyline(x, x.flag("closed", true), a.span);
             };
-        case "ellipse":
+        case "circle", "ellipse", "rect", "polygon", "slot", "teardrop":
             return (ref CallArgs a) {
-                // s.ellipse(c, rx: 20.mm, ry: 12.mm, angle: 30.deg): rx along its own x axis, angle from X;
-                // what is not given is left to the constraints, as a circle's radius
-                auto x = Args(it, a, "ellipse", ["sketch", "center", "rx", "ry", "angle", "construction"]);
-                immutable rx = x.has("rx") ? positiveLen(x, "rx") : x.has("ry") ? 1.6 * positiveLen(x, "ry") : 10;
-                immutable ry = x.has("ry") ? positiveLen(x, "ry") : 0.6 * rx;
-                immutable angle = x.angleOr("angle", 0);
-                auto ctr = pointOrNew(x, "center", a.span);
-                auto e = made(a.span, () => sk.ellipse(ctr, rx, ry, angle, x.flag("construction", false)));
-                calling = "radius";
-                if (x.has("rx"))
-                    add(ConstraintKind.radiusX, [idOf(e)], a.span, rx, 0, x.spanOf("rx"));
-                if (x.has("ry"))
-                    add(ConstraintKind.radiusY, [idOf(e)], a.span, ry, 0, x.spanOf("ry"));
-                calling = "angle";
-                if (x.has("angle"))
-                    add(ConstraintKind.ellipseAngle, [idOf(e)], a.span, angle, 0, x.spanOf("angle"));
-                return e;
-            };
-        case "rect":
-            return (ref CallArgs a) {
-                // s.rect(p, q): p and q opposite corners; s.rect(center: c, w: 40.mm, h: 20.mm). The lines go
-                // p → (q.x, p.y) → q → (p.x, q.y) → p: bottom, right, top, left when p is the lower left corner.
-                // angle: 30.deg turns it (its first side that far from X); angle: "free" leaves the turn to
-                // the constraints (s.parallel(r[0], line) lays it along a slanted line)
-                auto x = Args(it, a, "rect", ["sketch", "p", "q", "center", "w", "h", "angle", "corner", "construction"]);
-                immutable cons = x.flag("construction", false);
-                bool turned, free;
-                double turn = 0;
-                if (x.has("angle"))
-                {
-                    turned = true;
-                    auto av = x.get("angle");
-                    if (av.kind == Kind.str)
-                    {
-                        if (av.s != "free")
-                            throw new HcadError(Code.type, "a rectangle's angle is an angle, or \"free\"", x.spanOf("angle"));
-                        free = true;
-                    }
-                    else
-                        turn = x.angle("angle");
-                }
-                // the directions of its sides: along the first, and across
-                immutable u = Vec3(cos(turn), sin(turn), 0), v = Vec3(-sin(turn), cos(turn), 0);
-                size_t[4] c;
-                size_t ctr = size_t.max;
-                if (x.has("center"))
-                {
-                    if (x.has("p") || x.has("q"))
-                        throw new HcadError(Code.unknownArg, "give either two corners or center:", x.spanOf("center"));
-                    ctr = pointOrNew(x, "center", a.span);
-                    immutable o = sk.guess(ctr);
-                    immutable w = x.has("w") ? positiveLen(x, "w") : 20, h = x.has("h") ? positiveLen(x, "h") : 10;
-                    foreach (i, d; [Vec3(-1, -1, 0), Vec3(1, -1, 0), Vec3(1, 1, 0), Vec3(-1, 1, 0)])
-                    {
-                        immutable q = Vec3(o.x, o.y, 0) + u * (d.x * w / 2) + v * (d.y * h / 2);
-                        c[i] = newPoint(q.x, q.y, a.span);
-                    }
-                }
-                else if (!x.has("q"))
-                {
-                    // one corner and the size: the rest of it along and across from there
-                    if (!x.has("w") || !x.has("h"))
-                        throw new HcadError(Code.unknownArg, "a rectangle from one corner needs w: and h: (or give "
-                            ~ "the opposite corner)", a.span);
-                    immutable w = positiveLen(x, "w"), h = positiveLen(x, "h");
-                    c[0] = pointOrNew(x, "p", a.span);
-                    immutable o = sk.guess(c[0]);
-                    foreach (i, q; [u * w, u * w + v * h, v * h])
-                    {
-                        immutable at = Vec3(o.x, o.y, 0) + q;
-                        c[i + 1] = newPoint(at.x, at.y, a.span);
-                    }
-                }
-                else
-                {
-                    foreach (n; ["w", "h"])
-                        if (x.has(n))
-                            throw new HcadError(Code.unknownArg, format("'%s' goes with center: or with one corner; two "
-                                ~ "corners already give the size", n), x.spanOf(n));
-                    c[0] = pointOrNew(x, "p", a.span);
-                    c[2] = pointOrNew(x, "q", a.span);
-                    immutable p = sk.guess(c[0]), q = sk.guess(c[2]);
-                    // the diagonal along and across the sides
-                    immutable dq = Vec3(q.x - p.x, q.y - p.y, 0), along = dq.dot(u), across = dq.dot(v);
-                    if (abs(along) < 1e-9 || abs(across) < 1e-9)
-                        throw new HcadError(Code.type, turned
-                            ? "the opposite corners of a rectangle must not lie along one of its sides"
-                            : "the opposite corners of a rectangle must differ in x and in y", x.spanOf("q"));
-                    immutable c1 = Vec3(p.x, p.y, 0) + u * along, c3 = Vec3(p.x, p.y, 0) + v * across;
-                    c[1] = newPoint(c1.x, c1.y, a.span);
-                    c[3] = newPoint(c3.x, c3.y, a.span);
-                }
-                Value[] lines;
-                foreach (i; 0 .. 4)
-                    lines ~= made(a.span, () => sk.line(c[i], c[(i + 1) % 4], cons));
-                if (!turned)
-                {
-                    calling = "horizontal";
-                    add(ConstraintKind.horizontal, [idOf(lines[0])], a.span);
-                    add(ConstraintKind.horizontal, [idOf(lines[2])], a.span);
-                    calling = "vertical";
-                    add(ConstraintKind.vertical, [idOf(lines[1])], a.span);
-                    add(ConstraintKind.vertical, [idOf(lines[3])], a.span);
-                }
-                else
-                {
-                    // square corners, opposite sides parallel: a rectangle that can turn
-                    calling = "perpendicular";
-                    add(ConstraintKind.perpendicular, [idOf(lines[0]), idOf(lines[1])], a.span);
-                    calling = "parallel";
-                    add(ConstraintKind.parallel, [idOf(lines[0]), idOf(lines[2])], a.span);
-                    add(ConstraintKind.parallel, [idOf(lines[1]), idOf(lines[3])], a.span);
-                    if (!free)
-                    {
-                        calling = "angle";
-                        add(ConstraintKind.direction, [c[0], c[1]], a.span, turn, 0, x.spanOf("angle"));
-                    }
-                }
-                if (ctr != size_t.max)
-                {
-                    // the centre halves a diagonal
-                    auto diag = made(a.span, () => sk.line(c[0], c[2], true));
-                    calling = "midpoint";
-                    add(ConstraintKind.midpoint, [ctr, idOf(diag)], a.span);
-                }
-                if (ctr != size_t.max || !x.has("q"))
-                {
-                    calling = "length";
-                    if (x.has("w"))
-                        add(ConstraintKind.length, [idOf(lines[0])], a.span, positiveLen(x, "w"), 0, x.spanOf("w"));
-                    if (x.has("h"))
-                        add(ConstraintKind.length, [idOf(lines[1])], a.span, positiveLen(x, "h"), 0, x.spanOf("h"));
-                }
-                if (x.has("corner"))
-                {
-                    // one dimension for the four, on the upper right corner (when p is the lower left one)
-                    immutable r = positiveLen(x, "corner");
-                    foreach (i, p; c)
-                    {
-                        wrapErrors(a.span, () => sk.fillet(p, r));
-                        record("fillet", [p], a.span, i == 2 ? x.spanOf("corner") : Span.init, false);
-                    }
-                }
-                return Value.of(lines);
-            };
-        case "polygon":
-            return (ref CallArgs a) {
-                // s.polygon(c, 6, r: 10.mm): a regular polygon, its corners on a construction circle round c
-                // (r its radius, or d its diameter); fit: "sides" puts its sides on the circle instead,
-                // touching it (d across the flats: a nut's spanner size); angle: the direction of the
-                // first corner from c, else the turn is left free (it starts with the first side at the
-                // bottom, horizontal)
-                import std.math : PI;
-                auto x = Args(it, a, "polygon", ["sketch", "center", "n", "r", "d", "fit", "angle", "construction"]);
-                immutable sides = polygonFit(x);
-                immutable nv = x.num("n");
-                if (nv != cast(long) nv || nv < 3 || nv > 1000)
-                    throw new HcadError(Code.type, "a polygon needs a whole number of sides, 3 or more", x.spanOf("n"));
-                immutable n = cast(size_t) nv;
-                immutable given = x.has("r") || x.has("d");
-                immutable r = given ? x.radius("r", "d") : 10;
-                if (given && !(r > 0))
-                    throw new HcadError(Code.type, "a polygon's radius must be positive", x.spanOf(x.has("r") ? "r" : "d"));
-                immutable cons = x.flag("construction", false);
-                auto ctr = pointOrNew(x, "center", a.span);
-                immutable o = sk.guess(ctr);
-                auto circ = made(a.span, () => sk.circle(ctr, r, true));
-                calling = x.has("d") ? "diameter" : "radius";
-                if (given)
-                    add(ConstraintKind.radius, [idOf(circ)], a.span, r, 0, x.spanOf(x.has("r") ? "r" : "d"), x.has("d"));
-                immutable a0 = x.angleOr("angle", -PI / 2 - PI / n);
-                // the corners start where they end up: on the circle, or out from it so that the
-                // sides touch it
-                immutable rc = sides ? r / cos(PI / n) : r;
-                size_t[] ps;
-                foreach (i; 0 .. n)
-                {
-                    immutable t = a0 + 2 * PI * i / n;
-                    ps ~= newPoint(o.x + rc * cos(t), o.y + rc * sin(t), a.span);
-                }
-                Value[] lines;
-                foreach (i; 0 .. n)
-                    lines ~= made(a.span, () => sk.line(ps[i], ps[(i + 1) % n], cons));
-                // the corners on a circle (with fit: "sides", one of no given size, round the same
-                // centre) and the sides equal make it regular; then one side touching the circle of
-                // the given size sets it. (Every side touching it says the same, but the solver
-                // cannot tell that from it: at the regular shape it would count a freedom too many.)
-                auto through = sides ? made(a.span, () => sk.circle(ctr, rc, true)) : circ;
-                calling = "on";
-                foreach (p; ps)
-                    add(ConstraintKind.onCircle, [p, idOf(through)], a.span);
-                if (sides)
-                {
-                    calling = "tangent";
-                    add(ConstraintKind.tangentLine, [idOf(lines[0]), idOf(circ)], a.span);
-                }
-                calling = "equal";
-                foreach (l; lines[1 .. $])
-                    add(ConstraintKind.equalLength, [idOf(l), idOf(lines[0])], a.span);
-                if (x.has("angle"))
-                {
-                    calling = "angle";
-                    add(ConstraintKind.direction, [ctr, ps[0]], a.span, a0, 0, x.spanOf("angle"));
-                }
-                return Value.of(lines);
-            };
-        case "slot":
-            return (ref CallArgs a) {
-                // s.slot(p, q, w: 6.mm): two half circles round p and q joined by two lines tangent to them;
-                // returns [line, arc round q, line, arc round p], counter-clockwise
-                auto x = Args(it, a, "slot", ["sketch", "p", "q", "w", "construction"]);
-                immutable cons = x.flag("construction", false);
-                auto p = pointOrNew(x, "p", a.span), q = pointOrNew(x, "q", a.span);
-                if (p == q)
-                    throw new HcadError(Code.type, "a slot needs two different points", x.spanOf("q"));
-                immutable pp = sk.guess(p), qq = sk.guess(q);
-                immutable len = (qq - pp).length;
-                if (len < 1e-9)
-                    throw new HcadError(Code.type, "the two ends of a slot must not start in the same place", x.spanOf("q"));
-                immutable w = x.has("w") ? positiveLen(x, "w") : len / 3;
-                immutable u = (qq - pp) * (1 / len), nrm = Vec3(-u.y, u.x, 0) * (w / 2);
-                auto pr = newPoint(pp.x - nrm.x, pp.y - nrm.y, a.span), qr = newPoint(qq.x - nrm.x, qq.y - nrm.y, a.span);
-                auto ql = newPoint(qq.x + nrm.x, qq.y + nrm.y, a.span), pl = newPoint(pp.x + nrm.x, pp.y + nrm.y, a.span);
-                auto bottom = made(a.span, () => sk.line(pr, qr, cons));
-                auto endQ = made(a.span, () => sk.arc(q, qr, ql, cons));
-                auto top = made(a.span, () => sk.line(ql, pl, cons));
-                auto endP = made(a.span, () => sk.arc(p, pl, pr, cons));
-                calling = "tangent";
-                add(ConstraintKind.tangentAt, [idOf(bottom), idOf(endP), pr], a.span);
-                add(ConstraintKind.tangentAt, [idOf(bottom), idOf(endQ), qr], a.span);
-                add(ConstraintKind.tangentAt, [idOf(top), idOf(endQ), ql], a.span);
-                add(ConstraintKind.tangentAt, [idOf(top), idOf(endP), pl], a.span);
-                calling = "equal";
-                add(ConstraintKind.equalRadius, [idOf(endQ), idOf(endP)], a.span);
-                if (x.has("w"))
-                {
-                    calling = "diameter";
-                    add(ConstraintKind.radius, [idOf(endP)], a.span, w / 2, 0, x.spanOf("w"), true);
-                }
-                return Value.of([bottom, endQ, top, endP]);
+                auto x = Args(it, a, name, ["sketch"] ~ shapeParams(name, a, 1) ~ ["construction"]);
+                return shape(name, x, a.span);
             };
         case "coincident":
             return constraint("coincident", ["a", "b"], (ref Args x, Span s) {
@@ -653,7 +435,8 @@ final class SketchVal : ObjectVal
             }
             else if (g.kind == OutlineSeg.Kind.ellipse)
             {
-                seg.kind = 3;
+                // a circle's outline is a round ellipse: drawn as the circle it is
+                seg.kind = from.entity != size_t.max && sk.entities[from.entity].kind == EntityKind.circle ? 2 : 3;
                 seg.c = Vec3(g.ax, g.ay, 0);
                 seg.r = g.bx;
                 seg.r2 = g.by;
@@ -832,6 +615,489 @@ final class SketchVal : ObjectVal
         return v;
     }
 
+    // ------------------------------------------------------------ shapes
+    // One way to build each shape, for both levels: s.rect(…) in a sketch, and rect(…), the
+    // profile, a one-shape sketch with everything given (asProfile). The points are made where
+    // the constraints put them, so a profile's sketch needs no solving.
+
+    Value shape(string name, ref Args x, Span s)
+    {
+        switch (name)
+        {
+        case "circle": return circleShape(x, s);
+        case "ellipse": return ellipseShape(x, s);
+        case "rect": return rectShape(x, s);
+        case "polygon": return x.has("points") ? polygonOfPoints(x, s) : polygonShape(x, s);
+        case "slot": return slotShape(x, s);
+        case "teardrop": return teardropShape(x, s);
+        default: assert(0, name);
+        }
+    }
+
+    /// The outline of a one-shape sketch with everything given: a profile's rect, circle…
+    Value shapeProfile(string kind, Span at)
+    {
+        import hackerscad.kernel.brep : KernelException, OutlineSeg;
+
+        sk.assumeSolved();
+        OutlineSeg[] segs;
+        try
+            segs = sk.outline();
+        catch (SketchException e)
+            throw new HcadError(Code.sketch, e.msg, at);
+        Brep b;
+        try
+            b = it.kernel.outline(segs);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, at);
+        auto sv = primitive(it, b, kind, at);
+        sv.flat = true;
+        return Value.of(sv);
+    }
+
+    bool construction(ref Args x) => x.flag("construction", false);
+
+    /// center:, or a new point at the origin.
+    size_t centreOf(ref Args x, Span s) => x.has("center") ? pointOrNew(x, "center", s) : newPoint(0, 0, s);
+
+    /// r: or d:, when given (and positive); a profile needs one.
+    bool radiusGiven(ref Args x, string what, ref double r)
+    {
+        if (!(x.has("r") || x.has("d")) && !asProfile)
+            return false;
+        r = x.radius("r", "d");
+        if (!(r > 0))
+            throw new HcadError(Code.type, format("%s's radius must be positive", what), x.spanOf(x.has("r") ? "r" : "d"));
+        return true;
+    }
+
+    void radiusDimension(ref Args x, size_t round, double r, Span s)
+    {
+        calling = x.has("d") ? "diameter" : "radius";
+        add(ConstraintKind.radius, [round], s, r, 0, x.spanOf(x.has("r") ? "r" : "d"), x.has("d"));
+    }
+
+    Value circleShape(ref Args x, Span s)
+    {
+        // s.circle(c, r: 5.mm) has that radius; without r/d the radius is left to the constraints
+        double r = 10;
+        immutable given = radiusGiven(x, "a circle", r);
+        auto ctr = centreOf(x, s);
+        auto c = made(s, () => sk.circle(ctr, r, construction(x)));
+        if (given)
+            radiusDimension(x, idOf(c), r, s);
+        return c;
+    }
+
+    Value ellipseShape(ref Args x, Span s)
+    {
+        // s.ellipse(c, rx: 20.mm, ry: 12.mm, angle: 30.deg): rx along its own x axis, angle from X;
+        // what is not given is left to the constraints, as a circle's radius
+        if (asProfile)
+            foreach (n; ["rx", "ry"])
+                positiveLen(x, n);
+        immutable rx = x.has("rx") ? positiveLen(x, "rx") : x.has("ry") ? 1.6 * positiveLen(x, "ry") : 10;
+        immutable ry = x.has("ry") ? positiveLen(x, "ry") : 0.6 * rx;
+        immutable angle = x.angleOr("angle", 0);
+        auto ctr = centreOf(x, s);
+        auto e = made(s, () => sk.ellipse(ctr, rx, ry, angle, construction(x)));
+        calling = "radius";
+        if (x.has("rx"))
+            add(ConstraintKind.radiusX, [idOf(e)], s, rx, 0, x.spanOf("rx"));
+        if (x.has("ry"))
+            add(ConstraintKind.radiusY, [idOf(e)], s, ry, 0, x.spanOf("ry"));
+        calling = "angle";
+        if (x.has("angle"))
+            add(ConstraintKind.ellipseAngle, [idOf(e)], s, angle, 0, x.spanOf("angle"));
+        return e;
+    }
+
+    Value rectShape(ref Args x, Span s)
+    {
+        // s.rect(p, q): p and q opposite corners; s.rect(center: c, w: 40.mm, h: 20.mm), or round a
+        // new point at the origin without center:. The lines go p → (q.x, p.y) → q → (p.x, q.y) → p:
+        // bottom, right, top, left when p is the lower left corner. angle: 30.deg turns it (its
+        // first side that far from X); angle: "free" leaves the turn to the constraints
+        // (s.parallel(r[0], line) lays it along a slanted line). A profile's h is w when not given
+        immutable cons = construction(x);
+        bool turned, free;
+        double turn = 0;
+        if (x.has("angle"))
+        {
+            turned = true;
+            auto av = x.get("angle");
+            if (av.kind == Kind.str)
+            {
+                if (av.s != "free" || asProfile)
+                    throw new HcadError(Code.type, asProfile ? "a profile's angle is an angle (\"free\" is for "
+                        ~ "sketches)" : "a rectangle's angle is an angle, or \"free\"", x.spanOf("angle"));
+                free = true;
+            }
+            else
+                turn = x.angle("angle");
+        }
+        // the directions of its sides: along the first, and across
+        immutable u = Vec3(cos(turn), sin(turn), 0), v = Vec3(-sin(turn), cos(turn), 0);
+        size_t[4] c;
+        size_t ctr = size_t.max;
+        double hDefault(double w) => asProfile ? w : 10;
+        if (!x.has("p") && !x.has("q"))
+        {
+            // round its centre
+            if (asProfile)
+                positiveLen(x, "w");
+            ctr = centreOf(x, s);
+            immutable o = sk.guess(ctr);
+            immutable w = x.has("w") ? positiveLen(x, "w") : 20, h = x.has("h") ? positiveLen(x, "h") : hDefault(w);
+            foreach (i, d; [Vec3(-1, -1, 0), Vec3(1, -1, 0), Vec3(1, 1, 0), Vec3(-1, 1, 0)])
+            {
+                immutable q = Vec3(o.x, o.y, 0) + u * (d.x * w / 2) + v * (d.y * h / 2);
+                c[i] = newPoint(q.x, q.y, s);
+            }
+        }
+        else if (x.has("center"))
+            throw new HcadError(Code.unknownArg, "give either corners or center:", x.spanOf("center"));
+        else if (!x.has("p"))
+            throw new HcadError(Code.missingArg, "q is the corner opposite p: give p too", x.spanOf("q"));
+        else if (!x.has("q"))
+        {
+            // one corner and the size: the rest of it along and across from there
+            if (!x.has("w") || (!x.has("h") && !asProfile))
+                throw new HcadError(Code.missingArg, "a rectangle from one corner needs w: and h: (or give "
+                    ~ "the opposite corner)", s);
+            immutable w = positiveLen(x, "w"), h = x.has("h") ? positiveLen(x, "h") : w;
+            c[0] = pointOrNew(x, "p", s);
+            immutable o = sk.guess(c[0]);
+            foreach (i, q; [u * w, u * w + v * h, v * h])
+            {
+                immutable at = Vec3(o.x, o.y, 0) + q;
+                c[i + 1] = newPoint(at.x, at.y, s);
+            }
+        }
+        else
+        {
+            foreach (n; ["w", "h"])
+                if (x.has(n))
+                    throw new HcadError(Code.unknownArg, format("'%s' goes with center: or with one corner; two "
+                        ~ "corners already give the size", n), x.spanOf(n));
+            c[0] = pointOrNew(x, "p", s);
+            c[2] = pointOrNew(x, "q", s);
+            immutable p = sk.guess(c[0]), q = sk.guess(c[2]);
+            // the diagonal along and across the sides
+            immutable dq = Vec3(q.x - p.x, q.y - p.y, 0), along = dq.dot(u), across = dq.dot(v);
+            if (abs(along) < 1e-9 || abs(across) < 1e-9)
+                throw new HcadError(Code.type, turned
+                    ? "the opposite corners of a rectangle must not lie along one of its sides"
+                    : "the opposite corners of a rectangle must differ in x and in y", x.spanOf("q"));
+            immutable c1 = Vec3(p.x, p.y, 0) + u * along, c3 = Vec3(p.x, p.y, 0) + v * across;
+            c[1] = newPoint(c1.x, c1.y, s);
+            c[3] = newPoint(c3.x, c3.y, s);
+        }
+        Value[] lines;
+        foreach (i; 0 .. 4)
+            lines ~= made(s, () => sk.line(c[i], c[(i + 1) % 4], cons));
+        if (!turned)
+        {
+            calling = "horizontal";
+            add(ConstraintKind.horizontal, [idOf(lines[0])], s);
+            add(ConstraintKind.horizontal, [idOf(lines[2])], s);
+            calling = "vertical";
+            add(ConstraintKind.vertical, [idOf(lines[1])], s);
+            add(ConstraintKind.vertical, [idOf(lines[3])], s);
+        }
+        else
+        {
+            // square corners, opposite sides parallel: a rectangle that can turn
+            calling = "perpendicular";
+            add(ConstraintKind.perpendicular, [idOf(lines[0]), idOf(lines[1])], s);
+            calling = "parallel";
+            add(ConstraintKind.parallel, [idOf(lines[0]), idOf(lines[2])], s);
+            add(ConstraintKind.parallel, [idOf(lines[1]), idOf(lines[3])], s);
+            if (!free)
+            {
+                calling = "angle";
+                add(ConstraintKind.direction, [c[0], c[1]], s, turn, 0, x.spanOf("angle"));
+            }
+        }
+        if (ctr != size_t.max)
+        {
+            // the centre halves a diagonal
+            auto diag = made(s, () => sk.line(c[0], c[2], true));
+            calling = "midpoint";
+            add(ConstraintKind.midpoint, [ctr, idOf(diag)], s);
+        }
+        if (ctr != size_t.max || !x.has("q"))
+        {
+            calling = "length";
+            if (x.has("w"))
+                add(ConstraintKind.length, [idOf(lines[0])], s, positiveLen(x, "w"), 0, x.spanOf("w"));
+            if (x.has("h"))
+                add(ConstraintKind.length, [idOf(lines[1])], s, positiveLen(x, "h"), 0, x.spanOf("h"));
+        }
+        if (x.has("corner"))
+        {
+            // one dimension for the four, on the upper right corner (when p is the lower left one)
+            immutable r = positiveLen(x, "corner");
+            foreach (i, p; c)
+            {
+                wrapErrors(s, () => sk.fillet(p, r));
+                record("fillet", [p], s, i == 2 ? x.spanOf("corner") : Span.init, false);
+            }
+        }
+        return Value.of(lines);
+    }
+
+    Value polygonShape(ref Args x, Span s)
+    {
+        // s.polygon(c, 6, r: 10.mm): a regular polygon, its corners on a construction circle round c
+        // (r its radius, or d its diameter); fit: "sides" puts its sides on the circle instead,
+        // touching it (d across the flats: a nut's spanner size); angle: the direction of the
+        // first corner from c, else the turn is left free (it starts with the first side at the
+        // bottom, horizontal, where a profile has it)
+        import std.math : PI;
+        immutable sides = polygonFit(x);
+        immutable nv = x.num("n");
+        if (nv != cast(long) nv || nv < 3 || nv > 1000)
+            throw new HcadError(Code.type, "a polygon needs a whole number of sides, 3 or more", x.spanOf("n"));
+        immutable n = cast(size_t) nv;
+        double r = 10;
+        immutable given = radiusGiven(x, "a polygon", r);
+        immutable cons = construction(x);
+        auto ctr = centreOf(x, s);
+        immutable o = sk.guess(ctr);
+        auto circ = made(s, () => sk.circle(ctr, r, true));
+        if (given)
+            radiusDimension(x, idOf(circ), r, s);
+        immutable a0 = x.angleOr("angle", -PI / 2 - PI / n);
+        // the corners start where they end up: on the circle, or out from it so that the
+        // sides touch it
+        immutable rc = sides ? r / cos(PI / n) : r;
+        size_t[] ps;
+        foreach (i; 0 .. n)
+        {
+            immutable t = a0 + 2 * PI * i / n;
+            ps ~= newPoint(o.x + rc * cos(t), o.y + rc * sin(t), s);
+        }
+        Value[] lines;
+        foreach (i; 0 .. n)
+            lines ~= made(s, () => sk.line(ps[i], ps[(i + 1) % n], cons));
+        if (asProfile)
+            return Value.of(lines);   // nothing to solve: the constraints would only be counted
+        // the corners on a circle (with fit: "sides", one of no given size, round the same
+        // centre) and the sides equal make it regular; then one side touching the circle of
+        // the given size sets it. (Every side touching it says the same, but the solver
+        // cannot tell that from it: at the regular shape it would count a freedom too many.)
+        auto through = sides ? made(s, () => sk.circle(ctr, rc, true)) : circ;
+        calling = "on";
+        foreach (p; ps)
+            add(ConstraintKind.onCircle, [p, idOf(through)], s);
+        if (sides)
+        {
+            calling = "tangent";
+            add(ConstraintKind.tangentLine, [idOf(lines[0]), idOf(circ)], s);
+        }
+        calling = "equal";
+        foreach (l; lines[1 .. $])
+            add(ConstraintKind.equalLength, [idOf(l), idOf(lines[0])], s);
+        if (x.has("angle"))
+        {
+            calling = "angle";
+            add(ConstraintKind.direction, [ctr, ps[0]], s, a0, 0, x.spanOf("angle"));
+        }
+        return Value.of(lines);
+    }
+
+    Value polygonOfPoints(ref Args x, Span s)
+    {
+        // s.polygon([p1, p2, p3]): the closed polyline through them
+        if (x.has("smooth"))
+            throw new HcadError(Code.unknownArg, "a smooth outline is not sketch geometry: polygon(points, smooth: "
+                ~ "true) is a profile of its own", x.spanOf("smooth"));
+        return polyline(x, true, s);
+    }
+
+    Value polyline(ref Args x, bool closed, Span s)
+    {
+        auto v = x.get("points");
+        if (v.kind != Kind.array || v.arr.length < 2)
+            throw new HcadError(Code.type, "polyline needs an array of at least 2 points", x.spanOf("points"));
+        size_t[] ps;
+        foreach (p; v.arr)
+        {
+            if (p.kind == Kind.object_ && cast(SketchEntityVal) p.obj)
+                ps ~= pointOf(p, x.spanOf("points"));
+            else
+            {
+                auto q = vecOf(x, p, x.spanOf("points"));
+                ps ~= newPoint(q.x, q.y, s);
+            }
+        }
+        immutable cons = construction(x);
+        Value[] lines;
+        foreach (i; 0 .. closed ? ps.length : ps.length - 1)
+            lines ~= made(s, () => sk.line(ps[i], ps[(i + 1) % ps.length], cons));
+        return Value.of(lines);
+    }
+
+    Value slotShape(ref Args x, Span s)
+    {
+        // s.slot(p, q, w: 6.mm): two half circles round p and q joined by two lines tangent to them;
+        // s.slot(length, w): length end to end, along X (angle: turned) round center: or a new point
+        // at the origin. Returns [line, arc round q, line, arc round p], counter-clockwise
+        immutable cons = construction(x);
+        if (x.has("p") || x.has("q"))
+        {
+            foreach (n; ["length", "center", "angle"])
+                if (x.has(n))
+                    throw new HcadError(Code.unknownArg, format("'%s' is for a slot by its length, slot(length, w:); "
+                        ~ "between two centres give p, q and w:", n), x.spanOf(n));
+            if (asProfile)
+                positiveLen(x, "w");
+            auto p = pointOrNew(x, "p", s), q = pointOrNew(x, "q", s);
+            if (p == q)
+                throw new HcadError(Code.type, "a slot needs two different points", x.spanOf("q"));
+            immutable len = (sk.guess(q) - sk.guess(p)).length;
+            if (len < 1e-9)
+                throw new HcadError(Code.type, "the two ends of a slot must not start in the same place", x.spanOf("q"));
+            return slotBetween(x, p, q, x.has("w") ? positiveLen(x, "w") : len / 3, cons, s);
+        }
+        // by its length
+        if ((asProfile || x.has("length")) && !x.has("w"))
+            throw new HcadError(Code.missingArg, "a slot by its length needs w: too", s);
+        if (asProfile)
+            positiveLen(x, "length");
+        immutable w = x.has("w") ? positiveLen(x, "w") : 10;
+        immutable l = x.has("length") ? positiveLen(x, "length") : 3 * w;
+        if (l < w - 1e-9)
+            throw new HcadError(Code.type, "a slot must be at least as long as it is wide", x.spanOf("length"));
+        immutable t = x.angleOr("angle", 0), half = (l - w) / 2;
+        auto ctr = centreOf(x, s);
+        if (half < 1e-9)
+        {
+            // as long as wide: a circle
+            auto c = made(s, () => sk.circle(ctr, w / 2, cons));
+            calling = "diameter";
+            add(ConstraintKind.radius, [idOf(c)], s, w / 2, 0, x.spanOf("w"), true);
+            return c;
+        }
+        immutable o = sk.guess(ctr), u = Vec3(cos(t), sin(t), 0) * half;
+        auto p = newPoint(o.x - u.x, o.y - u.y, s), q = newPoint(o.x + u.x, o.y + u.y, s);
+        auto ends = slotBetween(x, p, q, w, cons, s);
+        auto axis = made(s, () => sk.line(p, q, true));
+        calling = "midpoint";
+        add(ConstraintKind.midpoint, [ctr, idOf(axis)], s);
+        if (x.has("angle"))
+        {
+            calling = "angle";
+            add(ConstraintKind.direction, [p, q], s, t, 0, x.spanOf("angle"));
+        }
+        else
+        {
+            calling = "horizontal";
+            add(ConstraintKind.horizontal, [idOf(axis)], s);
+        }
+        if (x.has("length"))
+        {
+            // between the centres: not shown as a dimension, which would read l - w
+            calling = "length";
+            add(ConstraintKind.length, [idOf(axis)], s, l - w);
+        }
+        return ends;
+    }
+
+    Value slotBetween(ref Args x, size_t p, size_t q, double w, bool cons, Span s)
+    {
+        immutable pp = sk.guess(p), qq = sk.guess(q);
+        immutable u = (qq - pp) * (1 / (qq - pp).length), nrm = Vec3(-u.y, u.x, 0) * (w / 2);
+        auto pr = newPoint(pp.x - nrm.x, pp.y - nrm.y, s), qr = newPoint(qq.x - nrm.x, qq.y - nrm.y, s);
+        auto ql = newPoint(qq.x + nrm.x, qq.y + nrm.y, s), pl = newPoint(pp.x + nrm.x, pp.y + nrm.y, s);
+        auto bottom = made(s, () => sk.line(pr, qr, cons));
+        auto endQ = made(s, () => sk.arc(q, qr, ql, cons));
+        auto top = made(s, () => sk.line(ql, pl, cons));
+        auto endP = made(s, () => sk.arc(p, pl, pr, cons));
+        calling = "tangent";
+        add(ConstraintKind.tangentAt, [idOf(bottom), idOf(endP), pr], s);
+        add(ConstraintKind.tangentAt, [idOf(bottom), idOf(endQ), qr], s);
+        add(ConstraintKind.tangentAt, [idOf(top), idOf(endQ), ql], s);
+        add(ConstraintKind.tangentAt, [idOf(top), idOf(endP), pl], s);
+        calling = "equal";
+        add(ConstraintKind.equalRadius, [idOf(endQ), idOf(endP)], s);
+        if (x.has("w"))
+        {
+            calling = "diameter";
+            add(ConstraintKind.radius, [idOf(endP)], s, w / 2, 0, x.spanOf("w"), true);
+        }
+        return Value.of([bottom, endQ, top, endP]);
+    }
+
+    Value teardropShape(ref Args x, Span s)
+    {
+        // s.teardrop(c, d: 5.mm, angle: 45.deg, flat: false): a round hole with a point towards +Y,
+        // so that a hole through a wall prints without supports: an arc round c and two lines
+        // tangent to it meeting above it, angle (3° to 90°) from the vertical; flat: true cuts the
+        // point with a line touching the circle's top. Returns [arc, right line, left line] (and
+        // the flat between them). At 90° the lines meet on the circle: the teardrop is the circle
+        import std.math : PI, sin;
+        double r = 10;
+        immutable given = radiusGiven(x, "a teardrop", r);
+        immutable ang = x.angleOr("angle", PI / 4), cons = construction(x);
+        if (!(ang >= PI / 60 - 1e-9 && ang <= PI / 2 + 1e-9))
+            throw new HcadError(Code.type, "the point's angle is from the vertical: between 3° and 90°", x.spanOf("angle"));
+        auto ctr = centreOf(x, s);
+        if (cos(ang) < 1e-6)
+        {
+            auto c = made(s, () => sk.circle(ctr, r, cons));
+            if (given)
+                radiusDimension(x, idOf(c), r, s);
+            return c;
+        }
+        immutable o = sk.guess(ctr), ca = r * cos(ang), sa = r * sin(ang), tipY = r / sin(ang);
+        auto left = newPoint(o.x - ca, o.y + sa, s), right = newPoint(o.x + ca, o.y + sa, s);
+        auto tip = newPoint(o.x, o.y + tipY, s);
+        auto arc = made(s, () => sk.arc(ctr, left, right, cons));
+        if (given)
+            radiusDimension(x, idOf(arc), r, s);
+        immutable flat = x.flag("flat", false);
+        // the sides, to the point (lines of the outline, or construction ones cut by the flat)
+        auto up = made(s, () => sk.line(right, tip, cons || flat));
+        auto down = made(s, () => sk.line(tip, left, cons || flat));
+        Value[] result = [arc];
+        if (!flat)
+            result ~= [up, down];
+        else
+        {
+            // the flat, at the circle's top, from one side to the other
+            immutable f = (r - sa) / (tipY - sa);
+            auto fr = newPoint(o.x + ca * (1 - f), o.y + r, s), fl = newPoint(o.x - ca * (1 - f), o.y + r, s);
+            auto r1 = made(s, () => sk.line(right, fr, cons));
+            auto top = made(s, () => sk.line(fr, fl, cons));
+            auto l1 = made(s, () => sk.line(fl, left, cons));
+            result ~= [r1, top, l1];
+            if (!asProfile)
+            {
+                calling = "on";
+                add(ConstraintKind.onLine, [fr, idOf(up)], s);
+                add(ConstraintKind.onLine, [fl, idOf(down)], s);
+                calling = "horizontal";
+                add(ConstraintKind.horizontal, [idOf(top)], s);
+                calling = "tangent";
+                add(ConstraintKind.tangentLine, [idOf(top), idOf(arc)], s);
+            }
+        }
+        if (asProfile)
+            return Value.of(result);
+        calling = "tangent";
+        add(ConstraintKind.tangentAt, [idOf(up), idOf(arc), right], s);
+        add(ConstraintKind.tangentAt, [idOf(down), idOf(arc), left], s);
+        // the point straight above the centre, the sides at the angle from the vertical
+        auto axis = made(s, () => sk.line(tip, ctr, true));
+        calling = "vertical";
+        add(ConstraintKind.vertical, [idOf(axis)], s);
+        calling = "angle";
+        add(ConstraintKind.angle, [idOf(axis), idOf(down)], s, ang, 0, x.has("angle") ? x.spanOf("angle") : Span.init);
+        return Value.of(result);
+    }
+
     // ------------------------------------------------------------ helpers
 
     Value entity(size_t id) => Value.make(Kind.object_, new SketchEntityVal(this, id));
@@ -965,6 +1231,9 @@ final class SketchVal : ObjectVal
             p = arrayToVec(it, p.arr, x.raw.caller, s);
         if (p.kind != Kind.vec || (p.v.dim != Dim.length && p.v.dim != Dim.none))
             throw new HcadError(Code.type, format("expected a point (vector of lengths), not %s", p.typeName), s);
+        if (asProfile && p.v.v.z != 0)
+            throw new HcadError(Code.type, "a profile lies on XY (z = 0): place it afterwards with move, rotate or "
+                ~ "placeOn", s);
         return p.v.dim == Dim.none ? p.v.v * x.unitFactor : p.v.v;
     }
 

@@ -254,13 +254,25 @@ step):
   turn: `s.horizontal(hex[0])` lays its first side flat.
 - `s.ellipse(c, rx: 13.mm, ry: 7.mm, angle: 20.deg)`: an ellipse, tilted.
 - `s.slot(p, q, w: 8.mm)`: a slot, two half circles round p and q joined by
-  straight sides.
+  straight sides; `s.slot(30.mm, 8.mm, center: c)` by its length, along X.
+- `s.teardrop(c, d: 5.mm)`: a round hole with a point on top, which prints
+  lying on its side; `flat: true` cuts the point. The sampler leaves it out:
+  [page 14](14-going-further.md) shows where it helps.
 - `s.on(shape, circle)`: every corner of a shape on the circle, the shape
   inside it; `s.tangent(shape, circle)`: every side touching it, the shape
   round it. A circle with `construction: true` is a guide, not part of the
   outline: a pentagon in one, a square round another, a rectangle in a third
   (one side given, the circle sets the other).
 - `s.equal(ellipse)`: an ellipse as wide as tall, a circle, as on the medal.
+
+The same shapes, with the same names and sizes, are profiles of their own:
+`rect(26.mm, 18.mm, corner: 4.mm)`, `polygon(6, d: 24.mm)`,
+`slot(30.mm, 8.mm)`, centred on the origin unless given a point. Profiles
+combine with `+ - &` and move, turn, scale and mirror like solids, while a
+sketch draws one outline: use profiles to add up and cut simple shapes, a
+sketch when the outline's parts depend on each other (tangent, at a
+distance, the same size). A sketch's `s.profile` is a profile too, so the
+two mix.
 
 ## What a sketch can do
 

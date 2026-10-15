@@ -785,7 +785,7 @@ unittest
         unittest
         {
             writeln(format("%.3f %.3f %.3f %.3f %.3f", rect(20, 10).round(3).area / 1.mm ^^ 2,
-                rect(10, 10).offset(2).area / 1.mm ^^ 2, regularPolygon(6, d: 10).area / 1.mm ^^ 2,
+                rect(10, 10).offset(2).area / 1.mm ^^ 2, polygon(6, d: 10).area / 1.mm ^^ 2,
                 slot(30, 10).area / 1.mm ^^ 2, rect(10, 10).offset(-2).area / 1.mm ^^ 2));
             writeln(text("Hi", size: 10).area > 10 * 1.mm ^^ 2, " ", (rect(4, 4) + circle(d: 2).move(x: 2)).area > 16 * 1.mm ^^ 2);
         }
@@ -2232,7 +2232,7 @@ unittest
             // a quarter turn: the top lies across the bottom
             assert(abs(bar.section(XY.offset(30.mm - 1e-6.mm)).bbox.size.x / 1.mm - 10) < 1e-3, "turned");
             assert(abs(bar.section(XY.offset(15.mm)).bbox.size.x / 1.mm - 15 * sqrt(2.0)) < 1e-3, "half way");
-            assert(abs(regularPolygon(6, r: 10).extrude(40, twist: 720.deg).volume / mm3 - 40 * 150 * sqrt(3.0)) < 0.1,
+            assert(abs(polygon(6, r: 10).extrude(40, twist: 720.deg).volume / mm3 - 40 * 150 * sqrt(3.0)) < 0.1,
                 "two turns");
             immutable down = (circle(r: 15) - circle(r: 13)).extrude(-20, twist: -60.deg);
             assert(abs(down.bbox.min.z / 1.mm + 20) < 1e-6, "downwards");
@@ -2717,7 +2717,7 @@ unittest
     writeln(s.dof);
     return s.profile.extrude(1.mm);
 }
-@part Solid b() => regularPolygon(6, d: 13.mm, fit: "sides").extrude(1.mm);
+@part Solid b() => polygon(6, d: 13.mm, fit: "sides").extrude(1.mm);
 @part Solid p()
 {
     auto s = sketch();
@@ -2732,7 +2732,7 @@ unittest
     assert(isClose(partVolume(r, "a"), hexagon, 1e-6) && isClose(partVolume(r, "b"), hexagon, 1e-6));
     assert(isClose(partVolume(r, "p"), 5 * 10.0 ^^ 2 * tan(PI / 5), 1e-6));
     import std.algorithm : canFind;
-    auto e = errorIn(`auto p = regularPolygon(6, d: 13.mm, fit: "flats");`, "import std.shapes;");
+    auto e = errorIn(`auto p = polygon(6, d: 13.mm, fit: "flats");`, "import std.shapes;");
     assert(e.message.canFind("fit is"), e.message);
 }
 
@@ -2831,3 +2831,95 @@ unittest
     assert(e.message.canFind("free"), e.message);
 }
 
+
+unittest
+{
+    // the shapes are one-shape sketches with everything given: a profile and the sketch's shape
+    // of the same sizes are the same outline, by every form
+    immutable decls = q{
+        import std.math;
+        immutable mm2 = 1.mm ^^ 2;
+        void same(Profile a, Profile b, string what)
+        {
+            assert(abs(a.area - b.area) / mm2 < 1e-6, what ~ ": area");
+            assert(abs((a & b).area - a.area) / mm2 < 1e-4, what ~ ": overlap");
+            assert((a.bbox.center - b.bbox.center).length / 1.mm < 1e-6, what ~ ": place");
+        }
+    };
+    output(q{
+        auto s1 = sketch();
+        s1.rect(center: s1.point(0, 0, fixed: true), w: 40.mm, h: 20.mm, corner: 3.mm);
+        same(rect(40.mm, 20.mm, corner: 3.mm), s1.profile, "rect");
+        assert(abs(rect(40.mm, 20.mm, corner: 3.mm).area / mm2 - (800 - (4 - PI) * 9)) < 1e-6, "corner");
+        same(rect(40.mm, 20.mm).round(3.mm), rect(40.mm, 20.mm, corner: 3.mm), "round");
+        same(rect(vec(0, 0), vec(40, 20)), rect(center: vec(20, 10), w: 40.mm, h: 20.mm), "corners");
+        same(rect(vec(0, 0), w: 40.mm, h: 20.mm), rect(vec(40, 20), vec(0, 0)), "a corner and the size");
+        assert(abs(rect(20.mm).area / mm2 - 400) < 1e-6, "square");
+        same(rect(40.mm, 20.mm, angle: 90.deg), rect(20.mm, 40.mm), "turned");
+        auto s2 = sketch();
+        s2.rect(s2.point(5, 5, fixed: true), s2.point(45, 25, fixed: true));
+        same(rect(vec(5, 5), vec(45, 25)), s2.profile, "sketch corners");
+        auto s3 = sketch();
+        s3.circle(s3.point(10, 5, fixed: true), d: 8.mm);
+        same(circle(vec(10, 5), d: 8.mm), s3.profile, "circle");
+        same(circle(center: vec(10, 5), r: 4.mm), circle(d: 8.mm).move(x: 10.mm, y: 5.mm), "circle centre");
+        auto s4 = sketch();
+        s4.ellipse(s4.point(0, 0, fixed: true), rx: 15.mm, ry: 8.mm, angle: 30.deg);
+        same(ellipse(15.mm, 8.mm, angle: 30.deg), s4.profile, "ellipse");
+        same(ellipse(vec(3, 4), rx: 15.mm, ry: 8.mm), ellipse(15.mm, 8.mm).move(x: 3.mm, y: 4.mm), "ellipse centre");
+        auto s5 = sketch();
+        s5.polygon(s5.point(0, 0, fixed: true), 6, d: 13.mm, fit: "sides", angle: 0.deg);
+        same(polygon(6, d: 13.mm, fit: "sides", angle: 0.deg), s5.profile, "hexagon");
+        // without an angle the first side lies at the bottom: a square stands on a side
+        assert(abs(polygon(4, r: 10.mm).bbox.size.x / 1.mm - sqrt(200.0)) < 1e-6, "flat square");
+        same(polygon(vec(10, 0), 3, r: 5.mm), polygon(3, r: 5.mm).move(x: 10.mm), "polygon centre");
+        auto s6 = sketch();
+        s6.polygon([vec(0, 0), vec(30, 0), vec(0, 20)]);
+        same(polygon([vec(0, 0), vec(30, 0), vec(0, 20)]), s6.profile, "through points");
+        auto s7 = sketch();
+        s7.slot(s7.point(0, 0, fixed: true), s7.point(20, 10, fixed: true), w: 6.mm);
+        same(slot(vec(0, 0), vec(20, 10), w: 6.mm), s7.profile, "slot between centres");
+        assert(abs(slot(30.mm, 10.mm).area / mm2 - (200 + 25 * PI)) < 1e-6, "slot");
+        same(slot(30.mm, 10.mm, angle: 90.deg), slot(vec(0, -10), vec(0, 10), w: 10.mm), "slot turned");
+        auto s8 = sketch();
+        s8.slot(30.mm, 10.mm, center: s8.point(5, 5, fixed: true), angle: 20.deg);
+        same(slot(30.mm, 10.mm, center: vec(5, 5), angle: 20.deg), s8.profile, "slot by its length");
+        assert(s8.dof == 0, "slot dof");
+        auto s9 = sketch();
+        s9.teardrop(s9.point(0, 0, fixed: true), d: 10.mm);
+        same(teardrop(d: 10.mm), s9.profile, "teardrop");
+        assert(s9.dof == 0, "teardrop dof");
+        auto s10 = sketch();
+        s10.teardrop(s10.point(4, 2, fixed: true), r: 5.mm, angle: 30.deg, flat: true);
+        same(teardrop(vec(4, 2), r: 5.mm, angle: 30.deg, flat: true), s10.profile, "flat teardrop");
+        assert(s10.dof == 0, "flat teardrop dof");
+        same(teardrop(r: 5.mm, angle: 30.deg, flat: true), teardrop(r: 5.mm, angle: 30.deg) & rect(20.mm, 10.mm),
+            "flat: cut at the top");
+        // a sketch's shape without its centre stands round a new point at the origin
+        auto s11 = sketch();
+        s11.circle(d: 8.mm);
+        assert(s11.dof == 2, "free centre");
+        same(circle(d: 8.mm), s11.profile, "circle at the origin");
+    }, decls);
+
+    // profiles move, turn, scale and mirror like solids
+    output(q{
+        immutable p = rect(40.mm, 20.mm) - circle(vec(10, 0), d: 6.mm);
+        assert(abs(p.rotate(30.deg).area - p.area) / mm2 < 1e-6, "rotate");
+        assert(abs(p.rotate(z: 30).area - p.area) / mm2 < 1e-6, "rotate z");
+        assert(abs(p.mirror(X).area - p.area) / mm2 < 1e-6, "mirror");
+        assert((p.mirror(X) & circle(vec(10, 0), d: 6.mm)).area / mm2 > 28, "mirrored: the hole on the other side");
+        assert(abs(p.scale(2).area - 4 * p.area) / mm2 < 1e-6, "scale");
+        assert(abs(p.scale(x: 2, y: 3).area / p.area - 6) < 1e-6, "scale x, y");
+        assert(abs(p.move(x: 5.mm, y: 2.mm).bbox.center.x / 1.mm - 5) < 1e-6, "move");
+    }, decls);
+
+    import std.algorithm : canFind;
+    assert(errorIn(`auto p = circle();`).message.canFind("'r' (radius) or 'd'"));
+    assert(errorIn(`auto p = slot(30.mm);`).message.canFind("needs w:"));
+    assert(errorIn(`auto p = rect(10.mm, angle: "free");`).message.canFind("\"free\" is for sketches"));
+    assert(errorIn(`auto p = teardrop(d: 5.mm, angle: 95.deg);`).message.canFind("between 3° and 90°"));
+    assert(errorIn(`auto s = sketch(); s.polygon([vec(0, 0), vec(9, 0), vec(0, 9)], smooth: true);`)
+        .message.canFind("not sketch geometry"));
+    assert(errorIn(`auto p = slot(vec(0, 0), vec(9, 0), w: 2.mm, length: 9.mm);`).message.canFind("by its length"));
+}

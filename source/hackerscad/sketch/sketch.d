@@ -289,6 +289,17 @@ final class Sketch
         return rep;
     }
 
+    /// Takes the geometry as it is for solved, with no freedom left, without
+    /// running the solver: for shapes built with every point already where
+    /// the constraints put it (a profile's rect, circle… are one-shape
+    /// sketches with everything given).
+    void assumeSolved()
+    {
+        last = SolveReport.init;
+        last.solved = true;
+        dirty = false;
+    }
+
     SolveReport report()
     {
         solveIfNeeded();
@@ -310,16 +321,18 @@ final class Sketch
             throw new SketchException("the sketch constraints conflict", last.conflicting);
         OutlineSeg[] segs;
 
-        // full circles are loops of their own (two half arcs)
+        // full circles are loops of their own: one whole edge (a round ellipse), as a profile's
+        // circle(r) has, starting on +X
         foreach (i, e; entities)
             if (e.kind == EntityKind.circle && !e.construction)
             {
                 auto c = pos(e.refs[0], vars);
-                immutable r = vars[e.var];
-                segs ~= OutlineSeg(OutlineSeg.Kind.arc, c.x + r, c.y, c.x - r, c.y, c.x, c.y + r);
-                segs ~= OutlineSeg(OutlineSeg.Kind.arc, c.x - r, c.y, c.x + r, c.y, c.x, c.y - r);
+                immutable r = abs(vars[e.var]);
+                if (r < 1e-9)
+                    throw new SketchException("a circle of the outline has no size", [e.refs[0]]);
+                segs ~= OutlineSeg(OutlineSeg.Kind.ellipse, c.x, c.y, r, r, 0);
                 segs ~= OutlineSeg(OutlineSeg.Kind.end);
-                sources ~= [OutlineSource(i), OutlineSource(i), OutlineSource.init];
+                sources ~= [OutlineSource(i), OutlineSource.init];
             }
             else if (e.kind == EntityKind.ellipse && !e.construction)
             {

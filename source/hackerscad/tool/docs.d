@@ -43,17 +43,22 @@ dimensions and pictures, compare them with the request, fix, then export.
   .fillet(edges.between(faces.from(holes), faces.top), r: 0.5.mm).
 - Cut with planes: body.split(body.plane(faces.top).offset(-10.mm)) gives
   .above and .below; s.pieces lists separate bodies, ordered along X, Y, Z.
-- Profiles: rect, circle, polygon, regularPolygon, slot, text, combined
-  with + - &, .round(r), .offset(d); turn them into solids with .extrude(h)
-  or .revolve(axis: Y). On a face: body.extrude(profile, on: frame, depth:)
+- Profiles: rect, circle, ellipse, polygon, slot, teardrop (the shapes of a
+  sketch, same names and arguments, centred on the origin unless given a
+  point: rect(40.mm, 20.mm, corner: 3.mm), rect(p, q), circle(c, d: 5.mm),
+  polygon(6, d: 13.mm, fit: "sides"), slot(p, q, w: 6.mm)), polygon(points),
+  text; combined with + - &, moved, turned, scaled, mirrored like solids,
+  .round(r), .offset(d); turn them into solids with .extrude(h) or
+  .revolve(axis: Y). On a face: body.extrude(profile, on: frame, depth:)
   adds, body.cut(profile, on: frame, depth: | through: true) removes.
 - Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
 - Exact 2D outlines with dimensions: auto s = sketch(); points, lines, arcs,
   circles, ellipses and shapes (s.rect, s.polygon(c, 6, d:, fit: "sides"),
-  s.slot), then constraints (horizontal, vertical, length, distance, angle,
-  tangent, on, equal, concentric…) and s.profile, to extrude or revolve.
+  s.slot, s.teardrop), then constraints (horizontal, vertical, length,
+  distance, angle, tangent, on, equal, concentric…) and s.profile, to
+  extrude or revolve.
   Prefer a sketch over unions and differences of boxes and cylinders for a
   mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip)
   whenever the request gives its dimensions: write each dimension as a
@@ -68,6 +73,13 @@ dimensions and pictures, compare them with the request, fix, then export.
   normal: X)), plane(p1, p2, p3), plane(axis, point).
 - Existing parts: load("part.stl"/".obj"/".3mf"/".step", scale: 1) gives a solid to
   modify; text("LABEL", size: 4.mm).centered centres a profile for engraving.
+- When asked to copy lettering from a photo, a drawing or a model: if the
+  font cannot be recognised, or text() does not have it (it uses the fonts
+  installed), ask the user before going on, offering a similar installed
+  font (name it), or tracing the letters as a sketch (lines and arcs sized
+  from the picture), or load("letters.svg") if they can give a vector
+  tracing; never swap the font silently. Logos, engraved or hand-drawn
+  lettering are traced as a sketch.
 - Constants are immutable; module-level values cannot be modified.
 - Expose the dimensions a user may want to change as parameters:
       @param("Outer width", min: 20.mm, max: 200.mm)

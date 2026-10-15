@@ -2312,6 +2312,11 @@ static TopoDS_Shape faces_from_loops(const std::vector<TopoDS_Wire> &loops)
         BRepBuilderAPI_MakeFace f(w, Standard_True);
         if (!f.IsDone())
             throw Standard_Failure("an outline loop is not planar");
+        if (loops.size() == 1) { // one loop: no holes to sort out (a profile's rect, circle…)
+            ShapeUpgrade_UnifySameDomain unify(upward(f.Face()), Standard_True, Standard_True, Standard_False);
+            unify.Build();
+            return unify.Shape();
+        }
         GProp_GProps p;
         BRepGProp::SurfaceProperties(f.Face(), p);
         TopExp_Explorer v(w, TopAbs_VERTEX);

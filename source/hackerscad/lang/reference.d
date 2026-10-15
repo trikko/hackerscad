@@ -109,7 +109,7 @@ private alias T = (string name, string doc) => Ref(name, "", null, "", doc, RefK
 immutable Ref[] reference =
     group("Objects and types", [
     T("Solid", "A 3D body: boxes, cylinders, booleans, features. Every operation gives a new one."),
-    T("Profile", "A flat 2D outline on XY (rect, circle, text, sketch.profile): extrude or revolve it into a Solid."),
+    T("Profile", "A flat 2D outline on XY (rect, circle, text, sketch.profile; a shape's profile is a one-shape sketch with everything given): combine with + - &, extrude or revolve it into a Solid."),
     T("Path", "A curve in space (path, spline, helix) to sweep a profile along."),
     T("Vec", "A 2D or 3D vector or point: vec(10.mm, 5.mm, 0.mm); .x .y .z .length."),
     T("Vec2", "A 2D vector."),
@@ -233,7 +233,8 @@ immutable Ref[] reference =
         "s.rotate(z: 45)                    // about X, Y or Z, in degrees",
         "s.rotate(30.deg, X)                // an angle about an axis: X, a vec, or an Axis",
         "s.rotate(x: 30, y: 10, z: 45)      // about X, then Y, then Z",
-        "s.rotate(z: 45, around: p)         // about point p instead of the origin"]),
+        "s.rotate(z: 45, around: p)         // about point p instead of the origin",
+        "profile.rotate(30.deg)             // a profile: in its plane, about the origin"]),
     withForms(F("scale", "Shape", ["factor: number", "x: number", "y: number", "z: number", "around: Vec"], "",
         "Scales around the origin, or around the point given as around:."), [
         "s.scale(2)                         // the same along every axis",
@@ -266,19 +267,38 @@ immutable Ref[] reference =
     F("halves", "Solid", ["plane: Plane"], "Halves", "Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid."),
     ]) ~
     group("Profiles (2D)", [
-    F("rect", "", ["w: Length", "h: Length"], "Profile", "A rectangle centred on the origin."),
-    F("ellipse", "", ["rx: Length", "ry: Length"], "Profile", "An ellipse centred on the origin, rx along X, ry along Y."),
-    withForms(F("circle", "", ["r: Length", "d: Length"], "Profile", "A circle centred on the origin."), [
-        "circle(5.mm)        // radius",
-        "circle(d: 10.mm)    // diameter"]),
-    F("polygon", "", ["points: Vec[]", "smooth: bool"], "Profile", "A polygon through the points; smooth: true, a smooth closed curve through them instead."),
-    withForms(F("regularPolygon", "", ["n: int", "r: Length", "d: Length", "fit: string"], "Profile",
-        "A regular polygon centred on the origin: d/r the circle through its corners, or with fit: \"sides\" the circle its sides touch."), [
-        "regularPolygon(6, d: 10.mm)                // corners 10 mm apart across the middle",
-        "regularPolygon(6, d: 13.mm, fit: \"sides\")  // 13 mm across the flats: an M8 nut"]),
-    F("slot", "", ["length: Length", "width: Length"], "Profile", "A stadium along X."),
-    F("teardrop", "", ["r | d: Length", "angle: Angle", "flat: bool"], "Profile",
-        "A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point."),
+    withForms(F("rect", "", ["w: Length", "h: Length", "p: Vec", "q: Vec", "center: Vec", "angle: Angle", "corner: Length"], "Profile",
+        "A rectangle: centred on the origin (or center:), from two opposite corners, or from one corner and its size; angle: turns it, corner: rounds its corners. s.rect with everything given."), [
+        "rect(40.mm, 20.mm)                    // centred on the origin; rect(20.mm), a square",
+        "rect(vec(0, 0), vec(40, 20))          // two opposite corners",
+        "rect(vec(0, 0), w: 40.mm, h: 20.mm)   // from its lower left corner",
+        "rect(center: c, w: 40.mm, h: 20.mm)   // round a point",
+        "rect(40.mm, 20.mm, angle: 30.deg)     // turned about its centre",
+        "rect(40.mm, 20.mm, corner: 3.mm)      // round corners"]),
+    withForms(F("circle", "", ["r: Length", "d: Length", "center: Vec"], "Profile", "A circle centred on the origin, or round a point. s.circle with everything given."), [
+        "circle(5.mm)              // radius",
+        "circle(d: 10.mm)          // diameter",
+        "circle(vec(10, 0), d: 4.mm)  // round a point"]),
+    withForms(F("ellipse", "", ["rx: Length", "ry: Length", "angle: Angle", "center: Vec"], "Profile",
+        "An ellipse centred on the origin (or round a point), rx along X, ry along Y; angle: turns it. s.ellipse with everything given."), [
+        "ellipse(15.mm, 8.mm)                   // rx, ry",
+        "ellipse(vec(10, 0), rx: 15.mm, ry: 8.mm, angle: 30.deg)  // round a point, turned"]),
+    withForms(F("polygon", "", ["points: Vec[]", "smooth: bool", "n: int", "r | d: Length", "fit: string", "angle: Angle", "center: Vec"], "Profile",
+        "A polygon through the points (smooth: true, a smooth closed curve through them instead); or a regular one of n sides, centred on the origin or round a point: d/r the circle through its corners, or with fit: \"sides\" the circle its sides touch; angle: the direction of its first corner, else its first side lies at the bottom, horizontal. s.polygon with everything given."), [
+        "polygon([vec(0, 0), vec(30, 0), vec(0, 20)])  // through the points",
+        "polygon(6, d: 10.mm)                  // regular: corners 10 mm apart across the middle",
+        "polygon(6, d: 13.mm, fit: \"sides\")    // 13 mm across the flats: an M8 nut",
+        "polygon(vec(10, 0), 3, r: 5.mm)       // round a point, a corner on top"]),
+    withForms(F("slot", "", ["length: Length", "w: Length", "p: Vec", "q: Vec", "center: Vec", "angle: Angle"], "Profile",
+        "A stadium: length end to end along X, centred on the origin (or center:, angle: turned); or round two centres p and q, w wide. s.slot with everything given."), [
+        "slot(30.mm, 6.mm)                     // 30 long end to end, 6 wide, along X",
+        "slot(30.mm, 6.mm, angle: 90.deg)      // along Y",
+        "slot(vec(0, 0), vec(20, 10), w: 6.mm) // round two centres"]),
+    withForms(F("teardrop", "", ["r | d: Length", "angle: Angle", "flat: bool", "center: Vec"], "Profile",
+        "A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); angle: another point (3° to 90° from the vertical), flat: true cuts the point. s.teardrop with everything given."), [
+        "teardrop(d: 5.mm)                     // the point 45° from the vertical",
+        "teardrop(d: 5.mm, flat: true)         // the point cut at the circle's top",
+        "teardrop(vec(10, 0), d: 5.mm, angle: 30.deg)  // round a point, sharper"]),
     F("text", "", ["text: string", "size: Length", "font: string"], "Profile", "A text outline starting at the origin on the baseline."),
     F("round", "Profile", ["r: Length"], "Profile", "Rounds every corner, outward and inward, holes too; an error names a corner r is too large for."),
     F("offset", "Profile", ["distance: Length"], "Profile", "Grows (d > 0) or shrinks the outline; on a plane, the parallel plane."),
@@ -405,28 +425,41 @@ immutable Ref[] reference =
     F("line", "Sketch", ["p: Point", "q: Point"], "Line", "A line between two points."),
     F("arc", "Sketch", ["center: Point", "start: Point", "end: Point"], "Arc", "An arc, counter-clockwise."),
     F("polyline", "Sketch", ["points", "closed: bool"], "Line[]", "Lines through points (vectors become new points)."),
+    withForms(F("circle", "Sketch", ["center: Point", "r: Length", "d: Length"], "Circle",
+        "A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…)."), [
+        "s.circle(c, d: 10.mm)   // 0 dof once c is fixed",
+        "s.circle(c)   // the radius left free: 1 dof",
+        "s.circle(d: 10.mm)   // round a new point at the origin: 2 dof"]),
     withForms(F("ellipse", "Sketch", ["center: Point", "rx: Length", "ry: Length", "angle: Angle"], "Ellipse",
-        "An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints."), [
+        "An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints. The same shape as the profile ellipse(…)."), [
         "s.ellipse(c, rx: 20.mm, ry: 12.mm, angle: 0.deg)   // 0 dof once c is fixed",
         "s.ellipse(c, rx: 20.mm, ry: 12.mm)   // the turn left free: 1 dof",
         "s.ellipse(c)   // rx, ry and the turn left free: 3 dof"]),
     withForms(F("rect", "Sketch", ["p: Point", "q: Point", "center: Point", "w: Length", "h: Length", "angle: Angle | \"free\"", "corner: Length"],
-        "Line[]", "A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), \"free\" leaves the turn to the constraints; corner: rounds them."), [
+        "Line[]", "A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), \"free\" leaves the turn to the constraints; corner: rounds them. The same shape as the profile rect(…)."), [
         "s.rect(p, q)   // opposite corners: 4 dof with new corners, 0 with fixed ones",
         "s.rect(center: c, w: 40.mm, h: 20.mm)   // 0 dof once c is fixed",
         "s.rect(p, w: 40.mm, h: 20.mm)   // from one corner: p the lower left, 0 dof once p is fixed",
+        "s.rect(40.mm, 20.mm)   // round a new point at the origin: 2 dof",
         "s.rect(center: c, w: 40.mm, h: 20.mm, corner: 3.mm)",
         "s.rect(center: c, w: 40.mm, h: 20.mm, angle: 30.deg)   // turned",
         "s.parallel(s.rect(center: c, w: 40.mm, h: 20.mm, angle: \"free\")[0], line)   // along a slanted line"]),
     withForms(F("polygon", "Sketch", ["center: Point", "n: int", "r: Length", "d: Length", "fit: string", "angle: Angle"], "Line[]",
-        "A regular polygon: its n lines, corners on a construction circle of the size given; fit: \"sides\" makes its sides touch it instead; angle: the direction of the first corner."), [
+        "A regular polygon: its n lines, corners on a construction circle of the size given; fit: \"sides\" makes its sides touch it instead; angle: the direction of the first corner, else the turn is left free (starting with the first side at the bottom, horizontal). s.polygon([p1, p2, p3]): the closed polyline through the points. The same shapes as the profile polygon(…)."), [
         "s.polygon(c, 6, r: 10.mm)   // the turn left free: 1 dof once c is fixed",
         "s.polygon(c, 6, d: 13.mm, fit: \"sides\")   // 13 mm across the flats",
         "s.polygon(c, 6, d: 20.mm, angle: 90.deg)   // 0 dof",
-        "s.horizontal(s.polygon(c, 6, r: 10.mm)[0])   // first side flat: 0 dof"]),
-    withForms(F("slot", "Sketch", ["p: Point", "q: Point", "w: Length"], "[Line, Arc, Line, Arc]",
-        "Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p]."), [
-        "s.slot(p, q, w: 6.mm)   // 0 dof once p and q are fixed; without w: 1"]),
+        "s.horizontal(s.polygon(c, 6, r: 10.mm)[0])   // first side flat: 0 dof",
+        "s.polygon([p, q, vec(0, 20)])   // through points: a closed polyline"]),
+    withForms(F("slot", "Sketch", ["p: Point", "q: Point", "w: Length", "length: Length", "center: Point", "angle: Angle"], "[Line, Arc, Line, Arc]",
+        "Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p]; or by its length end to end, along X (angle: turned) round center: or a new point at the origin. The same shape as the profile slot(…)."), [
+        "s.slot(p, q, w: 6.mm)   // 0 dof once p and q are fixed; without w: 1",
+        "s.slot(30.mm, 6.mm, center: c)   // 30 long along X: 0 dof once c is fixed",
+        "s.slot(30.mm, 6.mm, center: c, angle: 30.deg)   // turned"]),
+    withForms(F("teardrop", "Sketch", ["center: Point", "r | d: Length", "angle: Angle", "flat: bool"], "[Arc, Line, Line]",
+        "A hole that prints sideways: an arc round the centre and two lines tangent to it meeting above it, angle (45° unless given) from the vertical; flat: true cuts the point with a line on the circle's top ([arc, line, flat, line]). The same shape as the profile teardrop(…)."), [
+        "s.teardrop(c, d: 5.mm)   // 0 dof once c is fixed",
+        "s.teardrop(c, d: 5.mm, angle: 30.deg, flat: true)   // sharper, the point cut flat"]),
     F("coincident", "Sketch", ["p: Point", "q: Point"], "", "Two points in the same place."),
     F("fix", "Sketch", ["p: Point"], "", "Pins a point."),
     F("horizontal", "Sketch", ["line: Line"], "", "A horizontal line (or two points at the same height, or an ellipse's x axis along X)."),

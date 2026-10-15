@@ -38,7 +38,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 </dl></section>
 <section><h2>Objects and types</h2><dl>
 <dt>Solid</dt><dd>A 3D body: boxes, cylinders, booleans, features. Every operation gives a new one.</dd>
-<dt>Profile</dt><dd>A flat 2D outline on XY (rect, circle, text, sketch.profile): extrude or revolve it into a Solid.</dd>
+<dt>Profile</dt><dd>A flat 2D outline on XY (rect, circle, text, sketch.profile; a shape's profile is a one-shape sketch with everything given): combine with + - &amp;, extrude or revolve it into a Solid.</dd>
 <dt>Path</dt><dd>A curve in space (path, spline, helix) to sweep a profile along.</dd>
 <dt>Vec</dt><dd>A 2D or 3D vector or point: vec(10.mm, 5.mm, 0.mm); .x .y .z .length.</dd>
 <dt>Vec2</dt><dd>A 2D vector.</dd>
@@ -167,13 +167,12 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.halves(plane: Plane) → Halves</dt><dd>Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.</dd>
 </dl></section>
 <section><h2>Profiles (2D)</h2><dl>
-<dt>rect(w: Length, h: Length) → Profile</dt><dd>A rectangle centred on the origin.</dd>
-<dt>ellipse(rx: Length, ry: Length) → Profile</dt><dd>An ellipse centred on the origin, rx along X, ry along Y.</dd>
-<dt>circle(r: Length, d: Length) → Profile</dt><dd>A circle centred on the origin.</dd>
-<dt>polygon(points: Vec[], smooth: bool) → Profile</dt><dd>A polygon through the points; smooth: true, a smooth closed curve through them instead.</dd>
-<dt>regularPolygon(n: int, r: Length, d: Length, fit: string) → Profile</dt><dd>A regular polygon centred on the origin: d/r the circle through its corners, or with fit: "sides" the circle its sides touch.</dd>
-<dt>slot(length: Length, width: Length) → Profile</dt><dd>A stadium along X.</dd>
-<dt>teardrop(r | d: Length, angle: Angle, flat: bool) → Profile</dt><dd>A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.</dd>
+<dt>rect(w: Length, h: Length, p: Vec, q: Vec, center: Vec, angle: Angle, corner: Length) → Profile</dt><dd>A rectangle: centred on the origin (or center:), from two opposite corners, or from one corner and its size; angle: turns it, corner: rounds its corners. s.rect with everything given.</dd>
+<dt>circle(r: Length, d: Length, center: Vec) → Profile</dt><dd>A circle centred on the origin, or round a point. s.circle with everything given.</dd>
+<dt>ellipse(rx: Length, ry: Length, angle: Angle, center: Vec) → Profile</dt><dd>An ellipse centred on the origin (or round a point), rx along X, ry along Y; angle: turns it. s.ellipse with everything given.</dd>
+<dt>polygon(points: Vec[], smooth: bool, n: int, r | d: Length, fit: string, angle: Angle, center: Vec) → Profile</dt><dd>A polygon through the points (smooth: true, a smooth closed curve through them instead); or a regular one of n sides, centred on the origin or round a point: d/r the circle through its corners, or with fit: "sides" the circle its sides touch; angle: the direction of its first corner, else its first side lies at the bottom, horizontal. s.polygon with everything given.</dd>
+<dt>slot(length: Length, w: Length, p: Vec, q: Vec, center: Vec, angle: Angle) → Profile</dt><dd>A stadium: length end to end along X, centred on the origin (or center:, angle: turned); or round two centres p and q, w wide. s.slot with everything given.</dd>
+<dt>teardrop(r | d: Length, angle: Angle, flat: bool, center: Vec) → Profile</dt><dd>A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); angle: another point (3° to 90° from the vertical), flat: true cuts the point. s.teardrop with everything given.</dd>
 <dt>text(text: string, size: Length, font: string) → Profile</dt><dd>A text outline starting at the origin on the baseline.</dd>
 <dt>p.round(r: Length) → Profile</dt><dd>Rounds every corner, outward and inward, holes too; an error names a corner r is too large for.</dd>
 <dt>p.offset(distance: Length) → Profile</dt><dd>Grows (d &gt; 0) or shrinks the outline; on a plane, the parallel plane.</dd>
@@ -276,10 +275,12 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.line(p: Point, q: Point) → Line</dt><dd>A line between two points.</dd>
 <dt>sk.arc(center: Point, start: Point, end: Point) → Arc</dt><dd>An arc, counter-clockwise.</dd>
 <dt>sk.polyline(points, closed: bool) → Line[]</dt><dd>Lines through points (vectors become new points).</dd>
-<dt>sk.ellipse(center: Point, rx: Length, ry: Length, angle: Angle) → Ellipse</dt><dd>An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints.</dd>
-<dt>sk.rect(p: Point, q: Point, center: Point, w: Length, h: Length, angle: Angle | "free", corner: Length) → Line[]</dt><dd>A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), "free" leaves the turn to the constraints; corner: rounds them.</dd>
-<dt>sk.polygon(center: Point, n: int, r: Length, d: Length, fit: string, angle: Angle) → Line[]</dt><dd>A regular polygon: its n lines, corners on a construction circle of the size given; fit: "sides" makes its sides touch it instead; angle: the direction of the first corner.</dd>
-<dt>sk.slot(p: Point, q: Point, w: Length) → [Line, Arc, Line, Arc]</dt><dd>Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p].</dd>
+<dt>sk.circle(center: Point, r: Length, d: Length) → Circle</dt><dd>A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…).</dd>
+<dt>sk.ellipse(center: Point, rx: Length, ry: Length, angle: Angle) → Ellipse</dt><dd>An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints. The same shape as the profile ellipse(…).</dd>
+<dt>sk.rect(p: Point, q: Point, center: Point, w: Length, h: Length, angle: Angle | "free", corner: Length) → Line[]</dt><dd>A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), "free" leaves the turn to the constraints; corner: rounds them. The same shape as the profile rect(…).</dd>
+<dt>sk.polygon(center: Point, n: int, r: Length, d: Length, fit: string, angle: Angle) → Line[]</dt><dd>A regular polygon: its n lines, corners on a construction circle of the size given; fit: "sides" makes its sides touch it instead; angle: the direction of the first corner, else the turn is left free (starting with the first side at the bottom, horizontal). s.polygon([p1, p2, p3]): the closed polyline through the points. The same shapes as the profile polygon(…).</dd>
+<dt>sk.slot(p: Point, q: Point, w: Length, length: Length, center: Point, angle: Angle) → [Line, Arc, Line, Arc]</dt><dd>Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p]; or by its length end to end, along X (angle: turned) round center: or a new point at the origin. The same shape as the profile slot(…).</dd>
+<dt>sk.teardrop(center: Point, r | d: Length, angle: Angle, flat: bool) → [Arc, Line, Line]</dt><dd>A hole that prints sideways: an arc round the centre and two lines tangent to it meeting above it, angle (45° unless given) from the vertical; flat: true cuts the point with a line on the circle's top ([arc, line, flat, line]). The same shape as the profile teardrop(…).</dd>
 <dt>sk.coincident(p: Point, q: Point)</dt><dd>Two points in the same place.</dd>
 <dt>sk.fix(p: Point)</dt><dd>Pins a point.</dd>
 <dt>sk.horizontal(line: Line)</dt><dd>A horizontal line (or two points at the same height, or an ellipse's x axis along X).</dd>

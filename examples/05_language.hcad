@@ -105,10 +105,10 @@ Solid markers()
         outline = circle(r: 3.mm);
         break;
     case 3:
-        outline = regularPolygon(3, r: 3.mm);
+        outline = polygon(3, r: 3.mm);
         break;
     default:
-        outline = regularPolygon(6, r: 3.mm);   // 4 to 6 pegs: hexagons
+        outline = polygon(6, r: 3.mm);   // 4 to 6 pegs: hexagons
         break;
     }
     // arrays and algorithms: positions computed with `map`, shapes joined with `sum`

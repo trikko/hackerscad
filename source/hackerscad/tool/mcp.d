@@ -876,7 +876,7 @@ JSONValue[] toolList()
         gui("hcad_gui_sketch", "Show a sketch in the user's 3D view, seen from above, with its dimensions (the user "
             ~ "can click them to change them) and the points that can still move in blue, as selecting its step or "
             ~ "inspecting one of its lines does. line (to to_line) is any line of a sketch: the sketch() call, its "
-            ~ ".profile, an s.point/line/arc/circle/ellipse/polyline/rect/polygon/slot call or a constraint call; what "
+            ~ ".profile, an s.point/line/arc/circle/ellipse/polyline/rect/polygon/slot/teardrop call or a constraint call; what "
             ~ "those lines make, and the entities "
             ~ "their constraints involve (and their dimensions), are drawn in orange. Without line, the first sketch "
             ~ "whole; on: false hides it (Esc, or hcad_gui_rollback with {}, also does). The reply's sketch tells "
