@@ -49,7 +49,8 @@ void main(string[] args)
     start(buildPath(dir, "untitled.hcad"));
     scope (exit)
         stop();
-    auto pages = [&page1, &page2, &page3, &page4, &page5, &page6, &page7, &page8, &page9, &page10, &page11, &page12];
+    auto pages = [&page1, &page2, &page3, &page4, &page5, &page6, &page7, &page8, &page9, &page10, &page11, &page12,
+        &page13];
     if (args.length > 1)
         foreach (n; args[1 .. $])
             pages[n.to!int - 1]();
@@ -316,6 +317,30 @@ void page12()
         view(`{"preset": "iso"}`);
         shot("12-" ~ name);
     }
+}
+
+void page13()
+{
+    // Carlo drawn as a constrained sketch: its dimensions from above, the clip
+    // extruded, then with five teeth (the constraints keep it together)
+    import std.file : copy;
+    auto dir = buildPath(tempDir, "tutorial");
+    mkdirRecurse(dir);
+    auto file = buildPath(dir, "carlo.hcad");
+    copy(buildPath(docs, "13-carlo.hcad"), file);
+    open(file);
+    req("sketch", `{"on": true}`);
+    view(`{"projection": "orthographic", "preset": "top"}`);
+    view(`{"preset": "fit"}`);
+    shot("13-carlo-sketch", lineOf("auto s = sketch()"));
+    req("sketch", `{"on": false}`);
+    view(`{"projection": "perspective", "preset": "iso"}`);
+    view(`{"preset": "fit"}`);
+    shot("13-carlo", lineOf("s.profile"));
+    req("set", `{"params": {"teeth": 5}}`);
+    view(`{"preset": "fit"}`);
+    shot("13-carlo-five", lineOf("immutable teeth"));
+    req("set", `{"preset": ""}`);
 }
 
 // ---------------------------------------------------------------- the code the reader writes

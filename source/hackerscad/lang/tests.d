@@ -493,6 +493,24 @@ unittest
 
 unittest
 {
+    // the tutorial's Carlo: a sketch fully constrained, one valid part, with 3 teeth and with 5, without the eye
+    import std.file : thisExePath, readText;
+    import std.path : dirName;
+    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "docs", "tutorial", "13-carlo.hcad");
+    foreach (teeth; ["3", "5", "3 no eye"])
+    {
+        auto it = make();
+        it.overrides = teeth == "3 no eye" ? ["eye": "false"] : ["teeth": teeth];
+        auto r = it.run(path);
+        foreach (d; r.diagnostics)
+            assert(d.severity != Severity.error && d.severity != Severity.warning, d.message);
+        assert(r.parts.length == 1 && kernel.isValid(r.parts[0].solid.brep), teeth);
+        assert(r.log[0].text == "degrees of freedom left: 0", r.log[0].text);
+    }
+}
+
+unittest
+{
     // the shipped example evaluates with the expected parts and checks
     import std.file : thisExePath, exists;
     import std.path : dirName;

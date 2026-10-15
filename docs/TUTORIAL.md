@@ -41,6 +41,9 @@ without supports.
 12. [Going further](tutorial/12-going-further.md): the examples, a hook made
     ready to print, a label from a drawing, sketches, sweeps, libraries,
     drawings, the command line, and what to do when something goes wrong.
+13. [Carlo, drawn with a sketch](tutorial/13-carlo.md): the mascot's outline
+    told by its rules (level, leaning, parallel, teeth all alike), solved and
+    extruded.
 
 Each page ends with a picture of how the window should look, and with the
 model as it is at that point, to open if something went wrong.

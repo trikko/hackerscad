@@ -1,4 +1,4 @@
-[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md)
+[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Carlo, drawn with a sketch →](13-carlo.md)
 
 # 12. Going further
 
@@ -213,7 +213,8 @@ Solid bracket()
 The points start where they are written; the constraints move them (here the
 bottom becomes 50 mm, not 40). The pencil button in the view bar shows the
 sketch with its dimensions: click one to change it. Points still free to
-move are blue.
+move are blue. [Chapter 13](13-carlo.md) draws Carlo, the bag clip, this way,
+from start to end.
 
 ## Curved shapes: lofts and sweeps
 
@@ -363,7 +364,7 @@ hcad docs fillet                              # the reference of one function
   edges take the longest. hackerscad remembers every step, so changing a
   parameter recomputes only what depends on it.
 - **The view is jerky when you turn it:** the console says at the start which
-  OpenGL draws the view (also in ☰ › About hackerscad › Troubleshooting). If it
+  OpenGL draws the view (also in ☰ › About hackerscad › Copy debug information). If it
   says it is drawn by the processor, the graphics driver is missing or too
   old: install the one from the maker of the card. In a virtual machine or a
   remote session it is expected; **Smooth edges** off, in the cube of the view
@@ -374,4 +375,4 @@ hcad docs fillet                              # the reference of one function
 From here, the [language reference](../LANGUAGE.md) describes everything,
 and the [examples](../../examples) are complete models to open and change.
 
-[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md)
+[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Carlo, drawn with a sketch →](13-carlo.md)
