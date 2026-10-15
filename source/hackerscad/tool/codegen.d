@@ -671,9 +671,10 @@ unittest
 
 /// Moves the part `part` by `v` (kind "move", mm), or turns it (kind
 /// "rotate": `v` the angles about X, then Y, then Z in degrees) about
-/// `around`. When its chain already ends with such a call holding plain
-/// numbers (for a turn, about the same point), the two make one call, or
-/// none when they come to nothing; otherwise one is added.
+/// `around`, or scales it (kind "scale": `v` the factors along X, Y and Z)
+/// keeping `around` where it is. When its chain already ends with such a
+/// call holding plain numbers (for a turn, about the same point), the two
+/// make one call, or none when they come to nothing; otherwise one is added.
 Edit transformPart(string source, string file, string part, string kind, Vec3 v, Vec3 around = Vec3(0, 0, 0))
 {
     auto r = returned(source, file, part);
@@ -726,6 +727,8 @@ private Edit transformExpr(string source, size_t start, size_t end, bool operato
     immutable r = R(start);
     auto expr = source[start .. end];
     LastCall c;
+    if (kind == "scale")
+        return scaleExpr(source, start, expr, operators, v, around, append);
     if (!operators && lastCall(expr, c) && !c.positional && c.name == kind)
     {
         // the numbers it holds, or none when one is not plain
@@ -797,6 +800,112 @@ private Edit transformExpr(string source, size_t start, size_t end, bool operato
     auto call = kind == "move" ? moveCall(v) : turnCall(v, around);
     if (call is null)
         throw new CodegenException("nothing to move or turn");
+    return append(call);
+}
+
+/// A scale by the factors `f` (along X, Y, Z) that keeps `pivot` where it
+/// is, the shortest way to write it: one factor when they are all the same,
+/// else the ones that are not 1; around: only when the point is not the
+/// origin, and only along the axes that scale. Null when nothing scales.
+string scaleCall(Vec3 f, Vec3 pivot)
+{
+    import std.math : round;
+    string number(double x) => format("%.6g", round(x * 1e6) / 1e6);
+    foreach (i; 0 .. 3)
+        if (abs(f[i] - 1) < 1e-9)
+        {
+            f[i] = 1;
+            pivot[i] = 0;   // along an axis that does not scale, it moves nothing
+        }
+        else
+            pivot[i] = round(pivot[i] * 1000) / 1000;
+    string[] args;
+    if (f.x == f.y && f.y == f.z)
+    {
+        if (f.x == 1)
+            return null;
+        args ~= number(f.x);
+    }
+    else
+        foreach (i, n; ["x", "y", "z"])
+            if (f[i] != 1)
+                args ~= n ~ ": " ~ number(f[i]);
+    if (pivot.length > 1e-6)
+        args ~= "around: " ~ vecMm(pivot);
+    return ".scale(" ~ args.join(", ") ~ ")";
+}
+
+/// transformExpr for a scale: a plain scale last in the chain takes this one
+/// in (one scale about some point, or none when they come to nothing),
+/// else `append` adds it.
+private Edit scaleExpr(string source, size_t start, string expr, bool operators, Vec3 f, Vec3 around,
+    Edit delegate(string call) append)
+{
+    import std.conv : to;
+    import std.regex : matchFirst, regex;
+    immutable num = `-?[0-9]+(?:\.[0-9]+)?(?:e-?[0-9]+)?`;
+    LastCall c;
+    if (!operators && lastCall(expr, c) && c.name == "scale" && c.unnamed.length <= 1)
+    {
+        bool plain = true;
+        Vec3 had = Vec3(1, 1, 1), pivot;
+        if (c.unnamed.length == 1)
+        {
+            if (c.unnamed[0].matchFirst(regex("^" ~ num ~ "$")).empty)
+                plain = false;
+            else
+                had = Vec3(1, 1, 1) * c.unnamed[0].to!double;
+        }
+        foreach (name, value; c.args)
+        {
+            immutable axis = ["x": 0, "y": 1, "z": 2].get(name, -1);
+            if (axis >= 0 && c.unnamed.length == 0 && !value.matchFirst(regex("^" ~ num ~ "$")).empty)
+                had[axis] = value.to!double;
+            else if (name == "around")
+            {
+                auto m = value.matchFirst(regex(`^vec\((` ~ num ~ `)\.mm, (` ~ num ~ `)\.mm, (` ~ num ~ `)\.mm\)$`));
+                if (m.empty)
+                    plain = false;
+                else
+                    pivot = Vec3(m[1].to!double, m[2].to!double, m[3].to!double);
+            }
+            else
+                plain = false;
+        }
+        // x -> f (had (x - p) + p - q) + q: factors f * had, and the point
+        // that stays, axis by axis, where (1 - s) q' = what it moves
+        Vec3 s, q;
+        foreach (i; 0 .. 3)
+        {
+            s[i] = f[i] * had[i];
+            immutable t = f[i] * (pivot[i] - had[i] * pivot[i] - around[i]) + around[i];
+            if (abs(s[i] - 1) > 1e-9)
+                q[i] = t / (1 - s[i]);
+            else if (abs(t) > 1e-6)
+                plain = false;   // undone along it, but moved: no scale writes that
+        }
+        if (plain)
+        {
+            Edit e;
+            e.offset = start + c.start;
+            e.length = c.end - c.start;
+            e.text = scaleCall(s, q);
+            if (e.text is null)
+            {
+                // nothing left: the call goes, with the line break before it
+                size_t from = e.offset;
+                while (from > start && (source[from - 1] == ' ' || source[from - 1] == '\t' || source[from - 1] == '\n'))
+                    from--;
+                e.length += e.offset - from;
+                e.offset = from;
+            }
+            e.selectOffset = e.offset + e.text.length;
+            return e;
+        }
+    }
+    auto call = scaleCall(f, around);
+    if (call is null)
+        throw new CodegenException("nothing to scale");
     return append(call);
 }
 
@@ -1180,6 +1289,7 @@ private struct LastCall
     string name;
     string[string] args;   /// the named ones
     bool positional;       /// some argument has no name
+    string[] unnamed;      /// those without a name, in order
 }
 
 private bool lastCall(string expr, out LastCall c)
@@ -1238,6 +1348,7 @@ private bool lastCall(string expr, out LastCall c)
         if (colon < 0 || arg[0 .. colon].strip.length == 0 || arg.indexOf('(') >= 0 && arg.indexOf('(') < colon)
         {
             c.positional = true;   // not a name: before ':' there is a call, or nothing
+            c.unnamed ~= arg;
             continue;
         }
         c.args[arg[0 .. colon].strip] = arg[colon + 1 .. $].strip;
@@ -1576,6 +1687,38 @@ unittest
     auto g = "module m;\n\n@part\nSolid p() => box(10, 10, 10).move(x: w);\nimmutable w = 3.mm;\n";
     auto h = transformPart(g, "m.hcad", "p", "move", Vec3(1, 0, 0)).apply(g);
     assert(h.canFind(".move(x: w)") && h.canFind(".move(x: 1.mm)"), h);
+}
+
+unittest
+{
+    // a scale about the bottom of the part: one factor, or one per axis; a
+    // second scale about the same point is taken in, and an undone one goes
+    import std.algorithm : count;
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto a = transformPart(src, "m.hcad", "p", "scale", Vec3(1.5, 1.5, 1.5), Vec3(0, 0, 0)).apply(src);
+    assert(a.canFind(".scale(1.5)") && !a.canFind("around"), a);
+    auto b = transformPart(a, "m.hcad", "p", "scale", Vec3(2, 2, 2)).apply(a);
+    assert(b.canFind(".scale(3)") && b.count(".scale(") == 1, b);
+    auto c = transformPart(b, "m.hcad", "p", "scale", Vec3(1, 1, 1.0 / 3)).apply(b);
+    assert(c.canFind(".scale(x: 3, y: 3)") && c.count(".scale(") == 1, c);
+    auto d = transformPart(c, "m.hcad", "p", "scale", Vec3(1.0 / 3, 1.0 / 3, 1)).apply(c);
+    assert(!d.canFind(".scale("), d);
+    // about a point off the origin: around:, only along the axes that scale
+    auto e = transformPart(src, "m.hcad", "p", "scale", Vec3(1, 1, 2), Vec3(5, 5, 3)).apply(src);
+    assert(e.canFind(".scale(z: 2, around: vec(0.mm, 0.mm, 3.mm))"), e);
+    auto f = transformPart(e, "m.hcad", "p", "scale", Vec3(1.2, 0.8, 1), Vec3(5, 5, 3)).apply(e);
+    assert(f.canFind(".scale(x: 1.2, y: 0.8, z: 2, around: vec(5.mm, 5.mm, 3.mm))") && f.count(".scale(") == 1, f);
+    // about two different points: still one scale, about a third point
+    auto g = transformPart(e, "m.hcad", "p", "scale", Vec3(1, 1, 2), Vec3(0, 0, 0)).apply(e);
+    assert(g.canFind(".scale(z: 4, around: vec(0.mm, 0.mm, 2.mm))"), g);
+    // undone, but moved: a second one
+    auto h = transformPart(e, "m.hcad", "p", "scale", Vec3(1, 1, 0.5), Vec3(0, 0, 0)).apply(e);
+    assert(h.count(".scale(") == 2, h);
+    // a factor it cannot read: another call after it
+    auto k = "module m;\n\n@part\nSolid p() => box(10, 10, 10).scale(w);\nimmutable w = 2;\n";
+    auto l = transformPart(k, "m.hcad", "p", "scale", Vec3(2, 2, 2)).apply(k);
+    assert(l.canFind(".scale(w)") && l.canFind(".scale(2)"), l);
+    assert(scaleCall(Vec3(1, 1, 1), Vec3(3, 4, 5)) is null);
 }
 
 unittest

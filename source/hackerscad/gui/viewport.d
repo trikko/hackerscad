@@ -122,10 +122,12 @@ final class Viewport
 
     // sketches drawn over the model
     private SketchView[] sketches;
-    private bool sketchMode;
+    private size_t[] shownSketches;      /// indices in sketches: the ones drawn
+    private bool[size_t][] litEntities;  /// for each shown sketch, the entities that stand out
     private uint sketchVao, sketchVbo;
     private bool sketchDirty;
-    private int[4] sketchRanges;   /// lines, construction lines, free points, fixed points (end indices)
+    /// lines, construction lines, highlighted lines, free points, fixed points, highlighted points (end indices)
+    private int[6] sketchRanges;
 
     private uint program, gridVao, gridVbo;
     private int gridCount;
@@ -164,6 +166,8 @@ final class Viewport
     // camera: orbit around target, Z up
     private Vec3 target;
     private double distance = 150, yaw = -PI / 3, pitch = PI / 6;
+    private bool firstModel = true;   // the window's first model is seen from a little higher
+    private double fitRoom = 1;       // the next fit this much farther (the first model's)
     private enum fovy = 30.0 * PI / 180;
 
     // pointer and drag state
@@ -394,9 +398,19 @@ final class Viewport
         dirty = true;
         if (selected.part >= cast(int) parts.length)
             selected = Hit.init;
-        // a new model starts from the default view, framed
-        if (fitView)
+        // a new model starts from the default view, framed; the first one a
+        // window shows from a little higher than Iso, into Carlo's slot
+        if (fitView && firstModel)
+        {
+            yaw = -PI / 3;
+            pitch = PI / 4;
+            fitRoom = 1.25;   // and with room around it
+            fit();
+        }
+        else if (fitView)
             setView(ViewPreset.iso);
+        if (parts.length)
+            firstModel = false;
         redraw();
     }
 
@@ -849,12 +863,13 @@ final class Viewport
         return [c + u * du + v * dv, c - u * du + v * dv, c - u * du - v * dv, c + u * du - v * dv];
     }
 
-    // ---- moving and turning a part by hand (Move… and Rotate… in the
-    // context menu): arrows along X, Y and Z from the middle of the part and
-    // a frame under it, or three rings round it with a knob each. The part
+    // ---- moving, turning and scaling a part by hand (Move…, Rotate… and
+    // Scale… in the context menu): arrows along X, Y and Z from the middle of
+    // the part and a frame under it, three rings round it with a knob each,
+    // or a handle along each axis and one at the corner of its box. The part
     // is drawn where it goes; the window writes the code.
 
-    enum Gizmo { none, move, rotate, hinge }
+    enum Gizmo { none, move, rotate, hinge, scale }
 
     // ---- Place on…: a corner or the centre of a face onto one of another
     // face (or the ground), the faces against each other, then the hinge
@@ -1035,6 +1050,7 @@ final class Viewport
         gizmoPart = placePart;
         gizmoMove = Vec3(0, 0, 0);
         gizmoTurns = null;
+        gizmoScale = Vec3(1, 1, 1);
         hingeAngle = 0;
         hingeOrigin = to;
         hingeDir = toN.normalized;
@@ -1081,11 +1097,14 @@ final class Viewport
     public Vec3 gizmoMove = Vec3(0, 0, 0);   /// how far the part is moved (mm, whole)
     public Turn[] gizmoTurns;                /// the turns so far, in order (degrees, whole)
     public Vec3 gizmoCentre;                 /// what it turns about: the middle of its box
+    public Vec3 gizmoScale = Vec3(1, 1, 1);  /// the factors along X, Y and Z (scale)
+    public Vec3 gizmoAnchor;                 /// what stays where it is (scale): the middle of the bottom of its box
     private Vec3 gizmoLo, gizmoHi;
     // what is grabbed or under the pointer: move: 0 the frame, 1..3 the X, Y,
-    // Z arrows; rotate: 1..3 the X, Y, Z rings
+    // Z arrows; rotate: 1..3 the X, Y, Z rings; scale: 0 the corner, 1..3
+    // the X, Y, Z handles
     private int gizmoGrab = -1, gizmoHover = -1;
-    private Vec3 grabMove, grabPoint;
+    private Vec3 grabMove, grabPoint, grabScale;
     private double grabAngle, lastScreenAngle;
     private bool keepPreview;   // confirmed: the preview stays until the new parts come
     /// Told while the part moves or turns, with the pointer's window position.
@@ -1101,13 +1120,25 @@ final class Viewport
         gizmoPart = part;
         gizmoMove = Vec3(0, 0, 0);
         gizmoTurns = null;
+        gizmoScale = Vec3(1, 1, 1);
         hingeAngle = 0;
         auto b = parts[part].bbox;
         gizmoLo = b.min;
         gizmoHi = b.max;
         gizmoCentre = (b.min + b.max) * 0.5;
+        gizmoAnchor = Vec3(gizmoCentre.x, gizmoCentre.y, b.min.z);
         keepPreview = false;
         gizmoGrab = gizmoHover = -1;
+        makeRoom();
+        redraw();
+    }
+
+    /// The scale gizmo's part previewed scaled by the factors `f`.
+    public void previewScale(Vec3 f)
+    {
+        if (gizmo != Gizmo.scale)
+            return;
+        gizmoScale = f;
         makeRoom();
         redraw();
     }
@@ -1183,6 +1214,8 @@ final class Viewport
         Vec3[] pts;
         if (gizmo == Gizmo.move)
             pts = gizmoFrame()[] ~ [arrowTip(0), arrowTip(1), arrowTip(2)];
+        else if (gizmo == Gizmo.scale)
+            pts = scaledBox()[] ~ [scaleTip(0), scaleTip(1), scaleTip(2), scaleCorner()];
         else if (gizmo == Gizmo.rotate)
             foreach (k; 0 .. 3)
                 foreach (n; 0 .. 24)
@@ -1252,6 +1285,7 @@ final class Viewport
         {
             gizmoPart = -1;
             hingeAngle = 0;
+            gizmoScale = Vec3(1, 1, 1);
             placeActive = false;
         }
         redraw();
@@ -1272,6 +1306,12 @@ final class Viewport
     private float[16] partMatrix()
     {
         float[16] m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+        // scaled about the anchor, which stays where it is
+        foreach (i; 0 .. 3)
+        {
+            m[i * 4 + i] = cast(float) gizmoScale[i];
+            m[12 + i] = cast(float)(gizmoAnchor[i] * (1 - gizmoScale[i]));
+        }
         foreach (t; gizmoTurns)
         {
             if (t.angle == 0)
@@ -1355,20 +1395,37 @@ final class Viewport
             m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]);
     }
 
-    /// A direction of the previewed part as drawn (turned only), and back.
-    Vec3 placedDir(Vec3 d)
-    {
-        auto m = partMatrix();
-        return Vec3(m[0] * d.x + m[4] * d.y + m[8] * d.z, m[1] * d.x + m[5] * d.y + m[9] * d.z,
-            m[2] * d.x + m[6] * d.y + m[10] * d.z);
-    }
+    /// A direction of the previewed part, from as drawn back to its own.
+    Vec3 unplacedDir(Vec3 d) => inverseApplied(d, false);
 
-    Vec3 unplacedDir(Vec3 d)
+    /// A face normal of the previewed part as drawn: by the inverse
+    /// transpose, so that it stays square to the face when the part is
+    /// scaled more along one axis (the hover mark round it stays round).
+    Vec3 placedNormal(Vec3 n) => inverseApplied(n, true).normalized;
+
+    /// The inverse of the part's 3 by 3 (turned and scaled), by its
+    /// cofactors, applied to `d`; `transposed`: its transpose instead.
+    private Vec3 inverseApplied(Vec3 d, bool transposed)
     {
-        // the turn is a rotation: its inverse is its transpose
         auto m = partMatrix();
-        return Vec3(m[0] * d.x + m[1] * d.y + m[2] * d.z, m[4] * d.x + m[5] * d.y + m[6] * d.z,
-            m[8] * d.x + m[9] * d.y + m[10] * d.z);
+        double a(int row, int col) => m[col * 4 + row];
+        immutable det = a(0, 0) * (a(1, 1) * a(2, 2) - a(1, 2) * a(2, 1)) - a(0, 1) * (a(1, 0) * a(2, 2) - a(1, 2) * a(2, 0))
+            + a(0, 2) * (a(1, 0) * a(2, 1) - a(1, 1) * a(2, 0));
+        if (abs(det) < 1e-12)
+            return d;
+        double inv(int row, int col)
+        {
+            if (transposed)
+            {
+                immutable t = row;
+                row = col;
+                col = t;
+            }
+            immutable r0 = (col + 1) % 3, r1 = (col + 2) % 3, c0 = (row + 1) % 3, c1 = (row + 2) % 3;
+            return (a(r0, c0) * a(r1, c1) - a(r0, c1) * a(r1, c0)) / det;
+        }
+        return Vec3(inv(0, 0) * d.x + inv(0, 1) * d.y + inv(0, 2) * d.z, inv(1, 0) * d.x + inv(1, 1) * d.y + inv(1, 2) * d.z,
+            inv(2, 0) * d.x + inv(2, 1) * d.y + inv(2, 2) * d.z);
     }
 
     Vec3 unplaced(Vec3 p)
@@ -1408,6 +1465,46 @@ final class Viewport
     }
 
     private double ringRadius() => max(8.0, 0.6 * (gizmoHi - gizmoLo).length);
+
+    /// A point of the part's box (unscaled) where the scale puts it.
+    private Vec3 scaledPoint(Vec3 p) => Vec3(gizmoAnchor.x + (p.x - gizmoAnchor.x) * gizmoScale.x,
+        gizmoAnchor.y + (p.y - gizmoAnchor.y) * gizmoScale.y, gizmoAnchor.z + (p.z - gizmoAnchor.z) * gizmoScale.z);
+
+    /// The corners of the scaled box: the bottom four, then the top four.
+    private Vec3[8] scaledBox()
+    {
+        Vec3[8] r;
+        foreach (k; 0 .. 8)
+        {
+            immutable c = k & 3;   // round the bottom, then the top
+            r[k] = scaledPoint(Vec3(c == 1 || c == 2 ? gizmoHi.x : gizmoLo.x, c >= 2 ? gizmoHi.y : gizmoLo.y,
+                k >= 4 ? gizmoHi.z : gizmoLo.z));
+        }
+        return r;
+    }
+
+    /// The middle of the scaled box.
+    private Vec3 scaleFoot() => scaledPoint(gizmoCentre);
+
+    /// How far past the box the handles reach (mm).
+    private double scaleReach() => max(6.0, 0.25 * (gizmoHi - gizmoLo).length);
+
+    /// The knob of the handle along axis a: past the scaled box's side, out
+    /// from its middle; it follows the side as the part stretches.
+    private Vec3 scaleTip(int a)
+    {
+        auto p = scaleFoot();
+        p[a] = scaledPoint(gizmoHi)[a] + scaleReach();
+        return p;
+    }
+
+    /// The uniform knob: past the scaled box's top corner, away from the anchor.
+    private Vec3 scaleCorner()
+    {
+        auto c = scaledPoint(gizmoHi);
+        auto d = c - gizmoAnchor;
+        return d.length > 1e-9 ? c + d.normalized * (0.5 * scaleReach()) : c + Vec3(1, 1, 1) * scaleReach();
+    }
 
     /// The point of ring k (about axis k, through the centre) at angle a (degrees).
     private Vec3 ringPoint(int k, double a)
@@ -1486,6 +1583,29 @@ final class Viewport
             }
             return inside ? 0 : -1;
         }
+        if (gizmo == Gizmo.scale)
+        {
+            // the knobs first, the corner's before the axes', then the shafts
+            if (onKnob(scaleCorner()))
+                return 0;
+            foreach (a; 0 .. 3)
+                if (onKnob(scaleTip(a)))
+                    return a + 1;
+            int best = -1;
+            double bestD = handlePixels;
+            foreach (a; 0 .. 3)
+            {
+                immutable d = near([scaleFoot(), scaleTip(a)]);
+                if (d <= bestD)
+                {
+                    bestD = d;
+                    best = a + 1;
+                }
+            }
+            if (best < 0 && near([gizmoAnchor, scaleCorner()]) <= handlePixels)
+                best = 0;
+            return best;
+        }
         if (gizmo == Gizmo.hinge)
             return onKnob(hingePoint(45 + hingeAngle)) || near(hingeRing()) < handlePixels + 1 ? 1 : -1;
         if (gizmo == Gizmo.rotate)
@@ -1533,6 +1653,9 @@ final class Viewport
     private void grabGizmo(double x, double y)
     {
         grabMove = gizmoMove;
+        grabScale = gizmoScale;
+        if (gizmo == Gizmo.scale && gizmoGrab > 0)
+            grabPoint = scaleTip(gizmoGrab - 1);   // where the drag is measured from: the knob as grabbed
         if (gizmo == Gizmo.move && gizmoGrab == 0)
             onFloor(x, y, gizmoLo.z + gizmoMove.z, grabPoint);
         if (gizmo == Gizmo.hinge)
@@ -1563,9 +1686,60 @@ final class Viewport
         return abs(v - s) <= pull ? s : whole;
     }
 
+    /// A factor in steps of 0.05 (Shift: 0.01), never below one step.
+    static double scaleStep(double f, bool free)
+    {
+        import std.math : round;
+        immutable step = free ? 0.01 : 0.05;
+        return max(step, round(f / step) * step);
+    }
+
+    /// How far (mm) the pointer went along direction `dir` from `foot`, as seen.
+    private double alongOnScreen(Vec3 foot, Vec3 dir, double dx, double dy)
+    {
+        immutable step = 50 * mmPerPixelAt(foot);
+        double ax, ay, bx, by;
+        if (project(foot, ax, ay) && project(foot + dir * step, bx, by) && (bx - ax) ^^ 2 + (by - ay) ^^ 2 > 25)
+            return (dx * (bx - ax) + dy * (by - ay)) / ((bx - ax) ^^ 2 + (by - ay) ^^ 2) * step;
+        return -dy * mmPerPixelAt(foot);
+    }
+
     private void dragGizmo(double x, double y, double dx, double dy, bool free)
     {
-        if (gizmo == Gizmo.move && gizmoGrab == 0)
+        if (gizmo == Gizmo.scale)
+        {
+            if (gizmoGrab == 0)
+            {
+                // the corner: all three alike, as far as it went along the
+                // diagonal from the anchor, against how long that diagonal is
+                auto d = Vec3((gizmoHi.x - gizmoAnchor.x) * grabScale.x, (gizmoHi.y - gizmoAnchor.y) * grabScale.y,
+                    (gizmoHi.z - gizmoAnchor.z) * grabScale.z);
+                if (d.length > 1e-9)
+                {
+                    immutable k = 1 + alongOnScreen(gizmoAnchor + d, d.normalized, dx, dy) / d.length;
+                    if (grabScale.x == grabScale.y && grabScale.y == grabScale.z)
+                        gizmoScale = Vec3(1, 1, 1) * scaleStep(grabScale.x * k, free);
+                    else
+                    {
+                        immutable ks = scaleStep(k, free);
+                        gizmoScale = grabScale * ks;
+                    }
+                }
+            }
+            else
+            {
+                // a handle: its side follows the pointer along the axis
+                immutable a = gizmoGrab - 1;
+                immutable half = gizmoHi[a] - gizmoAnchor[a];
+                if (half > 1e-9)
+                {
+                    auto m = grabScale;
+                    m[a] = scaleStep(grabScale[a] + alongOnScreen(grabPoint, axes[a], dx, dy) / half, free);
+                    gizmoScale = m;
+                }
+            }
+        }
+        else if (gizmo == Gizmo.move && gizmoGrab == 0)
         {
             Vec3 p;
             Vec3 raw;
@@ -1666,6 +1840,29 @@ final class Viewport
                 drawPolyline([arrowFoot(), arrowTip(a)], c, live(a + 1) ? 4 : 2.5);
                 drawKnob(arrowTip(a), c, live(a + 1) ? handlePixels + 2 : handlePixels);
             }
+            return;
+        }
+        if (gizmo == Gizmo.scale)
+        {
+            // the scaled box, the handles out of its middle, the corner's
+            // knob on the diagonal from the anchor: in a colour none of the
+            // axes has, whichever stands out on the part
+            immutable orange = gizmoPart >= 0 && gizmoPart < parts.length
+                ? standOut(parts[gizmoPart].rgb, Vec3(0.8, 0.25, 0.85), Vec3(0.95, 0.7, 0.1), 0.32) : Vec3(0.8, 0.25, 0.85);
+            auto b = scaledBox();
+            drawPolyline([b[0], b[1], b[2], b[3], b[0]], orange, 1.5);
+            drawPolyline([b[4], b[5], b[6], b[7], b[4]], orange, 1.5);
+            foreach (k; 0 .. 4)
+                drawPolyline([b[k], b[k + 4]], orange, 1.5);
+            foreach (a; 0 .. 3)
+            {
+                auto c = lit(axisColours[a], live(a + 1));
+                drawPolyline([scaleFoot(), scaleTip(a)], c, live(a + 1) ? 4 : 2.5);
+                drawKnob(scaleTip(a), c, live(a + 1) ? handlePixels + 2 : handlePixels);
+            }
+            drawPolyline([scaledPoint(gizmoHi), scaleCorner()], lit(orange, live(0)), live(0) ? 4 : 2.5);
+            drawKnob(scaleCorner(), lit(orange, live(0)), live(0) ? handlePixels + 3 : handlePixels + 1);
+            drawKnob(gizmoAnchor, Vec3(0.55, 0.57, 0.6), handlePixels - 3);   // what stays where it is
             return;
         }
         if (gizmo == Gizmo.hinge)
@@ -2002,11 +2199,31 @@ final class Viewport
         redraw();
     }
 
-    void setSketchMode(bool on)
+    /// Draws the sketches `which` (indices in what setSketches gave) over the
+    /// model, with their free points in blue; `highlight[k]` are entities of
+    /// sketch which[k] drawn in orange (what an inspected line made or
+    /// constrains). Nothing: no sketch drawn.
+    void showSketches(size_t[] which, size_t[][] highlight = null)
     {
-        sketchMode = on;
+        shownSketches = null;
+        litEntities = null;
+        foreach (k, i; which)
+        {
+            if (i >= sketches.length)
+                continue;
+            shownSketches ~= i;
+            bool[size_t] lit;
+            if (k < highlight.length)
+                foreach (e; highlight[k])
+                    lit[e] = true;
+            litEntities ~= lit;
+        }
+        sketchDirty = true;
         redraw();
     }
+
+    /// Whether a sketch is drawn.
+    bool sketchShown() const => shownSketches.length > 0;
 
     /// Window coordinates of a model point; false when behind the camera.
     bool project(Vec3 p, out double x, out double y)
@@ -2458,14 +2675,16 @@ private:
                 w = max(w, abs(c.dot(b.right)));
                 h = max(h, abs(c.dot(b.up)));
             }
-            distance = max(h, w / aspect) / tan(fovy / 2) * 1.08;
+            distance = max(h, w / aspect) / tan(fovy / 2) * 1.08 * fitRoom;
+            fitRoom = 1;
             return;
         }
         immutable radius = max(1.0, (hi - lo).length / 2);
         // the sphere around the parts in the narrower of the vertical and
         // horizontal fields of view
         immutable fov = min(fovy, 2 * atan(tan(fovy / 2) * aspect));
-        distance = radius / sin(fov / 2) * 1.02;
+        distance = radius / sin(fov / 2) * 1.02 * fitRoom;
+        fitRoom = 1;
     }
 
     void realize()
@@ -3008,8 +3227,8 @@ private:
             return true;
         }
 
-        // in sketch mode the parts are see-through so the sketch shows
-        immutable ghost = sketchMode && sketches.length;
+        // with a sketch shown the parts are see-through so the sketch shows
+        immutable ghost = sketchShown;
         if (ghost)
         {
             glEnable(GL_BLEND);
@@ -3324,7 +3543,7 @@ private:
         glUniform1i(uClipOn, 0);
         if (section)
             drawSectionOutline();
-        if (!sketchMode || sketches.length == 0)
+        if (!sketchShown)
             return;
         if (sketchDirty)
             uploadSketches();
@@ -3340,29 +3559,41 @@ private:
         glLineWidth(1);
         glUniform3f(uColor, 0.55f, 0.6f, 0.7f);
         glDrawArrays(GL_LINES, sketchRanges[0], sketchRanges[1] - sketchRanges[0]);
+        // what the inspected line made or constrains, in Inspect's orange
+        glLineWidth(4);
+        glUniform3f(uColor, 1.0f, 0.55f, 0.05f);
+        glDrawArrays(GL_LINES, sketchRanges[1], sketchRanges[2] - sketchRanges[1]);
+        glLineWidth(1);
         glPointSize(8);
         // blue points can still move, black ones are fully constrained
         glUniform3f(uColor, 0.15f, 0.45f, 0.95f);
-        glDrawArrays(GL_POINTS, sketchRanges[1], sketchRanges[2] - sketchRanges[1]);
+        glDrawArrays(GL_POINTS, sketchRanges[2], sketchRanges[3] - sketchRanges[2]);
         if (darkStyle)
             glUniform3f(uColor, 0.92f, 0.92f, 0.95f);
         else
             glUniform3f(uColor, 0.05f, 0.05f, 0.08f);
-        glDrawArrays(GL_POINTS, sketchRanges[2], sketchRanges[3] - sketchRanges[2]);
+        glDrawArrays(GL_POINTS, sketchRanges[3], sketchRanges[4] - sketchRanges[3]);
+        glPointSize(11);
+        glUniform3f(uColor, 1.0f, 0.55f, 0.05f);
+        glDrawArrays(GL_POINTS, sketchRanges[4], sketchRanges[5] - sketchRanges[4]);
         glPointSize(1);
         glEnable(GL_DEPTH_TEST);
     }
 
     void uploadSketches()
     {
-        float[] lines, construction, freePts, fixedPts;
+        float[] lines, construction, litLines, freePts, fixedPts, litPts;
         void add(ref float[] a, Vec3 v)
         {
             a ~= [cast(float) v.x, cast(float) v.y, cast(float) v.z];
         }
 
-        foreach (sk; sketches)
+        foreach (s, index; shownSketches)
         {
+            if (index >= sketches.length)
+                continue;
+            auto sk = sketches[index];
+            auto lit = litEntities[s];
             foreach (g; sk.segments)
             {
                 Vec3[] pts;
@@ -3380,24 +3611,34 @@ private:
                             a1 += 2 * PI;
                     }
                     immutable n = 48;
+                    // an ellipse: r along its own x axis, turned by g.angle, r2 across
+                    immutable r2 = g.kind == 3 ? g.r2 : g.r;
+                    immutable ux = Vec3(cos(g.angle), sin(g.angle), 0), uy = Vec3(-sin(g.angle), cos(g.angle), 0);
                     foreach (k; 0 .. n + 1)
                     {
                         immutable t = a0 + (a1 - a0) * k / n;
-                        pts ~= g.c + Vec3(g.r * cos(t), g.r * sin(t), 0);
+                        pts ~= g.c + ux * (g.r * cos(t)) + uy * (r2 * sin(t));
                     }
                 }
-                foreach (k; 0 .. pts.length - 1)
+                // a fillet's arc stands out with its corner point
+                immutable on = (g.entity >= 0 && (cast(size_t) g.entity in lit) !is null)
+                    || (g.corner >= 0 && (cast(size_t) g.corner in lit) !is null);
+                foreach (j; 0 .. pts.length - 1)
                 {
-                    add(g.construction ? construction : lines, pts[k]);
-                    add(g.construction ? construction : lines, pts[k + 1]);
+                    add(on ? litLines : g.construction ? construction : lines, pts[j]);
+                    add(on ? litLines : g.construction ? construction : lines, pts[j + 1]);
                 }
             }
             foreach (p; sk.points)
-                add(p.free ? freePts : fixedPts, p.pos);
+                add((p.entity in lit) !is null ? litPts : p.free ? freePts : fixedPts, p.pos);
         }
-        auto all = lines ~ construction ~ freePts ~ fixedPts;
-        sketchRanges = [cast(int)(lines.length / 3), cast(int)((lines.length + construction.length) / 3),
-            cast(int)((lines.length + construction.length + freePts.length) / 3), cast(int)(all.length / 3)];
+        auto all = lines ~ construction ~ litLines ~ freePts ~ fixedPts ~ litPts;
+        int end = 0;
+        foreach (i, part; [lines, construction, litLines, freePts, fixedPts, litPts])
+        {
+            end += cast(int)(part.length / 3);
+            sketchRanges[i] = end;
+        }
         positionBuffer(sketchVao, sketchVbo, all);
         glBindVertexArray(0);
         sketchDirty = false;
@@ -3762,7 +4003,7 @@ private:
                     auto a = vtx(p.indices[t * 3]), b = vtx(p.indices[t * 3 + 1]), c = vtx(p.indices[t * 3 + 2]);
                     best.normal = (b - a).cross(c - a).normalized;
                     if (moved)
-                        best.normal = placedDir(best.normal);
+                        best.normal = placedNormal(best.normal);
                 }
             }
         }

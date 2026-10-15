@@ -312,9 +312,11 @@ mixin template ControlMethods()
             }
         case "transform":
             {
-                // {"part": "lid", "move": [10, 0, 0]} or {"part": "lid", "rotate": {"axis": "z", "angle": 45}}:
-                // the code Move… and Rotate… write (a turn is about the middle of the part's box);
-                // {"part": "lid", "show": "move"} shows the frame (rotate: the rings), "none" takes it away
+                // {"part": "lid", "move": [10, 0, 0]}, {"part": "lid", "rotate": {"axis": "z", "angle": 45}} or
+                // {"part": "lid", "scale": 1.5} ([1, 1, 2]: a factor each): the code Move…, Rotate… and Scale…
+                // write (a turn is about the middle of the part's box, a scale about the middle of its bottom);
+                // {"part": "lid", "show": "move"} shows the frame (rotate: the rings, scale: the handles,
+                // previewed scaled by "scale" when given), "none" takes it away
                 whenIdle(() {
                     auto name = arg("part");
                     int index = -1;
@@ -336,12 +338,30 @@ mixin template ControlMethods()
                     {
                         if (show == "none")
                             cancelTransform();
-                        else if (show == "move" || show == "rotate")
-                            startTransform(show == "move" ? Viewport.Gizmo.move : Viewport.Gizmo.rotate, index);
+                        else if (show == "move" || show == "rotate" || show == "scale")
+                        {
+                            startTransform(show == "move" ? Viewport.Gizmo.move : show == "scale" ? Viewport.Gizmo.scale
+                                : Viewport.Gizmo.rotate, index);
+                            // scale with factors: previewed so, for the user to drag on and confirm
+                            if (show == "scale" && has("scale") && viewport.gizmo == Viewport.Gizmo.scale)
+                            {
+                                auto q = p["scale"];
+                                Vec3 f = Vec3(1, 1, 1);
+                                if (q.type == JSONType.array && q.array.length == 3)
+                                    foreach (i; 0 .. 3)
+                                        f[i] = numberOf(q[i]);
+                                else
+                                    f = Vec3(1, 1, 1) * numberOf(q);
+                                if (f.x <= 0 || f.y <= 0 || f.z <= 0)
+                                    return reply(JSONValue.init, "scale factors must be positive");
+                                viewport.previewScale(f);
+                                transformValue.setLabel(transformText());
+                            }
+                        }
                         else if (show == "hinge" && hasAxis && hingeAlong.length > 0)
                             startHinge(index, hingeAt, hingeAlong, "the axis");
                         else
-                            return reply(JSONValue.init, "show is move, rotate, hinge (with origin and direction) or none");
+                            return reply(JSONValue.init, "show is move, rotate, scale, hinge (with origin and direction) or none");
                         return reply(state(), null);
                     }
                     // Place on…: {"place": {"from": […], "from_normal": […], "to": […], "to_normal": […], "spin": 0}}
@@ -389,7 +409,27 @@ mixin template ControlMethods()
                     }
                     string kind;
                     Vec3 v;
-                    if (has("move"))
+                    Vec3 around = last.parts[index].bbox.center;
+                    if (has("scale"))
+                    {
+                        kind = "scale";
+                        auto q = p["scale"];
+                        if (q.type == JSONType.array && q.array.length == 3)
+                            foreach (i; 0 .. 3)
+                                v[i] = numberOf(q[i]);
+                        else if (q.type == JSONType.integer || q.type == JSONType.uinteger || q.type == JSONType.float_)
+                            v = Vec3(1, 1, 1) * numberOf(q);
+                        else
+                            return reply(JSONValue.init, "scale is a factor, or [x, y, z] factors");
+                        if (v.x <= 0 || v.y <= 0 || v.z <= 0)
+                            return reply(JSONValue.init, "scale factors must be positive");
+                        if (v.x == 1 && v.y == 1 && v.z == 1)
+                            return reply(JSONValue.init, "a scale of 1 changes nothing");
+                        // the middle of the bottom of its box stays where it is
+                        auto b = last.parts[index].bbox;
+                        around = Vec3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, b.min.z);
+                    }
+                    else if (has("move"))
                     {
                         kind = "move";
                         if (p["move"].type != JSONType.array || p["move"].array.length != 3)
@@ -408,9 +448,9 @@ mixin template ControlMethods()
                         v[axis] = numberOf(r["angle"]);
                     }
                     else
-                        return reply(JSONValue.init, "give move, rotate or show");
+                        return reply(JSONValue.init, "give move, rotate, scale or show");
                     cancelTransform();
-                    if (auto problem = writeTransform(index, kind, v, last.parts[index].bbox.center))
+                    if (auto problem = writeTransform(index, kind, v, around))
                         return reply(JSONValue.init, problem);
                     whenIdle(() => reply(state(), null));
                 });
@@ -565,14 +605,42 @@ mixin template ControlMethods()
                 return;
             }
         case "sketch":
-            // {"on": true}: show the sketches with their dimensions; the reply lists them
-            sketchToggle.setActive("on" !in p || p["on"].type != JSONType.false_);
-            whenIdle(() {
-                auto r = state();
-                r["sketches"] = sketchesJson();
-                reply(r, null);
-            });
-            return;
+            // {"line": 52, "to_line": 54}: the sketch those lines belong to, what they make or constrain in
+            // orange (as Inspect on them, without the solids); {"on": true} or nothing: the first sketch;
+            // {"on": false}: none. The reply lists the sketches, and state's sketch tells the one shown
+            {
+                immutable hide = "on" in p && p["on"].type == JSONType.false_;
+                whenIdle(() {
+                    // on the latest evaluation
+                    if (hide)
+                    {
+                        // a sketch shown on its own goes with its Inspect; over a step or a solid, alone
+                        if (viewport.inInspect && inspectShown.length == 0)
+                            showFinal();
+                        else
+                            hideSketch();
+                    }
+                    else if (has("line"))
+                    {
+                        immutable from = cast(uint) p["line"].get!long;
+                        immutable to = has("to_line") ? max(from, cast(uint) p["to_line"].get!long) : from;
+                        if (!inspectSketch(from, to, true))
+                            return reply(JSONValue.init, from == to ? format("line %d is not part of a sketch", from)
+                                : format("lines %d–%d are not part of a sketch", from, to));
+                    }
+                    else
+                    {
+                        if (last.sketches.length == 0)
+                            return reply(JSONValue.init, "the model has no sketch");
+                        auto first = last.sketches[0].span.line;
+                        inspectSketch(first, first, false);
+                    }
+                    auto r = state();
+                    r["sketches"] = sketchesJson();
+                    reply(r, null);
+                });
+                return;
+            }
         case "step":
             {
                 // {"row": 3}: a row of the Steps panel clicked (0-based, as state's steps lists them)
@@ -608,7 +676,8 @@ mixin template ControlMethods()
             }
         case "inspect":
             {
-                // {"line": 12, "to_line": 20} or {"function": "lever"}: what that code made; nothing: back to the model
+                // {"line": 12, "to_line": 20} or {"function": "lever"}: what that code made (on lines of a sketch,
+                // the sketch with what they make or constrain); nothing: back to the model
                 if (!has("line") && !has("function"))
                 {
                     stopInspect();
@@ -636,8 +705,9 @@ mixin template ControlMethods()
                     immutable from = cast(uint) p["line"].get!long;
                     immutable to = has("to_line") ? cast(uint) p["to_line"].get!long : from;
                     if (!inspectLines(from, max(from, to), -1))
-                        return reply(JSONValue.init, from == to ? format("line %d made no solid, profile or path", from)
-                            : format("lines %d–%d made no solid, profile or path", from, to));
+                        return reply(JSONValue.init, from == to
+                            ? format("line %d made no solid, profile or path and is not part of a sketch", from)
+                            : format("lines %d–%d made no solid, profile or path and are not part of a sketch", from, to));
                     whenIdle(() => reply(state(), null));
                 });
                 return;
@@ -658,6 +728,7 @@ mixin template ControlMethods()
                         id = cast(uint)(i + 1);
                 if (id == 0)
                     return reply(JSONValue.init, format("no feature on line %d", line));
+                showSketchOn(line, line, false);   // as its step does: a sketch's, with the sketch
                 rollTo(id);
                 whenIdle(() => reply(state(), null));
                 return;

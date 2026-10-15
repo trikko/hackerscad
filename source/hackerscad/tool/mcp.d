@@ -624,7 +624,7 @@ JSONValue[] toolList()
     enum partsProp = `"parts": {"type": "array", "items": {"type": "string"}, "description": "Only these parts, by `
         ~ `function name or @part(name:); default every part but the export: false ones."}`;
 
-    // the Examples menu's models: "bagclip (Bag clip), cup (...)" and their names in JSON
+    // the Examples menu's models: "carlo (Carlo), cup (...)" and their names in JSON
     auto exampleList = examples.map!(e => e.name ~ " (" ~ e.label ~ ")").join(", ");
     auto exampleEnum = examples.map!(e => `"` ~ e.name ~ `"`).join(", ");
 
@@ -795,21 +795,25 @@ JSONValue[] toolList()
             ~ "(an example, the user's model) would save over it as they try things.",
             `"path": {"type": "string"}, "code": {"type": "string"}, "copy": {"type": "string"}, `
             ~ `"name": {"type": "string", "description": "letters, digits and dashes"}`),
-        gui("hcad_gui_transform", "Move or turn a part of the user's model, as Move… and Rotate… in the 3D view's "
-            ~ "right-click menu: the code is written at the end of the part's chain (a .move() or .rotate() already "
-            ~ "there is changed instead). move: [x, y, z] in mm; rotate: {axis, angle in degrees}, about the middle of "
-            ~ "the part's box. hinge: degrees about the axis through origin [x, y, z] (mm) along direction "
-            ~ "[x, y, z], as Rotate around its normal / this edge (written as .rotate(30.deg, Y, around: …)). show: move or "
-            ~ "rotate shows the frame or the rings on the part for the user to drag, hinge (with origin and direction) "
+        gui("hcad_gui_transform", "Move, turn or scale a part of the user's model, as Move…, Rotate… and Scale… in the "
+            ~ "3D view's right-click menu: the code is written at the end of the part's chain (a .move(), .rotate() or "
+            ~ ".scale() already there is changed instead). move: [x, y, z] in mm; rotate: {axis, angle in degrees}, about "
+            ~ "the middle of the part's box; scale: a factor, or [x, y, z] factors, about the middle of the bottom of the "
+            ~ "part's box (a part on the ground stays on it; written as .scale(1.5) or .scale(x: 1, y: 1, z: 2), with "
+            ~ "around: when that point is not the origin). hinge: degrees about the axis through origin [x, y, z] (mm) along direction "
+            ~ "[x, y, z], as Rotate around its normal / this edge (written as .rotate(30.deg, Y, around: …)). show: move, "
+            ~ "rotate or scale shows the frame, the rings or the scale handles on the part for the user to drag (scale with show "
+            ~ "scale: previewed with those factors, for the user to adjust and confirm), hinge (with origin and direction) "
             ~ "one ring about that axis (none takes them away), writing nothing. place: {from, from_normal, to, "
             ~ "to_normal, spin} as Place on…: the part turned so the face of outward normal from_normal lies against the "
             ~ "surface of outward normal to_normal, the point from on the point to (corners and middles of faces, or a "
             ~ "point of the ground with to_normal [0, 0, 1]), then spun by spin degrees about to_normal: written as "
             ~ ".placeOn(other().frame(faces…), from: faces…) when both faces are flat (it follows the other part), else as "
             ~ "turns and a move; with show: true "
-            ~ "inside place, previewed with its ring for the user to spin and confirm, writing nothing. A piece of @parts moves or turns "
-            ~ "alone. part: its name (needed with several parts).",
+            ~ "inside place, previewed with its ring for the user to spin and confirm, writing nothing. A piece of @parts moves, turns or "
+            ~ "scales alone. part: its name (needed with several parts).",
             `"part": {"type": "string"}, "move": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
+            ~ `"scale": {"type": ["number", "array"], "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"rotate": {"type": "object", "properties": {"axis": {"type": "string", "enum": ["x", "y", "z"]}, `
             ~ `"angle": {"type": "number"}}, "required": ["axis", "angle"]}, `
             ~ `"place": {"type": "object", "properties": {"from": {"type": "array", "items": {"type": "number"}}, `
@@ -817,7 +821,7 @@ JSONValue[] toolList()
             ~ `"to_normal": {"type": "array", "items": {"type": "number"}}, "spin": {"type": "number"}, "show": {"type": "boolean"}}}, `
             ~ `"hinge": {"type": "number"}, "origin": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"direction": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
-            ~ `"show": {"type": "string", "enum": ["move", "rotate", "hinge", "none"]}`, `[]`),
+            ~ `"show": {"type": "string", "enum": ["move", "rotate", "scale", "hinge", "none"]}`, `[]`),
         gui("hcad_gui_colour", "Colour a part of the user's model, as Colour in the 3D view's right-click menu: "
             ~ "the colour is written as the first argument of the part's @part (alpha:, name: and export: stay). "
             ~ "colour: one of hackerscad's own colours (bright, alike in brightness under the view's light; Sky Pop "
@@ -869,13 +873,25 @@ JSONValue[] toolList()
             ~ "are shown filled and hatched; on: false removes it.",
             `"plane": {"type": "string", "enum": ["xy", "xz", "yz", "face"]}, "at": {"type": "number"}, `
             ~ `"flip": {"type": "boolean"}, "on": {"type": "boolean"}`, `[]`),
-        gui("hcad_gui_sketch", "Show (on: true) or hide the sketches in the user's 3D view, with their dimensions and the "
-            ~ "points that can still move in blue. The reply lists the sketches: solved, degrees_of_freedom, "
+        gui("hcad_gui_sketch", "Show a sketch in the user's 3D view, seen from above, with its dimensions (the user "
+            ~ "can click them to change them) and the points that can still move in blue, as selecting its step or "
+            ~ "inspecting one of its lines does. line (to to_line) is any line of a sketch: the sketch() call, its "
+            ~ ".profile, an s.point/line/arc/circle/ellipse/polyline/rect/polygon/slot call or a constraint call; what "
+            ~ "those lines make, and the entities "
+            ~ "their constraints involve (and their dimensions), are drawn in orange. Without line, the first sketch "
+            ~ "whole; on: false hides it (Esc, or hcad_gui_rollback with {}, also does). The reply's sketch tells "
+            ~ "the one shown: degrees_of_freedom, free_points (line, x, y) and, for a line, made (the entities it "
+            ~ "makes: id, kind (point, line, arc, circle or ellipse), line; a shape such as s.rect makes several, "
+            ~ "with their constraints), constraints (kind: the method, e.g. tangent, concentric, horizontal; line, "
+            ~ "the entity ids they involve, their dimension) and "
+            ~ "highlighted (every entity in orange). sketches lists all of them: solved, degrees_of_freedom, "
             ~ "free_points, and the dimensions with their label, the line and col of their value in the code, the value "
-            ~ "and conflicting when the constraints disagree.", `"on": {"type": "boolean"}`, `[]`),
+            ~ "and conflicting when the constraints disagree.",
+            `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "on": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
             ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "
-            ~ "several times, every run), what a value row made, or what a function returns. row is 0-based, in the "
+            ~ "several times, every run), what a value row made, or what a function returns; the step of a sketch "
+            ~ "(or of what its .profile made on that line) also shows the sketch, as hcad_gui_sketch. row is 0-based, in the "
             ~ "order of the steps list of hcad_gui_state with source: true; headings are not rows to click. "
             ~ "hcad_gui_rollback with {} (or Esc) goes back to the final model.",
             `"row": {"type": "integer"}`, `["row"]`),
@@ -888,8 +904,12 @@ JSONValue[] toolList()
         gui("hcad_gui_inspect", "Show in the user's 3D view what a line of code made (Inspect): the solids, 2D profiles "
             ~ "(where they were drawn, before being extruded or placed) and paths of its calls in orange, the final parts "
             ~ "as ghosts. line to to_line covers several lines; function shows what that function returns. On the line "
-            ~ "declaring a function, what it returns. Without arguments, back to the final model. Returns the state, "
-            ~ "whose inspect lists the items shown (line, function, kind, calls, bounding box).",
+            ~ "declaring a function, what it returns. On the lines of a sketch (the sketch() call, .profile, "
+            ~ "s.line(…), s.ellipse(…), s.rect(…), s.tangent(…)…) the sketch is shown too, with what they make or "
+            ~ "constrain in orange. "
+            ~ "Without arguments, back to the final model. Returns the state, whose inspect lists the items shown "
+            ~ "(line, function, kind, calls, bounding box) and, on a sketch's lines, sketch: the entities and "
+            ~ "constraints highlighted, as hcad_gui_sketch tells them.",
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "function": {"type": "string"}`, `[]`),
         gui("hcad_gui_export", "Export the model open in the user's window, with the parameters and preset set "
             ~ "there, to 'path': .3mf (one object per part, colours), .stl (one part), .zip (one STL per part), "

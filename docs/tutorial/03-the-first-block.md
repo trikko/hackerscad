@@ -9,8 +9,8 @@ that holds the water.
 ## A new model
 
 1. Click the New button, the first at the top left, or press Ctrl+N. A new
-   model appears, a few lines that make a cube with two holes across it: a
-   start to change into your own.
+   model appears, a few lines that make Carlo: a start to replace with your
+   own.
 2. Select all its code (Ctrl+A) and type, or paste, these lines in its place:
 
    ```d
@@ -44,8 +44,10 @@ The view shows a block at once. What the lines say:
 The tank should have round corners. You do not need to know how to write
 that: select the corners and ask.
 
-1. Click one of the upright edges of the block. It turns orange, and the line
-   of code that made it is highlighted in the editor.
+1. In the view bar, click the button that picks **edges**, the third of the
+   four (or press Alt+3): a click now picks an edge, not a face. Click one of
+   the upright edges of the block. It turns orange, and the line of code that
+   made it is highlighted in the editor.
 2. Hold Shift and click the other upright edges you can see: Shift+click
    adds to what is selected (Shift+click again to take one away).
 3. The fourth edge is at the back. Drag with the right mouse button to turn

@@ -53,7 +53,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>Faces</dt><dd>A selection of a solid's faces, for shell, draft, frames: faces.top, faces.normal(X)…</dd>
 <dt>Edge</dt><dd>One edge, inside a selector predicate: edges.filter(e =&gt; e.isCircle &amp;&amp; e.radius == 3.mm).</dd>
 <dt>Face</dt><dd>One face, inside a selector predicate: faces.filter(f =&gt; f.center.z &gt; 10.mm).</dd>
-<dt>Sketch</dt><dd>A constrained 2D drawing: points, lines, arcs and constraints; the solver places them, .profile gives the outline.</dd>
+<dt>Sketch</dt><dd>A constrained 2D drawing: points, lines, arcs, circles, ellipses and constraints; the solver places them, .profile gives the outline.</dd>
 <dt>Drawing</dt><dd>A technical sheet (views, sections, dimensions) returned by a @drawing function; exported as PDF, SVG, DXF.</dd>
 <dt>Assembly</dt><dd>Parts placed by their connections (planned).</dd>
 <dt>Color</dt><dd>A colour: "steelblue", "#RRGGBB", "#RRGGBBAA" or rgb(…).</dd>
@@ -145,7 +145,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <section><h2>Transforms</h2><dl>
 <dt>s.move(v: Vec, x: Length, y: Length, z: Length)</dt><dd>Moves: move(x: 10.mm) or move(vec(…)).</dd>
 <dt>s.rotate(angle: Angle, axis: Axis, x: Angle, y: Angle, z: Angle, around: Vec)</dt><dd>Turns about the origin, or about the point given as around:.</dd>
-<dt>s.scale(factor: number, x: number, y: number, z: number)</dt><dd>Scales around the origin: scale(2), or a factor each, scale(x: 2, y: 0.5) (an ellipsoid from a sphere).</dd>
+<dt>s.scale(factor: number, x: number, y: number, z: number, around: Vec)</dt><dd>Scales around the origin, or around the point given as around:.</dd>
 <dt>s.mirror(plane: Plane)</dt><dd>mirror(X): across the plane through the origin with that normal, or any plane.</dd>
 <dt>s.color(color: Color, alpha: 0..1) → Solid</dt><dd>Sets the colour: "steelblue", "#RRGGBB", rgb(…).</dd>
 <dt>s.centered()</dt><dd>Moved so its bounding box is centred on the origin.</dd>
@@ -171,7 +171,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>ellipse(rx: Length, ry: Length) → Profile</dt><dd>An ellipse centred on the origin, rx along X, ry along Y.</dd>
 <dt>circle(r: Length, d: Length) → Profile</dt><dd>A circle centred on the origin.</dd>
 <dt>polygon(points: Vec[], smooth: bool) → Profile</dt><dd>A polygon through the points; smooth: true, a smooth closed curve through them instead.</dd>
-<dt>regularPolygon(n: int, r: Length, d: Length) → Profile</dt><dd>regularPolygon(6, d: 10.mm): d/r through the corners.</dd>
+<dt>regularPolygon(n: int, r: Length, d: Length, fit: string) → Profile</dt><dd>A regular polygon centred on the origin: d/r the circle through its corners, or with fit: "sides" the circle its sides touch.</dd>
 <dt>slot(length: Length, width: Length) → Profile</dt><dd>A stadium along X.</dd>
 <dt>teardrop(r | d: Length, angle: Angle, flat: bool) → Profile</dt><dd>A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.</dd>
 <dt>text(text: string, size: Length, font: string) → Profile</dt><dd>A text outline starting at the origin on the baseline.</dd>
@@ -276,15 +276,23 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.line(p: Point, q: Point) → Line</dt><dd>A line between two points.</dd>
 <dt>sk.arc(center: Point, start: Point, end: Point) → Arc</dt><dd>An arc, counter-clockwise.</dd>
 <dt>sk.polyline(points, closed: bool) → Line[]</dt><dd>Lines through points (vectors become new points).</dd>
+<dt>sk.ellipse(center: Point, rx: Length, ry: Length, angle: Angle) → Ellipse</dt><dd>An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints.</dd>
+<dt>sk.rect(p: Point, q: Point, center: Point, w: Length, h: Length, corner: Length) → Line[]</dt><dd>A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; corner: rounds them.</dd>
+<dt>sk.polygon(center: Point, n: int, r: Length, d: Length, fit: string, angle: Angle) → Line[]</dt><dd>A regular polygon: its n lines, corners on a construction circle of the size given; fit: "sides" makes its sides touch it instead; angle: the direction of the first corner.</dd>
+<dt>sk.slot(p: Point, q: Point, w: Length) → [Line, Arc, Line, Arc]</dt><dd>Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p].</dd>
 <dt>sk.coincident(p: Point, q: Point)</dt><dd>Two points in the same place.</dd>
 <dt>sk.fix(p: Point)</dt><dd>Pins a point.</dd>
-<dt>sk.horizontal(line: Line)</dt><dd>A horizontal line (or two points at the same height).</dd>
+<dt>sk.horizontal(line: Line)</dt><dd>A horizontal line (or two points at the same height, or an ellipse's x axis along X).</dd>
 <dt>sk.vertical(line: Line)</dt><dd>A vertical line.</dd>
-<dt>sk.equal(a, b)</dt><dd>Equal lengths or radii.</dd>
-<dt>sk.tangent(a, b)</dt><dd>Tangent line and circle, or two circles.</dd>
+<dt>sk.equal(a, b)</dt><dd>Equal lengths or radii; s.equal(e): an ellipse as wide as tall.</dd>
+<dt>sk.on(p: Point, curve)</dt><dd>A point on a line, circle, arc or ellipse.</dd>
+<dt>sk.concentric(a, b)</dt><dd>Circles, arcs or ellipses (or a point) round the same centre.</dd>
+<dt>sk.tangent(a, b)</dt><dd>Tangent line and circle, arc or ellipse, or two circles.</dd>
 <dt>sk.midpoint(p: Point, line: Line)</dt><dd>A point in the middle of a line.</dd>
 <dt>sk.symmetric(p: Point, q: Point, line: Line)</dt><dd>Two points symmetric about a line.</dd>
+<dt>sk.radius(c: Circle, v: Length, rx: Length, ry: Length)</dt><dd>Sets a radius (an ellipse's: rx, ry).</dd>
 <dt>sk.diameter(c: Circle, v: Length)</dt><dd>Sets a diameter.</dd>
+<dt>sk.angle(a: Line, b: Line, v: Angle)</dt><dd>The angle between two lines, or of one line or an ellipse from X.</dd>
 <dt>sk.profile → Profile</dt><dd>Solves the sketch and gives its outline.</dd>
 <dt>sk.dof → int</dt><dd>Degrees of freedom left.</dd>
 <dt>sk.solved → bool</dt><dd>Whether the constraints are satisfied.</dd>

@@ -136,7 +136,9 @@ hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, doub
 int hc_path_frame(const hc_shape *path, int at_end, double out[6]);
 
 /* A planar profile from segments of 7 doubles: kind (0 line a→b, 1 arc a→b
- * through m, 2 end of loop), ax ay bx by mx my. Nested loops are holes. */
+ * through m, 2 end of loop, 3 a whole ellipse around a with radii bx along
+ * its x axis, mx radians from X, and by), ax ay bx by mx my. Nested loops are
+ * holes. */
 hc_shape *hc_outline(const double *data, int n);
 
 /* Sweeps a profile (drawn on XY around the origin) along a path; the profile

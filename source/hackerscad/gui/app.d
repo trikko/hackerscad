@@ -108,21 +108,18 @@ else
 
 /// What the window opens on when there is no file: a small model that
 /// shows the main ideas.
-enum startModel = import("00_bagclip.hcad");
+enum startModel = import("00_carlo.hcad");
 
-/// What New starts with: a part in a few lines, to change into one's own.
-enum newModelTemplate = `// An example: replace what is inside body() with your own.
+/// What New starts with: Carlo, to replace with one's own model.
+enum newModelTemplate = `// Delete this and write your own model in its place.
 
 import std.shapes;
+import carlo;
 
 @part
 Solid body()
 {
-    auto cube = box(20.mm, 20.mm, 20.mm, center: true);
-    auto rod = cylinder(d: 14.mm, h: 30.mm, center: true);
-
-    // the cube less (-) the rod, across it twice: two holes
-    return cube - rod.rotate(x: 90) - rod.rotate(y: 90);
+    return carlo();
 }
 `;
 
@@ -500,6 +497,7 @@ struct InspectQuery
     uint from, to;      /// lines (1-based); 0 when a function is shown
     int col = -1;       /// cursor column on a single line (1-based), -1 for none
     string function_;   /// a function's name: what it returns
+    bool sketchOnly;    /// only the sketch the lines belong to, nothing standing out (a step of it)
 }
 
 final class MainWindow
@@ -521,7 +519,7 @@ final class MainWindow
     Box testsDot;         /// over its corner: yellow, not run since the last change; red, one failed
     bool testsNext;       /// the next evaluation runs them
     string statusText;   /// the latest program message (for the control socket)
-    ToggleButton paramsToggle, consoleToggle, codeToggle, viewToggle, rotateMode, panMode, sketchToggle, sectionToggle, inspectToggle;
+    ToggleButton paramsToggle, consoleToggle, codeToggle, viewToggle, rotateMode, panMode, sectionToggle, inspectToggle;
     Box sectionBar, viewBar;
     DropDown sectionPlane;
     Scale sectionSlider;
@@ -539,6 +537,13 @@ final class MainWindow
     Overlay overlay;
     Button[] dimButtons;
     SketchView.Dimension[] dims;
+    // the sketch drawn over the view: the one of the step selected or of the
+    // inspected line, with its dimensions, its free points and what the line
+    // makes or constrains in orange
+    uint[2] sketchLines;          /// the lines it was asked for (0 when none is shown)
+    bool sketchHighlight;         /// what those lines make stands out (Inspect; not a step)
+    size_t[] sketchIndices;       /// in last.sketches (a sketch made in a loop or a function called again: every run)
+    SketchView.Found[] sketchFound;   /// what the lines make in each
     bool positionQueued;
     Evaluator evaluator;
     ControlServer control;
@@ -600,15 +605,6 @@ final class MainWindow
         // ---- toolbar above the 3D view: views, navigation, section, sketches
         viewBar = new Box(Orientation.Horizontal, 6);
         viewBar.addCssClass("hcad-viewbar");
-        sketchToggle = toggle("document-edit-symbolic",
-            "Show the sketches and their dimensions: blue points can still move, click a dimension to change it", false);
-        sketchToggle.connectToggled(() {
-            viewport.setSketchMode(sketchToggle.getActive());
-            if (sketchToggle.getActive() && last.sketches.length)
-                viewport.setView(ViewPreset.top);
-            updateDimensions();
-        });
-        sketchToggle.setVisible(false);
         sectionToggle = toggle("hcad-section-symbolic", "Section view: cut the model with a plane you can slide", false);
         sectionToggle.connectToggled(() {
             sectionBar.setVisible(sectionToggle.getActive());
@@ -654,6 +650,7 @@ final class MainWindow
             auto css = new CssProvider;
             css.loadFromString("button.hcad-dimension { padding: 1px 5px; min-height: 0; min-width: 0; font-size: 0.85em;"
                 ~ " border-radius: 4px; }"
+                ~ " button.hcad-dimension-lit { background-color: rgb(255, 140, 13); color: black; }"
                 // a parameter's ↺, no taller than its label
                 ~ " button.hcad-param-reset { min-height: 0; min-width: 0; padding: 0 4px; margin: 0; }"
                 ~ " .hcad-progress { padding: 10px 10px 10px 16px; }"
@@ -790,8 +787,7 @@ final class MainWindow
         viewBar.append(displayMenu);
         viewBar.append(sectionToggle);
         viewBar.append(inspectToggle);
-        viewBar.append(sketchToggle);
-        foreach (b; [rotateMode, panMode, sectionToggle, inspectToggle, sketchToggle])
+        foreach (b; [rotateMode, panMode, sectionToggle, inspectToggle])
             b.addCssClass("flat");
 
         // ---- editor
@@ -1004,9 +1000,11 @@ final class MainWindow
             inspectQuery = InspectQuery.init;   // a feature row: back to the final model after a run
             showInspected(distinct(made), format("line %d · %s", made[0].site.line,
                 made[0].decl.file.length ? made[0].fn ~ "()" : made[0].fn), false);
+            showSketchOn(made[0].site.line, made[0].site.line, false);
         };
         stepsPanel.onReturns = (FunctionInfo fn) {
             jumpTo(fn.nameSpan, "");
+            hideSketch();
             inspectFunction(fn);
         };
         // Esc in the view closes Inspect
@@ -1025,7 +1023,7 @@ final class MainWindow
                     cancelTransform();
                     return true;
                 }
-                if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback))
+                if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback || sketchIndices.length))
                 {
                     showFinal();
                     return true;
@@ -1115,11 +1113,14 @@ final class MainWindow
             left.setVisible(leftShown);
             right.setVisible(rightShown);
         }
-        foreach (t; [codeToggle, consoleToggle, viewToggle, paramsToggle])
+        // a function per button: a closure made in a loop body would share
+        // the loop's variable, and every button would pass the last one
+        void watch(ToggleButton b)
         {
-            auto b = t;
             b.connectToggled(() => updatePanes(b));
         }
+        foreach (t; [codeToggle, consoleToggle, viewToggle, paramsToggle])
+            watch(t);
         viewport.area.setSizeRequest(320, 240);
 
         auto main = mainPaned = new Paned(Orientation.Horizontal);
@@ -1239,7 +1240,7 @@ final class MainWindow
             keys.connectKeyPressed((uint key, uint code, ModifierType state) {
                 if (inspectKeys.canFind(key))
                     updateEditorCursor(true);
-                else if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback))
+                else if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback || sketchIndices.length))
                 {
                     showFinal();
                     return true;
@@ -1643,18 +1644,24 @@ private:
             import std.string : splitLines;
             stepsPanel.update(o.features, o.trace, o.functions, path, text().splitLines);
         }
+        viewport.setSketches(o.sketches);
+        // the sketch shown stays (a dimension was changed): of the same lines, in the new model
+        immutable sketchWas = sketchLines;
+        immutable sketchLit = sketchHighlight;
         // Inspect shows what the same lines make now
         if (viewport.inInspect && !o.cancelled)
             reinspect();
         if (viewport.inRollback)
             showFinal();
-        viewport.setSketches(o.sketches);
+        if (sketchWas[0] > 0 && !o.cancelled)
+        {
+            if (sketchLines == sketchWas)
+                showSketchOn(sketchWas[0], sketchWas[1], sketchHighlight);   // the new sketch, the same lines
+            else if (sketchLines[0] == 0 && !viewport.inInspect && !viewport.inRollback)
+                inspectSketch(sketchWas[0], sketchWas[1], sketchLit);   // the step it came from is gone
+        }
         if (sectionToggle.getActive())
             updateSection(false);
-        // the sketch button only makes sense when the model has sketches
-        sketchToggle.setVisible(o.sketches.length > 0);
-        if (o.sketches.length == 0 && sketchToggle.getActive())
-            sketchToggle.setActive(false);
         updateDimensions();
 
         TextIter s, e;
@@ -2157,10 +2164,10 @@ private:
 
     void picked(Hit hit)
     {
-        // in sketch mode a click near a sketch point shows the line that created it
-        if (sketchToggle.getActive())
-            foreach (sk; last.sketches)
-                foreach (pt; sk.points)
+        // with a sketch shown, a click near one of its points shows the line that created it
+        foreach (index; sketchIndices)
+            if (index < last.sketches.length)
+                foreach (pt; last.sketches[index].points)
                 {
                     double px, py;
                     if (viewport.project(pt.pos, px, py) && (px - hit.x) ^^ 2 + (py - hit.y) ^^ 2 < 64)
@@ -2268,7 +2275,7 @@ private:
         transformBar.setVisible(false);
     }
 
-    /// The frame (move) or the rings (rotate) on part `index`.
+    /// The frame (move), the rings (rotate) or the handles (scale) on part `index`.
     void startTransform(Viewport.Gizmo kind, int index)
     {
         if (index < 0 || index >= last.parts.length)
@@ -2278,7 +2285,8 @@ private:
             return info(format("part '%s' is defined in another file", part.name));
         transformPartName = part.fn;   // a piece of @parts moves with all its function makes
         viewport.startGizmo(kind, index);
-        transformTitle.setLabel((kind == Viewport.Gizmo.move ? "Move " : "Rotate ") ~ part.name);
+        transformTitle.setLabel((kind == Viewport.Gizmo.move ? "Move " : kind == Viewport.Gizmo.scale ? "Scale "
+            : "Rotate ") ~ part.name);
         transformValue.setLabel(transformText());
         transformBar.setVisible(true);
     }
@@ -2374,7 +2382,8 @@ private:
     }
 
     /// What the drag has done so far, as Apply will write it: how far along
-    /// X, Y and Z, or the angles about them of all the turns as one.
+    /// X, Y and Z, the angles about them of all the turns as one, or the
+    /// factors and the size they give.
     string transformText()
     {
         // the short way round: several turns of the ring read as what they come to
@@ -2393,12 +2402,29 @@ private:
                     parts ~= format("%s %+g mm", n, m[i]);
             return parts.length ? parts.join("   ") : "not moved";
         }
+        if (viewport.gizmo == Viewport.Gizmo.scale)
+            return scaleText(viewport.gizmoScale, viewport.gizmoPart);
         auto angles = combinedTurn();
         string[] parts;
         foreach (i, n; ["X", "Y", "Z"])
             if (angles[i] != 0)
                 parts ~= format("%s %+g°", n, angles[i]);
         return parts.length ? parts.join("   ") : "not turned";
+    }
+
+    /// The factors as the bar reads them: "× 1.25" alike, else one per axis,
+    /// with the size of part `index`'s box they come to.
+    string scaleText(Vec3 f, int index)
+    {
+        string number(double x) => format("%.6g", x);
+        string factors = f.x == f.y && f.y == f.z ? "× " ~ number(f.x)
+            : format("x × %s · y × %s · z × %s", number(f.x), number(f.y), number(f.z));
+        if (f.x == 1 && f.y == 1 && f.z == 1)
+            factors = "not scaled";
+        if (index < 0 || index >= last.parts.length)
+            return factors;
+        auto size = last.parts[index].bbox.max - last.parts[index].bbox.min;
+        return format("%s   %s × %s × %s mm", factors, number(size.x * f.x), number(size.y * f.y), number(size.z * f.z));
     }
 
     /// All the turns made, in order, as one: the angles about X, Y and Z
@@ -2473,6 +2499,21 @@ private:
             return;
         }
         Turn[] steps;
+        if (viewport.gizmo == Viewport.Gizmo.scale)
+        {
+            // about the middle of the bottom of its box: a part on the ground stays on it
+            immutable f = viewport.gizmoScale;
+            if (f.x == 1 && f.y == 1 && f.z == 1)
+                return cancelTransform();
+            if (auto problem = writeTransform(viewport.gizmoPart, "scale", f, viewport.gizmoAnchor))
+            {
+                info(problem);
+                return cancelTransform();
+            }
+            viewport.stopGizmo(true);
+            transformBar.setVisible(false);
+            return;
+        }
         if (viewport.gizmo == Viewport.Gizmo.move)
         {
             if (viewport.gizmoMove.length > 0)
@@ -2495,15 +2536,17 @@ private:
         transformBar.setVisible(false);
     }
 
-    /// A move (by v, mm) or a turn (v the angles about X, Y, Z, degrees).
+    /// A move (by v, mm), a turn (v the angles about X, Y, Z, degrees) or a
+    /// scale (v the factors along X, Y, Z).
     struct Turn
     {
         string kind;
         Vec3 v;
     }
 
-    /// Moves (kind "move", by v in mm) or turns (kind "rotate", v the angles
-    /// in degrees, about `around`) part `name` in the code; the problem, or null.
+    /// Moves (kind "move", by v in mm), turns (kind "rotate", v the angles
+    /// in degrees, about `around`) or scales (kind "scale", v the factors,
+    /// keeping `around` where it is) part `name` in the code; the problem, or null.
     string writeTransform(int index, string kind, Vec3 v, Vec3 around) =>
         writeTransforms(index, [Turn(kind, v)], around);
 
@@ -3061,6 +3104,10 @@ private:
 
     void applySection()
     {
+        // the slider can move with the section closed (a new model's range):
+        // that must not bring the plane back
+        if (!sectionToggle.getActive())
+            return viewport.setSection(false, sectionNormal, 0);
         immutable v = sectionSlider.getValue();
         // flipping keeps the same plane and hides the other side
         auto n = sectionFlipped ? sectionNormal * -1 : sectionNormal;
@@ -3099,6 +3146,11 @@ private:
             return;
         auto f = last.features[ids[$ - 1] - 1];
         immutable boolean = f.operands.length == 2;
+        // the step of a sketch (or of what its profile made on that line): the sketch too
+        if (f.span.file == absolutePath(path))
+            showSketchOn(f.span.line, f.span.line, false);
+        else
+            hideSketch();
         if (ids.length == 1 && !boolean)
             return rollTo(ids[0]);
 
@@ -3507,7 +3559,7 @@ private:
         sectionFlipped = false;
         cancelTransform();
         inspectToggle.setActive(false);
-        sketchToggle.setActive(false);
+        hideSketch();
         rotateMode.setActive(true);
         shadingChoice[Shading.edges].setActive(true);
         printabilityChoice.setActive(false);
@@ -3526,6 +3578,7 @@ private:
         viewport.clearRollback();
         if (viewport.inInspect)
             stopInspect();
+        hideSketch();
         stepsPanel.clearSelection();
         info("");
         showModeBar(null);
@@ -3570,11 +3623,202 @@ private:
                     break;
                 }
         auto made = entriesOn(from, to);
-        if (made.length == 0)
+        SketchView.Found[] found;
+        immutable onSketch = sketchesOn(from, to, found).length > 0;
+        if (made.length == 0 && !onSketch)
             return false;
+        // a line of a sketch: the sketch, and in orange what the line makes or constrains in it
+        if (made.length == 0)
+            return inspectSketch(from, to, true, col);
         inspectQuery = InspectQuery(from, to, col, null);
         showInspected(made, from == to ? format("line %d", from) : format("lines %d–%d", from, to), false);
+        if (onSketch)
+            showSketchOn(from, to, true);
+        else
+            hideSketch();
         return true;
+    }
+
+    /// Inspect of lines that make no solid but belong to a sketch: the sketch
+    /// alone over the ghosts of the parts, what the lines make or constrain
+    /// in orange (`highlight`; without it the whole sketch, as for its step).
+    bool inspectSketch(uint from, uint to, bool highlight, int col = -1)
+    {
+        inspectRequest++;   // what a previous Inspect is still computing is not needed
+        if (viewport.inRollback)
+        {
+            viewport.clearRollback();
+            stepsPanel.clearSelection();
+        }
+        if (!showSketchOn(from, to, highlight))
+            return false;
+        inspectQuery = InspectQuery(from, to, col, null, !highlight);
+        inspectShown = null;
+        inspectMeshes = null;
+        viewport.showInspect(null);
+        immutable where = from == to ? format("line %d", from) : format("lines %d–%d", from, to);
+        info(where ~ " · " ~ sketchFoundText());
+        showModeBar(highlight ? "Inspecting " ~ where ~ ": its sketch, in orange what it makes or constrains"
+            : format("The sketch of line %d", from));
+        return true;
+    }
+
+    /// The sketches lines from..to of the model belong to (every run of
+    /// them), and what the lines make in each.
+    size_t[] sketchesOn(uint from, uint to, out SketchView.Found[] found)
+    {
+        immutable file = absolutePath(path);
+        size_t[] r;
+        foreach (i, sk; last.sketches)
+        {
+            auto f = sk.on(file, from, to);
+            if (f.sketch || f.entities.length || f.constraints.length)
+            {
+                r ~= i;
+                found ~= f;
+            }
+        }
+        return r;
+    }
+
+    /// Draws the sketch lines from..to belong to, with its dimensions and
+    /// free points; with `highlight`, what the lines make or constrain in
+    /// orange. False (and no sketch drawn) when they are no sketch's.
+    bool showSketchOn(uint from, uint to, bool highlight)
+    {
+        SketchView.Found[] found;
+        auto which = sketchesOn(from, to, found);
+        if (which.length == 0)
+        {
+            hideSketch();
+            return false;
+        }
+        // another sketch: seen from above, as a drawing
+        immutable another = sketchIndices != which;
+        sketchLines = [from, to];
+        sketchHighlight = highlight;
+        sketchIndices = which;
+        sketchFound = found;
+        size_t[][] lit;
+        foreach (f; found)
+            lit ~= highlight ? f.highlight : null;
+        viewport.showSketches(which, lit);
+        if (another)
+            viewport.setView(ViewPreset.top);
+        updateDimensions();
+        return true;
+    }
+
+    void hideSketch()
+    {
+        if (sketchIndices.length == 0 && sketchLines[0] == 0)
+            return;
+        sketchLines = [0, 0];
+        sketchIndices = null;
+        sketchFound = null;
+        viewport.showSketches(null);
+        updateDimensions();
+    }
+
+    /// "sketch of line 37 · fully constrained · 2 lines, 1 constraint (tangent)"
+    string sketchFoundText()
+    {
+        if (sketchIndices.length == 0)
+            return "";
+        auto sk = last.sketches[sketchIndices[0]];
+        string[] what;
+        size_t[string] made, cons;
+        string[] madeOrder, consOrder;
+        foreach (k, index; sketchIndices)
+        {
+            auto f = sketchFound[k];
+            foreach (e; f.entities)
+            {
+                auto kind = last.sketches[index].entities[e].kind;
+                if (kind !in made)
+                    madeOrder ~= kind;
+                made[kind]++;
+            }
+            foreach (c; f.constraints)
+            {
+                auto kind = last.sketches[index].constraints[c].kind;
+                if (kind !in cons)
+                    consOrder ~= kind;
+                cons[kind]++;
+            }
+        }
+        foreach (kind; madeOrder)
+            what ~= made[kind] > 1 ? format("%d %ss", made[kind], kind) : "a " ~ kind;
+        foreach (kind; consOrder)
+            what ~= cons[kind] > 1 ? format("%s ×%d", kind, cons[kind]) : kind;
+        auto state = !sk.solved ? "conflicting" : sk.dof ? format("%d degree%s of freedom", sk.dof, sk.dof > 1 ? "s" : "")
+            : "fully constrained";
+        auto runs = sketchIndices.length > 1 ? format(" (%d runs)", sketchIndices.length) : "";
+        return format("sketch of line %d%s · %s%s", sk.span.line, runs, state,
+            what.length && sketchHighlight ? " · " ~ what.join(", ") : "");
+    }
+
+    /// The sketch shown, for agents (null when none is): its state, the
+    /// points that can still move, and what the lines asked for make or
+    /// constrain in it.
+    JSONValue shownSketchJson()
+    {
+        if (sketchIndices.length == 0)
+            return JSONValue(null);
+        JSONValue j = ["lines": [sketchLines[0], sketchLines[1]]];
+        j["status"] = sketchFoundText();
+        JSONValue[] list;
+        foreach (k, index; sketchIndices)
+        {
+            if (index >= last.sketches.length)
+                continue;
+            auto sk = last.sketches[index];
+            JSONValue js = ["line": JSONValue(sk.span.line), "solved": JSONValue(sk.solved)];
+            js["degrees_of_freedom"] = sk.dof;
+            JSONValue[] free;
+            foreach (pt; sk.points)
+                if (pt.free)
+                    free ~= JSONValue(["line": JSONValue(pt.span.line), "x": JSONValue(pt.pos.x), "y": JSONValue(pt.pos.y)]);
+            js["free_points"] = free;
+            js["dimensions"] = sk.dimensions.length;
+            if (sketchHighlight)
+            {
+                auto f = sketchFound[k];
+                JSONValue entity(size_t e)
+                {
+                    JSONValue je = ["id": JSONValue(e), "kind": JSONValue(sk.entities[e].kind),
+                        "line": JSONValue(sk.entities[e].span.line)];
+                    if (sk.entities[e].construction)
+                        je["construction"] = true;
+                    return je;
+                }
+                JSONValue[] es, cs, lit;
+                foreach (e; f.entities)
+                    es ~= entity(e);
+                foreach (c; f.constraints)
+                {
+                    auto rc = sk.constraints[c];
+                    JSONValue jc = ["kind": JSONValue(rc.kind), "line": JSONValue(rc.span.line)];
+                    JSONValue[] ids;
+                    foreach (e; rc.entities)
+                        ids ~= JSONValue(e);
+                    jc["entities"] = ids;
+                    if (rc.dimension >= 0)
+                        jc["dimension"] = sk.dimensions[rc.dimension].label;
+                    if (rc.conflicting)
+                        jc["conflicting"] = true;
+                    cs ~= jc;
+                }
+                foreach (e; f.highlight)
+                    lit ~= entity(e);
+                js["made"] = es;
+                js["constraints"] = cs;
+                js["highlighted"] = lit;
+            }
+            list ~= js;
+        }
+        j["sketches"] = list;
+        return j;
     }
 
     /// Shows what a function returned (every call of it, up to the trace's limits).
@@ -3729,6 +3973,11 @@ private:
                     return;
                 }
         }
+        else if (inspectQuery.sketchOnly)
+        {
+            if (!inspectSketch(inspectQuery.from, inspectQuery.to, false))
+                showFinal();
+        }
         else if (inspectQuery.from > 0)
             inspectLines(inspectQuery.from, inspectQuery.to, inspectQuery.col);
         else
@@ -3743,6 +3992,8 @@ private:
         inspectShown = null;
         inspectMeshes = null;
         viewport.clearInspect();
+        if (was)
+            hideSketch();
         if (was)
         {
             stepsPanel.clearSelection();
@@ -3782,6 +4033,8 @@ private:
             items ~= it;
         }
         j["items"] = items;
+        if (sketchIndices.length)
+            j["sketch"] = shownSketchJson();
         return j;
     }
 
@@ -4011,6 +4264,7 @@ private:
         }
         entries ~= I("Move…", () => startTransform(Viewport.Gizmo.move, contextHit.part));
         entries ~= I("Rotate…", () => startTransform(Viewport.Gizmo.rotate, contextHit.part));
+        entries ~= I("Scale…", () => startTransform(Viewport.Gizmo.scale, contextHit.part));
         {
             // the face under the click gives the plane, whatever the selection mode
             auto under = viewport.pickAny(x, y);
@@ -4408,29 +4662,48 @@ private:
             overlay.removeOverlay(b);
         dimButtons = null;
         dims = null;
-        if (!sketchToggle.getActive())
-            return;
-        foreach (sk; last.sketches)
-            foreach (d; sk.dimensions)
+        foreach (k, index; sketchIndices)
+        {
+            if (index >= last.sketches.length)
+                continue;
+            auto sk = last.sketches[index];
+            // the dimensions of the constraints on the inspected lines stand out
+            bool[size_t] lit;
+            if (sketchHighlight && k < sketchFound.length)
+                foreach (c; sketchFound[k].constraints)
+                    if (sk.constraints[c].dimension >= 0)
+                        lit[sk.constraints[c].dimension] = true;
+            foreach (di, d; sk.dimensions)
             {
                 if (d.value.file != absolutePath(path))
                     continue;
-                auto b = new Button;
-                b.setLabel(d.label);
-                b.addCssClass("osd");
-                b.addCssClass("hcad-dimension");
-                if (d.conflicting)
-                    b.addCssClass("destructive-action");
-                b.setHalign(Align.Start);
-                b.setValign(Align.Start);
-                b.setTooltipText(format("line %d: click to change", d.value.line));
-                auto dim = d;
-                b.connectClicked(() => editDimension(b, dim));
-                overlay.addOverlay(b);
-                dimButtons ~= b;
-                dims ~= d;
+                addDimensionButton(d, (di in lit) !is null);
             }
+        }
         positionDimensions();
+    }
+
+    /// A button on dimension `d`: a function of its own, so that each
+    /// button's click handler keeps its own dimension (a closure made in a
+    /// loop body shares the loop's variables, and every button would edit
+    /// the last one).
+    void addDimensionButton(SketchView.Dimension d, bool lit)
+    {
+        auto b = new Button;
+        b.setLabel(d.label);
+        b.addCssClass("osd");
+        b.addCssClass("hcad-dimension");
+        if (d.conflicting)
+            b.addCssClass("destructive-action");
+        else if (lit)
+            b.addCssClass("hcad-dimension-lit");
+        b.setHalign(Align.Start);
+        b.setValign(Align.Start);
+        b.setTooltipText(format("line %d: click to change", d.value.line));
+        b.connectClicked(() => editDimension(b, d));
+        overlay.addOverlay(b);
+        dimButtons ~= b;
+        dims ~= d;
     }
 
     void positionDimensions()
@@ -5179,6 +5452,7 @@ private:
         j["params"] = ps;
         j["presets"] = last.presets;
         j["inspect"] = inspectJson();
+        j["sketch"] = shownSketchJson();
         auto cam = viewport.camera();
         JSONValue jc = ["yaw": cam.yaw, "pitch": cam.pitch, "distance": cam.distance];
         jc["target"] = [cam.target.x, cam.target.y, cam.target.z];

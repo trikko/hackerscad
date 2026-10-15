@@ -29,7 +29,7 @@ only source of truth, so it diffs, versions and reviews like any other code.
   file per part), STEP with a named body per part, PNG, and
   drawings with views, sections and dimensions as PDF, SVG or DXF.
 * 🔩 **Libraries**: screws, nuts, holes and inserts, ISO threads, gears,
-  print-in-place hinges, snap fits, enclosures.
+  print-in-place hinges, snap fits, enclosures, and Carlo the mascot.
 * 🤖 **AI agents**: an MCP server lets an agent write, check, look at and
   export models, and drive the application while you watch.
 * 🐧 **Linux, Windows, macOS**: AppImage, zip, app bundle.
@@ -65,10 +65,10 @@ open /Applications/hackerscad.app                                    # the appli
 /Applications/hackerscad.app/Contents/Resources/bin/hcad check model.hcad  # the command line tool
 ```
 
-The window opens on a small example: a clip that keeps bags of biscuits
-closed. Change its parameters, edit its code, right-click its faces. The New
-button starts a model of your own from a few lines: a cube with two holes
-across it.
+The window opens on a small example: Carlo, the mascot, a clip that keeps
+bags of biscuits closed. Change its parameters, edit its code, right-click its faces. The New
+button starts a model of your own from a few lines that make Carlo, to
+replace with yours.
 
 ## A model
 

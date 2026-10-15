@@ -1,4 +1,4 @@
-[← Print it](10-print-it.md) · [Contents](../TUTORIAL.md) · [Going further →](12-going-further.md)
+[← Print it](10-print-it.md) · [Contents](../TUTORIAL.md) · [Carlo, drawn with a sketch →](12-carlo.md)
 
 # 11. Let an AI agent help
 
@@ -53,4 +53,4 @@ use.
 
 The model as the agent left it: [planter-11.hcad](planter-11.hcad).
 
-[← Print it](10-print-it.md) · [Contents](../TUTORIAL.md) · [Going further →](12-going-further.md)
+[← Print it](10-print-it.md) · [Contents](../TUTORIAL.md) · [Carlo, drawn with a sketch →](12-carlo.md)

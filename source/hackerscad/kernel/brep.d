@@ -78,11 +78,12 @@ class KernelException : Exception
     }
 }
 
-/// One piece of a planar outline: a line a → b, an arc a → b through m, or
-/// the end of a loop.
+/// One piece of a planar outline: a line a → b, an arc a → b through m, the
+/// end of a loop, or a whole ellipse (a loop of its own, before an end):
+/// centre a, radii bx (along its own x axis, mx radians from X) and by.
 struct OutlineSeg
 {
-    enum Kind : int { line, arc, end }
+    enum Kind : int { line, arc, end, ellipse }
     Kind kind;
     double ax = 0, ay = 0, bx = 0, by = 0, mx = 0, my = 0;
 }

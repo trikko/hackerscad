@@ -10,8 +10,9 @@ open out a little, the bottom is rounded, and the inside is hollow.
 A pot looks better, and comes off a mould or the print bed more easily, when
 its sides lean out a little. Tilting a face like that is called a *draft*.
 
-1. Click the front face of the block, then Shift+click the face on the
-   right.
+1. Pick **faces** again in the view bar (the second of the four buttons, or
+   Alt+2), then click the front face of the block, then Shift+click the face
+   on the right.
 2. Turn the view (drag with the right button) until you see the other two
    sides, and Shift+click them too. Then click **Iso** to come back. The note
    at the bottom right says *4 faces selected*.

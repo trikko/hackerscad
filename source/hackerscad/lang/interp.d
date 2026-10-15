@@ -841,7 +841,9 @@ final class Interp
             if (v.isNum && def.n.isInt && !v.n.isInt)
                 throw new HcadError(Code.type, format("parameter '%s' is a whole number, not %s (if it may have "
                     ~ "decimals, give its default with a dot or a unit: %s.0, %s.mm)", d.name, v, def, def), span);
-            if (p.min.isNum && v.n.value < p.min.n.value || p.max.isNum && v.n.value > p.max.n.value)
+            // a limit given in another unit (30.deg against 30 typed in degrees) may differ in the last digit
+            bool below(double x, double lim) => x < lim - 1e-9 * (abs(lim) > 1 ? abs(lim) : 1.0);
+            if (p.min.isNum && below(v.n.value, p.min.n.value) || p.max.isNum && below(-v.n.value, -p.max.n.value))
                 throw new HcadError(Code.type, format("parameter '%s' = %s is outside [%s, %s]", d.name, v,
                     p.min.kind == Kind.void_ ? "-∞" : p.min.toString, p.max.kind == Kind.void_ ? "∞" : p.max.toString), span);
             if (p.choices.length && !p.choices.canFind(v))
@@ -2266,7 +2268,7 @@ final class Interp
 
     /// Names of the built-in object types, usable in declarations.
     static immutable string[] objectTypes = ["Sketch", "SketchPoint", "SketchLine", "SketchArc", "SketchCircle",
-        "Drawing", "DrawingView"];
+        "SketchEllipse", "Drawing", "DrawingView"];
 
     /// Default value of a declared type, like T.init in D.
     Value defaultOf(TypeRef t, ModuleVal mod, Span span)

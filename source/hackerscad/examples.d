@@ -43,7 +43,7 @@ static immutable Example[] examples = () {
     return r;
 }();
 
-/// Their names, for messages: "bagclip, cup or language".
+/// Their names, for messages: "carlo, cup or language".
 string exampleNames()
 {
     import std.algorithm : map;
@@ -57,5 +57,5 @@ unittest
     auto e = example("03_tour.hcad", "// Language tour: if, for: each once\nmodule tour;\n");
     assert(e.name == "tour" && e.label == "Language tour" && e.what == "if, for: each once");
     assert(example("00_x.hcad", "/// Plain\n").label == "Plain");
-    assert(examples.length >= 4 && examples[0].name == "bagclip");
+    assert(examples.length >= 4 && examples[0].name == "carlo");
 }

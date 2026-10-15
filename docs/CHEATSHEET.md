@@ -20,7 +20,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `Faces` — A selection of a solid's faces, for shell, draft, frames: faces.top, faces.normal(X)…
 - `Edge` — One edge, inside a selector predicate: edges.filter(e => e.isCircle && e.radius == 3.mm).
 - `Face` — One face, inside a selector predicate: faces.filter(f => f.center.z > 10.mm).
-- `Sketch` — A constrained 2D drawing: points, lines, arcs and constraints; the solver places them, .profile gives the outline.
+- `Sketch` — A constrained 2D drawing: points, lines, arcs, circles, ellipses and constraints; the solver places them, .profile gives the outline.
 - `Drawing` — A technical sheet (views, sections, dimensions) returned by a @drawing function; exported as PDF, SVG, DXF.
 - `Assembly` — Parts placed by their connections (planned).
 - `Color` — A colour: "steelblue", "#RRGGBB", "#RRGGBBAA" or rgb(…).
@@ -119,7 +119,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 - `s.move(v: Vec, x: Length, y: Length, z: Length)` — Moves: move(x: 10.mm) or move(vec(…)).
 - `s.rotate(angle: Angle, axis: Axis, x: Angle, y: Angle, z: Angle, around: Vec)` — Turns about the origin, or about the point given as around:.
-- `s.scale(factor: number, x: number, y: number, z: number)` — Scales around the origin: scale(2), or a factor each, scale(x: 2, y: 0.5) (an ellipsoid from a sphere).
+- `s.scale(factor: number, x: number, y: number, z: number, around: Vec)` — Scales around the origin, or around the point given as around:.
 - `s.mirror(plane: Plane)` — mirror(X): across the plane through the origin with that normal, or any plane.
 - `s.color(color: Color, alpha: 0..1) → Solid` — Sets the colour: "steelblue", "#RRGGBB", rgb(…).
 - `s.centered()` — Moved so its bounding box is centred on the origin.
@@ -148,7 +148,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `ellipse(rx: Length, ry: Length) → Profile` — An ellipse centred on the origin, rx along X, ry along Y.
 - `circle(r: Length, d: Length) → Profile` — A circle centred on the origin.
 - `polygon(points: Vec[], smooth: bool) → Profile` — A polygon through the points; smooth: true, a smooth closed curve through them instead.
-- `regularPolygon(n: int, r: Length, d: Length) → Profile` — regularPolygon(6, d: 10.mm): d/r through the corners.
+- `regularPolygon(n: int, r: Length, d: Length, fit: string) → Profile` — A regular polygon centred on the origin: d/r the circle through its corners, or with fit: "sides" the circle its sides touch.
 - `slot(length: Length, width: Length) → Profile` — A stadium along X.
 - `teardrop(r | d: Length, angle: Angle, flat: bool) → Profile` — A hole that prints sideways without supports: a circle with a 45° point towards +Y (up on a wall); flat: true cuts the point.
 - `text(text: string, size: Length, font: string) → Profile` — A text outline starting at the origin on the baseline.
@@ -258,15 +258,23 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.line(p: Point, q: Point) → Line` — A line between two points.
 - `sk.arc(center: Point, start: Point, end: Point) → Arc` — An arc, counter-clockwise.
 - `sk.polyline(points, closed: bool) → Line[]` — Lines through points (vectors become new points).
+- `sk.ellipse(center: Point, rx: Length, ry: Length, angle: Angle) → Ellipse` — An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints.
+- `sk.rect(p: Point, q: Point, center: Point, w: Length, h: Length, corner: Length) → Line[]` — A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; corner: rounds them.
+- `sk.polygon(center: Point, n: int, r: Length, d: Length, fit: string, angle: Angle) → Line[]` — A regular polygon: its n lines, corners on a construction circle of the size given; fit: "sides" makes its sides touch it instead; angle: the direction of the first corner.
+- `sk.slot(p: Point, q: Point, w: Length) → [Line, Arc, Line, Arc]` — Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p].
 - `sk.coincident(p: Point, q: Point)` — Two points in the same place.
 - `sk.fix(p: Point)` — Pins a point.
-- `sk.horizontal(line: Line)` — A horizontal line (or two points at the same height).
+- `sk.horizontal(line: Line)` — A horizontal line (or two points at the same height, or an ellipse's x axis along X).
 - `sk.vertical(line: Line)` — A vertical line.
-- `sk.equal(a, b)` — Equal lengths or radii.
-- `sk.tangent(a, b)` — Tangent line and circle, or two circles.
+- `sk.equal(a, b)` — Equal lengths or radii; s.equal(e): an ellipse as wide as tall.
+- `sk.on(p: Point, curve)` — A point on a line, circle, arc or ellipse.
+- `sk.concentric(a, b)` — Circles, arcs or ellipses (or a point) round the same centre.
+- `sk.tangent(a, b)` — Tangent line and circle, arc or ellipse, or two circles.
 - `sk.midpoint(p: Point, line: Line)` — A point in the middle of a line.
 - `sk.symmetric(p: Point, q: Point, line: Line)` — Two points symmetric about a line.
+- `sk.radius(c: Circle, v: Length, rx: Length, ry: Length)` — Sets a radius (an ellipse's: rx, ry).
 - `sk.diameter(c: Circle, v: Length)` — Sets a diameter.
+- `sk.angle(a: Line, b: Line, v: Angle)` — The angle between two lines, or of one line or an ellipse from X.
 - `sk.profile → Profile` — Solves the sketch and gives its outline.
 - `sk.dof → int` — Degrees of freedom left.
 - `sk.solved → bool` — Whether the constraints are satisfied.

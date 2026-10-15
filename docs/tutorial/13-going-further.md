@@ -1,6 +1,6 @@
-[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Carlo, drawn with a sketch →](13-carlo.md)
+[← Carlo, drawn with a sketch](12-carlo.md) · [Contents](../TUTORIAL.md)
 
-# 12. Going further
+# 13. Going further
 
 The planter used boxes, the mouse, profiles, loops and checks. This page is a
 tour of what else hackerscad does, one small model at a time: a hook made
@@ -19,7 +19,7 @@ folder. The tour uses each thing the language has once (`if`, `for`,
 each one makes appear in the view or in the console. Change a number and
 watch.
 
-![The language tour](img/12-examples.png)
+![The language tour](img/13-examples.png)
 
 An example opens as a new model, not saved yet: nothing you change is lost
 from the original.
@@ -48,7 +48,7 @@ Solid hook()
 }
 ```
 
-![The hook](img/12-hook.png)
+![The hook](img/13-hook.png)
 
 ### Pull a face
 
@@ -57,7 +57,7 @@ and choose **Extrude face…**: type `10.mm` over the value. The face moves
 10 mm out and the arm grows with it, its sides still one face each.
 **Push face in…** does the opposite, into the material.
 
-![The arm, 10 mm longer](img/12-hook-longer.png)
+![The arm, 10 mm longer](img/13-hook-longer.png)
 
 ```d
         .extrude(faces.front, depth: 10.mm);
@@ -77,7 +77,7 @@ striped red, thin walls are cross-hatched violet, and the status line gives
 their areas.
 Turn the view to see the hook from below:
 
-![The underside of the arm and the top of the hole, in red](img/12-hook-print.png)
+![The underside of the arm and the top of the hole, in red](img/13-hook-print.png)
 
 Standing up, the whole underside of the arm hangs in the air, and so does
 the top of the screw hole. But nothing says it must print standing up. Add
@@ -86,7 +86,7 @@ the top of the screw hole. But nothing says it must print standing up. Add
 flat on the bed, and the arm grows straight up from it. Nothing hangs any
 more, and the screw hole stands upright, round as it is.
 
-![On its back: nothing overhangs](img/12-hook-back.png)
+![On its back: nothing overhangs](img/13-hook-back.png)
 
 Choosing which way up a part prints is often the whole fix. (A hole that
 has to print lying sideways can be a `teardrop(d: 4.5.mm)` in place of the
@@ -128,7 +128,7 @@ Solid hook()
 }
 ```
 
-![With two gussets](img/12-hook-final.png)
+![With two gussets](img/13-hook-final.png)
 
 The gussets stand straight up too: still nothing to support. To keep a model
 printable as it changes, write it as a check, `assert(hook.overhangs ==
@@ -169,7 +169,7 @@ Solid label()
 }
 ```
 
-![The label](img/12-label.png)
+![The label](img/13-label.png)
 
 The size comes from the drawing: a leaf 34 mm wide in the drawing program is
 34 mm here. An outline inside another is a hole.
@@ -208,13 +208,15 @@ Solid bracket()
 }
 ```
 
-![The bracket](img/12-sketch.png)
+![The bracket](img/13-sketch.png)
 
 The points start where they are written; the constraints move them (here the
-bottom becomes 50 mm, not 40). The pencil button in the view bar shows the
-sketch with its dimensions: click one to change it. Points still free to
-move are blue. [Chapter 13](13-carlo.md) draws Carlo, the bag clip, this way,
-from start to end.
+bottom becomes 50 mm, not 40). Click the sketch's step in *Steps*, or
+Ctrl+click any line of it, and the view shows the sketch from above with
+its dimensions: click one to change it. Points still free to move are blue.
+On a line like `s.length(left, 12.mm)` what it makes or constrains turns
+orange; Esc goes back to the model. [Chapter 12](12-carlo.md) drew Carlo,
+the bag clip, this way, from start to end.
 
 ## Curved shapes: lofts and sweeps
 
@@ -245,7 +247,7 @@ Solid jug()
 }
 ```
 
-![The jug](img/12-jug.png)
+![The jug](img/13-jug.png)
 
 ## Libraries: screws, threads, gears, enclosures
 
@@ -271,7 +273,7 @@ Solid lid()
 Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);
 ```
 
-![A lid with holes for M3 screws, and a gear](img/12-fixings.png)
+![A lid with holes for M3 screws, and a gear](img/13-fixings.png)
 
 - `hardware`: screw sizes `M2` to `M8`, screws, nuts, washers, and holes made
   for them (`"clearance"`, `"tap"`, `"insert"`, `"counterbore"`,
@@ -375,4 +377,4 @@ hcad docs fillet                              # the reference of one function
 From here, the [language reference](../LANGUAGE.md) describes everything,
 and the [examples](../../examples) are complete models to open and change.
 
-[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Carlo, drawn with a sketch →](13-carlo.md)
+[← Carlo, drawn with a sketch](12-carlo.md) · [Contents](../TUTORIAL.md)

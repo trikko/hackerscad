@@ -1,6 +1,6 @@
 /// Sketch geometry and constraints on the XY plane.
 ///
-/// Points, lines, arcs and circles are entities; constraints refer to them by
+/// Points, lines, arcs, circles and ellipses are entities; constraints refer to them by
 /// index. Positions given when entities are created are only the starting
 /// guess: the solver moves them until every constraint holds, staying as close
 /// to the guess as the constraints allow. The non-construction lines and arcs
@@ -9,7 +9,7 @@ module hackerscad.sketch.sketch;
 
 import std.algorithm : max, min;
 import std.format : format;
-import std.math : abs, atan2, cos, sin, tan, PI;
+import std.math : abs, atan2, cos, remainder, sin, sqrt, tan, PI;
 
 import hackerscad.geom.vec;
 import hackerscad.kernel.brep : OutlineSeg;
@@ -30,14 +30,15 @@ enum EntityKind
     point,
     line,
     arc,
-    circle
+    circle,
+    ellipse
 }
 
 struct Entity
 {
     EntityKind kind;
-    size_t[3] refs;       /// line: p1 p2; arc: center start end (counter-clockwise); circle: center
-    size_t var;           /// point: index of x (y follows); circle: index of the radius
+    size_t[3] refs;       /// line: p1 p2; arc: center start end (counter-clockwise); circle, ellipse: center
+    size_t var;           /// point: index of x (y follows); circle: index of the radius; ellipse: rx (ry, angle follow)
     bool construction;
 }
 
@@ -65,6 +66,13 @@ enum ConstraintKind
     midpoint,
     symmetric,
     arcRadius,        /// implicit: start and end of an arc are equally far from its centre
+    onEllipse,
+    radiusX,          /// an ellipse's radius along its own x axis
+    radiusY,
+    ellipseAngle,     /// the direction of an ellipse's x axis, from X (either way along it)
+    direction,        /// from point refs[0] towards refs[1], at an angle from X
+    equalRadii,       /// an ellipse as wide as tall: a circle
+    tangentAt,        /// a line touching a circle or arc at point refs[2]: the radius there square to it
 }
 
 struct Constraint
@@ -77,11 +85,19 @@ struct Constraint
     size_t tag;           /// caller's id (source position), reported in errors
 }
 
+/// Where a segment of the outline comes from.
+struct OutlineSource
+{
+    size_t entity = size_t.max;   /// the line, arc, circle or ellipse it is (part of)
+    size_t corner = size_t.max;   /// a corner fillet's arc: the point it rounds
+}
+
 struct SolveReport
 {
     bool solved;
     size_t dof;
     size_t[] freePoints;       /// entity indices of points that can still move
+    size_t[] freeShapes;       /// circles and ellipses whose radius (or turn) can still change
     size_t[] conflicting;      /// constraint indices
     double residual;
 }
@@ -134,6 +150,16 @@ final class Sketch
         return entities.length - 1;
     }
 
+    /// An ellipse: radius rx along its own x axis, which is `angle` from X, and ry across.
+    size_t ellipse(size_t center, double rx, double ry, double angle, bool construction = false)
+    {
+        expect(center, EntityKind.point);
+        vars ~= [rx, ry, angle];
+        entities ~= Entity(EntityKind.ellipse, [center, 0, 0], vars.length - 3, construction);
+        dirty = true;
+        return entities.length - 1;
+    }
+
     /// Adds a constraint; the orientation of signed ones follows the current geometry.
     void constrain(ConstraintKind kind, size_t[] refs, double value = 0, size_t tag = 0, double value2 = 0)
     {
@@ -160,8 +186,18 @@ final class Sketch
                 c.sign = abs(d - (ra + rb)) <= abs(d - abs(ra - rb)) ? 0 : (ra >= rb ? 1 : -1);
                 break;
             }
+        case ellipseAngle:
+            {
+                // the turn is only the ellipse's own unknown: it starts where it is asked to be, else a
+                // start a quarter turn away would be a flat spot of the residual
+                import std.math : round;
+                immutable v = entities[c.refs[0]].var + 2;
+                vars[v] = c.value + PI * round((vars[v] - c.value) / PI);
+                break;
+            }
         case coincident, fix, horizontal, vertical, length, distance, onLine, onCircle, parallel, perpendicular,
-                equalLength, equalRadius, radius, midpoint, symmetric, arcRadius:
+                equalLength, equalRadius, radius, midpoint, symmetric, arcRadius, onEllipse, radiusX, radiusY,
+                direction, equalRadii, tangentAt:
             break;
         }
         constraints ~= c;
@@ -187,11 +223,41 @@ final class Sketch
         return radiusOf(e, vars);
     }
 
+    /// Where a point is now, without solving: the starting guess of new geometry.
+    Vec3 guess(size_t p)
+    {
+        expect(p, EntityKind.point);
+        return pos(p, vars);
+    }
+
+    /// An ellipse's radii (positive) and the direction of its x axis.
+    void ellipseAxes(size_t e, out double rx, out double ry, out double angle)
+    {
+        solveIfNeeded();
+        expect(e, EntityKind.ellipse);
+        ellipseOf(e, vars, rx, ry, angle);
+    }
+
     SolveReport solve()
     {
         Equation[] eqs;
         foreach (c; constraints)
             eqs ~= equation(c);
+        // a round ellipse looks the same however it is turned: its angle stays
+        // where it is (unless a constraint sets it) rather than count as a
+        // degree of freedom nothing could take away
+        bool[size_t] round, turned;
+        foreach (c; constraints)
+            if (c.kind == ConstraintKind.equalRadii)
+                round[c.refs[0]] = true;
+            else if (c.kind == ConstraintKind.ellipseAngle)
+                turned[c.refs[0]] = true;
+        foreach (e, _; round)
+            if (e !in turned)
+            {
+                immutable v = entities[e].var + 2, at = vars[v];
+                eqs ~= Equation(1, (const(double)[] x, double[] r) { r[0] = x[v] - at; });
+            }
         auto res = hackerscad.sketch.solver.solve(vars, eqs);
         SolveReport rep;
         rep.solved = res.converged;
@@ -200,6 +266,9 @@ final class Sketch
         foreach (i, e; entities)
             if (e.kind == EntityKind.point && (res.free[e.var] || res.free[e.var + 1]))
                 rep.freePoints ~= i;
+            else if ((e.kind == EntityKind.circle && res.free[e.var])
+                    || (e.kind == EntityKind.ellipse && (res.free[e.var] || res.free[e.var + 1] || res.free[e.var + 2])))
+                rep.freeShapes ~= i;
         foreach (k; res.conflicting)
             rep.conflicting ~= k;
         last = rep;
@@ -213,8 +282,15 @@ final class Sketch
         return last;
     }
 
-    /// Closed loops of the non-construction lines, arcs and circles.
+    /// Closed loops of the non-construction lines, arcs, circles and ellipses.
     OutlineSeg[] outline()
+    {
+        OutlineSource[] sources;
+        return outline(sources);
+    }
+
+    /// The same, with where each segment comes from (`sources[i]` for `segs[i]`).
+    OutlineSeg[] outline(out OutlineSource[] sources)
     {
         solveIfNeeded();
         if (!last.solved)
@@ -230,6 +306,18 @@ final class Sketch
                 segs ~= OutlineSeg(OutlineSeg.Kind.arc, c.x + r, c.y, c.x - r, c.y, c.x, c.y + r);
                 segs ~= OutlineSeg(OutlineSeg.Kind.arc, c.x - r, c.y, c.x + r, c.y, c.x, c.y - r);
                 segs ~= OutlineSeg(OutlineSeg.Kind.end);
+                sources ~= [OutlineSource(i), OutlineSource(i), OutlineSource.init];
+            }
+            else if (e.kind == EntityKind.ellipse && !e.construction)
+            {
+                auto c = pos(e.refs[0], vars);
+                double rx, ry, angle;
+                ellipseOf(i, vars, rx, ry, angle);
+                if (rx < 1e-9 || ry < 1e-9)
+                    throw new SketchException("an ellipse of the outline has no size", [e.refs[0]]);
+                segs ~= OutlineSeg(OutlineSeg.Kind.ellipse, c.x, c.y, rx, ry, angle);
+                segs ~= OutlineSeg(OutlineSeg.Kind.end);
+                sources ~= [OutlineSource(i), OutlineSource.init];
             }
 
         // lines and arcs, joined at points that coincide after solving
@@ -301,11 +389,12 @@ final class Sketch
                 from = to;
                 cur = next;
             }
-            segs ~= loopSegments(all, order, rev, cornerPoint);
+            segs ~= loopSegments(all, order, rev, cornerPoint, sources);
             segs ~= OutlineSeg(OutlineSeg.Kind.end);
+            sources ~= OutlineSource.init;
         }
         if (segs.length == 0)
-            throw new SketchException("the sketch has no outline: draw lines, arcs or circles that are not construction");
+            throw new SketchException("the sketch has no outline: draw lines, arcs, circles or ellipses that are not construction");
         return segs;
     }
 
@@ -314,7 +403,8 @@ private:
     // a function of its own, so that each delegate captures its own constraint
     Equation equation(Constraint c) => Equation(equationCount(c.kind), (const(double)[] x, double[] r) { eval(c, x, r); });
 
-    OutlineSeg[] loopSegments(S)(S[] all, size_t[] order, bool[] rev, size_t[] cornerPoint)
+    OutlineSeg[] loopSegments(S)(S[] all, size_t[] order, bool[] rev, size_t[] cornerPoint,
+        ref OutlineSource[] sources)
     {
         immutable n = order.length;
         // ends of every segment in walking order, trimmed by corner fillets
@@ -327,6 +417,7 @@ private:
         }
         auto filletArc = new OutlineSeg[n];
         auto hasArc = new bool[n];
+        auto filletCorner = new size_t[n];
         foreach (i; 0 .. n)
         {
             immutable j = (i + 1) % n;
@@ -357,6 +448,7 @@ private:
             b[i] = v + u1 * t;
             a[j] = v + u2 * t;
             filletArc[i] = OutlineSeg(OutlineSeg.Kind.arc, b[i].x, b[i].y, a[j].x, a[j].y, mid.x, mid.y);
+            filletCorner[i] = cornerPoint[corner];
             hasArc[i] = true;
         }
         OutlineSeg[] segs;
@@ -366,15 +458,22 @@ private:
             if (e.kind == EntityKind.line)
             {
                 if ((b[i] - a[i]).length > 1e-9)
+                {
                     segs ~= OutlineSeg(OutlineSeg.Kind.line, a[i].x, a[i].y, b[i].x, b[i].y);
+                    sources ~= OutlineSource(all[order[i]].entity);
+                }
             }
             else
             {
                 auto m = arcMid(all[order[i]].entity);
                 segs ~= OutlineSeg(OutlineSeg.Kind.arc, a[i].x, a[i].y, b[i].x, b[i].y, m.x, m.y);
+                sources ~= OutlineSource(all[order[i]].entity);
             }
             if (hasArc[i])
+            {
                 segs ~= filletArc[i];
+                sources ~= OutlineSource(size_t.max, filletCorner[i]);
+            }
         }
         return segs;
     }
@@ -412,6 +511,7 @@ private:
     bool isRound(size_t e) => e < entities.length && (entities[e].kind == EntityKind.arc || entities[e].kind == EntityKind.circle);
     bool isLine(size_t e) => e < entities.length && entities[e].kind == EntityKind.line;
     bool isPoint(size_t e) => e < entities.length && entities[e].kind == EntityKind.point;
+    bool isEllipse(size_t e) => e < entities.length && entities[e].kind == EntityKind.ellipse;
 
     void check(const Constraint c)
     {
@@ -448,7 +548,19 @@ private:
             need(isRound(c.refs[0]), "a circle or an arc");
             break;
         case tangentLine:
-            need(isLine(c.refs[0]) && isRound(c.refs[1]), "a line and a circle or arc");
+            need(isLine(c.refs[0]) && (isRound(c.refs[1]) || isEllipse(c.refs[1])), "a line and a circle, arc or ellipse");
+            break;
+        case onEllipse:
+            need(isPoint(c.refs[0]) && isEllipse(c.refs[1]), "a point and an ellipse");
+            break;
+        case radiusX, radiusY, ellipseAngle, equalRadii:
+            need(isEllipse(c.refs[0]), "an ellipse");
+            break;
+        case tangentAt:
+            need(isLine(c.refs[0]) && isRound(c.refs[1]) && isPoint(c.refs[2]), "a line, a circle or arc and a point");
+            break;
+        case direction:
+            need(isPoint(c.refs[0]) && isPoint(c.refs[1]) && c.refs[0] != c.refs[1], "two different points");
             break;
         case symmetric:
             need(isPoint(c.refs[0]) && isPoint(c.refs[1]) && isLine(c.refs[2]), "two points and a line");
@@ -481,6 +593,30 @@ private:
         if (en.kind == EntityKind.circle)
             return x[en.var];
         return (pos(en.refs[1], x) - pos(en.refs[0], x)).length;
+    }
+
+    /// An ellipse with its radii made positive (the solver may flip their signs).
+    void ellipseOf(size_t e, const(double)[] x, out double rx, out double ry, out double angle) const
+    {
+        immutable v = entities[e].var;
+        rx = abs(x[v]);
+        ry = abs(x[v + 1]);
+        angle = wrap(x[v + 2]);
+    }
+
+    /// How far a circle, arc or ellipse reaches from its centre across a line:
+    /// for an ellipse, its support along the line's normal (exact tangency).
+    double reach(size_t curve, size_t line, const(double)[] x) const
+    {
+        auto en = entities[curve];
+        if (en.kind != EntityKind.ellipse)
+            return radiusOf(curve, x);
+        auto d = dirOf(line, x);
+        immutable dl = d.length;
+        immutable nx = -d.y / dl, ny = d.x / dl;
+        immutable v = en.var, a = x[v + 2];
+        immutable nu = nx * cos(a) + ny * sin(a), nv = -nx * sin(a) + ny * cos(a);
+        return sqrt((x[v] * nu) ^^ 2 + (x[v + 1] * nv) ^^ 2);
     }
 
     Vec3 dirOf(size_t line, const(double)[] x) const
@@ -576,7 +712,7 @@ private:
         case equalLength: r[0] = dirOf(c.refs[0], x).length - dirOf(c.refs[1], x).length; break;
         case equalRadius: r[0] = radiusOf(c.refs[0], x) - radiusOf(c.refs[1], x); break;
         case radius: r[0] = radiusOf(c.refs[0], x) - c.value; break;
-        case tangentLine: r[0] = c.sign * signedPart(c, x) - radiusOf(c.refs[1], x); break;
+        case tangentLine: r[0] = c.sign * signedPart(c, x) - reach(c.refs[1], c.refs[0], x); break;
         case tangentCircles:
             {
                 immutable d = (pos(center(c.refs[0]), x) - pos(center(c.refs[1]), x)).length;
@@ -610,6 +746,35 @@ private:
                 r[0] = (pos(e.refs[1], x) - ctr).length - (pos(e.refs[2], x) - ctr).length;
                 break;
             }
+        case onEllipse:
+            {
+                // zero on the ellipse, scaled to a length so that it weighs like the other residuals
+                immutable v = entities[c.refs[1]].var;
+                immutable rx = x[v], ry = x[v + 1], a = x[v + 2];
+                auto d = pos(c.refs[0], x) - pos(center(c.refs[1]), x);
+                immutable u = d.x * cos(a) + d.y * sin(a), w = -d.x * sin(a) + d.y * cos(a);
+                r[0] = (sqrt((u / rx) ^^ 2 + (w / ry) ^^ 2) - 1) * sqrt(abs(rx * ry));
+                break;
+            }
+        case radiusX: r[0] = abs(x[entities[c.refs[0]].var]) - c.value; break;
+        case radiusY: r[0] = abs(x[entities[c.refs[0]].var + 1]) - c.value; break;
+        // an ellipse turned half a turn is the same ellipse
+        case ellipseAngle: r[0] = remainder(x[entities[c.refs[0]].var + 2] - c.value, PI); break;
+        case direction:
+            {
+                auto d = pos(c.refs[1], x) - pos(c.refs[0], x);
+                r[0] = wrap(atan2(d.y, d.x) - c.value);
+                break;
+            }
+        case tangentAt:
+            {
+                // where a line meets an arc, "tangent" alone holds to first order
+                // wherever the point slides along the line: square radius instead
+                auto d = dirOf(c.refs[0], x), q = pos(c.refs[2], x) - pos(center(c.refs[1]), x);
+                r[0] = q.dot(d) / (d.length * q.length);
+                break;
+            }
+        case equalRadii: r[0] = abs(x[entities[c.refs[0]].var]) - abs(x[entities[c.refs[0]].var + 1]); break;
         }
     }
 }
@@ -672,6 +837,19 @@ unittest
     sq.line(c2, c3);
     sq.line(c3, c0);
     sq.fillet(c2, 5);
-    auto loop = sq.outline();
+    OutlineSource[] from;
+    auto loop = sq.outline(from);
     assert(loop.length == 6);   // 4 lines + 1 arc + end
+    // each segment knows its line; the fillet's arc, its corner
+    assert(from.length == loop.length);
+    size_t arcs;
+    foreach (k, g; loop)
+        if (g.kind == OutlineSeg.Kind.arc)
+        {
+            arcs++;
+            assert(from[k].entity == size_t.max && from[k].corner == c2);
+        }
+        else if (g.kind == OutlineSeg.Kind.line)
+            assert(sq.entities[from[k].entity].kind == EntityKind.line && from[k].corner == size_t.max);
+    assert(arcs == 1);
 }

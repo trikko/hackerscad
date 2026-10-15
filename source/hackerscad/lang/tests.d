@@ -7,6 +7,7 @@ version (unittest):
 import std.algorithm : map, canFind, count;
 import std.array : array, join;
 import std.format : format;
+import std.conv : to;
 import std.math : isClose, PI, sqrt, abs;
 import std.file : tempDir, mkdirRecurse, write, rmdirRecurse;
 import std.path : buildPath;
@@ -493,19 +494,50 @@ unittest
 
 unittest
 {
-    // the tutorial's Carlo: a sketch fully constrained, one valid part, with 3 teeth and with 5, without the eye
+    // the tutorial's Carlo: a sketch fully constrained, one valid part, with 3 teeth, 5 and 1, without the eye, the mouth closed
     import std.file : thisExePath, readText;
     import std.path : dirName;
-    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "docs", "tutorial", "13-carlo.hcad");
-    foreach (teeth; ["3", "5", "3 no eye"])
+    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "docs", "tutorial", "12-carlo.hcad");
+    string[string][] cases = [["teeth": "3"], ["teeth": "5"], ["eye": "false"], ["teeth": "1"], ["mouth": "-2"]];
+    foreach (o; cases)
     {
+        auto teeth = o.to!string;
         auto it = make();
-        it.overrides = teeth == "3 no eye" ? ["eye": "false"] : ["teeth": teeth];
+        it.overrides = o;
         auto r = it.run(path);
         foreach (d; r.diagnostics)
             assert(d.severity != Severity.error && d.severity != Severity.warning, d.message);
         assert(r.parts.length == 1 && kernel.isValid(r.parts[0].solid.brep), teeth);
         assert(r.log[0].text == "degrees of freedom left: 0", r.log[0].text);
+    }
+}
+
+unittest
+{
+    // Carlo in three places kept the same: the tutorial's sketch, lib/carlo.hcad and the start
+    // example; valid with one tooth or six, the mouth closed, leaning 0° or 30°
+    import std.file : thisExePath, readText;
+    import std.path : dirName;
+    import std.string : indexOf;
+    auto root = dirName(dirName(dirName(thisExePath)));
+    auto tutorial = readText(buildPath(root, "docs", "tutorial", "12-carlo.hcad"));
+    auto sketchCode = tutorial[tutorial.indexOf("    auto s = sketch();") .. tutorial.indexOf("    writeln(")];
+    auto library = readText(buildPath(root, "lib", "carlo.hcad"));
+    assert(library.indexOf(sketchCode) >= 0, "lib/carlo.hcad no longer draws the sketch of docs/tutorial/12-carlo.hcad");
+    // the start example shows the library's carlo(), word for word
+    auto carloCode = library[library.indexOf("/// Carlo lying flat") .. $];
+    assert(readText(buildPath(root, "examples", "00_carlo.hcad")).indexOf(carloCode) >= 0,
+        "examples/00_carlo.hcad no longer shows the carlo() of lib/carlo.hcad");
+    string[string][] cases = [null, ["teeth": "1", "mouth": "-2"], ["teeth": "6", "eye": "false"], ["lean": "0"],
+        ["lean": "30", "toothR": "4"]];
+    foreach (o; cases)
+    {
+        auto it = make();
+        it.overrides = o;
+        auto r = it.run(buildPath(root, "examples", "00_carlo.hcad"));
+        foreach (d; r.diagnostics)
+            assert(d.severity != Severity.error && d.severity != Severity.warning, o.to!string ~ ": " ~ d.message);
+        assert(r.parts.map!(p => p.name).array == ["clip"] && kernel.isValid(r.parts[0].solid.brep), o.to!string);
     }
 }
 
@@ -1037,6 +1069,285 @@ unittest
 
 unittest
 {
+    // what the GUI shows of a sketch: each segment knows its entity and the
+    // call that made it, each constraint call (valueless ones too) the
+    // entities it involves, so Inspect on a line can highlight them
+    import hackerscad.lang.sketchval : SketchVal, SketchView;
+    import std.string : splitLines, indexOf;
+
+    immutable src = `@part Solid p()
+{
+    auto s = sketch();
+    auto a = s.point(0, 0, fixed: true);
+    auto b = s.point(30, 1);
+    auto c = s.point(31, 20);
+    auto d = s.point(1, 21);
+    auto ab = s.line(a, b);
+    auto bc = s.line(b, c);
+    auto cd = s.line(c, d);
+    auto da = s.line(d, a);
+    s.horizontal(ab);
+    s.parallel(cd, ab);
+    s.perpendicular(da, ab);
+    s.vertical(bc);
+    s.length(ab, 30.mm);
+    s.distance(a, d, 20.mm);
+    s.fillet(c, 3.mm);
+    auto hole = s.circle(s.point(10, 10), d: 4.mm);
+    s.on(hole.center, s.line(a, c, construction: true));
+    foreach (i; 0 .. 2)
+        s.horizontal(s.line(s.point(5 + 10 * i, 15, fixed: true), s.point(8 + 10 * i, 16), construction: true));
+    return s.profile.extrude(1);
+}
+`;
+    uint lineOf(string needle)
+    {
+        foreach (i, l; src.splitLines)
+            if (l.indexOf(needle) >= 0)
+                return cast(uint)(i + 1);
+        assert(0, needle);
+    }
+
+    auto it = make();
+    auto r = runModel(src, it);
+    foreach (dg; r.diagnostics)
+        assert(dg.severity != Severity.error, dg.message);
+    assert(it.sketches.length == 1);
+    auto v = (cast(SketchVal) it.sketches[0]).view();
+    immutable file = v.span.file;
+    // free: the hole along its line, the end of each line of the loop
+    assert(v.solved && v.dof == 3, format("%s %s", v.solved, v.dof));
+    assert(v.profiles.length == 1 && v.profiles[0].line == lineOf("s.profile"));
+
+    // entities in the order they were made, with their calls
+    assert(v.entities[0].kind == "point" && v.entities[0].span.line == lineOf("auto a ="));
+    immutable ab = 4, bc = 5, cd = 6;
+    assert(v.entities[ab].kind == "line" && v.entities[ab].span.line == lineOf("auto ab ="));
+    assert(v.points.length == 9 && v.points[1].entity == 1);
+
+    // the outline draws each line once (cd and bc trimmed by the fillet at c), and the fillet's arc
+    size_t[ptrdiff_t] drawn;
+    foreach (g; v.segments)
+        drawn[g.entity]++;
+    foreach (e; [ab, bc, cd])
+        assert(drawn.get(e, 0) == 1, format("%s", drawn));
+    auto arc = v.segments.map!(g => g.corner).array.canFind(2);
+    assert(arc, "the fillet's arc names its corner point");
+    foreach (g; v.segments)
+        if (g.corner == 2)
+            assert(g.entity == -1 && g.span.line == lineOf("s.fillet"));
+        else
+            assert(g.entity >= 0 && g.span == v.entities[g.entity].span);
+
+    // constraint records: valueless ones too, with the entities they involve
+    SketchView.Constraint byLine(string needle)
+    {
+        foreach (c; v.constraints)
+            if (c.span.line == lineOf(needle))
+                return c;
+        assert(0, needle);
+    }
+    auto par = byLine("s.parallel");
+    assert(par.kind == "parallel" && par.entities == [cd, ab] && par.dimension < 0);
+    auto len = byLine("s.length");
+    assert(len.kind == "length" && len.entities == [ab] && len.dimension >= 0);
+    assert(v.dimensions[len.dimension].label == "30" && v.dimensions[len.dimension].constraint < v.constraints.length);
+    assert(v.constraints[v.dimensions[len.dimension].constraint].span == len.span);
+    auto fil = byLine("s.fillet");
+    assert(fil.kind == "fillet" && fil.entities[0] == 2 && fil.entities.canFind(bc) && fil.entities.canFind(cd), format("%s", fil));
+    assert(byLine("auto a =").kind == "fix");
+    assert(byLine("auto hole").kind == "diameter");
+
+    // Inspect on a line: an entity line highlights it; a constraint line, what it involves
+    auto f = v.on(file, lineOf("auto bc ="), lineOf("auto bc ="));
+    assert(f.entities == [bc] && f.highlight == [bc] && f.constraints.length == 0 && !f.sketch);
+    f = v.on(file, lineOf("s.parallel"), lineOf("s.parallel"));
+    assert(f.entities.length == 0 && f.constraints.length == 1 && f.highlight == [cd, ab]);
+    // a loop: several entities and constraints from one line, all of them
+    f = v.on(file, lineOf("s.horizontal(s.line"), lineOf("s.horizontal(s.line"));
+    assert(f.entities.length == 6 && f.constraints.length == 4, format("%s", f));   // 2 × (2 points, a line; fix, horizontal)
+    // the sketch() line and the .profile line belong to the sketch, other lines not
+    assert(v.on(file, lineOf("sketch()"), lineOf("sketch()")).sketch);
+    assert(v.covers(file, lineOf("s.profile"), lineOf("s.profile")));
+    assert(!v.covers(file, 1, 1) && !v.covers("other.hcad", lineOf("s.parallel"), lineOf("s.parallel")));
+}
+
+unittest
+{
+    // sketch shapes: ellipses, rectangles, regular polygons, slots, concentric
+    import std.algorithm : filter, sort;
+    auto r = runModel(q{
+        @part Solid oval()
+        {
+            auto s = sketch();
+            auto e = s.ellipse(s.point(0, 0, fixed: true), rx: 20.mm, ry: 10.mm);
+            s.horizontal(e);
+            writeln("oval ", s.dof);
+            return s.profile.extrude(1);
+        }
+        @part Solid through()
+        {
+            // the radii from two points it passes through
+            auto s = sketch();
+            auto e = s.ellipse(vec(0, 0));
+            s.fix(e.center);
+            s.horizontal(e);
+            s.on(s.point(30, 0, fixed: true), e);
+            s.on(s.point(18, 12, fixed: true), e);
+            writeln("through ", s.dof, " ", e.rx, " ", e.ry);
+            return s.profile.extrude(1);
+        }
+        @part Solid touching()
+        {
+            // a horizontal line tangent to a tilted ellipse: its height is the ellipse's reach
+            auto s = sketch();
+            auto e = s.ellipse(s.point(0, 0, fixed: true), rx: 20.mm, ry: 10.mm, angle: 30.deg);
+            auto l = s.line(s.point(-30, 16), s.point(30, 17), construction: true);
+            s.horizontal(l);
+            s.tangent(l, e);
+            writeln("touching ", abs(l.start.y - sqrt(175.0).mm) < 0.000001.mm);
+            return s.profile.extrude(1);
+        }
+        @part Solid round()
+        {
+            // drawn squashed, made round
+            auto s = sketch();
+            auto e = s.ellipse(s.point(0, 0, fixed: true));
+            s.equal(e);
+            s.radius(e, rx: 15.mm);
+            writeln("round ", s.dof, " ", e.ry);
+            return s.profile.extrude(1);
+        }
+        @part Solid plate()
+        {
+            // a rounded rectangle round a fixed centre, an elliptic hole in its middle
+            auto s = sketch();
+            auto c = s.point(0, 0, fixed: true);
+            auto sides = s.rect(center: c, w: 60.mm, h: 40.mm, corner: 5.mm);
+            auto hole = s.ellipse(vec(3, 2), rx: 10.mm, ry: 5.mm);
+            s.concentric(hole, c);
+            s.vertical(hole);
+            writeln("plate ", s.dof, " ", sides.length, " ", sides[1].length);
+            return s.profile.extrude(1);
+        }
+        @part Solid corners()
+        {
+            auto s = sketch();
+            s.rect(vec(0, 0), vec(30, 20));
+            writeln("corners ", s.dof);
+            auto t = sketch();
+            t.rect(t.point(0, 0, fixed: true), t.point(30, 20, fixed: true));
+            writeln("corners ", t.dof);
+            return t.profile.extrude(1);
+        }
+        @part Solid hexagon()
+        {
+            auto s = sketch();
+            auto sides = s.polygon(s.point(0, 0, fixed: true), 6, r: 10.mm);
+            writeln("hexagon ", s.dof);
+            s.horizontal(sides[0]);
+            writeln("hexagon ", s.dof, " ", abs(sides[0].length - 10.mm) < 0.000001.mm);
+            return s.profile.extrude(1);
+        }
+        @part Solid triangle()
+        {
+            auto s = sketch();
+            auto sides = s.polygon(s.point(0, 0, fixed: true), 3, d: 20.mm, angle: 90.deg);
+            writeln("triangle ", s.dof, " ", abs(sides[0].start.y - 10.mm) < 0.000001.mm);
+            return s.profile.extrude(1);
+        }
+        @part Solid slotted()
+        {
+            auto s = sketch();
+            auto parts = s.slot(s.point(0, 0, fixed: true), s.point(30, 0, fixed: true), w: 10.mm);
+            writeln("slot ", s.dof, " ", parts[1].radius);
+            return s.profile.extrude(1);
+        }
+        @part Solid rings()
+        {
+            // an elliptic ring: a circle hole concentric with the ellipse
+            auto s = sketch();
+            auto e = s.ellipse(s.point(0, 0, fixed: true), rx: 20.mm, ry: 12.mm, angle: 0.deg);
+            auto c = s.circle(s.point(2, 1), d: 8.mm);
+            s.concentric(e, c);
+            writeln("rings ", s.dof);
+            return s.profile.extrude(1);
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    auto log = r.log.map!(l => l.text).array;
+    assert(log == ["oval 0", "through 0 30 mm 15 mm", "touching true", "round 0 15 mm", "plate 0 4 40 mm", "corners 4",
+        "corners 0", "hexagon 1", "hexagon 0 true", "triangle 0 true", "slot 0 5 mm", "rings 0"], format("%s", log));
+    void near(string part, double want)
+    {
+        immutable got = partVolume(r, part);
+        // the kernel integrates ellipses numerically: close, not exact
+        assert(isClose(got, want, 1e-4), format("%s: %.9g, not %.9g", part, got, want));
+    }
+    near("oval", PI * 200);
+    near("through", PI * 450);
+    near("round", PI * 225);
+    near("plate", 2400 - (100 - 25 * PI) - PI * 50);
+    near("corners", 600);
+    near("hexagon", 1.5 * sqrt(3.0) * 100);
+    near("triangle", 0.75 * sqrt(3.0) * 100);
+    near("slotted", 300 + PI * 25);
+    near("rings", PI * 240 - PI * 16);
+
+    // what the GUI gets: the ellipse as a curve, its radii and the rect's sizes as dimensions
+    import hackerscad.lang.sketchval : SketchVal;
+    auto it = make();
+    runModel(q{
+        @part Solid p()
+        {
+            auto s = sketch();
+            auto c = s.point(0, 0, fixed: true);
+            s.rect(center: c, w: 60.mm, h: 40.mm, corner: 4.mm);
+            auto e = s.ellipse(c, rx: 10.mm, ry: 5.mm, angle: 30.deg);
+            return s.profile.extrude(1);
+        }
+    }, it);
+    auto v = (cast(SketchVal) it.sketches[0]).view();
+    assert(v.solved && v.dof == 0);
+    assert(v.entities.map!(e => e.kind).canFind("ellipse"));
+    auto oval = v.segments.filter!(g => g.kind == 3).array;
+    assert(oval.length == 1 && isClose(oval[0].r, 10) && isClose(oval[0].r2, 5) && isClose(oval[0].angle, PI / 6));
+    assert(v.entities[oval[0].entity].kind == "ellipse");
+    auto labels = v.dimensions.map!(d => d.label).array.sort.array;
+    // the four corners share one dimension, on the arc of the upper right one
+    assert(labels == ["30°", "40", "60", "R4", "Rx10", "Ry5"], format("%s", labels));
+    auto corner = v.dimensions.filter!(d => d.label == "R4").front;
+    assert(corner.at.x > 28 && corner.at.y > 18 && v.constraints[corner.constraint].kind == "fillet", format("%s", corner));
+    auto kinds = v.constraints.map!(c => c.kind).array;
+    assert(kinds.canFind("midpoint") && kinds.count("horizontal") == 2 && kinds.count("radius") == 2, format("%s", kinds));
+
+    // a round ellipse with a turn of its own is not over-constrained; ellipses need rx: and ry: for a radius
+    r = runModel(q{
+        @part Solid p()
+        {
+            auto s = sketch();
+            auto e = s.ellipse(s.point(0, 0, fixed: true), rx: 8.mm, angle: 10.deg);
+            s.equal(e);
+            writeln(s.dof, " ", s.solved);
+            return s.profile.extrude(1);
+        }
+    });
+    assert(r.log[0].text == "0 true", r.log[0].text);
+    auto e = error(q{
+        @part Solid p()
+        {
+            auto s = sketch();
+            auto e = s.ellipse(vec(0, 0));
+            s.radius(e, 5.mm);
+            return s.profile.extrude(1);
+        }
+    });
+    assert(e.code == Code.type && e.message.canFind("two radii"), e.message);
+}
+
+unittest
+{
     // built-in libraries
     auto r = runModel(q{
         import hardware;
@@ -1199,6 +1510,14 @@ unittest
     assert(isClose(egg.size.x, 40, 1e-4) && isClose(egg.size.y, 30, 1e-4) && isClose(egg.size.z, 20, 1e-4));
     assert(error("@part Solid p() => box(1, 1, 1).scale(2, x: 3);").code == Code.type);
     assert(error("@part Solid p() => box(1, 1, 1).scale(y: 0);").code == Code.type);
+    // around: the point that stays where it is
+    auto q = runModel(q{
+        @part Solid up() => box(10.mm, 10.mm, 10.mm).move(z: 5.mm).scale(2, around: vec(0.mm, 0.mm, 5.mm));
+        @part Solid tall() => box(10.mm, 10.mm, 10.mm).move(z: 5.mm).scale(z: 3, around: vec(0.mm, 0.mm, 5.mm));
+    });
+    auto up = kernel.bbox(q.parts[0].solid.brep), tall = kernel.bbox(q.parts[1].solid.brep);
+    assert(isClose(up.min.z, 5, 1e-6) && isClose(up.max.z, 25, 1e-6) && isClose(up.max.x, 10, 1e-6), "scale around");
+    assert(isClose(tall.min.z, 5, 1e-6) && isClose(tall.max.z, 35, 1e-6) && isClose(tall.max.x, 5, 1e-6), "scale around");
 }
 
 // The known bugs of OpenCascade, each tried with its workaround turned off.
@@ -2382,4 +2701,37 @@ unittest
     assert(isClose(partVolume(r, "c"), PI * 100 * 20, 1e-3), "a cylinder through rings");
     assert(error("@part Solid p() => loft([[vec(0, 0, 0), vec(1, 0, 0), vec(0, 1, 0)], "
         ~ "[vec(0, 0, 1), vec(1, 0, 1), vec(0, 1, 1), vec(1, 1, 1)]]);").message.canFind("the same count"));
+}
+
+unittest
+{
+    // fit: "sides" sizes a regular polygon by the circle its sides touch: a hexagon 13 mm across the
+    // flats, in a sketch and as a profile, and a pentagon; fully constrained, the sizes are dimensions
+    import std.math : tan, PI;
+    auto r = runModel(`import std.shapes;
+@part Solid a()
+{
+    auto s = sketch();
+    auto c = s.point(0, 0, fixed: true);
+    s.horizontal(s.polygon(c, 6, d: 13.mm, fit: "sides")[0]);
+    writeln(s.dof);
+    return s.profile.extrude(1.mm);
+}
+@part Solid b() => regularPolygon(6, d: 13.mm, fit: "sides").extrude(1.mm);
+@part Solid p()
+{
+    auto s = sketch();
+    s.polygon(s.point(0, 0, fixed: true), 5, r: 10.mm, fit: "sides", angle: 90.deg);
+    return s.profile.extrude(1.mm);
+}
+`);
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error && d.severity != Severity.warning, d.message);
+    assert(r.log[0].text == "0", r.log[0].text);
+    immutable hexagon = 6 * 6.5 ^^ 2 * tan(PI / 6);
+    assert(isClose(partVolume(r, "a"), hexagon, 1e-6) && isClose(partVolume(r, "b"), hexagon, 1e-6));
+    assert(isClose(partVolume(r, "p"), 5 * 10.0 ^^ 2 * tan(PI / 5), 1e-6));
+    import std.algorithm : canFind;
+    auto e = errorIn(`auto p = regularPolygon(6, d: 13.mm, fit: "flats");`, "import std.shapes;");
+    assert(e.message.canFind("fit is"), e.message);
 }

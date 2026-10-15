@@ -140,6 +140,12 @@ bool minimize(double[] x, const(Equation)[] eqs, double tolerance, size_t maxIte
                 a[p][q] = a[q][p] = t;
             }
         }
+        // unknowns the residuals barely depend on (a nearly horizontal line
+        // sliding along itself) are damped like the others, else one step
+        // throws them far from where they were
+        double floor = 1e-6;
+        foreach (p; 0 .. n)
+            floor = max(floor, 1e-3 * a[p][p]);
         bool improved;
         foreach (attempt; 0 .. 12)
         {
@@ -147,7 +153,7 @@ bool minimize(double[] x, const(Equation)[] eqs, double tolerance, size_t maxIte
             foreach (p; 0 .. n)
             {
                 aa[p][] = a[p][];
-                aa[p][p] += lambda * (a[p][p] + 1e-6);
+                aa[p][p] += lambda * (a[p][p] + floor);
             }
             auto delta = solveLinear(aa, g.dup);
             if (delta is null)

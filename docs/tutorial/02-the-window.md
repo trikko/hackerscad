@@ -3,7 +3,7 @@
 # 2. The window
 
 Before building anything, a tour of the window: what each part is for. The
-bag clip is still open; we use it to try things.
+bag clip, Carlo, is still open; we use it to try things.
 
 ![The parts of the window](img/02-window.png)
 
@@ -15,8 +15,11 @@ bag clip is still open; we use it to try things.
    under the part, across), or the knobs of the three rings round it, one
    after the other; the bar reads how far, and the ✓ next to the part
    writes one `.move()` or one `.rotate()` into the code (the X leaves it
-   as it was). With a face picked, **Rotate around its normal…** (its axis,
-   for a round face) gives one ring around it; with an edge, **Rotate around
+   as it was). **Scale…** works the same way: drag the X, Y or Z handle to
+   stretch the part along that axis, or the knob at the corner of its box to
+   scale it all alike; the middle of its bottom stays where it is, so a part
+   on the ground stays on it, and the ✓ writes one `.scale()`. With a face
+   picked, **Rotate around its normal…** (its axis, for a round face) gives one ring around it; with an edge, **Rotate around
    this edge…** turns the part on it as on a hinge. **Place on…** carries
    a point of the face you clicked (a corner, the middle of an edge or of
    the face: the green point) onto one of another face, onto the origin or
@@ -38,7 +41,7 @@ bag clip is still open; we use it to try things.
    the axes; the cube, to choose how the parts are drawn; the section, to cut
    the model and look inside (parallel to the face you picked, if any; drag
    the squares at the plane's corners to move it, the X past them closes it); the magnifying glass, to see what a line
-   of code makes.
+   of code makes (on a line of a sketch, the sketch with its dimensions).
 3. **Parameters and Steps.** Two tabs. *Parameters* has the sizes the model
    lets you change, without touching the code; *Steps* shows how the model is
    built, one step at a time.
@@ -52,7 +55,7 @@ bag clip is still open; we use it to try things.
 The buttons at the top left start a new model, open one, save it and export
 it (Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E; on macOS, Cmd in place of Ctrl, here and
 in the rest of this tutorial). **Examples** opens ready models to try: the
-bag clip, the espresso cup of the README, the planter this tutorial builds, a tour
+Carlo, the espresso cup of the README, the planter this tutorial builds, a tour
 of the language that shows `if`, `for`, `while`, `switch`, functions and
 structs, each with what it makes appear, and more complete models. The buttons at the top right show or hide
 the console, the code, the view and the parameters (Ctrl+J, F7, F8, F9). The
@@ -64,10 +67,10 @@ system is set.
 
 In **Parameters**, find **Teeth per jaw** and click **+**: the clip
 gets one more tooth on each jaw. The code does not change: parameters are
-values you try on the model. A value you changed is marked with a dot, and
-the ↺ at the end of its line brings back the one in the code; **Reset to
-defaults** brings back all of them, and the **Preset** menu at the top
-chooses ready-made sets of values (here *small* and *large*).
+values you try on the model, and the code hands them to `carlo()`, which
+draws the clip. A value you changed is marked with a dot, and the ↺ at the
+end of its line brings back the one in the code; **Reset to defaults**
+brings back all of them.
 
 ## How the parts are drawn
 

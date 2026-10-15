@@ -45,10 +45,12 @@ void main(string[] args)
     if (exists(work))
         remove(work);
 
-    // a new file starts from the bag clip example
+    // a new file starts from Carlo
     start(buildPath(dir, "untitled.hcad"));
     scope (exit)
         stop();
+    // a click picks faces, whatever an earlier run left chosen
+    view(`{"select": "face"}`);
     auto pages = [&page1, &page2, &page3, &page4, &page5, &page6, &page7, &page8, &page9, &page10, &page11, &page12,
         &page13];
     if (args.length > 1)
@@ -64,8 +66,7 @@ void main(string[] args)
 
 void page1()
 {
-    view(`{"preset": "iso"}`);
-    shot("01-first-start");
+    shot("01-first-start");   // as the window starts, a little higher than Iso
 }
 
 void page2()
@@ -88,6 +89,7 @@ void page3()
     open(work);
     view(`{"preset": "iso"}`);
     shot("03-block");
+    view(`{"select": "edge"}`);   // the edge button of the view bar, as the page says
     // Shift+click on the four vertical edges; the one at the back after turning the view
     // (just inside a visible face: a click lands on the edge within a few pixels)
     click([31, -31, 33], false);
@@ -104,6 +106,7 @@ void page3()
     type("r: 1.mm", "r: 10.mm");
     clearSelection();
     shot("03-final");
+    view(`{"select": "face"}`);
     save(3);
 }
 
@@ -273,53 +276,53 @@ void page11()
     save(11);
 }
 
-void page12()
+void page13()
 {
     import std.file : copy;
     auto dir = buildPath(tempDir, "tutorial");
     // the language tour, from the Examples menu
     req("new", `{"example": "language", "force": true}`);
     view(`{"preset": "iso"}`);
-    shot("12-examples");
+    shot("13-examples");
 
     // the hook: made longer with the mouse, then made printable
     auto hook = buildPath(dir, "hook.hcad");
-    copy(buildPath(docs, "12-hook-1.hcad"), hook);
+    copy(buildPath(docs, "13-hook-1.hcad"), hook);
     open(hook);
     view(`{"preset": "iso", "style": "edges"}`);
-    shot("12-hook");
+    shot("13-hook");
     menu([0, -22, 33], ["Extrude face…"]);
     type("depth: 5.mm", "depth: 10.mm");
     clearSelection();
     view(`{"preset": "iso"}`);
-    shot("12-hook-longer", lineOf(".extrude("));
+    shot("13-hook-longer", lineOf(".extrude("));
     // seen from below, with the printability marks
     view(`{"printability": true, "orbit": [0, -50]}`);
-    shot("12-hook-print");
+    shot("13-hook-print");
     // laid on its back, where it stays
     type("        .extrude(faces.front, depth: 10.mm);", "        .extrude(faces.front, depth: 10.mm)\n        .rotate(x: -90);");
     view(`{"preset": "iso"}`);
-    shot("12-hook-back", lineOf(".rotate("));
+    shot("13-hook-back", lineOf(".rotate("));
     // two gussets under the arm
     type("    return (plate + arm)\n", gussets12);
     view(`{"preset": "iso"}`);
-    shot("12-hook-final", lineOf("auto gusset"));
+    shot("13-hook-final", lineOf("auto gusset"));
     view(`{"printability": false}`);
-    write(buildPath(docs, "12-hook.hcad"), source());
+    write(buildPath(docs, "13-hook.hcad"), source());
 
     // a label from a drawing, and the models of the other sections
     copy(buildPath(docs, "leaf.svg"), buildPath(dir, "leaf.svg"));
     foreach (name; ["label", "sketch", "jug", "fixings"])
     {
         auto file = buildPath(dir, name ~ ".hcad");
-        copy(buildPath(docs, "12-" ~ name ~ ".hcad"), file);
+        copy(buildPath(docs, "13-" ~ name ~ ".hcad"), file);
         open(file);
         view(`{"preset": "iso"}`);
-        shot("12-" ~ name);
+        shot("13-" ~ name);
     }
 }
 
-void page13()
+void page12()
 {
     // Carlo drawn as a constrained sketch: its dimensions from above, the clip
     // extruded, then with five teeth (the constraints keep it together)
@@ -327,19 +330,19 @@ void page13()
     auto dir = buildPath(tempDir, "tutorial");
     mkdirRecurse(dir);
     auto file = buildPath(dir, "carlo.hcad");
-    copy(buildPath(docs, "13-carlo.hcad"), file);
+    copy(buildPath(docs, "12-carlo.hcad"), file);
     open(file);
     req("sketch", `{"on": true}`);
     view(`{"projection": "orthographic", "preset": "top"}`);
     view(`{"preset": "fit"}`);
-    shot("13-carlo-sketch", lineOf("auto s = sketch()"));
+    shot("12-carlo-sketch", lineOf("auto s = sketch()"));
     req("sketch", `{"on": false}`);
     view(`{"projection": "perspective", "preset": "iso"}`);
     view(`{"preset": "fit"}`);
-    shot("13-carlo", lineOf("s.profile"));
+    shot("12-carlo", lineOf("s.profile"));
     req("set", `{"params": {"teeth": 5}}`);
     view(`{"preset": "fit"}`);
-    shot("13-carlo-five", lineOf("immutable teeth"));
+    shot("12-carlo-five", lineOf("immutable teeth"));
     req("set", `{"preset": ""}`);
 }
 

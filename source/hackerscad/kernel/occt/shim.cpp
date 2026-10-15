@@ -2682,6 +2682,20 @@ hc_shape *hc_outline(const double *data, int n)
             case 2: // end of loop
                 close();
                 break;
+            case 3: { // a whole ellipse around a: radii d[3] along its x axis (d[5] radians from X) and d[4]
+                double rx = d[3], ry = d[4], t = d[5];
+                if (rx < ry) { // gp_Elips wants the major radius first: turn its axis a quarter
+                    std::swap(rx, ry);
+                    t += M_PI / 2;
+                }
+                gp_Ax2 ax(a, gp_Dir(0, 0, 1), gp_Dir(std::cos(t), std::sin(t), 0));
+                if (rx - ry <= 1e-9 * rx) // as wide as tall: a circle
+                    wire.Add(BRepBuilderAPI_MakeEdge(gp_Circ(ax, rx)).Edge());
+                else
+                    wire.Add(BRepBuilderAPI_MakeEdge(gp_Elips(ax, rx, ry)).Edge());
+                open = true;
+                break;
+            }
             }
         }
         close();

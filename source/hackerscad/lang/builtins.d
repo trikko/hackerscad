@@ -36,6 +36,7 @@ shared static this()
         "hinges": import("hinges.hcad"),
         "snaps": import("snaps.hcad"),
         "enclosures": import("enclosures.hcad"),
+        "carlo": import("carlo.hcad"),
     ];
 }
 
@@ -601,8 +602,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
     def("scale", (ref CallArgs a) {
         // scale(k) the same way along every axis; scale(x: 2, y: 0.5) a factor
-        // each (the ones not given stay 1): an ellipsoid from a sphere
-        auto x = Args(it, a, "scale", ["solid", "factor", "x", "y", "z"]);
+        // each (the ones not given stay 1): an ellipsoid from a sphere;
+        // around: the point that stays where it is instead of the origin
+        auto x = Args(it, a, "scale", ["solid", "factor", "x", "y", "z", "around"]);
         auto s = x.solid("solid");
         if (x.has("factor") && (x.has("x") || x.has("y") || x.has("z")))
             throw new HcadError(Code.type, "scale takes one factor, or x:, y:, z:, not both", x.spanOf("factor"));
@@ -611,9 +613,10 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         foreach (k_, v; ["factor": f, "x": sx, "y": sy, "z": sz])
             if (v <= 0)
                 throw new HcadError(Code.type, "scale factors must be positive", x.has(k_) ? x.spanOf(k_) : a.span);
+        immutable c = x.has("around") ? x.vecLen("around") : Vec3(0, 0, 0);
         if (sx == sy && sy == sz)
-            return transformed(it, a.span, s, b => k.scale(b, sx));
-        return transformed(it, a.span, s, b => k.scaleXyz(b, sx, sy, sz));
+            return transformed(it, a.span, s, b => k.translate(k.scale(k.translate(b, -c), sx), c));
+        return transformed(it, a.span, s, b => k.translate(k.scaleXyz(k.translate(b, -c), sx, sy, sz), c));
     });
     def("mirror", (ref CallArgs a) {
         // mirror(X) across the plane through the origin with that normal, or
@@ -943,11 +946,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return flat(k.polygon(xy), "polygon", a.span);
     });
     def("regularPolygon", (ref CallArgs a) {
-        // regularPolygon(6, d: 10.mm): d/r measure the corners (circumscribed circle)
-        auto x = Args(it, a, "regularPolygon", ["n", "r", "d"]);
-        immutable n = count(x, "n"), r = x.radius("r", "d");
+        // regularPolygon(6, d: 10.mm): d/r measure the corners (the circle through them); fit: "sides"
+        // the sides instead (the circle they touch: d across the flats, a nut's spanner size)
+        auto x = Args(it, a, "regularPolygon", ["n", "r", "d", "fit"]);
+        immutable n = count(x, "n"), given = x.radius("r", "d");
         if (n < 3)
             throw new HcadError(Code.type, "a regular polygon has at least 3 sides", x.spanOf("n"));
+        immutable r = polygonFit(x) ? given / cos(PI / n) : given;
         double[] xy;
         foreach (i; 0 .. n)
             xy ~= [r * cos(2 * PI * i / n), r * sin(2 * PI * i / n)];
@@ -2603,6 +2608,18 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
 }
 
 /// Named/positional argument reader with validation and unit coercion.
+/// A regular polygon's fit: argument, "corners" (the default: its size is the circle through the
+/// corners) or "sides" (the circle its sides touch); true for "sides".
+bool polygonFit(ref Args x)
+{
+    if (!x.has("fit"))
+        return false;
+    auto v = x.get("fit");
+    if (v.kind != Kind.str || (v.s != "corners" && v.s != "sides"))
+        throw new HcadError(Code.type, "fit is \"corners\" or \"sides\"", x.spanOf("fit"));
+    return v.s == "sides";
+}
+
 struct Args
 {
     Interp it;

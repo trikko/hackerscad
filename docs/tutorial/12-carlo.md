@@ -1,17 +1,17 @@
-[← Going further](12-going-further.md) · [Contents](../TUTORIAL.md)
+[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Going further →](13-going-further.md)
 
-# 13. Carlo, drawn with a sketch
+# 12. Carlo, drawn with a sketch
 
 The clip hackerscad starts with is Carlo, the mascot: a bag clip whose
-toothed slot and keyring hole make a little crocodile. The example builds
-it from coordinates worked out by hand. This page draws it the other way, as
-a **constrained sketch**: you say what the outline is like ("the bottom is
-level, the back leans 17°, the teeth are all 2.5 mm and touch each other")
-and hackerscad works out where every corner goes. Then the outline is
-extruded.
+toothed slot and keyring hole make a little crocodile. The example takes it
+ready-made from a library: `import carlo;`, then `carlo()`. This page draws
+it as that library does, with a **constrained sketch**: you say what the
+outline is like ("the top is level, the back leans 17°, the teeth are all
+2.5 mm and touch each other") and hackerscad works out where every corner
+goes. Then the outline is extruded.
 
 Press **New**, select all the code (Ctrl+A) and paste the
-[finished model](13-carlo.hcad) over it, or follow the parts below.
+[finished model](12-carlo.hcad) over it, or follow the parts below.
 
 ## Points, roughly where they go
 
@@ -22,14 +22,21 @@ whole outline does not float away.
 
 ```d
 auto s = sketch();
-auto a = s.point(-back + top * tan(lean), -top, fixed: true);
+immutable slope = tan(lean);
+auto a = s.point(-back + top * slope, -top,
+    fixed: true);
 auto b = s.point(slot + 2 * toothR, -top);
 auto c = s.point(slot - 2 * toothR, top);
-auto centre = s.point(-back - top * tan(lean) + eyeR, top);
-auto eyeBack = s.point(-back - (top - 3.mm) * tan(lean), top - 3.mm);
-auto nookCentre = s.point(-back - top * tan(lean) + 2 * eyeR + 1.mm, top + nook);
-auto nookTop = s.point(-back - top * tan(lean) + 2 * eyeR + 1.mm, top);
-auto nookEye = s.point(-back - top * tan(lean) + 2 * eyeR - 0.3.mm, top + 1.mm);
+immutable corner = -back - top * slope; // top left
+immutable rise = corner + 2 * eyeR;
+auto centre = s.point(corner + eyeR, top);
+auto eyeBack = s.point(corner + 3.mm * slope,
+    top - 3.mm);
+auto nookCentre = s.point(rise + 1.mm,
+    top + nook);
+auto nookTop = s.point(rise + 1.mm, top);
+auto nookEye = s.point(rise - 0.3.mm,
+    top + 1.mm);
 ```
 
 ## The block and the eye: level, leaning, tangent
@@ -44,10 +51,10 @@ auto bottom = s.line(a, b);
 auto left = s.line(a, eyeBack);
 auto topSide = s.line(c, nookTop);
 auto ring = s.arc(centre, nookEye, eyeBack);
-auto rounding = s.arc(nookCentre, nookEye, nookTop);
-s.horizontal(bottom);
+auto rounding = s.arc(nookCentre, nookEye,
+    nookTop);
 s.horizontal(topSide);
-s.angle(bottom, left, 90.deg + lean);     // the back leans 17°
+s.angle(topSide, left, 90.deg - lean);    // the back leans 17°
 s.on(centre, topSide);                    // the eye's centre on the top's line
 s.radius(ring, eyeR);
 s.tangent(left, ring);                    // the back touches the eye
@@ -58,7 +65,9 @@ s.distance(a, centre, 2 * top, along: Y); // the block's height
 ```
 
 - `horizontal` and `vertical` keep a line level or upright.
-- `angle(a, b, v)` sets the angle between two lines (start to end of each).
+- `angle(a, b, v)` sets the angle between two lines (start to end of each),
+  turning counter-clockwise from `a` to `b`, or clockwise on the side the
+  drawing starts on.
 - `on(p, line)` puts a point on a line (on the line it lies on, past its
   ends too), a circle or an arc.
 - `tangent(a, b)` makes a line touch an arc or a circle, or two arcs touch
@@ -77,11 +86,11 @@ if (eye)
 }
 else
 {
-    auto d = s.point(-back - top * tan(lean), top);
+    auto d = s.point(corner, top);
     left = s.line(a, d);
     topSide = s.line(c, d);
     s.distance(a, d, 2 * top, along: Y);
-    s.fillet(d, 2.mm);
+    s.fillet(d, 2.5.mm);
 }
 ```
 
@@ -97,9 +106,13 @@ its centre level with them, its radius the tooth radius.
 ```d
 foreach (k; 0 .. 2 * teeth)
 {
-    auto cl = s.point(2 * toothR * k + toothR, -axis);
-    // counter-clockwise from start to end: left to right goes under
-    auto pl = k % 2 == 0 ? s.arc(cl, lower[k], lower[k + 1]) : s.arc(cl, lower[k + 1], lower[k]);
+    immutable x = 2 * toothR * k + toothR;
+    auto cl = s.point(x, -axis);
+    // counter-clockwise from start to end: left to right
+    // goes under
+    auto pl = k % 2 == 0
+        ? s.arc(cl, lower[k], lower[k + 1])
+        : s.arc(cl, lower[k + 1], lower[k]);
     s.radius(pl, toothR);
     s.horizontal(lower[k], cl);
     s.horizontal(lower[k], lower[k + 1]);
@@ -119,8 +132,6 @@ row. The tips of the jaws lean like the back too, and touch the last tooth
 of their row in the same way:
 
 ```d
-s.distance(lower[1], upper[1], 2 * axis, along: Y);
-s.distance(a, lower[1], top - axis, along: Y);
 auto end = s.line(lower[0], upper[0]);
 s.parallel(end, left);
 s.distance(lower[0], left, back * cos(lean));   // from a point to a line
@@ -132,6 +143,32 @@ s.tangent(tipLow, lastLower);
 s.tangent(tipUp, lastUpper);
 ```
 
+## The mouth
+
+The upper row is level; the lower one tilts by `mouth`, a parameter: down to
+open the slot towards the tips, so that the clip slides on easily, up (a
+negative angle) to close it, so that it holds tighter. Both rows start on
+the end's line, at the point `start`; each row is a **construction line**
+(`construction: true`), a line that guides the others but is not part of the
+outline, with the lower centres and points `on` it:
+
+```d
+auto start = s.point(axis * slope, -axis);
+s.on(start, end);
+s.distance(a, start, top - axis, along: Y);     // the rows' height
+s.distance(start, upper[1], 2 * axis, along: Y); // the gap between them
+auto lowerRow = s.line(start, lowerOnRow[$ - 1],
+    construction: true);
+auto upperRow = s.line(upper[1], lastCentre,
+    construction: true);
+s.angle(lowerRow, upperRow, mouth);
+foreach (p; lowerOnRow[0 .. $ - 1])
+    s.on(p, lowerRow);
+```
+
+The bottom drops with the lower row, from below `start`: one more point,
+`under`, and a construction line from it to `b`, parallel to the row.
+
 ## Corners, a hole, and the outline
 
 `s.fillet(p, r)` rounds the corner where two lines meet. A circle inside
@@ -140,7 +177,7 @@ in the middle of the eye.
 
 ```d
 foreach (p; [a, b, c])
-    s.fillet(p, 2.mm);
+    s.fillet(p, 2.5.mm);
 return s.profile.extrude(height);
 ```
 
@@ -149,20 +186,24 @@ as a profile: `extrude` stands it up.
 
 ## See the sketch
 
-The pencil button at the right of the view bar shows the sketch with its
-dimensions. Seen from above (the cube menu › **Top**, and **Orthographic**
-in the display menu) it reads like a drawing. Click a dimension to change
-it: the code changes with it. Points that can still move are blue; here
-none can.
+Click the `sketch()` step in *Steps*, or Ctrl+click any line of the
+sketch: the view shows it from above, with its dimensions, and reads like a
+drawing (**Orthographic** in the display menu makes it flatter still).
+Click a dimension to change it: the code changes with it. Points that can
+still move are blue; here none can. Ctrl+click a single line to see what it
+does: `s.tangent(left, ring)` turns the back and the eye orange,
+`s.angle(topSide, left, 90.deg - lean)` the two sides and their 73°, and the
+`s.fillet` in the loop all three rounded corners. Esc goes back to the
+model.
 
-![The sketch of Carlo, seen from above](img/13-carlo-sketch.png)
+![The sketch of Carlo, seen from above](img/12-carlo-sketch.png)
 
 `s.dof` is how many ways the sketch can still move: the model writes it in
 the console, and here it is 0, a **fully constrained** sketch. Take a
 constraint out and the console says which points are free; give two that
 disagree and the error points at both.
 
-![Carlo extruded](img/13-carlo.png)
+![Carlo extruded](img/12-carlo.png)
 
 ## Change it
 
@@ -171,7 +212,7 @@ change. Set **teeth** to 5: the rows get longer, the block follows, the
 back still leans 17°, the slot still ends round and the eye still touches
 the back.
 
-![Carlo with five teeth](img/13-carlo-five.png)
+![Carlo with five teeth](img/12-carlo-five.png)
 
 The constraints a sketch has: `coincident`, `fix`, `horizontal`,
 `vertical`, `length`, `distance` (between points, along X or Y, or from a
@@ -180,4 +221,4 @@ line), `on` (a point on a line, circle or arc), `parallel`,
 `diameter`, `tangent`, `midpoint` and `symmetric`; the
 [language reference](../LANGUAGE.md) describes each one.
 
-[← Going further](12-going-further.md) · [Contents](../TUTORIAL.md)
+[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Going further →](13-going-further.md)
