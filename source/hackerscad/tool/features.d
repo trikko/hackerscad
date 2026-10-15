@@ -144,8 +144,10 @@ JSONValue featuresJson(const Analysis a)
 /// The section of `file` (as for meshOf) by plane `plane` ("xy", "xz" or
 /// "yz") at `at` mm along its third axis (z, y or x): its outlines as lines,
 /// arcs and circles, and the same as a hackerscad sketch in the plane's
-/// axes (x and y for xy, x and z for xz, y and z for yz).
-string sectionReport(string file, string part, string plane, double at)
+/// axes (x and y for xy, x and z for xz, y and z for yz). `region`
+/// ([u0, v0, u1, v1] in those axes) keeps only the outlines that lie inside
+/// it: a lettering, a pocket, without the outline of the whole part.
+string sectionReport(string file, string part, string plane, double at, const double[] region = null)
 {
     import std.algorithm : sort, max;
     import std.math : abs;
@@ -164,6 +166,27 @@ string sectionReport(string file, string part, string plane, double at)
     auto loops = slice(m, n, along, u, v);
     if (loops.length == 0)
         throw new Exception(format("the plane %s at %g mm does not cut the part", plane, at));
+    if (region.length)
+    {
+        import std.algorithm : min;
+        if (region.length != 4)
+            throw new Exception("region is four numbers: [u0, v0, u1, v1], two opposite corners in the plane's axes");
+        immutable u0 = min(region[0], region[2]), u1 = max(region[0], region[2]);
+        immutable v0 = min(region[1], region[3]), v1 = max(region[1], region[3]);
+        typeof(loops) inside;
+        foreach (l; loops)
+        {
+            bool all = true;
+            foreach (p; l)
+                all = all && p[0] >= u0 - 1e-6 && p[0] <= u1 + 1e-6 && p[1] >= v0 - 1e-6 && p[1] <= v1 + 1e-6;
+            if (all)
+                inside ~= l;
+        }
+        if (inside.length == 0)
+            throw new Exception(format("no outline of the section lies wholly inside the region (%g, %g) to (%g, %g)",
+                u0, v0, u1, v1));
+        loops = inside;
+    }
     double size = 1;
     foreach (l; loops)
         foreach (p; l)
@@ -183,7 +206,9 @@ string sectionReport(string file, string part, string plane, double at)
     foreach (i; order)
         sorted ~= fitted[i];
     immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
-    return format("section %s at %g mm (coordinates %s):\n", plane, at, axes) ~ describe(sorted)
+    return format("section %s at %g mm (coordinates %s)%s:\n", plane, at, axes,
+        region.length ? format(", the outlines inside (%g, %g) to (%g, %g)", region[0], region[1], region[2], region[3])
+            : "") ~ describe(sorted)
         ~ "\n// as a sketch (" ~ axes ~ " of the plane become its x, y):\n" ~ sketchCode(sorted, "section");
 }
 

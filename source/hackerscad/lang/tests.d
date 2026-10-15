@@ -2579,6 +2579,9 @@ unittest
     write(buildPath(dir, "plate.stl"), toStl(kernel.tessellate(plate, 0.01, 0.1).welded));
     immutable rep = sectionReport(buildPath(dir, "plate.stl"), null, "xy", 3);
     assert(rep.canFind("circle ⌀6, centre (8, 0)") && rep.canFind("arc r 5"), rep);
+    // a region round the hole: only its outline, not the plate's
+    immutable hole = sectionReport(buildPath(dir, "plate.stl"), null, "xy", 3, [4, -4, 12, 4]);
+    assert(hole.canFind("circle ⌀6, centre (8, 0)") && !hole.canFind("arc r 5") && !hole.canFind("outline 2"), hole);
     auto code = rep[rep.indexOf("/// The section") .. $];
     auto r = runModel("import std.math;\n" ~ code ~ "@part Solid p() => section().extrude(1.mm);\n"
         ~ "unittest { writeln(section().area / 1.mm ^^ 2); }\n");

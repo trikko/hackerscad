@@ -680,10 +680,13 @@ JSONValue[] toolList()
             ~ "hackerscad sketch ready to paste and extrude. For parts that are extrusions, cut them across. "
             ~ "projection: true gives the outline of the part's shadow on the plane instead ('at' unused). compare: "
             ~ "another part of the .hcad model ('part' the copy, 'compare' the original): both sections drawn on each "
-            ~ "other in a picture (the original thick grey, the copy thin orange) and both outlines as text.",
+            ~ "other in a picture (the original thick grey, the copy thin orange) and both outlines as text. region: "
+            ~ "[u0, v0, u1, v1] in the plane's axes keeps only the outlines inside it (a lettering, a pocket).",
             `"path": {"type": "string"}, "part": {"type": "string"}, "plane": {"type": "string", "enum": ["xy", "xz", "yz"]}, `
             ~ `"at": {"type": "number", "description": "mm along the plane's normal axis"}, "projection": {"type": "boolean"}, `
-            ~ `"compare": {"type": "string"}`, `["path", "plane"]`),
+            ~ `"compare": {"type": "string"}, "region": {"type": "array", "items": {"type": "number"}, "minItems": 4, `
+            ~ `"maxItems": 4, "description": "two opposite corners in the plane's axes: only the outlines inside"}`,
+            `["path", "plane"]`),
         tool("hcad_compare", "How far a part of a model is from another (a remodelled part from the mesh it copies, "
             ~ "loaded as a see-through reference part: @part(\"slategray\", alpha: 0.3, export: false) Solid original() => "
             ~ "load(\"x.stl\");): the largest, mean and rms distance both ways, where the worst is, the share within "
@@ -1187,6 +1190,11 @@ JSONValue callTool(string name, JSONValue args)
             {
                 auto at = "at" in args;
                 immutable level = at is null ? 0 : at.type == JSONType.integer ? at.integer : at.floating;
+                double[] region;
+                if (auto rg = "region" in args)
+                    if (rg.type == JSONType.array)
+                        foreach (x; rg.array)
+                            region ~= x.type == JSONType.integer ? x.integer : x.floating;
                 if (arg("compare").length)
                 {
                     string t;
@@ -1199,10 +1207,10 @@ JSONValue callTool(string name, JSONValue args)
                     if (pr.type == JSONType.true_)
                         text(projectionReport(arg("path"), arg("part"), arg("plane")));
                     else
-                        text(sectionReport(arg("path"), arg("part"), arg("plane"), level));
+                        text(sectionReport(arg("path"), arg("part"), arg("plane"), level, region));
                 }
                 else
-                    text(sectionReport(arg("path"), arg("part"), arg("plane"), level));
+                    text(sectionReport(arg("path"), arg("part"), arg("plane"), level, region));
             }
             catch (Exception e)
             {

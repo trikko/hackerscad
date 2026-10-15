@@ -32,9 +32,10 @@ usage:
       what a mesh (.stl .obj .3mf), a STEP file or a model is made of, to
       remodel it: flat faces, holes and shafts, cones, spheres, roundings,
       patterns of holes, with plausible sizes
-  hcad section FILE --plane xy|xz|yz --at MM [--part NAME]
+  hcad section FILE --plane xy|xz|yz --at MM [--part NAME] [--region U0,V0,U1,V1]
       the section of a mesh, STEP file or model as lines, arcs and circles
-      with their sizes, and as a sketch ready to paste; --projection: the
+      with their sizes, and as a sketch ready to paste; --region keeps the
+      outlines inside that rectangle of the plane; --projection: the
       outline of its shadow on the plane instead; --compare PART -o OUT.png:
       the sections of two parts of a model drawn on each other
   hcad compare FILE.hcad --a PART --b PART [--tolerance MM] [-o OUT.png]
@@ -182,12 +183,12 @@ int main(string[] args)
         }
     case "section":
         {
-            string part, plane = "xy", other, out_;
+            string part, plane = "xy", other, out_, region;
             double at = 0;
             bool projection;
             try
                 getopt(args, "part", &part, "plane", &plane, "at", &at, "projection", &projection, "compare", &other,
-                    "o|output", &out_);
+                    "o|output", &out_, "region", &region);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -215,7 +216,13 @@ int main(string[] args)
                 else if (projection)
                     write(projectionReport(args[1], part, plane));
                 else
-                    write(sectionReport(args[1], part, plane, at));
+                {
+                    import std.algorithm : map;
+                    import std.array : array, split;
+                    import std.conv : to;
+                    auto r = region.length ? region.split(",").map!(x => x.to!double).array : null;
+                    write(sectionReport(args[1], part, plane, at, r));
+                }
             }
             catch (Exception e)
             {
