@@ -23,6 +23,32 @@ private:
 
 __gshared OcctKernel kernel;
 
+/// The first line of a test that takes a second or more (threads, sweeps,
+/// meshes, the libraries and examples): skipped when HCAD_TESTS=fast, for a
+/// quick run while working; run otherwise, before a commit and by the CI.
+enum slowTest = q{
+    if (skipSlow())
+        return;
+};
+
+__gshared int skipped;   /// slow tests left out this run
+
+bool skipSlow()
+{
+    import std.process : environment;
+    immutable skip = environment.get("HCAD_TESTS") == "fast";
+    if (skip)
+        skipped++;
+    return skip;
+}
+
+shared static ~this()
+{
+    import std.stdio : stderr;
+    if (skipped)
+        stderr.writefln("HCAD_TESTS=fast: %d slow tests of lang/tests.d skipped (run them all before a commit)", skipped);
+}
+
 Interp make()
 {
     if (kernel is null)
@@ -543,6 +569,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // the shipped example evaluates with the expected parts and checks
     import std.file : thisExePath, exists;
     import std.path : dirName;
@@ -967,6 +994,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // paths, sweeps and lofts
 
     auto r = runModel(q{
@@ -1467,6 +1495,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // built-in libraries
     auto r = runModel(q{
         import hardware;
@@ -1505,6 +1534,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // an M8 × 25 thread: OpenCascade's mesher covered more than its flanks
     // (triangles folded over each other, 5% more area than the rod), which
     // hc_tessellate works around by dividing those faces for the mesh
@@ -1616,6 +1646,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // scale with a factor each: an ellipsoid from a sphere, a squashed box, an oval profile
     auto r = runModel(q{
         @part Solid egg() => sphere(10.mm).scale(x: 2, y: 1.5);
@@ -1681,6 +1712,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     import hackerscad.kernel.occt.c;
     hc_workaround(HC_WORKAROUND_MESH_DIVIDE, 0);
     scope (exit)
@@ -2115,6 +2147,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // a solid made from a fine mesh: volume and area summed from its
     // triangles match the mesh's own
     auto m = kernel.tessellate(kernel.sphere(10), 0.01, 0.05).welded;
@@ -2178,6 +2211,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // hull and minkowski: volumes and areas as computed by hand (within the
     // facets of the curved surfaces), profiles in a plane stay profiles
     import std.math : abs, PI;
@@ -2338,6 +2372,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // twisted extrusions and sweeps: the profile turns, the volume stays
     auto r = runModel(q{
         import std.math;
@@ -2411,6 +2446,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // threads on cylindrical faces: a bolt's shaft, a nut's hole
     auto r = runModel(q{
         import std.math;
@@ -2450,6 +2486,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // the thread families, and the taper of pipe threads
     auto r = runModel(q{
         import std.math;
@@ -2659,6 +2696,7 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
     // a twisted sweep along a curve keeps the volume of the untwisted one:
     // the area of the profile times the length of the path
     auto r = runModel(q{

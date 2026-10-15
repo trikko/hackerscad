@@ -253,6 +253,7 @@ GtkSourceView 5, then:
 dub build -b release          # bin/hcad, the command line tool
 dub build -b release :gui     # bin/hackerscad, the application
 dub test :core                # the tests
+HCAD_TESTS=fast dub test :core   # without the slow ones (threads, sweeps…): seconds
 ```
 
 Without `-b release` dub makes a debug build: handy to work on hackerscad, but
