@@ -3066,3 +3066,23 @@ unittest
 auto p = s.profile;`, "import std.shapes;");
     assert(e.message.canFind("on each other"), e.message);
 }
+
+unittest
+{
+    // push and pull: the pieces of a cut spread apart from the plane, each its own way; a solid pulled
+    // towards a point; one whose centre is on the reference stays, with a warning
+    auto r = runModel(`import std.shapes;
+immutable cut = plane(origin: vec(0, 0, 0), normal: X);
+@parts Solid[] apart() => box(20, 10, 10).split(cut).push(from: cut, by: 3.mm);
+@part Solid near() => box(10, 10, 10).move(y: 50.mm).pull(to: vec(0, 0, 5), by: 10.mm);
+@part Solid stays() => box(10, 10, 10).move(x: 100.mm).push(from: vec(100, 0, 5), by: 4.mm);
+`);
+    assert(r.parts.length == 4, format("%s", r.parts.map!(p => p.name).array));
+    auto b0 = kernel.bbox(r.parts[0].solid.brep), b1 = kernel.bbox(r.parts[1].solid.brep);
+    assert(isClose(b0.max.x, -3, 1e-6) && isClose(b1.min.x, 3, 1e-6), "the halves 3 mm each side of the cut");
+    assert(isClose(kernel.bbox(r.parts[2].solid.brep).min.y, 35, 1e-6), "pulled 10 mm towards the origin");
+    assert(isClose(kernel.bbox(r.parts[3].solid.brep).min.x, 95, 1e-6), "no direction: stays");
+    import std.algorithm : canFind;
+    assert(r.diagnostics.canFind!(d => d.severity == Severity.warning && d.message.canFind("no way to go")));
+}
+

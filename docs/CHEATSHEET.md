@@ -200,6 +200,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `x.frames(n: int) → Frame[]` — n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft.
 - `p.outline(n: int, round: Length) → OutlinePoint[]` — n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1).
 - `xs.above(plane: Plane) → Solid[]` — Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).
+- `s.push(from: Vec3 | Plane | Axis, by: Length) → Solid` — Moved away from a point, a plane or an axis, along the line from it to the centre of mass; on a list of solids each goes its own way (an exploded view).
+- `s.pull(to: Vec3 | Plane | Axis, by: Length) → Solid` — Moved towards a point, a plane or an axis: the opposite of push.
 - `xs.below(plane: Plane) → Solid[]` — Of a list of solids, those on the other side of the plane.
 - `xs.crossing(plane: Plane) → Solid[]` — Of a list of solids, those the plane cuts through.
 - `xs.nearest(point: Vec3) → Solid` — Of a list of solids, the one closest to a point.

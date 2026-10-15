@@ -220,6 +220,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>x.frames(n: int) → Frame[]</dt><dd>n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft.</dd>
 <dt>p.outline(n: int, round: Length) → OutlinePoint[]</dt><dd>n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1).</dd>
 <dt>xs.above(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).</dd>
+<dt>s.push(from: Vec3 | Plane | Axis, by: Length) → Solid</dt><dd>Moved away from a point, a plane or an axis, along the line from it to the centre of mass; on a list of solids each goes its own way (an exploded view).</dd>
+<dt>s.pull(to: Vec3 | Plane | Axis, by: Length) → Solid</dt><dd>Moved towards a point, a plane or an axis: the opposite of push.</dd>
 <dt>xs.below(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the other side of the plane.</dd>
 <dt>xs.crossing(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those the plane cuts through.</dd>
 <dt>xs.nearest(point: Vec3) → Solid</dt><dd>Of a list of solids, the one closest to a point.</dd>

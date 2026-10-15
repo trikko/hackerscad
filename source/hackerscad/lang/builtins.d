@@ -566,6 +566,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         v = v + Vec3(x.lenOr("x", 0), x.lenOr("y", 0), x.lenOr("z", 0));
         return transformed(it, a.span, s, b => k.translate(b, v));
     });
+    def("push", (ref CallArgs a) {
+        // push(from: p | plane | axis, by: 5.mm): moved away from it, from its centre of mass
+        auto x = Args(it, a, "push", ["solid", "from", "by"]);
+        auto s = x.solid("solid");
+        immutable v = pushOffset(it, x, "from", s, x.len("by"), a.span);
+        return transformed(it, a.span, s, b => k.translate(b, v));
+    });
+    def("pull", (ref CallArgs a) {
+        // pull(to: p | plane | axis, by: 5.mm): moved towards it, the opposite of push
+        auto x = Args(it, a, "pull", ["solid", "to", "by"]);
+        auto s = x.solid("solid");
+        immutable v = pushOffset(it, x, "to", s, -x.len("by"), a.span);
+        return transformed(it, a.span, s, b => k.translate(b, v));
+    });
     def("rotate", (ref CallArgs a) {
         // rotate(x:, y:, z:) Euler angles, or rotate(angle, axis:) around a
         // direction (through the origin) or an Axis (through its own origin);
@@ -1861,6 +1875,29 @@ bool solidsMember(Interp it, Value[] xs, string name, Span span, out Value resul
     }
     switch (name)
     {
+    case "push", "pull":
+        {
+            // each solid moved away from (push) or towards (pull) a point, a plane or an axis, along
+            // the line from it to the solid's centre of mass: pieces of a cut spread apart
+            immutable away = name == "push";
+            result = method((ref CallArgs a) {
+                auto x = Args(it, a, name, ["list", away ? "from" : "to", "by"]);
+                immutable by = away ? x.len("by") : -x.len("by");
+                Value[] r;
+                foreach (v; xs)
+                {
+                    if (v.solid.brep is null)
+                    {
+                        r ~= v;
+                        continue;
+                    }
+                    immutable off = pushOffset(it, x, away ? "from" : "to", v.solid, by, a.span);
+                    r ~= transformed(it, a.span, v.solid, b => k.translate(b, off));
+                }
+                return Value.of(r);
+            });
+            return true;
+        }
     case "above": result = side("above", 1); return true;
     case "below": result = side("below", -1); return true;
     case "crossing": result = side("crossing", 0); return true;
@@ -1961,6 +1998,47 @@ Value axisValue(Vec3 origin, Vec3 direction) => Value.make(Kind.struct_, StructV
     [Value.vector(origin, 3, Dim.length), Value.vector(direction.normalized, 3, Dim.none)]));
 
 bool isAxis(Value v) => v.kind == Kind.struct_ && v.st.def is axisDef;
+
+/// How far push or pull moves solid `s`: `by` along the line from the reference (`name`: a point, a
+/// Plane or an Axis) to its centre of mass; from a plane along its normal, from an axis square to it.
+/// A solid whose centre is on the reference has no direction: it stays, with a warning.
+Vec3 pushOffset(Interp it, ref Args x, string name, SolidVal s, double by, Span span)
+{
+    if (s.brep is null)
+        return Vec3(0, 0, 0);
+    immutable c = it.kernel.massProps(s.brep).centroid;
+    auto v = x.get(name);
+    Vec3 dir;
+    if (v.kind == Kind.struct_ && v.st.def is planeDef)
+    {
+        Vec3 o, n;
+        planeArg(x, name, o, n);
+        n = n.normalized;
+        immutable side = (c - o).dot(n);
+        dir = abs(side) < 1e-9 ? Vec3(0, 0, 0) : n * (side > 0 ? 1 : -1);
+    }
+    else if (isAxis(v))
+    {
+        Vec3 o, d;
+        axisArg(x, name, o, d);
+        d = d.normalized;
+        auto q = c - o;
+        dir = q - d * q.dot(d);
+    }
+    else if (v.kind == Kind.vec || v.kind == Kind.array)
+        dir = c - x.vecLen(name);
+    else
+        throw new HcadError(Code.type, format("'%s' is a point, a Plane or an Axis, not %s", name, v.typeName),
+            x.spanOf(name));
+    if (dir.length < 1e-9)
+    {
+        it.diagnostics ~= Diagnostic(Severity.warning, Code.type, format("a solid's centre of mass is on the %s: "
+            ~ "it has no way to go, and stays where it is", name == "from" ? "reference it is pushed from"
+            : "reference it is pulled to"), span);
+        return Vec3(0, 0, 0);
+    }
+    return dir.normalized * by;
+}
 
 /// An Axis value, or a bare direction meaning an axis through the origin.
 void axisArg(ref Args x, string name, out Vec3 origin, out Vec3 direction)

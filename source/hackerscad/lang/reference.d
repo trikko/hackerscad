@@ -369,6 +369,14 @@ immutable Ref[] reference =
     F("frames", "Path", ["n: int"], "Frame[]", "n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft."),
     F("outline", "Profile", ["n: int", "round: Length"], "OutlinePoint[]", "n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1)."),
     F("above", "list", ["plane: Plane"], "Solid[]", "Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p)."),
+    withForms(F("push", "Solid", ["from: Vec3 | Plane | Axis", "by: Length"], "Solid",
+        "Moved away from a point, a plane or an axis, along the line from it to the centre of mass; on a list of solids each goes its own way (an exploded view)."), [
+        "carlo().split(cutPlane).push(from: cutPlane, by: 4.mm)   // the pieces of a cut apart",
+        "parts.push(from: vec(0, 0, 0), by: 10.mm)                // away from a point",
+        "slices.push(from: axis(origin: vec(0, 0, 0), direction: Z), by: 5.mm)"]),
+    withForms(F("pull", "Solid", ["to: Vec3 | Plane | Axis", "by: Length"], "Solid",
+        "Moved towards a point, a plane or an axis: the opposite of push."), [
+        "lid.pull(to: base.plane(faces.top), by: 2.mm)"]),
     F("below", "list", ["plane: Plane"], "Solid[]", "Of a list of solids, those on the other side of the plane."),
     F("crossing", "list", ["plane: Plane"], "Solid[]", "Of a list of solids, those the plane cuts through."),
     F("nearest", "list", ["point: Vec3"], "Solid", "Of a list of solids, the one closest to a point."),
