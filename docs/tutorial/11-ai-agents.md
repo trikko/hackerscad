@@ -52,7 +52,10 @@ a line by hand, a text, in the colour you pick. Then ask "make a 5 mm hole
 here": the agent reads your marks and what lies under each of them, the part,
 the face and the point. The agent draws on the view the same way to show you
 what it means, "this wall is too thin". Click a mark to move it, Delete to
-remove it; **Done** (or Esc) brings the view back to life, without the marks.
+remove it; right-click it to add a label or edit its text, **Clear** removes
+them all. The two buttons by the colours save the view with its marks as a
+picture, or copy it to paste in a message: marks work for showing a person
+too. **Done** (or Esc) brings the view back to life, without the marks.
 
 Each window has a name in its header bar (*tidy-pine*, *blue-otter*…): click
 it to choose your own. With several windows open, tell the agent which one to

@@ -157,8 +157,8 @@ how much is left.
 
 ## See through it
 
-The cube in the view bar, **Wireframe**: only the edges, the hidden ones in
-blue. The shelf and the holes show through the walls.
+The cube in the view bar, **Wireframe**: only the edges, the hidden ones
+fainter. The shelf and the holes show through the walls.
 
 ![In wireframe](img/08-wireframe.png)
 

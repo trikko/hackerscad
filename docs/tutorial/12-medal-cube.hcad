@@ -1,0 +1,97 @@
+// A first sketch: a medal with an H and a rim in relief
+module medal;
+
+import std.shapes;
+
+@param("Diameter", min: 30.mm, max: 60.mm)
+immutable diameter = 40.mm;
+
+@param("Rim width", min: 2.mm, max: 5.mm)
+immutable rim = 3.5.mm;
+
+// the disc under the relief, and how high the H and the
+// rim stand on it
+immutable base = 2.mm;
+immutable relief = 1.mm;
+
+/// The rim and the H, seen from above: a sketch.
+Profile face(Sketch s = sketch())
+{
+
+    // drawn wrong on purpose, to see what each rule
+    // below does: the inside of the rim a squashed
+    // ellipse off the centre, the H small, crooked,
+    // away from the middle; the centre is pinned at
+    // the origin
+    auto c = s.point(0, 0, fixed: true);
+    s.circle(c, d: diameter);
+    auto inner = s.ellipse(vec(2, 2));
+
+    // the H: twelve points, drawn by eye, and the
+    // lines round them
+    auto h = s.polyline([
+        vec(-3, -4), vec(0, -5), vec(1, 1),
+        vec(4, 2), vec(3, -5), vec(6, -4),
+        vec(6, 7), vec(4, 8), vec(4, 4),
+        vec(1, 3), vec(0, 8), vec(-3, 7),
+    ], closed: true);
+
+    // the rim: the ellipse round the same centre, as
+    // wide as tall (a circle), its size
+    s.concentric(inner, c);
+    s.equal(inner);
+    s.radius(inner, rx: diameter / 2 - rim);
+
+    // across and up, in turn
+    foreach (i, l; h)
+    {
+        if (i % 2 == 0)
+            s.horizontal(l);
+        else
+            s.vertical(l);
+    }
+
+    // the strokes all 5 mm wide, the letter 22 mm tall
+    s.length(h[0], 5.mm);
+    s.equal(h[4], h[0]);
+    s.equal(h[6], h[0]);
+    s.equal(h[10], h[0]);
+    s.length(h[11], 22.mm);
+    s.equal(h[5], h[11]);
+    s.distance(h[2].start, h[8].end, 5.mm, along: Y);
+
+    // 18 mm wide, the feet level, the bar in the middle
+    s.distance(h[0].start, h[5].start, 18.mm, along: X);
+    s.horizontal(h[0].start, h[5].start);
+    s.equal(h[1], h[9]);
+
+    // the H in the middle: the centre halfway along a
+    // diagonal that is not part of the outline
+    auto diagonal = s.line(h[0].start, h[6].start,
+        construction: true);
+    s.midpoint(c, diagonal);
+
+    writeln("degrees of freedom left: ", s.dof);
+    return s.profile;
+}
+
+@part
+Solid medal()
+{
+    // the disc, the relief on it, a keyring hole
+    // through the rim at the top
+    return circle(d: diameter).extrude(base)
+        + face().extrude(relief).move(z: base)
+        - cylinder(d: rim - 1.mm, h: 10.mm)
+            .move(y: diameter / 2 - rim / 2, z: -1.mm);
+}
+
+/// The medal on the front of a cube: the same sketch,
+/// drawn on that face.
+@part("Orange Pop")
+Solid cube()
+{
+    auto block = box(50.mm, 50.mm, 50.mm).move(x: 75.mm);
+    return block.extrude(face(block.sketch(faces.front)),
+        depth: relief);
+}

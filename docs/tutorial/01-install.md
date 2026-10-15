@@ -49,8 +49,9 @@ Move around the model with the mouse, in the big area in the middle:
 - **drag with the right button** to turn it;
 - **drag with the middle button** (or Ctrl and the right button) to move it;
 - **turn the wheel** to zoom in and out, towards the pointer;
-- **Fit**, in the bar over the view, frames the whole model again; **Iso**,
-  **Top**, **Front** and **Right** look at it from those sides.
+- **Fit**, in the bar over the view (or F6), frames the whole model again;
+  the **View** menu next to it looks at it from the sides: **Iso**, **Top**,
+  **Front** and **Right**.
 
 The left button is for clicking things, as you will see. If you prefer to
 turn the view with it, the two buttons with the arrows in the bar choose what

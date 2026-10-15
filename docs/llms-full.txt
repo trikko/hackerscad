@@ -253,7 +253,7 @@ basic construct once, with comments saying what each makes appear; in the applic
 - **Not available:** classes, pointers, `mixin`, `static if`, user templates, exceptions, `asm`, `alias`, `new`.
 - **Sandbox.**
   - `load()` reads mesh, STEP and drawing (SVG, DXF) files inside the project directory only.
-  - Library imports are limited to hackerscad's standard modules: `std.shapes`, `std.math`, `std.algorithm`, `std.range`, `std.conv`, `std.format`, `std.stdio`, `std.array`, and `hardware`.
+  - Library imports are limited to hackerscad's standard modules: `std.shapes`, `std.math`, `std.algorithm`, `std.range`, `std.conv`, `std.format`, `std.stdio`, `std.array`, and the built-in libraries (`hardware`, `threads`, `gears`, `hinges`, `snaps`, `enclosures`, `carlo`).
   - Imports cannot leave the project directory or the library folder they were found in.
   - There is no file, network or process access.
   - Evaluation steps, recursion depth and array sizes are limited.

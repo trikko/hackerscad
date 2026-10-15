@@ -19,7 +19,7 @@ import gtk.window : Window;
 import pango.types : WrapMode;
 
 import hackerscad.lang.reference;
-import hackerscad.tool.cheatsheet : sections, usage, libraryLines;
+import hackerscad.tool.cheatsheet : sections, usage, libraryLines, keyLines, keysHeading;
 
 final class CheatsheetWindow
 {
@@ -93,6 +93,9 @@ private:
     {
         foreach (r; hackerscad.lang.reference.recipes)
             entries ~= Entry(recipes, r.code, r.task, r.code);
+        // the application's keys and mouse: nothing to insert
+        foreach (k; keyLines)
+            entries ~= Entry(keysHeading, k.keys, k.what, "");
         foreach (section; sections)
             foreach (ref e; reference)
                 if (e.group == section)

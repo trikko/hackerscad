@@ -30,9 +30,15 @@ bag clip, Carlo, is still open; we use it to try things.
    the section's: its ✓ cuts the part there into a part per piece
    (more than two when the plane crosses a slot), each in its colour. **Colour** offers
    hackerscad's own bright colours (Sky Pop, Pink Pop…), and writes the
-   name of the one you pick into the part's `@part`; **Other…** opens a
+   name of the one you pick into the part's `@part` (on one piece of a part
+   split into pieces, on that piece alone; **Default colour of…** colours
+   the others); **Other…** opens a
    wheel where every hue is as bright as those, the part showing each one
-   until you Apply it (or Cancel).
+   until you Apply it (or Cancel). A double click on a flat face turns the
+   view straight at it (**Look at face** in the menu does the same);
+   **Sketch on face…** starts a sketch on it, and on a face a sketch made,
+   **Edit sketch…** shows that sketch ([chapters 12](12-medal.md) and
+   [14](14-going-further.md)).
 2. **The view bar.** Fit, and the views in the **View** menu (Iso, Top,
    Front, Right, and **Sketches**, the model's sketches: one opens to be
    edited); four buttons for what a click picks, **whole parts, faces,
@@ -45,8 +51,13 @@ bag clip, Carlo, is still open; we use it to try things.
    of code makes; the arrow at a ring, **Annotate** (A): the view stops
    still, to draw arrows, crosses, circles and text on it like on a
    screenshot, to show something or to tell an AI agent where (chapter
-   11); **Done** (or Esc) brings the view back to life. With the cursor in a sketch's code the view shows that
-   sketch by itself, from above, with its dimensions.
+   11), and the two buttons by the colours save it as a picture or copy it,
+   to paste in a message; **Done** (or Esc) brings the view back to life.
+   With the cursor in a sketch's code the view shows that sketch by itself,
+   with its dimensions, seen straight on (from above, or from outside the
+   face it is drawn on): the pin in the bar keeps it there while you read
+   other code, and **Look at sketch** in its right-click menu turns the view
+   back onto it.
 3. **Parameters and Steps.** Two tabs. *Parameters* has the sizes the model
    lets you change, without touching the code; *Steps* shows how the model is
    built, one step at a time.
@@ -59,8 +70,8 @@ bag clip, Carlo, is still open; we use it to try things.
 
 The buttons at the top left start a new model, open one, save it and export
 it (Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E; on macOS, Cmd in place of Ctrl, here and
-in the rest of this tutorial). **Examples** opens ready models to try: the
-Carlo, the espresso cup of the README, the planter this tutorial builds, a tour
+in the rest of this tutorial). **Examples** opens ready models to try:
+Carlo, the bag clip, the espresso cup of the README, the planter this tutorial builds, a tour
 of the language that shows `if`, `for`, `while`, `switch`, functions and
 structs, each with what it makes appear, and more complete models. The buttons at the top right show or hide
 the console, the code, the view and the parameters (Ctrl+J, F7, F8, F9). The
@@ -100,6 +111,9 @@ The cube in the view bar opens a small menu:
 - **Shine**: **None**, matte, each flat face one even tone; **Normal**, a
   small highlight on curves; **High**, a shiny material with soft highlights
   on every curve. The choice is kept.
+- **Smooth edges**, under *Quality*: edges and curves without steps. It asks
+  more of the graphics card: turn it off if turning the view is slow. The
+  choice is kept.
 
 ## Editing the code
 
@@ -118,6 +132,21 @@ The editor has the keys of a code editor:
 - Brackets and quotes close themselves: type `(` and `)` comes after the
   cursor, type it again and the cursor steps over it; around a selection they
   enclose it. The bracket matching the one at the cursor is marked.
+
+## Keys and mouse
+
+- **The view:** right drag turns it, middle drag (or Ctrl and the right
+  button) moves it, the wheel zooms; F6 frames the model; a click picks, a
+  Shift+click adds to what is picked, a right-click opens the menu; a double
+  click on a flat face looks straight at it; Alt+1 to Alt+4 choose what a
+  click picks (parts, faces, edges, vertices); **A** annotates the view; Esc
+  closes what is shown over the model (a sketch, a step, the marks).
+- **The window:** Ctrl+N, Ctrl+O, Ctrl+S and Ctrl+E new, open, save and
+  export; Ctrl+J, F7, F8, F9 show or hide the console, the code, the view
+  and the parameters; Ctrl+I shows what the line at the cursor makes; F5
+  runs the model's `unittest` checks; F1 opens the cheatsheet.
+- **The code:** the keys of the list above (Ctrl+F, Ctrl+H, Ctrl+L, Ctrl+/,
+  Ctrl+D…); Ctrl+click on a line shows what it makes, in the view.
 
 ## The cheatsheet
 

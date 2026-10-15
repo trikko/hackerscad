@@ -346,6 +346,13 @@ void page12()
     view(`{"projection": "perspective", "preset": "iso"}`);
     view(`{"preset": "fit"}`);
     shot("12-medal", lineOf("Solid medal()"));
+    // the same sketch on the front face of a cube: the model at the end of the page
+    auto cube = buildPath(dir, "medal-cube.hcad");
+    write(cube, readText(buildPath(docs, "12-medal-cube.hcad")));
+    open(cube);
+    view(`{"preset": "iso"}`);
+    view(`{"preset": "fit"}`);
+    shot("12-medal-cube", lineOf("Solid cube()"));
     auto shapes = buildPath(dir, "shapes.hcad");
     write(shapes, readText(buildPath(docs, "12-shapes.hcad")));
     open(shapes);

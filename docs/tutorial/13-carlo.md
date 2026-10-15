@@ -3,9 +3,10 @@
 # 13. Carlo, drawn with a sketch
 
 The clip hackerscad starts with is Carlo, the mascot: a bag clip whose
-toothed slot and keyring hole make a little crocodile. The example takes it
-ready-made from a library: `import carlo;`, then `carlo()`. This page draws
-it as that library does, with a **constrained sketch**: you say what the
+toothed slot and keyring hole make a little crocodile. A new model takes it
+ready-made from a library, `import carlo;` and then `carlo()`; the first of
+the examples shows that library's code, with its numbers as parameters. This
+page draws it the same way, with a **constrained sketch**: you say what the
 outline is like ("the top is level, the back leans 17°, the teeth are all
 2.5 mm and touch each other") and hackerscad works out where every corner
 goes. Then the outline is extruded.
@@ -212,7 +213,7 @@ disagree and the error points at both.
 ## Change it
 
 Because the outline is told by its rules, it keeps them when the numbers
-change. Set **teeth** to 5: the rows get longer, the block follows, the
+change. In **Parameters**, set **Teeth per jaw** to 5: the rows get longer, the block follows, the
 back still leans 17°, the slot still ends round and the eye still touches
 the back.
 
@@ -222,7 +223,7 @@ The constraints a sketch has: `coincident`, `fix`, `horizontal`,
 `vertical`, `length`, `distance` (between points, along X or Y, or from a
 line), `on` (a point on a line, circle or arc), `parallel`,
 `perpendicular`, `angle`, `equal` (lengths or radii), `radius`,
-`diameter`, `tangent`, `midpoint` and `symmetric`; the
+`diameter`, `tangent`, `midpoint`, `symmetric` and `concentric`; the
 [language reference](../LANGUAGE.md) describes each one.
 
 [← A first sketch: a medal](12-medal.md) · [Contents](../TUTORIAL.md) · [Going further →](14-going-further.md)

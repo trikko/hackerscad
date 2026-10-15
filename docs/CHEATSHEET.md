@@ -429,3 +429,31 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - A parameter in the side panel: `@param("Width", min: 10.mm, max: 100.mm) immutable width = 40.mm;`
 - Check a requirement: `unittest { assert(body.bbox.size.z <= 40.mm, "too tall"); }`
 - Measure: `writeln(s.volume, " ", s.bbox.size)`
+
+## Keys and mouse (on macOS, Cmd for Ctrl)
+
+- **Right drag** — turns the view
+- **Middle drag, or Ctrl + right drag** — moves the view
+- **Wheel** — zooms, towards the pointer
+- **F6** — frames the whole model (Fit)
+- **Click / Shift+click** — picks what is under the pointer / adds it to what is picked
+- **Right-click** — what can be done there: fillets, holes, Move…, Colour, Sketch on face…
+- **Double click on a flat face** — the view straight at that face
+- **Alt+1 … Alt+4** — a click picks whole parts, faces, edges or vertices
+- **A** — annotates the view: arrows, crosses, circles, text; Done or Esc goes back
+- **Esc** — closes what is shown over the model: a sketch, a step, Inspect, the marks
+- **Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E** — new, open, save, export
+- **Ctrl+J, F7, F8, F9** — show or hide the console, the code, the view, the parameters
+- **Ctrl+I, or Ctrl+click on a line** — shows what the line makes, in the view
+- **F5** — runs the model's unittest checks
+- **F1** — this cheatsheet
+- **Ctrl+F, F3, Shift+F3** — finds in the code, next, previous
+- **Ctrl+H** — replaces
+- **Ctrl+L** — goes to a line
+- **Ctrl+/** — comments the lines out, or back in
+- **Ctrl+D** — duplicates the line or the selection
+- **Ctrl+Shift+K** — deletes the lines
+- **Alt+Up, Alt+Down** — moves the lines up or down
+- **Tab, Shift+Tab** — indents the lines in or out
+- **Ctrl+Z, Ctrl+Shift+Z** — undoes, redoes (the changes the mouse wrote too)
+- **Ctrl+Q** — quits

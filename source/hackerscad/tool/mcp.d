@@ -872,7 +872,9 @@ JSONValue[] toolList()
             ~ "of mass) or {\"part\": name, \"face\": i} (that face's centre). remove: ids; clear: true (all), "
             ~ "\"agent\" (yours) or \"user\" (with none left the view goes live again, unless the user is "
             ~ "annotating); mode: true locks the view for the user to draw, false goes back to the live view and "
-            ~ "drops every mark; list: true. In one call: mode, clear, remove, add. Returns annotations: [{id, kind, "
+            ~ "drops every mark; list: true; save: an absolute .png path writes the view with its marks to a "
+            ~ "picture, copy: true puts it on the clipboard (the bar's Save and Copy: for a person who is not "
+            ~ "looking at the window). In one call: mode, clear, remove, add, then save and copy. Returns annotations: [{id, kind, "
             ~ "by (agent or user), points (fractions), colour, text or label, under}]: under is, for each key point "
             ~ "(an arrow's tip then its tail, a cross's or circle's centre, a text's point, a line's ends), what the "
             ~ "view shows there: part, face, point (mm), normal and a selector for the face, or part null. "
@@ -884,7 +886,7 @@ JSONValue[] toolList()
             ~ `"arrow": {"type": "array"}, "cross": {}, "circle": {}, "freehand": {"type": "array"}, `
             ~ `"text": {"type": "string"}, "label": {"type": "string"}, "colour": {"type": "string"}}}}, `
             ~ `"remove": {"type": "array", "items": {"type": "integer"}}, "clear": {"type": ["boolean", "string"]}, `
-            ~ `"list": {"type": "boolean"}, "mode": {"type": "boolean"}`, `[]`),
+            ~ `"list": {"type": "boolean"}, "mode": {"type": "boolean"}, "save": {"type": "string"}, "copy": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_rename", "Rename the user's window (the name in its header bar, which the user and the "
             ~ "'window' argument use): letters, digits and dashes.", `"name": {"type": "string"}`, `["name"]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "

@@ -377,15 +377,18 @@ two jaws, and the parts list shows `jaws1`
 and `jaws2`, each in its colour (`varied: true`); move `cut` past the slot and
 there is one, `jaws`. `split` instead gives every piece of both sides as a list
 (`Solid[]`), a part per element with `@parts`: that is what **Split…** in the
-right-click menu writes for you. To pick pieces in code, `.above(plane)`,
+right-click menu writes for you. **Colour** in the right-click menu of one
+piece colours that piece alone (it writes `.color(…)` on it in the function);
+**Default colour of jaws** writes the colour of `@parts`, which the pieces not
+coloured on their own take. To pick pieces in code, `.above(plane)`,
 `.below(plane)`, `.largest`, `.top`… choose among them, and `.pieces` lists the
 bodies of any solid.
 
 ## Technical drawings
 
 A function marked `@drawing` makes a sheet with views, dimensions and
-sections, to export as PDF, SVG or DXF (Export, or `hcad render -o
-tank.pdf`). Added at the end of the planter, this one draws the tank:
+sections, to export as PDF, SVG or DXF from the command line (`hcad render -o
+tank.pdf`) or by an agent. Added at the end of the planter, this one draws the tank:
 
 ```d
 @drawing

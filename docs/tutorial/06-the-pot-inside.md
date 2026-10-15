@@ -38,7 +38,7 @@ Solid potShape() => box(size - 2.mm, size - 2.mm, height - 18.mm)
   and they are 1.6 mm thick), so 0.5 mm stays free all around. It is 18 mm
   lower: 16 mm under it, and its rim 2 mm below the rim of the tank.
 - `pot()` takes that shape and hollows it out. `@part` without a colour gives
-  the green of hackerscad.
+  hackerscad's sky blue (Sky Pop).
 - The lines starting with `///` are comments: notes for whoever reads the
   code, ignored by hackerscad. `//` starts a comment too.
 

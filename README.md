@@ -19,7 +19,11 @@ only source of truth, so it diffs, versions and reviews like any other code.
   arguments and library functions, signatures while you type, help on hover,
   and a searchable cheatsheet (F1).
 * 🖱️ **And with the mouse**: fillets, chamfers, shells, holes, pockets and
-  bosses from the context menu, written back into the code.
+  bosses from the context menu, parts moved, turned, scaled, split and
+  coloured, all written back into the code.
+* 📐 **Sketches you see**: a constrained sketch shows in the view as soon as
+  the cursor is in its code, its dimensions edited by clicking them; draw on
+  a face of a part, measuring from its edges.
 * 🎛️ **Parameters**: `@param` gives a field in the side panel, `@preset` named
   sets of values, `unittest` the design's requirements.
 * 🧱 **Exact solids**: OpenCascade B-rep with fillets, shells, drafts, sweeps,
@@ -31,7 +35,8 @@ only source of truth, so it diffs, versions and reviews like any other code.
 * 🔩 **Libraries**: screws, nuts, holes and inserts, ISO threads, gears,
   print-in-place hinges, snap fits, enclosures, and Carlo the mascot.
 * 🤖 **AI agents**: an MCP server lets an agent write, check, look at and
-  export models, and drive the application while you watch.
+  export models, and drive the application while you watch; mark up the
+  view with arrows, circles and text to show it (or a person) where.
 * 🐧 **Linux, Windows, macOS**: AppImage, zip, app bundle.
 
 <p align="center"><img alt="hackerscad" src="docs/screenshot.png" width="800"></p>

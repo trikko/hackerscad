@@ -118,6 +118,44 @@ LibLine[][string] libraryLines(out string[] order)
 }
 
 /// Markdown, for hcad docs --cheatsheet.
+/// A key or mouse action of the application, and what it does.
+struct KeyLine
+{
+    string keys, what;
+}
+
+/// The keys and the mouse in the application (on macOS, Cmd in place of Ctrl).
+immutable KeyLine[] keyLines = [
+    KeyLine("Right drag", "turns the view"),
+    KeyLine("Middle drag, or Ctrl + right drag", "moves the view"),
+    KeyLine("Wheel", "zooms, towards the pointer"),
+    KeyLine("F6", "frames the whole model (Fit)"),
+    KeyLine("Click / Shift+click", "picks what is under the pointer / adds it to what is picked"),
+    KeyLine("Right-click", "what can be done there: fillets, holes, Move…, Colour, Sketch on face…"),
+    KeyLine("Double click on a flat face", "the view straight at that face"),
+    KeyLine("Alt+1 … Alt+4", "a click picks whole parts, faces, edges or vertices"),
+    KeyLine("A", "annotates the view: arrows, crosses, circles, text; Done or Esc goes back"),
+    KeyLine("Esc", "closes what is shown over the model: a sketch, a step, Inspect, the marks"),
+    KeyLine("Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E", "new, open, save, export"),
+    KeyLine("Ctrl+J, F7, F8, F9", "show or hide the console, the code, the view, the parameters"),
+    KeyLine("Ctrl+I, or Ctrl+click on a line", "shows what the line makes, in the view"),
+    KeyLine("F5", "runs the model's unittest checks"),
+    KeyLine("F1", "this cheatsheet"),
+    KeyLine("Ctrl+F, F3, Shift+F3", "finds in the code, next, previous"),
+    KeyLine("Ctrl+H", "replaces"),
+    KeyLine("Ctrl+L", "goes to a line"),
+    KeyLine("Ctrl+/", "comments the lines out, or back in"),
+    KeyLine("Ctrl+D", "duplicates the line or the selection"),
+    KeyLine("Ctrl+Shift+K", "deletes the lines"),
+    KeyLine("Alt+Up, Alt+Down", "moves the lines up or down"),
+    KeyLine("Tab, Shift+Tab", "indents the lines in or out"),
+    KeyLine("Ctrl+Z, Ctrl+Shift+Z", "undoes, redoes (the changes the mouse wrote too)"),
+    KeyLine("Ctrl+Q", "quits"),
+];
+
+/// The heading of the keys' section.
+enum keysHeading = "Keys and mouse (on macOS, Cmd for Ctrl)";
+
 string cheatsheetMarkdown()
 {
     auto o = appender!string;
@@ -141,6 +179,9 @@ string cheatsheetMarkdown()
     o ~= "\n## How do I…\n\n";
     foreach (r; recipes)
         o.formattedWrite("- %s: `%s`\n", r.task, r.code);
+    o.formattedWrite("\n## %s\n\n", keysHeading);
+    foreach (k; keyLines)
+        o.formattedWrite("- **%s** — %s\n", k.keys, k.what);
     return o[];
 }
 
@@ -194,6 +235,10 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
             o.formattedWrite("<dt>%s</dt><dd>%s</dd>\n", esc(l.usage), esc(l.doc));
         o ~= "</dl></section>\n";
     }
+    o.formattedWrite("<section><h2>%s</h2><dl>\n", esc(keysHeading));
+    foreach (k; keyLines)
+        o.formattedWrite("<dt>%s</dt><dd>%s</dd>\n", esc(k.keys), esc(k.what));
+    o ~= "</dl></section>\n";
     o ~= "</main></body></html>\n";
     return o[];
 }

@@ -286,6 +286,48 @@ sketch when the outline's parts depend on each other (tangent, at a
 distance, the same size). A sketch's `s.profile` is a profile too, so the
 two mix.
 
+## On the face of a cube
+
+A sketch does not have to lie on the ground: it can be drawn on a face of a
+solid. Let `face()` take the sketch it draws on, and the same rim and H go
+wherever it is handed. Change its first lines, `Profile face()`, `{` and
+`auto s = sketch();`, into:
+
+```d
+Profile face(Sketch s = sketch())
+{
+```
+
+`s` is now given to the function; when nothing is given, it is a new sketch
+on XY as before, and the medal does not change. At the end of the file, add
+a cube:
+
+```d
+/// The medal on the front of a cube: the same sketch,
+/// drawn on that face.
+@part("Orange Pop")
+Solid cube()
+{
+    auto block = box(50.mm, 50.mm, 50.mm).move(x: 75.mm);
+    return block.extrude(face(block.sketch(faces.front)),
+        depth: relief);
+}
+```
+
+`block.sketch(faces.front)` is a sketch on the cube's front face: its centre
+is the sketch's origin, x goes right and y up as you look at the face. The
+point the medal pins at (0, 0) is the middle of the face, every rule holds
+the same, and the medal stands out of it. `block.extrude(profile, depth:)`
+raises the profile from the face it was drawn on, 1 mm out.
+
+![The medal on the cube](img/12-medal-cube.png)
+
+Put the cursor in `face()` and the view shows its sketch twice, once for
+each place it is drawn; on the cube, the face's edges are in it too, in
+violet: they are the face's own outline, fixed, and the rules could measure
+from them (`s.edges` lists them). [Chapter 14](14-going-further.md#a-sketch-on-a-face) does that, with a groove along
+Carlo's jaw.
+
 ## What a sketch can do
 
 The constraints a sketch has: `coincident`, `fix`, `horizontal`,
@@ -296,5 +338,7 @@ line), `on` (a point on a line, circle or arc), `parallel`,
 lines, circles and the shapes above, `s.arc(centre, start, end)` draws arcs,
 and `s.fillet(p, r)` rounds a corner. The [language reference](../LANGUAGE.md) describes each one. The
 next page uses many of them to draw Carlo, the clip hackerscad starts with.
+
+The model at the end of this page: [12-medal-cube.hcad](12-medal-cube.hcad).
 
 [← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Carlo, drawn with a sketch →](13-carlo.md)

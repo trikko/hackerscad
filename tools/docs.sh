@@ -51,7 +51,7 @@ for f in build/page14/*.hcad; do
 done
 # the medal and the shapes of page 12 check, and the Carlo of page 13 (a
 # unittest keeps it the same as lib/carlo.hcad)
-for f in docs/tutorial/12-medal.hcad docs/tutorial/12-shapes.hcad docs/tutorial/13-carlo.hcad; do
+for f in docs/tutorial/12-medal.hcad docs/tutorial/12-medal-cube.hcad docs/tutorial/12-shapes.hcad docs/tutorial/13-carlo.hcad; do
     bin/hcad check "$f" >/dev/null
 done
 bin/hcad render docs/tutorial/planter-09.hcad -o docs/tutorial/img/planter.png >/dev/null

@@ -141,6 +141,23 @@ mixin template Annotate()
             colourButton.setPopover(pop);
             row.append(colourButton);
         }
+        // the view with its marks as a picture, for a person (an agent reads them from the state)
+        {
+            auto keep = new Box(Orientation.Horizontal, 0);
+            keep.addCssClass("linked");
+            auto save = new Button;
+            save.setIconName("document-save-symbolic");
+            save.setTooltipText("Save the view with its marks as a PNG picture");
+            save.connectClicked(() => saveAnnotated());
+            auto copy = new Button;
+            copy.setIconName("edit-copy-symbolic");
+            copy.setTooltipText("Copy the view with its marks, to paste the picture in a message");
+            copy.connectClicked(() { info(copyAnnotated() ? "the view with its marks is copied: paste it as a picture"
+                : "the view could not be captured"); });
+            keep.append(save);
+            keep.append(copy);
+            row.append(keep);
+        }
         auto clear = new Button;
         clear.setLabel("Clear");
         clear.setTooltipText("Remove all the marks, yours and the agents'");
@@ -205,6 +222,96 @@ mixin template Annotate()
     }
 
     /// A colour of the menu: a function of its own, so each button keeps its colour.
+    /// The view as annotated, its marks drawn on it (not the bar over it), as
+    /// a PNG picture; null when it cannot be had. The window as drawn when it
+    /// is; hidden or covered (not drawn since), the 3D view drawn apart, as a
+    /// screenshot does then, and the marks drawn on it.
+    ubyte[] annotatedPng()
+    {
+        import gtk.widget_paintable : WidgetPaintable;
+        import gtk.snapshot : Snapshot;
+        immutable w = viewport.area.getWidth(), h = viewport.area.getHeight();
+        if (w > 0 && h > 0)
+        {
+            auto snap = new Snapshot;
+            new WidgetPaintable(viewport.area).snapshot(snap, w, h);
+            if (noteArea.getVisible())
+                new WidgetPaintable(noteArea).snapshot(snap, w, h);
+            if (auto node = snap.toNode())
+                return window.getRenderer().renderTexture(node, null).saveToPngBytes().getData().dup;
+        }
+        import cairo.global : imageSurfaceCreateFromPng, create;
+        import hackerscad.render.png : encodePng;
+        import std.file : read, remove, tempDir, write;
+        import std.path : buildPath;
+        import std.process : thisProcessID;
+        immutable rw = max(640, w), rh = max(480, h);
+        auto pixels = viewport.renderImage(rw, rh);
+        if (pixels is null)
+            return null;
+        auto file = buildPath(tempDir, format("hcad-annotated-%d.png", thisProcessID));
+        scope (exit)
+            if (file.exists)
+                remove(file);
+        write(file, encodePng(pixels, rw, rh));
+        auto surface = imageSurfaceCreateFromPng(file);
+        drawNotes(create(surface), rw, rh);
+        surface.flush();
+        surface.writeToPng(file);
+        return cast(ubyte[]) read(file);
+    }
+
+    /// Save (in the bar, "annotate" with save on the socket): the view with its
+    /// marks written to a PNG file; the problem, or null.
+    string writeAnnotated(string file)
+    {
+        auto picture = annotatedPng();
+        if (picture is null)
+            return "the view could not be drawn (is the screen locked?)";
+        try
+        {
+            static import std.file;
+            std.file.write(file, picture);
+        }
+        catch (Exception e)
+            return "could not write " ~ file ~ ": " ~ e.msg;
+        return null;
+    }
+
+    /// The bar's Save: where to save the picture, then saved there.
+    void saveAnnotated()
+    {
+        import std.path : baseName, stripExtension;
+        auto d = new FileDialog;
+        d.setInitialName(baseName(path).stripExtension ~ "-annotated.png");
+        d.save(window, null, (ObjectWrap src, AsyncResult res) {
+            try
+            {
+                auto f = d.saveFinish(res);
+                if (f is null)
+                    return;
+                auto problem = writeAnnotated(f.getPath());
+                info(problem !is null ? problem : "saved " ~ f.getPath());
+            }
+            catch (ErrorWrap)
+            {
+            }
+        });
+    }
+
+    /// Copy (in the bar, "annotate" with copy on the socket): the picture on
+    /// the clipboard, as PNG; whether it could be had.
+    bool copyAnnotated()
+    {
+        import gdk.content_provider : ContentProvider;
+        import glib.bytes : Bytes;
+        auto picture = annotatedPng();
+        if (picture is null)
+            return false;
+        window.getClipboard().setContent(ContentProvider.newForBytes("image/png", new Bytes(picture)));
+        return true;
+    }
+
     Button swatchButton(size_t i)
     {
         auto b = new Button;

@@ -1277,7 +1277,9 @@ mixin template ControlMethods()
                 // {"remove": [ids]}; {"clear": true} all ({"clear": "agent"} or "user": one author's;
                 // none left: back to the live view, unless the user is annotating); {"mode": true}
                 // locks the view for the user to draw, false goes back to the live view (the marks go);
-                // {"list": true}. In one call: mode, clear, remove, add
+                // {"list": true}; {"save": "/path/view.png"} writes the view with its marks to a picture,
+                // {"copy": true} puts it on the clipboard, for a person (the bar's Save and Copy).
+                // In one call: mode, clear, remove, add, then save and copy
                 whenIdle(() {
                     import hackerscad.tool.annotations : readAnnotation, Annotation;
                     if (has("mode"))
@@ -1344,6 +1346,27 @@ mixin template ControlMethods()
                         notesChanged();
                     }
                     JSONValue r = ["annotations": notes.toJson()];
+                    if (has("save") || ("copy" in p && p["copy"].type == JSONType.true_))
+                    {
+                        if (!frozen)
+                            return reply(JSONValue.init, "the view is not annotated: add marks (or mode: true) first");
+                        if (has("save"))
+                        {
+                            import std.path : isAbsolute;
+                            immutable file = arg("save");
+                            if (!file.isAbsolute)
+                                return reply(JSONValue.init, "save takes an absolute path to a .png file");
+                            if (auto problem = writeAnnotated(file))
+                                return reply(JSONValue.init, problem);
+                            r["saved"] = file;
+                        }
+                        if ("copy" in p && p["copy"].type == JSONType.true_)
+                        {
+                            if (!copyAnnotated())
+                                return reply(JSONValue.init, "the view could not be drawn (is the screen locked?)");
+                            r["copied"] = true;
+                        }
+                    }
                     if (has("add"))
                         r["ids"] = ids;
                     if (missing.length)
