@@ -1128,6 +1128,44 @@ unittest
 
 unittest
 {
+    // the volume of a smooth outline extruded: a C, then the area times the height
+    import hackerscad.kernel.occt.c;
+    auto src = q{
+        import std.math;
+        Vec2[] c()
+        {
+            Vec2[] o, i;
+            foreach (k; 0 .. 25)
+            {
+                immutable t = 30.deg + k * 300.deg / 24;
+                o ~= vec(20.mm * cos(t), 20.mm * sin(t));
+                i ~= vec(14.mm * cos(t), 14.mm * sin(t));
+            }
+            Vec2[] p = o;
+            foreach_reverse (q; i)
+                p ~= q;
+            return p;
+        }
+        @part Solid a() => polygon(c(), smooth: true).extrude(10.mm);
+        unittest { writeln(polygon(c(), smooth: true).area * 10.mm); }
+    };
+    auto r = runModel(src);
+    import std.array : split;
+    import std.conv : to;
+    immutable want = r.log[0].text.split(" ")[0].to!double;
+    assert(abs(partVolume(r, "a") - want) < 0.005 * want, format("%s for %s", partVolume(r, "a"), want));
+    hc_workaround(HC_WORKAROUND_MESH_VOLUME, 0);
+    scope (exit)
+        hc_workaround(HC_WORKAROUND_MESH_VOLUME, 1);
+    // another height: the volumes are cached by shape
+    import std.array : replace;
+    immutable raw = kernel.volume(runModel(src.replace("10.mm", "11.mm")).parts[0].solid.brep);
+    stillBroken(abs(raw - want * 1.1) > 0.02 * want * 1.1,
+        "BRepGProp's volume of a smooth outline extruded, 6% off (shim.cpp, hc_volume, mesh_volume)");
+}
+
+unittest
+{
     import hackerscad.kernel.occt.c;
     hc_workaround(HC_WORKAROUND_MESH_DIVIDE, 0);
     scope (exit)

@@ -27,7 +27,8 @@ const char *hc_last_error(void);
 
 /* Workarounds for bugs of OpenCascade (WORKAROUND in shim.cpp), all on at
  * start. A test turns one off to see whether the bug is still there. */
-enum { HC_WORKAROUND_MESH_DIVIDE = 0, HC_WORKAROUND_SHELL_STRATEGIES = 1, HC_WORKAROUND_HELIX_PIECES = 2 };
+enum { HC_WORKAROUND_MESH_DIVIDE = 0, HC_WORKAROUND_SHELL_STRATEGIES = 1, HC_WORKAROUND_HELIX_PIECES = 2,
+    HC_WORKAROUND_MESH_VOLUME = 3 };
 void hc_workaround(int which, int on);
 
 /* Face history of the last operation on this thread: for every face of the

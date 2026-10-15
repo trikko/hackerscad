@@ -243,12 +243,12 @@ extern "C" {
 const char *hc_last_error(void) { return g_error.c_str(); }
 
 // the WORKAROUNDs below that a test can turn off (hc_workaround)
-static std::atomic<bool> g_workarounds[3] = {{true}, {true}, {true}};
+static std::atomic<bool> g_workarounds[4] = {{true}, {true}, {true}, {true}};
 static bool workaround(int which) { return g_workarounds[which].load(); }
 
 void hc_workaround(int which, int on)
 {
-    if (which >= 0 && which < 3)
+    if (which >= 0 && which < 4)
         g_workarounds[which] = on != 0;
 }
 
@@ -1667,6 +1667,55 @@ static bool triangle_properties(const hc_shape *s, double &volume, double &area)
 // (an M8 × 50 thread came out 1967 mm³ for 2066), the adaptive one is not.
 static const double mass_accuracy = 1e-5;
 
+// Whether a face is freeform (a B-spline, a curve swept along a line…),
+// where the integration of volumes can go wrong.
+static bool freeform(const TopoDS_Face &f)
+{
+    switch (BRepAdaptor_Surface(f, Standard_False).GetType()) {
+    case GeomAbs_BSplineSurface: case GeomAbs_BezierSurface: case GeomAbs_SurfaceOfExtrusion:
+    case GeomAbs_OffsetSurface: case GeomAbs_OtherSurface:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// The volume summed over the triangles of the faces' meshes (meshed finely
+// here when they have none), each face's turned as the face is.
+static double mesh_volume(const TopoDS_Shape &shape)
+{
+    Bnd_Box box;
+    BRepBndLib::Add(shape, box);
+    const double diag = box.IsVoid() ? 1 : sqrt(box.SquareExtent());
+    bool meshed = true;
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More() && meshed; ex.Next()) {
+        TopLoc_Location loc;
+        meshed = !BRep_Tool::Triangulation(TopoDS::Face(ex.Current()), loc).IsNull();
+    }
+    if (!meshed)
+        BRepMesh_IncrementalMesh(shape, std::min(0.01, diag * 1e-4), false, 0.2, true);
+    double volume = 0;
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Face &f = TopoDS::Face(ex.Current());
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) t = BRep_Tool::Triangulation(f, loc);
+        if (t.IsNull())
+            return -1;
+        const gp_Trsf tr = loc.Transformation();
+        const bool flip = f.Orientation() == TopAbs_REVERSED;
+        for (int i = 1; i <= t->NbTriangles(); i++) {
+            int a, b, c;
+            t->Triangle(i).Get(a, b, c);
+            if (flip)
+                std::swap(b, c);
+            gp_XYZ p = t->Node(a).Transformed(tr).XYZ(), q = t->Node(b).Transformed(tr).XYZ(),
+                   r = t->Node(c).Transformed(tr).XYZ();
+            volume += p.Dot(q.Crossed(r)) / 6;
+        }
+    }
+    return volume;
+}
+
 double hc_volume(const hc_shape *s)
 {
     return guarded<>(-1.0, [&] {
@@ -1675,6 +1724,19 @@ double hc_volume(const hc_shape *s)
             return volume;
         GProp_GProps p;
         BRepGProp::VolumeProperties(s->shape, p, mass_accuracy);
+        // WORKAROUND (OCCT 7.9, BRepGProp): on freeform faces swept from a
+        // smooth outline the adaptive integration can be far off (a hook
+        // made of a smooth polygon extruded: 18300 mm³ for 10500, a smooth C:
+        // +6%); the volume of the mesh is then the truer one. lang/tests.d
+        // turns this off (HC_WORKAROUND_MESH_VOLUME) and fails once it is right
+        bool any = false;
+        for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More() && !any; ex.Next())
+            any = freeform(TopoDS::Face(ex.Current()));
+        if (any && workaround(HC_WORKAROUND_MESH_VOLUME)) {
+            const double m = mesh_volume(s->shape);
+            if (m > 0 && std::abs(m - p.Mass()) > 0.01 * m)
+                return m;
+        }
         return p.Mass();
     });
 }
