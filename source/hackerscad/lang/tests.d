@@ -475,6 +475,24 @@ unittest
 
 unittest
 {
+    // an object type declared without a value starts as null, then takes one
+    auto r = runModel(q{
+        @part Solid p()
+        {
+            auto s = sketch();
+            SketchArc first;
+            writeln(first);
+            first = s.arc(s.point(0, 0), s.point(5, 0), s.point(0, 5));
+            s.radius(first, 5.mm);
+            writeln(first);
+            return box(1, 1, 1);
+        }
+    });
+    assert(r.log[0].text == "null" && r.log[1].text == "SketchArc", r.log[0].text ~ " / " ~ r.log[1].text);
+}
+
+unittest
+{
     // the shipped example evaluates with the expected parts and checks
     import std.file : thisExePath, exists;
     import std.path : dirName;

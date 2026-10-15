@@ -2141,6 +2141,12 @@ final class Interp
         {
             throw new HcadError(Code.type, format("%s must be %s, not %s", what, t, v.typeName), span);
         }
+        // null fits any object type (a sketch point, an arc…), as in D
+        {
+            import std.algorithm : canFind;
+            if (v.kind == Kind.null_ && !t.isArray && objectTypes.canFind(t.name))
+                return v;
+        }
 
         if (t.isArray)
         {
@@ -2286,6 +2292,10 @@ final class Interp
         case "Solid": return Value.of(new SolidVal(null, span));
         default:
             {
+                // an object (a sketch point, an arc…) starts as null, as a class in D
+                import std.algorithm : canFind;
+                if (objectTypes.canFind(t.name))
+                    return Value.null_();
                 Value tv;
                 if (tryLookup(t.name, mod ? mod.env : prelude, tv) && tv.kind == Kind.type && tv.type.def !is null)
                 {
