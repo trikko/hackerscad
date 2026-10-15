@@ -504,6 +504,24 @@ unittest
     assert(isClose(partVolume(joined, "joined"), partVolume(joined, "whole"), 1e-6));
     assert(isClose(partVolume(joined, "overlapping"), partVolume(joined, "single"), 1e-6));
 
+    // where the faces cannot be merged ("Courbes non jointives"), the union
+    // is still made, as it was before faces were merged
+    auto unmerged = runModel(q{
+        Solid alongX(Profile p, double x0, double x1) => p.extrude(x1 - x0, along: X).move(x: x0);
+        @part Solid c()
+        {
+            auto bolt = slot(vec(1.85, 12), vec(1.85, 15), w: 3.2.mm) + rect(vec(1.25, 15), vec(2.45, 17.25));
+            return alongX(bolt, -19.75, 0.76)
+                + polygon([vec(0.7, 0.25), vec(0.95, 1.25), vec(0.95, 2.45), vec(0.7, 3.45)]).extrude(6.85.mm)
+                    .move(z: 10.4.mm)
+                + box(1.1, 1.2, 5.7).move(x: 1.25, y: 1.85, z: 11)
+                + alongX(circle(vec(1.85, 15), d: 3.2.mm), -21, -19);
+        }
+    });
+    foreach (d; unmerged.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(isClose(partVolume(unmerged, "c"), 397.4, 1e-3), partVolume(unmerged, "c").to!string);
+
     assert(error("@part Solid p() { return box(1, 1, 1).fillet(edges.filter(e => e.length > 5.mm), r: 0.1); }").code == Code.kernel);
     assert(error("@part Solid p() { return box(1, 1, 1).fillet(faces.top, r: 0.1); }").code == Code.type);
     assert(error("@part Solid p() { return box(1, 1, 1).fillet(edges!(e => e.isLine), r: 0.1); }").code == Code.syntax);

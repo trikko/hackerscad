@@ -1014,7 +1014,14 @@ static TopoDS_Shape unify_keeping_origins(BRepBuilderAPI_MakeShape &mk, const hc
     TopTools_IndexedMapOfShape faces;
     TopExp::MapShapes(r, TopAbs_FACE, faces);
     ShapeUpgrade_UnifySameDomain unify(r, Standard_True, Standard_True, Standard_False);
-    unify.Build();
+    // merging can fail on some geometry ("Courbes non jointives"): the
+    // boolean's own result then, with its faces as they are, rather than none
+    try {
+        unify.Build();
+    } catch (const Standard_Failure &) {
+        g_history = before;
+        return r;
+    }
     const TopoDS_Shape u = unify.Shape();
     history_new(u);
     TopTools_IndexedMapOfShape merged;
