@@ -410,11 +410,14 @@ immutable Ref[] reference =
         "s.ellipse(c, rx: 20.mm, ry: 12.mm, angle: 0.deg)   // 0 dof once c is fixed",
         "s.ellipse(c, rx: 20.mm, ry: 12.mm)   // the turn left free: 1 dof",
         "s.ellipse(c)   // rx, ry and the turn left free: 3 dof"]),
-    withForms(F("rect", "Sketch", ["p: Point", "q: Point", "center: Point", "w: Length", "h: Length", "corner: Length"],
-        "Line[]", "A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; corner: rounds them."), [
+    withForms(F("rect", "Sketch", ["p: Point", "q: Point", "center: Point", "w: Length", "h: Length", "angle: Angle | \"free\"", "corner: Length"],
+        "Line[]", "A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), \"free\" leaves the turn to the constraints; corner: rounds them."), [
         "s.rect(p, q)   // opposite corners: 4 dof with new corners, 0 with fixed ones",
         "s.rect(center: c, w: 40.mm, h: 20.mm)   // 0 dof once c is fixed",
-        "s.rect(center: c, w: 40.mm, h: 20.mm, corner: 3.mm)"]),
+        "s.rect(p, w: 40.mm, h: 20.mm)   // from one corner: p the lower left, 0 dof once p is fixed",
+        "s.rect(center: c, w: 40.mm, h: 20.mm, corner: 3.mm)",
+        "s.rect(center: c, w: 40.mm, h: 20.mm, angle: 30.deg)   // turned",
+        "s.parallel(s.rect(center: c, w: 40.mm, h: 20.mm, angle: \"free\")[0], line)   // along a slanted line"]),
     withForms(F("polygon", "Sketch", ["center: Point", "n: int", "r: Length", "d: Length", "fit: string", "angle: Angle"], "Line[]",
         "A regular polygon: its n lines, corners on a construction circle of the size given; fit: \"sides\" makes its sides touch it instead; angle: the direction of the first corner."), [
         "s.polygon(c, 6, r: 10.mm)   // the turn left free: 1 dof once c is fixed",

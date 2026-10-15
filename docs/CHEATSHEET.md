@@ -259,7 +259,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.arc(center: Point, start: Point, end: Point) → Arc` — An arc, counter-clockwise.
 - `sk.polyline(points, closed: bool) → Line[]` — Lines through points (vectors become new points).
 - `sk.ellipse(center: Point, rx: Length, ry: Length, angle: Angle) → Ellipse` — An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints.
-- `sk.rect(p: Point, q: Point, center: Point, w: Length, h: Length, corner: Length) → Line[]` — A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; corner: rounds them.
+- `sk.rect(p: Point, q: Point, center: Point, w: Length, h: Length, angle: Angle | "free", corner: Length) → Line[]` — A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), "free" leaves the turn to the constraints; corner: rounds them.
 - `sk.polygon(center: Point, n: int, r: Length, d: Length, fit: string, angle: Angle) → Line[]` — A regular polygon: its n lines, corners on a construction circle of the size given; fit: "sides" makes its sides touch it instead; angle: the direction of the first corner.
 - `sk.slot(p: Point, q: Point, w: Length) → [Line, Arc, Line, Arc]` — Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p].
 - `sk.coincident(p: Point, q: Point)` — Two points in the same place.

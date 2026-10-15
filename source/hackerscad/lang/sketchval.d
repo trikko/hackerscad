@@ -180,9 +180,28 @@ final class SketchVal : ObjectVal
         case "rect":
             return (ref CallArgs a) {
                 // s.rect(p, q): p and q opposite corners; s.rect(center: c, w: 40.mm, h: 20.mm). The lines go
-                // p → (q.x, p.y) → q → (p.x, q.y) → p: bottom, right, top, left when p is the lower left corner
-                auto x = Args(it, a, "rect", ["sketch", "p", "q", "center", "w", "h", "corner", "construction"]);
+                // p → (q.x, p.y) → q → (p.x, q.y) → p: bottom, right, top, left when p is the lower left corner.
+                // angle: 30.deg turns it (its first side that far from X); angle: "free" leaves the turn to
+                // the constraints (s.parallel(r[0], line) lays it along a slanted line)
+                auto x = Args(it, a, "rect", ["sketch", "p", "q", "center", "w", "h", "angle", "corner", "construction"]);
                 immutable cons = x.flag("construction", false);
+                bool turned, free;
+                double turn = 0;
+                if (x.has("angle"))
+                {
+                    turned = true;
+                    auto av = x.get("angle");
+                    if (av.kind == Kind.str)
+                    {
+                        if (av.s != "free")
+                            throw new HcadError(Code.type, "a rectangle's angle is an angle, or \"free\"", x.spanOf("angle"));
+                        free = true;
+                    }
+                    else
+                        turn = x.angle("angle");
+                }
+                // the directions of its sides: along the first, and across
+                immutable u = Vec3(cos(turn), sin(turn), 0), v = Vec3(-sin(turn), cos(turn), 0);
                 size_t[4] c;
                 size_t ctr = size_t.max;
                 if (x.has("center"))
@@ -193,38 +212,80 @@ final class SketchVal : ObjectVal
                     immutable o = sk.guess(ctr);
                     immutable w = x.has("w") ? positiveLen(x, "w") : 20, h = x.has("h") ? positiveLen(x, "h") : 10;
                     foreach (i, d; [Vec3(-1, -1, 0), Vec3(1, -1, 0), Vec3(1, 1, 0), Vec3(-1, 1, 0)])
-                        c[i] = newPoint(o.x + d.x * w / 2, o.y + d.y * h / 2, a.span);
+                    {
+                        immutable q = Vec3(o.x, o.y, 0) + u * (d.x * w / 2) + v * (d.y * h / 2);
+                        c[i] = newPoint(q.x, q.y, a.span);
+                    }
+                }
+                else if (!x.has("q"))
+                {
+                    // one corner and the size: the rest of it along and across from there
+                    if (!x.has("w") || !x.has("h"))
+                        throw new HcadError(Code.unknownArg, "a rectangle from one corner needs w: and h: (or give "
+                            ~ "the opposite corner)", a.span);
+                    immutable w = positiveLen(x, "w"), h = positiveLen(x, "h");
+                    c[0] = pointOrNew(x, "p", a.span);
+                    immutable o = sk.guess(c[0]);
+                    foreach (i, q; [u * w, u * w + v * h, v * h])
+                    {
+                        immutable at = Vec3(o.x, o.y, 0) + q;
+                        c[i + 1] = newPoint(at.x, at.y, a.span);
+                    }
                 }
                 else
                 {
                     foreach (n; ["w", "h"])
                         if (x.has(n))
-                            throw new HcadError(Code.unknownArg, format("'%s' goes with center:; two corners already "
-                                ~ "give the size", n), x.spanOf(n));
+                            throw new HcadError(Code.unknownArg, format("'%s' goes with center: or with one corner; two "
+                                ~ "corners already give the size", n), x.spanOf(n));
                     c[0] = pointOrNew(x, "p", a.span);
                     c[2] = pointOrNew(x, "q", a.span);
                     immutable p = sk.guess(c[0]), q = sk.guess(c[2]);
-                    if (abs(p.x - q.x) < 1e-9 || abs(p.y - q.y) < 1e-9)
-                        throw new HcadError(Code.type, "the opposite corners of a rectangle must differ in x and in y",
-                            x.spanOf("q"));
-                    c[1] = newPoint(q.x, p.y, a.span);
-                    c[3] = newPoint(p.x, q.y, a.span);
+                    // the diagonal along and across the sides
+                    immutable dq = Vec3(q.x - p.x, q.y - p.y, 0), along = dq.dot(u), across = dq.dot(v);
+                    if (abs(along) < 1e-9 || abs(across) < 1e-9)
+                        throw new HcadError(Code.type, turned
+                            ? "the opposite corners of a rectangle must not lie along one of its sides"
+                            : "the opposite corners of a rectangle must differ in x and in y", x.spanOf("q"));
+                    immutable c1 = Vec3(p.x, p.y, 0) + u * along, c3 = Vec3(p.x, p.y, 0) + v * across;
+                    c[1] = newPoint(c1.x, c1.y, a.span);
+                    c[3] = newPoint(c3.x, c3.y, a.span);
                 }
                 Value[] lines;
                 foreach (i; 0 .. 4)
                     lines ~= made(a.span, () => sk.line(c[i], c[(i + 1) % 4], cons));
-                calling = "horizontal";
-                add(ConstraintKind.horizontal, [idOf(lines[0])], a.span);
-                add(ConstraintKind.horizontal, [idOf(lines[2])], a.span);
-                calling = "vertical";
-                add(ConstraintKind.vertical, [idOf(lines[1])], a.span);
-                add(ConstraintKind.vertical, [idOf(lines[3])], a.span);
+                if (!turned)
+                {
+                    calling = "horizontal";
+                    add(ConstraintKind.horizontal, [idOf(lines[0])], a.span);
+                    add(ConstraintKind.horizontal, [idOf(lines[2])], a.span);
+                    calling = "vertical";
+                    add(ConstraintKind.vertical, [idOf(lines[1])], a.span);
+                    add(ConstraintKind.vertical, [idOf(lines[3])], a.span);
+                }
+                else
+                {
+                    // square corners, opposite sides parallel: a rectangle that can turn
+                    calling = "perpendicular";
+                    add(ConstraintKind.perpendicular, [idOf(lines[0]), idOf(lines[1])], a.span);
+                    calling = "parallel";
+                    add(ConstraintKind.parallel, [idOf(lines[0]), idOf(lines[2])], a.span);
+                    add(ConstraintKind.parallel, [idOf(lines[1]), idOf(lines[3])], a.span);
+                    if (!free)
+                    {
+                        calling = "angle";
+                        add(ConstraintKind.direction, [c[0], c[1]], a.span, turn, 0, x.spanOf("angle"));
+                    }
+                }
                 if (ctr != size_t.max)
                 {
                     // the centre halves a diagonal
                     auto diag = made(a.span, () => sk.line(c[0], c[2], true));
                     calling = "midpoint";
                     add(ConstraintKind.midpoint, [ctr, idOf(diag)], a.span);
+                }
+                if (ctr != size_t.max || !x.has("q"))
+                {
                     calling = "length";
                     if (x.has("w"))
                         add(ConstraintKind.length, [idOf(lines[0])], a.span, positiveLen(x, "w"), 0, x.spanOf("w"));
@@ -387,8 +448,13 @@ final class SketchVal : ObjectVal
             });
         case "distance":
             return constraint("distance", ["a", "b", "value", "along"], (ref Args x, Span s) {
-                // between two points (along: X or Y for one direction only) or from a point to a line
+                // between two points (along: X or Y for one direction only) or from a point to a line;
+                // which side is the drawing's, so a distance is never negative (a minus sign would
+                // only flip it to the other side, against what the drawing shows)
                 immutable d = x.len("value");
+                if (d < 0)
+                    throw new HcadError(Code.type, "a distance is not negative: the side comes from where the "
+                        ~ "points are drawn", x.spanOf("value"));
                 auto b = entityArg(x, "b");
                 if (sk.entities[b].kind == EntityKind.line)
                     return add(ConstraintKind.pointLineDistance, [pointArg(x, "a"), b], s, d, 0, x.spanOf("value"));

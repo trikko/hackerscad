@@ -2793,3 +2793,41 @@ unittest
     assert(isClose(partVolume(r, "square"), 400, 1e-6) && isClose(partVolume(r, "inside"), 24 * 18, 1e-6));
 }
 
+unittest
+{
+    // a rectangle turned by an angle, and one free to turn laid along a slanted line: fully constrained,
+    // the sizes they were given, the slanted one's side along the line
+    auto r = runModel(`import std.shapes;
+@part Solid a()
+{
+    auto s = sketch();
+    s.rect(center: s.point(0, 0, fixed: true), w: 30.mm, h: 20.mm, angle: 25.deg);
+    writeln(s.dof);
+    auto f = s.point(40, -10, fixed: true), g = s.point(80, 10, fixed: true);
+    auto slanted = s.line(f, g, construction: true);
+    auto q = s.rect(center: s.point(60, 10), w: 20.mm, h: 10.mm, angle: "free");
+    writeln(s.dof);
+    s.parallel(q[0], slanted);
+    s.on(q[0].start, slanted);
+    s.distance(f, q[0].start, 5.mm);
+    writeln(s.dof);
+    writeln(q[0].end.y - q[0].start.y > 0.mm);
+    return s.profile.extrude(1.mm);
+}
+@part Solid b()
+{
+    auto s = sketch();
+    auto r = s.rect(s.point(0, 0, fixed: true), w: 30.mm, h: 20.mm);
+    writeln(s.dof, " ", r[1].end.x, " ", r[1].end.y);
+    return s.profile.extrude(1.mm);
+}
+`);
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error && d.severity != Severity.warning, d.message);
+    assert(r.log.map!(l => l.text).array == ["0", "3", "0", "true", "0 30 mm 20 mm"], r.log.map!(l => l.text).join(","));
+    assert(isClose(partVolume(r, "a"), 600 + 200, 1e-6));
+    import std.algorithm : canFind;
+    auto e = errorIn(`auto s = sketch(); s.rect(center: s.point(0, 0), angle: "loose");`, "import std.shapes;");
+    assert(e.message.canFind("free"), e.message);
+}
+
