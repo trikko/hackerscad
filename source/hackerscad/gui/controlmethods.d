@@ -659,9 +659,22 @@ mixin template ControlMethods()
             // {"line": 52, "to_line": 54}: the sketch those lines belong to, what they make or constrain in
             // orange (as Inspect on them, without the solids); {"on": true} or nothing: the first sketch;
             // {"on": false}: none; {"follow": false}: the setting Show the sketch at the cursor; {"pin": true}: the sketch
-            // at the cursor stays when it leaves. The reply lists the sketches, and state's sketch tells the one shown
+            // at the cursor stays when it leaves; {"align": true}: the view straight at the sketch shown (Look at
+            // sketch). The reply lists the sketches, and state's sketch tells the one shown
             // (from_cursor, pinned, partial, stale). An explicit request takes the view over from the cursor
             {
+                if (has("align") && !has("line") && !("on" in p))
+                {
+                    whenIdle(() {
+                        if (!alignToSketch())
+                            return reply(JSONValue.init, frozen ? "the view is annotated: it does not move"
+                                : "no sketch is shown: show one first (line, or the cursor in its code)");
+                        auto r = state();
+                        r["sketches"] = sketchesJson();
+                        reply(r, null);
+                    });
+                    return;
+                }
                 immutable hide = "on" in p && p["on"].type == JSONType.false_;
                 // follow: the setting Show the sketch at the cursor; pin: the pin of the mode bar, which keeps
                 // the sketch at the cursor shown when the cursor leaves its code; alone, they show nothing else

@@ -3849,6 +3849,21 @@ private:
         updateDimensions();
     }
 
+    /// Look at sketch: the view straight at the sketch shown, from outside
+    /// the face it is drawn on, or from above (the right-click menu, "sketch"
+    /// with align on the socket); false when none is shown.
+    bool alignToSketch()
+    {
+        if (sketchIndices.length == 0 || sketchIndices[0] >= last.sketches.length || frozen)
+            return false;
+        auto sk = last.sketches[sketchIndices[0]];
+        if (sk.placed)
+            viewport.lookAlong(sk.place[3]);
+        else
+            viewport.setView(ViewPreset.top);
+        return true;
+    }
+
     void hideSketch()
     {
         if (sceneLocked(false))
@@ -4194,6 +4209,12 @@ private:
     {
         if (hit.part < 0 || hit.part >= last.parts.length)
         {
+            // a sketch shown (its parts hidden, so a click finds none): the view
+            // back on it, or the model; then, as on empty space, the hidden parts
+            MenuEntry[] head;
+            if (sketchIndices.length)
+                head = [MenuEntry.heading("SKETCH"), MenuEntry.item("Look at sketch", () { alignToSketch(); }),
+                    MenuEntry.item("Show final model", () => showFinal())];
             // on empty space: the hidden parts can come back
             MenuEntry[] back;
             foreach (i, part; last.parts)
@@ -4202,14 +4223,18 @@ private:
                     immutable index = i;
                     back ~= MenuEntry.item("Show " ~ part.name, () => setPartVisible(index, true));
                 }
-            if (back.length == 0)
-                return;
             if (back.length > 1)
                 back ~= MenuEntry.item("Show all parts", () {
                     foreach (i; 0 .. last.parts.length)
                         setPartVisible(i, true);
                 });
-            contextPopover = popupMenu(viewport.area, x, y, MenuEntry.heading("HIDDEN PARTS") ~ back);
+            if (back.length)
+                back = MenuEntry.heading("HIDDEN PARTS") ~ back;
+            if (head.length && back.length)
+                head ~= MenuEntry.separator();
+            if (head.length + back.length == 0)
+                return;
+            contextPopover = popupMenu(viewport.area, x, y, head ~ back);
             return;
         }
         if (viewport.inRollback)

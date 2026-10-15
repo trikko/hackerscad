@@ -941,10 +941,12 @@ JSONValue[] toolList()
             ~ "The window also shows the sketch whose code the editor's cursor is in (hcad_gui_edit with goto moves the "
             ~ "cursor): follow: false turns that off, true on (the display menu's Show the sketch at the cursor, kept "
             ~ "between runs); pin: true keeps the sketch shown from the cursor when the cursor leaves its code. A line "
-            ~ "given here takes the view over from the cursor until Esc or on: false. state's sketch tells from_cursor, "
+            ~ "given here takes the view over from the cursor until Esc or on: false. align: true turns the view "
+            ~ "straight back at the sketch shown (Look at sketch in the right-click menu: from outside its face, or "
+            ~ "from above), after the user or you turned it. state's sketch tells from_cursor, "
             ~ "pinned, partial, stale (and error_line).",
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "on": {"type": "boolean"}, `
-            ~ `"follow": {"type": "boolean"}, "pin": {"type": "boolean"}`, `[]`),
+            ~ `"follow": {"type": "boolean"}, "pin": {"type": "boolean"}, "align": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
             ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "
             ~ "several times, every run), what a value row made, or what a function returns; the step of a sketch "

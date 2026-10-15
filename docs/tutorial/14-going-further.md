@@ -268,7 +268,8 @@ onto its plane: the rim of a hole underneath, to centre something over it. In
 the 3D view, right-click a flat face and choose **Sketch on face…**: an empty
 sketch on it is written for you, its edges already there, ready to draw on.
 A double click on a flat face (or **Look at face** in the same menu) turns the
-view straight at it.
+view straight at it; with a sketch shown, **Look at sketch** in the right-click
+menu turns it back onto the sketch after you have turned it round.
 
 ## Curved shapes: lofts and sweeps
 
