@@ -430,35 +430,45 @@ int main(string[] args)
     // they know its name before it opens), when no open window has it;
     // --copy=FILE opens that file's text in a model of no file (Save asks
     // for a name): an example to try things in, overwriting nothing
-    string path, shot, theme;
-    foreach (a; args[1 .. $])
+    string path, shot, theme, name, copy, size;
     {
-        if (a.length > 13 && a[0 .. 13] == "--screenshot=")
-            shot = a[13 .. $];
-        else if (a.length > 8 && a[0 .. 8] == "--theme=")
-            theme = a[8 .. $];
-        else if (a.length > 7 && a[0 .. 7] == "--name=")
-            MainWindow.startName = a[7 .. $];
-        else if (a.length > 7 && a[0 .. 7] == "--copy=")
+        import std.getopt : getopt, config, GetOptException;
+        import std.stdio : stderr;
+        auto rest = args.dup;
+        try
+            getopt(rest, config.passThrough, "screenshot", &shot, "theme", &theme, "name", &name, "copy", &copy,
+                "size", &size);
+        catch (GetOptException e)
+            stderr.writeln("hackerscad: ", e.msg);
+        // what is left: the model to open (options the system adds, -psn_… on
+        // macOS, pass through and are left out)
+        foreach (a; rest[1 .. $])
+            if (a.length && a[0] != '-')
+                path = absolutePath(a);
+    }
+    if (name.length)
+        MainWindow.startName = name;
+    if (copy.length)
+    {
+        try
+            MainWindow.startText = readText(copy);
+        catch (Exception e)
         {
-            try
-                MainWindow.startText = readText(a[7 .. $]);
-            catch (Exception e)
-            {
-                import std.stdio : stderr;
-                stderr.writeln("hackerscad: cannot read ", a[7 .. $], ": ", e.msg);
-            }
+            import std.stdio : stderr;
+            stderr.writeln("hackerscad: cannot read ", copy, ": ", e.msg);
         }
-        else if (a.length > 7 && a[0 .. 7] == "--size=")
-        {
-            import std.array : split;
-            import std.conv : to;
-            auto wh = a[7 .. $].split("x");
+    }
+    if (size.length)
+    {
+        import std.array : split;
+        import std.conv : to, ConvException;
+        auto wh = size.split("x");
+        try
             if (wh.length == 2)
                 MainWindow.startSize = [wh[0].to!int, wh[1].to!int];
+        catch (ConvException)
+        {
         }
-        else
-            path = absolutePath(a);
     }
     if (path is null)
         path = absolutePath("untitled.hcad");
