@@ -4414,14 +4414,21 @@ private:
         {
             // hackerscad's own colours (geom/color.d), the default first
             import hackerscad.geom.color : partPalette;
-            MenuEntry[] colours;
+            MenuEntry[] colours, all;
             immutable now = part.rgb & 0xFFFFFF;
             foreach (c; partPalette)
-                colours ~= colourEntry(c.name, c.rgb, now == c.rgb ? "✓" : null);
+                colours ~= colourEntry(c.name, c.rgb, now == c.rgb ? "✓" : null, false);
             colours ~= S();
             colours ~= I("Other…", () => showColourWheel(contextHit.part));
-            // a piece's colour is its @parts annotation's: all the pieces take it
-            entries ~= G(isPiece(contextHit.part) ? "Colour of all pieces" : "Colour", colours);
+            entries ~= G("Colour", colours);
+            // a piece: its own colour, or its group's (the @parts annotation's),
+            // a default that the pieces not coloured on their own take
+            if (isPiece(contextHit.part))
+            {
+                foreach (c; partPalette)
+                    all ~= colourEntry(c.name, c.rgb, null, true);
+                entries ~= G("Default colour of " ~ part.fn, all);
+            }
         }
         entries ~= I("Hide " ~ part.name, () => setPartVisible(contextHit.part, false));
         if (last.parts.length > 1)
@@ -4454,11 +4461,13 @@ private:
     Popover contextPopover;
 
     /// A Colour entry: its sample, and clicking it writes the colour's name on
-    /// the part the menu is for (one entry per call: closures made in a loop share one frame).
-    MenuEntry colourEntry(string name, uint rgb, string detail)
+    /// the part the menu is for (`all`: on the @parts of its piece; one entry
+    /// per call: closures made in a loop share one frame).
+    MenuEntry colourEntry(string name, uint rgb, string detail, bool all)
     {
         return MenuEntry.colour(name, format("#%06X", rgb), () {
-            if (auto problem = writeColour(last.parts[contextHit.part].fn, name))
+            auto p = last.parts[contextHit.part];
+            if (auto problem = writeColour(p.fn, all ? -1 : p.piece, p.fromSolid, name))
                 info(problem);
         }, detail);
     }
@@ -4475,6 +4484,7 @@ private:
         if (colourWheel !is null && colourWheel.win.getVisible())
             colourWheel.win.close();   // the part it was on takes back its colour
         auto name = last.parts[index].fn;
+        immutable piece = last.parts[index].piece, fromSolid = last.parts[index].fromSolid;
         immutable start = last.parts[index].rgb & 0xFFFFFF;
         // the preview and its undoing touch the parts the wheel opened on: once
         // the model is evaluated again, the new parts have their own colours
@@ -4485,7 +4495,7 @@ private:
                 viewport.previewColour(index, rgb);
         }
         colourWheel = new ColourWheel(window, start, (uint rgb) => show(rgb), (uint rgb) {
-            if (auto problem = writeColour(name, format("#%06X", rgb)))
+            if (auto problem = writeColour(name, piece, fromSolid, format("#%06X", rgb)))
             {
                 show(start);
                 info(problem);
@@ -4493,16 +4503,19 @@ private:
         }, () => show(start));
     }
 
-    /// Gives part `name` the colour `colour` (a name, "#RRGGBB") in the code,
-    /// on its @part; the problem, or null.
-    string writeColour(string name, string colour)
+    /// Gives the part of function `name` the colour `colour` (a name,
+    /// "#RRGGBB") in the code, on its @part; piece `piece` of a @parts
+    /// function (from 0; -1 the annotation, for all) with .color on it alone.
+    /// The problem, or null.
+    string writeColour(string name, int piece, bool fromSolid, string colour)
     {
         if (busy())
             return "wait for the evaluation to finish, then try again";
         try
         {
-            import hackerscad.tool.codegen : colourPart;
-            applyEdit(colourPart(text(), path, name, colour));
+            import hackerscad.tool.codegen : colourPart, colourPiece;
+            applyEdit(piece >= 0 ? colourPiece(text(), path, name, piece, fromSolid, colour)
+                : colourPart(text(), path, name, colour));
             info("");
             return null;
         }

@@ -1174,6 +1174,45 @@ Edit appendToPiece(string source, string file, string part, size_t index, bool f
     return between(source, e.apply(src), e);
 }
 
+/// colourPart for piece `index` of a @parts function: `.color("…")` on that
+/// piece only, in place of the colour it ends with, or added. The colour is selected.
+Edit colourPiece(string source, string file, string part, size_t index, bool fromSolid, string colour)
+{
+    import std.regex : matchFirst, regex;
+    size_t a, b;
+    bool ops;
+    auto src = pieceStatement(source, file, part, index, fromSolid, a, b, ops);
+    colour = `"` ~ colour ~ `"`;
+    Edit e;
+    auto had = src[a .. b].matchFirst(regex(`\.color\(\s*("[^"]*")\s*\)$`));
+    if (!had.empty && !ops)
+    {
+        // the string literal itself, quotes included
+        e.offset = a + (had[1].ptr - src[a .. b].ptr);
+        e.length = had[1].length;
+        e.text = colour;
+        e.selectOffset = e.offset;
+        e.selectLength = colour.length;
+    }
+    else
+        e = appendAt(src, a, b, ops, ".color(" ~ colour ~ ")", colour);
+    return between(source, e.apply(src), e);
+}
+
+unittest
+{
+    // a piece's colour: on its own statement, then changed in place
+    auto src = "module m;\n\n@parts(\"Red Pop\")\nSolid[] p() => box(10, 10, 10).split(XY.offset(5.mm));\n";
+    auto a = colourPiece(src, "m.hcad", "p", 1, false, "Blue Pop").apply(src);
+    assert(a.canFind("    pieces[1] = pieces[1].color(\"Blue Pop\");\n    return pieces;") && a.canFind("@parts(\"Red Pop\")"), a);
+    auto b = colourPiece(a, "m.hcad", "p", 1, false, "#112233").apply(a);
+    assert(b.canFind("pieces[1] = pieces[1].color(\"#112233\");") && !b.canFind("Blue Pop"), b);
+    // after a move, on the same line
+    auto c = transformPiece(b, "m.hcad", "p", 0, false, "move", Vec3(5, 0, 0)).apply(b);
+    auto d = colourPiece(c, "m.hcad", "p", 0, false, "Cyan Pop").apply(c);
+    assert(d.canFind("pieces[0] = pieces[0].move(x: 5.mm).color(\"Cyan Pop\");"), d);
+}
+
 unittest
 {
     // a piece of a list: the function takes its pieces apart, that one turns,

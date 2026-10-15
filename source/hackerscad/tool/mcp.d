@@ -838,11 +838,13 @@ JSONValue[] toolList()
             ~ "wheel, hue in degrees (OKLCH: 0 pink-red, 90 yellow, 150 green, 250 blue, 300 violet) with "
             ~ "lightness (0.45-0.95) and vividness (0-0.25), the palette's 0.76 and 0.15 when left out: every hue "
             ~ "then looks as bright as the palette's colours (written as #RRGGBB). wheel: true opens the wheel on "
-            ~ "the part for the user, writing nothing. part: its name (needed with several parts).",
+            ~ "the part for the user, writing nothing. A piece of @parts (clip2) is coloured alone, with .color(…) "
+            ~ "on that piece in the function; all: true colours the @parts annotation instead, which the pieces not "
+            ~ "coloured on their own take. part: its name (needed with several parts).",
             `"part": {"type": "string"}, "colour": {"type": "string", "description": "Sky Pop, Blue Pop, Cyan Pop, `
             ~ `Violet Pop, Pink Pop, Rose Pop, Red Pop, Orange Pop, Yellow Pop, White Pop, Gray Pop, or #RRGGBB"}, `
             ~ `"hue": {"type": "number"}, "lightness": {"type": "number"}, "vividness": {"type": "number"}, `
-            ~ `"wheel": {"type": "boolean"}`, `[]`),
+            ~ `"wheel": {"type": "boolean"}, "all": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_split", "Split a part of the user's model, as Split… in the 3D view's right-click menu: the "
             ~ "part becomes a plain function, an immutable keeps the plane, and @parts(varied: true) Solid[] "
             ~ "<part>Pieces() => <part>().split(plane) takes its place: a part of each piece the cut leaves (more than "

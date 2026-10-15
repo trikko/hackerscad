@@ -279,7 +279,8 @@ mixin template ControlMethods()
                 // {"part": "lid", "colour": "Violet Pop"} or "#C597FE": the colour written on its @part,
                 // as the right-click menu's Colour; {"hue": 250, "lightness": 0.76, "vividness": 0.15}
                 // as its Other… wheel (OKLCH; the last two as the palette's when left out);
-                // {"wheel": true} opens the wheel on the part for the user, writing nothing
+                // {"wheel": true} opens the wheel on the part for the user, writing nothing;
+                // a piece of @parts is coloured alone (.color on it), {"all": true} all its pieces (the annotation)
                 whenIdle(() {
                     auto name = arg("part");
                     int index = -1;
@@ -319,7 +320,9 @@ mixin template ControlMethods()
                             names ~= c.name;
                         return reply(JSONValue.init, "colour is one of " ~ names.join(", ") ~ ", or #RRGGBB");
                     }
-                    if (auto problem = writeColour(last.parts[index].fn, colour))
+                    auto q = last.parts[index];
+                    immutable everyPiece = "all" in p && p["all"].type == JSONType.true_;
+                    if (auto problem = writeColour(q.fn, everyPiece ? -1 : q.piece, q.fromSolid, colour))
                         return reply(JSONValue.init, problem);
                     whenIdle(() => reply(state(), null));
                 });

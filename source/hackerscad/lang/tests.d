@@ -2734,6 +2734,17 @@ unittest
     // varied: the first in the given colour, the others different; without it all the same
     assert(r.parts[0].rgb == 0xFF8A82 && r.parts[1].rgb != r.parts[0].rgb && r.parts[2].rgb != r.parts[1].rgb);
     assert(r.parts[3].rgb == r.parts[4].rgb);
+    // a piece coloured on its own keeps its colour, the others take @parts's
+    auto own = runModel(q{
+        @parts("Red Pop")
+        Solid[] two()
+        {
+            auto pieces = [box(1, 1, 1), box(1, 1, 1).move(x: 5)];
+            pieces[1] = pieces[1].color("#112233");
+            return pieces;
+        }
+    });
+    assert((own.parts[0].rgb & 0xFFFFFF) == 0xFF8A82 && (own.parts[1].rgb & 0xFFFFFF) == 0x112233);
     assert(isClose(partVolume(r, "cubes2"), 64, 1e-6) && isClose(partVolume(r, "whole"), 192, 1e-6));
     // @part on a list points at @parts; @parts on what is not solid says what it takes
     assert(error("@part Solid[] p() => [box(1, 1, 1)];").message.canFind("@parts makes a part of each"));

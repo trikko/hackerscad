@@ -366,10 +366,13 @@ final class Interp
                 immutable one = items.length == 1;
                 immutable name = one ? f.name : format("%s%d", f.name, k + 1);
                 immutable partLabel = one ? label : format("%s%d", label, k + 1);
-                // the annotation's colour, else the solid's own, else the default
+                // @part: the annotation's colour, else the solid's own, else the default;
+                // @parts: a piece's own colour first (one piece coloured on its own)
                 uint c = coloured ? rgb : item.hasColor ? item.rgb : rgb;
                 if (varied && !(item.hasColor && !coloured))
                     c = tints[k];
+                if (many && item.hasColor)
+                    c = item.rgb;
                 if (alpha == alpha)
                     c = withAlpha(c, alpha);
                 foreach (q; r.parts)
