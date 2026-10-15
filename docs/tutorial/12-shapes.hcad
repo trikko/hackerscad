@@ -1,0 +1,67 @@
+// The shapes a sketch has, each fully constrained
+module shapes;
+
+import std.shapes;
+
+@part
+Solid sampler()
+{
+    auto s = sketch();
+
+    // places on a grid, 35 mm apart, and points pinned
+    // there
+    Vec2 grid(double x, double y) =>
+        vec(x * 35, y * 35);
+    SketchPoint at(Vec2 p) =>
+        s.point(p.x, p.y, fixed: true);
+
+    // a rectangle from its centre, the corners round
+    s.rect(center: at(grid(-1, 1)), w: 26.mm, h: 18.mm,
+        corner: 4.mm);
+
+    // hexagons: the circle through the corners, or
+    // the one the sides touch (across the flats)
+    auto hex = s.polygon(at(grid(0, 1)), 6, d: 24.mm);
+    s.horizontal(hex[0]);
+    auto nut = s.polygon(at(grid(1, 1)), 6, d: 20.mm,
+        fit: "sides");
+    s.horizontal(nut[0]);
+
+    // an ellipse, tilted
+    s.ellipse(at(grid(-1, 0)), rx: 13.mm, ry: 7.mm,
+        angle: 20.deg);
+
+    // a slot between two points, 8 mm wide
+    s.slot(at(grid(0, 0) - vec(10, 0)),
+        at(grid(0, 0) + vec(10, 0)), w: 8.mm);
+
+    // a pentagon in a circle (construction: not part of
+    // the outline), its corners on it
+    auto ring = s.circle(at(grid(1, 0)), d: 24.mm,
+        construction: true);
+    auto five = s.polygon(ring.center, 5);
+    s.on(five, ring);
+    s.vertical(five[0].start, ring.center);
+
+    // a square round a circle: every side touching it
+    auto round = s.circle(at(grid(-1, -1)), d: 20.mm,
+        construction: true);
+    s.tangent(s.rect(center: round.center), round);
+
+    // a rectangle in a circle, one side given
+    auto disc = s.circle(at(grid(0, -1)), d: 26.mm,
+        construction: true);
+    auto inside = s.rect(center: disc.center);
+    s.on(inside, disc);
+    s.length(inside[0], 22.mm);
+
+    // a circle and an ellipse made round: as wide as
+    // tall
+    s.circle(at(grid(1, -1) - vec(6, 0)), d: 10.mm);
+    auto e = s.ellipse(at(grid(1, -1) + vec(7, 0)));
+    s.equal(e);
+    s.radius(e, rx: 5.mm);
+
+    writeln("degrees of freedom left: ", s.dof);
+    return s.profile.extrude(2.mm);
+}

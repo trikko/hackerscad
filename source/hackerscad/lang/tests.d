@@ -497,7 +497,7 @@ unittest
     // the tutorial's Carlo: a sketch fully constrained, one valid part, with 3 teeth, 5 and 1, without the eye, the mouth closed
     import std.file : thisExePath, readText;
     import std.path : dirName;
-    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "docs", "tutorial", "12-carlo.hcad");
+    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "docs", "tutorial", "13-carlo.hcad");
     string[string][] cases = [["teeth": "3"], ["teeth": "5"], ["eye": "false"], ["teeth": "1"], ["mouth": "-2"]];
     foreach (o; cases)
     {
@@ -520,10 +520,10 @@ unittest
     import std.path : dirName;
     import std.string : indexOf;
     auto root = dirName(dirName(dirName(thisExePath)));
-    auto tutorial = readText(buildPath(root, "docs", "tutorial", "12-carlo.hcad"));
+    auto tutorial = readText(buildPath(root, "docs", "tutorial", "13-carlo.hcad"));
     auto sketchCode = tutorial[tutorial.indexOf("    auto s = sketch();") .. tutorial.indexOf("    writeln(")];
     auto library = readText(buildPath(root, "lib", "carlo.hcad"));
-    assert(library.indexOf(sketchCode) >= 0, "lib/carlo.hcad no longer draws the sketch of docs/tutorial/12-carlo.hcad");
+    assert(library.indexOf(sketchCode) >= 0, "lib/carlo.hcad no longer draws the sketch of docs/tutorial/13-carlo.hcad");
     // the start example shows the library's carlo(), word for word
     auto carloCode = library[library.indexOf("/// Carlo lying flat") .. $];
     assert(readText(buildPath(root, "examples", "00_carlo.hcad")).indexOf(carloCode) >= 0,
@@ -2735,3 +2735,61 @@ unittest
     auto e = errorIn(`auto p = regularPolygon(6, d: 13.mm, fit: "flats");`, "import std.shapes;");
     assert(e.message.canFind("fit is"), e.message);
 }
+
+unittest
+{
+    // on and tangent with a whole shape: a hexagon in a circle, an octagon and a square round one, a
+    // rectangle in one; each fully constrained, with the area its geometry gives
+    import std.math : sin, tan, PI;
+    auto r = runModel(`import std.shapes;
+@part Solid hex()
+{
+    auto s = sketch();
+    auto c = s.point(0, 0, fixed: true);
+    auto circ = s.circle(c, d: 30.mm, construction: true);
+    auto h = s.polygon(c, 6);
+    s.on(h, circ);
+    s.horizontal(h[0]);
+    writeln(s.dof);
+    return s.profile.extrude(1.mm);
+}
+@part Solid oct()
+{
+    auto s = sketch();
+    auto c = s.point(0, 0, fixed: true);
+    auto circ = s.circle(c, d: 20.mm, construction: true);
+    auto o = s.polygon(c, 8);
+    s.tangent(o, circ);
+    s.horizontal(o[0]);
+    writeln(s.dof);
+    return s.profile.extrude(1.mm);
+}
+@part Solid square()
+{
+    auto s = sketch();
+    auto circ = s.circle(s.point(0, 0, fixed: true), d: 20.mm, construction: true);
+    s.tangent(s.rect(vec(-12, -12), vec(11, 11)), circ);
+    writeln(s.dof);
+    return s.profile.extrude(1.mm);
+}
+@part Solid inside()
+{
+    auto s = sketch();
+    auto circ = s.circle(s.point(0, 0, fixed: true), d: 30.mm, construction: true);
+    auto q = s.rect(vec(-12, -8), vec(11, 9));
+    s.on(q, circ);
+    writeln(s.dof);
+    s.length(q[0], 24.mm);
+    writeln(s.dof);
+    return s.profile.extrude(1.mm);
+}
+`);
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error && d.severity != Severity.warning, d.message);
+    // the rectangle in the circle keeps its proportion free until a side is given
+    assert(r.log.map!(l => l.text).array == ["0", "0", "0", "1", "0"], r.log.map!(l => l.text).join(","));
+    assert(isClose(partVolume(r, "hex"), 6 * 15.0 ^^ 2 * sin(PI / 3) / 2, 1e-6));
+    assert(isClose(partVolume(r, "oct"), 8 * 10.0 ^^ 2 * tan(PI / 8), 1e-6));
+    assert(isClose(partVolume(r, "square"), 400, 1e-6) && isClose(partVolume(r, "inside"), 24 * 18, 1e-6));
+}
+

@@ -404,10 +404,19 @@ final class SketchVal : ObjectVal
             });
         case "on":
             return constraint("on", ["point", "curve"], (ref Args x, Span s) {
-                auto p = pointArg(x, "point"), c = entityArg(x, "curve");
+                // a point on a curve; a shape's lines (s.rect, s.polygon, s.polyline) on a circle or
+                // ellipse: every corner on it, the shape inscribed
+                auto c = entityArg(x, "curve");
                 immutable k = sk.entities[c].kind;
-                add(k == EntityKind.line ? ConstraintKind.onLine : k == EntityKind.ellipse ? ConstraintKind.onEllipse
-                    : ConstraintKind.onCircle, [p, c], s);
+                immutable kind = k == EntityKind.line ? ConstraintKind.onLine : k == EntityKind.ellipse
+                    ? ConstraintKind.onEllipse : ConstraintKind.onCircle;
+                if (auto lines = linesOf(x.get("point"), x.spanOf("point")))
+                {
+                    foreach (l; lines)
+                        add(kind, [sk.entities[l].refs[0], c], s);
+                    return;
+                }
+                add(kind, [pointArg(x, "point"), c], s);
             });
         case "parallel":
             return constraint("parallel", ["a", "b"], (ref Args x, Span s) {
@@ -469,6 +478,18 @@ final class SketchVal : ObjectVal
             });
         case "tangent":
             return constraint("tangent", ["a", "b"], (ref Args x, Span s) {
+                // a shape's lines (s.rect, s.polygon, s.polyline) and a circle or ellipse: every side
+                // touching it, the shape round it
+                if (auto lines = linesOf(x.get("a"), x.spanOf("a")))
+                {
+                    auto round = entityArg(x, "b");
+                    if (sk.entities[round].kind == EntityKind.line || sk.entities[round].kind == EntityKind.point)
+                        throw new HcadError(Code.type, "a shape is tangent to a circle, an arc or an ellipse",
+                            x.spanOf("b"));
+                    foreach (l; lines)
+                        add(ConstraintKind.tangentLine, [l, round], s);
+                    return;
+                }
                 auto a = entityArg(x, "a"), b = entityArg(x, "b");
                 if (sk.entities[b].kind == EntityKind.line)
                 {
@@ -816,6 +837,25 @@ final class SketchVal : ObjectVal
     }
 
     size_t pointArg(ref Args x, string n) => pointOf(x.get(n), x.spanOf(n));
+
+    /// The lines of a shape (an array of SketchLines, as s.rect, s.polygon and s.polyline return),
+    /// or null when `v` is not an array.
+    size_t[] linesOf(Value v, Span s)
+    {
+        if (v.kind != Kind.array)
+            return null;
+        size_t[] ids;
+        foreach (e; v.arr)
+        {
+            immutable id = entityOf(e, s);
+            if (sk.entities[id].kind != EntityKind.line)
+                throw new HcadError(Code.type, "a shape here is a list of lines (s.rect, s.polygon, s.polyline)", s);
+            ids ~= id;
+        }
+        if (ids.length == 0)
+            throw new HcadError(Code.type, "an empty list of lines", s);
+        return ids;
+    }
 
     /// A SketchPoint, or a vector: a new point starting there.
     size_t pointOrNew(ref Args x, string n, Span s)

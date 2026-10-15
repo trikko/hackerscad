@@ -163,6 +163,19 @@ final class Sketch
     /// Adds a constraint; the orientation of signed ones follows the current geometry.
     void constrain(ConstraintKind kind, size_t[] refs, double value = 0, size_t tag = 0, double value2 = 0)
     {
+        // a line tangent to an arc it ends on: "tangent" holds to first order wherever that end
+        // slides along the line, and the freedoms would be counted one too many; the radius square
+        // to the line at the shared point says the same exactly
+        if (kind == ConstraintKind.tangentLine && refs.length == 2 && refs[0] < entities.length
+            && refs[1] < entities.length && entities[refs[0]].kind == EntityKind.line
+            && entities[refs[1]].kind == EntityKind.arc)
+            foreach (p; entities[refs[0]].refs[0 .. 2])
+                if (p == entities[refs[1]].refs[1] || p == entities[refs[1]].refs[2])
+                {
+                    kind = ConstraintKind.tangentAt;
+                    refs = [refs[0], refs[1], p];
+                    break;
+                }
         Constraint c;
         c.kind = kind;
         foreach (i, r; refs)

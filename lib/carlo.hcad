@@ -5,7 +5,7 @@ module carlo;
 /// the top of a bag of biscuits and push it into the
 /// wavy slot: the teeth hold it. The start example
 /// (examples/00_carlo.hcad) shows this same code;
-/// chapter 12 of the tutorial explains it.
+/// chapter 13 of the tutorial explains it.
 
 /// Carlo lying flat on z = 0, `height` tall, the
 /// slot opening towards +X. `lean` is how far the back

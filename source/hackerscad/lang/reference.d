@@ -431,9 +431,13 @@ immutable Ref[] reference =
     withForms(F("equal", "Sketch", ["a", "b"], "", "Equal lengths or radii; s.equal(e): an ellipse as wide as tall."), [
         "s.equal(a, b)   // two lines, or two circles or arcs",
         "s.equal(e)   // an ellipse made round: a circle"]),
-    F("on", "Sketch", ["p: Point", "curve"], "", "A point on a line, circle, arc or ellipse."),
+    withForms(F("on", "Sketch", ["p: Point", "curve"], "", "A point on a line, circle, arc or ellipse; a shape's lines (s.rect, s.polygon, s.polyline) on a circle or ellipse: every corner on it, the shape inscribed."), [
+        "s.on(p, circ)                 // the point on the circle",
+        "s.on(s.polygon(c, 6), circ)   // a hexagon in the circle, its corners on it"]),
     F("concentric", "Sketch", ["a", "b"], "", "Circles, arcs or ellipses (or a point) round the same centre."),
-    F("tangent", "Sketch", ["a", "b"], "", "Tangent line and circle, arc or ellipse, or two circles."),
+    withForms(F("tangent", "Sketch", ["a", "b"], "", "Tangent line and circle, arc or ellipse, or two circles; a shape's lines and a circle or ellipse: every side touching it, the shape round it."), [
+        "s.tangent(line, circ)                  // the line touches the circle",
+        "s.tangent(s.rect(center: c), circ)     // a square round the circle"]),
     F("midpoint", "Sketch", ["p: Point", "line: Line"], "", "A point in the middle of a line."),
     F("symmetric", "Sketch", ["p: Point", "q: Point", "line: Line"], "", "Two points symmetric about a line."),
     withForms(F("radius", "Sketch", ["c: Circle", "v: Length", "rx: Length", "ry: Length"], "", "Sets a radius (an ellipse's: rx, ry)."), [

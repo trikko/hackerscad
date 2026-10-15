@@ -52,7 +52,7 @@ void main(string[] args)
     // a click picks faces, whatever an earlier run left chosen
     view(`{"select": "face"}`);
     auto pages = [&page1, &page2, &page3, &page4, &page5, &page6, &page7, &page8, &page9, &page10, &page11, &page12,
-        &page13];
+        &page13, &page14];
     if (args.length > 1)
         foreach (n; args[1 .. $])
             pages[n.to!int - 1]();
@@ -276,53 +276,95 @@ void page11()
     save(11);
 }
 
-void page13()
+void page14()
 {
     import std.file : copy;
     auto dir = buildPath(tempDir, "tutorial");
     // the language tour, from the Examples menu
     req("new", `{"example": "language", "force": true}`);
     view(`{"preset": "iso"}`);
-    shot("13-examples");
+    shot("14-examples");
 
     // the hook: made longer with the mouse, then made printable
     auto hook = buildPath(dir, "hook.hcad");
-    copy(buildPath(docs, "13-hook-1.hcad"), hook);
+    copy(buildPath(docs, "14-hook-1.hcad"), hook);
     open(hook);
     view(`{"preset": "iso", "style": "edges"}`);
-    shot("13-hook");
+    shot("14-hook");
     menu([0, -22, 33], ["Extrude face…"]);
     type("depth: 5.mm", "depth: 10.mm");
     clearSelection();
     view(`{"preset": "iso"}`);
-    shot("13-hook-longer", lineOf(".extrude("));
+    shot("14-hook-longer", lineOf(".extrude("));
     // seen from below, with the printability marks
     view(`{"printability": true, "orbit": [0, -50]}`);
-    shot("13-hook-print");
+    shot("14-hook-print");
     // laid on its back, where it stays
     type("        .extrude(faces.front, depth: 10.mm);", "        .extrude(faces.front, depth: 10.mm)\n        .rotate(x: -90);");
     view(`{"preset": "iso"}`);
-    shot("13-hook-back", lineOf(".rotate("));
+    shot("14-hook-back", lineOf(".rotate("));
     // two gussets under the arm
     type("    return (plate + arm)\n", gussets12);
     view(`{"preset": "iso"}`);
-    shot("13-hook-final", lineOf("auto gusset"));
+    shot("14-hook-final", lineOf("auto gusset"));
     view(`{"printability": false}`);
-    write(buildPath(docs, "13-hook.hcad"), source());
+    write(buildPath(docs, "14-hook.hcad"), source());
 
     // a label from a drawing, and the models of the other sections
     copy(buildPath(docs, "leaf.svg"), buildPath(dir, "leaf.svg"));
     foreach (name; ["label", "sketch", "jug", "fixings"])
     {
         auto file = buildPath(dir, name ~ ".hcad");
-        copy(buildPath(docs, "13-" ~ name ~ ".hcad"), file);
+        copy(buildPath(docs, "14-" ~ name ~ ".hcad"), file);
         open(file);
         view(`{"preset": "iso"}`);
-        shot("13-" ~ name);
+        shot("14-" ~ name);
     }
 }
 
 void page12()
+{
+    // the medal drawn wrong on purpose, then its rules a group at a time: the sketch from above
+    // after each, the medal, and the shapes a sketch has
+    import std.algorithm : map;
+    import std.array : join, split;
+    import std.file : readText;
+    import std.string : stripRight;
+    auto dir = buildPath(tempDir, "tutorial");
+    mkdirRecurse(dir);
+    auto file = buildPath(dir, "medal.hcad");
+    auto full = readText(buildPath(docs, "12-medal.hcad"));
+    immutable from = full.indexOf("    // the rim:"), to = full.indexOf("    writeln(");
+    auto groups = full[from .. to].stripRight.split("\n\n");
+    foreach (i, name; ["12-medal-free", "12-medal-rim", "12-medal-level", "12-medal-sizes", "12-medal-bar",
+        "12-medal-sketch"])
+    {
+        write(file, full[0 .. from] ~ groups[0 .. i].map!(g => g ~ "\n\n").join ~ full[to .. $]);
+        open(file);
+        sketchShot(name, "auto s = sketch()");
+    }
+    view(`{"projection": "perspective", "preset": "iso"}`);
+    view(`{"preset": "fit"}`);
+    shot("12-medal", lineOf("Solid medal()"));
+    auto shapes = buildPath(dir, "shapes.hcad");
+    write(shapes, readText(buildPath(docs, "12-shapes.hcad")));
+    open(shapes);
+    sketchShot("12-shapes", "auto s = sketch()");
+    view(`{"projection": "perspective", "preset": "iso"}`);
+}
+
+/// The sketch of the line holding `text`, from above, its dimensions and free points shown.
+void sketchShot(string name, string text)
+{
+    immutable line = lineOf(text);
+    req("sketch", format(`{"line": %d}`, line));
+    view(`{"projection": "orthographic", "preset": "top"}`);
+    view(`{"preset": "fit"}`);
+    shot(name, line);
+    req("sketch", `{"on": false}`);
+}
+
+void page13()
 {
     // Carlo drawn as a constrained sketch: its dimensions from above, the clip
     // extruded, then with five teeth (the constraints keep it together)
@@ -330,19 +372,19 @@ void page12()
     auto dir = buildPath(tempDir, "tutorial");
     mkdirRecurse(dir);
     auto file = buildPath(dir, "carlo.hcad");
-    copy(buildPath(docs, "12-carlo.hcad"), file);
+    copy(buildPath(docs, "13-carlo.hcad"), file);
     open(file);
     req("sketch", `{"on": true}`);
     view(`{"projection": "orthographic", "preset": "top"}`);
     view(`{"preset": "fit"}`);
-    shot("12-carlo-sketch", lineOf("auto s = sketch()"));
+    shot("13-carlo-sketch", lineOf("auto s = sketch()"));
     req("sketch", `{"on": false}`);
     view(`{"projection": "perspective", "preset": "iso"}`);
     view(`{"preset": "fit"}`);
-    shot("12-carlo", lineOf("s.profile"));
+    shot("13-carlo", lineOf("s.profile"));
     req("set", `{"params": {"teeth": 5}}`);
     view(`{"preset": "fit"}`);
-    shot("12-carlo-five", lineOf("immutable teeth"));
+    shot("13-carlo-five", lineOf("immutable teeth"));
     req("set", `{"preset": ""}`);
 }
 

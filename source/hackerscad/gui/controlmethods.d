@@ -44,7 +44,8 @@ mixin template ControlMethods()
                 foreach (n; p["reset"].array)
                     params.overrides.remove(n.str);
             params.invalidate();
-            firstResult = true; // frame the changed model
+            // frame the changed model, keeping the angle it is seen from
+            fitNext = true;
             scheduleEvaluation(0);
             whenIdle(() => reply(state(), null));
             return;

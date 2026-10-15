@@ -51,9 +51,16 @@ dimensions and pictures, compare them with the request, fix, then export.
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
 - Exact 2D outlines with dimensions: auto s = sketch(); points, lines, arcs,
-  circles, then constraints (horizontal, vertical, length, distance, angle,
-  tangent, equal…) and s.profile. Prefer it when a request gives dimensions
-  of an irregular outline; a warning lists points left free.
+  circles, ellipses and shapes (s.rect, s.polygon(c, 6, d:, fit: "sides"),
+  s.slot), then constraints (horizontal, vertical, length, distance, angle,
+  tangent, on, equal, concentric…) and s.profile, to extrude or revolve.
+  Prefer a sketch over unions and differences of boxes and cylinders for a
+  mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip)
+  whenever the request gives its dimensions: write each dimension as a
+  constraint, aim for s.dof == 0 (a warning lists what is left free), then
+  add 3D features (holes, fillets, shells) to the extruded solid. Examples
+  below: the medal (a first sketch, step by step) and the carlo library (a
+  clip drawn with tangent arcs, a loop and if/else).
 - To build on a face, take its frame and place parts built on XY (Z up):
   cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top).at(x: 10.mm)).
 - Axes and planes anywhere: rotate(90.deg, axis: body.axis(edges.filter(e =>
@@ -251,7 +258,7 @@ string summaryText()
 string librarySection()
 {
     string r;
-    foreach (name; ["hardware", "threads", "gears", "hinges", "snaps", "enclosures"])
+    foreach (name; ["hardware", "threads", "gears", "hinges", "snaps", "enclosures", "carlo"])
         r ~= "\n## Library source: " ~ name ~ "\n\n```d\n" ~ librarySources[name] ~ "```\n";
     return r;
 }
@@ -260,7 +267,10 @@ string librarySection()
 string reference(string topic = null)
 {
     auto full = agentGuide ~ "\n" ~ import("LANGUAGE.md") ~ "\n## Example: box with lid\n\n```d\n" ~ import("04_box.hcad")
-        ~ "```\n\n## Example: knob on a shaft\n\n```d\n" ~ import("07_knob.hcad") ~ "```\n" ~ librarySection;
+        ~ "```\n\n## Example: knob on a shaft\n\n```d\n" ~ import("07_knob.hcad")
+        ~ "```\n\n## Example: a constrained sketch, a medal\n\n```d\n" ~ import("tutorial/12-medal.hcad")
+        ~ "```\n\n## Example: the shapes of a sketch\n\n```d\n" ~ import("tutorial/12-shapes.hcad") ~ "```\n"
+        ~ librarySection;
     if (topic.length == 0)
         return full;
 

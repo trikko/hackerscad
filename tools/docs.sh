@@ -35,22 +35,25 @@ tail -n +2 examples/02_planter.hcad | cmp -s - docs/tutorial/planter-11.hcad \
 for f in docs/tutorial/planter-*.hcad; do
     bin/hcad check "$f" >/dev/null
 done
-# the models of page 13, complete in its text, are its 13-*.hcad files (the
-# hook as it starts; 13-hook.hcad is where the page ends): they must check
+# the models of page 14, complete in its text, are its 14-*.hcad files (the
+# hook as it starts; 14-hook.hcad is where the page ends): they must check
 # and be the same
-for f in docs/tutorial/13-*.hcad; do
+for f in docs/tutorial/14-*.hcad; do
     bin/hcad check "$f" >/dev/null
 done
-rm -rf build/page13 && mkdir -p build/page13
-awk '/^```d$/{n++; f=sprintf("build/page13/%02d.hcad", n); getline; if ($0 !~ /^module /) {f=""; next}} /^```$/{f=""; next} f{print > f}' \
-    docs/tutorial/13-going-further.md
-for f in build/page13/*.hcad; do
+rm -rf build/page14 && mkdir -p build/page14
+awk '/^```d$/{n++; f=sprintf("build/page14/%02d.hcad", n); getline; if ($0 !~ /^module /) {f=""; next}} /^```$/{f=""; next} f{print > f}' \
+    docs/tutorial/14-going-further.md
+for f in build/page14/*.hcad; do
     found=
-    for m in docs/tutorial/13-*.hcad; do cmp -s "$f" "$m" && found=1; done
-    [ -n "$found" ] || { echo "a model of page 13 differs from its docs/tutorial/13-*.hcad: $f"; exit 1; }
+    for m in docs/tutorial/14-*.hcad; do cmp -s "$f" "$m" && found=1; done
+    [ -n "$found" ] || { echo "a model of page 14 differs from its docs/tutorial/14-*.hcad: $f"; exit 1; }
 done
-# the Carlo of page 12 checks too (a unittest keeps it the same as lib/carlo.hcad)
-bin/hcad check docs/tutorial/12-carlo.hcad >/dev/null
+# the medal and the shapes of page 12 check, and the Carlo of page 13 (a
+# unittest keeps it the same as lib/carlo.hcad)
+for f in docs/tutorial/12-medal.hcad docs/tutorial/12-shapes.hcad docs/tutorial/13-carlo.hcad; do
+    bin/hcad check "$f" >/dev/null
+done
 bin/hcad render docs/tutorial/planter-09.hcad -o docs/tutorial/img/planter.png >/dev/null
 sed 's/^    return p;$/    return p.move(z: 72.mm);/' docs/tutorial/planter-09.hcad > build/planter-apart.hcad
 bin/hcad render build/planter-apart.hcad -o docs/tutorial/img/planter-apart.png >/dev/null

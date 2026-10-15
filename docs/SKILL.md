@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-ebacbdff`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-9d536c02`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-ebacbdff`:** this text is up to date.
+- **It prints `0.3.1-9d536c02`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -139,9 +139,16 @@ format stamp):
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
 - Exact 2D outlines with dimensions: auto s = sketch(); points, lines, arcs,
-  circles, then constraints (horizontal, vertical, length, distance, angle,
-  tangent, equal…) and s.profile. Prefer it when a request gives dimensions
-  of an irregular outline; a warning lists points left free.
+  circles, ellipses and shapes (s.rect, s.polygon(c, 6, d:, fit: "sides"),
+  s.slot), then constraints (horizontal, vertical, length, distance, angle,
+  tangent, on, equal, concentric…) and s.profile, to extrude or revolve.
+  Prefer a sketch over unions and differences of boxes and cylinders for a
+  mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip)
+  whenever the request gives its dimensions: write each dimension as a
+  constraint, aim for s.dof == 0 (a warning lists what is left free), then
+  add 3D features (holes, fillets, shells) to the extruded solid. Examples
+  below: the medal (a first sketch, step by step) and the carlo library (a
+  clip drawn with tangent arcs, a loop and if/else).
 - To build on a face, take its frame and place parts built on XY (Z up):
   cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top).at(x: 10.mm)).
 - Axes and planes anywhere: rotate(90.deg, axis: body.axis(edges.filter(e =>

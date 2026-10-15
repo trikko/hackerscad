@@ -1,6 +1,6 @@
-[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Going further →](13-going-further.md)
+[← A first sketch: a medal](12-medal.md) · [Contents](../TUTORIAL.md) · [Going further →](14-going-further.md)
 
-# 12. Carlo, drawn with a sketch
+# 13. Carlo, drawn with a sketch
 
 The clip hackerscad starts with is Carlo, the mascot: a bag clip whose
 toothed slot and keyring hole make a little crocodile. The example takes it
@@ -11,7 +11,7 @@ outline is like ("the top is level, the back leans 17°, the teeth are all
 goes. Then the outline is extruded.
 
 Press **New**, select all the code (Ctrl+A) and paste the
-[finished model](12-carlo.hcad) over it, or follow the parts below.
+[finished model](13-carlo.hcad) over it, or follow the parts below.
 
 ## Points, roughly where they go
 
@@ -196,14 +196,14 @@ does: `s.tangent(left, ring)` turns the back and the eye orange,
 `s.fillet` in the loop all three rounded corners. Esc goes back to the
 model.
 
-![The sketch of Carlo, seen from above](img/12-carlo-sketch.png)
+![The sketch of Carlo, seen from above](img/13-carlo-sketch.png)
 
 `s.dof` is how many ways the sketch can still move: the model writes it in
 the console, and here it is 0, a **fully constrained** sketch. Take a
 constraint out and the console says which points are free; give two that
 disagree and the error points at both.
 
-![Carlo extruded](img/12-carlo.png)
+![Carlo extruded](img/13-carlo.png)
 
 ## Change it
 
@@ -212,7 +212,7 @@ change. Set **teeth** to 5: the rows get longer, the block follows, the
 back still leans 17°, the slot still ends round and the eye still touches
 the back.
 
-![Carlo with five teeth](img/12-carlo-five.png)
+![Carlo with five teeth](img/13-carlo-five.png)
 
 The constraints a sketch has: `coincident`, `fix`, `horizontal`,
 `vertical`, `length`, `distance` (between points, along X or Y, or from a
@@ -221,4 +221,4 @@ line), `on` (a point on a line, circle or arc), `parallel`,
 `diameter`, `tangent`, `midpoint` and `symmetric`; the
 [language reference](../LANGUAGE.md) describes each one.
 
-[← Let an AI agent help](11-ai-agents.md) · [Contents](../TUTORIAL.md) · [Going further →](13-going-further.md)
+[← A first sketch: a medal](12-medal.md) · [Contents](../TUTORIAL.md) · [Going further →](14-going-further.md)

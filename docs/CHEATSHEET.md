@@ -267,9 +267,9 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.horizontal(line: Line)` — A horizontal line (or two points at the same height, or an ellipse's x axis along X).
 - `sk.vertical(line: Line)` — A vertical line.
 - `sk.equal(a, b)` — Equal lengths or radii; s.equal(e): an ellipse as wide as tall.
-- `sk.on(p: Point, curve)` — A point on a line, circle, arc or ellipse.
+- `sk.on(p: Point, curve)` — A point on a line, circle, arc or ellipse; a shape's lines (s.rect, s.polygon, s.polyline) on a circle or ellipse: every corner on it, the shape inscribed.
 - `sk.concentric(a, b)` — Circles, arcs or ellipses (or a point) round the same centre.
-- `sk.tangent(a, b)` — Tangent line and circle, arc or ellipse, or two circles.
+- `sk.tangent(a, b)` — Tangent line and circle, arc or ellipse, or two circles; a shape's lines and a circle or ellipse: every side touching it, the shape round it.
 - `sk.midpoint(p: Point, line: Line)` — A point in the middle of a line.
 - `sk.symmetric(p: Point, q: Point, line: Line)` — Two points symmetric about a line.
 - `sk.radius(c: Circle, v: Length, rx: Length, ry: Length)` — Sets a radius (an ellipse's: rx, ry).

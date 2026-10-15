@@ -38,10 +38,13 @@ without supports.
 10. [Print it](tutorial/10-print-it.md): export, slice, put it together.
 11. [Let an AI agent help](tutorial/11-ai-agents.md): ask an agent, and watch
     it work in the window.
-12. [Carlo, drawn with a sketch](tutorial/12-carlo.md): the mascot's outline
+12. [A first sketch: a medal](tutorial/12-medal.md): an outline told by its
+    rules instead of its numbers, one rule at a time, and the shapes a sketch
+    has.
+13. [Carlo, drawn with a sketch](tutorial/13-carlo.md): the mascot's outline
     told by its rules (level, leaning, parallel, teeth all alike), solved and
     extruded.
-13. [Going further](tutorial/13-going-further.md): the examples, a hook made
+14. [Going further](tutorial/14-going-further.md): the examples, a hook made
     ready to print, a label from a drawing, sketches, sweeps, libraries,
     drawings, the command line, and what to do when something goes wrong.
 

@@ -554,6 +554,7 @@ final class MainWindow
     bool modified;
     uint debounce;
     bool firstResult = true;
+    bool fitNext;   /// frame the next result from where the view looks now (the socket's set)
     Outcome last;
     string screenshotPath;
 
@@ -1698,6 +1699,11 @@ private:
         {
             viewport.setParts(o.parts, firstResult);
             firstResult = false;
+            if (fitNext)
+            {
+                fitNext = false;
+                viewport.fit();
+            }
             // a split under way follows its part by name; gone (split, renamed), it ends
             if (splitPart >= 0)
             {

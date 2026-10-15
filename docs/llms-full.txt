@@ -40,9 +40,16 @@ dimensions and pictures, compare them with the request, fix, then export.
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
 - Exact 2D outlines with dimensions: auto s = sketch(); points, lines, arcs,
-  circles, then constraints (horizontal, vertical, length, distance, angle,
-  tangent, equal…) and s.profile. Prefer it when a request gives dimensions
-  of an irregular outline; a warning lists points left free.
+  circles, ellipses and shapes (s.rect, s.polygon(c, 6, d:, fit: "sides"),
+  s.slot), then constraints (horizontal, vertical, length, distance, angle,
+  tangent, on, equal, concentric…) and s.profile, to extrude or revolve.
+  Prefer a sketch over unions and differences of boxes and cylinders for a
+  mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip)
+  whenever the request gives its dimensions: write each dimension as a
+  constraint, aim for s.dof == 0 (a warning lists what is left free), then
+  add 3D features (holes, fillets, shells) to the extruded solid. Examples
+  below: the medal (a first sketch, step by step) and the carlo library (a
+  clip drawn with tangent arcs, a loop and if/else).
 - To build on a face, take its frame and place parts built on XY (Z up):
   cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top).at(x: 10.mm)).
 - Axes and planes anywhere: rotate(90.deg, axis: body.axis(edges.filter(e =>
@@ -184,7 +191,7 @@ basic construct once, with comments saying what each makes appear; in the applic
 - **Constrained sketches** (2D on XY): `auto s = sketch();` then add geometry and constraints and take `s.profile`.
   - Geometry: `s.point(x, y)` (where it starts: constraints move it; `fixed: true` pins it there), `s.line(p, q)`, `s.arc(center, start, end)` (counter-clockwise), `s.circle(center, r: | d:)` (without r/d the radius is left to the constraints), `s.polyline([p1, p2, vec(…)], closed: true)` (returns the lines; vectors become new points), `s.ellipse(center, rx:, ry:, angle:)` (rx along its own x axis, `angle` from X, ry across; what is not given is left to the constraints, the turn too: `s.ellipse(c, rx: 20.mm, ry: 12.mm)` with c fixed leaves 1 degree of freedom). `construction: true` geometry helps constraining but is not part of the outline.
   - Shapes, made of the geometry above with their constraints (the points they need are new; a vector where a point goes, here and in `s.circle` and `s.ellipse`, becomes a new point starting there): `s.rect(p, q)` (opposite corners) or `s.rect(center: c, w:, h:)` returns its 4 lines p → (q.x, p.y) → q → (p.x, q.y), that is bottom, right, top, left when p is the lower left corner; they are horizontal and vertical, so a rectangle of new corners has 4 degrees of freedom, 0 with w, h and a fixed centre (a construction diagonal holds the centre in its middle); `corner: r` rounds the four corners. `s.polygon(center, n, r: | d:, fit:, angle:)` returns the n lines of a regular polygon, its corners on a construction circle of that radius (`fit: "corners"`, the default), or its sides touching it with `fit: "sides"` (`d` across the flats: a nut's spanner size); `angle` is the direction of the first corner from the centre, else the turn is left free (1 degree of freedom: `s.horizontal(lines[0])` takes it). `s.slot(p, q, w:)` returns `[line, arc round q, line, arc round p]`: two half circles joined by lines tangent to them, 0 degrees of freedom with p, q fixed and w given. Sizes given (w, h, r, d, rx, ry, angle, corner: one dimension for the four corners) are dimensions, shown and editable in the sketch view.
-  - Constraints: `coincident(p, q)`, `fix(p)`, `horizontal(line | p, q)`, `vertical(…)`, `length(line, v)`, `distance(p, q, v)`, `distance(p, q, v, along: X | Y)`, `distance(p, line, v)`, `on(p, line | circle | arc)`, `parallel(a, b)`, `perpendicular(a, b)`, `angle(a, b, v)` (between the line directions, start → end), `equal(a, b)` (lengths or radii), `radius(c, v)`, `diameter(c, v)`, `tangent(line | circle, circle | line)`, `midpoint(p, line)`, `symmetric(p, q, line)`, `concentric(a, b)` (circles, arcs, ellipses or a point round the same centre), `angle(line, v)` (of one line from X).
+  - Constraints: `coincident(p, q)`, `fix(p)`, `horizontal(line | p, q)`, `vertical(…)`, `length(line, v)`, `distance(p, q, v)`, `distance(p, q, v, along: X | Y)`, `distance(p, line, v)`, `on(p, line | circle | arc)` (a shape's lines instead of p: every corner on the circle, the shape inscribed: `s.on(s.polygon(c, 6), circ)`), `parallel(a, b)`, `perpendicular(a, b)`, `angle(a, b, v)` (between the line directions, start → end), `equal(a, b)` (lengths or radii), `radius(c, v)`, `diameter(c, v)`, `tangent(line | circle, circle | line)` (a shape's lines and a circle: every side touching it, the shape round it: `s.tangent(s.rect(center: c), circ)`), `midpoint(p, line)`, `symmetric(p, q, line)`, `concentric(a, b)` (circles, arcs, ellipses or a point round the same centre), `angle(line, v)` (of one line from X).
   - On ellipses: `on(p, e)`, `tangent(line, e)`, `concentric(e, …)`, `radius(e, rx: v, ry: v)` (either or both), `horizontal(e)` / `vertical(e)` (its x axis along X or Y), `angle(e, v)`, and `equal(e)`: as wide as tall, a circle. A round ellipse looks the same however it is turned: its turn then stays where it is, unless an angle sets it, and is not a degree of freedom.
   - `s.fillet(p, r)` rounds the corner where two lines meet at p (r is shown as a dimension on its arc).
   - Reading back: `p.x`, `p.y`, `p.pos`, `line.start`, `line.end`, `line.length`, `line.mid`, `c.center`, `c.radius`, `e.center`, `e.rx`, `e.ry`, `e.angle`, `s.dof` (degrees of freedom left), `s.solved`.
@@ -238,7 +245,7 @@ basic construct once, with comments saying what each makes appear; in the applic
   - `hinges`: `hinge(length:, width:, thickness:, knuckles: 5, clearance: 0.4.mm)` returns `.fixed` and `.moving`, two leaves printed in place around an axis along X at z = thickness.
   - `snaps`: `snapHook(length:, thickness:, width:, overhang:, lead: 30.deg)` (a cantilever hook standing on z = 0, barb towards +X) and `snapSlot(…)` (the window to subtract from the mating wall).
   - `enclosures`: `roundedBox(x, y, z, r)`, `tray(x, y, z, wall:, r:)` (open on top), `enclosure(vec(x, y, z), wall:, r:, lidHeight:, screw: M3)` returns `.base` and `.lid` (lid with a lip that fits inside, screw posts in the corners).
-  - `carlo`: `carlo(teeth: 3, height: 15.mm, toothR:, gap:, jaw:, back:, lean: 17.deg, mouth: 1.5.deg, eye: true)`, Carlo the mascot, a bag clip lying on z = 0 (the constrained sketch of the tutorial's chapter 12, extruded; `lean` tilts the back and the tips, a positive `mouth` opens the slot towards the tips, a negative one closes it).
+  - `carlo`: `carlo(teeth: 3, height: 15.mm, toothR:, gap:, jaw:, back:, lean: 17.deg, mouth: 1.5.deg, eye: true)`, Carlo the mascot, a bag clip lying on z = 0 (the constrained sketch of the tutorial's chapter 13, extruded; `lean` tilts the back and the tips, a positive `mouth` opens the slot towards the tips, a negative one closes it).
 - **Drawings** (technical sheets, exported as SVG, PDF or DXF): a function marked `@drawing` returns `drawing(size: "A4", title:, author:, material:, projection: "first" | "third", scale: 0 (fit), landscape: true)` after adding to it:
   - `d.standardViews(solid, iso: true, dimensions: true)`: front, top, side and an isometric view, laid out and scaled to fit, with overall dimensions and hole callouts;
   - `d.view(solid, "front" | "back" | "top" | "bottom" | "right" | "left" | "iso", at: vec(x, y), scale:)` (without `at:` the layout places it; `at:` is in paper mm from the bottom-left corner);
@@ -718,6 +725,171 @@ unittest
 }
 ```
 
+## Example: a constrained sketch, a medal
+
+```d
+// A first sketch: a medal with an H and a rim in relief
+module medal;
+
+import std.shapes;
+
+@param("Diameter", min: 30.mm, max: 60.mm)
+immutable diameter = 40.mm;
+
+@param("Rim width", min: 2.mm, max: 5.mm)
+immutable rim = 3.5.mm;
+
+// the disc under the relief, and how high the H and the
+// rim stand on it
+immutable base = 2.mm;
+immutable relief = 1.mm;
+
+/// The rim and the H, seen from above: a sketch.
+Profile face()
+{
+    auto s = sketch();
+
+    // drawn wrong on purpose, to see what each rule
+    // below does: the inside of the rim a squashed
+    // ellipse off the centre, the H small, crooked,
+    // away from the middle; the centre is pinned at
+    // the origin
+    auto c = s.point(0, 0, fixed: true);
+    s.circle(c, d: diameter);
+    auto inner = s.ellipse(vec(2, 2));
+
+    // the H: twelve points, drawn by eye, and the
+    // lines round them
+    auto h = s.polyline([
+        vec(-3, -4), vec(0, -5), vec(1, 1),
+        vec(4, 2), vec(3, -5), vec(6, -4),
+        vec(6, 7), vec(4, 8), vec(4, 4),
+        vec(1, 3), vec(0, 8), vec(-3, 7),
+    ], closed: true);
+
+    // the rim: the ellipse round the same centre, as
+    // wide as tall (a circle), its size
+    s.concentric(inner, c);
+    s.equal(inner);
+    s.radius(inner, rx: diameter / 2 - rim);
+
+    // across and up, in turn
+    foreach (i, l; h)
+    {
+        if (i % 2 == 0)
+            s.horizontal(l);
+        else
+            s.vertical(l);
+    }
+
+    // the strokes all 5 mm wide, the letter 22 mm tall
+    s.length(h[0], 5.mm);
+    s.equal(h[4], h[0]);
+    s.equal(h[6], h[0]);
+    s.equal(h[10], h[0]);
+    s.length(h[11], 22.mm);
+    s.equal(h[5], h[11]);
+    s.distance(h[2].start, h[8].end, 5.mm, along: Y);
+
+    // 18 mm wide, the feet level, the bar in the middle
+    s.distance(h[0].start, h[5].start, 18.mm, along: X);
+    s.horizontal(h[0].start, h[5].start);
+    s.equal(h[1], h[9]);
+
+    // the H in the middle: the centre halfway along a
+    // diagonal that is not part of the outline
+    auto diagonal = s.line(h[0].start, h[6].start,
+        construction: true);
+    s.midpoint(c, diagonal);
+
+    writeln("degrees of freedom left: ", s.dof);
+    return s.profile;
+}
+
+@part
+Solid medal()
+{
+    // the disc, the relief on it, a keyring hole
+    // through the rim at the top
+    return circle(d: diameter).extrude(base)
+        + face().extrude(relief).move(z: base)
+        - cylinder(d: rim - 1.mm, h: 10.mm)
+            .move(y: diameter / 2 - rim / 2, z: -1.mm);
+}
+```
+
+## Example: the shapes of a sketch
+
+```d
+// The shapes a sketch has, each fully constrained
+module shapes;
+
+import std.shapes;
+
+@part
+Solid sampler()
+{
+    auto s = sketch();
+
+    // places on a grid, 35 mm apart, and points pinned
+    // there
+    Vec2 grid(double x, double y) =>
+        vec(x * 35, y * 35);
+    SketchPoint at(Vec2 p) =>
+        s.point(p.x, p.y, fixed: true);
+
+    // a rectangle from its centre, the corners round
+    s.rect(center: at(grid(-1, 1)), w: 26.mm, h: 18.mm,
+        corner: 4.mm);
+
+    // hexagons: the circle through the corners, or
+    // the one the sides touch (across the flats)
+    auto hex = s.polygon(at(grid(0, 1)), 6, d: 24.mm);
+    s.horizontal(hex[0]);
+    auto nut = s.polygon(at(grid(1, 1)), 6, d: 20.mm,
+        fit: "sides");
+    s.horizontal(nut[0]);
+
+    // an ellipse, tilted
+    s.ellipse(at(grid(-1, 0)), rx: 13.mm, ry: 7.mm,
+        angle: 20.deg);
+
+    // a slot between two points, 8 mm wide
+    s.slot(at(grid(0, 0) - vec(10, 0)),
+        at(grid(0, 0) + vec(10, 0)), w: 8.mm);
+
+    // a pentagon in a circle (construction: not part of
+    // the outline), its corners on it
+    auto ring = s.circle(at(grid(1, 0)), d: 24.mm,
+        construction: true);
+    auto five = s.polygon(ring.center, 5);
+    s.on(five, ring);
+    s.vertical(five[0].start, ring.center);
+
+    // a square round a circle: every side touching it
+    auto round = s.circle(at(grid(-1, -1)), d: 20.mm,
+        construction: true);
+    s.tangent(s.rect(center: round.center), round);
+
+    // a rectangle in a circle, one side given
+    auto disc = s.circle(at(grid(0, -1)), d: 26.mm,
+        construction: true);
+    auto inside = s.rect(center: disc.center);
+    s.on(inside, disc);
+    s.length(inside[0], 22.mm);
+
+    // a circle and an ellipse made round: as wide as
+    // tall
+    s.circle(at(grid(1, -1) - vec(6, 0)), d: 10.mm);
+    auto e = s.ellipse(at(grid(1, -1) + vec(7, 0)));
+    s.equal(e);
+    s.radius(e, rx: 5.mm);
+
+    writeln("degrees of freedom left: ", s.dof);
+    return s.profile.extrude(2.mm);
+}
+```
+
 ## Library source: hardware
 
 ```d
@@ -1111,5 +1283,218 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
             lid -= room.move(x: sx * px, y: sy * py, z: wall);
         }
     return Enclosure(base, lid);
+}
+```
+
+## Library source: carlo
+
+```d
+module carlo;
+
+/// Carlo, hackerscad's mascot: a bag clip whose toothed
+/// slot and keyring eye make a little crocodile. Fold
+/// the top of a bag of biscuits and push it into the
+/// wavy slot: the teeth hold it. The start example
+/// (examples/00_carlo.hcad) shows this same code;
+/// chapter 13 of the tutorial explains it.
+
+/// Carlo lying flat on z = 0, `height` tall, the
+/// slot opening towards +X. `lean` is how far the back
+/// and the tips lean (the clip slides onto the bag).
+/// `mouth` tilts the lower jaw: down to open the slot
+/// towards the tips (it slides on more easily), up to
+/// close it (it holds tighter). `eye` adds the keyring
+/// eye on the top corner. Prints flat, as it comes: a
+/// constrained sketch, extruded.
+Solid carlo(int teeth = 3, Length height = 15.mm,
+    Length toothR = 2.5.mm, Length gap = 2.9.mm,
+    Length jaw = 5.mm, Length back = 5.4.mm,
+    Angle lean = 17.deg, Angle mouth = 1.5.deg,
+    bool eye = true)
+{
+    assert(teeth >= 1, "a jaw needs a tooth at least");
+    auto s = sketch();
+
+    // where the points start: near where they end up
+    // (the constraints below move them into place),
+    // from the rows of teeth, the top and bottom sides
+    // and the slot's depth
+    immutable axis = toothR + gap / 2;
+    immutable top = axis + toothR + jaw;
+    immutable slot = 4 * teeth * toothR;
+    immutable slope = tan(lean);
+    auto a = s.point(-back + top * slope, -top,
+        fixed: true);
+    auto b = s.point(slot + 2 * toothR, -top);
+    auto c = s.point(slot - 2 * toothR, top);
+
+    // the block: a level top, the back leaning, the
+    // tips of the jaws parallel to it
+    auto bottom = s.line(a, b);
+    SketchLine left, topSide;
+    immutable corner = -back - top * slope; // top left
+    if (eye)
+    {
+        // the eye: a ring on the top edge, its centre
+        // on the top's line, round over the corner and
+        // down onto the back, touching it; where it
+        // rises from the top, a small rounding (an arc
+        // touching both), not a corner
+        immutable eyeR = 5.mm, nook = 1.5.mm;
+        immutable rise = corner + 2 * eyeR;
+        auto centre = s.point(corner + eyeR, top);
+        auto eyeBack = s.point(corner + 3.mm * slope,
+            top - 3.mm);
+        auto nookCentre = s.point(rise + 1.mm,
+            top + nook);
+        auto nookTop = s.point(rise + 1.mm, top);
+        auto nookEye = s.point(rise - 0.3.mm,
+            top + 1.mm);
+        left = s.line(a, eyeBack);
+        topSide = s.line(c, nookTop);
+        auto ring = s.arc(centre, nookEye, eyeBack);
+        auto rounding = s.arc(nookCentre, nookEye,
+            nookTop);
+        s.on(centre, topSide);
+        s.radius(ring, eyeR);
+        s.tangent(left, ring);
+        s.radius(rounding, nook);
+        s.tangent(topSide, rounding);
+        s.tangent(ring, rounding);
+        s.distance(a, centre, 2 * top, along: Y);
+
+        // the keyring hole, in the middle of the eye
+        s.circle(centre, d: 3.8.mm);
+    }
+    else
+    {
+        // no eye: the back meets the top in a corner,
+        // rounded
+        auto d = s.point(corner, top);
+        left = s.line(a, d);
+        topSide = s.line(c, d);
+        s.distance(a, d, 2 * top, along: Y);
+        s.fillet(d, 2.5.mm);
+    }
+    s.horizontal(topSide);
+    s.angle(topSide, left, 90.deg - lean);
+
+    // the two rows of teeth: semicircles of one radius,
+    // end to end, pocket and tooth in turn; a row is
+    // points along a line, each arc between two of
+    // them, its centre on the line too. The upper row
+    // is level, the lower one tilts by the mouth. The
+    // first pocket of each row starts where it touches
+    // the end of the slot instead, and the last tooth
+    // ends where it touches the tip of its jaw
+    SketchPoint[] lower, upper;
+    foreach (i; 0 .. 2 * teeth + 1)
+    {
+        lower ~= s.point(2 * toothR * i, -axis);
+        upper ~= s.point(2 * toothR * i, axis);
+    }
+    SketchArc firstLower, firstUpper;
+    SketchArc lastLower, lastUpper;
+
+    // the upper row's last centre: with upper[1], its
+    // direction
+    SketchPoint lastCentre;
+
+    // the lower row's points and centres, put on its
+    // line below
+    SketchPoint[] lowerOnRow;
+    foreach (k; 0 .. 2 * teeth)
+    {
+        immutable x = 2 * toothR * k + toothR;
+        auto cl = s.point(x, -axis);
+        auto cu = s.point(x, axis);
+
+        // counter-clockwise from start to end: left to
+        // right goes under, right to left goes over.
+        // Lower row: pockets down, teeth up; upper row:
+        // pockets up, teeth down (facing the lower
+        // pockets)
+        auto pl = k % 2 == 0
+            ? s.arc(cl, lower[k], lower[k + 1])
+            : s.arc(cl, lower[k + 1], lower[k]);
+        auto pu = k % 2 == 0
+            ? s.arc(cu, upper[k + 1], upper[k])
+            : s.arc(cu, upper[k], upper[k + 1]);
+        s.radius(pl, toothR);
+        s.radius(pu, toothR);
+
+        // each centre on its row; the upper row level
+        immutable onRow = k == 0 ? k + 1 : k;
+        lowerOnRow ~= cl;
+        if (k > 1)
+            lowerOnRow ~= lower[k];
+        s.horizontal(upper[onRow], cu);
+        if (k > 0 && k < 2 * teeth - 1)
+            s.horizontal(upper[k], upper[k + 1]);
+        if (k == 0)
+        {
+            firstLower = pl;
+            firstUpper = pu;
+        }
+        if (k == 2 * teeth - 1)
+        {
+            lastLower = pl;
+            lastUpper = pu;
+            lastCentre = cu;
+        }
+    }
+
+    // the end of the slot: parallel to the back, the
+    // back's thickness behind it, touching the first
+    // pocket of each row where they meet it
+    auto end = s.line(lower[0], upper[0]);
+    s.parallel(end, left);
+    s.distance(lower[0], left, back * cos(lean));
+    s.tangent(end, firstLower);
+    s.tangent(end, firstUpper);
+
+    // the rows start on the end's line, the gap apart:
+    // the upper one level, the lower one tilted by the
+    // mouth, down to open it, up to close it
+    // (construction lines, which guide the outline
+    // without being part of it)
+    auto start = s.point(axis * slope, -axis);
+    s.on(start, end);
+    s.distance(a, start, top - axis, along: Y);
+    s.distance(start, upper[1], 2 * axis, along: Y);
+    auto lowerRow = s.line(start, lowerOnRow[$ - 1],
+        construction: true);
+    auto upperRow = s.line(upper[1], lastCentre,
+        construction: true);
+
+    // from the lower row to the upper one:
+    // counter-clockwise when it opens
+    s.angle(lowerRow, upperRow, mouth);
+    foreach (p; lowerOnRow[0 .. $ - 1])
+        s.on(p, lowerRow);
+    s.on(lower[1], lowerRow);
+
+    // the bottom drops with the lower row, from below
+    // its start
+    auto under = s.point(axis * slope, -top);
+    s.vertical(start, under);
+    s.horizontal(a, under);
+    auto drop = s.line(under, b, construction: true);
+    s.parallel(drop, lowerRow);
+
+    // the tips of the jaws, parallel to the back,
+    // touching the last teeth
+    auto tipLow = s.line(b, lower[$ - 1]);
+    auto tipUp = s.line(upper[$ - 1], c);
+    s.parallel(tipLow, left);
+    s.parallel(tipUp, left);
+    s.tangent(tipLow, lastLower);
+    s.tangent(tipUp, lastUpper);
+
+    // round outer corners
+    foreach (p; [a, b, c])
+        s.fillet(p, 2.5.mm);
+
+    return s.profile.extrude(height);
 }
 ```
