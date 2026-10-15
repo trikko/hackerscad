@@ -429,7 +429,18 @@ immutable Ref[] reference =
     F("isPerpendicular", "Edge", ["axis: Direction"], "bool", "Whether it is at right angles to the axis (a face: whether its normal runs along it: top and bottom for Z)."),
     ]) ~
     group("Sketches", [
-    F("sketch", "", [], "Sketch", "A constrained 2D sketch: add points, lines, constraints, then take .profile."),
+    withForms(F("sketch", "", ["on: Frame | Plane", "origin: Vec", "x: Direction"], "Sketch",
+        "A constrained 2D sketch: add points, lines, constraints, then take .profile. On XY, or on a face of a solid (its edges as references, its axes as frame's) or a frame or plane: the profile then lies there."), [
+        "sketch()   // on XY",
+        "body.sketch(faces.top)   // on a face: s.edges, s.origin, s.project(…)",
+        "sketch(XZ.offset(10.mm))   // on a plane, or sketch(frame)",
+        "body.cut(s.profile, depth: 2.mm)   // where the sketch is: no on:"]),
+    withForms(P("edges", "Sketch", "Entity[]", "A sketch on a face: the face's edges as references (fixed construction lines, arcs, circles), each loop from its lowest edge counter-clockwise, as a rect's sides: bottom, right, top, left; the outside first."), [
+        "s.distance(c.center, s.edges[0], 5.mm)   // 5 mm from the bottom edge",
+        "s.coincident(p, s.edges[1].end)   // on a corner"]),
+    P("origin", "Sketch", "Point", "A sketch on a face or plane: its origin (the face's centre) as a fixed reference point."),
+    withForms(F("project", "Sketch", ["edges: Edges"], "Entity[]", "Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them."), [
+        "s.concentric(c, s.project(edges.filter(e => e.isCircle && e.center.z < 5.mm))[0])   // over a hole below"]),
     F("point", "Sketch", ["x: Length", "y: Length", "fixed: bool"], "Point", "A point where it starts; constraints move it."),
     F("line", "Sketch", ["p: Point", "q: Point"], "Line", "A line between two points."),
     F("arc", "Sketch", ["center: Point", "start: Point", "end: Point"], "Arc", "An arc, counter-clockwise."),
@@ -470,6 +481,14 @@ immutable Ref[] reference =
         "s.teardrop(c, d: 5.mm)   // 0 dof once c is fixed",
         "s.teardrop(c, d: 5.mm, angle: 30.deg, flat: true)   // sharper, the point cut flat"]),
     F("coincident", "Sketch", ["p: Point", "q: Point"], "", "Two points in the same place."),
+    F("length", "Sketch", ["line: Line", "v: Length"], "", "Sets the length of a line."),
+    withForms(F("distance", "Sketch", ["a: Point", "b: Point | Line", "v: Length", "along: X | Y"], "", "Sets how far a point is from another point (along: X or Y only across or up), or from a line."), [
+        "s.distance(p, q, 10.mm)",
+        "s.distance(p, q, 10.mm, along: X)",
+        "s.distance(p, line, 4.mm)"]),
+    F("parallel", "Sketch", ["a: Line", "b: Line"], "", "Two parallel lines."),
+    F("perpendicular", "Sketch", ["a: Line", "b: Line"], "", "Two lines at right angles."),
+    F("fillet", "Sketch", ["p: Point", "r: Length"], "", "Rounds the corner where two lines meet at p."),
     F("fix", "Sketch", ["p: Point"], "", "Pins a point."),
     F("horizontal", "Sketch", ["line: Line"], "", "A horizontal line (or two points at the same height, or an ellipse's x axis along X)."),
     F("vertical", "Sketch", ["line: Line"], "", "A vertical line."),

@@ -100,7 +100,7 @@ mixin template ControlMethods()
                 alias num = numberOf;
                 // the view is annotated: it is locked, so the marks stay on what they mark
                 if (frozen && (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom")
-                        || has("size") || has("projection")))
+                        || has("size") || has("projection") || has("look_at_face")))
                     return reply(JSONValue.init, "the view is annotated (locked, with marks on it): it cannot move "
                         ~ "until hcad_gui_annotate mode: false (or the user's Done) takes it back to the live view");
                 // moved as the user moves it: the frames count in graphics' figures
@@ -113,6 +113,16 @@ mixin template ControlMethods()
                         viewport.fit();
                     else
                         viewport.setView(v.to!ViewPreset);
+                }
+                // straight at a flat face, as a double click on it: {"x": 0.5, "y": 0.4} or {"point": [x, y, z]}
+                if (has("look_at_face"))
+                {
+                    double fx, fy;
+                    if (auto problem = screenPoint(p["look_at_face"], fx, fy))
+                        return reply(JSONValue.init, problem);
+                    if (auto problem = lookAtFace(fx, fy))
+                        return reply(JSONValue.init, problem);
+                    viewport.moved();
                 }
                 // centred on a model point, `size` mm across the view
                 if (has("look_at") || has("size"))
@@ -477,7 +487,8 @@ mixin template ControlMethods()
         case "feature":
             {
                 // {"x": 0.5, "y": 0.4, "action": "fillet-edge", "value": "2.mm"}: what the context menu does,
-                // on what is there or (use_selection) on the Shift selection that contains it
+                // on what is there or (use_selection) on the Shift selection that contains it;
+                // "action": "sketch" is Sketch on face…
                 auto act = arg("action"), value = arg("value"), kind = arg("kind"), size = arg("size");
                 immutable useSelection = has("use_selection") && p["use_selection"].type == JSONType.true_;
                 whenIdle(() {
@@ -492,11 +503,18 @@ mixin template ControlMethods()
                     if (!useSelection)
                         picked(hit);
                     setContext(hit);
+                    // Sketch on face…: a sketch on the face there, to draw on
+                    if (act == "sketch")
+                    {
+                        if (auto problem = sketchOnFaceOf(hit.part, hit.face))
+                            return reply(JSONValue.init, problem);
+                        return whenIdle(() => reply(state(), null));
+                    }
                     auto code = contextCode(act, value, kind, size);
                     if (code.length == 0)
                         return reply(JSONValue.init, "unknown action, or it does not apply there: use fillet-edge, "
                             ~ "chamfer-edge (an edge), fillet-face, chamfer-face, shell, draft, extrude-face, cut-face (faces), thread (size: an ISO size that fits the cylinder, e.g. M8), hole (kind: "
-                            ~ "clearance, tap or insert; size: M2 to M8), pocket or boss (a face)");
+                            ~ "clearance, tap or insert; size: M2 to M8), pocket or boss (a face), sketch (a flat face)");
                     appendFeature(last.parts[hit.part], code, null);
                     whenIdle(() {
                         auto r = state();

@@ -220,6 +220,56 @@ orange; the cursor out of the sketch, or Esc, goes back to the model.
 **View › Sketches** bring it back later. [Chapter 13](13-carlo.md) drew Carlo,
 the bag clip, this way, from start to end.
 
+### A sketch on a face
+
+A sketch can also be drawn on a flat face of a solid: `body.sketch(faces.top)`.
+The face's edges are in it from the start, as **references**: fixed, drawn in
+violet, ready to measure from. `s.edges` lists them, the lowest side first and
+then round the face the other way from the clock's hands, as a rectangle's
+sides (bottom, right, top, left); `s.origin` is the face's centre. Here a groove
+runs along Carlo's lower jaw, 3 mm above its bottom side:
+
+```d
+module grooved;
+
+import carlo;
+
+/// Carlo with a groove along its lower jaw, drawn on
+/// its top face.
+@part
+Solid clip()
+{
+    auto body = carlo();
+
+    // on the top face: Carlo's outline is in the sketch
+    // as references, its lowest side first
+    auto s = body.sketch(faces.top);
+    auto bottom = s.edges[0];
+    auto p = s.point(-5, -9), q = s.point(12, -9);
+    s.slot(p, q, w: 1.5.mm);
+
+    // both ends 3 mm above the bottom side, the left
+    // one 6 mm from its corner, 18 mm long
+    s.distance(p, bottom, 3.mm);
+    s.distance(q, bottom, 3.mm);
+    s.distance(p, bottom.start, 6.mm, along: X);
+    s.distance(p, q, 18.mm);
+    return body.cut(s.profile, depth: 0.6.mm);
+}
+```
+
+![A sketch on Carlo's top face](img/14-face-sketch.png)
+
+The profile of such a sketch knows where it lies: `body.cut(s.profile, depth:)`
+digs it into the face, `body.extrude(s.profile, depth:)` raises it, with no
+`on:`. Make Carlo longer or shorter and the groove follows its bottom side.
+`s.project(edges.…)` brings other edges of the solid into the sketch, flattened
+onto its plane: the rim of a hole underneath, to centre something over it. In
+the 3D view, right-click a flat face and choose **Sketch on face…**: an empty
+sketch on it is written for you, its edges already there, ready to draw on.
+A double click on a flat face (or **Look at face** in the same menu) turns the
+view straight at it.
+
 ## Curved shapes: lofts and sweeps
 
 `loft([…])` passes smoothly through outlines at different heights, a vase

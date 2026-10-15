@@ -272,7 +272,10 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>e.isPerpendicular(axis: Direction) → bool</dt><dd>Whether it is at right angles to the axis (a face: whether its normal runs along it: top and bottom for Z).</dd>
 </dl></section>
 <section><h2>Sketches</h2><dl>
-<dt>sketch() → Sketch</dt><dd>A constrained 2D sketch: add points, lines, constraints, then take .profile.</dd>
+<dt>sketch(on: Frame | Plane, origin: Vec, x: Direction) → Sketch</dt><dd>A constrained 2D sketch: add points, lines, constraints, then take .profile. On XY, or on a face of a solid (its edges as references, its axes as frame's) or a frame or plane: the profile then lies there.</dd>
+<dt>sk.edges → Entity[]</dt><dd>A sketch on a face: the face's edges as references (fixed construction lines, arcs, circles), each loop from its lowest edge counter-clockwise, as a rect's sides: bottom, right, top, left; the outside first.</dd>
+<dt>sk.origin → Point</dt><dd>A sketch on a face or plane: its origin (the face's centre) as a fixed reference point.</dd>
+<dt>sk.project(edges: Edges) → Entity[]</dt><dd>Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them.</dd>
 <dt>sk.point(x: Length, y: Length, fixed: bool) → Point</dt><dd>A point where it starts; constraints move it.</dd>
 <dt>sk.line(p: Point, q: Point) → Line</dt><dd>A line between two points.</dd>
 <dt>sk.arc(center: Point, start: Point, end: Point) → Arc</dt><dd>An arc, counter-clockwise.</dd>
@@ -284,6 +287,11 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.slot(p: Point, q: Point, w: Length, length: Length, center: Point, angle: Angle) → [Line, Arc, Line, Arc]</dt><dd>Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p]; or by its length end to end, along X (angle: turned) round center: or a new point at the origin. The same shape as the profile slot(…).</dd>
 <dt>sk.teardrop(center: Point, r | d: Length, angle: Angle, flat: bool) → [Arc, Line, Line]</dt><dd>A hole that prints sideways: an arc round the centre and two lines tangent to it meeting above it, angle (45° unless given) from the vertical; flat: true cuts the point with a line on the circle's top ([arc, line, flat, line]). The same shape as the profile teardrop(…).</dd>
 <dt>sk.coincident(p: Point, q: Point)</dt><dd>Two points in the same place.</dd>
+<dt>sk.length(line: Line, v: Length)</dt><dd>Sets the length of a line.</dd>
+<dt>sk.distance(a: Point, b: Point | Line, v: Length, along: X | Y)</dt><dd>Sets how far a point is from another point (along: X or Y only across or up), or from a line.</dd>
+<dt>sk.parallel(a: Line, b: Line)</dt><dd>Two parallel lines.</dd>
+<dt>sk.perpendicular(a: Line, b: Line)</dt><dd>Two lines at right angles.</dd>
+<dt>sk.fillet(p: Point, r: Length)</dt><dd>Rounds the corner where two lines meet at p.</dd>
 <dt>sk.fix(p: Point)</dt><dd>Pins a point.</dd>
 <dt>sk.horizontal(line: Line)</dt><dd>A horizontal line (or two points at the same height, or an ellipse's x axis along X).</dd>
 <dt>sk.vertical(line: Line)</dt><dd>A vertical line.</dd>

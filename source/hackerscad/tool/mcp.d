@@ -754,7 +754,9 @@ JSONValue[] toolList()
             ~ "to centre) and size (mm across the view), orbit [yaw, pitch] in degrees (like "
             ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
-            ~ "stays still). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
+            ~ "stays still); look_at_face ({x, y} fractions of the view, or {point: [x, y, z]} in mm) turns the view "
+            ~ "straight at the flat face there, from outside, as the user's double click on a face or Look at face in "
+            ~ "the right-click menu does (after preset, before the rest). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
             ~ "faint); printability marks, over any style, the overhangs needing supports in red and the walls under "
             ~ "min_wall in violet (then hcad_gui_state has their areas per part); projection is perspective or orthographic; menu opens the parts (eye), display (cube) or views (View) "
             ~ "menu of the view bar, or the header bar's examples or export menu, for a screenshot, none closes them; sidebar shows the params or steps tab; "
@@ -767,6 +769,8 @@ JSONValue[] toolList()
             ~ "those panels. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
             ~ `"look_at": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
+            ~ `"look_at_face": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}, `
+            ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}}}, `
             ~ `"size": {"type": "number"}, `
             ~ `"orbit": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"pan": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
@@ -887,11 +891,13 @@ JSONValue[] toolList()
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face), "
             ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep), pocket (a rectangle cut "
-            ~ "in), boss (a cylinder standing on the face). With use_selection: true it acts on the Shift selection "
+            ~ "in), boss (a cylinder standing on the face), sketch (Sketch on face…: the part's function keeps its "
+            ~ "solid in a variable and starts an empty sketch on that flat face, its edges as references; add its "
+            ~ "geometry and then cut or extrude its profile with hcad_gui_edit). With use_selection: true it acts on the Shift selection "
             ~ "(hcad_gui_pick with shift) that contains the point, as the menu does: several edges or faces at once.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"action": {"type": "string", "enum": ["fillet-edge", "chamfer-edge", "fillet-face", "chamfer-face", `
-            ~ `"shell", "draft", "extrude-face", "cut-face", "thread", "hole", "pocket", "boss"]}, "value": {"type": "string", "description": `
+            ~ `"shell", "draft", "extrude-face", "cut-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
             ~ `"radius, distance, thickness, angle or depth, e.g. 2.mm or -4.deg"}, `
             ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert"]}, `
             ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6 or M8 for holes; any that fits the cylinder for thread (M10, M12…)"}, `
@@ -916,7 +922,8 @@ JSONValue[] toolList()
             ~ "are shown filled and hatched; on: false removes it.",
             `"plane": {"type": "string", "enum": ["xy", "xz", "yz", "face"]}, "at": {"type": "number"}, `
             ~ `"flip": {"type": "boolean"}, "on": {"type": "boolean"}`, `[]`),
-        gui("hcad_gui_sketch", "Show a sketch in the user's 3D view, seen from above, with its dimensions (the user "
+        gui("hcad_gui_sketch", "Show a sketch in the user's 3D view, seen from above (a sketch on a face: from outside that face, the "
+            ~ "face's edges and what s.project gave drawn in violet as references), with its dimensions (the user "
             ~ "can click them to change them) and the points that can still move in blue, as selecting its step or "
             ~ "inspecting one of its lines does. line (to to_line) is any line of a sketch: the sketch() call, its "
             ~ ".profile, an s.point/line/arc/circle/ellipse/polyline/rect/polygon/slot/teardrop call or a constraint call; what "

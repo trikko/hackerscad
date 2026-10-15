@@ -254,7 +254,10 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 ## Sketches
 
-- `sketch() → Sketch` — A constrained 2D sketch: add points, lines, constraints, then take .profile.
+- `sketch(on: Frame | Plane, origin: Vec, x: Direction) → Sketch` — A constrained 2D sketch: add points, lines, constraints, then take .profile. On XY, or on a face of a solid (its edges as references, its axes as frame's) or a frame or plane: the profile then lies there.
+- `sk.edges → Entity[]` — A sketch on a face: the face's edges as references (fixed construction lines, arcs, circles), each loop from its lowest edge counter-clockwise, as a rect's sides: bottom, right, top, left; the outside first.
+- `sk.origin → Point` — A sketch on a face or plane: its origin (the face's centre) as a fixed reference point.
+- `sk.project(edges: Edges) → Entity[]` — Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them.
 - `sk.point(x: Length, y: Length, fixed: bool) → Point` — A point where it starts; constraints move it.
 - `sk.line(p: Point, q: Point) → Line` — A line between two points.
 - `sk.arc(center: Point, start: Point, end: Point) → Arc` — An arc, counter-clockwise.
@@ -266,6 +269,11 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.slot(p: Point, q: Point, w: Length, length: Length, center: Point, angle: Angle) → [Line, Arc, Line, Arc]` — Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p]; or by its length end to end, along X (angle: turned) round center: or a new point at the origin. The same shape as the profile slot(…).
 - `sk.teardrop(center: Point, r | d: Length, angle: Angle, flat: bool) → [Arc, Line, Line]` — A hole that prints sideways: an arc round the centre and two lines tangent to it meeting above it, angle (45° unless given) from the vertical; flat: true cuts the point with a line on the circle's top ([arc, line, flat, line]). The same shape as the profile teardrop(…).
 - `sk.coincident(p: Point, q: Point)` — Two points in the same place.
+- `sk.length(line: Line, v: Length)` — Sets the length of a line.
+- `sk.distance(a: Point, b: Point | Line, v: Length, along: X | Y)` — Sets how far a point is from another point (along: X or Y only across or up), or from a line.
+- `sk.parallel(a: Line, b: Line)` — Two parallel lines.
+- `sk.perpendicular(a: Line, b: Line)` — Two lines at right angles.
+- `sk.fillet(p: Point, r: Length)` — Rounds the corner where two lines meet at p.
 - `sk.fix(p: Point)` — Pins a point.
 - `sk.horizontal(line: Line)` — A horizontal line (or two points at the same height, or an ellipse's x axis along X).
 - `sk.vertical(line: Line)` — A vertical line.

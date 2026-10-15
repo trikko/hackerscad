@@ -1174,6 +1174,97 @@ Edit appendToPiece(string source, string file, string part, size_t index, bool f
     return between(source, e.apply(src), e);
 }
 
+/// A sketch on face `faces` (a selector's code) of the part `part`, to
+/// draw on: what the function returned is kept in a variable, and an empty
+/// sketch is made on its face (its edges as references) before it is
+/// returned unchanged; the cursor goes at the end of the sketch's line, so
+/// that the sketch shows there. Its geometry, and the cut or extrusion of
+/// its profile, are the user's to write.
+Edit sketchOnFace(string source, string file, string part, string faces)
+{
+    import std.regex : matchFirst, regex;
+    import std.string : strip;
+    auto r = returned(source, file, part);
+    auto fn = r.fn;
+    auto toks = r.toks;
+    immutable expr = source[r.start .. r.end].strip;
+    bool[string] used;
+    foreach (t; toks[tokenAt(toks, fn.nameSpan) .. $])
+        if (t.kind == Tok.ident)
+            used[t.text] = true;
+    string unique(string name)
+    {
+        auto n = name;
+        for (int k = 2; n in used; k++)
+            n = format("%s%d", name, k);
+        used[n] = true;
+        return n;
+    }
+    // a variable returned as it is stays the body; anything else goes into one
+    immutable plain = fn.exprBody is null && !expr.matchFirst(regex(`^[A-Za-z_]\w*$`)).empty;
+    immutable body = plain ? expr : unique("body");
+    immutable sk = unique("s");
+    // an empty line above the comment, as in the examples
+    string[] lines = plain ? [""] : [format("auto %s = %s;", body, expr), ""];
+    lines ~= ["// drawn on the face: its edges are references (" ~ sk ~ ".edges)",
+        format("auto %s = %s.sketch(%s);", sk, body, faces), "",
+        format("return %s;", body)];
+    immutable sketchLine = lines.length - 3;
+    immutable semi = offsetOf(source, toks[r.last].span) + 1;
+    Edit e;
+    string indent;
+    if (fn.exprBody !is null)
+    {
+        // => expr; becomes a block
+        size_t cut = offsetOf(source, toks[r.first - 1].span);
+        while (cut > 0 && (source[cut - 1] == ' ' || source[cut - 1] == '\t' || source[cut - 1] == '\n'))
+            cut--;
+        indent = "    ";
+        e.offset = cut;
+        e.length = semi - cut;
+        e.text = "\n{\n";
+    }
+    else
+    {
+        immutable ret = offsetOf(source, toks[r.first - 1].span);   // the 'return'
+        size_t lineStart = ret;
+        while (lineStart > 0 && source[lineStart - 1] != '\n')
+            lineStart--;
+        indent = source[lineStart .. ret];
+        e.offset = lineStart;
+        e.length = semi - lineStart;
+    }
+    foreach (k, l; lines)
+    {
+        e.text ~= l.length ? indent ~ l : "";
+        if (k == sketchLine)
+            e.selectOffset = e.offset + e.text.length;   // the cursor at the end of the sketch's line
+        if (k + 1 < lines.length)
+            e.text ~= "\n";
+    }
+    if (fn.exprBody !is null)
+        e.text ~= "\n}";
+    return e;
+}
+
+unittest
+{
+    // an expression body becomes a block: the body in a variable, an empty sketch on its face
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10) - cylinder(d: 2, h: 20);\n";
+    auto e = sketchOnFace(src, "m.hcad", "p", "faces.top");
+    auto a = e.apply(src);
+    assert(a.canFind("Solid p()\n{\n    auto body = box(10, 10, 10) - cylinder(d: 2, h: 20);\n\n"
+        ~ "    // drawn on the face: its edges are references (s.edges)\n    auto s = body.sketch(faces.top);\n\n"
+        ~ "    return body;\n}\n"), a);
+    import std.algorithm : endsWith;
+    assert(a[0 .. e.selectOffset].endsWith("body.sketch(faces.top);") && e.selectLength == 0);
+    // a block returning a variable: that one; the names taken get a number
+    auto b = "module m;\n\n@part\nSolid p()\n{\n    auto s = box(4, 4, 4);\n    return s;\n}\n";
+    auto c = sketchOnFace(b, "m.hcad", "p", "faces.front").apply(b);
+    assert(c.canFind("    auto s = box(4, 4, 4);\n\n    // drawn on the face: its edges are references (s2.edges)\n"
+        ~ "    auto s2 = s.sketch(faces.front);\n\n    return s;\n}"), c);
+}
+
 /// colourPart for piece `index` of a @parts function: `.color("…")` on that
 /// piece only, in place of the colour it ends with, or added. The colour is selected.
 Edit colourPiece(string source, string file, string part, size_t index, bool fromSolid, string colour)

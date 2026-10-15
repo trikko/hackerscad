@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-039aade3`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-bb5b895d`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-039aade3`:** this text is up to date.
+- **It prints `0.3.1-bb5b895d`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -161,6 +161,14 @@ format stamp):
   clip drawn with tangent arcs, a loop and if/else).
 - To build on a face, take its frame and place parts built on XY (Z up):
   cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top).at(x: 10.mm)).
+- To draw an outline on a face, measured from the part's own edges, sketch
+  there: auto s = body.sketch(faces.top); its edges are references in
+  s.edges (the lowest first, counter-clockwise: bottom, right, top, left on
+  a rectangular face), s.origin is its centre, s.project(edges.…) flattens
+  other edges onto it (a hole's rim below). Constrain the new geometry to
+  them (s.distance(p, s.edges[0], 3.mm)), then body.cut(s.profile, depth:)
+  or body.extrude(s.profile, depth:): the profile knows its face, no on:.
+  In the window: hcad_gui_feature with action sketch on a flat face.
 - Axes and planes anywhere: rotate(90.deg, axis: body.axis(edges.filter(e =>
   e.isCircle && e.radius == 3.mm))), s.mirror(plane(origin: vec(10, 0, 0),
   normal: X)), plane(p1, p2, p3), plane(axis, point).

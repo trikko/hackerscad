@@ -1,0 +1,26 @@
+module grooved;
+
+import carlo;
+
+/// Carlo with a groove along its lower jaw, drawn on
+/// its top face.
+@part
+Solid clip()
+{
+    auto body = carlo();
+
+    // on the top face: Carlo's outline is in the sketch
+    // as references, its lowest side first
+    auto s = body.sketch(faces.top);
+    auto bottom = s.edges[0];
+    auto p = s.point(-5, -9), q = s.point(12, -9);
+    s.slot(p, q, w: 1.5.mm);
+
+    // both ends 3 mm above the bottom side, the left
+    // one 6 mm from its corner, 18 mm long
+    s.distance(p, bottom, 3.mm);
+    s.distance(q, bottom, 3.mm);
+    s.distance(p, bottom.start, 6.mm, along: X);
+    s.distance(p, q, 18.mm);
+    return body.cut(s.profile, depth: 0.6.mm);
+}

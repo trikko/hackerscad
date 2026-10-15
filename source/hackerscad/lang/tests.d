@@ -3114,10 +3114,13 @@ unittest
     foreach (name, v; it.prelude.vars)
         if (v.kind == Kind.builtin && !documented(name))
             missing ~= name;
-    foreach (name; ["point", "line", "arc", "circle", "ellipse", "polyline", "rect", "polygon", "slot", "teardrop",
-        "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
-        "perpendicular", "angle", "equal", "radius", "diameter", "tangent", "midpoint", "symmetric", "fillet",
-        "profile", "dof", "solved", "standardViews", "view", "section", "dimension", "note"])
+    // a sketch's methods and properties, each with an entry of its own on Sketch
+    import hackerscad.lang.sketchval : SketchVal;
+    import hackerscad.lang.errors : Span;
+    foreach (name; new SketchVal(it, Span.init, true).memberNames)
+        if (!reference.canFind!(r => r.name == name && r.on == "Sketch"))
+            missing ~= name ~ " (of a sketch)";
+    foreach (name; ["standardViews", "view", "section", "dimension", "note"])
         if (!documented(name))
             missing ~= name;
     // what sketch geometry reads back: an entry for the entity itself, not a namesake of a solid's
@@ -3126,4 +3129,52 @@ unittest
             missing ~= name ~ " (of a sketch entity)";
     assert(missing.length == 0, "not in the reference (source/hackerscad/lang/reference.d): "
         ~ missing.sort.uniq.array.join(", "));
+}
+
+unittest
+{
+    // a sketch on a face: its edges as references in the order of a rect's
+    // sides (bottom, right, top, left), its profile cut or extruded where it lies
+    auto r = runModel(q{
+        immutable body = box(40.mm, 30.mm, 10.mm) - cylinder(d: 8.mm, h: 6.mm).move(x: 10.mm, z: -1.mm);
+        @part Solid plate()
+        {
+            auto s = body.sketch(faces.top);
+            assert(s.edges.length == 4 && s.dof == 0);
+            assert(abs(s.edges[0].mid.y + 15.mm) < 1e-6.mm && abs(s.edges[1].mid.x - 20.mm) < 1e-6.mm);
+            auto c = s.circle(s.point(3, 4), d: 6.mm);
+            s.distance(c.center, s.edges[0], 5.mm);
+            s.distance(c.center, s.edges[1], 5.mm);
+            assert(s.dof == 0 && abs(c.center.x - 15.mm) < 1e-6.mm && abs(c.center.y + 10.mm) < 1e-6.mm);
+            return body.cut(s.profile, depth: 3.mm);
+        }
+        @part Solid boss()
+        {
+            // the blind hole's rim, from under the top, in the sketch on it; a wall's x to the right, y up
+            auto s = body.sketch(faces.top);
+            auto rim = s.project(edges.filter(e => e.isCircle && e.center.z > 1.mm));
+            auto c = s.circle(s.point(0, 0), d: 4.mm);
+            s.concentric(c, rim[0]);
+            auto w = body.sketch(faces.front);
+            w.rect(center: w.origin, w: 4.mm, h: 2.mm);
+            return s.profile.extrude(2.mm).move(z: 20.mm) + w.profile.extrude(1.mm);
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(isClose(partVolume(r, "plate"), 40 * 30 * 10 - PI * 16 * 5 - PI * 9 * 3, 1e-6));
+    auto boss = r.parts[1].solid;
+    assert(isClose(partVolume(r, "boss"), PI * 4 * 2 + 4 * 2 * 1, 1e-6));
+    auto bb = kernel.bbox(boss.brep);
+    assert(abs(bb.min.y + 16) < 1e-6 && abs(bb.max.z - 32) < 1e-6 && abs(bb.min.x + 2) < 1e-6 && abs(bb.max.x - 12) < 1e-6);
+    // on: for a profile that already has its face; profiles of two faces together; edges without a face
+    enum base = "immutable body = box(10, 10, 10);\n";
+    assert(error(base ~ "@part Solid p() { auto s = body.sketch(faces.top); s.circle(s.origin, d: 2); "
+        ~ "return body.cut(s.profile, on: faces.top, depth: 1); }").message.canFind("leave on: out"));
+    assert(error(base ~ "@part Solid p() { auto s = body.sketch(faces.top); s.circle(s.origin, d: 2); "
+        ~ "auto t = body.sketch(faces.front); t.circle(t.origin, d: 2); return (s.profile + t.profile).extrude(1); }")
+        .message.canFind("different faces"));
+    assert(error("@part Solid p() { auto s = sketch(); writeln(s.edges); return box(1, 1, 1); }").message.canFind("drawn on a face"));
+    assert(error(base ~ "@part Solid p() { auto s = body.sketch(faces.filter(f => f.normal.z > -2)); return body; }")
+        .message.canFind("exactly one face"));
 }

@@ -988,8 +988,12 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto sv = derived(it, twist != 0 ? k.sweep(nonEmpty(p, a.span), k.polyline([Vec3(0, 0, 0), Vec3(0, 0, h)], false),
             false, h < 0 ? -twist : twist) : k.extrude(nonEmpty(p, a.span), h, taper), [p], "extrude", a.span);
         sv.flat = false;
+        sv.placed = false;
         if (sym)
-            return transformed(it, a.span, sv, b => k.translate(b, Vec3(0, 0, -h / 2)));
+            sv = transformed(it, a.span, sv, b => k.translate(b, Vec3(0, 0, -h / 2))).solid;
+        // a profile drawn on a face: the solid stands on that face
+        if (p.placed)
+            return transformed(it, a.span, sv, b => toPlace(k, p.place, b));
         return Value.of(sv);
     });
     def("thread", (ref CallArgs a) {
@@ -1018,8 +1022,11 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto b = k.revolve(nonEmpty(p, a.span), o, d, max(-2 * PI, min(2 * PI, ang)));
         if (upright)
             b = k.rotate(b, Vec3(1, 0, 0), PI / 2);
+        if (p.placed)
+            b = toPlace(k, p.place, b);
         auto sv = derived(it, b, [p], "revolve", a.span);
         sv.flat = false;
+        sv.placed = false;
         return Value.of(sv);
     });
 
@@ -1079,6 +1086,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto sv = derived(it, k.sweep(nonEmpty(p, a.span), pv.solid.brep, x.flag("frenet", false), twist), [p], "sweep",
             a.span);
         sv.flat = false;
+        sv.placed = false;
         return Value.of(sv);
     });
     def("loft", (ref CallArgs a) {
@@ -1141,11 +1149,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         {
             if (p.kind != Kind.solid || !p.solid.flat || p.solid.path)
                 throw new HcadError(Code.type, format("loft profiles must be 2D profiles, not %s", p.typeName), x.spanOf("profiles"));
-            bs ~= nonEmpty(p.solid, a.span);
+            // a profile drawn on a face or plane: there
+            bs ~= p.solid.placed ? toPlace(k, p.solid.place, nonEmpty(p.solid, a.span)) : nonEmpty(p.solid, a.span);
             ins ~= p.solid;
         }
         auto sv = derived(it, k.loft(bs, x.flag("ruled", false)), ins, "loft", a.span);
         sv.flat = false;
+        sv.placed = false;
         return Value.of(sv);
     });
 
@@ -2108,6 +2118,17 @@ Vec3 faceXAxis(Vec3 n)
     return inPlane(Vec3(1, 0, 0), n).normalized;
 }
 
+/// `b`, built on XY in a frame's coordinates, moved onto the frame
+/// (origin, x, y, z): a placed profile's solid where the profile lies.
+Brep toPlace(BrepKernel k, Vec3[4] place, Brep b)
+{
+    Vec3 axis;
+    immutable angle = axisAngle(place[1], place[2], place[3], axis);
+    if (angle > 1e-12)
+        b = k.rotate(b, axis, angle);
+    return k.translate(b, place[0]);
+}
+
 /// Axis and angle of the rotation whose matrix has columns x, y, z.
 double axisAngle(Vec3 x, Vec3 y, Vec3 z, out Vec3 axis)
 {
@@ -2188,6 +2209,10 @@ enum touchingBridge = 0.02;
 Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span, bool merged = false)
 {
     SolidVal r;
+    // profiles drawn on two different faces have no plane in common
+    if (a.flat && b.flat && a.placed && b.placed && a.place != b.place)
+        throw new HcadError(Code.type, "these two profiles were drawn on different faces or planes: combine profiles "
+            ~ "drawn on the same one", span);
     if (a.brep is null || b.brep is null)
     {
         final switch (op)
@@ -2874,6 +2899,13 @@ SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span)
         r.flat = inputs[0].flat || (inputs[0].brep is null && inputs.length > 1 && inputs[1].flat);
         // a path moved, turned or mirrored is still a path
         r.path = inputs.length == 1 && inputs[0].path;
+        // a profile drawn on a face stays there: moved, combined, offset in its plane
+        foreach (input; inputs)
+            if (r.flat && input !is null && input.flat && input.placed && !r.placed)
+            {
+                r.placed = true;
+                r.place = input.place;
+            }
     }
     auto origins = it.kernel.faceOrigins(b);
     r.creators = new uint[origins.length];
@@ -2949,7 +2981,20 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
     auto p = profileArg(x, "profile");
     requireXY(it, p, a.span);
     Vec3 o, ax, ay, az;
-    if (x.has("on"))
+    if (p.placed && x.has("on"))
+        throw new HcadError(Code.type, "this profile was drawn on a face (its sketch's): it is already where it goes, "
+            ~ "leave on: out", x.spanOf("on"));
+    if (p.placed)
+    {
+        o = p.place[0];
+        ax = p.place[1];
+        ay = p.place[2];
+        az = p.place[3];
+        if (x.has("at"))
+            throw new HcadError(Code.type, "this profile was drawn on a face: place it in its sketch, not with at:",
+                x.spanOf("at"));
+    }
+    else if (x.has("on"))
     {
         auto v = x.get("on");
         if (v.kind == Kind.selector)
@@ -3328,7 +3373,7 @@ Brep nonEmpty(SolidVal s, Span span)
 /// A face that a frame can stand on: on a curved one its centre and average
 /// normal are inside the body (on a cylinder's axis), and what is placed on
 /// it ends up buried, so it is refused.
-FaceInfo flatFace(Interp it, SolidVal s, int face, string fn, Span span)
+public FaceInfo flatFace(Interp it, SolidVal s, int face, string fn, Span span)
 {
     auto f = it.kernel.faces(s.brep)[face];
     immutable size = it.kernel.bbox(s.brep).size.length;

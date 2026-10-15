@@ -10,7 +10,7 @@ import std.format : format;
 import std.math : abs, cos, sin;
 
 import hackerscad.geom.vec;
-import hackerscad.kernel.brep : Brep;
+import hackerscad.kernel.brep : Brep, EdgeInfo, EdgeKind;
 import hackerscad.lang.builtins : Args, primitive, polygonFit;
 import hackerscad.lang.errors;
 import hackerscad.lang.interp;
@@ -21,8 +21,69 @@ import hackerscad.sketch.sketch;
 void installSketch(Interp it, void delegate(string, BuiltinImpl) def)
 {
     def("sketch", (ref CallArgs a) {
-        Args(it, a, "sketch", []);
-        return Value.make(Kind.object_, new SketchVal(it, a.span));
+        // sketch() on XY; body.sketch(faces.top) on a face of a solid, its edges as references;
+        // sketch(frame) or sketch(plane) on a frame or plane (origin:, x: as frame takes them)
+        import hackerscad.lang.builtins : faceXAxis, flatFace, frameArg, inPlane, planeArg, planeDef,
+            resolveSelector;
+        if (a.positional.length == 0 && a.named.length == 0)
+            return Value.make(Kind.object_, new SketchVal(it, a.span));
+        Args x;
+        Vec3 o, n, ax, ay;
+        SolidVal body;
+        int face = -1;
+        bool framed;
+        if (a.positional.length && a.positional[0].kind == Kind.solid)
+        {
+            x = Args(it, a, "sketch", ["solid", "face", "origin", "x"]);
+            body = x.solid("solid");
+            if (body.flat || body.path)
+                throw new HcadError(Code.type, "sketch(face) draws on a face of a solid, not of a profile or a path",
+                    x.spanOf("solid"));
+            auto idx = resolveSelector(it, x.selector("face", true), body, x.spanOf("face"));
+            if (idx.length != 1)
+                throw new HcadError(Code.type, format("sketch needs exactly one face, the selector matched %d",
+                    idx.length), x.spanOf("face"));
+            auto f = flatFace(it, body, idx[0], "sketch", x.spanOf("face"));
+            face = idx[0];
+            o = f.center;
+            n = f.normal;
+        }
+        else
+        {
+            x = Args(it, a, "sketch", ["on", "origin", "x"]);
+            auto v = x.get("on");
+            if (v.kind == Kind.struct_ && v.st.def is planeDef)
+                planeArg(x, "on", o, n);
+            else
+            {
+                Vec3 az;
+                frameArg(x, "on", o, ax, ay, az);
+                n = az;
+                framed = true;
+            }
+        }
+        if (x.has("origin"))
+        {
+            // a chosen origin is projected onto the plane
+            auto q = x.vecLen("origin");
+            o = q - n * (q - o).dot(n);
+        }
+        if (x.has("x"))
+        {
+            ax = inPlane(x.dir("x"), n);
+            if (ax.length < 1e-9)
+                throw new HcadError(Code.type, "the x direction is perpendicular to the plane", x.spanOf("x"));
+            ax = ax.normalized;
+            ay = n.cross(ax);
+        }
+        else if (!framed)
+        {
+            ax = faceXAxis(n);
+            ay = n.cross(ax);
+        }
+        auto sv = new SketchVal(it, a.span);
+        sv.placeOn(o, ax, ay, n.normalized, body, face);
+        return Value.make(Kind.object_, sv);
     });
     // the profiles of the shapes a sketch has: one-shape sketches with everything given (polygon's
     // form through points is in builtins.d, and comes here for a regular one)
@@ -91,6 +152,12 @@ final class SketchVal : ObjectVal
     size_t[][] constraintRefs;   /// by tag: the entities it involves
     Span[] profileSpans;      /// where `.profile` was read
     bool asProfile;           /// a profile's one-shape sketch: everything given, not shown as a sketch
+    bool placed;              /// drawn on a face or plane: its frame below (else on XY)
+    Vec3[4] place;            /// origin, x, y, z
+    SolidVal on;              /// the solid whose face it is drawn on (null on a frame or plane)
+    size_t[] faceEdges;       /// the references of that face's edges
+    size_t originRef = size_t.max;   /// the reference point at the origin
+    private size_t[][size_t] edgeRefs;   /// edge of `on` → its references (more than one for a curve)
     private bool warned;
     private string calling;   /// the constraint method running
 
@@ -119,7 +186,7 @@ final class SketchVal : ObjectVal
     }
 
     override string[] memberNames() => ["point", "line", "arc", "circle", "ellipse", "polyline", "rect", "polygon",
-        "slot", "teardrop", "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
+        "slot", "teardrop", "edges", "origin", "project", "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
         "perpendicular", "angle", "equal", "radius", "diameter", "tangent", "midpoint", "symmetric", "fillet",
         "profile", "dof", "solved"];
 
@@ -136,6 +203,25 @@ final class SketchVal : ObjectVal
                 return true;
             }
         case "dof": result = Value.integer(sk.report().dof); return true;
+        case "edges":
+            {
+                // the face's edges, as references (a curve that is neither a line nor a circle:
+                // the lines that follow it)
+                if (on is null)
+                    throw new HcadError(Code.type, "edges are the references of a sketch drawn on a face: "
+                        ~ "body.sketch(faces.top)", at);
+                Value[] r;
+                foreach (e; faceEdges)
+                    r ~= entity(e);
+                result = Value.of(r);
+                return true;
+            }
+        case "origin":
+            if (!placed)
+                throw new HcadError(Code.type, "origin is the reference point of a sketch drawn on a face or plane: "
+                    ~ "on XY, s.point(0, 0, fixed: true)", at);
+            result = entity(originRef);
+            return true;
         case "solved": result = Value.of(sk.report().solved); return true;
         default: return false;
         }
@@ -181,6 +267,23 @@ final class SketchVal : ObjectVal
             return (ref CallArgs a) {
                 auto x = Args(it, a, name, ["sketch"] ~ shapeParams(name, a, 1) ~ ["construction"]);
                 return shape(name, x, a.span);
+            };
+        case "project":
+            return (ref CallArgs a) {
+                // s.project(edges.…): edges of the solid the sketch is on, flattened onto its plane
+                // as references (a circle seen aslant: an ellipse)
+                import hackerscad.lang.builtins : resolveSelector;
+                auto x = Args(it, a, "project", ["sketch", "edges"]);
+                if (on is null)
+                    throw new HcadError(Code.type, "project takes edges of the solid a sketch is drawn on: "
+                        ~ "body.sketch(faces.top)", a.span);
+                auto idx = resolveSelector(it, x.selector("edges", false), on, x.spanOf("edges"));
+                auto infos = it.kernel.edges(on.brep);
+                Value[] r;
+                foreach (i; idx)
+                    foreach (e; reference(i, infos[i], x.spanOf("edges")))
+                        r ~= entity(e);
+                return Value.of(r);
             };
         case "coincident":
             return constraint("coincident", ["a", "b"], (ref Args x, Span s) {
@@ -373,6 +476,11 @@ final class SketchVal : ObjectVal
         SketchView v;
         v.span = span;
         v.profiles = profileSpans.dup;
+        v.placed = placed;
+        if (placed)
+            v.place = place;
+        if (on !is null)
+            v.body = on.brep;
         auto rep = sk.report();
         v.solved = rep.solved;
         v.dof = rep.dof;
@@ -381,7 +489,8 @@ final class SketchVal : ObjectVal
             free[p] = true;
         Span spanOf(size_t e) => e < entitySpans.length && entitySpans[e] != Span.init ? entitySpans[e] : span;
         foreach (i, e; sk.entities)
-            v.entities ~= SketchView.Entity(["point", "line", "arc", "circle", "ellipse"][e.kind], spanOf(i), e.construction);
+            v.entities ~= SketchView.Entity(["point", "line", "arc", "circle", "ellipse"][e.kind], spanOf(i), e.construction,
+                e.reference);
         // the outline as the profile will have it (with corner fillets), when it can be built
         import hackerscad.kernel.brep : OutlineSeg;
         OutlineSeg[] outline;
@@ -450,10 +559,12 @@ final class SketchVal : ObjectVal
             seg.entity = i;
             seg.span = spanOf(i);
             seg.construction = e.construction;
+            seg.reference = e.reference;
             final switch (e.kind)
             {
             case EntityKind.point:
-                v.points ~= SketchView.Point(sk.position(i), (i in free) !is null, spanOf(i), e.construction, i);
+                v.points ~= SketchView.Point(sk.position(i), (i in free) !is null, spanOf(i), e.construction, i,
+                    e.reference);
                 continue;
             case EntityKind.line:
                 seg.kind = 0;
@@ -612,6 +723,9 @@ final class SketchVal : ObjectVal
             v.constraints[d.constraint].dimension = v.dimensions.length;
             v.dimensions ~= d;
         }
+        // the labels where the sketch lies in the model
+        foreach (ref d; v.dimensions)
+            d.at = v.world(d.at);
         return v;
     }
 
@@ -1102,6 +1216,190 @@ final class SketchVal : ObjectVal
 
     Value entity(size_t id) => Value.make(Kind.object_, new SketchEntityVal(this, id));
 
+    /// Draws the sketch on the frame (o, ax, ay, az); on face `face` of
+    /// `body`, that face's edges become references, as does the origin.
+    void placeOn(Vec3 o, Vec3 ax, Vec3 ay, Vec3 az, SolidVal body, int face)
+    {
+        placed = true;
+        place = [o, ax, ay, az];
+        on = body;
+        originRef = refPoint(Vec3(0, 0, 0));
+        if (body is null)
+            return;
+        auto infos = it.kernel.edges(body.brep);
+        size_t[] mine;
+        foreach (i, ends; it.kernel.edgeFaces(body.brep))
+            if (ends[0] == face || ends[1] == face)
+                mine ~= i;
+        foreach (i; loopOrder(mine, infos))
+            faceEdges ~= reference(i, infos[i], span);
+    }
+
+    /// The edges of a face in the order of its loops, as a rect gives its
+    /// sides: each loop from its lowest edge (then leftmost), counter-clockwise
+    /// in the sketch; the loop with the lowest edge first (the outside).
+    size_t[] loopOrder(size_t[] edges, EdgeInfo[] infos)
+    {
+        import std.algorithm : canFind;
+        size_t[] r;
+        bool[size_t] used;
+        immutable tol = 1e-6;
+        while (r.length < edges.length)
+        {
+            // the lowest edge left, by its middle
+            size_t first = size_t.max;
+            foreach (i; edges)
+                if (i !in used && (first == size_t.max || less(local(infos[i].mid), local(infos[first].mid))))
+                    first = i;
+            used[first] = true;
+            size_t[] loop = [first];
+            Vec3[] pts = [local(infos[first].start), local(infos[first].mid)];
+            auto head = local(infos[first].start), at = local(infos[first].end);
+            // on along the edges that meet at its end
+            for (bool more = (head - at).length >= tol; more;)
+            {
+                more = false;
+                foreach (i; edges)
+                    if (i !in used)
+                    {
+                        auto a = local(infos[i].start), b = local(infos[i].end);
+                        if ((a - at).length < tol || (b - at).length < tol)
+                        {
+                            immutable forward = (a - at).length < tol;
+                            used[i] = true;
+                            loop ~= i;
+                            pts ~= [at, local(infos[i].mid)];
+                            at = forward ? b : a;
+                            more = (at - head).length >= tol;
+                            break;
+                        }
+                    }
+            }
+            pts ~= at;
+            // clockwise as found: the other way round, from the same edge
+            double area = 0;
+            foreach (k; 0 .. pts.length)
+            {
+                auto p = pts[k], q = pts[(k + 1) % pts.length];
+                area += p.x * q.y - q.x * p.y;
+            }
+            if (area < 0 && loop.length > 2)
+            {
+                size_t[] back = [loop[0]];
+                foreach_reverse (i; loop[1 .. $])
+                    back ~= i;
+                loop = back;
+            }
+            r ~= loop;
+        }
+        return r;
+    }
+
+    private static bool less(Vec3 a, Vec3 b) => a.y < b.y - 1e-6 || (a.y <= b.y + 1e-6 && a.x < b.x);
+
+    /// A point of the plane in the sketch's coordinates.
+    Vec3 local(Vec3 p) => Vec3((p - place[0]).dot(place[1]), (p - place[0]).dot(place[2]), 0);
+
+    /// The reference point at `at` (in the sketch's coordinates): one per
+    /// place, so that edges meeting at a corner share it.
+    size_t refPoint(Vec3 at)
+    {
+        foreach (i, e; sk.entities)
+            if (e.reference && e.kind == EntityKind.point && (sk.position(i) - at).length < 1e-7)
+                return i;
+        auto id = sk.point(at.x, at.y, true);
+        sk.freeze(id);
+        entitySpans.length = sk.entities.length;
+        entitySpans[id] = span;
+        return id;
+    }
+
+    /// The references of edge `index` of the solid the sketch is on,
+    /// flattened onto its plane: a line, an arc, a circle or an ellipse (a
+    /// circle seen aslant), lines along any other curve, a point for an edge
+    /// seen end-on. Made once per edge.
+    size_t[] reference(size_t index, EdgeInfo e, Span at)
+    {
+        import std.math : atan2, PI;
+        if (auto had = index in edgeRefs)
+            return *had;
+        size_t[] r;
+        size_t keep(size_t id)
+        {
+            sk.freeze(id);
+            entitySpans.length = sk.entities.length;
+            entitySpans[id] = span;
+            r ~= id;
+            return id;
+        }
+        immutable tol = 1e-7;
+        auto a = local(e.start), b = local(e.end), m = local(e.mid);
+        immutable n = place[3];
+        if (e.kind == EdgeKind.line)
+        {
+            if ((a - b).length < tol)
+                r ~= refPoint(a);
+            else
+                keep(sk.line(refPoint(a), refPoint(b), true));
+        }
+        else if (e.kind == EdgeKind.circle && abs(abs(e.axis.normalized.dot(n)) - 1) < 1e-9)
+        {
+            // in a plane parallel to the sketch: a circle, or an arc counter-clockwise as the sketch sees it
+            auto c = local(e.center);
+            immutable full = (a - b).length < tol && e.length > PI * e.radius;
+            if (full)
+                keep(sk.circle(refPoint(c), e.radius, true));
+            else
+            {
+                double ang(Vec3 p) => atan2(p.y - c.y, p.x - c.x);
+                double ccw(double from, double to)
+                {
+                    auto d = to - from;
+                    while (d < 0)
+                        d += 2 * PI;
+                    while (d >= 2 * PI)
+                        d -= 2 * PI;
+                    return d;
+                }
+                immutable through = ccw(ang(a), ang(m)) < ccw(ang(a), ang(b));
+                auto from = through ? a : b, to = through ? b : a;
+                keep(sk.arc(refPoint(c), refPoint(from), refPoint(to), true));
+            }
+        }
+        else if (e.kind == EdgeKind.circle && (a - b).length < tol && e.length > PI * e.radius)
+        {
+            // a whole circle seen aslant: an ellipse, its diameter along both planes kept
+            auto axis = e.axis.normalized;
+            auto along = axis.cross(n);
+            immutable ry = e.radius * abs(axis.dot(n));
+            auto c = local(e.center);
+            immutable angle = atan2(along.dot(place[2]), along.dot(place[1]));
+            if (ry < tol)
+            {
+                // edge-on: the diameter it shows
+                auto d = Vec3(cos(angle), sin(angle), 0) * e.radius;
+                keep(sk.line(refPoint(c - d), refPoint(c + d), true));
+            }
+            else
+            {
+                auto centre = refPoint(c);
+                keep(sk.ellipse(centre, e.radius, ry, angle, true));
+            }
+        }
+        else
+        {
+            // any other curve (or an arc seen aslant): lines through points along it
+            Vec3[] pts = [a, m, b];
+            foreach (k; 0 .. pts.length - 1)
+                if ((pts[k] - pts[k + 1]).length >= tol)
+                    keep(sk.line(refPoint(pts[k]), refPoint(pts[k + 1]), true));
+            if (r.length == 0)
+                r ~= refPoint(a);
+        }
+        edgeRefs[index] = r;
+        return r;
+    }
+
     size_t idOf(Value v) => (cast(SketchEntityVal) v.obj).id;
 
     Value made(Span s, size_t delegate() f)
@@ -1326,6 +1624,9 @@ final class SketchVal : ObjectVal
             throw new HcadError(Code.kernel, e.msg, span, "does the outline cross itself?");
         auto sv = primitive(it, b, "sketch", span);
         sv.flat = true;
+        // drawn on a face or plane: the profile lies there
+        sv.placed = placed;
+        sv.place = place;
         return Value.of(sv);
     }
 }
@@ -1347,6 +1648,7 @@ struct SketchView
         string kind;        /// "point", "line", "arc", "circle" or "ellipse"
         Span span;          /// the call that made it
         bool construction;
+        bool reference;     /// a face's edge or the origin, on a sketch drawn on a face
     }
 
     struct Point
@@ -1356,6 +1658,7 @@ struct SketchView
         Span span;
         bool construction;
         size_t entity;      /// its id in entities
+        bool reference;     /// a reference point (a corner of the face, the origin): fixed, drawn apart
     }
 
     struct Segment
@@ -1368,11 +1671,12 @@ struct SketchView
         ptrdiff_t entity = -1;   /// the line, arc, circle or ellipse it draws (or part of it); -1 for a fillet's arc
         ptrdiff_t corner = -1;   /// a corner fillet's arc: the point it rounds
         Span span;               /// the call that made it (the s.fillet call for a fillet's arc)
+        bool reference;          /// a face's edge, or another projected onto the sketch
     }
 
     struct Dimension
     {
-        Vec3 at;            /// where to show the label
+        Vec3 at;            /// where to show the label, in the model's coordinates (on the sketch's plane)
         string label;
         Span value;         /// the value argument in the source, to edit it
         bool conflicting;
@@ -1403,6 +1707,9 @@ struct SketchView
     Span span;
     bool solved;
     size_t dof;
+    bool placed;            /// drawn on a face or plane: positions are in its frame (else on XY)
+    Vec3[4] place = [Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)];   /// origin, x, y, z
+    Brep body;              /// a sketch on a face: the solid that face is of, as it was then (shown under it)
     Point[] points;
     Segment[] segments;
     Dimension[] dimensions;
@@ -1410,6 +1717,9 @@ struct SketchView
     Constraint[] constraints;
     Span[] profiles;        /// where its .profile was read
     bool partial;           /// made by a run an error stopped: what came after the error is missing
+
+    /// A point of the sketch (x, y in its plane) in the model's coordinates.
+    Vec3 world(Vec3 p) const => placed ? place[0] + place[1] * p.x + place[2] * p.y : p;
 
     /// The entities and constraints on lines from..to of `file`.
     Found on(string file, uint from, uint to) const
@@ -1423,8 +1733,10 @@ struct SketchView
                 f.highlight ~= e;
         }
         f.sketch = inside(span) || profiles.canFind!(p => inside(p));
+        // a face's edges come with the sketch() call: they stay references, not
+        // what its line makes (in orange only where a constraint uses them)
         foreach (i, e; entities)
-            if (inside(e.span))
+            if (inside(e.span) && !e.reference)
             {
                 f.entities ~= i;
                 light(i);

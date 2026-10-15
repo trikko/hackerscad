@@ -40,6 +40,7 @@ struct Entity
     size_t[3] refs;       /// line: p1 p2; arc: center start end (counter-clockwise); circle, ellipse: center
     size_t var;           /// point: index of x (y follows); circle: index of the radius; ellipse: rx (ry, angle follow)
     bool construction;
+    bool reference;       /// geometry from outside the sketch (a face's edges): fixed, not part of the outline
 }
 
 enum ConstraintKind
@@ -108,6 +109,7 @@ final class Sketch
     Constraint[] constraints;
     double[] vars;
     double[size_t] fillets;    /// corner point → radius
+    bool[] frozen;             /// per unknown: held where it is, not an unknown at all (references)
     private bool dirty = true;
     private SolveReport last;
 
@@ -158,6 +160,26 @@ final class Sketch
         entities ~= Entity(EntityKind.ellipse, [center, 0, 0], vars.length - 3, construction);
         dirty = true;
         return entities.length - 1;
+    }
+
+    /// Makes entity `e` a reference: construction geometry whose position
+    /// and size are given, out of the unknowns (no degree of freedom, and
+    /// constraints only between references are checked, not solved). The
+    /// points of a line or an arc are frozen on their own.
+    void freeze(size_t e)
+    {
+        entities[e].reference = true;
+        entities[e].construction = true;
+        frozen.length = vars.length;
+        immutable v = entities[e].var;
+        final switch (entities[e].kind)
+        {
+        case EntityKind.point: frozen[v .. v + 2] = true; break;
+        case EntityKind.circle: frozen[v] = true; break;
+        case EntityKind.ellipse: frozen[v .. v + 3] = true; break;
+        case EntityKind.line, EntityKind.arc: break;
+        }
+        dirty = true;
     }
 
     /// Adds a constraint; the orientation of signed ones follows the current geometry.
@@ -271,7 +293,42 @@ final class Sketch
                 immutable v = entities[e].var + 2, at = vars[v];
                 eqs ~= Equation(1, (const(double)[] x, double[] r) { r[0] = x[v] - at; });
             }
-        auto res = hackerscad.sketch.solver.solve(vars, eqs);
+        // the frozen values stay out of the unknowns: the equations see them
+        // where they are, and the solver only the others
+        frozen.length = vars.length;
+        size_t[] unknown;
+        foreach (i; 0 .. vars.length)
+            if (!frozen[i])
+                unknown ~= i;
+        hackerscad.sketch.solver.SolveResult res;
+        if (unknown.length == vars.length)
+            res = hackerscad.sketch.solver.solve(vars, eqs);
+        else
+        {
+            auto full = vars.dup;
+            // one closure per call: closures made in a loop share one frame
+            static Equation over(Equation e, double[] full, size_t[] unknown)
+            {
+                return Equation(e.count, (const(double)[] y, double[] r) {
+                    foreach (k, i; unknown)
+                        full[i] = y[k];
+                    e.eval(full, r);
+                });
+            }
+            Equation[] reduced;
+            foreach (e; eqs)
+                reduced ~= over(e, full, unknown);
+            auto y = new double[unknown.length];
+            foreach (k, i; unknown)
+                y[k] = vars[i];
+            res = hackerscad.sketch.solver.solve(y, reduced);
+            foreach (k, i; unknown)
+                vars[i] = y[k];
+            auto free = new bool[vars.length];
+            foreach (k, i; unknown)
+                free[i] = res.free[k];
+            res.free = free;
+        }
         SolveReport rep;
         rep.solved = res.converged;
         rep.dof = res.dof;
@@ -878,4 +935,37 @@ unittest
         else if (g.kind == OutlineSeg.Kind.line)
             assert(sq.entities[from[k].entity].kind == EntityKind.line && from[k].corner == size_t.max);
     assert(arcs == 1);
+}
+
+unittest
+{
+    import std.math : isClose;
+    // references: frozen, no freedom, constraints to them solved on the rest
+    auto s = new Sketch;
+    auto a = s.point(0, 0), b = s.point(30, 0);
+    auto edge = s.line(a, b);
+    foreach (e; [a, b, edge])
+        s.freeze(e);
+    auto ring = s.circle(s.point(0, 0), 5);
+    s.freeze(ring);
+    s.freeze(s.entities[ring].refs[0]);
+    auto rep = s.solve();
+    assert(rep.solved && rep.dof == 0 && rep.freePoints.length == 0 && rep.freeShapes.length == 0);
+    // a point 4 above the edge, on the ring's centre's vertical: 2 freedoms taken, none left
+    auto p = s.point(3, 7);
+    s.constrain(ConstraintKind.pointLineDistance, [p, edge], 4);
+    s.constrain(ConstraintKind.vertical, [s.line(s.entities[ring].refs[0], p, true)]);
+    rep = s.solve();
+    assert(rep.solved && rep.dof == 0, format("%s", rep));
+    assert(isClose(s.position(p).y, 4, 1e-6) && abs(s.position(p).x) < 1e-6);
+    assert(s.position(b).x == 30 && s.radius(ring) == 5);
+    // a constraint between references that does not hold: a conflict, nothing moves
+    s.constrain(ConstraintKind.vertical, [edge]);
+    assert(!s.solve().solved && s.position(b).x == 30);
+    // references are not part of the outline
+    auto t = new Sketch;
+    auto r = t.circle(t.point(0, 0), 10);
+    t.freeze(r);
+    t.circle(t.point(0, 0), 4);
+    assert(t.outline().length == 2);   // the small circle and its end
 }

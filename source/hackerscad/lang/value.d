@@ -575,6 +575,8 @@ final class SolidVal
     uint[] creators;   /// per face: the feature that created it (Interp.features), 0 if unknown
     bool flat;         /// a 2D profile (planar faces) rather than a solid
     bool path;         /// a curve (wire) to sweep along
+    bool placed;       /// a profile drawn on a face or plane (a sketch's): where it lies, below
+    Vec3[4] place;     /// its frame: origin, x, y, z; the brep stays on XY, in the frame's coordinates
 
     this(Brep b, Span origin)
     {

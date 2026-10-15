@@ -79,6 +79,7 @@ struct Outcome
     TraceEntry[] trace;       /// the geometry each call made (Inspect)
     FunctionInfo[] functions; /// of the model's file, for the feature tree (empty if it did not parse)
     SketchView[] sketches;
+    PartMesh[] sketchBodies;  /// by sketch: the solid a sketch on a face is drawn on (empty for the others)
     LogLine[] log;
     Diagnostic[] diagnostics;
     string[string] sources;   /// module path → source, to render diagnostics
@@ -329,6 +330,31 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     // sketches are shown even when the evaluation failed (conflicting
     // constraints, an error after them): then marked partial
     o.sketches = sketchViews(it, absolutePath(req.path), !o.ok);
+    // the solids sketches on faces are drawn on, to show under them (once each)
+    {
+        PartMesh[Brep] made;
+        o.sketchBodies = new PartMesh[o.sketches.length];
+        foreach (i, sk; o.sketches)
+            if (sk.body !is null)
+            {
+                if (auto had = sk.body in made)
+                {
+                    o.sketchBodies[i] = *had;
+                    continue;
+                }
+                try
+                {
+                    PartResult pr;
+                    pr.name = "sketch body";
+                    pr.solid = new SolidVal(sk.body, sk.span);
+                    o.sketchBodies[i] = made[sk.body] = prepare(kernel, pr, req.tolerance);
+                }
+                catch (Exception)
+                {
+                    // not shown under the sketch
+                }
+            }
+    }
     foreach (path, m; it.modules)
         o.sources[path] = m.source;
     o.milliseconds = sw.peek.total!"msecs";

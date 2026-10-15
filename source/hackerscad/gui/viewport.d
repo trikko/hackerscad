@@ -22,7 +22,7 @@ import gdk.types : ModifierType;
 import hackerscad.geom.vec;
 import hackerscad.geom.color : alphaOf;
 import hackerscad.gui.evaluator : PartMesh;
-import hackerscad.kernel.brep : EdgeInfo, EdgeKind;
+import hackerscad.kernel.brep : Brep, EdgeInfo, EdgeKind;
 import hackerscad.lang.sketchval : SketchView;
 
 enum ViewPreset
@@ -93,6 +93,9 @@ final class Viewport
     /// Parallel projection: sizes do not shrink with the distance.
     bool orthographic;
     void delegate(Hit hit) onPick;    /// part -1 when clicking the background
+    void delegate(double x, double y) onDoubleClick;   /// a second left click soon after the first, in the same place
+    private long lastClickAt;          /// when the last left click was (hnsecs)
+    private double lastClickX = -1e9, lastClickY = -1e9;
     void delegate(Hit hit, double x, double y) onContext;   /// right click without dragging
     void delegate() onFrame;          /// after every frame (to move overlay labels)
 
@@ -128,7 +131,7 @@ final class Viewport
     private uint sketchVao, sketchVbo;
     private bool sketchDirty;
     /// lines, construction lines, highlighted lines, free points, fixed points, highlighted points (end indices)
-    private int[6] sketchRanges;
+    private int[8] sketchRanges;
 
     private uint program, gridVao, gridVbo;
     private int gridCount;
@@ -341,6 +344,25 @@ final class Viewport
                 auto h = pickSelect(startX, startY);
                 h.shift = startShift;
                 onPick(h);
+                // a double click: the system's time between the two, a few pixels apart
+                import core.time : MonoTime;
+                import gtk.settings : Settings;
+                immutable now = MonoTime.currTime.ticks;
+                immutable ms = (now - lastClickAt) * 1000 / MonoTime.ticksPerSecond;
+                int limit = 400;
+                if (auto st = Settings.getDefault())
+                    limit = st.gtkDoubleClickTime;
+                if (ms <= limit && abs(startX - lastClickX) < 6 && abs(startY - lastClickY) < 6 && onDoubleClick !is null)
+                {
+                    lastClickAt = 0;
+                    onDoubleClick(startX, startY);
+                }
+                else
+                {
+                    lastClickAt = now;
+                    lastClickX = startX;
+                    lastClickY = startY;
+                }
             }
             // a right click without movement opens the context menu
             if (!dragging && dragButton == 3 && onContext !is null)
@@ -2204,6 +2226,20 @@ final class Viewport
 
     /// The sketches that can be drawn; `faded[i]`: sketch i is drawn faint
     /// (the last good one, shown while the code has an error).
+    /// The solids sketches on faces are drawn on (SketchView.on), each
+    /// shown faint under its sketch.
+    void setSketchBodies(PartMesh[Brep] bodies)
+    {
+        sketchBodies = bodies;
+        sketchBodiesDirty = true;
+        redraw();
+    }
+
+    /// ditto, as given
+    PartMesh[Brep] sketchBodies;
+    private Gpu[Brep] sketchBodyGpu;
+    private bool sketchBodiesDirty;
+
     void setSketches(SketchView[] s, bool[] faded = null)
     {
         sketches = s;
@@ -2334,7 +2370,8 @@ final class Viewport
             return;
         import std.math : atan2, asin;
         n = n.normalized;
-        yaw = atan2(n.y, n.x);
+        // straight up or down: X to the right, as the top view has it (a sketch on a flat face reads so)
+        yaw = abs(n.z) > 1 - 1e-6 ? -PI / 2 : atan2(n.y, n.x);
         pitch = max(-PI / 2 + 0.001, min(PI / 2 - 0.001, asin(n.z)));
         fit();
     }
@@ -3732,6 +3769,42 @@ private:
             return;
         if (sketchDirty)
             uploadSketches();
+        if (sketchBodiesDirty)
+        {
+            foreach (ref g; sketchBodyGpu)
+                freeGpu(g);
+            sketchBodyGpu = null;
+            foreach (b, m; sketchBodies)
+                sketchBodyGpu[b] = uploadMesh(m);
+            sketchBodiesDirty = false;
+        }
+        // a sketch on a face: the solid it is drawn on, faint, as it was then
+        {
+            bool[Brep] drawn;
+            foreach (i; shownSketches)
+                if (i < sketches.length && sketches[i].body !is null && (sketches[i].body in drawn) is null)
+                    if (auto g = sketches[i].body in sketchBodyGpu)
+                    {
+                        drawn[sketches[i].body] = true;
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                        glDepthMask(GL_FALSE);
+                        glUniform1i(uFlat, 0);
+                        glUniform1f(uAlpha, 0.22);
+                        glUniform3f(uColor, 0.06f, 0.76f, 0.95f);   // the parts' colour (Sky Pop)
+                        glBindVertexArray(g.vao);
+                        glDrawElements(GL_TRIANGLES, g.indexCount, GL_UNSIGNED_INT, null);
+                        // its edges, so that its shape reads
+                        glUniform1i(uFlat, 1);
+                        glUniform1f(uAlpha, 0.6);
+                        glUniform3f(uColor, 0.10f, 0.30f, 0.40f);
+                        glBindVertexArray(g.edgeVao);
+                        glDrawArrays(GL_LINES, 0, g.edgeCount);
+                        glUniform1f(uAlpha, 1);
+                        glDepthMask(GL_TRUE);
+                        glDisable(GL_BLEND);
+                    }
+        }
         glDisable(GL_DEPTH_TEST);
         glUniform1i(uFlat, 1);
         // the last good sketch, while the code has an error: faint
@@ -3745,6 +3818,16 @@ private:
             glUniform1f(uAlpha, 0.4);
         }
         glBindVertexArray(sketchVao);
+        // a face's edges and what was projected onto the sketch: references, in violet, under the rest
+        glLineWidth(2);
+        if (darkStyle)
+            glUniform3f(uColor, 0.78f, 0.55f, 1.0f);
+        else
+            glUniform3f(uColor, 0.55f, 0.20f, 0.75f);
+        glDrawArrays(GL_LINES, sketchRanges[5], sketchRanges[6] - sketchRanges[5]);
+        glPointSize(4);
+        glDrawArrays(GL_POINTS, sketchRanges[6], sketchRanges[7] - sketchRanges[6]);
+        glPointSize(1);
         glLineWidth(2);
         if (darkStyle)
             glUniform3f(uColor, 0.45f, 0.65f, 1.0f);
@@ -3791,9 +3874,12 @@ private:
 
     void uploadSketches()
     {
-        float[] lines, construction, litLines, freePts, fixedPts, litPts;
+        float[] lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts;
+        // a sketch on a face is drawn where it lies
+        SketchView placing;
         void add(ref float[] a, Vec3 v)
         {
+            v = placing.world(v);
             a ~= [cast(float) v.x, cast(float) v.y, cast(float) v.z];
         }
 
@@ -3802,6 +3888,7 @@ private:
             if (index >= sketches.length)
                 continue;
             auto sk = sketches[index];
+            placing = sk;
             auto lit = litEntities[s];
             foreach (g; sk.segments)
             {
@@ -3834,16 +3921,16 @@ private:
                     || (g.corner >= 0 && (cast(size_t) g.corner in lit) !is null);
                 foreach (j; 0 .. pts.length - 1)
                 {
-                    add(on ? litLines : g.construction ? construction : lines, pts[j]);
-                    add(on ? litLines : g.construction ? construction : lines, pts[j + 1]);
+                    add(on ? litLines : g.reference ? refLines : g.construction ? construction : lines, pts[j]);
+                    add(on ? litLines : g.reference ? refLines : g.construction ? construction : lines, pts[j + 1]);
                 }
             }
             foreach (p; sk.points)
-                add((p.entity in lit) !is null ? litPts : p.free ? freePts : fixedPts, p.pos);
+                add((p.entity in lit) !is null ? litPts : p.reference ? refPts : p.free ? freePts : fixedPts, p.pos);
         }
-        auto all = lines ~ construction ~ litLines ~ freePts ~ fixedPts ~ litPts;
+        auto all = lines ~ construction ~ litLines ~ freePts ~ fixedPts ~ litPts ~ refLines ~ refPts;
         int end = 0;
-        foreach (i, part; [lines, construction, litLines, freePts, fixedPts, litPts])
+        foreach (i, part; [lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts])
         {
             end += cast(int)(part.length / 3);
             sketchRanges[i] = end;

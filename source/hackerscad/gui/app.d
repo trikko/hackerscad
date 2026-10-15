@@ -953,6 +953,8 @@ final class MainWindow
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = &picked;
+        // a double click on a flat face: the view looks straight at it
+        viewport.onDoubleClick = (double x, double y) { lookAtFace(x, y); };
         // the selection mode kept from the last run (its buttons were made before the view)
         foreach (i, b; selectChoice)
             if (b !is null && b.getActive())
@@ -1694,6 +1696,20 @@ private:
             stepsPanel.update(o.features, o.trace, o.functions, path, text().splitLines);
         }
         viewport.setSketches(last.sketches, staleSketch);
+        {
+            // the solids sketches on faces are drawn on: the new ones, and those
+            // of the sketches still shown from before (the last good one)
+            import hackerscad.kernel.brep : Brep;
+            PartMesh[Brep] bodies;
+            foreach (i, sk; o.sketches)
+                if (sk.body !is null && i < o.sketchBodies.length && o.sketchBodies[i].vertices.length)
+                    bodies[sk.body] = o.sketchBodies[i];
+            foreach (sk; last.sketches)
+                if (sk.body !is null && (sk.body in bodies) is null)
+                    if (auto had = sk.body in viewport.sketchBodies)
+                        bodies[sk.body] = *had;
+            viewport.setSketchBodies(bodies);
+        }
         updateSketchMenu();
         // the sketch shown stays (a dimension was changed): of the same lines, in the new model
         immutable sketchWas = sketchLines;
@@ -3825,7 +3841,10 @@ private:
         foreach (f; found)
             lit ~= highlight ? f.highlight : null;
         viewport.showSketches(which, lit);
-        if (another)
+        // a sketch on a face: seen from outside that face
+        if (another && which.length && which[0] < last.sketches.length && last.sketches[which[0]].placed)
+            viewport.lookAlong(last.sketches[which[0]].place[3]);
+        else if (another)
             viewport.setView(ViewPreset.top);
         updateDimensions();
     }
@@ -3900,6 +3919,7 @@ private:
             auto sk = last.sketches[index];
             JSONValue js = ["line": JSONValue(sk.span.line), "solved": JSONValue(sk.solved)];
             js["degrees_of_freedom"] = sk.dof;
+            sketchPlaneJson(js, sk);
             JSONValue[] free;
             foreach (pt; sk.points)
                 if (pt.free)
@@ -4230,6 +4250,15 @@ private:
             entries ~= I(nf == 1 ? "Draft face…" : format("Draft %d faces…", nf), () => ctx("draft", "3.deg"));
             entries ~= I(nf == 1 ? "Extrude face…" : format("Extrude %d faces…", nf), () => ctx("extrude-face", "5.mm"));
             entries ~= I(nf == 1 ? "Cut face…" : format("Cut %d faces…", nf), () => ctx("cut-face", "2.mm"));
+            // a sketch to draw on a flat face, its edges as references
+            if (nf == 1 && canSketchOn(contextHit.part, selFaces[0]))
+            {
+                immutable index = contextHit.part, face = selFaces[0];
+                entries ~= I("Sketch on face…", () {
+                    if (auto problem = sketchOnFaceOf(index, face))
+                        info(problem);
+                });
+            }
         }
         if (hit.face >= 0)
         {
@@ -4366,11 +4395,13 @@ private:
                 sectionToggle.setActive(true);
                 updateSection(true);
             });
-            view ~= I("Look at face", () {
-                Vec3 p, n;
-                if (viewport.selectedPlane(p, n))
-                    viewport.lookAlong(n);
-            });
+        }
+
+        // straight at the face under the click (as a double click on it)
+        {
+            immutable cx = x, cy = y;
+            if (faceUnder(cx, cy, null))
+                entries ~= I("Look at face", () { lookAtFace(cx, cy); });
         }
 
         // a turn about what is picked: a face's normal (a round face's axis), an edge (a hinge)
@@ -4553,6 +4584,73 @@ private:
         SolidVal sv;
         auto it = selectorInterp(sv);
         return edgesSelector(it, sv, selEdges);
+    }
+
+    /// Whether a flat face is under view coordinates (x, y), and its outward
+    /// normal (null: only whether).
+    bool faceUnder(double x, double y, Vec3* normal)
+    {
+        import hackerscad.gui.measure : faceItem;
+        auto hit = viewport.pickAny(x, y);
+        if (hit.part < 0 || hit.face < 0 || hit.part >= last.parts.length)
+            return false;
+        if (!faceItem(last.parts[hit.part], hit.face).planar || hit.normal.length < 0.5)
+            return false;
+        if (normal !is null)
+            *normal = hit.normal.normalized;
+        return true;
+    }
+
+    /// Look at face (a double click on a flat face, the right-click menu,
+    /// "view" with look_at_face on the socket): the view straight at the face
+    /// under (x, y), from outside it; the problem, or null.
+    string lookAtFace(double x, double y)
+    {
+        if (frozen)
+            return "the view is annotated: it does not move";
+        Vec3 n;
+        if (!faceUnder(x, y, &n))
+            return "no flat face there";
+        viewport.lookAlong(n);
+        return null;
+    }
+
+    /// Whether face `face` of part `index` is flat, to draw a sketch on, and
+    /// the part is a whole one (a piece of @parts is made with the others).
+    bool canSketchOn(int index, int face)
+    {
+        import hackerscad.gui.measure : faceItem;
+        return index >= 0 && index < last.parts.length && !isPiece(index) && faceItem(last.parts[index], face).planar;
+    }
+
+    /// Sketch on face…: the part's function draws a sketch on face `face`
+    /// (Sketch on face… in the right-click menu, "feature" with action
+    /// "sketch" on the socket); the problem, or null.
+    string sketchOnFaceOf(int index, int face)
+    {
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        if (!canSketchOn(index, face))
+            return "a sketch goes on a flat face of a whole part (not a piece of @parts)";
+        auto part = last.parts[index];
+        if (part.span.file != absolutePath(path))
+            return format("part '%s' is defined in another file", part.name);
+        try
+        {
+            import hackerscad.tool.codegen : sketchOnFace;
+            SolidVal sv;
+            auto it = selectorInterp(part, sv);
+            applyEdit(sketchOnFace(text(), path, part.fn, facesSelector(it, sv, [face])));
+            viewport.setSelection(null);
+            // the sketch shows as soon as the cursor, on its line, has it evaluated
+            followArmed = true;
+            info("");
+            return null;
+        }
+        catch (CodegenException e)
+            return e.msg;
+        catch (HcadError e)
+            return "fix the errors in the code first: " ~ e.msg;
     }
 
     /// A right-click menu entry: its code appended, the size `placeholder`
@@ -4906,6 +5004,20 @@ private:
         }
     }
 
+    /// A sketch drawn on a face or plane, for agents: where (origin, x, y,
+    /// normal; points are given in its x, y) and how many references it has.
+    static void sketchPlaneJson(ref JSONValue js, const SketchView sk)
+    {
+        if (!sk.placed)
+            return;
+        JSONValue v(Vec3 p) => JSONValue([p.x, p.y, p.z]);
+        js["plane"] = ["origin": v(sk.place[0]), "x": v(sk.place[1]), "y": v(sk.place[2]), "normal": v(sk.place[3])];
+        size_t refs;
+        foreach (e; sk.entities)
+            refs += e.reference && e.kind != "point";
+        js["references"] = refs;
+    }
+
     /// The sketches of the model, for the control socket: whether each is
     /// solved, how many points can still move, and its dimensions with the
     /// place of their value in the code (to change it with "dimension").
@@ -4916,6 +5028,7 @@ private:
         {
             JSONValue js = ["line": JSONValue(sk.span.line), "solved": JSONValue(sk.solved)];
             js["degrees_of_freedom"] = sk.dof;
+            sketchPlaneJson(js, sk);
             if (i < staleSketch.length && staleSketch[i])
                 js["stale"] = true;   // the last good one: the code has an error in it
             else if (sk.partial)
