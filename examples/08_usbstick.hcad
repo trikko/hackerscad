@@ -30,7 +30,7 @@ immutable plugHeight = 4.5.mm;
 immutable plugLength = 12.mm;
 immutable sheet = 0.3.mm;
 
-@part("#2b2b33")
+@part("Red Pop")
 Solid body()
 {
     auto b = box(bodyLength, bodyWidth, bodyThickness)
