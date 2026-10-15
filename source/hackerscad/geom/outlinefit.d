@@ -6,7 +6,7 @@ module hackerscad.geom.outlinefit;
 import std.algorithm : max, min, reverse;
 import std.array : array;
 import std.format : format;
-import std.math : abs, asin, atan2, cos, PI, round, sin, sqrt;
+import std.math : abs, asin, atan2, ceil, cos, PI, round, sin, sqrt;
 
 import hackerscad.geom.mesh;
 import hackerscad.geom.meshfeatures : plausible;
@@ -439,16 +439,20 @@ string describe(const Element[][] loops)
     return s;
 }
 
-/// The outlines as a hackerscad sketch, in the plane's axes: points pinned
-/// where they are, lines, arcs and circles; `name` its function.
+/// The outlines as a hackerscad sketch, in the plane's axes: the points of
+/// lines and arcs pinned where they are, each arc's centre left to its radius
+/// (pinned too, rounded to the hundredth, the two ends would not be the same
+/// distance from it and the sketch would not solve); `name` its function.
 string sketchCode(const Element[][] loops, string name)
 {
     string s = format("/// The section, from the mesh: extrude it, or turn it into a shape of your own.\nProfile %s()\n{\n    auto s = sketch();\n", name);
-    int k;
-    string point(P2 p)
+    int k, arcs;
+    P2[string] at;   // where each point is, as written
+    string point(P2 p, bool fixed = true)
     {
         immutable id = format("p%d", k++);
-        s ~= format("    auto %s = s.point(%s.mm, %s.mm, fixed: true);\n", id, mm(p[0]), mm(p[1]));
+        s ~= format("    auto %s = s.point(%s.mm, %s.mm%s);\n", id, mm(p[0]), mm(p[1]), fixed ? ", fixed: true" : "");
+        at[id] = [plausible(p[0]), plausible(p[1])];
         return id;
     }
     foreach (loop; loops)
@@ -466,12 +470,18 @@ string sketchCode(const Element[][] loops, string name)
             immutable next = i + 1 == loop.length ? first : point(e.to);
             if (e.arc)
             {
-                auto c = point(e.center);
+                // the centre where the radius puts it, on the chord's bisector,
+                // starting where it was found; never closer than half the chord
+                auto c = point(e.center, false);
+                immutable half = dist(at[prev], at[next]) / 2;
+                immutable r = max(plausible(e.radius), ceil((half + 1e-4) * 100) / 100);
+                immutable id = format("a%d", arcs++);
                 // arcs go counter-clockwise from start to end
                 if (e.sweep > 0)
-                    s ~= format("    s.arc(%s, %s, %s);\n", c, prev, next);
+                    s ~= format("    auto %s = s.arc(%s, %s, %s);\n", id, c, prev, next);
                 else
-                    s ~= format("    s.arc(%s, %s, %s);\n", c, next, prev);
+                    s ~= format("    auto %s = s.arc(%s, %s, %s);\n", id, c, next, prev);
+                s ~= format("    s.radius(%s, %s.mm);\n", id, format("%g", r));
             }
             else
                 s ~= format("    s.line(%s, %s);\n", prev, next);

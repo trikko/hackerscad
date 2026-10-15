@@ -1565,10 +1565,18 @@ final class SketchVal : ObjectVal
         {
             size_t[] tags;
             foreach (c; rep.conflicting)
-                tags ~= sk.constraints[c].tag;
+                // past the constraints: equations the sketch adds itself
+                if (c < sk.constraints.length)
+                    tags ~= sk.constraints[c].tag;
+            import std.algorithm : canFind;
+            immutable where = lines(tags, constraintSpans);
+            if (where.length == 0)
+                throw new HcadError(Code.sketch, "the sketch constraints conflict, and no single one is to blame: "
+                    ~ "several contradict each other, or the points start too far from where they must go", span,
+                    "draw the points nearer where they go, pin fewer of them (fixed: true), or leave out the "
+                    ~ "constraints added last until it solves");
             throw new HcadError(Code.sketch, format("the sketch constraints conflict: check the constraints at line%s %s",
-                tags.length > 1 ? "s" : "", lines(tags, constraintSpans)), tags.length ? constraintSpans[tags[0]] : span,
-                "remove or change one of them");
+                where.canFind(",") ? "s" : "", where), constraintSpans[tags[0]], "remove or change one of them");
         }
         import hackerscad.kernel.brep : OutlineSeg;
 

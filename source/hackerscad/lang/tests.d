@@ -1097,6 +1097,27 @@ unittest
         }
     });
     assert(e.code == Code.sketch && e.message.canFind("conflict"), e.message);
+    assert(e.message.canFind("at line"), e.message);
+
+    // two arcs whose pinned ends are not the same distance from their pinned
+    // centres: no single constraint to blame, and no empty "at line"
+    e = error(q{
+        @part Solid p()
+        {
+            auto s = sketch();
+            foreach (x; [0, 20])
+            {
+                auto c = s.point(x, 0, fixed: true);
+                auto a = s.point(x + 5, 0, fixed: true), b = s.point(x, 5.02, fixed: true);
+                s.arc(c, a, b);
+                s.line(b, c);
+                s.line(c, a);
+            }
+            return s.profile.extrude(1);
+        }
+    });
+    assert(e.code == Code.sketch && e.message.canFind("no single one is to blame"), e.message);
+    assert(!e.message.canFind("at line"), e.message);
     e = error(q{
         @part Solid p()
         {
@@ -2568,6 +2589,20 @@ unittest
     // 40 × 20 less the four corners' squares plus their quarter circles, less the hole
     immutable expected = 800 - 4 * (25 - PI * 25 / 4) - PI * 9;
     assert(abs(r.log[0].text.to!double - expected) < 0.5, r.log[0].text);
+
+    // sizes that do not round evenly (corners r 4.03 round a centre off the
+    // grid): the arcs' ends, pinned to the hundredth, are not the same distance
+    // from a pinned centre; the sketch solves, with nothing left free
+    auto odd = kernel.translate(kernel.extrude(kernel.profileRound(kernel.rect(40.13, 20.07), 4.03), 6, 0),
+        Vec3(0.333, -0.271, 0));
+    write(buildPath(dir, "odd.stl"), toStl(kernel.tessellate(odd, 0.01, 0.1).welded));
+    immutable oddRep = sectionReport(buildPath(dir, "odd.stl"), null, "xy", 3);
+    auto oddCode = oddRep[oddRep.indexOf("/// The section") .. $];
+    auto o = runModel("import std.math;\n" ~ oddCode ~ "@part Solid p() => section().extrude(1.mm);\n"
+        ~ "unittest { writeln(section().area / 1.mm ^^ 2); }\n");
+    assert(o.diagnostics.length == 0, oddCode ~ o.diagnostics[0].message);
+    immutable oddArea = 40.13 * 20.07 - 4 * 4.03 ^^ 2 * (1 - PI / 4);
+    assert(abs(o.log[0].text.to!double - oddArea) < 0.5, o.log[0].text);
 }
 
 unittest
