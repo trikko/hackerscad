@@ -31,7 +31,8 @@ usage:
   hcad features FILE [--part NAME] [--json]
       what a mesh (.stl .obj .3mf), a STEP file or a model is made of, to
       remodel it: flat faces, holes and shafts, cones, spheres, roundings,
-      patterns of holes, with plausible sizes
+      chamfers, surfaces turned round an axis, patterns of holes, with
+      plausible sizes
   hcad literals FILE.hcad [--original PART|MESH]
       the numbers written more than once in a model, with their lines, and
       which sizes of the original they are (a hole's diameter, an axis): the

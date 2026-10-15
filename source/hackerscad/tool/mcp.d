@@ -37,7 +37,8 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "reply is the questions, before any code or hcad_gui_new/edit, even when told to make it; estimate only "
     ~ "if the user says so. Ask instead of guessing when it changes the result: the sizes of a real part to copy or build onto (say exactly what to measure), a font that cannot "
     ~ "be recognised (offer a similar installed one or tracing it as a sketch), the process or printer for "
-    ~ "fits. For an outline given by its dimensions, prefer a constrained sketch. To ask or to show where, "
+    ~ "fits. To remodel a mesh or STEP, no questions: its sizes are there; hcad_docs topic remodel gives the "
+    ~ "method. For an outline given by its dimensions, prefer a constrained sketch. To ask or to show where, "
     ~ "frame the view on it, then mark it with hcad_gui_annotate in a colour that stands out; read the user's "
     ~ "marks in hcad_gui_state when they say \"here\"; clear yours when done (the view is locked meanwhile).";
 
@@ -643,7 +644,8 @@ JSONValue[] toolList()
 
     return [
         tool("hcad_docs", "Reference of the .hcad language, the geometry API, conventions and examples. "
-            ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware') for a short excerpt. format: "
+            ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware', 'remodel') for a short excerpt "
+            ~ "(a topic a heading names gives that whole section). format: "
             ~ "cheatsheet gives every function in one line each (compact), summary the short index (llms.txt), agents "
             ~ "and skill the agent guides, stamp which docs the server has (an installed skill showing another is out "
             ~ "of date: refresh it with format skill).",
@@ -714,8 +716,9 @@ JSONValue[] toolList()
             ~ "curved or tilted: what shading shows), and pictures of the 'views' (12) directions that show most of "
             ~ "them ('fixed': twelve that stay the same, to compare versions): grey in common, red only in the "
             ~ "original, blue only in the copy, violet the surface facing otherwise. 'voids': compare their holes, "
-            ~ "pockets and cavities made solid instead (hidden inside, they show from outside). Use it after "
-            ~ "hcad_compare: what it lists is what a person sees first. Fix the outside first; only once it matches, "
+            ~ "pockets and cavities made solid instead (hidden inside, they show from outside). Use it from the first "
+            ~ "comparison on, with hcad_diff: what it lists is what a person sees first, and what volumes miss. Fix "
+            ~ "the outside first; only once it matches, "
             ~ "and only if something still differs, 'depth' (mm) peels both like an onion (that much cut away "
             ~ "towards each view) to compare the inside; the answer says when going deeper is no use.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "views": {"type": "integer"}, `
@@ -724,22 +727,26 @@ JSONValue[] toolList()
         tool("hcad_diff", "Where a part of a model (a copy) differs from another (the original, e.g. a mesh loaded as a "
             ~ "see-through reference part), as pieces of material: what the copy lacks (to add) and what it has too much "
             ~ "of (to cut), largest first, each with its box, volume, centre of mass and how much of its box it fills (a "
-            ~ "full box is a box() to add or cut). Both are filled into cubes of 'resolution' mm (default: the size / "
-            ~ "250); differences thinner than two cubes are left out.",
+            ~ "full box is a box() to add or cut), and for the largest the hcad_section (plane, at, compare) that shows "
+            ~ "its shape. Both are filled into cubes of 'resolution' mm (default: the size / 250); differences thinner "
+            ~ "than two cubes are listed apart, with how much they make (chamfers, lettering, notches: hcad_lines "
+            ~ "shows them).",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "resolution": {"type": "number"}`, `["a", "b"]`),
         tool("hcad_fit", "Tune measures of a copy to its original: the @param lengths named in 'params' (of the .hcad "
             ~ "model at 'path') are moved, by the downhill simplex method, to make the volume where part 'a' (the copy) "
             ~ "and part 'b' (the original) differ as small as it goes. Returns the values found, the volume before and "
-            ~ "after, and the -D overrides; then write them into the model. Each step evaluates the model: a few "
-            ~ "parameters at a time (each evaluation takes a second or two).",
+            ~ "after, and the -D overrides; then write them into the model. When the sizes take away little of the "
+            ~ "difference it says so: the shape differs (cut sections elsewhere before fitting again). Each step "
+            ~ "evaluates the model: a few parameters at a time (each evaluation takes a second or two).",
             `"path": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"params": {"type": "array", "items": {"type": "string"}}, "evaluations": {"type": "integer"}`,
             `["path", "a", "b", "params"]`),
         tool("hcad_match", "The operations of a copy and its original (two parts of an .hcad model: 'a' the copy, 'b' "
             ~ "the original) matched one by one: the holes, shafts, cones, roundings, spheres and planes hcad_features "
             ~ "finds, and the holes and pockets met along x, y and z. Lists what is in the original and not in the copy, "
-            ~ "in the copy and not in the original, and in both but different, however small (a chamfer, a counterbore, "
-            ~ "a teardrop where the original has a circle).",
+            ~ "in the copy and not in the original, and in both but different (a chamfer, a counterbore, a teardrop "
+            ~ "where the original has a circle), the largest first; a hole cut in steps (a tapered nut trap) is one "
+            ~ "entry, told as stepped; slivers under 1 mm² or mm³ are only counted.",
             `"path": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}`, `["path", "a", "b"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),

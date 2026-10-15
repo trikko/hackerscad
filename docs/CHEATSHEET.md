@@ -186,7 +186,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.centroid → Vec3` — The centre of mass (of a uniform solid).
 - `s.section(plane: Plane) → Profile` — The cut of the solid by a plane: a profile in that plane.
 - `s.projection(plane: Plane) → Profile` — The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY.
-- `s.features → string` — What the solid is made of, one surface a line: flat faces, holes and shafts (with the ISO size they match), cones, spheres, roundings, patterns of holes; to remodel a loaded mesh: writeln(load("x.stl").features).
+- `s.features → string` — What the solid is made of, one surface a line: flat faces, holes and shafts (with the ISO size they match), cones, spheres, roundings, chamfers (with their size), surfaces turned round an axis, patterns of holes; to remodel a loaded mesh: writeln(load("x.stl").features).
 - `s.aligned → Solid` — The solid lying on its largest flat face, its longest extent along X, centred in X and Y on z = 0: a mesh found tilted, set straight to remodel it.
 - `s.deviation(other: Solid) → Length` — How far apart the two surfaces are at most, both ways: to check a remodelled part against the mesh it copies, assert(clone.deviation(original) < 0.1.mm).
 - `s.overhangs(angle: Angle) → Area` — The area facing down more steeply than the angle from a wall (45° by default), off the bed: what needs supports.

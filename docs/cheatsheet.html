@@ -206,7 +206,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.centroid → Vec3</dt><dd>The centre of mass (of a uniform solid).</dd>
 <dt>s.section(plane: Plane) → Profile</dt><dd>The cut of the solid by a plane: a profile in that plane.</dd>
 <dt>s.projection(plane: Plane) → Profile</dt><dd>The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY.</dd>
-<dt>s.features → string</dt><dd>What the solid is made of, one surface a line: flat faces, holes and shafts (with the ISO size they match), cones, spheres, roundings, patterns of holes; to remodel a loaded mesh: writeln(load("x.stl").features).</dd>
+<dt>s.features → string</dt><dd>What the solid is made of, one surface a line: flat faces, holes and shafts (with the ISO size they match), cones, spheres, roundings, chamfers (with their size), surfaces turned round an axis, patterns of holes; to remodel a loaded mesh: writeln(load("x.stl").features).</dd>
 <dt>s.aligned → Solid</dt><dd>The solid lying on its largest flat face, its longest extent along X, centred in X and Y on z = 0: a mesh found tilted, set straight to remodel it.</dd>
 <dt>s.deviation(other: Solid) → Length</dt><dd>How far apart the two surfaces are at most, both ways: to check a remodelled part against the mesh it copies, assert(clone.deviation(original) &lt; 0.1.mm).</dd>
 <dt>s.overhangs(angle: Angle) → Area</dt><dd>The area facing down more steeply than the angle from a wall (45° by default), off the bed: what needs supports.</dd>

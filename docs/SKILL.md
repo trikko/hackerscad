@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-b118b6f5`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-e44c5abd`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-b118b6f5`:** this text is up to date.
+- **It prints `0.3.1-e44c5abd`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -55,7 +55,10 @@ format stamp):
   column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
   views: look at them), hcad_measure, hcad_export (.3mf, .stl for one part,
   .zip for one STL per part, .step, .png; 'parts' picks some),
-  hcad_drawing (.pdf .svg .dxf). When the user has the application open, the
+  hcad_drawing (.pdf .svg .dxf); to remodel a mesh or STEP (see
+  Remodelling a mesh), hcad_features, hcad_scan, hcad_section, hcad_diff,
+  hcad_lines, hcad_compare, hcad_match, hcad_fit and hcad_literals
+  (hcad_docs topic remodel gives the method). When the user has the application open, the
   hcad_gui_* tools drive it (open, edit the code, set parameters, move the
   view, pick faces, select and measure, context menu, section plane, rollback,
   inspect (the solids and 2D profiles a line or function makes), save,
@@ -95,17 +98,22 @@ format stamp):
   shafts, cones, roundings, hole patterns, with plausible sizes): the start
   for remodelling a part given as STL (hcad_features with the server);
   `hcad section part.stl --plane xy --at 3` (hcad_section) a cut across it
-  as lines, arcs and circles, and as a sketch ready to extrude;
+  as lines, arcs and circles, and as a sketch ready to extrude (`--region
+  U0,V0,U1,V1` only the outlines inside);
   `hcad compare model.hcad --a clone --b original -o map.png` (hcad_compare)
   how far the remodelled part is from the mesh, with a coloured map and
   the surface patches that do not match; `hcad diff` (hcad_diff) the
-  material to add or cut; `hcad lines` (hcad_lines) both drawn as lines
+  material to add or cut, the thin differences it leaves out, and the
+  section that shows each region; `hcad match` (hcad_match) the operations
+  matched one by one; `hcad lines` (hcad_lines) both drawn as lines
   from many sides, the lines only one has (chamfers, countersinks,
   letterings: what the eye sees first; once the outside matches,
   `--depth MM` peels both, `--voids` compares the holes made solid;
   violet marks surface facing otherwise: twisted, curved); `hcad scan`
   (hcad_scan) holes and pockets along
-  an axis; `hcad fit` (hcad_fit) tunes @param lengths to the original.
+  an axis; `hcad fit` (hcad_fit) tunes @param lengths to the original;
+  `hcad literals model.hcad --original original` (hcad_literals) the
+  numbers the model repeats, and which sizes of the original they are.
   `--printability` adds per part the overhangs needing supports and the
   walls too thin to print (marked in the pictures: red stripes, violet
   hatching); with the window, `hcad_gui_view` with `printability: true`.
@@ -192,7 +200,8 @@ format stamp):
   tracing; never swap the font before the user has chosen (saying so
   afterwards is not enough). Working with no one to ask (a task run on its
   own): trace the letters as a sketch, and say so in the report. Logos, engraved or hand-drawn
-  lettering are traced as a sketch.
+  lettering are traced as a sketch. Lettering on a mesh or STEP to copy
+  needs no question: its exact shape is there (see Remodelling a mesh).
 - Constants are immutable; module-level values cannot be modified.
 - Expose the dimensions a user may want to change as parameters:
       @param("Outer width", min: 20.mm, max: 200.mm)
@@ -257,7 +266,8 @@ format stamp):
   lay it so (its largest flat face on the ground); look at --printability.
 
 ## Copying a real part, or building onto one
-- From a photo or a real object to copy or build onto, your first reply is
+- From a photo or a real object to copy or build onto (not a mesh or STEP:
+  those have the sizes, see below), your first reply is
   the questions, before writing any code or touching the user's window
   (no hcad_gui_new, no hcad_gui_edit), even when the user says "make it"
   without giving sizes. In one message: the sizes to measure (below), the
@@ -275,10 +285,48 @@ format stamp):
   @params to correct after a test print.
 - From a photo: ask for one known size (the scale) and about the hidden
   sides; say which sizes are guessed.
-- From a mesh: straighten it if tilted (load(…).aligned); take exact
-  outlines from hcad section, rebuild them as sketches, then compare and
-  lines (--fixed) until nothing differs; look at the two sections drawn on
-  each other (red/blue edges show what the numbers miss).
+
+## Remodelling a mesh or STEP
+- The sizes are in the file: start at once, no questions. Load it as a
+  see-through reference part beside the copy (@part("slategray", alpha:
+  0.3, export: false) Solid original() => load("x.stl");), straightened
+  if tilted (load(…).aligned).
+- 1, read it: hcad_features (chamfers with their size, holes, surfaces
+  turned round an axis), hcad_scan along x, y and z (the holes and pockets
+  as the operations they were made with), then hcad_section at the levels
+  the scans name: exact lines and arcs (region: only the outlines inside a
+  rectangle, a lettering, a pocket).
+- 2, build from the largest to the smallest: the outside as one outline
+  per stretch, extruded; the chamfers of its end faces before anything is
+  cut in them; then holes, pockets and traps; last small chamfers, notches
+  and lettering.
+- 3, compare every round with three tools, from the first round on:
+  hcad_diff (where material is missing or too much, and the section that
+  shows each region); hcad_lines (what the eye sees: chamfers, lettering,
+  notches, which volumes miss); hcad_section with compare at the place
+  hcad_diff names (the copy's outline drawn on the original's).
+- 4, then: hcad_match (the operations one by one: a hexagon where the copy
+  has a circle, a trap cut in steps, a notch for printing); hcad_lines with
+  voids and depth once the outside matches; hcad_fit only to tune sizes of
+  a shape already right.
+- 5, done when hcad_compare finds 95% or more of both surfaces within
+  0.1 mm, and hcad_lines lists nothing large.
+- 6, name the measures that matter: hcad_literals lists the numbers the
+  model repeats and which sizes of the original they are (a hole's
+  diameter, an axis); make those @params or named constants, use the
+  names, and put the relations in unittest blocks (the rod fits its hole).
+- What the numbers do not say: hcad_diff leaves out what is thinner than
+  two cubes, and says how much it left (chamfers, lettering, notches: look
+  at hcad_lines). When hcad_fit takes away little, or moves a size away
+  from what an exact section measures, the shape differs, not the sizes:
+  cut sections elsewhere, off the axis too (a step that drops towards the
+  sides is often turned round an axis; hcad_features names it).
+- Parts printed and shared online have habits to look for: notches on top
+  of sideways holes, a layer closing a hole for a millimetre (printed over,
+  drilled after), teardrop points cut flat at an angle that is not 45°
+  (read it from the section, not teardrop()), nut traps wider at the mouth,
+  0.5 mm chamfers where holes open. Small regular grooves 0.5 mm deep in a
+  face are lettering: trace it from a section 0.25 mm inside the face.
 
 ## Before saying it is done
 - No errors and no warnings (an under-constrained sketch's warning counts);

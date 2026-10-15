@@ -83,7 +83,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   tracing; never swap the font before the user has chosen (saying so
   afterwards is not enough). Working with no one to ask (a task run on its
   own): trace the letters as a sketch, and say so in the report. Logos, engraved or hand-drawn
-  lettering are traced as a sketch.
+  lettering are traced as a sketch. Lettering on a mesh or STEP to copy
+  needs no question: its exact shape is there (see Remodelling a mesh).
 - Constants are immutable; module-level values cannot be modified.
 - Expose the dimensions a user may want to change as parameters:
       @param("Outer width", min: 20.mm, max: 200.mm)
@@ -148,7 +149,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   lay it so (its largest flat face on the ground); look at --printability.
 
 ## Copying a real part, or building onto one
-- From a photo or a real object to copy or build onto, your first reply is
+- From a photo or a real object to copy or build onto (not a mesh or STEP:
+  those have the sizes, see below), your first reply is
   the questions, before writing any code or touching the user's window
   (no hcad_gui_new, no hcad_gui_edit), even when the user says "make it"
   without giving sizes. In one message: the sizes to measure (below), the
@@ -166,10 +168,48 @@ dimensions and pictures, compare them with the request, fix, then export.
   @params to correct after a test print.
 - From a photo: ask for one known size (the scale) and about the hidden
   sides; say which sizes are guessed.
-- From a mesh: straighten it if tilted (load(…).aligned); take exact
-  outlines from hcad section, rebuild them as sketches, then compare and
-  lines (--fixed) until nothing differs; look at the two sections drawn on
-  each other (red/blue edges show what the numbers miss).
+
+## Remodelling a mesh or STEP
+- The sizes are in the file: start at once, no questions. Load it as a
+  see-through reference part beside the copy (@part("slategray", alpha:
+  0.3, export: false) Solid original() => load("x.stl");), straightened
+  if tilted (load(…).aligned).
+- 1, read it: hcad_features (chamfers with their size, holes, surfaces
+  turned round an axis), hcad_scan along x, y and z (the holes and pockets
+  as the operations they were made with), then hcad_section at the levels
+  the scans name: exact lines and arcs (region: only the outlines inside a
+  rectangle, a lettering, a pocket).
+- 2, build from the largest to the smallest: the outside as one outline
+  per stretch, extruded; the chamfers of its end faces before anything is
+  cut in them; then holes, pockets and traps; last small chamfers, notches
+  and lettering.
+- 3, compare every round with three tools, from the first round on:
+  hcad_diff (where material is missing or too much, and the section that
+  shows each region); hcad_lines (what the eye sees: chamfers, lettering,
+  notches, which volumes miss); hcad_section with compare at the place
+  hcad_diff names (the copy's outline drawn on the original's).
+- 4, then: hcad_match (the operations one by one: a hexagon where the copy
+  has a circle, a trap cut in steps, a notch for printing); hcad_lines with
+  voids and depth once the outside matches; hcad_fit only to tune sizes of
+  a shape already right.
+- 5, done when hcad_compare finds 95% or more of both surfaces within
+  0.1 mm, and hcad_lines lists nothing large.
+- 6, name the measures that matter: hcad_literals lists the numbers the
+  model repeats and which sizes of the original they are (a hole's
+  diameter, an axis); make those @params or named constants, use the
+  names, and put the relations in unittest blocks (the rod fits its hole).
+- What the numbers do not say: hcad_diff leaves out what is thinner than
+  two cubes, and says how much it left (chamfers, lettering, notches: look
+  at hcad_lines). When hcad_fit takes away little, or moves a size away
+  from what an exact section measures, the shape differs, not the sizes:
+  cut sections elsewhere, off the axis too (a step that drops towards the
+  sides is often turned round an axis; hcad_features names it).
+- Parts printed and shared online have habits to look for: notches on top
+  of sideways holes, a layer closing a hole for a millimetre (printed over,
+  drilled after), teardrop points cut flat at an angle that is not 45°
+  (read it from the section, not teardrop()), nut traps wider at the mouth,
+  0.5 mm chamfers where holes open. Small regular grooves 0.5 mm deep in a
+  face are lettering: trace it from a section 0.25 mm inside the face.
 
 ## Before saying it is done
 - No errors and no warnings (an under-constrained sketch's warning counts);
@@ -352,7 +392,7 @@ basic construct once, with comments saying what each makes appear; in the applic
   ```
 - **Separate bodies:** `s.pieces` lists the disconnected bodies of a solid (e.g. after a cut through it), ordered by position along X, then Y, then Z; pick one with `[i]` or sort them (`s.pieces.sort((a, b) => a.volume > b.volume)`). A list of solids also says which are where: `.above(plane)` and `.below(plane)` (by centre of mass, so the pieces of a split, which touch the plane, count), `.crossing(plane)` (those it cuts through), `.nearest(point)`, `.largest`, `.smallest`, and `.top`, `.bottom`, `.left`, `.right`, `.front`, `.back` (the highest, lowest…): `carlo().split(cutPlane).below(cutPlane).largest`. To make parts of them, see `@parts`.
 - **Push and pull:** `s.push(from: ref, by: 5.mm)` moves a solid away from a point, a Plane or an Axis, `s.pull(to: ref, by: 5.mm)` towards it, along the line from the reference to the solid's centre of mass (from a plane along its normal, from an axis square to it). On a list each solid goes its own way, so the pieces of a cut spread apart, an exploded view: `carlo().split(cutPlane).push(from: cutPlane, by: 4.mm)`. A solid whose centre is on the reference stays, with a warning.
-- **Importing parts:** `load("part.stl")`, `load("part.obj")`, `load("part.3mf")`, `load("part.step")`, with `scale:` (STL and OBJ are read in mm; 3MF uses its own unit and build transforms). Meshes become solids (coplanar triangles merged into faces, closed meshes only), STEP files keep their exact geometry; both can be cut, filleted, measured and selected like any other solid. Paths are relative to the model file and must stay inside the project directory. To remodel a mesh exactly, set it straight first if it came tilted (`load("part.stl").aligned` lies on its largest flat face, longest along X, centred on z = 0); `writeln(load("part.stl").features)` lists what it is made of (flat faces, holes and shafts with the ISO size they match, cones, spheres, roundings, patterns of holes, with plausible sizes; `hcad features part.stl` on the command line, `hcad_features` for agents); load it as a see-through reference part to compare. `hcad section part.stl --plane xy --at 3` (`hcad_section` for agents) gives a cut across it as lines, arcs and circles with their sizes, and as a sketch ready to paste and extrude. `clone.deviation(original)` is how far apart the two surfaces are at most (`assert(clone.deviation(original) < 0.2.mm)` in a unittest); `hcad compare model.hcad --a clone --b original -o map.png` (`hcad_compare`) also gives the mean, the share within a tolerance, a picture of the clone coloured green where it matches, yellow at the tolerance, red beyond, and the patches of each surface the other does not follow (area, offset, facing: a missing chamfer or countersink shows there). `hcad diff` lists the pieces of material to add or cut; `hcad scan file.stl --axis z` the holes and pockets met along an axis with their shapes and depths; `hcad section … --compare` draws two sections on each other and `--projection` reads a shadow's outline; `hcad fit model.hcad --a clone --b original --param width` tunes @param lengths until the two match. Drawings become profiles on XY: `load("logo.svg")` and `load("plate.dxf")` give their closed outlines (an outline inside another is a hole, inside a hole an island), ready to extrude; SVG sizes come from the drawing's width and height in mm, cm, in or pt (plain numbers are mm), DXF from its $INSUNITS (mm when unset); curves within 0.05 mm. Open lines, text and images are left out.
+- **Importing parts:** `load("part.stl")`, `load("part.obj")`, `load("part.3mf")`, `load("part.step")`, with `scale:` (STL and OBJ are read in mm; 3MF uses its own unit and build transforms). Meshes become solids (coplanar triangles merged into faces, closed meshes only), STEP files keep their exact geometry; both can be cut, filleted, measured and selected like any other solid. Paths are relative to the model file and must stay inside the project directory. To remodel a mesh exactly, set it straight first if it came tilted (`load("part.stl").aligned` lies on its largest flat face, longest along X, centred on z = 0); `writeln(load("part.stl").features)` lists what it is made of (flat faces, holes and shafts with the ISO size they match, cones, spheres, roundings, chamfers with their size, surfaces turned round an axis, patterns of holes, with plausible sizes; `hcad features part.stl` on the command line, `hcad_features` for agents); load it as a see-through reference part to compare. `hcad section part.stl --plane xy --at 3` (`hcad_section` for agents) gives a cut across it as lines, arcs and circles with their sizes, and as a sketch ready to paste and extrude. `clone.deviation(original)` is how far apart the two surfaces are at most (`assert(clone.deviation(original) < 0.2.mm)` in a unittest); `hcad compare model.hcad --a clone --b original -o map.png` (`hcad_compare`) also gives the mean, the share within a tolerance, a picture of the clone coloured green where it matches, yellow at the tolerance, red beyond, and the patches of each surface the other does not follow (area, offset, facing: a missing chamfer or countersink shows there). `hcad diff` lists the pieces of material to add or cut, the thin differences apart, and the section that shows each piece; `hcad scan file.stl --axis z` the holes and pockets met along an axis with their shapes and depths; `hcad section … --compare` draws two sections on each other and `--projection` reads a shadow's outline; `hcad fit model.hcad --a clone --b original --param width` tunes @param lengths until the two match (and says when the shape, not the sizes, differs); `hcad match` matches the operations of the two one by one (a nut trap cut in steps is one hole); `hcad section … --region u0,v0,u1,v1` keeps the outlines inside a rectangle of the plane (a lettering); `hcad literals model.hcad --original original` lists the numbers the model repeats and which sizes of the original they are, to name them as @params once the copy matches. Drawings become profiles on XY: `load("logo.svg")` and `load("plate.dxf")` give their closed outlines (an outline inside another is a hole, inside a hole an island), ready to extrude; SVG sizes come from the drawing's width and height in mm, cm, in or pt (plain numbers are mm), DXF from its $INSUNITS (mm when unset); curves within 0.05 mm. Open lines, text and images are left out.
 - **Centring:** `shape.centered` moves a profile (in X and Y) or a solid (in X, Y and Z) so its bounding box is centred on the origin, e.g. `text("LABEL", size: 4.mm).centered`.
 - **Measuring:** `distance(a, b)` between two solids (0 when they touch), `s.bbox`, `s.volume`, `s.area`.
 - **Introspection:** `s.bbox` (`min`, `max`, `size`, `center`), `s.volume`, `s.area`, `s.isValid`.
