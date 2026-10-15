@@ -28,11 +28,16 @@ import hackerscad.kernel.occt.backend : OcctKernel;
 enum serverVersion = appVersion;
 
 enum instructions = "hackerscad is a parametric CAD for code-defined models (.hcad, a sandboxed subset of D). "
-    ~ "Call hcad_docs first, then iterate with hcad_render (it returns dimensions, problems and pictures) "
-    ~ "until the model matches the request, then hcad_export. If the user has hackerscad open, "
-    ~ "hcad_gui_* tools show your work in their window. To show an example in a window of its own, "
-    ~ "hcad_gui_launch it with code (or copy: a file), not path: a window of no file, which a Save cannot "
-    ~ "overwrite.";
+    ~ "Call hcad_docs first (its rules avoid most mistakes), then iterate with hcad_render (it returns "
+    ~ "dimensions, problems and pictures) until the model matches the request, then hcad_export. If the user "
+    ~ "has hackerscad open, hcad_gui_* tools show your work in their window: change its code with "
+    ~ "hcad_gui_edit, never by writing its file; with several windows, ask which one (never assume the most "
+    ~ "recent). To show an example in a window of its own, hcad_gui_launch it with code (or copy: a file), not "
+    ~ "path: a window of no file, which a Save cannot overwrite. From a photo or a real object, your first "
+    ~ "reply is the questions, before any code or hcad_gui_new/edit, even when told to make it; estimate only "
+    ~ "if the user says so. Ask instead of guessing when it changes the result: the sizes of a real part to copy or build onto (say exactly what to measure), a font that cannot "
+    ~ "be recognised (offer a similar installed one or tracing it as a sketch), the process or printer for "
+    ~ "fits. For an outline given by its dimensions, prefer a constrained sketch.";
 
 /// Runs the server until stdin closes. Models are evaluated in a worker
 /// process (`hcad mcp --worker`): a cancelled or timed out evaluation, or one
@@ -785,7 +790,8 @@ JSONValue[] toolList()
         gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (a cube with two "
             ~ "holes), parameters and view reset; with example, one of the Examples menu instead (" ~ exampleList
             ~ "), unsaved. Refused when the user has unsaved "
-            ~ "changes, unless force is true (which discards them: ask the user first).",
+            ~ "changes, unless force is true (which discards them: ask the user first). To copy an object from a "
+            ~ "photo or a real part, ask for its sizes (and the font of any lettering) before starting one.",
             `"force": {"type": "boolean"}, "example": {"type": "string", "enum": [` ~ exampleEnum ~ `]}`, `[]`),
         tool("hcad_gui_launch", "Open a new hackerscad window on the user's screen, on the model at path (or a new "
             ~ "one), named name (or a random name): it returns once the window answers and has evaluated the model, "

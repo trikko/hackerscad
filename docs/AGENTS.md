@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-5c835d30`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-da60a09b`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-5c835d30`:** this text is up to date.
+- **It prints `0.3.1-da60a09b`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -70,6 +70,10 @@ format stamp):
   code), and a file rewritten under them makes the window ask which to keep.
   For the command line tools, save a copy elsewhere (hcad_gui_state with
   source: true gives the code) instead of moving the window to a file.
+  Never take the most recent window for the user's: if it is not clear
+  which one they mean, ask, or open one of your own. Show the work in the
+  window as it goes, not only pictures at the end, and leave the view on
+  what changed (hcad_gui_view preset fit).
 - **With the command line:** `hcad docs` prints the whole reference
   (`hcad docs fillet` one topic); `hcad check model.hcad --json` reports
   errors, parts and sizes; `hcad render model.hcad -o model-views.png`
@@ -161,7 +165,8 @@ format stamp):
   installed), ask the user before going on, offering a similar installed
   font (name it), or tracing the letters as a sketch (lines and arcs sized
   from the picture), or load("letters.svg") if they can give a vector
-  tracing; never swap the font silently. Logos, engraved or hand-drawn
+  tracing; never swap the font before the user has chosen (saying so
+  afterwards is not enough). Logos, engraved or hand-drawn
   lettering are traced as a sketch.
 - Constants are immutable; module-level values cannot be modified.
 - Expose the dimensions a user may want to change as parameters:
@@ -191,6 +196,74 @@ format stamp):
   heat-set inserts (hole(M3, d, "insert")) to modelled threads.
 - Style: annotations (@param, @preset, @part, @drawing) go on their own line above
   the declaration, several per line when short; chains break before each
-  call, the line starting with the dot.
+  call, the line starting with the dot; lines short (the editor shows about
+  56 characters at its default width); an empty line above each comment
+  (not right after { or another comment); comments say why.
+- For an example, a trial or an explanation that needs some object to work
+  on (to move, cut, place, measure), use Carlo, the mascot clip: import
+  carlo; then carlo(), and call it Carlo. Not instead of an object the
+  request names (the phone, the shaft): model that one.
+
+## Sketches: habits
+- Pin one point (fixed: true) or the outline floats.
+- A distance is never negative: which side comes from where the points are
+  drawn; draw them roughly where they go.
+- Guides that are not part of the outline: construction: true lines and
+  circles (a diagonal whose midpoint is the centre, a circle to inscribe in).
+- s.on(shape, circle) puts every corner of a rect/polygon on a circle,
+  s.tangent(shape, circle) every side touching it; polygon(…, fit: "sides")
+  sizes it across the flats (a nut's spanner size).
+- A profile is a flat closed shape with its holes. One outline told by its
+  sizes and relations: a sketch. Overlapping shapes, an offset outline, text
+  or an SVG on a shape: profile operations (+ - &, .offset). They mix:
+  s.profile + circle(d: 5.mm).
+
+## Mechanical parts and 3D printing
+- A mechanical part: its outline as a sketch from the drawing's dimensions,
+  extruded or revolved; then holes (hardware: hole(M3, depth, "clearance" |
+  "tap" | "insert" | "counterbore" | "countersink")), then fillets and
+  chamfers (before shells and holes; a radius smaller than the faces next
+  to the edge); then check.
+- Fits: ask how it will be made (FDM, resin, machined) before choosing
+  clearances; for FDM about 0.2–0.3 mm for a sliding fit, press fits from a
+  test print. Put clearances in @params.
+- Holes across a wall that will print sideways: teardrop(d:) with the point
+  up (flat: true cuts the point). Say how the part is meant to print, and
+  lay it so (its largest flat face on the ground); look at --printability.
+
+## Copying a real part, or building onto one
+- From a photo or a real object to copy or build onto, your first reply is
+  the questions, before writing any code or touching the user's window
+  (no hcad_gui_new, no hcad_gui_edit), even when the user says "make it"
+  without giving sizes. In one message: the sizes to measure (below), the
+  font if there is lettering, and the offer "or I start now with estimated
+  sizes". Estimate only when the user answers so, or already said so in the
+  request ("just estimate", "I have no caliper"). Saying at the end what
+  was estimated does not replace asking.
+- Do not invent shapes or sizes you are not sure of: ask. Ask in the way
+  that helps: not "how big is it?" but what to measure and how ("with a
+  caliper, the distance between the centres of the two holes, axis to
+  axis"; "how thick is the rim at the arrow in the photo?"; "is the left
+  side straight or curved?"). Number the questions, say what each size is
+  for, and which sizes are critical (fits, holes) and which can be rough.
+  If, once asked, the user cannot measure or asks you to estimate, say what is estimated and make those sizes
+  @params to correct after a test print.
+- From a photo: ask for one known size (the scale) and about the hidden
+  sides; say which sizes are guessed.
+- From a mesh: straighten it if tilted (load(…).aligned); take exact
+  outlines from hcad section, rebuild them as sketches, then compare and
+  lines (--fixed) until nothing differs; look at the two sections drawn on
+  each other (red/blue edges show what the numbers miss).
+
+## Before saying it is done
+- No errors and no warnings (an under-constrained sketch's warning counts);
+  the sizes match the request; reference parts fit, with no unwanted
+  overlap ((a & b).volume); printability looked at if it is to be printed;
+  the pictures actually looked at.
+- Say what was not checked (a fit that needs a test print, a size guessed).
+- Ask instead of guessing whenever it changes the result, and ask before
+  you start, not afterwards: a font, the scale
+  of a photo, a size of a real part, the process or printer, which window,
+  overwriting a file.
 
 The full reference: `hcad docs` (llms-full.txt).
