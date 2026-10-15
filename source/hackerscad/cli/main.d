@@ -32,6 +32,10 @@ usage:
       what a mesh (.stl .obj .3mf), a STEP file or a model is made of, to
       remodel it: flat faces, holes and shafts, cones, spheres, roundings,
       patterns of holes, with plausible sizes
+  hcad literals FILE.hcad [--original PART|MESH]
+      the numbers written more than once in a model, with their lines, and
+      which sizes of the original they are (a hole's diameter, an axis): the
+      measures to name and turn into @params once a copy matches
   hcad section FILE --plane xy|xz|yz --at MM [--part NAME] [--region U0,V0,U1,V1]
       the section of a mesh, STEP file or model as lines, arcs and circles
       with their sizes, and as a sketch ready to paste; --region keeps the
@@ -146,6 +150,31 @@ int main(string[] args)
             write(topic == "--agents" ? agentsText() : topic == "--skill" ? skillText()
                 : topic == "--summary" ? summaryText() : topic == "--cheatsheet" ? cheatsheetMarkdown()
                 : reference(topic));
+            return 0;
+        }
+    case "literals":
+        {
+            string original;
+            try
+                getopt(args, "original", &original);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            import hackerscad.tool.literals : literalsReport;
+            try
+                write(literalsReport(args[1], original));
+            catch (Exception e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
             return 0;
         }
     case "features":

@@ -289,7 +289,7 @@ JSONValue toolError(string message)
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
     ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
-        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit", "hcad_match", "hcad_lines"].canFind(tool);
+        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit", "hcad_match", "hcad_lines", "hcad_literals"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -674,6 +674,11 @@ JSONValue[] toolList()
             ~ "(@part(\"slategray\", alpha: 0.3, export: false) Solid original() => load(\"x.stl\");) to compare.",
             `"path": {"type": "string"}, "part": {"type": "string"}, `
             ~ `"json": {"type": "boolean", "description": "every surface as data too (long)"}`, `["path"]`),
+        tool("hcad_literals", "The numbers written more than once in a model (path), with their lines, the most used "
+            ~ "first, and the ones a constant is already named after; with original (a part of the model, or a mesh "
+            ~ "file), which sizes of it each one is: a hole's diameter or radius, where an axis or a flat face is. The "
+            ~ "last step of a copy that matches: name the measures that matter (@param, immutable) and use the names.",
+            `"path": {"type": "string"}, "original": {"type": "string"}`, `["path"]`),
         tool("hcad_section", "The section of a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and "
             ~ "its 'part') by a plane xy, xz or yz at 'at' mm along z, y or x: its closed outlines as straight lines, "
             ~ "arcs and whole circles with their sizes (fitted to the cut, plausibly rounded), and the same as a "
@@ -1176,6 +1181,18 @@ JSONValue callTool(string name, JSONValue args)
                     }
                 text(report(a) ~ "(json: true gives every surface as data)\n");
             }
+            catch (Exception e)
+            {
+                isError = true;
+                text(e.msg);
+            }
+            break;
+        }
+    case "hcad_literals":
+        {
+            import hackerscad.tool.literals : literalsReport;
+            try
+                text(literalsReport(arg("path"), arg("original")));
             catch (Exception e)
             {
                 isError = true;
