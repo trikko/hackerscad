@@ -76,9 +76,15 @@ JSONValue featuresJson(const Analysis a)
         final switch (f.kind)
         {
         case Surface.plane:
-            jf["kind"] = "plane";
+            jf["kind"] = f.chamfer ? "chamfer" : "plane";
             jf["normal"] = v3(f.normal);
             jf["offset_mm"] = plausible(f.offset);
+            if (f.chamfer)
+            {
+                jf["chamfer_mm"] = plausible(f.leg);
+                jf["width_mm"] = plausible(f.width);
+                jf["between"] = [v3(f.sides[0]), v3(f.sides[1])];
+            }
             break;
         case Surface.cylinder:
             jf["kind"] = f.full ? (f.hole ? "hole" : "shaft") : (f.hole ? "inner rounding" : "rounding");
@@ -107,7 +113,13 @@ JSONValue featuresJson(const Analysis a)
             jf["center_mm"] = v3(f.point);
             break;
         case Surface.curved:
-            jf["kind"] = "freeform";
+            jf["kind"] = f.revolved ? "revolved" : "freeform";
+            if (f.revolved)
+            {
+                jf["axis"] = v3(f.axis);
+                jf["through_mm"] = v3(f.point);
+                jf["from_axis_mm"] = [plausible(f.radius), plausible(f.outer)];
+            }
             break;
         }
         jf["bbox_min_mm"] = v3(f.lo);

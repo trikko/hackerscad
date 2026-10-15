@@ -6,9 +6,9 @@
 module hackerscad.geom.meshfeatures;
 
 import std.algorithm : max, min, sort, map, sum, canFind;
-import std.array : array;
+import std.array : array, join;
 import std.format : format;
-import std.math : abs, acos, atan, atan2, ceil, cos, floor, isNaN, PI, round, sin, sqrt;
+import std.math : abs, acos, asin, atan, atan2, ceil, cos, floor, isNaN, PI, round, sin, sqrt;
 
 import hackerscad.geom.mesh;
 import hackerscad.geom.vec;
@@ -40,6 +40,16 @@ struct Feature
     bool hole;        /// its outside faces the axis (a hole, a pocket's rounded corner)
     double error = 0; /// how far the triangles' corners are from the fitted surface, at most
     Vec3 lo, hi;      /// bounding box
+    /// planes: a chamfer, a narrow strip between two faces whose normals it
+    /// halves; `leg` how far it cuts into each, `width` across it, `sides`
+    /// the two faces' normals
+    bool chamfer;
+    double leg = 0, width = 0;
+    Vec3[2] sides;
+    /// curved: turned round an axis along X, Y or Z (`axis`, through `point`),
+    /// its distance from it from `radius` to `outer`
+    bool revolved;
+    double outer = 0;
 
     bool full() const => span > 2 * PI - 0.3;
     double diameter() const => 2 * radius;
@@ -174,7 +184,9 @@ Analysis analyse(const Mesh input)
     void process(uint[] g, int depth)
     {
         auto f = fit(m, g, normal, area, r.tolerance, flat);
-        if (f.kind != Surface.curved || depth > 60)
+        if (f.kind == Surface.curved)
+            f = revolution(m, g, normal, area, f, size);
+        if (f.kind != Surface.curved || f.revolved || depth > 60)
         {
             if (f.area > 0)
                 r.features ~= f;
@@ -213,6 +225,7 @@ Analysis analyse(const Mesh input)
     foreach (g; members)
         process(g, 0);
     r.features = mergeCylinders(r.features, r.tolerance);
+    markChamfers(r.features);
     // largest first
     r.features.sort!((a, b) => a.area > b.area);
     r.patterns = patterns(r.features, r.tolerance);
@@ -412,6 +425,147 @@ private Feature fit(const Mesh m, const uint[] tris, const Vec3[] normal, const 
         f.halfAngle = atan(slope);
     }
     return f;
+}
+
+/// A curved surface turned round an axis along X, Y or Z: the lines of its
+/// normals all meet that axis (each lies in a plane through it). Seen along
+/// the axis they all pass through one point, its place; the feature comes
+/// back marked revolved when they do, within a hundredth of the part's size.
+private Feature revolution(const Mesh m, const uint[] tris, const Vec3[] normal, const double[] area, Feature f,
+    double size)
+{
+    if (tris.length < 6)
+        return f;
+    immutable Vec3[3] axes = [Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)];
+    double best = double.infinity;
+    foreach (ai, a; axes)
+    {
+        immutable u = axes[(ai + 1) % 3], w = axes[(ai + 2) % 3];
+        // the point nearest every normal's line, seen along the axis (least squares)
+        double sxx = 0, sxy = 0, syy = 0, bx = 0, by = 0, wsum = 0;
+        double[2][] ps, ds;
+        double[] ws;
+        uint[] used;
+        foreach (t; tris)
+        {
+            auto c = (m.vertex(m.tris[3 * t]) + m.vertex(m.tris[3 * t + 1]) + m.vertex(m.tris[3 * t + 2])) / 3;
+            double[2] p2 = [c.dot(u), c.dot(w)], n2 = [normal[t].dot(u), normal[t].dot(w)];
+            immutable len = sqrt(n2[0] * n2[0] + n2[1] * n2[1]);
+            if (len < 0.3)
+                continue;   // a normal along the axis says nothing about where it is
+            n2[] /= len;
+            // (I - d dᵀ): the part of a vector across the line
+            immutable m00 = 1 - n2[0] * n2[0], m01 = -n2[0] * n2[1], m11 = 1 - n2[1] * n2[1];
+            immutable wt = area[t];
+            sxx += wt * m00;
+            sxy += wt * m01;
+            syy += wt * m11;
+            bx += wt * (m00 * p2[0] + m01 * p2[1]);
+            by += wt * (m01 * p2[0] + m11 * p2[1]);
+            wsum += wt;
+            ps ~= p2;
+            ds ~= n2;
+            ws ~= wt;
+            used ~= t;
+        }
+        if (ps.length < 6 || wsum <= 0)
+            continue;
+        // the normals seen along the axis must turn (20° or more), or any
+        // point on their common direction would do
+        double spread = 0;
+        foreach (d; ds)
+            spread = max(spread, acos(min(1.0, abs(d[0] * ds[0][0] + d[1] * ds[0][1]))));
+        if (spread < 20 * PI / 180)
+            continue;
+        immutable det = sxx * syy - sxy * sxy;
+        if (abs(det) < 1e-9 * wsum * wsum)
+            continue;   // all the normals parallel: no single crossing
+        immutable cx = (syy * bx - sxy * by) / det, cy = (sxx * by - sxy * bx) / det;
+        // how far each line turns from the way to the point, as an angle (a
+        // faceted surface's triangles lean off the planes through the axis by
+        // a few degrees, whatever its size): the mean square under 4°, the
+        // worst under 15°
+        double sq = 0, worst = 0;
+        foreach (i, p2; ps)
+        {
+            immutable dx = cx - p2[0], dy = cy - p2[1];
+            immutable reach = sqrt(dx * dx + dy * dy);
+            if (reach < 1e-9)
+                continue;
+            immutable ang = asin(min(1.0, abs(dx * ds[i][1] - dy * ds[i][0]) / reach));
+            sq += ws[i] * ang * ang;
+            worst = max(worst, ang);
+        }
+        immutable err = sqrt(sq / wsum);
+        if (err < best && err < 4 * PI / 180 && worst < 15 * PI / 180)
+        {
+            best = err;
+            f.revolved = true;
+            f.axis = a;
+            f.point = u * cx + w * cy;
+            // its distances from the axis
+            f.radius = double.infinity;
+            f.outer = 0;
+            foreach (t; used)
+                foreach (k; 0 .. 3)
+                {
+                    auto q = m.vertex(m.tris[3 * t + k]);
+                    immutable r = sqrt((q.dot(u) - cx) ^^ 2 + (q.dot(w) - cy) ^^ 2);
+                    f.radius = min(f.radius, r);
+                    f.outer = max(f.outer, r);
+                }
+        }
+    }
+    return f;
+}
+
+/// The planes that are chamfers: no wider than 3 mm, between two faces
+/// they touch, their normal halfway between those faces' (within 5°).
+private void markChamfers(Feature[] fs)
+{
+    bool touches(const Feature a, const Feature b) =>
+        a.lo.x <= b.hi.x + 0.05 && b.lo.x <= a.hi.x + 0.05 && a.lo.y <= b.hi.y + 0.05 && b.lo.y <= a.hi.y + 0.05
+        && a.lo.z <= b.hi.z + 0.05 && b.lo.z <= a.hi.z + 0.05;
+    immutable halfway = cos(5 * PI / 180);
+    foreach (pi, ref p; fs)
+    {
+        if (p.kind != Surface.plane)
+            continue;
+        foreach (i, a; fs)
+        {
+            if (a.kind != Surface.plane || i == pi || p.chamfer)
+                continue;
+            foreach (j; i + 1 .. fs.length)
+            {
+                auto b = fs[j];
+                if (j == pi || b.kind != Surface.plane || a.normal.dot(b.normal) > 0.9 || a.normal.dot(b.normal) < -0.9)
+                    continue;
+                auto mid = a.normal + b.normal;
+                if (mid.length < 1e-6 || p.normal.dot(mid / mid.length) < halfway || !touches(p, a) || !touches(p, b))
+                    continue;
+                // across the strip: in its plane, square to the edge it bevels
+                auto edge = a.normal.cross(b.normal);
+                auto across = p.normal.cross(edge / edge.length);
+                double lo = double.infinity, hi = -double.infinity;
+                foreach (k; 0 .. 8)
+                {
+                    auto c = Vec3(k & 1 ? p.hi.x : p.lo.x, k & 2 ? p.hi.y : p.lo.y, k & 4 ? p.hi.z : p.lo.z);
+                    lo = min(lo, c.dot(across));
+                    hi = max(hi, c.dot(across));
+                }
+                immutable w = hi - lo;
+                if (w <= 0 || w > 3)
+                    continue;
+                p.chamfer = true;
+                p.width = w;
+                p.leg = w * abs(p.normal.dot(a.normal));
+                p.sides = [a.normal, b.normal];
+                break;
+            }
+            if (p.chamfer)
+                break;
+        }
+    }
 }
 
 private Feature curved(Feature f)
@@ -786,6 +940,22 @@ string report(const Analysis a, size_t most = 40)
     }
     if (others)
         s ~= format("%d more small or freeform surfaces, %s mm² in all\n", others, mm(otherArea));
+    // the chamfers, small as they are, by size: what a remodelled part most often lacks
+    size_t[string] chamfers;
+    foreach (f; a.features)
+        if (f.chamfer)
+            chamfers[mm(f.leg)]++;
+    if (chamfers.length)
+    {
+        import std.algorithm : sort;
+        import std.array : array;
+        auto sizes = chamfers.keys.array;
+        sizes.sort!((x, y) => chamfers[x] > chamfers[y]);
+        string[] parts;
+        foreach (k; sizes)
+            parts ~= format("%d of %s mm", chamfers[k], k);
+        s ~= "chamfers: " ~ parts.join(", ") ~ "\n";
+    }
     foreach (p; a.patterns)
     {
         auto f = a.features[p.members[0]];
@@ -805,6 +975,9 @@ string describe(const Feature f)
     final switch (f.kind)
     {
     case Surface.plane:
+        if (f.chamfer)
+            return format("chamfer %s mm (%s wide) between the faces facing %s and %s, %s mm² (%s to %s)", mm(f.leg),
+                mm(f.width), vec(f.sides[0]), vec(f.sides[1]), mm(f.area), vec(f.lo), vec(f.hi));
         return format("plane, normal %s, at %s mm along it, %s mm² (%s to %s)", vec(f.normal), mm(f.offset), mm(f.area),
             vec(f.lo), vec(f.hi));
     case Surface.cylinder:
@@ -822,6 +995,9 @@ string describe(const Feature f)
     case Surface.sphere:
         return format("sphere%s ⌀%s, centre %s", f.hole ? " (hollow)" : "", mm(f.diameter), vec(f.point));
     case Surface.curved:
+        if (f.revolved && f.area > 1)
+            return format("surface turned round the axis %s through %s, %s to %s mm from it (revolve a profile), %s mm² "
+                ~ "(%s to %s)", vec(f.axis), vec(f.point), mm(f.radius), mm(f.outer), mm(f.area), vec(f.lo), vec(f.hi));
         return f.area > 1 ? format("freeform surface, %s mm² (%s to %s)", mm(f.area), vec(f.lo), vec(f.hi)) : null;
     }
 }

@@ -2611,6 +2611,29 @@ unittest
 unittest
 {
     mixin(slowTest);
+    // hcad features: chamfers told as such, with their size, and a surface
+    // turned round an axis (a torus here) told with its axis and place
+    import hackerscad.tool.features : meshOf;
+    import hackerscad.geom.meshfeatures : analyse, report;
+    import std.file : write, mkdirRecurse, rmdirRecurse;
+    auto dir = buildPath(tempDir, "hcad-features-test");
+    mkdirRecurse(dir);
+    scope (exit)
+        rmdirRecurse(dir);
+    immutable model = buildPath(dir, "shapes.hcad");
+    write(model, q{
+        @part Solid block() => box(30, 20, 10).chamfer(edges.of(faces.top), d: 1);
+        @part Solid ring() => torus(10, 3).move(x: 5, y: 3);
+    });
+    immutable block = report(analyse(meshOf(model, "block")));
+    assert(block.canFind("chamfer 1 mm") && block.canFind("chamfers: 4 of 1 mm"), block);
+    immutable ring = report(analyse(meshOf(model, "ring")));
+    assert(ring.canFind("turned round the axis (0, 0, 1) through (5, 3, 0)"), ring);
+}
+
+unittest
+{
+    mixin(slowTest);
     // hcad match: a nut trap cut in three steps is one hole, told as stepped,
     // not three slivers; the copy's straight one is the same hole, different
     import hackerscad.tool.features : matchReport;
