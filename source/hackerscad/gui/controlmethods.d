@@ -28,7 +28,7 @@ mixin template ControlMethods()
             }
         case "set":
             if (auto s = arg("source"))
-                buffer.setText(s);
+                replaceCode(s);
             // a preset first (it clears the values set by hand), then the
             // values given with it, on top
             if ("preset" in p)
@@ -185,7 +185,7 @@ mixin template ControlMethods()
                     TextIter at;
                     if (buffer.getIterAtLine(at, cast(int) p["cursor"].get!long - 1))
                     {
-                        buffer.placeCursor(at);
+                        placeCursorQuietly(at);   // for a picture: the sketch at the cursor does not follow it
                         editor.scrollToIter(at, 0.1, true, 0, 0.3);
                         completion.close();
                     }
@@ -199,7 +199,7 @@ mixin template ControlMethods()
                 // a menu of the view bar opened, for a screenshot ("none" closes them)
                 if (auto m = arg("menu"))
                 {
-                    foreach (b; [partsMenu, displayMenu, examplesButton, exportButton])
+                    foreach (b; [partsMenu, displayMenu, examplesButton, exportButton, viewMenuButton])
                         b.popdown();
                     if (contextPopover !is null)
                         contextPopover.popdown();
@@ -211,6 +211,8 @@ mixin template ControlMethods()
                         examplesButton.popup();
                     else if (m == "export")
                         exportButton.popup();
+                    else if (m == "views")
+                        viewMenuButton.popup();
                 }
                 if (has("console"))
                     consoleToggle.setActive(p["console"].type == JSONType.true_);
@@ -500,7 +502,7 @@ mixin template ControlMethods()
             {
                 startNew();
                 agentText = null;
-                buffer.setText(p["source"].str);
+                replaceCode(p["source"].str);
                 modified = false;
                 updateTitle();
             }
@@ -527,13 +529,28 @@ mixin template ControlMethods()
             {
                 // {"x": 0.5, "y": 0.5, "path": ["Hole at point", "Clearance", "M3"]}: the right-click menu there,
                 // then its entries clicked in order; without path, the entries it has there; with
-                // "open": true it stays open (path: groups to open), for a screenshot
+                // "open": true it stays open (path: groups to open), for a screenshot; {"bar": "view", "path":
+                // ["Sketches", "line 12 · …"]}: the view bar's View menu instead
                 string[] path;
                 immutable keep = "open" in p && p["open"].type == JSONType.true_;
                 if ("path" in p && p["path"].type == JSONType.array)
                     foreach (v; p["path"].array)
                         path ~= v.str;
                 immutable list = !("path" in p) || path.length == 0;
+                if (arg("bar").length)
+                {
+                    // the view bar's View menu: its presets, and Sketches, one entry per sketch of the model
+                    if (arg("bar") != "view")
+                        return reply(JSONValue.init, "bar is view (the View menu of the view bar)");
+                    whenIdle(() {
+                        if (list)
+                            return reply(JSONValue(["entries": menuJson(viewMenuEntries())]), null);
+                        if (auto problem = runMenuPath(viewMenuEntries(), path))
+                            return reply(JSONValue.init, problem);
+                        whenIdle(() => reply(state(), null));
+                    });
+                    return;
+                }
                 whenIdle(() {
                     double x, y;
                     if (auto problem = screenPoint(p, x, y))
@@ -608,9 +625,34 @@ mixin template ControlMethods()
         case "sketch":
             // {"line": 52, "to_line": 54}: the sketch those lines belong to, what they make or constrain in
             // orange (as Inspect on them, without the solids); {"on": true} or nothing: the first sketch;
-            // {"on": false}: none. The reply lists the sketches, and state's sketch tells the one shown
+            // {"on": false}: none; {"follow": false}: the setting Show the sketch at the cursor; {"pin": true}: the sketch
+            // at the cursor stays when it leaves. The reply lists the sketches, and state's sketch tells the one shown
+            // (from_cursor, pinned, partial, stale). An explicit request takes the view over from the cursor
             {
                 immutable hide = "on" in p && p["on"].type == JSONType.false_;
+                // follow: the setting Show the sketch at the cursor; pin: the pin of the mode bar, which keeps
+                // the sketch at the cursor shown when the cursor leaves its code; alone, they show nothing else
+                if (has("pin"))
+                {
+                    if (!sketchFollowing)
+                        return reply(JSONValue.init, "pin keeps the sketch shown at the cursor: none is (move the "
+                            ~ "cursor into a sketch's code with hcad_gui_edit goto)");
+                    pinButton.setActive(p["pin"].type == JSONType.true_);
+                }
+                if (has("follow") || has("pin"))
+                {
+                    if (has("follow"))
+                        setFollow(p["follow"].type == JSONType.true_);
+                    if (!has("line") && !("on" in p))
+                    {
+                        whenIdle(() {
+                            auto r = state();
+                            r["sketches"] = sketchesJson();
+                            reply(r, null);
+                        });
+                        return;
+                    }
+                }
                 whenIdle(() {
                     // on the latest evaluation
                     if (hide)
@@ -656,7 +698,20 @@ mixin template ControlMethods()
             }
         case "dimension":
             {
-                // {"line": 12, "col": 30, "value": "40.mm"}: a sketch dimension changed, as clicking it
+                // {"line": 12, "col": 30, "value": "40.mm"}: a sketch dimension changed, as clicking it;
+                // {"line": 12, "col": 30, "edit": true}: its field opened for the user to type in, as a click
+                // on it does (the sketch must be shown)
+                if (has("edit") && p["edit"].type == JSONType.true_)
+                {
+                    foreach (i, d; dims)
+                        if (d.value.line == p["line"].get!long && d.value.col == p["col"].get!long)
+                        {
+                            editDimension(dimButtons[i], d);
+                            whenIdle(() => reply(state(), null));
+                            return;
+                        }
+                    return reply(JSONValue.init, "no dimension shown there: show its sketch first (hcad_gui_sketch)");
+                }
                 if (!has("line") || !has("col") || arg("value").length == 0)
                     return reply(JSONValue.init, "give line and col of the dimension (hcad_gui_sketch lists them) and "
                         ~ "the new value");
@@ -774,7 +829,7 @@ mixin template ControlMethods()
                     at = toUTFindex(src, it.getOffset());
                     if ("show" in p && p["show"].boolean)
                     {
-                        buffer.placeCursor(it);
+                        placeCursorQuietly(it);
                         editor.scrollToMark(buffer.getInsert(), 0, true, 0, 0.35);
                         editor.getHadjustment().setValue(0);
                     }
@@ -880,8 +935,15 @@ mixin template ControlMethods()
                 // "move_up" | "move_down" | "indent" | "unindent", "lines": [from, to]}; {"goto": line} shows a line
                 if (has("goto"))
                 {
+                    // the cursor moved as the user moves it: the sketch whose code it is in shows
                     editorTools.showLine(cast(int) numberOf(p["goto"]));
-                    return reply(state(), null);
+                    if (followTimer)
+                        Source.remove(followTimer);
+                    followTimer = 0;
+                    followArmed = true;
+                    followSketch(false);
+                    whenIdle(() => reply(state(), null));
+                    return;
                 }
                 if (auto act = arg("action"))
                 {

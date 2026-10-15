@@ -494,12 +494,14 @@ struct Parser
     {
         auto b = node!Block(cur.span);
         expect(Tok.lbrace, "'{'");
-        while (!accept(Tok.rbrace))
+        while (kind != Tok.rbrace)
         {
             if (kind == Tok.eof)
                 throw new HcadError(Code.syntax, "unterminated block: missing '}'", b.span);
             b.stmts ~= parseStatement();
         }
+        b.endLine = cur.span.line;
+        advance();
         return b;
     }
 

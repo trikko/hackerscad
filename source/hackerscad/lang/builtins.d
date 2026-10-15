@@ -2821,6 +2821,12 @@ SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span)
         it.features[created - 1].result = r;
         if (boolean)
             it.features[created - 1].operands = inputs.dup;
+        // made from a profile or a path: what that came from (Edit sketch… on a face)
+        foreach (input; inputs)
+            if (input !is null && (input.flat || input.path))
+                foreach (c; input.creators)
+                    if (c > 0 && !it.features[created - 1].from.canFind(c))
+                        it.features[created - 1].from ~= c;
     }
     return r;
 }

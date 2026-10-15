@@ -97,9 +97,11 @@ up and down): 24; the ellipse can still move two ways, grow two ways and
 turn: 5 more. They stay where they were drawn only because nothing moves
 them.
 
-Click the `sketch()` step in **Steps** (or Ctrl+click its line): the view
-shows the sketch from above, the points that can still move in blue. Esc
-goes back to the medal.
+Put the cursor anywhere in the sketch's code, from `auto s = sketch();` to
+`return s.profile;` (or click the `sketch()` step in **Steps**): the view
+shows the sketch from above, the points that can still move in blue, and in
+orange what the cursor's line makes. Move the cursor out of it and the medal
+comes back; Esc does it too.
 
 ![The H, every point free](img/12-medal-free.png)
 
@@ -225,7 +227,7 @@ the hole for a keyring, through the rim.
 
 ## Change it
 
-Click the `sketch()` step again and click **22**, the height of the H: type
+Put the cursor back in the sketch's code and click **22**, the height of the H: type
 26 and press Enter. The code changes, and the letter grows, still level,
 still in the middle. Its strokes stay 5 mm, because nothing said they
 depend on the height. In **Parameters**, set **Diameter** to 50: the rim
@@ -235,13 +237,23 @@ Give two rules that disagree, `s.length(h[5], 20.mm);` with the right side
 already as tall as the left, and the sketch cannot be solved: the error
 lists the lines that disagree. Take it away again.
 
+While you type, a line is often unfinished for a moment: the view keeps the
+last good sketch, faint, and the bar over the view says on which line the
+error is, until the code is right again. An error further down, after the
+sketch, leaves the sketch drawn as the code made it so far.
+
+The medal made, the sketch is still a click away: right-click a face that
+came from it (the rim or the H) and choose **Edit sketch…**, or pick it in
+**View › Sketches**, the list of the model's sketches. The cursor goes to
+its `sketch()` line, and the view shows it.
+
 ## The shapes a sketch has
 
 Lines and circles are not all: a sketch has ready-made shapes, each made of
 points, lines and arcs with their rules already in. This
 [sampler](12-shapes.hcad) has one of each, every one fully constrained (open
-it with **Open**, or paste it over a new model, and click the `sketch()`
-step):
+it with **Open**, or paste it over a new model, and put the cursor in its
+code):
 
 ![The shapes of a sketch](img/12-shapes.png)
 

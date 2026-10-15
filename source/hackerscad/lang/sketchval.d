@@ -1405,6 +1405,7 @@ struct SketchView
     Entity[] entities;
     Constraint[] constraints;
     Span[] profiles;        /// where its .profile was read
+    bool partial;           /// made by a run an error stopped: what came after the error is missing
 
     /// The entities and constraints on lines from..to of `file`.
     Found on(string file, uint from, uint to) const
@@ -1441,6 +1442,180 @@ struct SketchView
         auto f = on(file, from, to);
         return f.sketch || f.entities.length || f.constraints.length;
     }
+}
+
+/// The sketches a run made in `file`, as plain data. Kept by the
+/// interpreter when the run stops at an error too (`failed`): they are then
+/// marked partial, made only as far as the code ran.
+SketchView[] sketchViews(Interp it, string file, bool failed)
+{
+    SketchView[] r;
+    foreach (sk; it.sketches)
+        if (auto sv = cast(SketchVal) sk)
+            if (sv.span.file == file)
+            {
+                try
+                {
+                    auto v = sv.view();
+                    v.partial = failed;
+                    r ~= v;
+                }
+                catch (Exception)
+                {
+                    // a sketch that cannot be solved or drawn is left out
+                }
+            }
+    return r;
+}
+
+/// Lines from..to of a file that a sketch owns: where the cursor shows it.
+struct Stretch
+{
+    uint from, to;
+    bool helper;   /// the body of another function the sketch was handed to, which drew on it
+}
+
+/// The lines of `file` holding the sketch's calls: its sketch() call, its
+/// entities, its constraints and where its .profile was read (sorted, once each).
+uint[] callLines(const ref SketchView v, string file)
+{
+    uint[] r;
+    void add(const Span s)
+    {
+        if (s.file == file && s.line > 0)
+            r ~= s.line;
+    }
+    add(v.span);
+    foreach (e; v.entities)
+        add(e.span);
+    foreach (c; v.constraints)
+        add(c.span);
+    foreach (p; v.profiles)
+        add(p);
+    return r.sort.uniq.array;
+}
+
+/// The stretches of `file` a sketch owns. In the function its sketch() call
+/// is in: from the first to the last line of its calls, with every line in
+/// between (a foreach header, braces, a value computed on the way, comments,
+/// a branch not taken). Another function that drew on it (a helper it was
+/// handed to): that function's lines, from its declaration to its closing
+/// brace. Another function that only read its .profile: those lines.
+/// `functions` are the file's (Interp.functionsOf).
+Stretch[] stretchesOf(const ref SketchView v, string file, const(FunctionInfo)[] functions)
+{
+    // the function a line is in, -1 outside them all
+    ptrdiff_t functionOf(uint line)
+    {
+        foreach (i, f; functions)
+            if (line >= f.first && line <= (f.end >= f.first ? f.end : f.last))
+                return i;
+        return -1;
+    }
+    struct Group
+    {
+        uint from = uint.max, to;
+        bool draws;   /// entities or constraints made there, not only the sketch read
+    }
+    Group[ptrdiff_t] groups;
+    void add(const Span s, bool draws)
+    {
+        if (s.file != file || s.line == 0)
+            return;
+        auto g = &groups.require(functionOf(s.line), Group.init);
+        if (s.line < g.from)
+            g.from = s.line;
+        if (s.line > g.to)
+            g.to = s.line;
+        g.draws = g.draws || draws;
+    }
+    add(v.span, false);
+    foreach (e; v.entities)
+        add(e.span, true);
+    foreach (c; v.constraints)
+        add(c.span, true);
+    foreach (p; v.profiles)
+        add(p, false);
+    immutable home = v.span.file == file ? functionOf(v.span.line) : ptrdiff_t.min;
+    Stretch[] r;
+    foreach (k, g; groups)
+    {
+        if (k != home && k >= 0 && g.draws)
+        {
+            auto f = functions[k];
+            r ~= Stretch(f.first, f.end >= f.first ? f.end : g.to, true);
+        }
+        else
+            r ~= Stretch(g.from, g.to, false);
+    }
+    r.sort!((a, b) => a.from < b.from);
+    return r;
+}
+
+/// Which sketch line `line` of `file` belongs to.
+struct SketchAt
+{
+    ptrdiff_t index = -1;   /// in the sketches given; -1 for none
+    /// other sketches (other sketch() calls) that own the line just as much:
+    /// a helper function they were all handed to
+    size_t sharing;
+}
+
+/// The sketch among `views` (each with its stretches) that line `line` of
+/// `file` belongs to: the one whose stretch holding it is narrowest, then
+/// the one with a call nearest to it, then `prefer` (the one shown) if it
+/// is still a candidate, then the last made.
+SketchAt sketchAt(const(SketchView)[] views, const(Stretch[])[] stretches, string file, uint line,
+    ptrdiff_t prefer = -1)
+{
+    import std.algorithm : canFind;
+    enum none = uint.max;
+    uint[] width = new uint[views.length], distance = new uint[views.length];
+    foreach (i, v; views)
+    {
+        width[i] = none;
+        if (i >= stretches.length)
+            continue;
+        foreach (st; stretches[i])
+            if (line >= st.from && line <= st.to && st.to - st.from < width[i])
+                width[i] = st.to - st.from;
+        if (width[i] == none)
+            continue;
+        distance[i] = none;
+        foreach (l; callLines(v, file))
+        {
+            immutable d = l > line ? l - line : line - l;
+            if (d < distance[i])
+                distance[i] = d;
+        }
+    }
+    SketchAt r;
+    foreach (i; 0 .. views.length)
+    {
+        if (width[i] == none)
+            continue;
+        if (r.index < 0)
+        {
+            r.index = i;
+            continue;
+        }
+        immutable b = r.index;
+        if (width[i] < width[b] || (width[i] == width[b] && distance[i] < distance[b]))
+            r.index = i;
+        else if (width[i] == width[b] && distance[i] == distance[b] && b != prefer)
+            r.index = i;   // a tie: the last made, unless the one shown is the best so far
+    }
+    if (r.index < 0)
+        return r;
+    if (prefer >= 0 && prefer < views.length && width[prefer] == width[r.index] && distance[prefer] == distance[r.index])
+        r.index = prefer;
+    Span[] others;
+    foreach (i; 0 .. views.length)
+        if (width[i] == width[r.index] && distance[i] == distance[r.index] && views[i].span != views[r.index].span
+            && !others.canFind(views[i].span))
+            others ~= views[i].span;
+    r.sharing = others.length;
+    return r;
 }
 
 final class SketchEntityVal : ObjectVal

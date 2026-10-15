@@ -124,6 +124,7 @@ final class Viewport
     private SketchView[] sketches;
     private size_t[] shownSketches;      /// indices in sketches: the ones drawn
     private bool[size_t][] litEntities;  /// for each shown sketch, the entities that stand out
+    private bool[] fadedSketches;        /// by index in sketches: drawn faint
     private uint sketchVao, sketchVbo;
     private bool sketchDirty;
     /// lines, construction lines, highlighted lines, free points, fixed points, highlighted points (end indices)
@@ -2192,9 +2193,12 @@ final class Viewport
         glVertexAttrib3f(1, 0, 0, 1);
     }
 
-    void setSketches(SketchView[] s)
+    /// The sketches that can be drawn; `faded[i]`: sketch i is drawn faint
+    /// (the last good one, shown while the code has an error).
+    void setSketches(SketchView[] s, bool[] faded = null)
     {
         sketches = s;
+        fadedSketches = faded.dup;
         sketchDirty = true;
         redraw();
     }
@@ -2408,6 +2412,18 @@ final class Viewport
     }
 
     Camera camera() => Camera(yaw * 180 / PI, pitch * 180 / PI, distance, target, orthographic);
+
+    /// Puts the camera back where camera() said it was.
+    void setCamera(Camera c)
+    {
+        fitPending = false;
+        yaw = c.yaw * PI / 180;
+        pitch = c.pitch * PI / 180;
+        distance = c.distance;
+        target = c.target;
+        orthographic = c.orthographic;
+        redraw();
+    }
 
     /// Where the camera looks: from the eye towards the target.
     Vec3 viewDirection() => basis().forward;
@@ -3549,6 +3565,16 @@ private:
             uploadSketches();
         glDisable(GL_DEPTH_TEST);
         glUniform1i(uFlat, 1);
+        // the last good sketch, while the code has an error: faint
+        bool faded;
+        foreach (i; shownSketches)
+            faded = faded || (i < fadedSketches.length && fadedSketches[i]);
+        if (faded)
+        {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glUniform1f(uAlpha, 0.4);
+        }
         glBindVertexArray(sketchVao);
         glLineWidth(2);
         if (darkStyle)
@@ -3577,7 +3603,21 @@ private:
         glUniform3f(uColor, 1.0f, 0.55f, 0.05f);
         glDrawArrays(GL_POINTS, sketchRanges[4], sketchRanges[5] - sketchRanges[4]);
         glPointSize(1);
+        if (faded)
+        {
+            glUniform1f(uAlpha, 1);
+            glDisable(GL_BLEND);
+        }
         glEnable(GL_DEPTH_TEST);
+    }
+
+    /// Whether the sketch drawn is faint (the last good one, while the code has an error).
+    bool sketchFaded() const
+    {
+        foreach (i; shownSketches)
+            if (i < fadedSketches.length && fadedSketches[i])
+                return true;
+        return false;
     }
 
     void uploadSketches()

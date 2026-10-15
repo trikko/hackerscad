@@ -86,7 +86,8 @@ import hackerscad.gui.completion;
 import hackerscad.gui.cheatsheet;
 import hackerscad.lang.interp : Interp, TraceEntry, FunctionInfo, callsOf;
 import hackerscad.lang.value : Kind, SolidVal;
-import hackerscad.lang.sketchval : SketchView;
+import hackerscad.lang.sketchval : SketchView, Stretch;
+import hackerscad.gui.sketchfollow;
 import hackerscad.tool.guiclient : toOverrides;
 import std.json;
 
@@ -652,6 +653,11 @@ final class MainWindow
             css.loadFromString("button.hcad-dimension { padding: 1px 5px; min-height: 0; min-width: 0; font-size: 0.85em;"
                 ~ " border-radius: 4px; }"
                 ~ " button.hcad-dimension-lit { background-color: rgb(255, 140, 13); color: black; }"
+                // a dimension being edited: a field the size of its label
+                // solid, on the 3D view: the theme's field colours, the accent round it
+                ~ " entry.hcad-dimension-entry { min-width: 0; min-height: 24px; padding: 0 6px; font-size: 0.85em;"
+                ~ " border-radius: 4px; background-color: @view_bg_color; color: @view_fg_color;"
+                ~ " box-shadow: 0 0 0 2px @accent_color, 0 2px 6px alpha(black, 0.25); }"
                 // a parameter's ↺, no taller than its label
                 ~ " button.hcad-param-reset { min-height: 0; min-width: 0; padding: 0 4px; margin: 0; }"
                 ~ " .hcad-progress { padding: 10px 10px 10px 16px; }"
@@ -735,14 +741,19 @@ final class MainWindow
         views.append(textButton("Fit", "Frame the model (F6)", () => viewport.fit()));
         {
             import gio.menu : Menu;
+            auto presets = new Menu;
+            presets.append("Iso", "win.view-iso");
+            presets.append("Top", "win.view-top");
+            presets.append("Front", "win.view-front");
+            presets.append("Right", "win.view-right");
+            // the model's sketches, one entry each: it opens it to edit it
+            sketchMenu = new Menu;
             auto list = new Menu;
-            list.append("Iso", "win.view-iso");
-            list.append("Top", "win.view-top");
-            list.append("Front", "win.view-front");
-            list.append("Right", "win.view-right");
-            auto viewMenu = new MenuButton;
+            list.appendSection(null, presets);
+            list.appendSubmenu("Sketches", sketchMenu);
+            auto viewMenu = viewMenuButton = new MenuButton;
             viewMenu.setLabel("View");
-            viewMenu.setTooltipText("Look from a side: iso, top, front, right");
+            viewMenu.setTooltipText("Look from a side: iso, top, front, right; open one of the model's sketches");
             viewMenu.setMenuModel(list);
             views.append(viewMenu);
         }
@@ -997,6 +1008,7 @@ final class MainWindow
         stepsPanel.onValue = (TraceEntry[] made) {
             if (made.length == 0)
                 return;
+            followTakenOver();
             jumpTo(made[0].site, "");
             inspectQuery = InspectQuery.init;   // a feature row: back to the final model after a run
             showInspected(distinct(made), format("line %d · %s", made[0].site.line,
@@ -1209,8 +1221,14 @@ final class MainWindow
             revision++;
             modified = true;
             updateTitle();
+            sketchLinesMoved();
             scheduleEvaluation(250);
         });
+        // the sketch at the cursor
+        buffer.connectNotify("cursor-position", () => cursorMoved());
+        disarmFollow();
+        sketchMenuAction();
+        updateSketchMenu();
         scheduleEvaluation(0);
 
         // Inspect: a click with the lens armed, or a Ctrl+click, shows what that line makes
@@ -1640,26 +1658,41 @@ private:
             o.functions = last.functions;
         last = o;
         hadResult = true;
+        // the sketches made, or the last good ones while the code has an error
+        holdSketches(o);
         params.update(o.params, o.presets);
         {
             import std.string : splitLines;
             stepsPanel.update(o.features, o.trace, o.functions, path, text().splitLines);
         }
-        viewport.setSketches(o.sketches);
+        viewport.setSketches(last.sketches, staleSketch);
+        updateSketchMenu();
         // the sketch shown stays (a dimension was changed): of the same lines, in the new model
         immutable sketchWas = sketchLines;
         immutable sketchLit = sketchHighlight;
-        // Inspect shows what the same lines make now
-        if (viewport.inInspect && !o.cancelled)
-            reinspect();
-        if (viewport.inRollback)
-            showFinal();
-        if (sketchWas[0] > 0 && !o.cancelled)
+        if (sketchFollowing)
         {
-            if (sketchLines == sketchWas)
-                showSketchOn(sketchWas[0], sketchWas[1], sketchHighlight);   // the new sketch, the same lines
-            else if (sketchLines[0] == 0 && !viewport.inInspect && !viewport.inRollback)
-                inspectSketch(sketchWas[0], sketchWas[1], sketchLit);   // the step it came from is gone
+            // the sketch at the cursor, in the new model
+            if (!o.cancelled)
+                followSketch(true);
+        }
+        else
+        {
+            // Inspect shows what the same lines make now
+            if (viewport.inInspect && !o.cancelled)
+                reinspect();
+            if (viewport.inRollback)
+                showFinal();
+            if (sketchWas[0] > 0 && !o.cancelled)
+            {
+                if (sketchLines == sketchWas)
+                    showSketchOn(sketchWas[0], sketchWas[1], sketchHighlight);   // the new sketch, the same lines
+                else if (sketchLines[0] == 0 && !viewport.inInspect && !viewport.inRollback)
+                    inspectSketch(sketchWas[0], sketchWas[1], sketchLit);   // the step it came from is gone
+            }
+            // a sketch made where the cursor is
+            if (!o.cancelled)
+                followSketch(true);
         }
         if (sectionToggle.getActive())
             updateSection(false);
@@ -2183,8 +2216,9 @@ private:
                         return;
                     }
                 }
-        // a click on nothing closes Inspect
-        if (hit.part < 0 && viewport.inInspect)
+        // a click on nothing closes Inspect; not a sketch shown: in its
+        // empty space a click is part of working on it (Esc closes it)
+        if (hit.part < 0 && viewport.inInspect && !viewport.sketchShown)
             stopInspect();
         if (hit.shift && hit.part >= 0)
         {
@@ -2232,7 +2266,7 @@ private:
             return;
         buffer.getIterAtLine(b, span.line);
         buffer.applyTagByName("picked", a, b);
-        buffer.placeCursor(a);
+        placeCursorQuietly(a);
         editor.scrollToIter(a, 0.1, true, 0, 0.3);
         info(format("%s · %.1f × %.1f × %.1f mm", what, part.bbox.size.x, part.bbox.size.y, part.bbox.size.z));
     }
@@ -2251,7 +2285,7 @@ private:
             return;
         buffer.getIterAtLine(b, span.line);
         buffer.applyTagByName("picked", a, b);
-        buffer.placeCursor(a);
+        placeCursorQuietly(a);
         editor.scrollToIter(a, 0.1, true, 0, 0.3);
     }
 
@@ -3130,6 +3164,7 @@ private:
         if (id == 0 || id > last.features.length)
             return;
         auto f = last.features[id - 1];
+        followTakenOver();
         inspectRequest++;   // an Inspect on its way would replace the rollback
         jumpTo(f.span, format("rollback · line %d · %s (computing…)", f.span.line, f.kind));
         evaluator.prepareFeature(f, f.kind, (PartMesh m) {
@@ -3150,6 +3185,7 @@ private:
         ids = ids.filter!(id => id > 0 && id <= last.features.length).array;
         if (ids.length == 0)
             return;
+        followTakenOver();
         auto f = last.features[ids[$ - 1] - 1];
         immutable boolean = f.operands.length == 2;
         // the step of a sketch (or of what its profile made on that line): the sketch too
@@ -3383,6 +3419,22 @@ private:
             perspectiveChoice, () => viewport.setOrthographic(true));
         perspectiveChoice.setActive(true);
         box.append(new Separator(Orientation.Horizontal));
+        heading("Sketches");
+        {
+            // kept between runs
+            import hackerscad.gui.settings : setting;
+            followCursor = setting("sketch-follow", "on") != "off";
+            followChoice = new CheckButton;
+            followChoice.setLabel("Show the sketch at the cursor");
+            followChoice.setTooltipText("With the cursor in a sketch's code, the view shows that sketch from above, "
+                ~ "with its dimensions and what the cursor's line makes in orange; out of it, the model again");
+            followChoice.setActive(followCursor);
+            followChoice.connectToggled(() {
+                if (followChoice.getActive() != followCursor)
+                    setFollow(followChoice.getActive());
+            });
+            box.append(followChoice);
+        }
         box.append(new Separator(Orientation.Horizontal));
         // how shiny the surfaces are, kept between runs like the smoothing of edges
         heading("Shine");
@@ -3498,6 +3550,7 @@ private:
         modeText.setXalign(0);
         modeText.setHexpand(true);
         modeBar.append(modeText);
+        modeBar.append(makePinButton());
         auto back = new Button;
         back.setLabel("Show final model");
         back.setTooltipText("Back to the parts as the model makes them (Esc)");
@@ -3514,7 +3567,9 @@ private:
             modeText.setMarkup(text);
         else
             modeText.setLabel(text);
+        modeText.setTooltipText(text.length > 48 && !markup ? text : null);
         modeBar.setVisible(text.length > 0);
+        pinButton.setVisible(sketchFollowing && text.length > 0);
         showingStep(text.length > 0);
     }
 
@@ -3566,6 +3621,7 @@ private:
         cancelTransform();
         inspectToggle.setActive(false);
         hideSketch();
+        dropSketches();
         rotateMode.setActive(true);
         shadingChoice[Shading.edges].setActive(true);
         printabilityChoice.setActive(false);
@@ -3619,6 +3675,7 @@ private:
     /// function returns. False, and the view as it was, when nothing is found.
     bool inspectLines(uint from, uint to, int col)
     {
+        followTakenOver();
         if (from == to)
             foreach (fn; last.functions)
                 if (from >= fn.first && from <= fn.nameSpan.line)
@@ -3650,6 +3707,7 @@ private:
     /// in orange (`highlight`; without it the whole sketch, as for its step).
     bool inspectSketch(uint from, uint to, bool highlight, int col = -1)
     {
+        followTakenOver();
         inspectRequest++;   // what a previous Inspect is still computing is not needed
         if (viewport.inRollback)
         {
@@ -3664,7 +3722,8 @@ private:
         viewport.showInspect(null);
         immutable where = from == to ? format("line %d", from) : format("lines %d–%d", from, to);
         info(where ~ " · " ~ sketchFoundText());
-        showModeBar(highlight ? "Inspecting " ~ where ~ ": its sketch, in orange what it makes or constrains"
+        immutable note = sketchStateNote();
+        showModeBar(note.length ? note : highlight ? "Inspecting " ~ where ~ ": its sketch, in orange what it makes or constrains"
             : format("The sketch of line %d", from));
         return true;
     }
@@ -3692,6 +3751,7 @@ private:
     /// orange. False (and no sketch drawn) when they are no sketch's.
     bool showSketchOn(uint from, uint to, bool highlight)
     {
+        followTakenOver();
         SketchView.Found[] found;
         auto which = sketchesOn(from, to, found);
         if (which.length == 0)
@@ -3699,6 +3759,14 @@ private:
             hideSketch();
             return false;
         }
+        drawSketches(which, found, from, to, highlight);
+        return true;
+    }
+
+    /// Draws sketches `which` (indices in last.sketches), asked for by lines
+    /// from..to, which make `found` in each (in orange with `highlight`).
+    void drawSketches(size_t[] which, SketchView.Found[] found, uint from, uint to, bool highlight)
+    {
         // another sketch: seen from above, as a drawing
         immutable another = sketchIndices != which;
         sketchLines = [from, to];
@@ -3712,13 +3780,13 @@ private:
         if (another)
             viewport.setView(ViewPreset.top);
         updateDimensions();
-        return true;
     }
 
     void hideSketch()
     {
         if (sketchIndices.length == 0 && sketchLines[0] == 0)
             return;
+        followClosed();   // the sketch at the cursor: the camera goes back
         sketchLines = [0, 0];
         sketchIndices = null;
         sketchFound = null;
@@ -3773,6 +3841,7 @@ private:
             return JSONValue(null);
         JSONValue j = ["lines": [sketchLines[0], sketchLines[1]]];
         j["status"] = sketchFoundText();
+        sketchOriginJson(j);
         JSONValue[] list;
         foreach (k, index; sketchIndices)
         {
@@ -3830,6 +3899,7 @@ private:
     /// Shows what a function returned (every call of it, up to the trace's limits).
     bool inspectFunction(FunctionInfo fn)
     {
+        followTakenOver();
         immutable file = absolutePath(path);
         TraceEntry[] made;
         foreach (e; last.trace)
@@ -4084,6 +4154,13 @@ private:
         string title = ne ? count(ne, "edge") : nf ? count(nf, "face") : nv == 1 ? "vertex"
             : nv ? format("%d vertices", nv) : "Part";
         entries ~= H(title.toUpper, part.name);
+        // the face under the click came from a sketch's profile: open the sketch
+        {
+            auto under = viewport.pickAny(x, y);
+            immutable sketch = under.part == contextHit.part ? sketchOfFace(part, under.face) : -1;
+            if (sketch >= 0)
+                entries ~= I("Edit sketch…", () => openSketch(sketch));
+        }
 
         if (ne)
         {
@@ -4664,16 +4741,15 @@ private:
 
     void updateDimensions()
     {
-        foreach (b; dimButtons)
-            overlay.removeOverlay(b);
-        dimButtons = null;
-        dims = null;
+        // the dimensions to show, and which stand out (those of the
+        // constraints on the inspected lines)
+        SketchView.Dimension[] want;
+        bool[] wantLit;
         foreach (k, index; sketchIndices)
         {
             if (index >= last.sketches.length)
                 continue;
             auto sk = last.sketches[index];
-            // the dimensions of the constraints on the inspected lines stand out
             bool[size_t] lit;
             if (sketchHighlight && k < sketchFound.length)
                 foreach (c; sketchFound[k].constraints)
@@ -4683,9 +4759,37 @@ private:
             {
                 if (d.value.file != absolutePath(path))
                     continue;
-                addDimensionButton(d, (di in lit) !is null);
+                want ~= d;
+                wantLit ~= (di in lit) !is null;
             }
         }
+        // the same dimensions as shown: keep the buttons, only their look
+        // changes (made again, they would flash at the corner of the view
+        // before finding their place, at every click on a line)
+        bool same = want.length == dims.length;
+        foreach (i, d; want)
+            if (same)
+                same = d.label == dims[i].label && d.value == dims[i].value && d.conflicting == dims[i].conflicting;
+        if (same)
+        {
+            foreach (i, b; dimButtons)
+            {
+                if (wantLit[i] && !want[i].conflicting)
+                    b.addCssClass("hcad-dimension-lit");
+                else
+                    b.removeCssClass("hcad-dimension-lit");
+                b.setOpacity(shownStale() ? 0.55 : 1);
+            }
+            dims = want;
+            positionDimensions();
+            return;
+        }
+        foreach (b; dimButtons)
+            overlay.removeOverlay(b);
+        dimButtons = null;
+        dims = null;
+        foreach (i, d; want)
+            addDimensionButton(d, wantLit[i]);
         positionDimensions();
     }
 
@@ -4703,6 +4807,8 @@ private:
             b.addCssClass("destructive-action");
         else if (lit)
             b.addCssClass("hcad-dimension-lit");
+        if (shownStale())
+            b.setOpacity(0.55);   // the last good sketch, while the code has an error
         b.setHalign(Align.Start);
         b.setValign(Align.Start);
         b.setTooltipText(format("line %d: click to change", d.value.line));
@@ -4712,13 +4818,16 @@ private:
         dims ~= d;
     }
 
+    Button editingDimension;   /// the dimension whose field is open (hidden meanwhile)
+
     void positionDimensions()
     {
         foreach (i, b; dimButtons)
         {
             double x, y;
             immutable visible = viewport.project(dims[i].at, x, y);
-            b.setVisible(visible);
+            // the one being edited stays hidden under its field
+            b.setVisible(visible && b !is editingDimension);
             if (!visible)
                 continue;
             immutable mx = cast(int)(x - b.getWidth() / 2), my = cast(int)(y - b.getHeight() / 2);
@@ -4736,10 +4845,14 @@ private:
     JSONValue sketchesJson()
     {
         JSONValue[] r;
-        foreach (sk; last.sketches)
+        foreach (i, sk; last.sketches)
         {
             JSONValue js = ["line": JSONValue(sk.span.line), "solved": JSONValue(sk.solved)];
             js["degrees_of_freedom"] = sk.dof;
+            if (i < staleSketch.length && staleSketch[i])
+                js["stale"] = true;   // the last good one: the code has an error in it
+            else if (sk.partial)
+                js["partial"] = true;   // made before an error stopped the run
             size_t free;
             foreach (pt; sk.points)
                 free += pt.free;
@@ -4774,17 +4887,41 @@ private:
             current = argumentText(text(), path, d.value.line, d.value.col);
         catch (Exception e)
             return info(e.msg);
-        auto pop = new Popover;
-        pop.setParent(b);
-        pop.connectClosed(() {
-            idleAdd(PRIORITY_DEFAULT, () { pop.unparent(); return false; });
-        });
+        // edited in place: the label becomes a field of the same size and
+        // look, where it is; Enter writes the value, Esc or a click elsewhere
+        // leaves it as it was
+        import gtk.event_controller_focus : EventControllerFocus;
         auto entry = new Entry;
+        entry.addCssClass("hcad-dimension-entry");
         entry.setText(current);
-        entry.setWidthChars(14);
-        entry.connectActivate(() {
-            auto value = entry.getText();
-            pop.popdown();
+        // as wide as its value and a little room (a field's natural width is
+        // otherwise a long line)
+        immutable chars = cast(int) max(4, current.length + 2);
+        entry.setWidthChars(chars);
+        entry.setMaxWidthChars(chars);
+        entry.setHalign(Align.Start);
+        entry.setValign(Align.Start);
+        // the field centred where the label was
+        immutable cx = b.getMarginStart() + b.getWidth() / 2, cy = b.getMarginTop() + b.getHeight() / 2;
+        entry.setMarginStart(max(0, cx - (cast(int) current.length + 2) * 4));
+        entry.setMarginTop(max(0, cy - 13));
+        editingDimension = b;
+        b.setVisible(false);
+        overlay.addOverlay(entry);
+        bool done;
+        void finish(string value)
+        {
+            if (done)
+                return;
+            done = true;
+            // away from the signal handler: the entry goes, the button comes back
+            idleAdd(PRIORITY_DEFAULT, () {
+                overlay.removeOverlay(entry);
+                if (editingDimension is b)
+                    editingDimension = null;
+                b.setVisible(true);
+                return false;
+            });
             if (value.length == 0 || value == current)
                 return;
             try
@@ -4795,9 +4932,19 @@ private:
             }
             catch (Exception ex)
                 info(ex.msg);
+        }
+        entry.connectActivate(() => finish(entry.getText()));
+        auto keys = new EventControllerKey;
+        keys.connectKeyPressed((uint key, uint code, ModifierType state) {
+            if (key != KEY_Escape)
+                return false;
+            finish(null);
+            return true;
         });
-        pop.setChild(entry);
-        pop.popup();
+        entry.addController(keys);
+        auto focus = new EventControllerFocus;
+        focus.connectLeave(() => finish(null));
+        entry.addController(focus);
         entry.grabFocus();
     }
 
@@ -4932,7 +5079,7 @@ private:
         buffer.setText(disk);
         TextIter at;
         if (buffer.getIterAtLine(at, line))
-            buffer.placeCursor(at);
+            placeCursorQuietly(at);
         modified = false;
         updateTitle();
     }
@@ -4948,7 +5095,7 @@ private:
         params.invalidate();
         firstResult = true;
         resetInterface();
-        buffer.setText(newModelTemplate);
+        replaceCode(newModelTemplate);
         diskTime = 0;
         modified = false;
         updateTitle();
@@ -5083,7 +5230,7 @@ private:
         resetInterface();
         import std.uni : toLower;
         immutable drawing = [".svg", ".dxf"].canFind(extension(file).toLower);
-        buffer.setText(drawing
+        replaceCode(drawing
             ? format("module %s;\n\nimport std.shapes;\n\n"
                 ~ "// the outlines of %s, from the same folder as this model, made a plate\n"
                 ~ "@part\nSolid imported() => load(\"%s\")\n    .extrude(3.mm);\n", name, baseName(file), baseName(file))
@@ -5104,7 +5251,7 @@ private:
         params.invalidate();
         firstResult = true;
         resetInterface();
-        buffer.setText(readText(path));
+        replaceCode(readText(path));
         diskTime = mtimeOf(path);
         modified = false;
         updateTitle();
@@ -5394,6 +5541,7 @@ private:
 
     // the control socket's methods: gui/controlmethods
     mixin ControlMethods;
+    mixin SketchFollow;
 
     JSONValue state()
     {
@@ -5459,6 +5607,12 @@ private:
         j["presets"] = last.presets;
         j["inspect"] = inspectJson();
         j["sketch"] = shownSketchJson();
+        j["sketch_follow"] = followCursor;
+        {
+            TextIter it;
+            buffer.getIterAtMark(it, buffer.getInsert());
+            j["cursor"] = ["line": it.getLine() + 1, "col": it.getLineOffset() + 1];
+        }
         auto cam = viewport.camera();
         JSONValue jc = ["yaw": cam.yaw, "pitch": cam.pitch, "distance": cam.distance];
         jc["target"] = [cam.target.x, cam.target.y, cam.target.z];
@@ -5553,7 +5707,7 @@ private:
         params.invalidate();
         firstResult = true;
         resetInterface();
-        buffer.setText(e[0].source);
+        replaceCode(e[0].source);
         diskTime = 0;
         modified = false;
         updateTitle();

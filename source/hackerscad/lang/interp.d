@@ -58,6 +58,10 @@ struct FeatureInfo
     SolidVal[] operands;   /// of a union, difference or intersection: the two solids it combined
     Object frame;      /// the function call it ran in (Interp.callFrame)
     Object statement;  /// the statement it ran in (Interp.currentStatement)
+    /// what a feature made from a profile or a path (extrude, revolve, sweep,
+    /// loft…) was made from: the features of the faces of its inputs (a
+    /// sketch's profile is a "sketch" feature)
+    uint[] from;
 }
 
 /// A solid, profile or path a call in the evaluated file produced (the
@@ -96,6 +100,7 @@ struct FunctionInfo
     string name;       /// "Struct.method" for methods
     Span nameSpan;     /// what TraceEntry.decl points at
     uint first, last;  /// lines, attributes included; last is uint.max for the last one
+    uint end;          /// the line of the closing brace of its body (of its name, for `=> expression`)
 }
 
 /// A @drawing function and the drawing it returned (rendered on export).
@@ -489,7 +494,12 @@ final class Interp
                         last = nx.line - 1;
                         break;
                     }
-                r ~= FunctionInfo(st.name, st.f.nameSpan, st.line, last);
+                uint end = st.f.nameSpan.line;
+                if (st.f.body !is null && st.f.body.endLine > 0)
+                    end = st.f.body.endLine;
+                else if (st.f.exprBody !is null && st.f.exprBody.span.line > end)
+                    end = st.f.exprBody.span.line;
+                r ~= FunctionInfo(st.name, st.f.nameSpan, st.line, last, end);
             }
         return r;
     }

@@ -1174,6 +1174,125 @@ unittest
 
 unittest
 {
+    // the stretch of code a sketch owns (the GUI shows it while the cursor is
+    // there): from its first call to its last in its function, every line in
+    // between; the body of a helper that drew on it; a sketch nested in
+    // another's stretch wins its own lines; a helper two sketches share goes
+    // to the last made, and says it is shared
+    import hackerscad.lang.sketchval : SketchVal, SketchView, Stretch, stretchesOf, sketchAt, sketchViews;
+    import std.string : splitLines, indexOf;
+
+    immutable src = `void rim(Sketch s, double r)
+{
+    // the rim
+    auto c = s.point(0, 0, fixed: true);
+    s.circle(c, r: r);
+}
+
+@part Solid clip()
+{
+    immutable teeth = 3;
+    auto s = sketch();
+    auto a = s.point(0, 0, fixed: true);
+    // a comment
+    foreach (i; 0 .. teeth)
+    {
+        immutable x = 10.0 * i;
+        s.point(x, 5, fixed: true);
+    }
+    if (teeth > 5)
+        s.point(1, 1, fixed: true);
+    else
+    {
+        s.point(2, 2, fixed: true);
+    }
+    rim(s, 30);
+    auto t = sketch();
+    t.point(3, 3, fixed: true);
+    s.point(4, 4, fixed: true);
+    writeln("done");
+    return box(1, 1, 1);
+}
+
+@part Solid other()
+{
+    auto u = sketch();
+    rim(u, 10);
+    return box(2, 2, 2);
+}
+`;
+    uint lineOf(string needle)
+    {
+        foreach (i, l; src.splitLines)
+            if (l.indexOf(needle) >= 0)
+                return cast(uint)(i + 1);
+        assert(0, needle);
+    }
+
+    auto it = make();
+    auto r = runModel(src, it);
+    foreach (dg; r.diagnostics)
+        assert(dg.severity != Severity.error, dg.message);
+    immutable file = buildPath(tempDir, "hcad-test.hcad");
+    auto views = sketchViews(it, file, false);
+    assert(views.length == 3 && !views[0].partial);
+    auto fns = it.functionsOf(file);
+    auto rimFn = fns[0];
+    assert(rimFn.name == "rim" && rimFn.first == 1 && rimFn.end == lineOf("    s.circle(c, r: r);") + 1, format("%s", rimFn));
+    Stretch[][] stretches;
+    foreach (ref v; views)
+        stretches ~= stretchesOf(v, file, fns);
+    // s: from sketch() to its last point, and the helper's body
+    assert(stretches[0] == [Stretch(1, lineOf("    s.circle(c, r: r);") + 1, true),
+        Stretch(lineOf("auto s = sketch()"), lineOf("s.point(4, 4"), false)], format("%s", stretches[0]));
+    // t: its two lines
+    assert(stretches[1] == [Stretch(lineOf("auto t = sketch()"), lineOf("t.point(3, 3"), false)]);
+    ptrdiff_t at(uint line, ptrdiff_t prefer = -1) => sketchAt(views, stretches, file, line, prefer).index;
+    // lines in between belong to s: a comment, a foreach header and its braces, a value computed on the way,
+    // the branch not taken, the call of the helper
+    foreach (needle; ["auto s = sketch()", "// a comment", "foreach (i;", "immutable x =", "s.point(1, 1",
+        "    else", "rim(s, 30)", "s.point(4, 4"])
+        assert(at(lineOf(needle)) == 0, needle);
+    assert(at(lineOf("foreach (i;") + 1) == 0);   // its brace
+    // outside: before the first call, after the last, another function
+    foreach (needle; ["immutable teeth", "writeln(\"done\")", "@part Solid clip()", "return box(1, 1, 1)", "return box(2"])
+        assert(at(lineOf(needle)) < 0, needle);
+    // nested: t's lines are t's, though inside s's stretch
+    assert(at(lineOf("auto t = sketch()")) == 1 && at(lineOf("t.point(3, 3")) == 1);
+    // the helper, drawn on by s and u: the last made, or the one shown; shared with one other
+    auto h = sketchAt(views, stretches, file, lineOf("// the rim"));
+    assert(h.index == 2 && h.sharing == 1, format("%s", h));
+    assert(at(lineOf("// the rim"), 0) == 0);
+    assert(at(lineOf("auto u = sketch()")) == 2);
+    assert(sketchAt(views, stretches, file, lineOf("auto t = sketch()")).sharing == 0);
+}
+
+unittest
+{
+    // a run an error stops keeps the sketches made before it, marked partial
+    // (the GUI shows them instead of an empty view)
+    import hackerscad.lang.sketchval : sketchViews;
+    auto it = make();
+    bool failed;
+    try
+        runModel(`@part Solid p()
+{
+    auto s = sketch();
+    auto c = s.circle(s.point(0, 0, fixed: true), r: 5.mm);
+    auto body = s.profile.extrude(2);
+    return body + missing;
+}
+`, it);
+    catch (HcadError e)
+        failed = e.diag.span.line == 6;
+    assert(failed);
+    auto views = sketchViews(it, buildPath(tempDir, "hcad-test.hcad"), true);
+    assert(views.length == 1 && views[0].partial && views[0].solved && views[0].dof == 0 && views[0].segments.length == 1);
+    assert(views[0].profiles.length == 1 && views[0].profiles[0].line == 5);
+}
+
+unittest
+{
     // sketch shapes: ellipses, rectangles, regular polygons, slots, concentric
     import std.algorithm : filter, sort;
     auto r = runModel(q{

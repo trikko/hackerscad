@@ -163,6 +163,7 @@ final class Block : Stmt
 {
     Stmt[] stmts;
     bool scoped = true;   /// false for `int a, b;` declaration groups
+    uint endLine;         /// the line of its closing brace (0 when it has none)
 }
 
 enum Storage

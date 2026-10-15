@@ -20,7 +20,7 @@ import hackerscad.kernel.cache;
 import hackerscad.lang.errors;
 import hackerscad.lang.interp;
 import hackerscad.render.raster : edgeSets, contourTriangles, smoothSeams;
-import hackerscad.lang.sketchval : SketchView, SketchVal;
+import hackerscad.lang.sketchval : SketchView, sketchViews;
 import hackerscad.lang.value : SolidVal;
 import hackerscad.geom.color;
 
@@ -326,17 +326,9 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     catch (KernelException e)
         o.diagnostics = [Diagnostic(Severity.error, Code.kernel, e.msg, Span(req.path))];
     o.functions = it.functionsOf(absolutePath(req.path));
-    // sketches are shown even when the evaluation failed (e.g. conflicting constraints)
-    foreach (sk; it.sketches)
-        if (auto sv = cast(SketchVal) sk)
-            if (sv.span.file == absolutePath(req.path))
-            {
-                try
-                    o.sketches ~= sv.view();
-                catch (Exception)
-                {
-                }
-            }
+    // sketches are shown even when the evaluation failed (conflicting
+    // constraints, an error after them): then marked partial
+    o.sketches = sketchViews(it, absolutePath(req.path), !o.ok);
     foreach (path, m; it.modules)
         o.sources[path] = m.source;
     o.milliseconds = sw.peek.total!"msecs";

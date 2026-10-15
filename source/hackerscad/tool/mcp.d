@@ -749,9 +749,10 @@ JSONValue[] toolList()
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
             ~ "stays still). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
             ~ "faint); printability marks, over any style, the overhangs needing supports in red and the walls under "
-            ~ "min_wall in violet (then hcad_gui_state has their areas per part); projection is perspective or orthographic; menu opens the parts (eye) or display (cube) "
+            ~ "min_wall in violet (then hcad_gui_state has their areas per part); projection is perspective or orthographic; menu opens the parts (eye), display (cube) or views (View) "
             ~ "menu of the view bar, or the header bar's examples or export menu, for a screenshot, none closes them; sidebar shows the params or steps tab; "
-            ~ "cursor puts the editor's cursor at the start of a line and scrolls there; code_width sets how wide "
+            ~ "cursor puts the editor's cursor at the start of a line and scrolls there (for a picture: the sketch at "
+            ~ "the cursor does not follow it; hcad_gui_edit goto does); code_width sets how wide "
             ~ "the code is (pixels); theme draws the window light or dark for this run (the user's own choice, in the "
             ~ "main menu, stays); drag is what a left drag does, rotate or pan; antialias turns the smoothing of "
             ~ "edges on or off for this run (hcad_gui_state's graphics tells whether it is on). "
@@ -771,7 +772,7 @@ JSONValue[] toolList()
             ~ `"overhang_angle": {"type": "number", "description": "printability: degrees from a wall (45)"}, `
             ~ `"min_wall": {"type": "number", "description": "printability: thinnest wall in mm (0.8)"}, `
             ~ `"projection": {"type": "string", "enum": ["perspective", "orthographic"]}, `
-            ~ `"menu": {"type": "string", "enum": ["parts", "display", "examples", "export", "none"]}, `
+            ~ `"menu": {"type": "string", "enum": ["parts", "display", "views", "examples", "export", "none"]}, `
             ~ `"sidebar": {"type": "string", "enum": ["params", "steps"]}, `
             ~ `"cursor": {"type": "integer"}, "code_width": {"type": "integer"}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
@@ -864,9 +865,14 @@ JSONValue[] toolList()
             ~ "Without path, returns the entries the menu has there (with sub-entries and the values it shows) and "
             ~ "chooses nothing. With open: true the menu stays open (path: only groups to open), to show it in "
             ~ "hcad_gui_screenshot. On empty space the menu lists the hidden parts. Entries that copy (Measure, "
-            ~ "Copy as code) also return the text as copied.",
+            ~ "Copy as code) also return the text as copied. On a face made from a sketch's profile, Edit sketch… "
+            ~ "shows the sketch and puts the cursor on its sketch() line. bar: \"view\" is the view bar's View menu "
+            ~ "instead (no point): Iso, Top, Front, Right and Sketches, one entry per sketch of the model (\"line 12 · "
+            ~ "4 dimensions · fully constrained\"), e.g. path [\"Sketches\", \"line 12 · 4 dimensions · fully "
+            ~ "constrained\"] opens it.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
-            ~ `"path": {"type": "array", "items": {"type": "string"}}, "open": {"type": "boolean"}`, `[]`),
+            ~ `"path": {"type": "array", "items": {"type": "string"}}, "open": {"type": "boolean"}, `
+            ~ `"bar": {"type": "string", "enum": ["view"], "description": "a menu of the view bar instead of the right-click menu"}`, `[]`),
         gui("hcad_gui_section", "Cut the user's 3D view with a plane: parallel to xy, xz or yz, or to the selected face "
             ~ "(face; clicking another face moves it there); without plane, the plane shown stays (xy when none is); at is "
             ~ "the position from 0 to 1 across the model; flip: true shows the other side, false the first one; cut solids "
@@ -886,8 +892,15 @@ JSONValue[] toolList()
             ~ "the entity ids they involve, their dimension) and "
             ~ "highlighted (every entity in orange). sketches lists all of them: solved, degrees_of_freedom, "
             ~ "free_points, and the dimensions with their label, the line and col of their value in the code, the value "
-            ~ "and conflicting when the constraints disagree.",
-            `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "on": {"type": "boolean"}`, `[]`),
+            ~ "and conflicting when the constraints disagree, stale for the last good sketch (shown, faint, while "
+            ~ "the code has an error in it) and partial for one made before an error stopped the run. "
+            ~ "The window also shows the sketch whose code the editor's cursor is in (hcad_gui_edit with goto moves the "
+            ~ "cursor): follow: false turns that off, true on (the display menu's Show the sketch at the cursor, kept "
+            ~ "between runs); pin: true keeps the sketch shown from the cursor when the cursor leaves its code. A line "
+            ~ "given here takes the view over from the cursor until Esc or on: false. state's sketch tells from_cursor, "
+            ~ "pinned, partial, stale (and error_line).",
+            `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "on": {"type": "boolean"}, `
+            ~ `"follow": {"type": "boolean"}, "pin": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
             ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "
             ~ "several times, every run), what a value row made, or what a function returns; the step of a sketch "
@@ -896,8 +909,11 @@ JSONValue[] toolList()
             ~ "hcad_gui_rollback with {} (or Esc) goes back to the final model.",
             `"row": {"type": "integer"}`, `["row"]`),
         gui("hcad_gui_dimension", "Change a sketch dimension in the user's window, as clicking it and typing: the "
-            ~ "value at line and col (from hcad_gui_sketch) becomes value, e.g. \"40.mm\".",
-            `"line": {"type": "integer"}, "col": {"type": "integer"}, "value": {"type": "string"}`, `["line", "col", "value"]`),
+            ~ "value at line and col (from hcad_gui_sketch) becomes value, e.g. \"40.mm\". With edit: true instead "
+            ~ "of value, its field opens where the label is, as a click on it does, for the user to type in (the "
+            ~ "sketch must be shown).",
+            `"line": {"type": "integer"}, "col": {"type": "integer"}, "value": {"type": "string"}, "edit": {"type": "boolean"}`,
+            `["line", "col"]`),
         gui("hcad_gui_rollback", "Show the user's model as it was right after the feature on a line of code (its new "
             ~ "faces in orange, the final parts as ghosts); without line, back to the final model.",
             `"line": {"type": "integer"}`, `[]`),
@@ -931,7 +947,9 @@ JSONValue[] toolList()
             ~ "lines (1-based, inclusive); insert (a line number) and text insert before that line (one more than the "
             ~ "line count appends). Returns the state and the lines of the new text. action (comment, duplicate, delete, "
             ~ "move_up, move_down, indent, unindent) with lines does what the editor's keys do to those lines (Ctrl+/, "
-            ~ "Ctrl+D, Ctrl+Shift+K, Alt+Up, Alt+Down, Tab, Shift+Tab); goto (a line) shows that line.",
+            ~ "Ctrl+D, Ctrl+Shift+K, Alt+Up, Alt+Down, Tab, Shift+Tab); goto (a line) puts the cursor there as the user "
+            ~ "would: in a sketch's code, the view shows that sketch (unless something chosen is shown: a step, Inspect, "
+            ~ "a section).",
             `"old": {"type": "string"}, "new": {"type": "string"}, `
             ~ `"lines": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}, `
             ~ `"insert": {"type": "integer"}, "text": {"type": "string"}, "goto": {"type": "integer"}, `
@@ -979,7 +997,9 @@ JSONValue[] toolList()
             ~ "user_changed tells which lines the user changed since your previous hcad_gui_* call. It waits for the "
             ~ "running evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) "
             ~ "and seconds; with source: true it includes the code as it is in the editor (maybe not saved) and steps, "
-            ~ "the Steps panel row by row. params give value, default, type, min, max, step and choices; revision "
+            ~ "the Steps panel row by row. cursor is the editor's cursor (line, col); sketch the sketch shown (from_cursor, "
+            ~ "pinned, partial, stale) and sketch_follow the setting Show the sketch at the cursor. params give value, "
+            ~ "default, type, min, max, step and choices; revision "
             ~ "counts the evaluations, log is what the model printed, outdated says the window should be restarted; "
             ~ "graphics tells what draws the 3D view (OpenGL renderer, software: true when the processor draws it) "
             ~ "and how fast: frames gives, over the last frames drawn while the view moved (hcad_gui_view counts), "

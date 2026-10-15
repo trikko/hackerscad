@@ -211,11 +211,13 @@ Solid bracket()
 ![The bracket](img/14-sketch.png)
 
 The points start where they are written; the constraints move them (here the
-bottom becomes 50 mm, not 40). Click the sketch's step in *Steps*, or
-Ctrl+click any line of it, and the view shows the sketch from above with
+bottom becomes 50 mm, not 40). Put the cursor in the sketch's code (or
+click its step in *Steps*) and the view shows the sketch from above with
 its dimensions: click one to change it. Points still free to move are blue.
 On a line like `s.length(left, 12.mm)` what it makes or constrains turns
-orange; Esc goes back to the model. [Chapter 13](13-carlo.md) drew Carlo,
+orange; the cursor out of the sketch, or Esc, goes back to the model.
+**Edit sketch…**, in the right-click menu of a face the sketch made, and
+**View › Sketches** bring it back later. [Chapter 13](13-carlo.md) drew Carlo,
 the bag clip, this way, from start to end.
 
 ## Curved shapes: lofts and sweeps

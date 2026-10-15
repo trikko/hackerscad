@@ -186,15 +186,19 @@ as a profile: `extrude` stands it up.
 
 ## See the sketch
 
-Click the `sketch()` step in *Steps*, or Ctrl+click any line of the
-sketch: the view shows it from above, with its dimensions, and reads like a
-drawing (**Orthographic** in the display menu makes it flatter still).
-Click a dimension to change it: the code changes with it. Points that can
-still move are blue; here none can. Ctrl+click a single line to see what it
-does: `s.tangent(left, ring)` turns the back and the eye orange,
-`s.angle(topSide, left, 90.deg - lean)` the two sides and their 73°, and the
-`s.fillet` in the loop all three rounded corners. Esc goes back to the
-model.
+Put the cursor anywhere in the sketch's code, from `auto s = sketch();`
+down to `s.profile`, a `foreach`, a brace or a comment included (or click
+the `sketch()` step in *Steps*): the view shows it from above, with its
+dimensions, and reads like a drawing (**Orthographic** in the display menu
+makes it flatter still). Click a dimension to change it: the code changes
+with it. Points that can still move are blue; here none can. What the
+cursor's line does is orange: `s.tangent(left, ring)` turns the back and
+the eye orange, `s.angle(topSide, left, 90.deg - lean)` the two sides and
+their 73°, and the `s.fillet` in the loop all three rounded corners. Move
+the cursor out of the sketch, or press Esc, and the model comes back; the
+pin in the bar over the view keeps the sketch there while you look at
+other code. Once the clip is made, right-click any of its faces and choose
+**Edit sketch…** to come back here.
 
 ![The sketch of Carlo, seen from above](img/13-carlo-sketch.png)
 

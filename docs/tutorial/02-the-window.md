@@ -34,14 +34,16 @@ bag clip, Carlo, is still open; we use it to try things.
    wheel where every hue is as bright as those, the part showing each one
    until you Apply it (or Cancel).
 2. **The view bar.** Fit, and the views in the **View** menu (Iso, Top,
-   Front, Right); four buttons for what a click picks, **whole parts, faces,
+   Front, Right, and **Sketches**, the model's sketches: one opens to be
+   edited); four buttons for what a click picks, **whole parts, faces,
    edges or vertices** (Alt+1 to Alt+4; the choice is kept): the right-click
    menu offers what fits it, picked faces are striped, a picked part dotted;
    how a left drag moves the view; the eye, to hide or show the parts, the ground grid and
    the axes; the cube, to choose how the parts are drawn; the section, to cut
    the model and look inside (parallel to the face you picked, if any; drag
    the squares at the plane's corners to move it, the X past them closes it); the magnifying glass, to see what a line
-   of code makes (on a line of a sketch, the sketch with its dimensions).
+   of code makes. With the cursor in a sketch's code the view shows that
+   sketch by itself, from above, with its dimensions.
 3. **Parameters and Steps.** Two tabs. *Parameters* has the sizes the model
    lets you change, without touching the code; *Steps* shows how the model is
    built, one step at a time.
@@ -89,6 +91,9 @@ The cube in the view bar opens a small menu:
   blue on a yellow or orange part, so that they always show.
 - **Perspective**, as a photo; **Orthographic**, where sizes do not change
   with the distance: the Front, Top and Right views become true drawings.
+- **Show the sketch at the cursor**: on, the view shows the sketch whose
+  code the cursor is in ([chapter 12](12-medal.md)); off, only its step in
+  *Steps* or the magnifying glass do. The choice is kept.
 - **Shine**: **None**, matte, each flat face one even tone; **Normal**, a
   small highlight on curves; **High**, a shiny material with soft highlights
   on every curve. The choice is kept.
