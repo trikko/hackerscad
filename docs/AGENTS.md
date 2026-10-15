@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-da60a09b`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-039aade3`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-da60a09b`:** this text is up to date.
+- **It prints `0.3.1-039aade3`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -73,7 +73,13 @@ format stamp):
   Never take the most recent window for the user's: if it is not clear
   which one they mean, ask, or open one of your own. Show the work in the
   window as it goes, not only pictures at the end, and leave the view on
-  what changed (hcad_gui_view preset fit).
+  what changed (hcad_gui_view preset fit). To show the user what you mean
+  ("the hole goes here", "this wall is too thin"), mark up the view with
+  hcad_gui_annotate (arrows, crosses, circles, text over it, the view
+  locked meanwhile); the user marks it the same way in Annotate mode. When they say
+  "here", "this" or "there", read the marks in hcad_gui_state: each says
+  what lies under it (part, face, point in mm, selector). Then set mode:
+  false, so the view goes live again and shows your changes.
 - **With the command line:** `hcad docs` prints the whole reference
   (`hcad docs fillet` one topic); `hcad check model.hcad --json` reports
   errors, parts and sizes; `hcad render model.hcad -o model-views.png`
@@ -265,5 +271,30 @@ format stamp):
   you start, not afterwards: a font, the scale
   of a photo, a size of a real part, the process or printer, which window,
   overwriting a file.
+
+## Showing and asking with annotations (hcad_gui_annotate)
+- Use them to ask and to answer, not only words: "is this the face you
+  mean?" (an arrow on it), "the wall is 0.8 mm here" (a cross and a
+  label), "should the hole go here or here?" (two numbered crosses, and the
+  question in the chat with the same numbers). When an answer is about a
+  place on the model, show it.
+- Turn and frame the view first, so it can be understood: the part of
+  interest in sight, not hidden behind another, seen from a side that
+  makes it recognisable, with enough around it to tell where it is on the
+  part (not zoomed so close that it is unclear what it is, nor so far that
+  the detail is lost); one view per question if needed. Annotations lock
+  the view: frame it, then annotate.
+- Unless the user asks otherwise: arrows, crosses and circles in a colour
+  that stands out in that view, against the part's colour and the
+  background (not the part's own colour: red or magenta on a sky-blue part,
+  blue or black on a red one); short labels, off the part; few marks at a
+  time, one per thing to point at.
+- When the user says "here", "this", "from here to there": read their
+  marks in hcad_gui_state (each point with the part, face, point in mm and
+  selector under it) and, if in doubt, confirm what you understood with a
+  mark of your own before changing the model.
+- When they have served, clear your marks (clear: "agent", or mode: false):
+  while any are there the view stays locked and changes to the model do not
+  show. Do not clear the user's marks without asking.
 
 The full reference: `hcad docs` (llms-full.txt).

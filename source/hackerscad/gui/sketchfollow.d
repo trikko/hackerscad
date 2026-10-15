@@ -368,7 +368,8 @@ mixin template SketchFollow()
     /// split): the cursor leaves the view alone.
     bool followHeld()
     {
-        if (viewport.inRollback || viewport.gizmo != Viewport.Gizmo.none || viewport.placing || sectionToggle.getActive())
+        if (viewport.inRollback || viewport.gizmo != Viewport.Gizmo.none || viewport.placing || sectionToggle.getActive()
+            || frozen)   // the view is annotated: it does not change under the marks
             return true;
         return !sketchFollowing && (viewport.inInspect || sketchIndices.length > 0);
     }
@@ -551,6 +552,8 @@ mixin template SketchFollow()
     /// the sketch from above (Edit sketch… on a face, View › Sketches).
     void openSketch(size_t index)
     {
+        if (sceneLocked())
+            return;
         if (index >= last.sketches.length)
             return;
         auto sk = last.sketches[index];

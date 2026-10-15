@@ -198,6 +198,9 @@ final class Viewport
         auto drag = new GestureDrag;
         drag.setButton(0);
         drag.connectDragBegin((double x, double y, GestureDrag g) {
+            lockedDrag = locked;
+            if (lockedDrag)
+                return;
             startX = x;
             startY = y;
             immutable button = g.getCurrentButton();
@@ -250,6 +253,8 @@ final class Viewport
             area.grabFocus();
         });
         drag.connectDragUpdate((double dx, double dy, GestureDrag g) {
+            if (lockedDrag)
+                return;
             if (gizmoGrab >= 0)
             {
                 dragging = true;
@@ -290,6 +295,8 @@ final class Viewport
             redraw();
         });
         drag.connectDragEnd((double dx, double dy, GestureDrag g) {
+            if (lockedDrag)
+                return;
             if (gizmoGrab >= 0)
             {
                 gizmoGrab = -1;
@@ -360,6 +367,8 @@ final class Viewport
         scroll.connectScroll((double dx, double dy, EventControllerScroll s) {
             // a wheel notch zooms by 10%; touchpads and smooth wheels report pixels: about 10% per 40 px
             import gdk.types : ScrollUnit;
+            if (locked)
+                return true;
             immutable steps = s.getUnit() == ScrollUnit.Wheel ? dy : dy / 40;
             moved();
             zoomAt(pointerX, pointerY, pow(1.1, max(-2.0, min(2.0, steps))));
@@ -2307,6 +2316,8 @@ final class Viewport
     /// Frames the parts; computed at the next frame, when the size is known.
     void fit()
     {
+        if (locked)
+            return;
         // framed now when the view has a size, so that a zoom or pan right
         // after it starts from the framed camera
         if (area.getWidth() > 0 && area.getHeight() > 0)
@@ -2319,6 +2330,8 @@ final class Viewport
     /// Looks at the model from direction `n` (pointing towards the viewer).
     void lookAlong(Vec3 n)
     {
+        if (locked)
+            return;
         import std.math : atan2, asin;
         n = n.normalized;
         yaw = atan2(n.y, n.x);
@@ -2328,6 +2341,8 @@ final class Viewport
 
     void setView(ViewPreset v)
     {
+        if (locked)
+            return;
         final switch (v)
         {
         case ViewPreset.iso: yaw = -PI / 3; pitch = PI / 6; break;
@@ -2341,6 +2356,8 @@ final class Viewport
     /// Moves the camera away (factor > 1) or closer, keeping what it looks at.
     void zoom(double factor)
     {
+        if (locked)
+            return;
         distance = max(1e-3, distance * factor);
         redraw();
     }
@@ -2349,6 +2366,8 @@ final class Viewport
     /// the vertical, pitch up or down (degrees).
     void orbit(double yawDeg, double pitchDeg)
     {
+        if (locked)
+            return;
         yaw -= yawDeg * PI / 180;
         pitch = max(-PI / 2 + 0.01, min(PI / 2 - 0.01, pitch + pitchDeg * PI / 180));
         redraw();
@@ -2358,6 +2377,8 @@ final class Viewport
     /// pan drag (x to the right, y down).
     void pan(double fx, double fy)
     {
+        if (locked)
+            return;
         auto c = basis();
         immutable h = max(1, area.getHeight());
         immutable k = mmPerPixel();
@@ -2369,6 +2390,8 @@ final class Viewport
     /// size): what is under it stays still.
     void zoomAtFraction(double fx, double fy, double factor)
     {
+        if (locked)
+            return;
         zoomAt(fx * area.getWidth(), fy * area.getHeight(), factor);
     }
 
@@ -2376,6 +2399,8 @@ final class Viewport
     /// > 0) is how much of the model fits across the narrower side of the view.
     void centerOn(Vec3 p, double size)
     {
+        if (locked)
+            return;
         fitPending = false;
         target = p;
         if (size > 0)
@@ -2413,9 +2438,142 @@ final class Viewport
 
     Camera camera() => Camera(yaw * 180 / PI, pitch * 180 / PI, distance, target, orthographic);
 
+    // ---- the locked scene (Annotate): the camera cannot move, and the view
+    // goes on showing what it showed when locked (the style, the hidden
+    // parts, the section, the selection), whatever is changed meanwhile:
+    // those changes show once it is unlocked; the camera never moves
+
+    /// Whether the scene is locked.
+    public bool locked;
+    private bool lockedDrag;   /// a drag that began while locked: ignored to its end
+
+    private struct Shown
+    {
+        Shading shading;
+        bool showGrid, showAxes, printability, section;
+        Shine shine;
+        bool[] hidden;
+        Vec3 sectionNormal;
+        double sectionOffset;
+        int sectionPart;
+        Hit selected, hover;
+        Hit[] others;
+    }
+    private Shown lockedShown;
+    private Camera lockedCamera;
+
+    private Shown shownNow()
+    {
+        Shown s = {shading, showGrid, showAxes, printability, section, shine, hidden.dup, sectionNormal, sectionOffset,
+            sectionPart, selected, hover, others.dup};
+        return s;
+    }
+
+    private void showAs(Shown s)
+    {
+        shading = s.shading;
+        showGrid = s.showGrid;
+        showAxes = s.showAxes;
+        printability = s.printability;
+        section = s.section;
+        shine = s.shine;
+        hidden = s.hidden;
+        sectionNormal = s.sectionNormal;
+        sectionOffset = s.sectionOffset;
+        sectionPart = s.sectionPart;
+        selected = s.selected;
+        hover = s.hover;
+        others = s.others;
+    }
+
+    /// Locks the scene as it is now (or unlocks it: the camera stays, what
+    /// was changed meanwhile shows).
+    void lock(bool on)
+    {
+        if (on == locked)
+            return;
+        if (on)
+        {
+            dragging = false;
+            hover = Hit.init;
+            fitPending = false;
+            lockedCamera = camera();
+            lockedShown = shownNow();
+        }
+        locked = on;
+        redraw();
+    }
+
+    /// Runs `f` with the view as locked (the current state put back after).
+    private T asLocked(T)(scope T delegate() f)
+    {
+        if (!locked)
+            return f();
+        auto now = shownNow();
+        auto keepHidden = hidden;
+        showAs(lockedShown);
+        // the camera as locked: nothing could move it, but be sure
+        yaw = lockedCamera.yaw * PI / 180;
+        pitch = lockedCamera.pitch * PI / 180;
+        distance = lockedCamera.distance;
+        target = lockedCamera.target;
+        orthographic = lockedCamera.orthographic;
+        fitPending = false;
+        scope (exit)
+        {
+            showAs(now);
+            hidden = keepHidden;
+        }
+        return f();
+    }
+
+    /// What the locked view shows at window point (x, y): the part and face hit.
+    Hit pickShown(double x, double y) => asLocked!Hit(() => pick(x, y));
+
+    /// Where window point (x, y) lies on the plane through the point looked
+    /// at, facing the viewer: a model point that the view shows at (x, y).
+    Vec3 planePoint(double x, double y)
+    {
+        Vec3 o, d;
+        ray(x, y, o, d);
+        auto f = basis().forward;
+        immutable den = d.dot(f);
+        if (abs(den) < 1e-12)
+            return target;
+        return o + d * ((target - o).dot(f) / den);
+    }
+
+    /// Whether the view is drawn in the dark style.
+    bool dark() const => darkStyle;
+
+    /// The rectangle (view pixels: x0, y0, x1, y1) part i's box covers on
+    /// screen; false when it is hidden or behind the camera.
+    bool partRect(size_t i, out double[4] r)
+    {
+        if (i >= parts.length || isHidden(i))
+            return false;
+        auto p = parts[i];
+        r = [double.infinity, double.infinity, -double.infinity, -double.infinity];
+        foreach (cx; [p.bbox.min.x, p.bbox.max.x])
+            foreach (cy; [p.bbox.min.y, p.bbox.max.y])
+                foreach (cz; [p.bbox.min.z, p.bbox.max.z])
+                {
+                    double x, y;
+                    if (!project(Vec3(cx, cy, cz), x, y))
+                        continue;
+                    r[0] = min(r[0], x);
+                    r[1] = min(r[1], y);
+                    r[2] = max(r[2], x);
+                    r[3] = max(r[3], y);
+                }
+        return r[0] <= r[2];
+    }
+
     /// Puts the camera back where camera() said it was.
     void setCamera(Camera c)
     {
+        if (locked)
+            return;
         fitPending = false;
         yaw = c.yaw * PI / 180;
         pitch = c.pitch * PI / 180;
@@ -2447,6 +2605,8 @@ final class Viewport
     /// Switches projection; what lies on the plane of the target keeps its size.
     void setOrthographic(bool on)
     {
+        if (locked)
+            return;
         orthographic = on;
         redraw();
     }
@@ -2531,6 +2691,8 @@ private:
     /// target facing the camera.
     void zoomAt(double x, double y, double factor)
     {
+        if (locked)
+            return;
         auto b = basis();
         auto hit = pick(x, y);
         Vec3 p, lo, hi;
@@ -3135,6 +3297,13 @@ private:
     {
         if (!glReady)
             return false;
+        if (locked)
+            return asLocked!bool(() => renderNow());
+        return renderNow();
+    }
+
+    private bool renderNow()
+    {
         // the figures: the scope(exit)s run in reverse, so the timings take
         // in the antialiasing resolved at the end
         immutable started = MonoTime.currTime;

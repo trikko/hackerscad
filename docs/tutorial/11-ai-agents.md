@@ -45,6 +45,15 @@ away from it, 1 mm deep. The window shows it at once.
 The agent sees what you select in the view and which lines you changed, so
 "this face" and "the line I just wrote" work.
 
+To show the agent a place, point at it: turn on **Annotate** in the view bar
+(or press A in the view). The view stops still, and you draw on it as on a
+screenshot: an arrow, a cross on the exact point, a circle round something,
+a line by hand, a text, in the colour you pick. Then ask "make a 5 mm hole
+here": the agent reads your marks and what lies under each of them, the part,
+the face and the point. The agent draws on the view the same way to show you
+what it means, "this wall is too thin". Click a mark to move it, Delete to
+remove it; **Done** (or Esc) brings the view back to life, without the marks.
+
 Each window has a name in its header bar (*tidy-pine*, *blue-otter*…): click
 it to choose your own. With several windows open, tell the agent which one to
 use.

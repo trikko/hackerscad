@@ -37,7 +37,9 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "reply is the questions, before any code or hcad_gui_new/edit, even when told to make it; estimate only "
     ~ "if the user says so. Ask instead of guessing when it changes the result: the sizes of a real part to copy or build onto (say exactly what to measure), a font that cannot "
     ~ "be recognised (offer a similar installed one or tracing it as a sketch), the process or printer for "
-    ~ "fits. For an outline given by its dimensions, prefer a constrained sketch.";
+    ~ "fits. For an outline given by its dimensions, prefer a constrained sketch. To ask or to show where, "
+    ~ "frame the view on it, then mark it with hcad_gui_annotate in a colour that stands out; read the user's "
+    ~ "marks in hcad_gui_state when they say \"here\"; clear yours when done (the view is locked meanwhile).";
 
 /// Runs the server until stdin closes. Models are evaluated in a worker
 /// process (`hcad mcp --worker`): a cancelled or timed out evaluation, or one
@@ -850,6 +852,33 @@ JSONValue[] toolList()
             ~ "part: its name (needed with several parts).",
             `"part": {"type": "string"}, "plane": {"type": "string", "enum": ["xy", "xz", "yz"]}, `
             ~ `"at": {"type": "number"}, "show": {"type": "boolean"}`, `[]`),
+        gui("hcad_gui_annotate", "Annotations on the user's 3D view, a whiteboard you share with the user: the view "
+            ~ "locks (it cannot turn or zoom, and what it shows does not change meanwhile) and marks are drawn on "
+            ~ "it as on a screenshot, staying on what they mark if the view is resized, to show what you mean (\"the hole goes here\", \"this wall is too thin\"). The user draws "
+            ~ "too, in Annotate mode (the view bar's button, or A): arrows, crosses, circles, lines by hand, text; when "
+            ~ "the user says \"here\" or \"this\", read the marks in the state. add (locks the view if needed; returns "
+            ~ "the ids): items {\"arrow\": [tail, tip]}, {\"cross\": point} (a precise point), {\"circle\": point} (round "
+            ~ "it; round a whole part when the point is its name), {\"circle\": [corner, corner]}, {\"circle\": "
+            ~ "{\"center\": point, \"radius\": pixels}}, {\"freehand\": [points]}, {\"text\": \"…\", \"at\": point}; "
+            ~ "each with colour (magenta by default, red, orange, yellow, green, blue, black, white or \"#RRGGBB\") "
+            ~ "and label (a text beside it). A point is [x, y] as fractions of the view (0..1 from the top left), "
+            ~ "{\"px\": [x, y]} in pixels, or, projected into the view, [x, y, z] in mm, a part's name (its centre "
+            ~ "of mass) or {\"part\": name, \"face\": i} (that face's centre). remove: ids; clear: true (all), "
+            ~ "\"agent\" (yours) or \"user\" (with none left the view goes live again, unless the user is "
+            ~ "annotating); mode: true locks the view for the user to draw, false goes back to the live view and "
+            ~ "drops every mark; list: true. In one call: mode, clear, remove, add. Returns annotations: [{id, kind, "
+            ~ "by (agent or user), points (fractions), colour, text or label, under}]: under is, for each key point "
+            ~ "(an arrow's tip then its tail, a cross's or circle's centre, a text's point, a line's ends), what the "
+            ~ "view shows there: part, face, point (mm), normal and a selector for the face, or part null. "
+            ~ "While the view is annotated hcad_gui_view cannot move it, pick, inspect, rollback, step, sketch, "
+            ~ "transform, split and menu are refused, and a changed model shows only once it is live again (the "
+            ~ "camera where it was): after reading the user's marks, or when yours have served, set mode: false.",
+            `"add": {"type": "array", "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": `
+            ~ `["arrow", "cross", "circle", "freehand", "text"]}, "points": {"type": "array"}, "at": {}, `
+            ~ `"arrow": {"type": "array"}, "cross": {}, "circle": {}, "freehand": {"type": "array"}, `
+            ~ `"text": {"type": "string"}, "label": {"type": "string"}, "colour": {"type": "string"}}}}, `
+            ~ `"remove": {"type": "array", "items": {"type": "integer"}}, "clear": {"type": ["boolean", "string"]}, `
+            ~ `"list": {"type": "boolean"}, "mode": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_rename", "Rename the user's window (the name in its header bar, which the user and the "
             ~ "'window' argument use): letters, digits and dashes.", `"name": {"type": "string"}`, `["name"]`),
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
@@ -1000,6 +1029,10 @@ JSONValue[] toolList()
             ~ "the colour wheel (open it with hcad_gui_colour, wheel: true), about the About window (hcad_gui_about).",
             `"target": {"type": "string", "enum": ["window", "cheatsheet", "colour", "about"]}`, `[]`),
         gui("hcad_gui_state", "State of the user's window: file, parameters, parts, camera, problems, version; "
+            ~ "annotations lists the marks drawn on the locked 3D view, the user's (by: user) and yours, each with "
+            ~ "what lies under its key points (part, face, point in mm, selector; see hcad_gui_annotate), "
+            ~ "annotate_mode whether the view is annotated, annotated_view its size and whether the model changed "
+            ~ "since: when the user says \"here\", \"this\" or \"there\", look at them first; "
             ~ "user_changed tells which lines the user changed since your previous hcad_gui_* call. It waits for the "
             ~ "running evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) "
             ~ "and seconds; with source: true it includes the code as it is in the editor (maybe not saved) and steps, "
@@ -1318,7 +1351,7 @@ JSONValue callTool(string name, JSONValue args)
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
             "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_test", "hcad_gui_find", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
             "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet",
-            "hcad_gui_transform", "hcad_gui_colour", "hcad_gui_split":
+            "hcad_gui_transform", "hcad_gui_colour", "hcad_gui_split", "hcad_gui_annotate":
         {
             auto method = name["hcad_gui_".length .. $];
             auto r = guiRequest(arg("window"), method, args.type == JSONType.object ? args : JSONValue((JSONValue[string]).init));

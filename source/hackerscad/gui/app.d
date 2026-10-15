@@ -58,7 +58,7 @@ import gtk.gesture_click : GestureClick;
 import gtk.event_controller_key : EventControllerKey;
 import gtk.event_controller_motion : EventControllerMotion;
 import gdk.types : ModifierType, KEY_Escape, KEY_space, KEY_Return, KEY_KP_Enter, KEY_Control_L, KEY_Control_R,
-    KEY_Meta_L, KEY_Meta_R;
+    KEY_Meta_L, KEY_Meta_R, KEY_a, KEY_A, KEY_Delete, KEY_BackSpace;
 import hackerscad.geom.vec : BBox, Vec3;
 import glib.global : idleAdd;
 
@@ -88,6 +88,7 @@ import hackerscad.lang.interp : Interp, TraceEntry, FunctionInfo, callsOf;
 import hackerscad.lang.value : Kind, SolidVal;
 import hackerscad.lang.sketchval : SketchView, Stretch;
 import hackerscad.gui.sketchfollow;
+import hackerscad.gui.annotate : Annotate;
 import hackerscad.tool.guiclient : toOverrides;
 import std.json;
 
@@ -620,6 +621,7 @@ final class MainWindow
         inspectToggle = toggle("edit-find-symbolic", "Inspect (" ~ shortcutKey ~ "+I): click a line of code to see the solids and "
             ~ "2D profiles it makes, or a function's name to see what it returns; " ~ shortcutKey ~ "+click a line does the same", false);
         inspectToggle.connectToggled(() => updateEditorCursor(false));
+        buildAnnotate();
         // left-drag mode: rotate or pan (right drag always rotates, middle pans)
         import gtk.icon_theme : IconTheme;
         import gdk.display : Display;
@@ -684,6 +686,13 @@ final class MainWindow
                 ~ " background: alpha(@accent_bg_color, 0.14); border-radius: 0 0 9px 9px; }"
                 ~ " .hcad-modebar label { font-size: 0.9em; font-weight: bold; }"
                 ~ " .hcad-modebar button { min-height: 24px; padding: 1px 10px; }"
+                ~ " .hcad-annotatebar button { min-width: 22px; padding: 1px 5px; }"
+                ~ " .hcad-annotatebar menubutton > button { padding: 1px 4px; }"
+                // the colours of the annotations (tool/annotations' palette)
+                ~ " .hcad-mark-colour-0 { background: #9E006B; } .hcad-mark-colour-1 { background: #E01B24; }"
+                ~ " .hcad-mark-colour-2 { background: #FF7800; } .hcad-mark-colour-3 { background: #F6D32D; }"
+                ~ " .hcad-mark-colour-4 { background: #26A269; } .hcad-mark-colour-5 { background: #1C71D8; }"
+                ~ " .hcad-mark-colour-6 { background: #1E1E1E; } .hcad-mark-colour-7 { background: #FFFFFF; }"
                 ~ " .hcad-gizmo-value { background: alpha(@window_bg_color, 0.9); border-radius: 6px; padding: 2px 7px;"
                 ~ " border: 1px solid alpha(currentColor, 0.15); font-weight: bold; }"
                 ~ " popover.hcad-menu > contents { padding: 4px 0; min-width: 210px; border-radius: 6px; }"
@@ -799,6 +808,7 @@ final class MainWindow
         viewBar.append(displayMenu);
         viewBar.append(sectionToggle);
         viewBar.append(inspectToggle);
+        viewBar.append(annotateToggle);
         foreach (b; [rotateMode, panMode, sectionToggle, inspectToggle])
             b.addCssClass("flat");
 
@@ -983,7 +993,13 @@ final class MainWindow
             });
         };
         overlay = new Overlay;
-        overlay.setChild(viewport.area);
+        {
+            // the layer Annotate draws on lies over the 3D view (taking the pointer from it), under what floats over both
+            auto stacked = new Overlay;
+            stacked.setChild(viewport.area);
+            stacked.addOverlay(noteArea);
+            overlay.setChild(stacked);
+        }
         // what floats over the view stays inside it: a long message or bar is
         // cut, never drawn over the parameters and the steps
         {
@@ -1025,6 +1041,14 @@ final class MainWindow
             auto keys = new EventControllerKey;
             // Esc: back from Inspect or a rollback, otherwise (like Space) an empty selection
             keys.connectKeyPressed((uint key, uint code, ModifierType state) {
+                // A: Annotate, the view locked to draw on (its own keys then)
+                immutable plain = (state & (ModifierType.ControlMask | ModifierType.AltMask | ModifierType.MetaMask
+                    | ModifierType.SuperMask)) == 0;
+                if ((key == KEY_a || key == KEY_A) && plain)
+                {
+                    annotateToggle.setActive(true);
+                    return true;
+                }
                 // moving or turning a part: Enter writes it, Esc leaves it
                 if (viewport.gizmo != Viewport.Gizmo.none && (key == KEY_Return || key == KEY_KP_Enter))
                 {
@@ -1087,6 +1111,7 @@ final class MainWindow
         tools.append(sectionBar);
         tools.append(transformBar);
         tools.append(modeBar);
+        tools.append(annotateBar);
         overlay.addOverlay(tools);
         info("");
         overlay.setVexpand(true);
@@ -1644,6 +1669,9 @@ private:
 
     void showOutcome(Outcome o)
     {
+        // the view is annotated: it does not change under the marks; shown once it is unlocked
+        if (holdOutcome(o))
+            return;
         if (o.ok)
             showTests(o);
         // a failed evaluation leaves the last good model on screen: it is
@@ -2203,6 +2231,8 @@ private:
 
     void picked(Hit hit)
     {
+        if (sceneLocked())
+            return;
         // with a sketch shown, a click near one of its points shows the line that created it
         foreach (index; sketchIndices)
             if (index < last.sketches.length)
@@ -2318,6 +2348,8 @@ private:
     /// The frame (move), the rings (rotate) or the handles (scale) on part `index`.
     void startTransform(Viewport.Gizmo kind, int index)
     {
+        if (sceneLocked())
+            return;
         if (index < 0 || index >= last.parts.length)
             return;
         auto part = last.parts[index];
@@ -2407,6 +2439,8 @@ private:
     /// The ring about an axis on part `index`, as a hinge.
     void startHinge(int index, Vec3 origin, Vec3 dir, string about)
     {
+        if (sceneLocked())
+            return;
         if (index < 0 || index >= last.parts.length)
             return;
         auto part = last.parts[index];
@@ -2783,6 +2817,8 @@ private:
     /// the face's anchor nearest that point is carried.
     void startPlaceOn(int index, int face, Vec3 at)
     {
+        if (sceneLocked())
+            return;
         if (index < 0 || index >= last.parts.length)
             return;
         auto part = last.parts[index];
@@ -3016,6 +3052,8 @@ private:
     /// The section plane on part `index` alone, to split it where it is.
     void startSplit(int index, bool onFace = false, Vec3 facePoint = Vec3(0, 0, 0), Vec3 faceNormal = Vec3(0, 0, 1))
     {
+        if (sceneLocked())
+            return;
         if (index < 0 || index >= last.parts.length)
             return;
         auto part = last.parts[index];
@@ -3179,6 +3217,8 @@ private:
     /// difference or intersection shows its two operands in two colours.
     void showFeature(uint[] ids)
     {
+        if (sceneLocked())
+            return;
         import std.algorithm : filter;
         import std.array : array;
 
@@ -3607,7 +3647,7 @@ private:
     /// A new or another model: everything about the view as at the start
     /// (point of view and zoom with the first result, style, projection,
     /// section, printability limits, what the previous model left open,
-    /// selected or hidden). Smooth edges, and the preferences kept between
+    /// selected or hidden, its annotations). Smooth edges, and the preferences kept between
     /// runs (the panels shown, the theme, grid and axes), stay.
     void resetInterface()
     {
@@ -3633,10 +3673,14 @@ private:
         perspectiveChoice.setActive(true);
         sideStack.setVisibleChildName("params");
         viewport.showAll();
+        // the picture and its marks were of the other model
+        unlockView();
     }
 
     void showFinal()
     {
+        if (sceneLocked(false))
+            return;
         viewport.clearRollback();
         if (viewport.inInspect)
             stopInspect();
@@ -3707,6 +3751,8 @@ private:
     /// in orange (`highlight`; without it the whole sketch, as for its step).
     bool inspectSketch(uint from, uint to, bool highlight, int col = -1)
     {
+        if (sceneLocked())
+            return false;
         followTakenOver();
         inspectRequest++;   // what a previous Inspect is still computing is not needed
         if (viewport.inRollback)
@@ -3767,6 +3813,8 @@ private:
     /// from..to, which make `found` in each (in orange with `highlight`).
     void drawSketches(size_t[] which, SketchView.Found[] found, uint from, uint to, bool highlight)
     {
+        if (sceneLocked(false))
+            return;
         // another sketch: seen from above, as a drawing
         immutable another = sketchIndices != which;
         sketchLines = [from, to];
@@ -3784,6 +3832,8 @@ private:
 
     void hideSketch()
     {
+        if (sceneLocked(false))
+            return;
         if (sketchIndices.length == 0 && sketchLines[0] == 0)
             return;
         followClosed();   // the sketch at the cursor: the camera goes back
@@ -3944,6 +3994,8 @@ private:
     /// Tessellates the values (on the evaluator's thread) and shows them.
     void showInspected(TraceEntry[] made, string where, bool returns, uint calls = 0)
     {
+        if (sceneLocked())
+            return;
         enum maxShown = 64;
         if (made.length > maxShown)
             made = made[0 .. maxShown];
@@ -4062,6 +4114,8 @@ private:
 
     void stopInspect()
     {
+        if (sceneLocked(false))
+            return;
         inspectRequest++;
         immutable was = viewport.inInspect;
         inspectQuery = InspectQuery.init;
@@ -4826,8 +4880,8 @@ private:
         {
             double x, y;
             immutable visible = viewport.project(dims[i].at, x, y);
-            // the one being edited stays hidden under its field
-            b.setVisible(visible && b !is editingDimension);
+            // the one being edited stays hidden under its field; all while the view is annotated
+            b.setVisible(visible && b !is editingDimension && !frozen);
             if (!visible)
                 continue;
             immutable mx = cast(int)(x - b.getWidth() / 2), my = cast(int)(y - b.getHeight() / 2);
@@ -5542,6 +5596,7 @@ private:
     // the control socket's methods: gui/controlmethods
     mixin ControlMethods;
     mixin SketchFollow;
+    mixin Annotate;
 
     JSONValue state()
     {
@@ -5608,6 +5663,7 @@ private:
         j["inspect"] = inspectJson();
         j["sketch"] = shownSketchJson();
         j["sketch_follow"] = followCursor;
+        annotationsState(j);
         {
             TextIter it;
             buffer.getIterAtMark(it, buffer.getInsert());

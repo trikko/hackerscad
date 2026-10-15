@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- annotate tool: a cross with a gap at the point it marks -->
+  <path fill="#2e3436" d="M7.25 1 H8.75 V6 H7.25 Z M7.25 10 H8.75 V15 H7.25 Z M1 7.25 H6 V8.75 H1 Z M10 7.25 H15 V8.75 H10 Z"/>
+</svg>

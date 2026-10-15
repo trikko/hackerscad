@@ -10,6 +10,13 @@ mixin template ControlMethods()
     {
         string arg(string k) => k in p && p[k].type == JSONType.string ? p[k].str : null;
         bool has(string k) => k in p && p[k].type != JSONType.null_;
+        // the view is annotated: what would change what it shows waits until it is live again
+        {
+            import std.algorithm : canFind;
+            if (frozen && ["pick", "transform", "split", "inspect", "rollback", "step", "sketch", "menu"].canFind(method))
+                return reply(JSONValue.init, "the view is annotated (locked, with marks on it): " ~ method ~ " would "
+                    ~ "change what it shows; hcad_gui_annotate mode: false (or the user's Done) takes it back to the live view");
+        }
         switch (method)
         {
         case "open":
@@ -91,6 +98,11 @@ mixin template ControlMethods()
             {
                 import std.conv : to;
                 alias num = numberOf;
+                // the view is annotated: it is locked, so the marks stay on what they mark
+                if (frozen && (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom")
+                        || has("size") || has("projection")))
+                    return reply(JSONValue.init, "the view is annotated (locked, with marks on it): it cannot move "
+                        ~ "until hcad_gui_annotate mode: false (or the user's Done) takes it back to the live view");
                 // moved as the user moves it: the frames count in graphics' figures
                 if (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom") || has("size"))
                     viewport.moved();
@@ -1221,6 +1233,92 @@ mixin template ControlMethods()
             showAbout();
             reply(JSONValue(["opened": true]), null);
             return;
+        case "annotate":
+            {
+                // marks on the locked 3D view, a whiteboard shared with the user (see
+                // tool/annotations): {"add": [items]} locks the view if it is not, and returns the ids
+                // (an item: {"arrow": [tail, tip]}, {"cross": P}, {"circle": P or [corner, corner]},
+                // {"freehand": [P…]}, {"text": "…", "at": P}, with colour and label; a point is [x, y]
+                // fractions of the view, {"px": [x, y]}, [x, y, z] mm, a part's name or {part, face});
+                // {"remove": [ids]}; {"clear": true} all ({"clear": "agent"} or "user": one author's;
+                // none left: back to the live view, unless the user is annotating); {"mode": true}
+                // locks the view for the user to draw, false goes back to the live view (the marks go);
+                // {"list": true}. In one call: mode, clear, remove, add
+                whenIdle(() {
+                    import hackerscad.tool.annotations : readAnnotation, Annotation;
+                    if (has("mode"))
+                    {
+                        if (p["mode"].type == JSONType.true_)
+                        {
+                            if (!lockView(false))
+                                return reply(JSONValue.init, "the 3D view is hidden: show it (view: true) to annotate it");
+                        }
+                        else if (p["mode"].type == JSONType.false_)
+                            unlockView();
+                        else
+                            return reply(JSONValue.init, "mode is true (annotate) or false (the live view)");
+                    }
+                    if (has("clear"))
+                    {
+                        auto c = p["clear"];
+                        if (c.type == JSONType.true_)
+                            clearNotes(null);
+                        else if (c.type == JSONType.string && (c.str == "agent" || c.str == "user"))
+                            clearNotes(c.str);
+                        else if (c.type != JSONType.false_)
+                            return reply(JSONValue.init, "clear is true (all), \"agent\" or \"user\"");
+                    }
+                    JSONValue[] missing;
+                    if (has("remove"))
+                    {
+                        auto ids = p["remove"].type == JSONType.array ? p["remove"].array : [p["remove"]];
+                        foreach (v; ids)
+                        {
+                            if (v.type != JSONType.integer && v.type != JSONType.uinteger)
+                                return reply(JSONValue.init, "remove is a list of annotation ids");
+                            if (notes.find(cast(uint) numberOf(v)) is null)
+                                missing ~= v;
+                            else
+                                removeNote(cast(uint) numberOf(v));
+                        }
+                    }
+                    JSONValue[] ids;
+                    if (has("add"))
+                    {
+                        immutable wasFrozen = frozen;
+                        if (!lockView(false))
+                            return reply(JSONValue.init, "the 3D view is hidden: show it (view: true) to annotate it");
+                        auto items = p["add"].type == JSONType.array ? p["add"].array : [p["add"]];
+                        Annotation[] adding;
+                        foreach (k, it; items)
+                        {
+                            Annotation n;
+                            if (auto problem = readAnnotation(it, &readNotePoint, viewW, viewH, n))
+                            {
+                                // nothing added: the view as it was
+                                if (!wasFrozen)
+                                    unlockView();
+                                return reply(JSONValue.init, items.length > 1 ? format("item %d: %s", k, problem) : problem);
+                            }
+                            if (!("by" in it))
+                                n.by = "agent";
+                            findUnder(n);
+                            adding ~= n;
+                        }
+                        foreach (n; adding)
+                            ids ~= JSONValue(notes.add(n));
+                        notesChanged();
+                    }
+                    JSONValue r = ["annotations": notes.toJson()];
+                    if (has("add"))
+                        r["ids"] = ids;
+                    if (missing.length)
+                        r["not_found"] = missing;
+                    r["annotate_mode"] = frozen;
+                    reply(r, null);
+                });
+                return;
+            }
         case "screenshot":
             {
                 auto file = arg("path");

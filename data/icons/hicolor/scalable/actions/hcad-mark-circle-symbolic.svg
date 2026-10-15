@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- annotate tool: an ellipse -->
+  <path fill="#2e3436" fill-rule="evenodd" d="M15 8 A7 5.5 0 1 0 1 8 A7 5.5 0 1 0 15 8 Z M13.5 8 A5.5 4 0 1 1 2.5 8 A5.5 4 0 1 1 13.5 8 Z"/>
+</svg>

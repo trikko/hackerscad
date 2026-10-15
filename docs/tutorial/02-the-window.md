@@ -42,7 +42,10 @@ bag clip, Carlo, is still open; we use it to try things.
    the axes; the cube, to choose how the parts are drawn; the section, to cut
    the model and look inside (parallel to the face you picked, if any; drag
    the squares at the plane's corners to move it, the X past them closes it); the magnifying glass, to see what a line
-   of code makes. With the cursor in a sketch's code the view shows that
+   of code makes; the arrow at a ring, **Annotate** (A): the view stops
+   still, to draw arrows, crosses, circles and text on it like on a
+   screenshot, to show something or to tell an AI agent where (chapter
+   11); **Done** (or Esc) brings the view back to life. With the cursor in a sketch's code the view shows that
    sketch by itself, from above, with its dimensions.
 3. **Parameters and Steps.** Two tabs. *Parameters* has the sizes the model
    lets you change, without touching the code; *Steps* shows how the model is
