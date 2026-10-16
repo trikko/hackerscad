@@ -284,6 +284,8 @@ final class Interp
                 continue;
             immutable at = many ? "@parts" : "@part";
             stage(format("part %d of %d: %s", ++partIndex, partCount, f.name));
+            // the steps this part makes: where to look if it comes out broken
+            immutable partFeatures = features.length;
             auto v = callPart(f, mod);
             SolidVal[] items;
             import std.algorithm : all;
@@ -383,8 +385,29 @@ final class Interp
                 // a reference part is not exported (a phone loaded from a mesh, a face a
                 // triangle: checking it took seconds at every change)
                 if (export_ && !kernel.isValid(item.brep))
+                {
+                    // the first step that made a broken solid from sound ones: where to look
+                    string where;
+                    Span at_ = f.nameSpan;
+                    foreach (fi; features[partFeatures .. $])
+                    {
+                        if (fi.result is null || fi.result.brep is null || fi.result.flat || fi.result.path
+                            || kernel.isValid(fi.result.brep))
+                            continue;
+                        bool sound = true;
+                        foreach (o; fi.operands)
+                            if (o !is null && o.brep !is null && !o.flat && !o.path && !kernel.isValid(o.brep))
+                                sound = false;
+                        if (!sound)
+                            continue;
+                        where = format(": first broken by the %s at line %d", fi.kind, fi.span.line);
+                        at_ = fi.span;
+                        break;
+                    }
                     diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("%s '%s' is not a valid closed solid "
-                        ~ "(a self-intersecting outline, overlapping sweep or fold?): exports may be broken", at, name), f.nameSpan);
+                        ~ "(a self-intersecting outline, overlapping sweep or fold?)%s; exports may be broken", at, name,
+                        where), at_);
+                }
                 auto pr = PartResult(name, f.name, item, c, f.nameSpan, export_, partLabel);
                 if (many)
                 {

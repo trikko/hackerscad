@@ -539,6 +539,19 @@ unittest
     foreach (d; lasting.diagnostics)
         assert(d.severity != Severity.error, d.message);
 
+    // a part that comes out broken says which of its steps broke it, and points there
+    auto broken = runModel("@part Solid a() => box(10, 10, 10);\n"
+        ~ "@part Solid b() => box(10, 10, 10) + circle(d: 8).sweep(path([vec(0, 0, 0), vec(0, 0, 12), vec(1, 0, 12)]))"
+        ~ ".move(x: 3);\n");
+    bool told;
+    foreach (d; broken.diagnostics)
+        if (d.message.canFind("not a valid closed solid"))
+        {
+            assert(d.message.canFind("first broken by the sweep at line 2") && d.span.line == 2, d.message);
+            told = true;
+        }
+    assert(told, "the broken part is told");
+
     // where the faces cannot be merged ("Courbes non jointives"), the union
     // is still made, as it was before faces were merged
     auto unmerged = runModel(q{
