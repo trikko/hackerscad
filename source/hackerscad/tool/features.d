@@ -159,7 +159,8 @@ JSONValue featuresJson(const Analysis a)
 /// axes (x and y for xy, x and z for xz, y and z for yz). `region`
 /// ([u0, v0, u1, v1] in those axes) keeps only the outlines that lie inside
 /// it: a lettering, a pocket, without the outline of the whole part.
-string sectionReport(string file, string part, string plane, double at, const double[] region = null)
+string sectionReport(string file, string part, string plane, double at, const double[] region = null,
+    bool withSketch = true)
 {
     import std.algorithm : sort, max;
     import std.math : abs;
@@ -178,6 +179,7 @@ string sectionReport(string file, string part, string plane, double at, const do
     auto loops = slice(m, n, along, u, v);
     if (loops.length == 0)
         throw new Exception(format("the plane %s at %g mm does not cut the part", plane, at));
+    bool clipped;
     if (region.length)
     {
         import std.algorithm : min;
@@ -185,6 +187,9 @@ string sectionReport(string file, string part, string plane, double at, const do
             throw new Exception("region is four numbers: [u0, v0, u1, v1], two opposite corners in the plane's axes");
         immutable u0 = min(region[0], region[2]), u1 = max(region[0], region[2]);
         immutable v0 = min(region[1], region[3]), v1 = max(region[1], region[3]);
+        // the outlines wholly inside (a lettering, a pocket); when none is,
+        // those crossing it, cut at its edges (a convex window cuts any
+        // outline whole)
         typeof(loops) inside;
         foreach (l; loops)
         {
@@ -195,7 +200,17 @@ string sectionReport(string file, string part, string plane, double at, const do
                 inside ~= l;
         }
         if (inside.length == 0)
-            throw new Exception(format("no outline of the section lies wholly inside the region (%g, %g) to (%g, %g)",
+            foreach (l; loops)
+            {
+                auto cut = clipToRect(l, u0, v0, u1, v1);
+                if (cut.length >= 3 && abs(area(cut)) > 1e-4)
+                {
+                    inside ~= cut;
+                    clipped = true;
+                }
+            }
+        if (inside.length == 0)
+            throw new Exception(format("no outline of the section reaches into the region (%g, %g) to (%g, %g)",
                 u0, v0, u1, v1));
         loops = inside;
     }
@@ -219,9 +234,50 @@ string sectionReport(string file, string part, string plane, double at, const do
         sorted ~= fitted[i];
     immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
     return format("section %s at %g mm (coordinates %s)%s:\n", plane, at, axes,
-        region.length ? format(", the outlines inside (%g, %g) to (%g, %g)", region[0], region[1], region[2], region[3])
+        region.length ? format(", the outlines inside (%g, %g) to (%g, %g)%s", region[0], region[1], region[2], region[3],
+            clipped ? "; none lies wholly inside, so those crossing it are cut at its edges (the lines along them are "
+                ~ "the cut, not the part)" : "")
             : "") ~ describe(sorted)
-        ~ "\n// as a sketch (" ~ axes ~ " of the plane become its x, y):\n" ~ sketchCode(sorted, "section");
+        ~ (withSketch ? "\n// as a sketch (" ~ axes ~ " of the plane become its x, y):\n" ~ sketchCode(sorted, "section")
+            : "");
+}
+
+import hackerscad.geom.outlinefit : P2;
+
+/// The part of a closed outline inside the rectangle u0 … u1, v0 … v1
+/// (Sutherland–Hodgman: the window is convex, so any outline comes out
+/// whole, as one outline, its cut sides along the window's edges).
+P2[] clipToRect(const P2[] loop, double u0, double v0, double u1, double v1)
+{
+    P2[] r = loop.dup;
+    // keep the side where inside(p) holds of each edge in turn
+    foreach (edge; 0 .. 4)
+    {
+        if (r.length == 0)
+            break;
+        bool inside(P2 p) => edge == 0 ? p[0] >= u0 : edge == 1 ? p[0] <= u1 : edge == 2 ? p[1] >= v0 : p[1] <= v1;
+        P2 cross(P2 a, P2 b)
+        {
+            immutable t = edge == 0 ? (u0 - a[0]) / (b[0] - a[0]) : edge == 1 ? (u1 - a[0]) / (b[0] - a[0])
+                : edge == 2 ? (v0 - a[1]) / (b[1] - a[1]) : (v1 - a[1]) / (b[1] - a[1]);
+            return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+        }
+        P2[] o;
+        foreach (i, cur; r)
+        {
+            auto prev = r[(i + r.length - 1) % r.length];
+            if (inside(cur))
+            {
+                if (!inside(prev))
+                    o ~= cross(prev, cur);
+                o ~= cur;
+            }
+            else if (inside(prev))
+                o ~= cross(prev, cur);
+        }
+        r = o;
+    }
+    return r;
 }
 
 

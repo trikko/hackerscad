@@ -2494,7 +2494,7 @@ unittest
         assert(d.severity != Severity.error, d.message);
     // a feature that closes up on the way is an error, not a crash
     immutable closes = error("@part Solid p() => (rect(30, 20) - rect(10, 6)).offset(-1).extrude(1.5, taper: -45.deg);");
-    assert(closes.message.canFind("closes up"), closes.message);
+    assert(closes.message.canFind("closes up") && closes.message.canFind("atan(r / height)"), closes.message);
 }
 
 unittest
@@ -2600,6 +2600,11 @@ unittest
     // a region round the hole: only its outline, not the plate's
     immutable hole = sectionReport(buildPath(dir, "plate.stl"), null, "xy", 3, [4, -4, 12, 4]);
     assert(hole.canFind("circle ⌀6, centre (8, 0)") && !hole.canFind("arc r 5") && !hole.canFind("outline 2"), hole);
+    // a region across the plate's end: the outline cut at its edges; without the sketch on request
+    immutable end = sectionReport(buildPath(dir, "plate.stl"), null, "xy", 3, [12, -15, 30, 15], false);
+    assert(end.canFind("cut at its edges") && end.canFind("arc r 5") && !end.canFind("Profile section"), end);
+    assert(!end.canFind("circle ⌀6"), "the hole lies outside the region");
+    assert(end.canFind("line (12, -10) → (12, 10)") || end.canFind("line (12, 10) → (12, -10)"), end);
     auto code = rep[rep.indexOf("/// The section") .. $];
     auto r = runModel("import std.math;\n" ~ code ~ "@part Solid p() => section().extrude(1.mm);\n"
         ~ "unittest { writeln(section().area / 1.mm ^^ 2); }\n");

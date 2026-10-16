@@ -1,5 +1,6 @@
 module hackerscad.lang.lexer;
 
+import std.format : format;
 import std.ascii : isDigit, isHexDigit, isAlpha, isAlphaNum, isWhite;
 import std.conv : to, ConvException;
 import std.array : replace;
@@ -53,8 +54,22 @@ shared static this()
 immutable string[] unsupportedKeywords = [
     "class", "interface", "template", "mixin", "asm", "throw", "try", "catch",
     "finally", "new", "delete", "delegate", "function", "static", "goto", "with",
-    "synchronized", "shared", "__gshared", "extern", "pragma", "union", "alias",
+    "synchronized", "shared", "__gshared", "extern", "pragma", "union", "alias", "cast",
 ];
+
+/// What to write instead, for the unsupported keywords that have an answer.
+immutable string[string] unsupportedHints;
+
+shared static this()
+{
+    unsupportedHints = [
+        "cast": "convert with to: x.to!int (a whole number, rounded towards zero), x.to!double, x.to!string; "
+            ~ "round(x), floor(x), ceil(x) for numbers",
+    ];
+}
+
+/// The units a number takes, written after it with a dot (60.mm).
+immutable string[] unitNames = ["mm", "cm", "m", "inch", "deg", "rad"];
 
 private struct Op
 {
@@ -274,7 +289,8 @@ Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
             {
                 foreach (u; unsupportedKeywords)
                     if (u == word)
-                        throw new HcadError(Code.syntax, "'" ~ word ~ "' is not supported in .hcad files", span);
+                        throw new HcadError(Code.syntax, "'" ~ word ~ "' is not supported in .hcad files", span,
+                            unsupportedHints.get(word, null));
                 toks ~= Token(Tok.ident, word, span);
             }
             continue;
@@ -319,6 +335,22 @@ Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
                 advance(2);
                 while (isDigit(peek))
                     advance();
+            }
+            // "8.2mm": the unit joined without its dot
+            if (isAlpha(peek))
+            {
+                size_t j = i;
+                while (j < source.length && isAlpha(source[j]))
+                    j++;
+                immutable unit = source[i .. j];
+                foreach (u; unitNames)
+                    if (u == unit)
+                    {
+                        span.length = cast(uint)(j - startI);
+                        throw new HcadError(Code.lex, format("a number takes its unit after a dot: %s.%s, not %s%s",
+                            source[startI .. i], unit, source[startI .. i], unit), span,
+                            format("write %s.%s", source[startI .. i], unit));
+                    }
             }
             span.length = cast(uint)(i - startI);
             toks ~= Token(isFloat ? Tok.floatLit : Tok.intLit, source[startI .. i].replace("_", ""), span);
@@ -375,7 +407,15 @@ unittest
     auto u = lex("1.5.mm", "t");
     assert(u[0].kind == Tok.floatLit && u[1].kind == Tok.dot && u[2].text == "mm");
 
-    import std.exception : assertThrown;
+    import std.exception : assertThrown, collectException;
+    import std.algorithm : canFind;
     assertThrown!HcadError(lex("class Foo {}", "t"));
+    // a unit joined to its number, and cast, say what to write
+    auto glued = collectException!HcadError(lex("w = 8.2mm;", "t"));
+    assert(glued !is null && glued.diag.suggestion == "write 8.2.mm" && glued.diag.span.col == 5, glued.msg);
+    assert(collectException!HcadError(lex("a = 30deg;", "t")).diag.suggestion == "write 30.deg");
+    auto cast_ = collectException!HcadError(lex("int n = cast(int) x;", "t"));
+    assert(cast_ !is null && cast_.diag.suggestion.canFind("to!int"), cast_.msg);
+    assert(lex("1e3 0x1F 2.5", "t").length == 4);
     assertThrown!HcadError(lex(`"open`, "t"));
 }

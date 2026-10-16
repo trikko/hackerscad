@@ -238,10 +238,10 @@ int main(string[] args)
         {
             string part, plane = "xy", other, out_, region;
             double at = 0;
-            bool projection;
+            bool projection, noSketch;
             try
                 getopt(args, "part", &part, "plane", &plane, "at", &at, "projection", &projection, "compare", &other,
-                    "o|output", &out_, "region", &region);
+                    "o|output", &out_, "region", &region, "no-sketch", &noSketch);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -278,7 +278,7 @@ int main(string[] args)
                     import std.array : array, split;
                     import std.conv : to;
                     auto r = region.length ? region.split(",").map!(x => x.to!double).array : null;
-                    write(sectionReport(args[1], part, plane, at, r));
+                    write(sectionReport(args[1], part, plane, at, r, !noSketch));
                 }
             }
             catch (Exception e)

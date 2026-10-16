@@ -885,7 +885,8 @@ hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
             }
             if (r.IsNull() && !curved) {
                 set_error("tapered extrusion failed: an edge or a hole of the profile closes up before the top "
-                          "(lower the height or the taper)");
+                          "(lower the height or the taper; a rounded corner of radius r, as .offset(r) or "
+                          ".round(r) make, lasts while height × tan(taper) ≤ r: the taper at most atan(r / height))");
                 return nullptr;
             }
             if (r.IsNull()) {

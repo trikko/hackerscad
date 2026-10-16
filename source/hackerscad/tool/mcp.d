@@ -692,7 +692,9 @@ JSONValue[] toolList()
             `"path": {"type": "string"}, "part": {"type": "string"}, "plane": {"type": "string", "enum": ["xy", "xz", "yz"]}, `
             ~ `"at": {"type": "number", "description": "mm along the plane's normal axis"}, "projection": {"type": "boolean"}, `
             ~ `"compare": {"type": "string"}, "region": {"type": "array", "items": {"type": "number"}, "minItems": 4, `
-            ~ `"maxItems": 4, "description": "two opposite corners in the plane's axes: only the outlines inside"}`,
+            ~ `"maxItems": 4, "description": "two opposite corners in the plane's axes: only the outlines inside it `
+            ~ `(when none is, those crossing it cut at its edges)"}, "sketch": {"type": "boolean", "description": `
+            ~ `"false: the outlines only, without the sketch to paste"}`,
             `["path", "plane"]`),
         tool("hcad_compare", "How far a part of a model is from another (a remodelled part from the mesh it copies, "
             ~ "loaded as a see-through reference part: @part(\"slategray\", alpha: 0.3, export: false) Solid original() => "
@@ -1277,6 +1279,7 @@ JSONValue callTool(string name, JSONValue args)
             {
                 auto at = "at" in args;
                 immutable level = at is null ? 0 : at.type == JSONType.integer ? at.integer : at.floating;
+                immutable withSketch = !("sketch" in args && args["sketch"].type == JSONType.false_);
                 double[] region;
                 if (auto rg = "region" in args)
                     if (rg.type == JSONType.array)
@@ -1294,10 +1297,10 @@ JSONValue callTool(string name, JSONValue args)
                     if (pr.type == JSONType.true_)
                         text(projectionReport(arg("path"), arg("part"), arg("plane")));
                     else
-                        text(sectionReport(arg("path"), arg("part"), arg("plane"), level, region));
+                        text(sectionReport(arg("path"), arg("part"), arg("plane"), level, region, withSketch));
                 }
                 else
-                    text(sectionReport(arg("path"), arg("part"), arg("plane"), level, region));
+                    text(sectionReport(arg("path"), arg("part"), arg("plane"), level, region, withSketch));
             }
             catch (Exception e)
             {
