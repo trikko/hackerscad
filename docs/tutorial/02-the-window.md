@@ -154,6 +154,24 @@ The editor has the keys of a code editor:
 - **The code:** the keys of the list above (Ctrl+F, Ctrl+H, Ctrl+L, Ctrl+/,
   Ctrl+D…); Ctrl+click on a line shows what it makes, in the view.
 
+### Picking with a box
+
+Drag with the left button over the view and a box follows the pointer. It
+picks the kind of thing the bar's buttons are set to (parts, faces, edges or
+vertices), and adds it to what is already picked:
+
+- **Dragged from left to right**, the box is drawn with a solid line: it
+  takes only what lies **wholly inside** it. Use it to pick a few things
+  out of a crowd: the edges round one hole, say, and not the long ones
+  passing by.
+- **Dragged from right to left**, the box is drawn dashed: it takes
+  everything it **touches**, even in part. Use it to pick a lot at once.
+
+Either way it takes only what you can see: a face or an edge behind the
+part stays out. To take the hidden ones too, choose **Wireframe** in the
+cube's menu first: there everything is drawn, and the box takes all of it.
+In a sketch the box works the same way on its points and lines.
+
 ## The cheatsheet
 
 Press F1: a window lists everything the language has, one line each, with
