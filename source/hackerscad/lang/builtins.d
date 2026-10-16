@@ -2364,7 +2364,20 @@ uint colorOf(Value v, Span span)
     string[] names = namedColors.keys;
     foreach (c; partPalette)
         names ~= c.name.toLower;
-    throw new HcadError(Code.type, format("unknown color '%s'", v.s), span, Interp.suggest(s, names));
+    // nothing close: the names that contain the word, and the hex form
+    auto hint = Interp.suggest(s, names);
+    if (hint is null)
+    {
+        import std.algorithm : canFind, sort;
+        string[] near;
+        foreach (n; names)
+            if (n.canFind(s))
+                near ~= n;
+        near.sort();
+        hint = (near.length ? "names with it: " ~ near[0 .. near.length < 4 ? $ : 4].join(", ") ~ "; or " : "")
+            ~ "a hex colour, \"#RRGGBB\"";
+    }
+    throw new HcadError(Code.type, format("unknown color '%s'", v.s), span, hint);
 }
 
 immutable uint[string] namedColors;

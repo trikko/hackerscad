@@ -1607,8 +1607,19 @@ final class Interp
         void sameDim()
         {
             if (a.dim != b.dim)
-                throw new HcadError(Code.units, format("incompatible units: %s %s %s", a.dim.name, opText(op), b.dim.name), span,
-                    a.dim == Dim.none || b.dim == Dim.none ? "add a unit to the bare number, e.g. 5.mm" : null);
+            {
+                // the bare number with the other side's unit: 1.5 next to a length is 1.5.mm
+                string hint;
+                if (a.dim == Dim.none || b.dim == Dim.none)
+                {
+                    immutable bare = a.dim == Dim.none ? a : b, other = a.dim == Dim.none ? b : a;
+                    immutable unit = other.dim == Dim.length ? "mm" : other.dim == Dim.angle ? "deg" : null;
+                    hint = unit.length ? format("write the bare number with its unit: %g.%s", bare.value, unit)
+                        : "add a unit to the bare number, e.g. 5.mm";
+                }
+                throw new HcadError(Code.units, format("incompatible units: %s %s %s", a.dim.name, opText(op), b.dim.name),
+                    span, hint);
+            }
         }
 
         immutable bothInt = a.isInt && b.isInt;

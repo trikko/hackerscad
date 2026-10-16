@@ -455,8 +455,10 @@ final class Run
         foreach (way; [["a_to_b", na ~ " to " ~ nb], ["b_to_a", nb ~ " to " ~ na]])
         {
             auto d = j[way[0]];
-            s ~= format("  %s: %d%% within tolerance, mean %s mm, rms %s mm, largest %s mm at %s\n", way[1],
-                cast(int)(num(d["within_tolerance"]) * 100 + 0.5), mm(num(d["mean_mm"])), mm(num(d["rms_mm"])),
+            // one decimal, floored: 94.99% is not 95%
+            import std.math : floor;
+            s ~= format("  %s: %.1f%% within tolerance, mean %s mm, rms %s mm, largest %s mm at %s\n", way[1],
+                floor(num(d["within_tolerance"]) * 1000) / 10, mm(num(d["mean_mm"])), mm(num(d["rms_mm"])),
                 mm(num(d["max_mm"])), vec(d["worst_at"]));
         }
         foreach (side; [["b_surface_not_matched", "on " ~ nb ~ ", what " ~ na ~ " does not follow"],

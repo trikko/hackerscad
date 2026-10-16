@@ -539,6 +539,11 @@ unittest
     foreach (d; lasting.diagnostics)
         assert(d.severity != Severity.error, d.message);
 
+    // a bare number next to a length, an unknown colour: the fix in the suggestion
+    assert(error("@param(\"x\") immutable x = 3.mm;\n@part Solid a() => box(10, 10, 10).move(x: x - 1.5);")
+        .suggestion == "write the bare number with its unit: 1.5.mm");
+    assert(error(`@part Solid a() => box(10, 10, 10).color("sky");`).suggestion.canFind("skyblue"));
+
     // a part that comes out broken says which of its steps broke it, and points there
     auto broken = runModel("@part Solid a() => box(10, 10, 10);\n"
         ~ "@part Solid b() => box(10, 10, 10) + circle(d: 8).sweep(path([vec(0, 0, 0), vec(0, 0, 12), vec(1, 0, 12)]))"
