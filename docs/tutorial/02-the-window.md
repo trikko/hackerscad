@@ -40,12 +40,17 @@ bag clip, Carlo, is still open; we use it to try things.
    **Edit sketch…** shows that sketch ([chapters 12](12-medal.md) and
    [15](15-going-further.md)).
 2. **The view bar.** Fit, and the views in the **View** menu (Iso, Top,
-   Front, Right, and **Sketches**, the model's sketches: one opens to be
-   edited); four buttons for what a click picks, **whole parts, faces,
+   Front, Right, **New sketch…** and **Show planes**, and **Sketches**, the
+   model's sketches: one opens to be edited); four buttons for what a click picks, **whole parts, faces,
    edges or vertices** (Alt+1 to Alt+4; the choice is kept): the right-click
    menu offers what fits it, picked faces are striped, a picked part dotted;
    the eye, to hide or show the parts, the ground grid and
-   the axes; the cube, to choose how the parts are drawn; the section, to cut
+   the axes; the planes, to show XY (blue), XZ (green), YZ (red) and the
+   planes your code makes (violet, named after their variables): click one
+   and right-click it for **Sketch on plane…**, an empty sketch on it
+   written into the part the cursor is in (or into a new part); **New
+   sketch…** does the same on the face or plane you picked, or shows the
+   planes and waits for your click on one; the cube, to choose how the parts are drawn; the section, to cut
    the model and look inside (parallel to the face you picked, if any; drag
    the squares at the plane's corners to move it, the X past them closes it); the magnifying glass, to see what a line
    of code makes; the arrow at a ring, **Annotate** (A): the view stops

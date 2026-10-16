@@ -79,6 +79,7 @@ struct Outcome
     TraceEntry[] trace;       /// the geometry each call made (Inspect)
     FunctionInfo[] functions; /// of the model's file, for the feature tree (empty if it did not parse)
     SketchView[] sketches;
+    PlaneMade[] planes;       /// planes the model's file made (plane(), offset, flip), to show
     PartMesh[] sketchBodies;  /// by sketch: the solid a sketch on a face is drawn on (empty for the others)
     LogLine[] log;
     Diagnostic[] diagnostics;
@@ -330,6 +331,9 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     // sketches are shown even when the evaluation failed (conflicting
     // constraints, an error after them): then marked partial
     o.sketches = sketchViews(it, absolutePath(req.path), !o.ok);
+    foreach (p; it.planes)
+        if (p.span.file == absolutePath(req.path))
+            o.planes ~= p;
     // the solids sketches on faces are drawn on, to show under them (once each)
     {
         PartMesh[Brep] made;

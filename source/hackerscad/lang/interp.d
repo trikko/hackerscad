@@ -149,6 +149,13 @@ private enum Flow
     return_,
 }
 
+/// A plane the code made, where.
+struct PlaneMade
+{
+    Vec3 origin, normal;
+    Span span;
+}
+
 final class Interp
 {
     BrepKernel kernel;
@@ -170,6 +177,7 @@ final class Interp
     string[] presetNames;
     FeatureInfo[] features;
     ObjectVal[] sketches;     /// sketches created by the run, for the GUI
+    PlaneMade[] planes;       /// planes the code made (plane(), offset, flip), for the GUI to show
     /// Whether the model's unittests run (the window: only when asked, F5).
     bool runUnittests = true;
     /// Records in `trace` the geometry the calls of the evaluated file make

@@ -146,6 +146,9 @@ mixin template ControlMethods()
                 // moved as the user moves it: the frames count in graphics' figures
                 if (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom") || has("size"))
                     viewport.moved();
+                // the planes, to draw a sketch on (Show planes)
+                if (has("planes"))
+                    setPlanesShown(p["planes"].safe!bool.or(false));
                 // in the order a user would: frame, turn, move, zoom
                 if (auto v = arg("preset"))
                 {
@@ -528,6 +531,25 @@ mixin template ControlMethods()
                 // "action": "sketch" is Sketch on face…
                 auto act = arg("action"), value = arg("value"), kind = arg("kind"), size = arg("size");
                 immutable useSelection = has("use_selection") && p["use_selection"].safe!bool.or(false);
+                // "action": "sketch", "plane": "XZ" (or a plane of the code, by its name): Sketch on plane…
+                if (act == "sketch" && has("plane"))
+                {
+                    auto name = arg("plane");
+                    return whenIdle(() {
+                        refreshPlanes();
+                        immutable i = planeNamed(name);
+                        if (i < 0)
+                        {
+                            string[] names;
+                            foreach (q; viewport.planes)
+                                names ~= q.name;
+                            return reply(JValue.init, format("no plane '%s': there are %s", name, names.join(", ")));
+                        }
+                        if (auto problem = sketchOnPlaneOf(i))
+                            return reply(JValue.init, problem);
+                        whenIdle(() => reply(state(), null));
+                    });
+                }
                 whenIdle(() {
                     double x, y;
                     if (auto problem = screenPoint(p, x, y))

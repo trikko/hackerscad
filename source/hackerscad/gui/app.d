@@ -89,6 +89,7 @@ import hackerscad.lang.value : Kind, SolidVal;
 import hackerscad.lang.sketchval : SketchView, Stretch;
 import hackerscad.gui.sketchfollow;
 import hackerscad.gui.sketchedit;
+import hackerscad.gui.planes;
 import hackerscad.gui.annotate : Annotate;
 import hackerscad.tool.guiclient : toOverrides;
 import djson;
@@ -770,6 +771,10 @@ final class MainWindow
             sketchMenu = new Menu;
             auto list = new Menu;
             list.appendSection(null, presets);
+            auto sketching = new Menu;
+            sketching.append("New sketch…", "win.new-sketch");
+            sketching.append("Show planes", "win.toggle-planes");
+            list.appendSection(null, sketching);
             list.appendSubmenu("Sketches", sketchMenu);
             auto viewMenu = viewMenuButton = new MenuButton;
             viewMenu.setLabel("View");
@@ -816,6 +821,7 @@ final class MainWindow
         displayMenu.addCssClass("flat");
         displayMenu.setPopover(displayPopover());
         viewBar.append(displayMenu);
+        viewBar.append(buildPlanesToggle());
         viewBar.append(sectionToggle);
         viewBar.append(inspectToggle);
         viewBar.append(annotateToggle);
@@ -1103,7 +1109,7 @@ final class MainWindow
                     finishDrawing(false);
                     return true;
                 }
-                if (key == KEY_Escape && sketchEscape())
+                if (key == KEY_Escape && (planeEscape() || sketchEscape()))
                     return true;
                 // moving or turning a part: Enter writes it, Esc leaves it
                 if (viewport.gizmo != Viewport.Gizmo.none && (key == KEY_Return || key == KEY_KP_Enter))
@@ -1257,6 +1263,8 @@ final class MainWindow
         action(app, "view-top", [], () => viewport.setView(ViewPreset.top));
         action(app, "view-front", [], () => viewport.setView(ViewPreset.front));
         action(app, "view-right", [], () => viewport.setView(ViewPreset.right));
+        action(app, "new-sketch", [], () => info(newSketch()));
+        action(app, "toggle-planes", [], () => setPlanesShown(!planesToggle.getActive()));
         // the selection mode from the keyboard
         foreach (i, key; ["part", "face", "edge", "vertex"])
             action(app, "select-" ~ key, ["<Alt>" ~ format("%d", i + 1)], selectModeKey(i));
@@ -1805,6 +1813,8 @@ private:
             viewport.setSketchBodies(bodies);
         }
         updateSketchMenu();
+        if (planesToggle !is null && planesToggle.getActive())
+            refreshPlanes();
         // the sketch shown stays (a dimension was changed): of the same lines, in the new model
         immutable sketchWas = sketchLines;
         immutable sketchLit = sketchHighlight;
@@ -2470,6 +2480,9 @@ private:
     void picked(Hit hit, bool alone = false)
     {
         if (sceneLocked())
+            return;
+        // a plane shown, or New sketch… waiting for one
+        if (planePicked(hit))
             return;
         // with a sketch shown, a click on one of its points or lines selects it (the bar at the left constrains
         // what is selected) and shows the line that made it; on nothing, the sketch's selection empties
@@ -4604,6 +4617,12 @@ private:
         // drawing in a sketch: a right-click ends what is being drawn
         if (drawTool !is null)
             return finishDrawing(false);
+        if (hit.plane >= 0 && hit.plane < viewport.planes.length)
+        {
+            viewport.pickPlane(hit.plane);
+            contextPopover = popupMenu(viewport.area, x, y, planeMenu(hit.plane));
+            return;
+        }
         if (hit.part < 0 || hit.part >= last.parts.length)
         {
             // a sketch shown (its parts hidden, so a click finds none): the view
@@ -6435,12 +6454,13 @@ private:
     mixin ControlMethods;
     mixin SketchFollow;
     mixin SketchEdit;
+    mixin PlaneTools;
     mixin Annotate;
 
     /// Every field the state can have, for hcad_gui_state's only.
     static immutable string[] stateFields = ["path", "status", "window", "version", "outdated", "revision",
         "user_changed", "evaluating", "stage", "seconds", "modified", "source_hash", "preset", "overrides", "parts",
-        "params", "presets", "inspect", "sketch", "sketch_follow", "annotations", "annotate_mode", "annotated_view",
+        "params", "presets", "inspect", "sketch", "sketch_follow", "planes", "annotations", "annotate_mode", "annotated_view",
         "cursor", "camera", "printability", "graphics", "problems", "log", "source", "steps"];
 
     /// The window's state, as hcad_gui_state gives it; `graphics` adds
@@ -6509,6 +6529,8 @@ private:
         j["inspect"] = inspectJson();
         j["sketch"] = shownSketchJson();
         j["sketch_follow"] = followCursor;
+        if (viewport.planesOn)
+            j["planes"] = planesJson();
         annotationsState(j);
         {
             TextIter it;

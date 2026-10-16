@@ -1265,6 +1265,114 @@ unittest
         ~ "    auto s2 = s.sketch(faces.front);\n\n    return s;\n}"), c);
 }
 
+/// A sketch on a plane (`plane`: its code, XY or a variable), to draw on:
+/// in part `part`, an empty sketch just before its return (an expression
+/// body becomes a block); with no part (null), a new part at the end of the
+/// file that extrudes the sketch's profile. The cursor goes at the end of
+/// the sketch's line, so that the sketch shows there.
+Edit sketchOnPlane(string source, string file, string part, string plane)
+{
+    import std.algorithm : canFind;
+    import std.string : strip;
+    bool[string] used;
+    foreach (t; lex(source, file))
+        if (t.kind == Tok.ident)
+            used[t.text] = true;
+    string unique(string name)
+    {
+        auto n = name;
+        for (int k = 2; n in used; k++)
+            n = format("%s%d", name, k);
+        used[n] = true;
+        return n;
+    }
+    Edit e;
+    if (part is null)
+    {
+        // a new part: its sketch, and the profile extruded (an error until the sketch draws a loop)
+        immutable name = unique("sketched");
+        immutable sk = "s";   // its own function: no other s there
+        size_t end = source.length;
+        while (end > 0 && (source[end - 1] == '\n' || source[end - 1] == ' '))
+            end--;
+        e.offset = end;
+        e.length = source.length - end;
+        immutable head = end > 0 ? "\n\n" : "";
+        e.text = head ~ "@part\nSolid " ~ name ~ "()\n{\n    auto " ~ sk ~ " = sketch(" ~ plane ~ ");";
+        e.selectOffset = e.offset + e.text.length;
+        e.text ~= "\n\n    return " ~ sk ~ ".profile.extrude(5.mm);\n}\n";
+        return e;
+    }
+    auto r = returned(source, file, part);
+    auto fn = r.fn;
+    auto toks = r.toks;
+    immutable expr = source[r.start .. r.end].strip;
+    immutable sk = unique("s");
+    string[] lines = ["// drawn on " ~ plane, format("auto %s = sketch(%s);", sk, plane), "", format("return %s;", expr)];
+    immutable sketchLine = 1;
+    immutable semi = offsetOf(source, toks[r.last].span) + 1;
+    string indent;
+    if (fn.exprBody !is null)
+    {
+        size_t cut = offsetOf(source, toks[r.first - 1].span);
+        while (cut > 0 && (source[cut - 1] == ' ' || source[cut - 1] == '\t' || source[cut - 1] == '\n'))
+            cut--;
+        indent = "    ";
+        e.offset = cut;
+        e.length = semi - cut;
+        e.text = "\n{\n";
+    }
+    else
+    {
+        immutable ret = offsetOf(source, toks[r.first - 1].span);
+        size_t lineStart = ret;
+        while (lineStart > 0 && source[lineStart - 1] != '\n')
+            lineStart--;
+        indent = source[lineStart .. ret];
+        e.offset = lineStart;
+        e.length = semi - lineStart;
+        // an empty line above the comment, unless the block starts there
+        size_t before = lineStart;
+        while (before > 0 && (source[before - 1] == '\n' || source[before - 1] == ' ' || source[before - 1] == '\t'))
+            before--;
+        if (before > 0 && source[before - 1] != '{' && !source[before .. lineStart].canFind("\n\n"))
+            e.text = "\n";
+    }
+    foreach (k, l; lines)
+    {
+        e.text ~= l.length ? indent ~ l : "";
+        if (k == sketchLine)
+            e.selectOffset = e.offset + e.text.length;
+        if (k + 1 < lines.length)
+            e.text ~= "\n";
+    }
+    if (fn.exprBody !is null)
+        e.text ~= "\n}";
+    return e;
+}
+
+unittest
+{
+    import std.algorithm : endsWith, startsWith;
+    // in a part with an expression body: a block, the sketch before the return
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto e = sketchOnPlane(src, "m.hcad", "p", "XZ");
+    auto a = e.apply(src);
+    assert(a.canFind("Solid p()\n{\n    // drawn on XZ\n    auto s = sketch(XZ);\n\n    return box(10, 10, 10);\n}\n"), a);
+    assert(a[0 .. e.selectOffset].endsWith("auto s = sketch(XZ);"));
+    // in a block: before its return, a blank line above
+    auto b = "module m;\n\n@part\nSolid p()\n{\n    auto s = box(4, 4, 4);\n    return s;\n}\n";
+    auto c = sketchOnPlane(b, "m.hcad", "p", "mid").apply(b);
+    assert(c.canFind("    auto s = box(4, 4, 4);\n\n    // drawn on mid\n    auto s2 = sketch(mid);\n\n    return s;\n}"), c);
+    // no part: a new one at the end
+    auto d = "module m;\n";
+    auto f = sketchOnPlane(d, "m.hcad", null, "XY");
+    auto g = f.apply(d);
+    assert(g == "module m;\n\n@part\nSolid sketched()\n{\n    auto s = sketch(XY);\n\n    return s.profile.extrude(5.mm);\n}\n", g);
+    assert(g[0 .. f.selectOffset].endsWith("auto s = sketch(XY);"));
+    assert(sketchOnPlane("", "m.hcad", null, "XY").apply("").startsWith("@part\n"));
+}
+
 /// colourPart for piece `index` of a @parts function: `.color("…")` on that
 /// piece only, in place of the colour it ends with, or added. The colour is selected.
 Edit colourPiece(string source, string file, string part, size_t index, bool fromSolid, string colour)

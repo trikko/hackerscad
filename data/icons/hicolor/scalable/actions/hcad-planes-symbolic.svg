@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- planes: one lying flat, seen at an angle, and one standing on it (filled shapes only, for symbolic recolouring) -->
+  <path fill="#2e3436" fill-rule="evenodd" d="M4 9 L0.5 14 L12 14 L15.5 9 Z M4.6 10.2 L2.9 12.8 L11.4 12.8 L13.1 10.2 Z"/>
+  <path fill="#2e3436" fill-rule="evenodd" d="M5 1 L11 1 L11 10.2 L9.8 10.2 L9.8 2.2 L6.2 2.2 L6.2 10.2 L5 10.2 Z"/>
+</svg>

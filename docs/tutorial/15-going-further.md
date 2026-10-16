@@ -267,6 +267,10 @@ digs it into the face, `body.extrude(s.profile, depth:)` raises it, with no
 onto its plane: the rim of a hole underneath, to centre something over it. In
 the 3D view, right-click a flat face and choose **Sketch on face…**: an empty
 sketch on it is written for you, its edges already there, ready to draw on.
+Not on a face but on a plane (XY, XZ, YZ, or `auto mid = XY.offset(15.mm)`):
+the planes button of the view bar shows them, and **Sketch on plane…** in a
+plane's right-click menu (or **New sketch…** in the View menu) writes
+`auto s = sketch(XZ);` the same way.
 A double click on a flat face (or **Look at face** in the same menu) turns the
 view straight at it; with a sketch shown, **Look at sketch** in the right-click
 menu turns it back onto the sketch after you have turned it round.

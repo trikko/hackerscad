@@ -73,6 +73,7 @@ struct Hit
     double x = 0, y = 0;    /// window coordinates of the click
     bool shift;             /// Shift held: add to (or remove from) the selection
     double distance = double.infinity;
+    int plane = -1;     /// a plane shown (Viewport.planes) under the pointer, nearer than any part
 }
 
 /// Whether the segment (ax, ay)–(bx, by) on screen meets the box from (lx, ly)
@@ -405,7 +406,7 @@ final class Viewport
             if (dragBox && dragging)
             {
                 dragging = false;
-                band.setVisible(false);
+                band.setVisible(planesOn);
                 if (onBox !is null)
                     onBox(startX, startY, startX + dx, startY + dy, startX + dx < startX);
                 updateHoverCursor();
@@ -460,6 +461,8 @@ final class Viewport
         band.setVexpand(true);
         band.setVisible(false);
         band.setDrawFunc((DrawingArea, Context cr, int w, int h) {
+            if (planesOn)
+                labelPlanes(cr);
             if (!dragBox || !dragging)
                 return;
             immutable x = min(startX, boxX), y = min(startY, boxY), bw = abs(boxX - startX), bh = abs(boxY - startY);
@@ -482,6 +485,17 @@ final class Viewport
             pointerY = y;
             if (!dragging)
             {
+                if (planesOn)
+                {
+                    double d;
+                    immutable at = planeAt(x, y, d);
+                    immutable over = at >= 0 && d < pick(x, y).distance ? at : -1;
+                    if (over != hoverPlane)
+                    {
+                        hoverPlane = over;
+                        redraw();
+                    }
+                }
                 updateHoverCursor();
                 if (onMotion !is null)
                     onMotion(x, y);
@@ -679,6 +693,22 @@ final class Viewport
     Hit pickSelect(double x, double y)
     {
         auto h = pick(x, y);
+        // a plane shown, in front of the part hit (or with none): the plane
+        double planeDistance;
+        immutable onPlane = planeAt(x, y, planeDistance);
+        if (onPlane >= 0 && planeDistance < h.distance)
+        {
+            Hit p;
+            p.plane = onPlane;
+            p.distance = planeDistance;
+            p.normal = planes[onPlane].normal;
+            Vec3 eye, dir;
+            ray(x, y, eye, dir);
+            p.point = eye + dir * planeDistance;
+            p.x = x;
+            p.y = y;
+            return p;
+        }
         final switch (selectMode)
         {
         case SelectMode.part:
@@ -2502,6 +2532,207 @@ final class Viewport
         redraw();
     }
 
+    // ---- planes: the main ones and the code's, shown on request to draw a sketch on
+
+    /// A plane drawn in the view, as a square big enough for the model.
+    struct ShownPlane
+    {
+        string name;
+        Vec3 origin, normal;
+        bool main;      /// XY, XZ or YZ
+    }
+
+    ShownPlane[] planes;        /// what Show planes draws
+    bool planesOn;              /// Show planes on
+    int hoverPlane = -1;        /// the plane under the pointer
+    int pickedPlane = -1;       /// the plane clicked (picked: highlighted)
+
+    /// Shows the planes (or hides them).
+    void showPlanes(bool on)
+    {
+        planesOn = on;
+        hoverPlane = -1;
+        if (!on)
+            pickedPlane = -1;
+        band.setVisible(on);
+        band.queueDraw();
+        redraw();
+    }
+
+    /// The planes to show, the main ones first; the picked one stays picked
+    /// when it is still there (by name).
+    void setPlanes(ShownPlane[] ps)
+    {
+        immutable was = pickedPlane >= 0 && pickedPlane < planes.length ? planes[pickedPlane].name : null;
+        planes = ps;
+        pickedPlane = hoverPlane = -1;
+        foreach (i, p; ps)
+            if (was !is null && p.name == was)
+                pickedPlane = cast(int) i;
+        redraw();
+    }
+
+    /// Picks plane i (-1: none).
+    void pickPlane(int i)
+    {
+        pickedPlane = i >= 0 && i < planes.length ? i : -1;
+        redraw();
+        band.queueDraw();
+    }
+
+    /// The axes along plane i's square, its centre and half its side: on
+    /// the plane, nearest the middle of what is drawn, as big as that.
+    void planeFrame(size_t i, out Vec3 c, out Vec3 u, out Vec3 v, out double half)
+    {
+        auto p = planes[i];
+        auto n = p.normal.normalized;
+        u = abs(n.z) < 0.9 ? Vec3(0, 0, 1).cross(n).normalized : Vec3(1, 0, 0);
+        u = (u - n * u.dot(n)).normalized;
+        v = n.cross(u);
+        c = p.origin;
+        half = 30;
+        Vec3 lo, hi;
+        if (drawnBox(lo, hi))
+        {
+            // round the model's shadow on it, a little wider
+            auto m = (lo + hi) * 0.5;
+            c = m - n * (m - p.origin).dot(n);
+            double reach = 0;
+            foreach (k; 0 .. 8)
+            {
+                auto q = Vec3(k & 1 ? hi.x : lo.x, k & 2 ? hi.y : lo.y, k & 4 ? hi.z : lo.z) - c;
+                reach = max(reach, abs(q.dot(u)), abs(q.dot(v)));
+            }
+            half = max(10.0, reach * 1.2);
+        }
+    }
+
+    Vec3[4] planeQuad(size_t i)
+    {
+        Vec3 c, u, v;
+        double h;
+        planeFrame(i, c, u, v, h);
+        return [c + u * h + v * h, c - u * h + v * h, c - u * h - v * h, c + u * h - v * h];
+    }
+
+    /// The plane shown under window point (x, y), and how far along the
+    /// pointer's ray; -1 when none.
+    int planeAt(double x, double y, out double distance)
+    {
+        distance = double.infinity;
+        if (!planesOn)
+            return -1;
+        Vec3 eye, dir;
+        ray(x, y, eye, dir);
+        int best = -1;
+        foreach (i, p; planes)
+        {
+            auto n = p.normal.normalized;
+            immutable den = dir.dot(n);
+            if (abs(den) < 1e-9)
+                continue;
+            immutable t = (p.origin - eye).dot(n) / den;
+            if (t <= 0 || t >= distance)
+                continue;
+            Vec3 c, u, v;
+            double h;
+            planeFrame(i, c, u, v, h);
+            auto q = eye + dir * t - c;
+            if (abs(q.dot(u)) <= h && abs(q.dot(v)) <= h)
+            {
+                distance = t;
+                best = cast(int) i;
+            }
+        }
+        return best;
+    }
+
+    /// The colour of plane i: the main ones as the axis across them (XY blue, XZ green, YZ red), the code's violet.
+    Vec3 planeColour(size_t i)
+    {
+        auto n = planes[i].normal;
+        if (!planes[i].main)
+            return Vec3(0.6, 0.35, 0.9);
+        if (abs(n.z) > 0.9)
+            return Vec3(0.25, 0.45, 0.95);
+        if (abs(n.y) > 0.9)
+            return Vec3(0.3, 0.68, 0.35);
+        return Vec3(0.9, 0.3, 0.3);
+    }
+
+    /// The planes, see-through over the model, their sides drawn; the one
+    /// under the pointer or picked more strongly.
+    private void renderPlanes()
+    {
+        if (!planesOn || planes.length == 0)
+            return;
+        forPart(-1);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        // a plane lying on a face shows over it (the parts are drawn pushed back, it is pulled forward)
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(-1, -1);
+        glUniform1i(uFlat, 1);
+        foreach (i; 0 .. planes.length)
+        {
+            auto q = planeQuad(i);
+            auto c = planeColour(i);
+            immutable lit = i == hoverPlane || i == pickedPlane;
+            float[] tri;
+            foreach (k; [0, 1, 2, 0, 2, 3])
+                tri ~= [cast(float) q[k].x, cast(float) q[k].y, cast(float) q[k].z];
+            glUniform3f(uColor, cast(float) c.x, cast(float) c.y, cast(float) c.z);
+            glUniform1f(uAlpha, i == pickedPlane ? 0.3f : lit ? 0.2f : 0.08f);
+            uploadLines(tri);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            float[] side;
+            foreach (k; 0 .. 4)
+                foreach (e; [q[k], q[(k + 1) % 4]])
+                    side ~= [cast(float) e.x, cast(float) e.y, cast(float) e.z];
+            glUniform1f(uAlpha, lit ? 1.0f : 0.6f);
+            glLineWidth(i == pickedPlane ? 3 : lit ? 2 : 1);
+            uploadLines(side);
+            glDrawArrays(GL_LINES, 0, 8);
+            glLineWidth(1);
+        }
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glUniform1f(uAlpha, 1);
+        band.queueDraw();
+    }
+
+    /// The planes' names, at the top left corner of each on screen.
+    private void labelPlanes(Context cr)
+    {
+        cr.setFontSize(13);
+        foreach (i; 0 .. planes.length)
+        {
+            // its top left corner, kept inside the view (a plane wider than the view: at its edge)
+            double bx = double.infinity, by = 0;
+            foreach (q; planeQuad(i))
+            {
+                double x, y;
+                if (project(q, x, y) && x + y < bx + by)
+                {
+                    bx = x;
+                    by = y;
+                }
+            }
+            if (bx == double.infinity)
+                continue;
+            immutable w = area.getWidth(), h = area.getHeight();
+            bx = max(4.0, min(bx, w - 60.0));
+            by = max(40.0, min(by, h - 24.0));
+            auto c = planeColour(i);
+            immutable lit = i == hoverPlane || i == pickedPlane;
+            cr.setSourceRgba(c.x * 0.8, c.y * 0.8, c.z * 0.8, lit ? 1 : 0.75);
+            cr.moveTo(bx + 6, by + 16);
+            cr.showText(planes[i].name);
+        }
+    }
+
     /// Whether a sketch is drawn.
     bool sketchShown() const => shownSketches.length > 0;
 
@@ -3856,6 +4087,7 @@ private:
                 drawPolyline(edgePoints(h.part, parts[h.part].edgeInfo[h.edge]),
                     standOut(parts[h.part].rgb, Vec3(1.0, 0.86, 0.0), Vec3(0.15, 0.35, 0.95), 0.32), 4);
 
+        renderPlanes();
         renderSketches();
         renderDrawing();
         drawGizmo();

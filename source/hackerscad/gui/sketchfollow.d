@@ -699,7 +699,9 @@ mixin template SketchFollow()
             none.enabled = false;
             list ~= none;
         }
-        return presets ~ MenuEntry.group("Sketches", list);
+        return presets ~ [MenuEntry.item("New sketch…", () => info(newSketch())),
+            MenuEntry.item(planesToggle.getActive() ? "Hide planes" : "Show planes",
+                () => setPlanesShown(!planesToggle.getActive()))] ~ MenuEntry.group("Sketches", list);
     }
 
     /// The sketch state for agents: where the one shown comes from.

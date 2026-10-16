@@ -839,7 +839,9 @@ JValue toolList()
             ~ "main menu, stays); antialias turns the smoothing of "
             ~ "edges on or off for this run (hcad_gui_state's graphics tells whether it is on). "
             ~ "hidden lists the parts to hide (the others are shown); code, console, view and params show or hide "
-            ~ "those panels. hcad_gui_state gives the camera.",
+            ~ "those panels. planes shows XY, XZ, YZ and the planes the code makes (named after their variables), as the "
+            ~ "view bar's planes button does, to draw a sketch on one (hcad_gui_feature action sketch with plane); "
+            ~ "hcad_gui_state lists them while shown. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
             ~ `"look_at": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"look_at_face": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}, `
@@ -851,6 +853,7 @@ JValue toolList()
             ~ `"at": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}, `
             ~ `"style": {"type": "string", "enum": ["edges", "shaded", "wireframe"]}, `
             ~ `"printability": {"type": "boolean"}, `
+            ~ `"planes": {"type": "boolean", "description": "show the planes to sketch on (false hides them)"}, `
             ~ `"select": {"type": "string", "enum": ["part", "face", "edge", "vertex"], "description": "what a click (and hcad_gui_pick, hcad_gui_menu) picks, as the view bar's selection buttons; the right-click menu offers what fits it (kept between runs)"}, `
             ~ `"shine": {"type": "string", "enum": ["none", "normal", "high"], "description": "how shiny the surfaces are: none matte (each flat face one even tone), normal a small highlight on curves, high a shiny material (kept between runs)"}, `
             ~ `"overhang_angle": {"type": "number", "description": "printability: degrees from a wall (45)"}, `
@@ -974,7 +977,9 @@ JValue toolList()
             ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep), pocket (a rectangle cut "
             ~ "in), boss (a cylinder standing on the face), sketch (Sketch on face…: the part's function keeps its "
             ~ "solid in a variable and starts an empty sketch on that flat face, its edges as references; add its "
-            ~ "geometry and then cut or extrude its profile with hcad_gui_edit). With use_selection: true it acts on the selection "
+            ~ "geometry and then cut or extrude its profile with hcad_gui_edit; with plane instead of a point, Sketch on "
+            ~ "plane…: an empty sketch on XY, XZ, YZ or a plane of the code (by the name hcad_gui_state's planes give it), "
+            ~ "before the return of the part the editor's cursor is in, or in a new part that extrudes its profile). With use_selection: true it acts on the selection "
             ~ "(each hcad_gui_pick adds to it) that contains the point, as the menu does: several edges or faces at once.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"action": {"type": "string", "enum": ["fillet-edge", "chamfer-edge", "fillet-face", "chamfer-face", `
@@ -982,7 +987,8 @@ JValue toolList()
             ~ `"radius, distance, thickness, angle or depth, e.g. 2.mm or -4.deg"}, `
             ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert"]}, `
             ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6 or M8 for holes; any that fits the cylinder for thread (M10, M12…)"}, `
-            ~ `"use_selection": {"type": "boolean"}`, `["action"]`),
+            ~ `"use_selection": {"type": "boolean"}, `
+            ~ `"plane": {"type": "string", "description": "action sketch on a plane instead of a face: XY, XZ, YZ, or a plane the code made, by its name"}`, `["action"]`),
         gui("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) or at a model point and "
             ~ "choose entries of the menu in order, e.g. [\"Hole at point\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: "
             ~ "what the user would do with the mouse. Entries that write code append it to the part in the editor; with "
@@ -993,7 +999,8 @@ JValue toolList()
             ~ "hcad_gui_screenshot. On empty space the menu lists the hidden parts. Entries that copy (Measure, "
             ~ "Copy as code) also return the text as copied. On a face made from a sketch's profile, Edit sketch… "
             ~ "shows the sketch and puts the cursor on its sketch() line. bar: \"view\" is the view bar's View menu "
-            ~ "instead (no point): Iso, Top, Front, Right and Sketches, one entry per sketch of the model (\"line 12 · "
+            ~ "instead (no point): Iso, Top, Front, Right, New sketch… (on the face or plane picked, or waiting for a "
+            ~ "click on one), Show planes and Sketches, one entry per sketch of the model (\"line 12 · "
             ~ "4 dimensions · fully constrained\"), e.g. path [\"Sketches\", \"line 12 · 4 dimensions · fully "
             ~ "constrained\"] opens it.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
@@ -1180,7 +1187,9 @@ JValue toolList()
             ~ "one saved (typing and undoing back to it included). only gives just the fields named (and the "
             ~ "window), e.g. [\"revision\", \"source_hash\", \"camera\"]: a quick look at what changed, "
             ~ "much shorter than the whole state. cursor is the editor's cursor (line, col); sketch the sketch shown (from_cursor, "
-            ~ "pinned, partial, stale) and sketch_follow the setting Show the sketch at the cursor. params give value, "
+            ~ "pinned, partial, stale) and sketch_follow the setting Show the sketch at the cursor; planes, while they are "
+            ~ "shown, each plane's name, origin and normal (picked: the one clicked) and waiting_for_click (New "
+            ~ "sketch… waits for a click on a plane or flat face). params give value, "
             ~ "default, type, min, max, step and choices; revision "
             ~ "counts the changes to the code, log is what the model printed, outdated says the window should be restarted; "
             ~ "graphics: true adds what draws the 3D view (OpenGL renderer, software: true when the processor draws it) "
