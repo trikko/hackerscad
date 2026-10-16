@@ -16,7 +16,7 @@ import djson;
 import std.path : buildPath;
 import std.stdio : stdin, stdout, stderr;
 import std.string : strip;
-import core.atomic : atomicLoad, atomicOp;
+import core.atomic : atomicLoad, atomicOp, atomicStore;
 
 import hackerscad.render.raster : View, Shot;
 import hackerscad.tool.docs : agentsText, docsStamp, reference, skillText, summaryText;
@@ -28,7 +28,8 @@ import hackerscad.kernel.occt.backend : OcctKernel;
 enum serverVersion = appVersion;
 
 enum instructions = "hackerscad is a parametric CAD for code-defined models (.hcad, a sandboxed subset of D). "
-    ~ "Call hcad_docs first (its rules avoid most mistakes), then iterate with hcad_render (it returns "
+    ~ "Call hcad_docs with format: agents first: its rules avoid most mistakes (format: cheatsheet lists the "
+    ~ "functions only, not the rules). Then iterate with hcad_render (it returns "
     ~ "dimensions, problems and pictures) until the model matches the request, then hcad_export. If the user "
     ~ "has hackerscad open, hcad_gui_* tools show your work in their window: change its code with "
     ~ "hcad_gui_edit, never by writing its file; with several windows, ask which one (never assume the most "
@@ -658,8 +659,9 @@ JValue toolList()
             ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware', 'remodel') for a short excerpt "
             ~ "(a topic a heading names gives that whole section; a topic also finds the words the text uses for it: "
             ~ "rotated → angle:, bevel → chamfer, bore → hole). format: "
-            ~ "cheatsheet gives every function in one line each (compact), summary the short index (llms.txt), agents "
-            ~ "and skill the agent guides, stamp which docs the server has (an installed skill showing another is out "
+            ~ "agents the rules for agents (read them before the first model), cheatsheet every function in one line "
+            ~ "each (the functions only, not the rules), summary the short index (llms.txt), skill the agent guide "
+            ~ "as a skill, stamp which docs the server has (an installed skill showing another is out "
             ~ "of date: refresh it with format skill).",
             `"topic": {"type": "string"}, "format": {"type": "string", "enum": ["reference", "cheatsheet", "summary", "agents", "skill", "stamp"]}`),
         tool("hcad_check", "Evaluate a model: parts with bounding boxes and volumes, parameters, presets, "
@@ -1217,12 +1219,25 @@ JValue callTool(string name, JValue args)
             import hackerscad.tool.cheatsheet : cheatsheetMarkdown;
             switch (arg("format"))
             {
-            case "cheatsheet": text(cheatsheetMarkdown()); break;
+            case "cheatsheet":
+                text(cheatsheetPointer ~ cheatsheetMarkdown());
+                break;
             case "summary": text(summaryText()); break;
-            case "agents": text(agentsText()); break;
-            case "skill": text(skillText()); break;
+            case "agents":
+                atomicStore(rulesRead, true);
+                text(agentsText());
+                break;
+            case "skill":
+                atomicStore(rulesRead, true);
+                text(skillText());
+                break;
             case "stamp": text(docsStamp()); break;
-            case null, "reference": text(reference(arg("topic"))); break;
+            case null, "reference":
+                // the whole reference starts with the rules; a topic is an excerpt
+                if (arg("topic").length == 0)
+                    atomicStore(rulesRead, true);
+                text(reference(arg("topic")));
+                break;
             default: throw new Exception("format must be reference, cheatsheet, summary, agents, skill or stamp");
             }
             break;
@@ -1675,10 +1690,26 @@ JValue callTool(string name, JValue args)
     default:
         throw new Exception("unknown tool: " ~ name);
     }
+    // a model made before the rules were read: the agent is told, at every such call until it reads them
+    if (["hcad_check", "hcad_render", "hcad_export", "hcad_gui_new", "hcad_gui_edit", "hcad_gui_launch"].canFind(name)
+        && !atomicLoad(rulesRead))
+        text(rulesReminder);
     JValue r = JSOB("content", content);
     r["isError"] = isError;
     return r;
 }
+
+/// Whether the agent has asked for the rules in this session (hcad_docs with format agents or skill, or
+/// the whole reference): until then the tools that make a model remind it.
+shared bool rulesRead;
+
+enum rulesReminder = "You have not read the rules yet: call hcad_docs with format: agents before going on (the "
+    ~ "cheatsheet lists the functions only). They say how to build a part (a sketch for its outline, features in "
+    ~ "steps, hole() for screws), what to ask the user, and how to check the result.";
+
+/// Over the cheatsheet an agent asks for: where the rules are.
+enum cheatsheetPointer = "This lists the functions only, one line each. The rules for modelling are in "
+    ~ "hcad_docs format: agents: read them before the first model.\n\n";
 
 // the server is long-lived: agents iterating on a model reuse unchanged geometry
 CachingKernel sharedCache;
@@ -1745,7 +1776,19 @@ unittest
     auto content = call["result"]["content"].get!JArray.elements;
     assert(!call["result"]["isError"].get!bool);
     assert(content[0]["text"].get!string.canFind(`"volume_mm3": 6000`));
-    assert(content[$ - 1]["type"].get!string == "image");
+    assert(content[$ - 2]["type"].get!string == "image");
+    // the rules not read yet: a tool that makes a model reminds the agent, the cheatsheet points at them,
+    // and once read the reminder goes
+    assert(content[$ - 1]["text"].get!string == rulesReminder);
+    auto sheet = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 41, "method": "tools/call", "params": {"name":
+        "hcad_docs", "arguments": {"format": "cheatsheet"}}}`));
+    assert(sheet["result"]["content"][0]["text"].get!string.startsWith(cheatsheetPointer));
+    assert(!atomicLoad(rulesRead));
+    handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 42, "method": "tools/call", "params": {"name": "hcad_docs",
+        "arguments": {"format": "agents"}}}`));
+    auto again = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 43, "method": "tools/call", "params": {"name":
+        "hcad_check", "arguments": {"source": "@part Solid p() => box(10, 20, 30);"}}}`));
+    assert(!again["result"]["content"].get!JArray.elements.canFind!(c => c["text"].get!string == rulesReminder));
 
     auto bad = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "hcad_check",
         "arguments": {"source": "@part Solid p() => box(10, 20, 30).fillet(edges, radius: 1);"}}}`));
