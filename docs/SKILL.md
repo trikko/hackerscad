@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-aefca4a4`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-37737b5f`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-aefca4a4`:** this text is up to date.
+- **It prints `0.3.1-37737b5f`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -56,8 +56,9 @@ format stamp):
   views: look at them), hcad_measure, hcad_export (.3mf, .stl for one part,
   .zip for one STL per part, .step, .png; 'parts' picks some),
   hcad_drawing (.pdf .svg .dxf); to remodel a mesh or STEP (see
-  Remodelling a mesh), hcad_features, hcad_scan, hcad_section, hcad_diff,
-  hcad_lines, hcad_compare, hcad_match, hcad_fit and hcad_literals
+  Remodelling a mesh), hcad_features, hcad_scan, hcad_section,
+  hcad_review (the comparison round in one call), hcad_diff, hcad_lines,
+  hcad_compare, hcad_match, hcad_fit and hcad_literals
   (hcad_docs topic remodel gives the method). When the user has the application open, the
   hcad_gui_* tools drive it (open, edit the code, set parameters, move the
   view, pick faces, select and measure, context menu, section plane, rollback,
@@ -304,23 +305,22 @@ format stamp):
   Length x1)): numbers and @params both pass, no .to!double. Lettering:
   paste the sketch hcad_section gives with region round the letters (it
   solves as it is), extrude it 0.5 mm into the face; never trace by hand.
-- 3, THE ROUND, after every change, all four, in this order, however
-  close it looks (each sees what the others miss):
-    a. hcad_compare: the distances both ways;
-    b. hcad_diff: material missing or too much, the thin differences apart;
-    c. hcad_lines: what the eye sees (chamfers, lettering, notches);
-    d. focus: 1 and 2 on diff and on lines: close-ups of their first
-       entries, from where they are in sight, then fix what they show.
-  Each report ends with "next:", the step after it. To understand a shape:
-  hcad_section with compare where hcad_diff says; view {from, look_at,
-  size, cut} (render, compare, lines) for a picture from anywhere;
-  opaque: true draws the reference solid, to read its shape.
+- 3, THE ROUND: after every change, hcad_review (hcad review on the
+  command line). One call does it all: the distances both ways, the
+  material that differs, the drawings outside and of the voids, and
+  close-ups of the first entries of each, chosen and framed where they are
+  in sight; it ends saying whether it is done or what comes next. Fix what
+  the close-ups show and review again. To look at a place again after a
+  change, give its point (look: [x, y, z]): entry numbers change, points
+  do not. The single tools (hcad_compare, hcad_diff, hcad_lines, focus,
+  view) go deeper on one place; hcad_section with compare where the
+  review says, to read a shape; opaque: true draws the reference solid.
 - 4, then: hcad_match (the operations one by one: a hexagon where the copy
   has a circle, a trap cut in steps, a notch for printing); hcad_lines with
-  voids and depth once the outside matches; hcad_fit only to tune sizes of
-  a shape already right.
-- 5, done when hcad_compare finds 95% or more of both surfaces within
-  0.1 mm, and hcad_lines lists nothing large.
+  depth once the outside and the voids match; hcad_fit only to tune sizes
+  of a shape already right.
+- 5, done when hcad_review says so (95% or more of both surfaces within
+  0.1 mm) and its close-ups show nothing worth fixing.
 - 6, name the measures that matter: hcad_literals lists the numbers the
   model repeats and which sizes of the original they are (a hole's
   diameter, an axis); make those @params or named constants, use the

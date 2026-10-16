@@ -38,7 +38,7 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "if the user says so. Ask instead of guessing when it changes the result: the sizes of a real part to copy or build onto (say exactly what to measure), a font that cannot "
     ~ "be recognised (offer a similar installed one or tracing it as a sketch), the process or printer for "
     ~ "fits. To remodel a mesh or STEP, no questions: its sizes are there; hcad_docs topic remodel gives the "
-    ~ "method. For an outline given by its dimensions, prefer a constrained sketch. To ask or to show where, "
+    ~ "method, and after every change hcad_review compares the copy with the original in one call. For an outline given by its dimensions, prefer a constrained sketch. To ask or to show where, "
     ~ "frame the view on it, then mark it with hcad_gui_annotate in a colour that stands out; read the user's "
     ~ "marks in hcad_gui_state when they say \"here\"; clear yours when done (the view is locked meanwhile).";
 
@@ -717,9 +717,8 @@ JSONValue[] toolList()
             ~ "tolerance, and a picture of part a coloured by its distance from b: green within half the tolerance, "
             ~ "yellow at it, red at twice it, from the 'views' (4) directions that show most of it off, or from 'view' "
             ~ "as for hcad_render; the patches of each surface the other does not follow, numbered: focus: N gives a "
-            ~ "close-up of patch N. Correct the model until it is green; after every change, compare, then hcad_diff, "
-            ~ "hcad_lines (and with voids: true when the part has holes or pockets) and close-ups (focus) of their "
-            ~ "first entries.",
+            ~ "close-up of patch N. Correct the model until it is green; after every change hcad_review runs this, "
+            ~ "hcad_diff, hcad_lines (outside and on the voids) and the close-ups in one call.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}, `
             ~ `"json": {"type": "boolean", "description": "the whole comparison as data, every patch (long)"}, `
