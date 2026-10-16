@@ -17,6 +17,7 @@ mixin template SketchEdit()
     Box sketchBar;
     Button[string] toolButtons;
     Button[string] drawButtons;
+    Button deleteButton;
     string drawTool;      /// the drawing tool at work (null: clicks select)
     Vec3[] drawn;         /// its clicks so far, on the sketch's plane
     ptrdiff_t[] drawnAt;  /// for each: the point of the sketch it snapped to, or -1 (a new one)
@@ -85,6 +86,9 @@ mixin template SketchEdit()
             drawButtons[t[0]] = b;
             left.append(b);
         }
+        deleteButton = button("⌫", "Delete what is selected, what is drawn on it and the constraints on them (Delete)");
+        deleteButton.connectClicked(() { info(deleteSelection()); });
+        left.append(deleteButton);
         // points and curves under the drawing tools; directions, then sizes, in the other column
         foreach (g, group; toolGroups)
         {
@@ -141,6 +145,8 @@ mixin template SketchEdit()
         auto v = drawnSketch();
         immutable why = v is null ? "none" : sketchUneditable();
         sketchBar.setVisible(v !is null && !frozen);
+        if (deleteButton !is null)
+            deleteButton.setSensitive(why is null && sketchSel.length > 0);
         foreach (tool, b; drawButtons)
         {
             b.setSensitive(why is null);
@@ -661,5 +667,30 @@ mixin template SketchEdit()
         catch (Exception e)
             return e.msg;
         return tool ~ " written in the sketch's code";
+    }
+
+    /// Deletes what is selected in the sketch from its code (see deleteFromSketch); what the info line says.
+    string deleteSelection()
+    {
+        import hackerscad.tool.sketchcode : deleteFromSketch, editBetween;
+        if (sketchSel.length == 0)
+            return "select what to delete first";
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        auto v = drawnSketch();
+        if (v is null)
+            return "no sketch is drawn";
+        immutable src = text();
+        if (last.sources.get(absolutePath(path), null) != src)
+            return "the code changed since it was evaluated: wait for it, then try again";
+        string why;
+        auto after = deleteFromSketch(src, v.span.file, *v, sketchSel, why);
+        if (after is null)
+            return why;
+        applyEdit(editBetween(src, after));
+        immutable n = sketchSel.length;
+        sketchSel = null;
+        return format("%d deleted from the sketch's code, with what was drawn on %s and the constraints on them",
+            n, n == 1 ? "it" : "them");
     }
 }

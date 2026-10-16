@@ -764,7 +764,7 @@ mixin template ControlMethods()
                     });
                     return;
                 }
-                if ((has("select") || has("constrain")) && !has("line") && !p.has("on"))
+                if ((has("select") || has("constrain") || has("delete")) && !has("line") && !p.has("on"))
                 {
                     whenIdle(() {
                         if (has("select"))
@@ -786,6 +786,13 @@ mixin template ControlMethods()
                             drawRuns();
                         }
                         string said;
+                        if (has("delete") && p["delete"].safe!bool.or(false))
+                        {
+                            said = deleteSelection();
+                            import std.algorithm : canFind;
+                            if (!said.canFind("deleted from the sketch's code"))
+                                return reply(JValue.init, said);
+                        }
                         if (has("constrain"))
                         {
                             immutable tool = arg("constrain");

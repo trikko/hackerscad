@@ -746,3 +746,163 @@ unittest
     assert(plan("diameter", [3])[0] == '!');
     assert(plan("horizontal", []) == "! select what to constrain first: points, lines, circles");
 }
+
+/// Deletes entities `ids` of sketch `v` from the source: the statements
+/// that make them, those that make what is drawn on them (a line on a
+/// point), the constraints on any of them; a shape goes whole. The new
+/// source, or null with `why` when it cannot be done from here (a statement
+/// in a loop, a name still used elsewhere).
+string deleteFromSketch(string source, string file, const ref SketchView v, const(size_t)[] ids, out string why)
+{
+    import std.algorithm : canFind, sort, uniq;
+    import std.array : array;
+    SketchWriter w;
+    try
+        w = SketchWriter(source, file, v);
+    catch (CodegenException e)
+    {
+        why = e.msg;
+        return null;
+    }
+    // what goes: those given, what is made on them, everything their calls make (a shape's lines and corners)
+    bool[size_t] gone;
+    foreach (e; ids)
+        gone[e] = true;
+    for (bool more = true; more;)
+    {
+        more = false;
+        foreach (i, en; v.entities)
+        {
+            if (i in gone || en.reference)
+                continue;
+            bool goes = en.points.canFind!(p => (p in gone) !is null);
+            foreach (g, _; gone)
+                if (v.entities[g].span == en.span && !v.entities[g].reference)
+                    goes = true;
+            if (goes)
+            {
+                gone[i] = true;
+                more = true;
+            }
+        }
+    }
+    foreach (g, _; gone)
+        if (v.entities[g].reference)
+        {
+            why = "a face's edges and the origin are references: they stay";
+            return null;
+        }
+    // the statements: the calls that made them, the constraints on them
+    size_t[] starts;
+    bool[string] names;
+    string fail(string reason)
+    {
+        why = reason;
+        return null;
+    }
+    size_t[2] statementOf(Span s)
+    {
+        immutable c = w.callToken(s);
+        if (c == size_t.max || !w.direct(c))
+            return [size_t.max, size_t.max];
+        return w.statements[w.rangeOf(c)];
+    }
+    foreach (g, _; gone)
+    {
+        auto st = statementOf(v.entities[g].span);
+        if (st[0] == size_t.max)
+            return fail(format("line %d is in a loop, an if or another function: delete it by hand",
+                v.entities[g].span.line));
+        // the whole statement must be the call: auto x = s.line(…); or s.line(…);
+        auto t = w.toks;
+        if (t[st[0]].kind == Tok.kwAuto && t[st[0] + 1].kind == Tok.ident)
+            names[t[st[0] + 1].text] = true;
+        starts ~= st[0];
+    }
+    foreach (c; v.constraints)
+        if (c.entities.canFind!(e => (e in gone) !is null))
+        {
+            auto st = statementOf(c.span);
+            if (st[0] == size_t.max)
+                return fail(format("the constraint at line %d is in a loop, an if or another function: delete it by hand",
+                    c.span.line));
+            starts ~= st[0];
+        }
+    starts = starts.sort.uniq.array;
+    // a name declared there and used anywhere else: not deleted
+    foreach (i, t; w.toks)
+        if (t.kind == Tok.ident && t.text in names && !(i > 0 && w.toks[i - 1].kind == Tok.dot))
+        {
+            bool inside;
+            foreach (st0; starts)
+            {
+                immutable r = w.statements[w.rangeOf(st0)];
+                if (i >= r[0] && i <= r[1])
+                    inside = true;
+            }
+            if (!inside)
+                return fail(format("%s is still used at line %d: change that first", t.text, t.span.line));
+        }
+    // whole lines out (a statement alone on its lines), from the end
+    string r = source;
+    foreach_reverse (st0; starts)
+    {
+        immutable range = w.statements[w.rangeOf(st0)];
+        size_t a = offsetOf(source, w.toks[range[0]].span), b = offsetOf(source, w.toks[range[1]].span) + 1;
+        while (a > 0 && (source[a - 1] == ' ' || source[a - 1] == '\t'))
+            a--;
+        if (b < source.length && source[b] == '\n' && (a == 0 || source[a - 1] == '\n'))
+            b++;
+        r = r[0 .. a] ~ r[b .. $];
+    }
+    return r;
+}
+
+unittest
+{
+    import std.algorithm : canFind, filter;
+    import std.array : array;
+    import std.file : tempDir;
+    import std.path : buildPath;
+    import hackerscad.lang.interp : Interp;
+    import hackerscad.lang.sketchval : SketchVal;
+    import hackerscad.kernel.occt.backend : OcctKernel;
+
+    immutable file = buildPath(tempDir, "hcad-sketchdelete.hcad");
+    auto kernel = new OcctKernel;
+    SketchView viewOf(string src)
+    {
+        auto it = new Interp(kernel);
+        it.runSource(src, file);
+        return (cast(SketchVal) it.sketches[$ - 1]).view();
+    }
+    immutable src = "module m;\n@part\nSolid p()\n{\n"
+        ~ "    auto s = sketch();\n"
+        ~ "    auto a = s.point(0, 0, fixed: true);\n"
+        ~ "    auto b = s.point(40, 2);\n"
+        ~ "    auto c = s.point(20, 30);\n"
+        ~ "    auto ab = s.line(a, b);\n"
+        ~ "    s.line(b, c);\n"
+        ~ "    s.line(c, a);\n"
+        ~ "    s.horizontal(ab);\n"
+        ~ "    auto r = s.rect(vec(50, 0), vec(70, 20));\n"
+        ~ "    s.length(r[0], 20.mm);\n"
+        ~ "    return box(1, 1, 1);\n}\n";
+    auto v = viewOf(src);
+    size_t at(uint line, string kind) => v.entities.length.iota.filter!(i => v.entities[i].span.line == line
+        && v.entities[i].kind == kind).front;
+    string why;
+    // a point: it, the lines on it, the constraints on those
+    auto noB = deleteFromSketch(src, file, v, [at(7, "point")], why);
+    assert(noB !is null, why);
+    assert(!noB.canFind("auto b =") && !noB.canFind("s.line(b, c)") && !noB.canFind("auto ab =")
+        && !noB.canFind("s.horizontal(ab)") && noB.canFind("    s.line(c, a);\n    auto r ="), noB);
+    viewOf(noB);
+    // a line of a shape: the shape goes whole, with its constraint
+    auto noRect = deleteFromSketch(src, file, v, [at(13, "line")], why);
+    assert(noRect !is null && !noRect.canFind("s.rect") && !noRect.canFind("s.length(r[0]"), noRect);
+    // a name still used elsewhere: left
+    immutable used = src[0 .. src.length - 26] ~ "    writeln(ab.length);\n" ~ src[src.length - 26 .. $];
+    auto u = viewOf(used);
+    assert(deleteFromSketch(used, file, u, [at(9, "line")], why) is null && why.canFind("ab is still used"), why);
+}

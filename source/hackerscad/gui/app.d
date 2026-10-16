@@ -1089,6 +1089,12 @@ final class MainWindow
                     annotateToggle.setActive(true);
                     return true;
                 }
+                // what is selected in a sketch: Delete takes it out of the code
+                if (sketchSel.length && (key == KEY_Delete || key == KEY_BackSpace))
+                {
+                    info(deleteSelection());
+                    return true;
+                }
                 // drawing in a sketch: Enter ends it (as drawn), Esc drops it
                 if (drawTool !is null && (key == KEY_Return || key == KEY_KP_Enter))
                 {

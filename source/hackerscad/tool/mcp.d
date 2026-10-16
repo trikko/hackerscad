@@ -1036,7 +1036,9 @@ JValue toolList()
             ~ "its points to join) writes the shape at once (closed: true joins a line or a spline back to its "
             ~ "first point; a circle is its centre and a point on it, an arc its centre, start and end, a rect two "
             ~ "corners); tool chooses a drawing tool of the bar instead, and hcad_gui_pick clicks then draw, as "
-            ~ "the user's: state's sketch.drawing gives what is clicked so far.",
+            ~ "the user's: state's sketch.drawing gives what is clicked so far. delete: true (with select) takes "
+            ~ "the selected entities out of the code, with what is drawn on them (a line on a point; a shape goes "
+            ~ "whole) and the constraints on them; a name still used elsewhere in the code stops it, and says where.",
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "on": {"type": "boolean"}, `
             ~ `"follow": {"type": "boolean"}, "pin": {"type": "boolean"}, "align": {"type": "boolean"}, `
             ~ `"run": {"type": "integer"}, "select": {"type": "array", "items": {"type": "integer"}}, `
@@ -1045,7 +1047,8 @@ JValue toolList()
             ~ `"angle", "radius", "diameter"]}, "value": {"type": "string"}, `
             ~ `"draw": {"type": "string", "enum": ["point", "line", "rect", "circle", "arc", "spline"]}, `
             ~ `"points": {"type": "array", "items": {}}, "closed": {"type": "boolean"}, `
-            ~ `"tool": {"type": "string", "enum": ["select", "point", "line", "rect", "circle", "arc", "spline"]}`, `[]`),
+            ~ `"tool": {"type": "string", "enum": ["select", "point", "line", "rect", "circle", "arc", "spline"]}, `
+            ~ `"delete": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
             ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "
             ~ "several times, every run), what a value row made, or what a function returns; the step of a sketch "
