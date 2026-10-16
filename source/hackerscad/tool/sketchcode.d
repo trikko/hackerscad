@@ -946,13 +946,13 @@ unittest
 }
 
 /// Turns the entities `ids` into construction geometry (drawn dashed, out of the
-/// profile), or back when all of them are already: `construction: true` added to
-/// the calls that made them, or taken away. A call makes all it makes so (a
-/// shape's every side). The new source, or null with why; `on` tells which way.
-string toggleConstruction(string source, string file, const ref SketchView v, const(size_t)[] ids, out string why,
-    out bool on)
+/// profile) when `on`, else into plain geometry: `construction: true` added to
+/// the calls that made them, or taken away; those already so are left. A call
+/// makes all it makes so (a shape's every side). The new source, or null with why.
+string setConstruction(string source, string file, const ref SketchView v, const(size_t)[] ids, bool on,
+    out string why)
 {
-    import std.algorithm : all, canFind;
+    import std.algorithm : canFind;
     if (ids.length == 0)
     {
         why = "select what to turn into construction geometry, or back";
@@ -972,7 +972,6 @@ string toggleConstruction(string source, string file, const ref SketchView v, co
             why = "a face's edges and the origin are references: always out of the profile";
             return null;
         }
-    on = !ids.all!(e => v.entities[e].construction);
     // the calls, each once, with the edit each needs
     struct Change { size_t from, to; string text; }
     Change[] changes;
@@ -1057,12 +1056,11 @@ unittest
     size_t at(uint line, string kind) => v.entities.length.iota.filter!(i => v.entities[i].span.line == line
         && v.entities[i].kind == kind).front;
     string why;
-    bool on;
-    auto made = toggleConstruction(src, file, v, [at(8, "line"), at(9, "line")], why, on);
-    assert(made !is null && on, why);
+    auto made = setConstruction(src, file, v, [at(8, "line"), at(9, "line")], true, why);
+    assert(made !is null, why);
     assert(made.canFind("s.line(a, b, construction: true)") && made.canFind("vec(70, 20), construction: true)"), made);
-    // all construction now: back
+    // plain again
     auto v2 = viewOf(made);
-    auto back = toggleConstruction(made, file, v2, [at(8, "line")], why, on);
-    assert(back !is null && !on && back.canFind("s.line(a, b);"), back);
+    auto back = setConstruction(made, file, v2, [at(8, "line")], false, why);
+    assert(back !is null && back.canFind("s.line(a, b);"), back);
 }

@@ -321,7 +321,11 @@ mixin template SketchEdit()
         if (constructionButton !is null)
         {
             constructionButton.setSensitive(why is null);
-            if (drawConstruction)
+            // lit: the last selected is construction geometry (a click turns the whole selection the other way);
+            // nothing selected, what is drawn next will be
+            immutable last = sketchSel.length ? sketchSel[$ - 1] : size_t.max;
+            if (sketchSel.length ? v !is null && last < v.entities.length && v.entities[last].construction
+                    : drawConstruction)
                 constructionButton.addCssClass("hcad-tool-on");
             else
                 constructionButton.removeCssClass("hcad-tool-on");
@@ -934,6 +938,83 @@ mixin template SketchEdit()
             consider((ends[k][0] + ends[k][1]) * 0.5, -3 - cast(ptrdiff_t) hidden.length);
             hidden ~= Hidden(null, id);
         }
+        // circles and arcs: where they cross the lines and each other
+        {
+            import std.math : atan2, sqrt;
+            struct Round { size_t id; bool arc; Vec3 c, a, b; double r; }
+            Round[] rounds;
+            bool[size_t] had;
+            foreach (g; v.segments)
+                if ((g.kind == 1 || g.kind == 2) && g.entity >= 0 && (cast(size_t) g.entity in had) is null)
+                {
+                    had[g.entity] = true;
+                    rounds ~= Round(g.entity, g.kind == 1, g.c, g.a, g.b, g.r);
+                }
+            // on an arc: between its start and end, counter-clockwise
+            bool onRound(const ref Round o, Vec3 q)
+            {
+                if (!o.arc)
+                    return true;
+                double ang(Vec3 u) => atan2(u.y - o.c.y, u.x - o.c.x);
+                double ccw(double from, double to)
+                {
+                    double x = to - from;
+                    while (x < 0)
+                        x += 2 * PI;
+                    return x;
+                }
+                return ccw(ang(o.a), ang(q)) <= ccw(ang(o.a), ang(o.b));
+            }
+            // not where a point of the sketch is already
+            bool isPoint(Vec3 q)
+            {
+                foreach (pt; v.points)
+                    if ((pt.pos - q).length < 1e-6 * (1 + q.length))
+                        return true;
+                return false;
+            }
+            void offer(Vec3 q, size_t[] on)
+            {
+                if (isPoint(q))
+                    return;
+                consider(q, -3 - cast(ptrdiff_t) hidden.length);
+                hidden ~= Hidden(on);
+            }
+            foreach (k, id; lineIds)
+                foreach (ref o; rounds)
+                {
+                    auto a = ends[k][0], d = ends[k][1] - ends[k][0];
+                    auto f = a - o.c;
+                    immutable qa = d.dot(d), qb = 2 * f.dot(d), qc = f.dot(f) - o.r * o.r;
+                    immutable disc = qb * qb - 4 * qa * qc;
+                    if (qa < 1e-18 || disc < 0)
+                        continue;
+                    foreach (sign; [-1.0, 1.0])
+                    {
+                        immutable t = (-qb + sign * sqrt(disc)) / (2 * qa);
+                        if (t <= 1e-6 || t >= 1 - 1e-6)
+                            continue;
+                        auto q = a + d * t;
+                        if (onRound(o, q))
+                            offer(q, [id, o.id]);
+                    }
+                }
+            foreach (i; 0 .. rounds.length)
+                foreach (j; i + 1 .. rounds.length)
+                {
+                    auto o1 = rounds[i], o2 = rounds[j];
+                    auto dv = o2.c - o1.c;
+                    immutable dist = dv.length;
+                    if (dist < 1e-9 || dist > o1.r + o2.r || dist < abs(o1.r - o2.r))
+                        continue;
+                    immutable along = (o1.r * o1.r - o2.r * o2.r + dist * dist) / (2 * dist);
+                    immutable h = sqrt(max(0.0, o1.r * o1.r - along * along));
+                    auto m = o1.c + dv * (along / dist), n = Vec3(-dv.y, dv.x) * (h / dist);
+                    foreach (q; h > 1e-9 ? [m + n, m - n] : [m])
+                        if (onRound(o1, q) && onRound(o2, q))
+                            offer(q, [o1.id, o2.id]);
+                }
+        }
         foreach (i; 0 .. lineIds.length)
             foreach (j; i + 1 .. lineIds.length)
             {
@@ -1353,13 +1434,15 @@ mixin template SketchEdit()
             return drawConstruction ? "what you draw now is construction geometry: dashed guides, never filled (┄ again: "
                 ~ "back to normal)" : "what you draw is normal geometry again";
         }
-        return constructionSelection();
+        // the selection to the other way from what the button shows: the last selected's
+        auto v = drawnSketch();
+        return constructionSelection(v is null || !v.entities[sketchSel[$ - 1]].construction);
     }
 
-    /// The selection to construction geometry, or back when all of it is; what the info line says.
-    string constructionSelection()
+    /// The selection to construction geometry (`on`), or to plain geometry; what the info line says.
+    string constructionSelection(bool on)
     {
-        import hackerscad.tool.sketchcode : toggleConstruction, editBetween;
+        import hackerscad.tool.sketchcode : setConstruction, editBetween;
         if (busy())
             return "wait for the evaluation to finish, then try again";
         auto v = drawnSketch();
@@ -1369,8 +1452,7 @@ mixin template SketchEdit()
         if (last.sources.get(absolutePath(path), null) != src)
             return "the code changed since it was evaluated: wait for it, then try again";
         string why;
-        bool on;
-        auto after = toggleConstruction(src, v.span.file, *v, sketchSel, why, on);
+        auto after = setConstruction(src, v.span.file, *v, sketchSel, on, why);
         if (after is null)
             return why;
         sketchEditHold = true;

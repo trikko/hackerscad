@@ -1046,7 +1046,7 @@ JValue toolList()
             ~ "end, a point on it), fill (a point inside a closed area: it turns full or empty, as s.fill; state's "
             ~ "sketch shows the areas); sizes are written as numbers (a value to change); construction: true draws it as "
             ~ "construction geometry (dashed guides to constrain to, never filled or extruded). With select instead, "
-            ~ "construction: true turns the selected into construction geometry, or back when all of it is already (the "
+            ~ "construction: true turns the selected into construction geometry, false into plain geometry (the "
             ~ "bar's ┄; a shape's every side changes with it). tool chooses a drawing tool of "
             ~ "the bar instead (its button shows it; the user's right-click gives the others), and hcad_gui_pick clicks then draw, as "
             ~ "the user's: state's sketch.drawing gives what is clicked so far. delete: true (with select) takes "

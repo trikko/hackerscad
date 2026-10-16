@@ -816,11 +816,11 @@ mixin template ControlMethods()
                             if (!said.canFind("deleted from the sketch's code"))
                                 return reply(JValue.init, said);
                         }
-                        if (p.has("construction") && !has("draw") && p.safe!bool("construction").or(false))
+                        if (p.has("construction") && !has("draw"))
                         {
                             if (sketchSel.length == 0)
-                                return reply(JValue.init, "construction: true needs a selection (select [ids])");
-                            said = constructionSelection();
+                                return reply(JValue.init, "construction needs a selection (select [ids])");
+                            said = constructionSelection(p.safe!bool("construction").or(false));
                             import std.algorithm : canFind;
                             if (!said.canFind(" geometry"))
                                 return reply(JValue.init, said);

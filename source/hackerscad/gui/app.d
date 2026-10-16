@@ -4102,11 +4102,16 @@ private:
     {
         size_t[] shown;
         size_t[][] lit;
+        // a sketch the bar edits, shown from the cursor: orange is what is selected, and nothing else (what the
+        // cursor's line makes would look selected, and no click could take it away); a line asked for (a step,
+        // Inspect, hcad_gui_sketch line) still shows what it makes
+        immutable editing = sketchFollowing && drawnSketch() !is null && sketchUneditable() is null;
         foreach (k; drawnRuns())
         {
             shown ~= sketchIndices[k];
-            // what is selected stands out; else what the cursor's line makes
-            lit ~= sketchSel.length ? sketchSel.dup : sketchHighlight && k < sketchFound.length ? sketchFound[k].highlight : null;
+            // what is selected stands out; else, read only, what the cursor's line makes
+            lit ~= sketchSel.length || editing ? sketchSel.dup
+                : sketchHighlight && k < sketchFound.length ? sketchFound[k].highlight : null;
         }
         viewport.showSketches(shown, lit);
         updateDimensions();
