@@ -18,7 +18,7 @@ import std.stdio : stdin, stdout, stderr;
 import std.string : strip;
 import core.atomic : atomicLoad, atomicOp;
 
-import hackerscad.render.raster : View;
+import hackerscad.render.raster : View, Shot;
 import hackerscad.tool.docs : agentsText, docsStamp, reference, skillText, summaryText;
 import hackerscad.tool.runner;
 import hackerscad.tool.guiclient;
@@ -1108,6 +1108,31 @@ JSONValue callTool(string name, JSONValue args)
 
     string arg(string key) => args.type == JSONType.object && key in args && args[key].type == JSONType.string
         ? args[key].str : null;
+    // a picture from anywhere: view {from, look_at, size, cut}; none when not given
+    Shot[] viewArg()
+    {
+        if (args.type != JSONType.object || "view" !in args || args["view"].type != JSONType.object)
+            return null;
+        auto v = args["view"];
+        string from;
+        if (auto f = "from" in v)
+        {
+            if (f.type == JSONType.string)
+                from = f.str;
+            else if (f.type == JSONType.array)
+                from = format("%s,%s,%s", f.array[0].toString, f.array[1].toString, f.array[2].toString);
+        }
+        double[] at;
+        if (auto l = "look_at" in v)
+            if (l.type == JSONType.array)
+                foreach (x; l.array)
+                    at ~= x.type == JSONType.integer ? x.integer : x.floating;
+        double size = 0;
+        if (auto sz = "size" in v)
+            size = sz.type == JSONType.integer ? sz.integer : sz.floating;
+        immutable cut = "cut" in v && v["cut"].type == JSONType.true_;
+        return [Run.freeShot(from, at, size, cut)];
+    }
     // the entries to look at closely: a number, or a list of them
     size_t[] focus()
     {
@@ -1172,7 +1197,23 @@ JSONValue callTool(string name, JSONValue args)
             if (diags.length)
                 text(diags);
             if (name == "hcad_render" && run.ok && run.result.parts.length)
-                image(run.png(views(args), 450, only.length ? run.partIndices(only, true) : null));
+            {
+                auto free = viewArg();
+                immutable opaque = args.type == JSONType.object && "opaque" in args && args["opaque"].type == JSONType.true_;
+                // where each picture looks from, then the picture
+                string where = "the picture";
+                if (free.length)
+                    where ~= format(": seen %s\n", free[0]);
+                else
+                {
+                    where ~= ", left to right and top to bottom:\n";
+                    foreach (i, v; views(args))
+                        where ~= format("  %d. %s: %s\n", i + 1, v, Shot.of(v));
+                }
+                text(where);
+                image(run.png(views(args), 450, only.length ? run.partIndices(only, true) : null,
+                    free.length ? &free[0] : null, opaque));
+            }
             break;
         }
     case "hcad_drawing":
@@ -1244,7 +1285,7 @@ JSONValue callTool(string name, JSONValue args)
                 if (arg("compare").length)
                 {
                     string t;
-                    auto png = sectionOverlay(arg("path"), arg("part"), arg("compare"), arg("plane"), level, t);
+                    auto png = sectionOverlay(arg("path"), arg("part"), arg("compare"), arg("plane"), level, t, region);
                     text(t);
                     image(png);
                 }
@@ -1291,7 +1332,12 @@ JSONValue callTool(string name, JSONValue args)
             if (auto t = "tolerance_mm" in args)
                 tol = t.type == JSONType.integer ? t.integer : t.floating;
             ubyte[] png;
-            auto j = run.compare(ia, ib, tol, png);
+            auto free = viewArg();
+            size_t count = 4;
+            if (auto vc = "views" in args)
+                if (vc.type == JSONType.integer)
+                    count = cast(size_t) vc.integer;
+            auto j = run.compare(ia, ib, tol, png, free.length ? &free[0] : null, count);
             auto js = "json" in args;
             text(js && js.type == JSONType.true_ ? j.toPrettyString()
                 : Run.compareText(j, run.result.parts[ia].name, run.result.parts[ib].name));
@@ -1342,7 +1388,7 @@ JSONValue callTool(string name, JSONValue args)
                     "depth" !in args ? 0.0 : args["depth"].type == JSONType.integer ? args["depth"].integer
                     : args["depth"].floating, v is null ? 12 : cast(size_t) v.integer,
                     "fixed" in args && args["fixed"].type == JSONType.true_, "voids" in args && args["voids"].type == JSONType.true_,
-                    png, focus()));
+                    png, focus(), viewArg().length ? &viewArg()[0] : null));
                 image(png);
             }
             catch (Exception e)
@@ -1631,6 +1677,18 @@ unittest
     assert(compared.canFind("within tolerance") && !compared.canFind(`"a_to_b"`), compared);
     assert(callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original", "json": true}`)[0]["text"].str
         .canFind(`"a_to_b"`));
+
+    // the pictures say where they look from; a view from anywhere
+    auto views = callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original"}`)[0]["text"].str;
+    assert(views.canFind("the picture") && views.canFind("1. from"), views);
+    auto seen = handle(parseJSON(`{"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "hcad_render", `
+        ~ `"arguments": {` ~ where ~ `, "view": {"from": "right", "look_at": [0, 0, 5], "size": 10}}}}`))["result"];
+    assert(seen["content"].array[$ - 2]["text"].str.canFind("seen from the right (x)"), seen.toString);
+
+    // two sections drawn on each other, close on a region round the hole
+    auto cut = callTool("hcad_section", `{` ~ where ~ `, "part": "copy", "compare": "original", "plane": "xy", "at": 5, `
+        ~ `"region": [-4, -4, 4, 4]}`);
+    assert(cut.array[$ - 1]["type"].str == "image");
 
     // focus: a close-up of an entry of the report, as a picture; a number past the last one is an error
     auto close = handle(parseJSON(`{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "hcad_diff", `

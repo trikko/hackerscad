@@ -8,6 +8,7 @@ import std.string : indexOf;
 import hackerscad.lang.errors;
 import hackerscad.kernel.brep : KernelException;
 import hackerscad.tool.runner;
+import hackerscad.render.raster : Shot;
 import hackerscad.tool.docs : reference, agentsText, skillText, summaryText, docsStamp;
 import hackerscad.tool.mcp : serve, serveWorker;
 
@@ -100,6 +101,18 @@ options:
 /// The garbage collector marks on one thread: marking in parallel spent
 /// most of its time spinning on locks, against OCCT's own threads.
 extern (C) __gshared string[] rt_options = ["gcopt=parallel:0"];
+
+/// The picture asked for by --from, --look-at, --size and --cut (none when
+/// neither of the first two is given).
+Shot[] freeShotArg(string from, string lookAt, double size, bool cut)
+{
+    import std.algorithm : map;
+    import std.array : array, split;
+    import std.conv : to;
+    if (from.length == 0 && lookAt.length == 0)
+        return null;
+    return [Run.freeShot(from, lookAt.length ? lookAt.split(",").map!(x => x.to!double).array : null, size, cut)];
+}
 
 /// "2,5" → [2, 5]: the entries to look at closely (--focus).
 size_t[] focusList(string arg)
@@ -245,7 +258,11 @@ int main(string[] args)
                 if (other.length)
                 {
                     string text;
-                    auto png = sectionOverlay(args[1], part, other, plane, at, text);
+                    import std.algorithm : map;
+                    import std.array : array, split;
+                    import std.conv : to;
+                    auto png = sectionOverlay(args[1], part, other, plane, at, text,
+                        region.length ? region.split(",").map!(x => x.to!double).array : null);
                     write(text);
                     if (out_.length)
                     {
@@ -273,12 +290,13 @@ int main(string[] args)
         }
     case "compare":
         {
-            string pa, pb, out_, focusArg;
-            double tol = 0.1;
-            bool asJson;
+            string pa, pb, out_, focusArg, from, lookAt;
+            double tol = 0.1, size = 0;
+            bool asJson, cut;
+            size_t views = 4;
             try
                 getopt(args, "a", &pa, "b", &pb, "tolerance", &tol, "o|output", &out_, "json", &asJson,
-                    "focus", &focusArg);
+                    "focus", &focusArg, "from", &from, "look-at", &lookAt, "size", &size, "cut", &cut, "views", &views);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -301,7 +319,8 @@ int main(string[] args)
             {
                 ubyte[] png;
                 immutable ia = run.partIndices([pa], true)[0], ib = run.partIndices([pb], true)[0];
-                auto j = run.compare(ia, ib, tol, png);
+                auto free = freeShotArg(from, lookAt, size, cut);
+                auto j = run.compare(ia, ib, tol, png, free.length ? &free[0] : null, views);
                 if (asJson)
                     writeln(j.toPrettyString());
                 else
@@ -323,13 +342,13 @@ int main(string[] args)
         }
     case "lines":
         {
-            string pa, pb, out_, focusArg;
+            string pa, pb, out_, focusArg, from, lookAt;
             size_t views = 12;
-            double depth = 0;
-            bool fixed, voids;
+            double depth = 0, size = 0;
+            bool fixed, voids, cut;
             try
                 getopt(args, "a", &pa, "b", &pb, "depth", &depth, "fixed", &fixed, "voids", &voids, "views", &views,
-                    "o|output", &out_, "focus", &focusArg);
+                    "o|output", &out_, "focus", &focusArg, "from", &from, "look-at", &lookAt, "size", &size, "cut", &cut);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -351,8 +370,9 @@ int main(string[] args)
             try
             {
                 ubyte[] png;
+                auto free = freeShotArg(from, lookAt, size, cut);
                 write(run.lines(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], depth, views, fixed, voids,
-                    png, focusList(focusArg)));
+                    png, focusList(focusArg), free.length ? &free[0] : null));
                 if (out_.length)
                 {
                     import std.file : write;
@@ -505,11 +525,14 @@ int main(string[] args)
     RunOptions o;
     bool json;
     string[] only;
-    bool oneObject;
+    bool oneObject, cut, opaque;
+    string from, lookAt;
+    double size = 0;
     try
         getopt(args, "o|output", &outputs, "D", &defines, "preset", &o.preset, "drawing", &o.drawing, "tolerance", &o.tolerance,
             "part", &only, "one-object", &oneObject, "json", &json, "printability", &o.printability,
-            "overhang", &o.overhangAngle, "min-wall", &o.minWall);
+            "overhang", &o.overhangAngle, "min-wall", &o.minWall, "from", &from, "look-at", &lookAt, "size", &size,
+            "cut", &cut, "opaque", &opaque);
     catch (GetOptException e)
     {
         stderr.writeln("error: ", e.msg);
@@ -548,6 +571,21 @@ int main(string[] args)
     }
 
     auto run = evaluateModel(o);
+    run.opaque = opaque;
+    if (from.length || lookAt.length)
+    {
+        import std.algorithm : map;
+        import std.array : array, split;
+        import std.conv : to;
+        try
+            run.freeView = [Run.freeShot(from, lookAt.length ? lookAt.split(",").map!(x => x.to!double).array : null,
+                size, cut)];
+        catch (Exception e)
+        {
+            stderr.writeln("error: ", e.msg);
+            return 2;
+        }
+    }
     if (run.ok && command == "render")
     {
         try

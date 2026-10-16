@@ -430,7 +430,8 @@ string scanReport(string file, string part, string axis, double step)
 /// The sections of two parts of a model by one plane, drawn on each other:
 /// the original (`b`) in thick grey, the copy (`a`) in thin orange, with
 /// both outlines as text. The picture is a PNG.
-ubyte[] sectionOverlay(string file, string a, string b, string plane, double at, out string text)
+ubyte[] sectionOverlay(string file, string a, string b, string plane, double at, out string text,
+    const double[] region = null)
 {
     import std.algorithm : max, min;
     import hackerscad.geom.outlinefit;
@@ -460,6 +461,14 @@ ubyte[] sectionOverlay(string file, string a, string b, string plane, double at,
                 y0 = min(y0, p[1]);
                 y1 = max(y1, p[1]);
             }
+    // a region: the picture is that rectangle, close
+    if (region.length == 4)
+    {
+        x0 = min(region[0], region[2]);
+        x1 = max(region[0], region[2]);
+        y0 = min(region[1], region[3]);
+        y1 = max(region[1], region[3]);
+    }
     enum W = 900, H = 700, ss = 3;
     auto c = Canvas(W * ss, H * ss);
     c.clear();
@@ -467,7 +476,7 @@ ubyte[] sectionOverlay(string file, string a, string b, string plane, double at,
     immutable ox = W * ss / 2.0 - k * (x0 + x1) / 2, oy = H * ss / 2.0 + k * (y0 + y1) / 2;
     Vec3 screen(P2 p) => Vec3(ox + k * p[0], oy - k * p[1], 0);
     // a millimetre grid, faint
-    immutable gridStep = (x1 - x0) > 60 ? 10.0 : (x1 - x0) > 15 ? 5.0 : 1.0;
+    immutable gridStep = (x1 - x0) > 60 ? 10.0 : (x1 - x0) > 15 ? 5.0 : (x1 - x0) > 3 ? 1.0 : 0.1;
     import std.math : floor, ceil;
     for (double g = floor(x0 / gridStep) * gridStep; g <= x1; g += gridStep)
         c.line(screen([g, y0]), screen([g, y1]), Vec3(225, 228, 235), ss, 1);

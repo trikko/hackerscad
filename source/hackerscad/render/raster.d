@@ -200,7 +200,9 @@ private Prepared[] prepare(const Shaded[] items)
     auto r = new Prepared[items.length];
     foreach (i, it; items)
     {
-        r[i].edges = featureEdges(it.mesh, 25);
+        // a see-through part (a reference, a mesh with a face per facet) shows
+        // only its sharp edges: all of them would bury the picture in lines
+        r[i].edges = featureEdges(it.mesh, alphaOf(it.rgb) < 0.999 ? 40 : 25);
         if (it.faces.triangleCount)
             r[i].normals = vertexNormals(it.faces);
     }

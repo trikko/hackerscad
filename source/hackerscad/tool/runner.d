@@ -25,6 +25,7 @@ import hackerscad.render.raster;
 import hackerscad.geom.printability : PrintCheck, checkPrint;
 import hackerscad.drawing.sheet : Sheet, toSvg, toPdf, toDxf;
 import hackerscad.tool.closeup : Place;
+import hackerscad.geom.voxeldiff : Region;
 
 struct RunOptions
 {
@@ -52,6 +53,8 @@ final class Run
     double tolerance = 0.02;   /// mesh chord tolerance of exports and pictures (--tolerance)
     bool printability;         /// report overhangs and thin walls, mark them in pictures
     double overhangAngle = 45, minWall = 0.8;
+    Shot[] freeView;           /// a PNG export: this one picture instead of the views its name asks for
+    bool opaque;               /// a PNG export: see-through parts drawn solid
 
     private PrintCheck[] checks;
 
@@ -193,7 +196,7 @@ final class Run
             throw new HcadError(Code.undefined, "nothing to export: every @part has export: false", Span.init);
         if (picture)
         {
-            write(file, png(pngViews(file), 450, kept));
+            write(file, png(pngViews(file), 450, kept, freeView.length ? &freeView[0] : null, opaque));
             return;
         }
         import hackerscad.tool.exporter : ExportException, ExportPart, exportParts;
@@ -232,15 +235,18 @@ final class Run
         return [View.iso];
     }
 
-    /// `only`: the indices of the parts drawn; empty, all of them.
-    ubyte[] png(const View[] views, uint cell = 450, const size_t[] only = null)
+    /// `only`: the indices of the parts drawn; empty, all of them. `free`: one
+    /// picture from there instead of the views; `opaque`: see-through parts
+    /// drawn solid.
+    ubyte[] png(const View[] views, uint cell = 450, const size_t[] only = null, const(Shot)* free = null,
+        bool opaque = false)
     {
         import std.algorithm : canFind;
         Shaded[] shaded;
         foreach (i, p; result.parts)
             if (only.length == 0 || only.canFind(i))
             {
-                shaded ~= Shaded(partMeshes()[i], p.rgb, faceMeshes[i]);
+                shaded ~= Shaded(partMeshes()[i], opaque ? p.rgb & 0xFFFFFF : p.rgb, faceMeshes[i]);
                 if (printability)
                 {
                     // overhangs striped red, thin walls cross-hatched violet, as in the window
@@ -251,14 +257,51 @@ final class Run
                     shaded[$ - 1].marks = marks;
                 }
             }
-        auto img = views.length == 1 ? render(shaded, views[0], 1000, 700) : renderSheet(shaded, views, cell);
+        auto img = free !is null ? render(shaded, *free, 1000, 700)
+            : views.length == 1 ? render(shaded, views[0], 1000, 700) : renderSheet(shaded, views, cell);
         return encodePng(img.rgb, img.width, img.height);
+    }
+
+    /// A picture from anywhere: `from` a named view (front, iso…) or a
+    /// direction "x,y,z" towards the viewer; with `lookAt` and `size`, framed
+    /// on the cube of that side round that point; `cut`, what lies in front
+    /// of it left out.
+    static Shot freeShot(string from, const double[] lookAt, double size, bool cut)
+    {
+        import std.algorithm : map;
+        import std.array : array, split;
+        import std.conv : to;
+        import std.traits : EnumMembers;
+        Shot shot;
+        bool named;
+        foreach (v; EnumMembers!View)
+            if (from == v.to!string)
+            {
+                shot = Shot.of(v);
+                named = true;
+            }
+        if (!named && from.length)
+        {
+            auto d = from.split(",").map!(x => x.to!double).array;
+            if (d.length != 3 || (d[0] == 0 && d[1] == 0 && d[2] == 0))
+                throw new Exception("from is a view (iso, front, back, top, bottom, left, right) or a direction x,y,z");
+            shot = Shot(Vec3(d[0], d[1], d[2]));
+        }
+        if (lookAt.length)
+        {
+            if (lookAt.length != 3)
+                throw new Exception("look_at is a point: [x, y, z]");
+            immutable h = (size > 0 ? size : 20) / 2;
+            immutable c = Vec3(lookAt[0], lookAt[1], lookAt[2]);
+            shot = shot.framing(c - Vec3(h, h, h), c + Vec3(h, h, h), cut);
+        }
+        return shot;
     }
 
     /// How far part `a` is from part `b` (a remodelled part from the mesh it
     /// copies): the distances both ways, and pictures of `a` coloured by its
     /// distance from `b` (green within tol / 2, yellow at tol, red at twice it).
-    JSONValue compare(size_t a, size_t b, double tol, out ubyte[] picture)
+    JSONValue compare(size_t a, size_t b, double tol, out ubyte[] picture, const(Shot)* free = null, size_t views = 4)
     {
         import hackerscad.geom.deviation : deviation, deviationMap;
         import std.algorithm : max;
@@ -301,9 +344,70 @@ final class Run
         auto map = deviationMap(faceMeshes[a], meshes[b], max(0.3, bb.size.length / 150), tol, colors);
         auto s = Shaded(map.welded(1e-6), result.parts[a].rgb, map);
         s.colors = colors;
-        auto img = renderSheet([s], [View.iso, View.front, View.top, View.right], 450);
+        auto shots = free !is null ? [*free] : offViews(map, colors, views);
+        auto img = shots.length == 1 ? render([s], shots[0], 1000, 700) : renderSheet([s], shots, 450);
         picture = encodePng(img.rgb, img.width, img.height);
+        JSONValue[] captions;
+        foreach (sh; shots)
+            captions ~= JSONValue(sh.toString);
+        j["pictures"] = captions;
         return j;
+    }
+
+    /// The views that show the most of a map's surface out of tolerance (not
+    /// green), facing the viewer, each next one what the others did not show;
+    /// with nothing out of tolerance, iso, front, top and right.
+    static Shot[] offViews(const Mesh map, const uint[] colors, size_t count)
+    {
+        import hackerscad.render.linediff : orbit;
+        enum green = 0x3CAA5A;
+        Vec3[] normal;
+        double[] area;
+        foreach (t; 0 .. map.triangleCount)
+            if (t < colors.length && (colors[t] & 0xFFFFFF) != green)
+            {
+                auto p0 = map.vertex(map.tris[3 * t]), p1 = map.vertex(map.tris[3 * t + 1]), p2 = map.vertex(map.tris[3 * t + 2]);
+                auto n = (p1 - p0).cross(p2 - p0);
+                if (n.length <= 0)
+                    continue;
+                normal ~= n.normalized;
+                area ~= n.length / 2;
+            }
+        Shot[] shots;
+        if (area.length == 0 || count == 0)
+        {
+            foreach (v; [View.iso, View.front, View.top, View.right][0 .. count < 4 ? (count ? count : 4) : 4])
+                shots ~= Shot.of(v);
+            return shots;
+        }
+        auto shown = new bool[area.length];
+        auto dirs = orbit();
+        foreach (_; 0 .. count)
+        {
+            double best = 0;
+            size_t pick = size_t.max;
+            foreach (di, d; dirs)
+            {
+                double gain = 0;
+                immutable e = d.eye;
+                // the area as seen: facing the viewer counts in full, aslant less
+                foreach (t, n; normal)
+                    if (!shown[t] && n.dot(e) > 0.3)
+                        gain += area[t] * n.dot(e);
+                if (gain > best)
+                {
+                    best = gain;
+                    pick = di;
+                }
+            }
+            if (pick == size_t.max)
+                break;
+            shots ~= Shot(dirs[pick].eye);
+            foreach (t, n; normal)
+                if (n.dot(dirs[pick].eye) > 0.3)
+                    shown[t] = true;
+        }
+        return shots;
     }
 
     /// The comparison `compare` gives, as a few lines of text: the distances
@@ -348,6 +452,13 @@ final class Run
                     mm(num(p["area_mm2"])), vec(p["from"]), vec(p["to"]), vec(p["facing"]), mm(num(p["mean_mm"])),
                     mm(num(p["worst_mm"])));
             }
+        }
+        if ("pictures" in j)
+        {
+            s ~= "  the picture (the copy coloured by its distance: green within half the tolerance, yellow at it, red "
+                ~ "at twice it), left to right and top to bottom:\n";
+            foreach (i, c; j["pictures"].array)
+                s ~= format("    %d. %s\n", i + 1, c.str);
         }
         return s ~ "  (focus: N gives a close-up of patch N)\n";
     }
@@ -463,6 +574,12 @@ final class Run
                     mm(g.volume), where(g));
             }
         }
+        if (focus.length == 0 && (regions.length || found.thin.length))
+        {
+            picture = regionPicture(a, b, regions ~ found.thin);
+            s ~= "  the picture: the regions as boxes, green to add, red to cut, in the copy and the original drawn "
+                ~ "see-through; iso, front, top and right\n";
+        }
         if (focus.length)
         {
             import hackerscad.tool.closeup : Place;
@@ -480,6 +597,33 @@ final class Run
         else
             s ~= "  (focus: N gives a close-up of entry N)\n";
         return s;
+    }
+
+    /// The regions where a copy differs as boxes (green to add, red to cut)
+    /// in the copy and the original, both see-through: iso, front, top, right.
+    ubyte[] regionPicture(size_t a, size_t b, const Region[] regions)
+    {
+        Mesh boxes(bool missing)
+        {
+            Mesh m;
+            foreach (g; regions)
+                if (g.missing == missing)
+                {
+                    immutable base = cast(uint) m.vertexCount;
+                    foreach (k; 0 .. 8)
+                        m.verts ~= [cast(float)(k & 1 ? g.hi.x : g.lo.x), cast(float)(k & 2 ? g.hi.y : g.lo.y),
+                            cast(float)(k & 4 ? g.hi.z : g.lo.z)];
+                    foreach (t; [0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6, 0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 4, 6, 0, 6, 2,
+                            1, 3, 7, 1, 7, 5])
+                        m.tris ~= base + t;
+                }
+            return m;
+        }
+        partMeshes();
+        Shaded[] items = [Shaded(boxes(true), 0x2EA043), Shaded(boxes(false), 0xDC3232),
+            Shaded(meshes[a], 0x8C000000 | (result.parts[a].rgb & 0xFFFFFF)), Shaded(meshes[b], 0xB3708090)];
+        auto img = renderSheet(items, [View.iso, View.front, View.top, View.right], 450);
+        return encodePng(img.rgb, img.width, img.height);
     }
 
     /// Close-ups of places, as closeUps draws them, for parts a (the copy)
@@ -505,7 +649,7 @@ final class Run
     /// their holes, pockets and cavities made solid instead (b filled from its
     /// shadows, minus each part).
     string lines(size_t a, size_t b, double depth, size_t shown, bool fixed, bool voids, out ubyte[] picture,
-        const size_t[] focus = null)
+        const size_t[] focus = null, const(Shot)* free = null)
     {
         import hackerscad.render.linediff : fixedViews, Kind, lineDiff, orbit, sheet, telling;
         import hackerscad.geom.meshfeatures : plausible;
@@ -601,7 +745,8 @@ final class Run
             ~ "%s, blue only in %s, violet the surface facing otherwise):\n", views.length,
             fixed ? " (the same each time)" : "", nb, na);
         foreach (i, v; views)
-            s ~= format("  %d. %s\n", i + 1, d.directions[v]);
+            s ~= format("  %d. %s%s\n", i + 1, Shot(d.directions[v].eye),
+                d.directions[v].depth > 0 ? format(", the nearest %s mm cut away", mm(d.directions[v].depth)) : "");
         if (d.strokes.length && deeper)
             s ~= format("fix these first; once they match, peel deeper (depth %s mm) only if anything still differs\n",
                 mm(next));
@@ -622,6 +767,13 @@ final class Run
             auto close = closeUps(ma, mb, result.parts[a].rgb & 0xFFFFFF, places, 0.1, text);
             picture = encodePng(close.rgb, close.width, close.height);
             s ~= "the picture: close-ups instead\n" ~ text;
+        }
+        else if (free !is null)
+        {
+            import hackerscad.render.linediff : Direction;
+            auto one = lineDiff(ma, mb, [Direction.of(free.eye)], 700, free);
+            picture = encodePng(one.pictures[0].rgb, one.pictures[0].width, one.pictures[0].height);
+            s ~= format("the picture: one view instead, seen %s\n", *free);
         }
         else if (d.strokes.length)
             s ~= "  (focus: N gives a close-up of entry N)\n";
@@ -757,4 +909,21 @@ unittest
     auto a = evaluateModel(coarse), b = evaluateModel(fine);
     assert(a.ok && b.ok, a.fatal.length ? a.fatal[0].message : b.fatal.length ? b.fatal[0].message : "");
     assert(a.partMeshes()[0].triangleCount * 2 < b.partMeshes()[0].triangleCount);
+}
+
+unittest
+{
+    // a free shot: a named view or a direction, framed on a cube round a point
+    import std.exception : assertThrown;
+    auto f = Run.freeShot("front", [1, 2, 3], 4, true);
+    assert(f.eye.y < -0.99 && f.framed && f.cut && f.lo.x == -1 && f.hi.z == 5);
+    assert(Run.freeShot("1,0,0", null, 0, false).eye.x > 0.99 && !Run.freeShot("1,0,0", null, 0, false).framed);
+    assertThrown(Run.freeShot("sideways", null, 0, false));
+    // the views of a comparison: where the copy is off; a square facing +x out of tolerance
+    Mesh map;
+    map.verts = [5, 0, 0, 5, 1, 0, 5, 1, 1, 5, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1];
+    map.tris = [0, 1, 2, 0, 2, 3, 4, 6, 5];
+    auto shots = Run.offViews(map, [0xDC3232, 0xDC3232, 0x3CAA5A], 2);
+    assert(shots.length >= 1 && shots[0].eye.x > 0.5, "the first view faces the red square");
+    assert(Run.offViews(map, [0x3CAA5A, 0x3CAA5A, 0x3CAA5A], 4).length == 4, "all green: the usual four");
 }
