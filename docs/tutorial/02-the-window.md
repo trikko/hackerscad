@@ -136,8 +136,10 @@ The editor has the keys of a code editor:
 ## Keys and mouse
 
 - **The view:** right drag turns it, middle drag (or Ctrl and the right
-  button) moves it, the wheel zooms; F6 frames the model; a click picks, a
-  Shift+click adds to what is picked, a right-click opens the menu; a double
+  button) moves it, the wheel zooms; F6 frames the model; each click adds
+  what is under the pointer to what is picked (clicked again, it leaves),
+  a click on nothing, Esc or Space empties it; a right-click opens the
+  menu; a double
   click on a flat face looks straight at it; Alt+1 to Alt+4 choose what a
   click picks (parts, faces, edges, vertices); **A** annotates the view; Esc
   closes what is shown over the model (a sketch, a step, the marks).

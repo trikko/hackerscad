@@ -524,7 +524,7 @@ mixin template ControlMethods()
                         return reply(JValue.init, "nothing under that point");
                     hit.edge = viewport.nearestEdge(hit.part, hit.face, x, y, 12);
                     if (!useSelection)
-                        picked(hit);
+                        picked(hit, true);
                     setContext(hit);
                     // Sketch on face…: a sketch on the face there, to draw on
                     if (act == "sketch")

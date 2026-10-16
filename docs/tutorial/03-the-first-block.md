@@ -48,10 +48,11 @@ that: select the corners and ask.
    four (or press Alt+3): a click now picks an edge, not a face. Click one of
    the upright edges of the block. It turns orange, and the line of code that
    made it is highlighted in the editor.
-2. Hold Shift and click the other upright edges you can see: Shift+click
-   adds to what is selected (Shift+click again to take one away).
+2. Click the other upright edges you can see: each click adds to what is
+   selected (click one again to take it away; a click on nothing, Esc or
+   Space empties the selection).
 3. The fourth edge is at the back. Drag with the right mouse button to turn
-   the view until you see it, Shift+click it, then click **Iso** in the bar
+   the view until you see it, click it, then click **Iso** in the bar
    over the view to come back. The note at the bottom right counts what you
    selected: *4 edges selected*.
 

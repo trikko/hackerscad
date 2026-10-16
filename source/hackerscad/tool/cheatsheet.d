@@ -130,7 +130,7 @@ immutable KeyLine[] keyLines = [
     KeyLine("Middle drag, or Ctrl + right drag", "moves the view"),
     KeyLine("Wheel", "zooms, towards the pointer"),
     KeyLine("F6", "frames the whole model (Fit)"),
-    KeyLine("Click / Shift+click", "picks what is under the pointer / adds it to what is picked"),
+    KeyLine("Click", "adds what is under the pointer to what is picked (again: takes it away); on nothing, Esc or Space: none"),
     KeyLine("Right-click", "what can be done there: fillets, holes, Move…, Colour, Sketch on face…"),
     KeyLine("Double click on a flat face", "the view straight at that face"),
     KeyLine("Alt+1 … Alt+4", "a click picks whole parts, faces, edges or vertices"),

@@ -456,10 +456,11 @@ final class Viewport
     static bool sameItem(Hit a, Hit b) => a.part == b.part && a.edge == b.edge && a.vertex == b.vertex
         && (a.edge >= 0 || a.vertex >= 0 || a.face == b.face);
 
-    /// Shift+click: adds the item to the selection, or removes it if already there.
+    /// A click: adds the item to the selection, or removes it if already
+    /// there; items of several parts can be selected together (to measure).
     void toggleSelect(Hit h)
     {
-        if (selected.part < 0 || h.part != selected.part)
+        if (selected.part < 0)
             return select(h);
         auto all = selection();
         Hit[] kept;
@@ -608,10 +609,10 @@ final class Viewport
         }
     }
 
-    /// Everything selected, in picking order (all on one part).
+    /// Everything selected, in picking order (on one part or several).
     Hit[] selection() => selected.part >= 0 ? others ~ selected : null;
 
-    /// Replaces the selection (items of one part; the last is the main one).
+    /// Replaces the selection (the last item is the main one).
     void setSelection(Hit[] items)
     {
         selected = items.length ? items[$ - 1] : Hit.init;

@@ -967,7 +967,7 @@ final class MainWindow
         buildTransformBar();
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
-        viewport.onPick = &picked;
+        viewport.onPick = (Hit h) => picked(h);
         // a double click on a flat face: the view looks straight at it
         viewport.onDoubleClick = (double x, double y) { lookAtFace(x, y); };
         // the selection mode kept from the last run (its buttons were made before the view)
@@ -1711,6 +1711,9 @@ private:
             o.trace = last.trace;
         if (o.functions.length == 0)
             o.functions = last.functions;
+        // the selection, to find again on the new parts
+        auto selBefore = viewport.selection();
+        auto partsBefore = last.parts;
         last = o;
         hadResult = true;
         // the sketches made, or the last good ones while the code has an error
@@ -1801,6 +1804,7 @@ private:
         {
             viewport.setParts(o.parts, firstResult);
             firstResult = false;
+            keepSelection(selBefore, partsBefore);
             if (fitNext)
             {
                 fitNext = false;
@@ -2270,7 +2274,10 @@ private:
         info("");
     }
 
-    void picked(Hit hit)
+    /// A click in the 3D view: each item clicked joins the selection
+    /// (clicked again, it leaves it), a click on nothing empties it;
+    /// `alone` (a right-click away from the selection) selects it alone.
+    void picked(Hit hit, bool alone = false)
     {
         if (sceneLocked())
             return;
@@ -2291,18 +2298,10 @@ private:
         // empty space a click is part of working on it (Esc closes it)
         if (hit.part < 0 && viewport.inInspect && !viewport.sketchShown)
             stopInspect();
-        if (hit.shift && hit.part >= 0)
-        {
-            // Shift+click builds a selection of faces, edges or vertices for one operation
+        if (hit.part < 0 || alone)
+            viewport.select(hit);
+        else
             viewport.toggleSelect(hit);
-            auto n = viewport.selection().length;
-            immutable what = ["part", "face", "edge", "vertex"][viewport.selectMode];
-            auto sizes = selectionSizes();
-            info(format("%d %s selected%s · right-click for operations", n,
-                n == 1 ? what : what == "vertex" ? "vertices" : what ~ "s", sizes.length ? " · " ~ sizes : ""));
-            return;
-        }
-        viewport.select(hit);
         // a section parallel to the selected face follows the new face
         // a face picked or dropped: the section offers its plane, or not
         if (sectionToggle.getActive() && splitPart < 0)
@@ -2317,6 +2316,9 @@ private:
             info("");
             return;
         }
+        // clicked again: it left the selection, the rest stays
+        if (!viewport.selection().canFind!(h => Viewport.sameItem(h, hit)))
+            return info(selectionLine());
         auto part = last.parts[hit.part];
         auto span = part.span;
         string what = part.name;
@@ -2341,9 +2343,80 @@ private:
         placeCursorQuietly(a);
         editor.scrollToIter(a, 0.1, true, 0, 0.3);
         // the sizes of what was picked: the part's, or the face's, edge's, vertex's
+        if (viewport.selection().length > 1)
+            return info(selectionLine());
         auto sizes = selectionSizes();
         info(sizes.length ? what ~ " · " ~ sizes
             : format("%s · %.1f × %.1f × %.1f mm", what, part.bbox.size.x, part.bbox.size.y, part.bbox.size.z));
+    }
+
+    /// After an evaluation, the items selected on the parts before (`was`)
+    /// found again: the same part by name, the same face, edge or vertex,
+    /// still alike (a flat face facing the same way, an edge of the same
+    /// kind and direction); the others leave the selection. The info line
+    /// gives the sizes again, as the model now makes them.
+    void keepSelection(Hit[] before, PartMesh[] was)
+    {
+        import std.algorithm : countUntil;
+        import hackerscad.gui.measure : faceItem;
+        import hackerscad.kernel.brep : EdgeKind;
+        if (before.length == 0)
+            return;
+        Hit[] kept;
+        foreach (h; before)
+        {
+            if (h.part < 0 || h.part >= was.length)
+                continue;
+            immutable pi = last.parts.countUntil!(q => q.name == was[h.part].name);
+            if (pi < 0)
+                continue;
+            auto p = last.parts[pi], old = was[h.part];
+            if (h.edge >= 0)
+            {
+                if (h.edge >= p.edgeInfo.length || h.edge >= old.edgeInfo.length)
+                    continue;
+                auto e = p.edgeInfo[h.edge], o = old.edgeInfo[h.edge];
+                if (e.kind != o.kind || (e.kind == EdgeKind.line && abs(e.direction.dot(o.direction)) < 0.99)
+                    || (e.kind == EdgeKind.circle && abs(e.axis.dot(o.axis)) < 0.99))
+                    continue;
+            }
+            else if (h.vertex >= 0)
+            {
+                if (h.vertex >= viewport.vertices(pi).length)
+                    continue;
+            }
+            else if (h.face >= 0)
+            {
+                if (h.face + 1 >= p.faceStart.length || h.face + 1 >= old.faceStart.length)
+                    continue;
+                auto f = faceItem(p, h.face), g = faceItem(old, h.face);
+                if (f.planar != g.planar || (f.planar && f.normal.dot(g.normal) < 0.99))
+                    continue;
+            }
+            h.part = cast(int) pi;
+            kept ~= h;
+        }
+        viewport.setSelection(kept);
+        if (kept.length == 1)
+        {
+            auto sizes = selectionSizes();
+            info(sizes.length ? last.parts[kept[0].part].name ~ " · " ~ sizes : "");
+        }
+        else
+            info(selectionLine());
+    }
+
+    /// The info line of a selection of several items: how many, their sizes
+    /// (how far apart, the room they take); empty when none is selected.
+    string selectionLine()
+    {
+        auto n = viewport.selection().length;
+        if (n == 0)
+            return "";
+        immutable what = ["part", "face", "edge", "vertex"][viewport.selectMode];
+        auto sizes = selectionSizes();
+        return format("%d %s selected%s · right-click for operations · a click on nothing, Esc or Space empties it", n,
+            n == 1 ? what : what == "vertex" ? "vertices" : what ~ "s", sizes.length ? " · " ~ sizes : "");
     }
 
     /// Highlights a line of the editor and shows a message.
@@ -4333,6 +4406,16 @@ private:
         setContext(hit);
         auto part = last.parts[hit.part];
         auto sel = viewport.selection();
+        // items of several parts: their sizes only, as the operations write the code of one part
+        if (sel.canFind!(h => h.part != hit.part))
+        {
+            MenuEntry[] some = [MenuEntry.heading(format("%d ITEMS", sel.length), "on several parts")];
+            if (auto v = selectionSizes())
+                some ~= MenuEntry.item("Sizes", () => copy(v), v);
+            some ~= MenuEntry.item("Clear selection", () => clearSelection());
+            contextPopover = popupMenu(viewport.area, x, y, some);
+            return;
+        }
         immutable nf = selFaces.length, ne = selEdges.length, nv = selVertices.length;
         immutable mode = viewport.selectMode;
         alias I = MenuEntry.item, G = MenuEntry.group, H = MenuEntry.heading;
@@ -4788,8 +4871,8 @@ private:
         foreach (h; viewport.selection())
             if (Viewport.sameItem(h, hit) || (h.part == hit.part && h.face == hit.face && hit.edge < 0))
                 inSelection = true;
-        if (!inSelection || viewport.selection().length <= 1)
-            picked(hit);
+        if (!inSelection)
+            picked(hit, true);
         contextHit = hit;
         auto sel = viewport.selection();
         selFaces = null;
@@ -5738,9 +5821,28 @@ private:
     {
         if (agentText !is null)
             userChange = changedLines(agentText, text());
+        // only: of the state a reply carries, the fields named (the rest of the reply stays), as state's own only
+        bool[string] only;
+        if (method != "state" && p.isObject && p.has("only") && !p["only"].isNull)
+        {
+            if (!p["only"].isArray)
+                return reply(JValue.init, "only is a list of the state's fields, e.g. [\"revision\", \"problems\"]");
+            foreach (f; p["only"].get!JArray.elements)
+            {
+                auto name = f.isString ? f.get!string : "";
+                if (!stateFields.canFind(name))
+                    return reply(JValue.init, format("only: no field %s in the state; its fields: %-(%s, %)",
+                        f.toJSON(), stateFields));
+                only[name] = true;
+            }
+        }
         dispatchControl(method, p, (JValue r, string e) {
             agentText = text();
             userChange = JValue.init;
+            if (only.length && r.isObject)
+                foreach (name; stateFields)
+                    if (name != "window" && name !in only && r.has(name))
+                        r.remove(name);
             reply(r, e);
         });
     }
@@ -5904,7 +6006,7 @@ private:
         }
         auto sel = viewport.selection();
         if (nextSelected >= sel.length)
-            return "select two items first (hcad_gui_selection or Shift+click), or pass a and b";
+            return "select two items first (hcad_gui_selection or two clicks), or pass a and b";
         auto h = sel[nextSelected++];
         item = h.edge >= 0 ? edgeItem(last.parts[h.part], h.edge) : faceItem(last.parts[h.part], h.face);
         return null;

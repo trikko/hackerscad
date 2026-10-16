@@ -11,10 +11,10 @@ A pot looks better, and comes off a mould or the print bed more easily, when
 its sides lean out a little. Tilting a face like that is called a *draft*.
 
 1. Pick **faces** again in the view bar (the second of the four buttons, or
-   Alt+2), then click the front face of the block, then Shift+click the face
-   on the right.
+   Alt+2), then click the front face of the block, then the face on the
+   right.
 2. Turn the view (drag with the right button) until you see the other two
-   sides, and Shift+click them too. Then click **Iso** to come back. The note
+   sides, and click them too. Then click **Iso** to come back. The note
    at the bottom right says *4 faces selected*.
 3. Right-click one of the four faces and choose **Draft 4 faces…**.
 4. The angle, `3.deg`, is selected. Type `-4.deg`: 4 degrees, and the minus
@@ -48,8 +48,9 @@ magnifying glass. A plane cuts the model in two and hides the half towards
 you: the cut walls are hatched. The slider in the bar moves the plane, the
 menu next to it chooses its direction.
 
-To measure the wall, Shift+click its inside and outside faces, right-click,
-and open **Measure**: it shows the distance between them.
+To measure the wall, click its inside and outside faces: the note at the
+bottom right says how far apart they are (right-click and open **Measure**
+to copy it).
 
 Click the section button again to close it.
 

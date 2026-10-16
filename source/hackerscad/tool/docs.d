@@ -368,7 +368,9 @@ format stamp):
   source: true gives the code) instead of moving the window to a file.
   To see whether the user changed anything, ask hcad_gui_state only for
   what you need (only: ["source_hash", "camera"]): the same source_hash as
-  before is the same code, no need to fetch it again.
+  before is the same code, no need to fetch it again. The other hcad_gui_*
+  tools reply with the whole state too: give them only as well
+  (hcad_gui_edit with only: ["revision", "problems", "parts"]).
   Never take the most recent window for the user's: if it is not clear
   which one they mean, ask, or open one of your own. Show the work in the
   window as it goes, not only pictures at the end, and leave the view on

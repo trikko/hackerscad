@@ -638,10 +638,15 @@ JValue toolList()
     auto exampleEnum = examples.map!(e => `"` ~ e.name ~ `"`).join(", ");
 
     // every GUI tool can name the window, when several are open
+    // only, on the tools whose reply carries the window's state: just those of its fields
+    enum onlyProp = `"only": {"type": "array", "items": {"type": "string"}, "description": "of the window's state the `
+        ~ `reply carries, only these fields (as hcad_gui_state's only), e.g. [\"revision\", \"problems\"]: much `
+        ~ `shorter than the whole state"}`;
     JValue gui(string name, string description, string properties, string required = "[]") =>
         tool(name, description, `"window": {"type": "string", "description": "Name of the hackerscad window (shown in `
             ~ `its header bar; hcad_gui_windows lists them). Needed only when several are open."}`
-            ~ (properties.length ? ", " ~ properties : ""), required);
+            ~ (properties.length ? ", " ~ properties : "")
+            ~ (properties.canFind(`"only"`) ? "" : ", " ~ onlyProp), required);
 
     return JSAB(
         tool("hcad_docs", "Reference of the .hcad language, the geometry API, conventions and examples. "
@@ -796,11 +801,13 @@ JValue toolList()
             `"source": {"type": "string"}, "params": {"type": "object", "description": "Parameter values, name to value: `
             ~ `numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\"."}, "preset": {"type": "string"}, `
             ~ `"reset": {"type": "array", "items": {"type": "string"}, "description": "parameter names back to their default"}`),
-        gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: the "
-            ~ "face is highlighted and the editor jumps to the feature that created it. Returns part, face, the point and "
-            ~ "normal hit, and a selector expression for that face (e.g. faces.top) to use in code.",
+        gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: as "
+            ~ "the user's click, what is there joins the selection (picked again, it leaves it; hcad_gui_selection with "
+            ~ "clear: true empties it), items of several parts too, and the editor jumps to the feature that created "
+            ~ "it. Returns part, face, the point and normal hit, a selector expression for that face (e.g. faces.top) to "
+            ~ "use in code, and in status the sizes the info line shows (of one item, or how far apart two are).",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
-            ~ `"shift": {"type": "boolean", "description": "add to the selection (or remove from it), like Shift+click"}`, `[]`),
+            ~ `"shift": {"type": "boolean", "description": "kept for older callers: every pick adds to the selection"}`, `[]`),
         gui("hcad_gui_view", "Move the user's 3D view as they do with the mouse, in this order: preset (iso, front, "
             ~ "top, right: framed on the model; fit: frame it from where it is now), look_at [x, y, z] (a model point in mm "
             ~ "to centre) and size (mm across the view), orbit [yaw, pitch] in degrees (like "
