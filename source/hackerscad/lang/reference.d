@@ -307,6 +307,7 @@ immutable Ref[] reference =
     F("text", "", ["text: string", "size: Length", "font: string"], "Profile", "A text outline starting at the origin on the baseline."),
     F("round", "Profile", ["r: Length"], "Profile", "Rounds every corner, outward and inward, holes too; an error names a corner r is too large for."),
     F("offset", "Profile", ["distance: Length"], "Profile", "Grows (d > 0) or shrinks the outline; on a plane, the parallel plane."),
+    F("across", "Profile", ["axis: X | Y"], "Profile", "The profile stood up across X or Y, as extrude(along:) stands it (across X: its x along Y, its y up Z), at the origin: move it along the axis and loft through several, or extrude it where it is."),
     F("offset", "Solid", ["distance: Length"], "Solid", "Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened)."),
     withForms(F("extrude", "Profile", ["height: Length", "taper: Angle", "symmetric: bool", "twist: Angle", "along: X | Y"], "Solid",
         "A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly. along: X or Y stands the profile up across that axis and pushes it along it. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is."), [

@@ -161,6 +161,27 @@ struct Element
     double length() const => arc ? abs(sweep) * radius : sqrt((to[0] - from[0]) ^^ 2 + (to[1] - from[1]) ^^ 2);
 }
 
+/// The outline without the lines shorter than a hundredth of a millimetre
+/// (left between two pieces that meet a hair apart): the next piece starts
+/// where the dropped one did.
+Element[] withoutSlivers(Element[] loop)
+{
+    if (loop.length < 3)
+        return loop;
+    Element[] r;
+    foreach (e; loop)
+    {
+        if (!e.arc && !e.circle && e.length < 0.01)
+        {
+            if (r.length)
+                r[$ - 1].to = e.to;
+            continue;
+        }
+        r ~= e;
+    }
+    return r.length >= 2 ? r : loop;
+}
+
 /// A closed outline as lines and arcs within `tol` of its points: from each
 /// point, the longest piece (line or arc) that stays within it.
 Element[] fit(const P2[] input, double tol, bool traced = false)

@@ -220,7 +220,7 @@ string sectionReport(string file, string part, string plane, double at, const do
             size = max(size, abs(p[0]), abs(p[1]));
     Element[][] fitted;
     foreach (l; loops)
-        fitted ~= fit(l, 0.01 + 1e-4 * size);
+        fitted ~= withoutSlivers(fit(l, 0.01 + 1e-4 * size));
     // the largest outline first
     double[] areas;
     foreach (l; loops)
@@ -235,8 +235,7 @@ string sectionReport(string file, string part, string plane, double at, const do
     immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
     return format("section %s at %g mm (coordinates %s)%s:\n", plane, at, axes,
         region.length ? format(", the outlines inside (%g, %g) to (%g, %g)%s", region[0], region[1], region[2], region[3],
-            clipped ? "; none lies wholly inside, so those crossing it are cut at its edges (the lines along them are "
-                ~ "the cut, not the part)" : "")
+            clipped ? ", cut at its edges" : "")
             : "") ~ describe(sorted)
         ~ (withSketch ? "\n// as a sketch (" ~ axes ~ " of the plane become its x, y):\n" ~ sketchCode(sorted, "section")
             : "");
@@ -552,9 +551,9 @@ ubyte[] sectionOverlay(string file, string a, string b, string plane, double at,
             foreach (p; l)
                 size = max(size, p[0] < 0 ? -p[0] : p[0], p[1] < 0 ? -p[1] : p[1]);
     foreach (l; la)
-        fa ~= fit(l, 0.01 + 1e-4 * size);
+        fa ~= withoutSlivers(fit(l, 0.01 + 1e-4 * size));
     foreach (l; lb)
-        fb ~= fit(l, 0.01 + 1e-4 * size);
+        fb ~= withoutSlivers(fit(l, 0.01 + 1e-4 * size));
     immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
     text = format("section %s at %g mm (coordinates %s); grid every %g mm. %s, the copy (thin orange):\n", plane, at, axes,
         gridStep, a) ~ describe(fa) ~ format("%s, the original (thick grey):\n", b) ~ describe(fb);
@@ -591,7 +590,7 @@ string projectionReport(string file, string part, string plane)
             size = max(size, abs(p[0]), abs(p[1]));
     Element[][] fitted;
     foreach (l; loops)
-        fitted ~= fit(l, 1.5 * pixel, true);
+        fitted ~= withoutSlivers(fit(l, 1.5 * pixel, true));
     immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
     return format("the shadow on %s (coordinates %s):\n", plane, axes) ~ describe(fitted)
         ~ "\n// as a sketch:\n" ~ sketchCode(fitted, "shadow");

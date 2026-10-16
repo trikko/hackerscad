@@ -580,6 +580,22 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         immutable v = pushOffset(it, x, "to", s, -x.len("by"), a.span);
         return transformed(it, a.span, s, b => k.translate(b, v));
     });
+    def("across", (ref CallArgs a) {
+        // profile.across(X): stood up across X, as extrude(along: X) stands it
+        // (its x along Y, its y up Z), to place and loft or extrude where it is
+        auto x = Args(it, a, "across", ["profile", "axis"]);
+        auto p = x.solid("profile");
+        if (!p.flat)
+            throw new HcadError(Code.type, "across stands a profile up; a solid turns with rotate", x.spanOf("profile"));
+        auto d = x.dir("axis");
+        immutable alongX = abs(d[0] - 1) < 1e-9, alongY = abs(d[1] - 1) < 1e-9;
+        if (!alongX && !alongY)
+            throw new HcadError(Code.type, "across: X or Y (the profile's x along Y or X, its y up Z)", x.spanOf("axis"));
+        return transformed(it, a.span, p, (Brep b) {
+            b = k.rotate(b, Vec3(1, 0, 0), PI / 2);
+            return alongX ? k.rotate(b, Vec3(0, 0, 1), PI / 2) : b;
+        });
+    });
     def("rotate", (ref CallArgs a) {
         // rotate(x:, y:, z:) Euler angles, or rotate(angle, axis:) around a
         // direction (through the origin) or an Axis (through its own origin);

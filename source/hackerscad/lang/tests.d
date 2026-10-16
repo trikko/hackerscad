@@ -504,6 +504,18 @@ unittest
     assert(isClose(partVolume(joined, "joined"), partVolume(joined, "whole"), 1e-6));
     assert(isClose(partVolume(joined, "overlapping"), partVolume(joined, "single"), 1e-6));
 
+    // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
+    auto stood = runModel(q{
+        @part Solid a() => rect(10, 4).across(X).extrude(3);
+        @part Solid b() => rect(10, 4).extrude(3, along: X);
+        @part Solid c() => loft([rect(10, 4).across(X), circle(d: 4).across(X).move(x: 20)]);
+    });
+    foreach (d; stood.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(isClose(partVolume(stood, "a"), partVolume(stood, "b"), 1e-6));
+    auto loftBox = stood.parts[2].solid;
+    assert(abs(make().kernel.bbox(loftBox.brep).size.x - 20) < 1e-6, "the loft runs along X");
+
     // where the faces cannot be merged ("Courbes non jointives"), the union
     // is still made, as it was before faces were merged
     auto unmerged = runModel(q{
@@ -2603,6 +2615,7 @@ unittest
     // a region across the plate's end: the outline cut at its edges; without the sketch on request
     immutable end = sectionReport(buildPath(dir, "plate.stl"), null, "xy", 3, [12, -15, 30, 15], false);
     assert(end.canFind("cut at its edges") && end.canFind("arc r 5") && !end.canFind("Profile section"), end);
+    assert(!end.canFind(" 0 long"), end);
     assert(!end.canFind("circle ⌀6"), "the hole lies outside the region");
     assert(end.canFind("line (12, -10) → (12, 10)") || end.canFind("line (12, 10) → (12, -10)"), end);
     auto code = rep[rep.indexOf("/// The section") .. $];
