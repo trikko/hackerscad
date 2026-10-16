@@ -652,7 +652,7 @@ mixin template ControlMethods()
                     bool anyHidden;
                     foreach (i; 0 .. last.parts.length)
                         anyHidden = anyHidden || viewport.isHidden(i);
-                    if (hit.part < 0 && !anyHidden)
+                    if (hit.part < 0 && hit.plane < 0 && !anyHidden)
                         return reply(JValue.init, "nothing under that point: the menu opens on a part (or, on empty "
                             ~ "space, lists the hidden parts: none is hidden)");
                     contextMenu(hit, x, y);
