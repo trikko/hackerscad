@@ -516,6 +516,29 @@ unittest
     auto loftBox = stood.parts[2].solid;
     assert(abs(make().kernel.bbox(loftBox.brep).size.x - 20) < 1e-6, "the loft runs along X");
 
+    // two arcs meeting (a hole with its printing notch, grown): tapered in a moment (the draft ran for minutes)
+    import std.datetime.stopwatch : StopWatch, AutoStart;
+    auto clock = StopWatch(AutoStart.yes);
+    auto notch = runModel(q{
+        Profile notched() => circle(d: 3.3) + circle(vec(0, 1.5), r: 0.5) + rect(vec(-0.5, 0), vec(0.5, 1.5));
+        @part Solid a() => notched().offset(0.5).extrude(1, taper: 30.deg);
+        @part Solid b() => notched().offset(0.5).extrude(1, taper: -20.deg);
+    });
+    foreach (d; notch.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(clock.peek.total!"seconds" < 5 && partVolume(notch, "a") > 5 && partVolume(notch, "b") > partVolume(notch, "a"));
+    // a taper that closes a rounded corner on the way fails at once
+    auto closing = error(q{
+        @part Solid a() => rect(4, 3).offset(0.5).extrude(1, taper: 30.deg);
+    });
+    assert(closing.message.canFind("closes up") && clock.peek.total!"seconds" < 5, closing.message);
+    // as far as it lasts, it is made: the corner closing exactly at the top
+    auto lasting = runModel(q{
+        @part Solid a() => rect(10, 6).offset(1).extrude(1, taper: 45.deg);
+    });
+    foreach (d; lasting.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+
     // where the faces cannot be merged ("Courbes non jointives"), the union
     // is still made, as it was before faces were merged
     auto unmerged = runModel(q{

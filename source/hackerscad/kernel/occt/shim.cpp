@@ -842,6 +842,275 @@ static TopoDS_Shape drafted_circles(const TopoDS_Face &face, double height, doub
     return r;
 }
 
+// Whether two round sides of the face meet (an arc next to an arc): the
+// draft of such a prism can run for minutes in the intersection of the two
+// cones (OpenCascade 7.9), so it is lofted instead.
+static bool arcs_meet(const TopoDS_Face &face)
+{
+    for (TopExp_Explorer w(face, TopAbs_WIRE); w.More(); w.Next()) {
+        std::vector<bool> round;
+        for (BRepTools_WireExplorer e(TopoDS::Wire(w.Current())); e.More(); e.Next())
+            round.push_back(BRepAdaptor_Curve(e.Current()).GetType() == GeomAbs_Circle);
+        for (size_t i = 0; i < round.size() && round.size() > 1; i++)
+            if (round[i] && round[(i + 1) % round.size()])
+                return true;
+    }
+    return false;
+}
+
+// One face of lines and arcs extruded `height` with its sides drafted by
+// `taper`, as a ruled loft from each outline to its top: there every line
+// moved parallel towards the material, every arc concentric with its radius
+// shrunk or grown, the corners where neighbours meet again (lines give
+// planes, arcs cones, corners stay sharp, as drafted sides meet). Empty when
+// an outline changes on the way (a side turns over, an arc shrinks to
+// nothing: something closes up), it has other curves, or the result is not
+// sound.
+static TopoDS_Shape lofted(const TopoDS_Face &face, double height, double taper_rad)
+{
+    const double shrink = std::abs(height) * std::tan(taper_rad);
+    const double z0 = BRepAdaptor_Surface(face).Plane().Location().Z(), z1 = z0 + height;
+    Bnd_Box box;
+    BRepBndLib::Add(face, box);
+    const double size = std::sqrt(box.SquareExtent()), eps = 1e-4 * std::max(1.0, size), tol = 1e-7 * std::max(1.0, size);
+    struct Side {
+        bool arc;
+        gp_XY a, b;       // ends, in the wire's order
+        gp_XY c;          // arcs: centre
+        double r = 0;     // arcs: radius
+        bool ccw = true;  // arcs: the way from a to b
+        gp_XY to;         // lines: towards the material (unit)
+        bool inside;      // arcs: the material on the centre's side
+    };
+    auto cross = [](gp_XY u, gp_XY v) { return u.X() * v.Y() - u.Y() * v.X(); };
+    // the wires: each side, and its top
+    auto top_of = [&](const TopoDS_Wire &w, TopoDS_Wire &low, TopoDS_Wire &high) -> bool {
+        std::vector<Side> sides;
+        BRepBuilderAPI_MakeWire lowW;
+        for (BRepTools_WireExplorer e(w, face); e.More(); e.Next()) {
+            const TopoDS_Edge edge = e.Current();
+            lowW.Add(edge);
+            BRepAdaptor_Curve cv(edge);
+            const bool rev = edge.Orientation() == TopAbs_REVERSED;
+            gp_Pnt p0 = cv.Value(cv.FirstParameter()), p1 = cv.Value(cv.LastParameter());
+            if (rev)
+                std::swap(p0, p1);
+            Side sd;
+            sd.a = gp_XY(p0.X(), p0.Y());
+            sd.b = gp_XY(p1.X(), p1.Y());
+            gp_Pnt pm;
+            gp_Vec tv;
+            cv.D1((cv.FirstParameter() + cv.LastParameter()) / 2, pm, tv);
+            if (rev)
+                tv.Reverse();
+            gp_XY left(-tv.Y(), tv.X());
+            if (left.Modulus() < 1e-12)
+                return false;
+            left.Normalize();
+            const gp_Pnt probe(pm.X() + left.X() * eps, pm.Y() + left.Y() * eps, pm.Z());
+            const bool matterLeft = BRepClass_FaceClassifier(face, probe, tol).State() == TopAbs_IN;
+            if (cv.GetType() == GeomAbs_Line) {
+                sd.arc = false;
+                sd.to = matterLeft ? left : -left;
+            }
+            else if (cv.GetType() == GeomAbs_Circle) {
+                const gp_Circ ci = cv.Circle();
+                sd.arc = true;
+                sd.c = gp_XY(ci.Location().X(), ci.Location().Y());
+                sd.r = ci.Radius();
+                sd.ccw = (ci.Axis().Direction().Z() > 0) != rev;
+                const gp_XY m(pm.X(), pm.Y());
+                const gp_XY towards = matterLeft ? left : -left;
+                sd.inside = (sd.c - m) * towards > 0;
+            }
+            else
+                return false;
+            sides.push_back(sd);
+        }
+        if (sides.empty())
+            return false;
+        lowW.Build();
+        if (!lowW.IsDone())
+            return false;
+        low = lowW.Wire();
+        // the sides moved: lines along `to`, arcs to their new radius
+        std::vector<Side> moved = sides;
+        for (Side &sd : moved)
+            if (sd.arc) {
+                sd.r += sd.inside ? -shrink : shrink;
+                if (sd.r <= tol)
+                    return false;
+            }
+            else {
+                sd.a += sd.to * shrink;
+                sd.b += sd.to * shrink;
+            }
+        // the corners: where neighbours meet now, nearest to where they met
+        const size_t n = moved.size();
+        std::vector<gp_XY> corner(n);
+        auto tangent = [&](const Side &sd, bool atEnd) {
+            if (!sd.arc)
+                return (sd.b - sd.a).Normalized();
+            gp_XY rad = (atEnd ? sd.b : sd.a) - sd.c;
+            rad.Normalize();
+            return sd.ccw ? gp_XY(-rad.Y(), rad.X()) : gp_XY(rad.Y(), -rad.X());
+        };
+        auto meet = [&](const Side &p, const Side &q, gp_XY near, gp_XY &out) -> bool {
+            std::vector<gp_XY> pts;
+            auto lineCircle = [&](gp_XY a, gp_XY d, gp_XY c, double r) {
+                const gp_XY f = a - c;
+                const double B = 2 * (f * d), C = f * f - r * r, A = d * d, disc = B * B - 4 * A * C;
+                if (disc < -1e-12)
+                    return;
+                const double sq = std::sqrt(std::max(0.0, disc));
+                pts.push_back(a + d * ((-B - sq) / (2 * A)));
+                pts.push_back(a + d * ((-B + sq) / (2 * A)));
+            };
+            if (!p.arc && !q.arc) {
+                const gp_XY d1 = p.b - p.a, d2 = q.b - q.a;
+                const double den = cross(d1, d2);
+                if (std::abs(den) < 1e-12)
+                    return false;
+                pts.push_back(p.a + d1 * (cross(q.a - p.a, d2) / den));
+            }
+            else if (!p.arc)
+                lineCircle(p.a, p.b - p.a, q.c, q.r);
+            else if (!q.arc)
+                lineCircle(q.a, q.b - q.a, p.c, p.r);
+            else {
+                const gp_XY dc = q.c - p.c;
+                const double d = dc.Modulus();
+                if (d < 1e-12)
+                    return false;
+                const double a = (p.r * p.r - q.r * q.r + d * d) / (2 * d), h2 = p.r * p.r - a * a;
+                if (h2 < -1e-9)
+                    return false;
+                const gp_XY m = p.c + dc * (a / d), perp(-dc.Y() / d, dc.X() / d);
+                const double h = std::sqrt(std::max(0.0, h2));
+                pts.push_back(m + perp * h);
+                pts.push_back(m - perp * h);
+            }
+            if (pts.empty())
+                return false;
+            out = pts[0];
+            for (const gp_XY &x : pts)
+                if ((x - near).SquareModulus() < (out - near).SquareModulus())
+                    out = x;
+            return true;
+        };
+        for (size_t i = 0; i < n; i++) {
+            const Side &p = sides[i], &q = sides[(i + 1) % n];
+            const gp_XY v = p.b;
+            if (std::abs(cross(tangent(p, true), tangent(q, false))) < 1e-6) {
+                // meeting smoothly: the corner moves with both, along the normal
+                gp_XY to = p.arc ? (v - p.c).Normalized() * (p.inside ? -1.0 : 1.0) : p.to;
+                corner[i] = v + to * shrink;
+            }
+            else if (!meet(moved[i], moved[(i + 1) % n], v, corner[i]))
+                return false;
+        }
+        // the top's sides between the new corners, each the same way round as below
+        BRepBuilderAPI_MakeWire highW;
+        for (size_t i = 0; i < n; i++) {
+            const gp_XY a = corner[(i + n - 1) % n], b = corner[i];
+            const Side &sd = moved[i], &orig = sides[i];
+            TopoDS_Edge edge;
+            if (!sd.arc) {
+                if ((b - a) * (orig.b - orig.a) <= tol)
+                    return false;   // turned over: it closed up
+                edge = BRepBuilderAPI_MakeEdge(gp_Pnt(a.X(), a.Y(), z1), gp_Pnt(b.X(), b.Y(), z1));
+            }
+            else {
+                const gp_Circ ci(gp_Ax2(gp_Pnt(sd.c.X(), sd.c.Y(), z1), sd.ccw ? gp::DZ() : -gp::DZ()), sd.r);
+                auto sweep = [&](gp_XY c, gp_XY from, gp_XY to, bool ccw) {
+                    double t = std::atan2(cross(from - c, to - c), (from - c) * (to - c));
+                    if (!ccw)
+                        t = -t;
+                    if (t <= 0)
+                        t += 2 * M_PI;
+                    return t;
+                };
+                const bool whole = n == 1;
+                if (whole)
+                    edge = BRepBuilderAPI_MakeEdge(ci);
+                else {
+                    if (std::abs(sweep(sd.c, a, b, sd.ccw) - sweep(orig.c, orig.a, orig.b, orig.ccw)) > M_PI / 2)
+                        return false;   // the arc turned over: it closed up
+                    edge = BRepBuilderAPI_MakeEdge(ci, gp_Pnt(a.X(), a.Y(), z1), gp_Pnt(b.X(), b.Y(), z1));
+                }
+            }
+            if (edge.IsNull())
+                return false;
+            highW.Add(edge);
+        }
+        highW.Build();
+        if (!highW.IsDone())
+            return false;
+        high = highW.Wire();
+        return true;
+    };
+    const TopoDS_Wire outer = BRepTools::OuterWire(face);
+    TopoDS_Shape solid;
+    std::vector<TopoDS_Shape> holes;
+    for (TopExp_Explorer e(face, TopAbs_WIRE); e.More(); e.Next()) {
+        const TopoDS_Wire w = TopoDS::Wire(e.Current());
+        TopoDS_Wire low, high;
+        if (!top_of(w, low, high))
+            return TopoDS_Shape();
+        BRepOffsetAPI_ThruSections loft(Standard_True, Standard_True);
+        loft.CheckCompatibility(Standard_False);
+        loft.AddWire(low);
+        loft.AddWire(high);
+        loft.Build();
+        if (!loft.IsDone())
+            return TopoDS_Shape();
+        if (w.IsSame(outer))
+            solid = loft.Shape();
+        else
+            holes.push_back(loft.Shape());
+    }
+    if (solid.IsNull())
+        return TopoDS_Shape();
+    for (const TopoDS_Shape &h : holes) {
+        BRepAlgoAPI_Cut cut(solid, h);
+        if (!cut.IsDone())
+            return TopoDS_Shape();
+        solid = cut.Shape();
+    }
+    if (!sound_solid(solid, std::min(z0, z1), std::max(z0, z1)))
+        return TopoDS_Shape();
+    return solid;
+}
+
+// Whether a round side of the face closes up before the top: an arc with the
+// face's material on its centre's side narrows as the sides lean in, and is
+// gone at height r / tan(taper). Told before drafting: the draft of a prism
+// whose cones pass their apex can run for minutes instead of failing.
+static bool closes_up(const TopoDS_Face &face, double height, double taper_rad)
+{
+    const double shrink = std::abs(height) * std::tan(std::abs(taper_rad));
+    const double tol = 1e-6 + 1e-6 * std::abs(height);
+    for (TopExp_Explorer e(face, TopAbs_EDGE); e.More(); e.Next()) {
+        BRepAdaptor_Curve c(TopoDS::Edge(e.Current()));
+        if (c.GetType() != GeomAbs_Circle)
+            continue;
+        const gp_Circ circ = c.Circle();
+        if (shrink <= circ.Radius() + tol)
+            continue;
+        // halfway from the centre to the arc's middle: inside the face, the
+        // material is on the centre's side
+        const gp_Pnt mid = c.Value((c.FirstParameter() + c.LastParameter()) / 2);
+        const gp_Pnt ctr = circ.Location();
+        const gp_Pnt probe((ctr.X() + mid.X()) / 2, (ctr.Y() + mid.Y()) / 2, (ctr.Z() + mid.Z()) / 2);
+        BRepClass_FaceClassifier inside(face, probe, 1e-7);
+        const bool material = inside.State() == TopAbs_IN;
+        // a positive taper leans the sides towards the material, a negative one away
+        if (material == (taper_rad > 0))
+            return true;
+    }
+    return false;
+}
+
 hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -853,8 +1122,26 @@ hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
         }
         std::vector<TopoDS_Shape> out;
         for (const TopoDS_Face &face : faces_of(s->shape)) {
-            bool curved;
-            TopoDS_Shape r = drafted(face, height, taper_rad, curved);
+            if (closes_up(face, height, taper_rad)) {
+                set_error("tapered extrusion failed: a rounded corner of the profile closes up before the top "
+                          "(a corner of radius r, as .offset(r) or .round(r) make, lasts while height × tan(taper) ≤ "
+                          "r: lower the height, or the taper to at most atan(r / height))");
+                return nullptr;
+            }
+            bool curved = false;
+            TopoDS_Shape r;
+            // two arcs that meet: lofted, never drafted (the draft can hang);
+            // an outline that changes on the way is one that closes up
+            if (arcs_meet(face)) {
+                r = lofted(face, height, taper_rad);
+                if (r.IsNull()) {
+                    set_error("tapered extrusion failed: an edge or a corner of the profile closes up before the top "
+                              "(lower the height or the taper)");
+                    return nullptr;
+                }
+            }
+            else
+                r = drafted(face, height, taper_rad, curved);
             if (r.IsNull() && !curved)
                 r = drafted_circles(face, height, taper_rad);
             const double cap = height > 0 ? 1e-3 : -1e-3;
