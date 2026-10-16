@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-9a5d35cd`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-77f1d5be`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-9a5d35cd`:** this text is up to date.
+- **It prints `0.3.1-77f1d5be`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -81,8 +81,10 @@ format stamp):
   ("the hole goes here", "this wall is too thin"), mark up the view with
   hcad_gui_annotate (arrows, crosses, circles, text over it, the view
   locked meanwhile); the user marks it the same way in Annotate mode. When they say
-  "here", "this" or "there", read the marks in hcad_gui_state: each says
-  what lies under it (part, face, point in mm, selector). Then set mode:
+  "here", "this" or "there", or to look at the marks, read them in
+  hcad_gui_state, not in a screenshot: each says what lies under it (part,
+  face, point in mm, selector) or, on the background, what it points at
+  (points_at), and its colour's name. Then set mode:
   false, so the view goes live again and shows your changes.
 - **With the command line:** `hcad docs` prints the whole reference
   (`hcad docs fillet` one topic); `hcad check model.hcad --json` reports
@@ -367,10 +369,16 @@ format stamp):
   background (not the part's own colour: red or magenta on a sky-blue part,
   blue or black on a red one); short labels, off the part; few marks at a
   time, one per thing to point at.
-- When the user says "here", "this", "from here to there": read their
-  marks in hcad_gui_state (each point with the part, face, point in mm and
-  selector under it) and, if in doubt, confirm what you understood with a
-  mark of your own before changing the model.
+- When the user says "here", "this", "from here to there", or asks you to
+  look at the marks: read them in hcad_gui_state, not in a screenshot.
+  Each point has the part, face, point in mm and selector under it; a
+  point on the background has points_at, the surface the mark points at
+  (ahead of an arrow, or the nearest round it) and how many pixels away;
+  each mark has colour_name beside its hex (the default magenta is often
+  called purple or violet). A screenshot only for what the data cannot
+  tell: the shape of a line drawn by hand, a mark with nothing under it
+  and no points_at. If in doubt, confirm what you understood with a mark
+  of your own before changing the model.
 - When they have served, clear your marks (clear: "agent", or mode: false):
   while any are there the view stays locked and changes to the model do not
   show. Do not clear the user's marks without asking.
