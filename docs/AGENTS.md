@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-536a51f7`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-f550aa82`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-536a51f7`:** this text is up to date.
+- **It prints `0.3.1-f550aa82`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -203,8 +203,9 @@ format stamp):
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
 - Exact 2D outlines with dimensions: auto s = sketch(); points, lines, arcs,
-  circles, ellipses and shapes (s.rect, s.polygon(c, 6, d:, fit: "sides"),
-  s.slot, s.teardrop), then constraints (horizontal, vertical, length,
+  circles, ellipses, splines (s.spline([p, q, r]): a smooth curve through
+  points, closed: true a loop of its own) and shapes (s.rect, s.polygon(c,
+  6, d:, fit: "sides"), s.slot, s.teardrop), then constraints (horizontal, vertical, length,
   distance, angle, tangent, on, equal, concentric…) and s.profile, to
   extrude or revolve.
   Prefer a sketch over unions and differences of boxes and cylinders for

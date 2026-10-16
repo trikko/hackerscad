@@ -281,6 +281,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.line(p: Point, q: Point) → Line</dt><dd>A line between two points.</dd>
 <dt>sk.arc(center: Point, start: Point, end: Point) → Arc</dt><dd>An arc, counter-clockwise.</dd>
 <dt>sk.polyline(points, closed: bool) → Line[]</dt><dd>Lines through points (vectors become new points).</dd>
+<dt>sk.spline(points, closed: bool) → SketchSpline</dt><dd>A smooth curve through points (vectors become new points): open, its ends join lines and arcs as theirs do; closed: true, a loop of its own. Its points move it: constrain them.</dd>
 <dt>sk.circle(center: Point, r: Length, d: Length) → Circle</dt><dd>A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…).</dd>
 <dt>sk.ellipse(center: Point, rx: Length, ry: Length, angle: Angle) → Ellipse</dt><dd>An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints. The same shape as the profile ellipse(…).</dd>
 <dt>sk.rect(p: Point, q: Point, center: Point, w: Length, h: Length, angle: Angle | "free", corner: Length) → Line[]</dt><dd>A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), "free" leaves the turn to the constraints; corner: rounds them. The same shape as the profile rect(…).</dd>
@@ -311,8 +312,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>pt.x → Length</dt><dd>Where the point is across, solved (y: up).</dd>
 <dt>pt.y → Length</dt><dd>Where the point is up, solved.</dd>
 <dt>pt.pos → Vec</dt><dd>Where the point is, solved: vec(x, y).</dd>
-<dt>line.start → SketchPoint</dt><dd>Its first point (end: the other one); an arc's too.</dd>
-<dt>line.end → SketchPoint</dt><dd>Its last point; an arc's too.</dd>
+<dt>line.start → SketchPoint</dt><dd>Its first point (end: the other one); an arc's and a spline's too.</dd>
+<dt>line.end → SketchPoint</dt><dd>Its last point; an arc's and a spline's too (a closed spline's: its first).</dd>
 <dt>line.length → Length</dt><dd>How long it is, solved.</dd>
 <dt>line.mid → Vec</dt><dd>Its middle, solved.</dd>
 <dt>circ.center → SketchPoint</dt><dd>The centre of a circle, an arc or an ellipse.</dd>
@@ -320,6 +321,9 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>ell.rx → Length</dt><dd>The radius along the ellipse's own x axis, solved.</dd>
 <dt>ell.ry → Length</dt><dd>The radius across, solved.</dd>
 <dt>ell.angle → Angle</dt><dd>How far the ellipse's x axis is turned from X, solved.</dd>
+<dt>x.points → SketchPoint[]</dt><dd>The points the spline goes through, in order.</dd>
+<dt>x.closed → bool</dt><dd>Whether it goes round back to its first point.</dd>
+<dt>x.length → Length</dt><dd>How long it is along the curve, solved.</dd>
 </dl></section>
 <section><h2>Drawings</h2><dl>
 <dt>drawing(size: string, title: string, author: string, material: string, projection: string, scale: number, landscape: bool) → Drawing</dt><dd>A technical sheet, returned by a @drawing function.</dd>

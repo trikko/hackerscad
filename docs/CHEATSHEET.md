@@ -263,6 +263,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.line(p: Point, q: Point) → Line` — A line between two points.
 - `sk.arc(center: Point, start: Point, end: Point) → Arc` — An arc, counter-clockwise.
 - `sk.polyline(points, closed: bool) → Line[]` — Lines through points (vectors become new points).
+- `sk.spline(points, closed: bool) → SketchSpline` — A smooth curve through points (vectors become new points): open, its ends join lines and arcs as theirs do; closed: true, a loop of its own. Its points move it: constrain them.
 - `sk.circle(center: Point, r: Length, d: Length) → Circle` — A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…).
 - `sk.ellipse(center: Point, rx: Length, ry: Length, angle: Angle) → Ellipse` — An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints. The same shape as the profile ellipse(…).
 - `sk.rect(p: Point, q: Point, center: Point, w: Length, h: Length, angle: Angle | "free", corner: Length) → Line[]` — A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), "free" leaves the turn to the constraints; corner: rounds them. The same shape as the profile rect(…).
@@ -293,8 +294,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `pt.x → Length` — Where the point is across, solved (y: up).
 - `pt.y → Length` — Where the point is up, solved.
 - `pt.pos → Vec` — Where the point is, solved: vec(x, y).
-- `line.start → SketchPoint` — Its first point (end: the other one); an arc's too.
-- `line.end → SketchPoint` — Its last point; an arc's too.
+- `line.start → SketchPoint` — Its first point (end: the other one); an arc's and a spline's too.
+- `line.end → SketchPoint` — Its last point; an arc's and a spline's too (a closed spline's: its first).
 - `line.length → Length` — How long it is, solved.
 - `line.mid → Vec` — Its middle, solved.
 - `circ.center → SketchPoint` — The centre of a circle, an arc or an ellipse.
@@ -302,6 +303,9 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `ell.rx → Length` — The radius along the ellipse's own x axis, solved.
 - `ell.ry → Length` — The radius across, solved.
 - `ell.angle → Angle` — How far the ellipse's x axis is turned from X, solved.
+- `x.points → SketchPoint[]` — The points the spline goes through, in order.
+- `x.closed → bool` — Whether it goes round back to its first point.
+- `x.length → Length` — How long it is along the curve, solved.
 
 ## Drawings
 
