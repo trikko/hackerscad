@@ -425,7 +425,9 @@ unittest
     assert(m.isClosed);
     assert(isClose(m.volume, k.volume(s), 1e-2));
 
-    auto path = buildPath(tempDir, "hackerscad-test.step");
+    import std.format : format;
+    import std.process : thisProcessID;
+    auto path = buildPath(tempDir, format("hackerscad-test-%d.step", thisProcessID));
     scope (exit)
         remove(path);
     k.writeStep([s], ["s"], path);

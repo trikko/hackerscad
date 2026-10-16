@@ -3363,6 +3363,206 @@ unittest
 
 unittest
 {
+    // metamorphic: each 2D operation gives on an input mirrored, turned or drawn clockwise what it gives on the
+    // input drawn as usual (its outlines counter-clockwise): the same area or volume, outlines, holes and bodies,
+    // a valid solid. Mirrored, turned over or drawn clockwise, an outline runs the other way, which unions,
+    // offsets and the rest once read wrong (822c967): a table of operations by transforms, on three inputs
+    mixin(slowTest);
+    import std.range : retro;
+    alias Loop = double[2][];
+    struct Input
+    {
+        string name;
+        const(Loop)[] outlines, holes;
+    }
+    immutable Loop ell = [[-15, -10], [15, -10], [15, -2], [-5, -2], [-5, 12], [-15, 12]];
+    immutable Loop hole = [[-12, 5], [-8, 5], [-8, 9], [-12, 9]];
+    const inputs = [
+        Input("an L", [ell], []),
+        Input("an L with a hole", [ell], [hole]),
+        // three outlines, the hole in one
+        Input("three pieces", [[[-15, -10], [4, -10], [4, -2], [-5, -2], [-5, 12], [-15, 12]],
+            [[6, -10], [15, -10], [15, -2], [6, -2]], [[9, 4], [13, 4], [13, 8], [9, 8]]], [hole]),
+    ];
+    // the other operand of the booleans, the same mirrored or turned: a cross centred on the origin, crossing
+    // the L (the difference leaves three pieces of it)
+    immutable Loop cross = [[-2, -20], [2, -20], [2, -2], [20, -2], [20, 2], [2, 2], [2, 20], [-2, 20], [-2, 2],
+        [-20, 2], [-20, -2], [-2, -2]];
+
+    // how a transform moves a point (x, y) to (m[0] x + m[1] y, m[2] x + m[3] y), and the method that does it
+    struct Transform
+    {
+        string name, method;
+        double[4] m;
+        bool clockwise;   // no method: the same points, drawn the other way round
+    }
+    const transforms = [
+        Transform("as drawn", "", [1, 0, 0, 1]),
+        Transform("mirrored in X", ".mirror(X)", [-1, 0, 0, 1]),
+        Transform("mirrored in Y", ".mirror(Y)", [1, 0, 0, -1]),
+        Transform("mirrored in X and Y", ".mirror(X).mirror(Y)", [-1, 0, 0, -1]),
+        Transform("turned 180°", ".rotate(180.deg)", [-1, 0, 0, -1]),
+        Transform("turned 90°", ".rotate(90.deg)", [0, -1, 1, 0]),
+        Transform("turned over", ".rotate(x: 180)", [1, 0, 0, -1]),
+        Transform("clockwise", "", [1, 0, 0, 1], true),
+    ];
+
+    // %1$s the input, %2$s the cross; a profile is extruded 1 mm to measure it. Where the result lies counts
+    // for a revolve: it is compared with the input drawn where the transform puts it
+    struct Op
+    {
+        string name, code;
+        bool binary, flat, sketch, placed;
+    }
+    const ops = [
+        Op("union", "%1$s + %2$s", true, true),
+        Op("union the other way", "%2$s + %1$s", true, true),
+        Op("difference", "%1$s - %2$s", true, true),
+        Op("difference the other way", "%2$s - %1$s", true, true),
+        Op("intersection", "%1$s & %2$s", true, true),
+        Op("grown", "%1$s.offset(1.mm)", false, true),
+        Op("shrunk", "%1$s.offset(-1.mm)", false, true),
+        Op("rounded", "%1$s.round(1.mm)", false, true),
+        Op("filleted", "%1$s.extrude(5.mm).fillet(edges, r: 0.5.mm)"),
+        Op("filleted on top", "%1$s.extrude(5.mm).fillet(edges.of(faces.top), r: 1.mm)"),
+        Op("revolved", "%1$s.move(x: 40.mm).revolve()", false, false, false, true),
+        Op("revolved round X", "%1$s.move(y: 40.mm).revolve(axis: X, angle: 90.deg)", false, false, false, true),
+        // drawn in a sketch, through the transformed points in their order
+        Op("a sketch", "%1$s", false, true, true),
+        Op("a sketch less the cross", "%1$s - %2$s", true, true, true),
+    ];
+
+    string apply(const Op op, string a, string b) => op.binary ? format(op.code, a, b) : format(op.code, a);
+    string loops(const Loop[] ls, const double[4] m, bool reverse)
+    {
+        string[] r;
+        foreach (l; ls)
+        {
+            string[] pts;
+            foreach (p; l)
+                pts ~= format("vec(%g, %g)", m[0] * p[0] + m[1] * p[1], m[2] * p[0] + m[3] * p[1]);
+            if (reverse)
+                pts = pts.retro.array;
+            r ~= "[" ~ pts.join(", ") ~ "]";
+        }
+        return "[" ~ r.join(", ") ~ "]";
+    }
+    // the input moved by m as a profile drawn anew, counter-clockwise (or the other way round)
+    string drawn(const Input i, const double[4] m, bool reverse)
+        => format("drawn(%s, %d)", loops(i.outlines ~ i.holes, m, reverse), i.outlines.length);
+    immutable double[4] same = [1, 0, 0, 1];
+    bool mirrors(const double[4] m) => m[0] * m[3] - m[1] * m[2] < 0;
+
+    string src = `import std.shapes;
+Profile drawn(Vec[][] loops, int outlines)
+{
+    auto p = polygon(loops[0]);
+    foreach (i; 1 .. loops.length)
+        p = i < outlines ? p + polygon(loops[i]) : p - polygon(loops[i]);
+    return p;
+}
+Profile sketched(Vec[][] loops)
+{
+    auto s = sketch();
+    foreach (l; loops)
+    {
+        SketchPoint[] q;
+        foreach (v; l)
+            q ~= s.point(v.x, v.y, fixed: true);
+        s.polygon(q);
+    }
+    return s.profile;
+}
+`;
+    // a part per case, on a line of its own, named by it: the base (the input as drawn), each transform, and for
+    // a revolve the input drawn anew where the transform puts it, to compare with
+    struct Case
+    {
+        string label;
+        size_t reference;
+    }
+    Case[size_t] cases;
+    size_t parts;
+    size_t part(string code, bool flat, string label)
+    {
+        src ~= format("@part Solid c%d() => %s;   // %s\n", parts, flat ? "(" ~ code ~ ").extrude(1.mm)" : code, label);
+        return parts++;
+    }
+    immutable b0 = format("polygon(%s[0])", loops([cross], same, false));
+    foreach (op; ops)
+        foreach (input; inputs)
+        {
+            immutable base = part(apply(op, drawn(input, same, false), b0), op.flat, op.name ~ ", " ~ input.name);
+            foreach (t; transforms)
+            {
+                if (t.name == "as drawn" && !op.sketch)
+                    continue;
+                // the input transformed by its method, drawn clockwise, or sketched through the moved points
+                immutable a = op.sketch ? format("sketched(%s)", loops(input.outlines ~ input.holes, t.m, t.clockwise))
+                    : t.clockwise ? drawn(input, same, true) : drawn(input, same, false) ~ t.method;
+                immutable tb = t.clockwise ? format("polygon(%s[0])", loops([cross], same, true)) : b0 ~ t.method;
+                immutable reference = op.placed ? part(apply(op, drawn(input, t.m, mirrors(t.m)), b0), op.flat,
+                    op.name ~ ", " ~ input.name ~ " drawn " ~ t.name) : base;
+                // with the cross as drawn, and transformed too
+                foreach (b; op.binary && tb != b0 ? [b0, tb] : [b0])
+                {
+                    immutable label = format("%s, %s %s%s", op.name, input.name, t.name, b == b0 ? "" : ", the cross too");
+                    cases[part(apply(op, a, b), op.flat, label)] = Case(label, reference);
+                }
+            }
+        }
+
+    EvalResult r;
+    try
+        r = runModel(src);
+    catch (HcadError e)
+        r.diagnostics ~= e.diag;
+    import std.string : splitLines;
+    immutable lines = src.splitLines;
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error,
+            format("%s\n%s", d.message, d.span.line > 0 && d.span.line <= lines.length ? lines[d.span.line - 1] : ""));
+    assert(r.parts.length == parts, format("%d parts of %d", r.parts.length, parts));
+
+    // what must not change: valid, the volume, the bodies, the top faces (one per outline: profiles on each
+    // other not fused into one stay two) and their holes
+    static struct Measure
+    {
+        bool valid;
+        double volume;
+        size_t bodies, tops, holes;
+
+        string toString() const => format("%s, %s mm³, %d bodies, %d top faces, %d holes", valid ? "valid" : "not valid",
+            volume, bodies, tops, holes);
+    }
+    Measure measure(Brep b)
+    {
+        auto m = Measure(kernel.isValid(b), kernel.volume(b), kernel.solids(b).length);
+        immutable top = kernel.bbox(b).max.z;
+        foreach (i, f; kernel.faces(b))
+            if (f.normal.z > 1 - 1e-9 && abs(f.center.z - top) < 1e-6)
+            {
+                m.tops++;
+                m.holes += kernel.faceLoops(b, cast(int) i, 0.1).length - 1;
+            }
+        return m;
+    }
+    auto measures = r.parts.map!(p => measure(p.solid.brep)).array;
+    // every case that fails, in the table's order
+    import std.algorithm : sort;
+    string[] wrong;
+    foreach (n; cases.keys.sort)
+    {
+        immutable c = cases[n], got = measures[n], want = measures[c.reference];
+        if (!got.valid || abs(got.volume - want.volume) > 1e-6 * want.volume || got.bodies != want.bodies
+            || got.tops != want.tops || got.holes != want.holes)
+            wrong ~= format("%s: %s, as drawn %s", c.label, got, want);
+    }
+    assert(wrong.length == 0, format("%d cases of %d:\n%-(%s\n%)", wrong.length, cases.length, wrong));
+}
+
+unittest
+{
     // two equal circles in different places are two holes, not "outlines on each other" (the check
     // once mixed x and y); the same circle twice still is an error
     import std.algorithm : canFind;
