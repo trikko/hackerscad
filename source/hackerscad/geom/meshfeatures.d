@@ -8,7 +8,7 @@ module hackerscad.geom.meshfeatures;
 import std.algorithm : max, min, sort, map, sum, canFind;
 import std.array : array, join;
 import std.format : format;
-import std.math : abs, acos, asin, atan, atan2, ceil, cos, floor, isNaN, PI, round, sin, sqrt;
+import std.math : abs, acos, asin, atan, atan2, ceil, cos, floor, isNaN, PI, round, sin, sqrt, tan;
 
 import hackerscad.geom.mesh;
 import hackerscad.geom.vec;
@@ -206,14 +206,30 @@ Analysis analyse(const Mesh input)
                 best = i;
             }
         }
-        if (flats.length <= 1 || bestArea < 0.1 * f.area)
+        uint[] part;
+        Feature partFit;
+        if (flats.length > 1 && bestArea >= 0.1 * f.area)
         {
-            r.features ~= f;
-            return;
+            part = flats[best];
+            partFit = fit(m, part, normal, area, r.tolerance, flat);
         }
-        r.features ~= fit(m, flats[best], normal, area, r.tolerance, flat);
+        else
+        {
+            // no part flat to half a degree (a mesh exported with its flat faces a little bent): the largest
+            // part within 3° of one triangle's normal, every corner within 0.1 mm of its plane
+            part = nearlyFlat(m, g, normal, area, edgeTris, partFit);
+            double ar = 0;
+            foreach (t; part)
+                ar += area[t];
+            if (part.length == 0 || ar < max(2.0, 0.05 * f.area))
+            {
+                r.features ~= f;
+                return;
+            }
+        }
+        r.features ~= partFit;
         bool[uint] taken;
-        foreach (t; flats[best])
+        foreach (t; part)
             taken[t] = true;
         uint[] rest;
         foreach (t; g)
@@ -230,6 +246,127 @@ Analysis analyse(const Mesh input)
     r.features.sort!((a, b) => a.area > b.area);
     r.patterns = patterns(r.features, r.tolerance);
     return r;
+}
+
+/// The largest part of `tris` that is nearly flat: grown from a triangle
+/// across edges to those whose normal is within 3° of its own (not of the
+/// neighbour's, so a gentle curve does not creep in), kept when every corner
+/// lies within 0.1 mm of the part's plane; `plane` is it, fitted. Empty when
+/// none is. The largest triangles are tried as seeds first.
+private uint[] nearlyFlat(const Mesh m, const uint[] tris, const Vec3[] normal, const double[] area,
+    const uint[][ulong] edgeTris, out Feature plane)
+{
+    static ulong key(uint a, uint b) => a < b ? (cast(ulong) a << 32 | b) : (cast(ulong) b << 32 | a);
+    immutable near = cos(3 * PI / 180);
+    bool[uint] inSet, used;
+    foreach (t; tris)
+        inSet[t] = true;
+    auto seeds = tris.dup;
+    seeds.sort!((a, b) => area[a] > area[b]);
+    uint[] best;
+    double bestArea = 0;
+    size_t tried;
+    foreach (seed; seeds)
+    {
+        // each triangle in one try at most; the largest first, and not too many
+        if (seed in used)
+            continue;
+        if (++tried > 60)
+            break;
+        immutable n0 = normal[seed];
+        uint[] group, stack = [seed];
+        bool[uint] done = [seed: true];
+        while (stack.length)
+        {
+            immutable t = stack[$ - 1];
+            stack = stack[0 .. $ - 1];
+            group ~= t;
+            foreach (k; 0 .. 3)
+            {
+                auto other = edgeTris.get(key(m.tris[3 * t + k], m.tris[3 * t + (k + 1) % 3]), null);
+                if (other.length != 2)
+                    continue;
+                immutable u = other[0] == t ? other[1] : other[0];
+                if (u in inSet && u !in done && normal[u].dot(n0) >= near)
+                {
+                    done[u] = true;
+                    stack ~= u;
+                }
+            }
+        }
+        foreach (t; group)
+            used[t] = true;
+        // its plane: the area-weighted mean normal, through the corners' mean
+        Vec3 mn;
+        double ar = 0;
+        foreach (t; group)
+        {
+            mn = mn + normal[t] * area[t];
+            ar += area[t];
+        }
+        if (mn.length <= 0 || ar <= bestArea)
+            continue;
+        mn = mn / mn.length;
+        double d = 0, worst = 0;
+        size_t count;
+        foreach (t; group)
+            foreach (k; 0 .. 3)
+            {
+                d += m.vertex(m.tris[3 * t + k]).dot(mn);
+                count++;
+            }
+        d /= count;
+        Vec3 glo = m.vertex(m.tris[3 * group[0]]), ghi = glo;
+        foreach (t; group)
+            foreach (k; 0 .. 3)
+            {
+                auto p = m.vertex(m.tris[3 * t + k]);
+                worst = max(worst, abs(p.dot(mn) - d));
+                glo = Vec3(min(glo.x, p.x), min(glo.y, p.y), min(glo.z, p.z));
+                ghi = Vec3(max(ghi.x, p.x), max(ghi.y, p.y), max(ghi.z, p.z));
+            }
+        // flat within 0.1 mm, or 2% of its size (a face exported slightly bent, in strips)
+        if (worst > max(0.1, 0.02 * (ghi - glo).length))
+            continue;
+        // a face, not a stretch of a gentle curve: on most of its edge with the rest of the region it meets
+        // the next triangle at a crease (over 10°), where a curve would run on
+        {
+            immutable crease = cos(10 * PI / 180);
+            size_t edges, creased;
+            foreach (t; group)
+                foreach (k; 0 .. 3)
+                {
+                    auto other = edgeTris.get(key(m.tris[3 * t + k], m.tris[3 * t + (k + 1) % 3]), null);
+                    if (other.length != 2)
+                        continue;
+                    immutable u = other[0] == t ? other[1] : other[0];
+                    if (u in done || u !in inSet)
+                        continue;
+                    edges++;
+                    creased += normal[t].dot(normal[u]) < crease;
+                }
+            if (edges && creased * 2 < edges)
+                continue;
+        }
+        best = group;
+        bestArea = ar;
+        plane = Feature.init;
+        plane.kind = Surface.plane;
+        plane.normal = mn;
+        plane.offset = d;
+        plane.error = worst;
+        plane.area = ar;
+        plane.triangles = group.length;
+        plane.lo = plane.hi = m.vertex(m.tris[3 * group[0]]);
+        foreach (t; group)
+            foreach (k; 0 .. 3)
+            {
+                auto p = m.vertex(m.tris[3 * t + k]);
+                plane.lo = Vec3(min(plane.lo.x, p.x), min(plane.lo.y, p.y), min(plane.lo.z, p.z));
+                plane.hi = Vec3(max(plane.hi.x, p.x), max(plane.hi.y, p.y), max(plane.hi.z, p.z));
+            }
+    }
+    return best;
 }
 
 /// The surface a region of triangles lies on.
@@ -283,6 +420,36 @@ private Feature fit(const Mesh m, const uint[] tris, const Vec3[] normal, const 
         foreach (p; pts)
             f.error = max(f.error, abs(p.dot(mn) - f.offset));
         return f;
+    }
+
+    // nearly flat: a face exported slightly bent (in strips a few degrees apart), not a ball hundreds of mm wide:
+    // every normal within 6° of the mean one, every corner within 0.1 mm or 2% of its size of its plane
+    {
+        bool near = true;
+        immutable within6 = cos(6 * PI / 180);
+        foreach (t; tris)
+            if (normal[t].dot(mn) < within6)
+            {
+                near = false;
+                break;
+            }
+        if (near)
+        {
+            double d = 0, worst = 0;
+            foreach (p; pts)
+                d += p.dot(mn);
+            d /= pts.length;
+            foreach (p; pts)
+                worst = max(worst, abs(p.dot(mn) - d));
+            if (worst <= max(0.1, 0.02 * (f.hi - f.lo).length))
+            {
+                f.kind = Surface.plane;
+                f.normal = mn;
+                f.offset = d;
+                f.error = worst;
+                return f;
+            }
+        }
     }
 
     // a sphere: the normals' lines all cross at its centre
@@ -978,7 +1145,9 @@ string describe(const Feature f)
         if (f.chamfer)
             return format("chamfer %s mm (%s wide) between the faces facing %s and %s, %s mm² (%s to %s)", mm(f.leg),
                 mm(f.width), vec(f.sides[0]), vec(f.sides[1]), mm(f.area), vec(f.lo), vec(f.hi));
-        return format("plane, normal %s, at %s mm along it, %s mm² (%s to %s)", vec(f.normal), mm(f.offset), mm(f.area),
+        // nearly flat: a face exported slightly bent, its plane the one that fits it best
+        return format("%s, normal %s, at %s mm along it, %s mm² (%s to %s)", f.error > 0.02
+            ? format("nearly flat (within %s mm)", mm(f.error)) : "plane", vec(f.normal), mm(f.offset), mm(f.area),
             vec(f.lo), vec(f.hi));
     case Surface.cylinder:
         {
@@ -1055,4 +1224,34 @@ unittest
     assert(holeHint(3.4) == "M3 clearance", holeHint(3.4));
     assert(plausible(3.3999) == 3.4, format("%s", plausible(3.3999)));
     assert(plausible(12.0004) == 12);
+}
+
+unittest
+{
+    // a face exported slightly bent: the top of a block made of three strips 2.5° apart (as a mesh from another
+    // program can be) is nearly flat, its plane the best fit, not a ball hundreds of mm wide
+    Mesh m;
+    void tri(Vec3 a, Vec3 b, Vec3 c)
+    {
+        immutable base = cast(uint) m.vertexCount;
+        foreach (p; [a, b, c])
+            m.verts ~= [cast(float) p.x, cast(float) p.y, cast(float) p.z];
+        m.tris ~= [base, base + 1, base + 2];
+    }
+    void quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d)
+    {
+        tri(a, b, c);
+        tri(a, c, d);
+    }
+    // the top: y from 0 to 30 in three strips, each rising a little more steeply
+    immutable double[4] ys = [0, 10, 20, 30];
+    double[4] zs = [5, 0, 0, 0];
+    foreach (k; 1 .. 4)
+        zs[k] = zs[k - 1] + 10 * tan((k - 2) * 2.5 * PI / 180);
+    foreach (k; 0 .. 3)
+        quad(Vec3(0, ys[k], zs[k]), Vec3(40, ys[k], zs[k]), Vec3(40, ys[k + 1], zs[k + 1]), Vec3(0, ys[k + 1], zs[k + 1]));
+    auto a = analyse(m);
+    assert(a.features.length == 1 && a.features[0].kind == Surface.plane && a.features[0].error > 0.02
+        && a.features[0].error < 0.6, report(a));
+    assert(report(a).canFind("nearly flat"), report(a));
 }
