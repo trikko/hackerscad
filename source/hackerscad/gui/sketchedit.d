@@ -1252,9 +1252,9 @@ mixin template SketchEdit()
     {
         Vec3 p;
         ptrdiff_t at = snapAt(x, y, p);
-        // an area is clicked inside: no point of the sketch to take (one is on its edge), only a hidden place
-        // (the middle of a construction line, say), its point kept there
-        if (drawTool == "fill" && at != -3)
+        // the fill takes a point of the sketch (it marks the area holding it) or a hidden place (its own point kept
+        // there), not the first point of a drawing
+        if (drawTool == "fill" && at == -2)
             at = -1;
         if (at == -1 && !onSketchPlane(x, y, p))
             return;
@@ -1405,8 +1405,7 @@ mixin template SketchEdit()
             // nothing clicked yet: only where it would snap
             Vec3 p;
             immutable sn = snapAt(x, y, p);
-            // the fill takes only hidden places
-            viewport.drawingSnap = (drawTool == "fill" ? sn == -3 : sn != -1) ? [drawnSketch().world(p)] : null;
+            viewport.drawingSnap = sn != -1 ? [drawnSketch().world(p)] : null;
             viewport.drawingSnapKind = sn == -3 ? (lastHidden.mid >= 0 ? 1 : 2) : 0;
             if (sn == -3)
                 info(hiddenText(lastHidden) ~ ": the point goes there, kept there");
@@ -1591,13 +1590,20 @@ mixin template SketchEdit()
                             here ~= k;
                     if (here.length == 0)
                     {
-                        // a point of the sketch: shown, it can be constrained to stay in its area
-                        immutable n = w.fresh("inside");
-                        w.add(format("auto %s = %s.point(%s, %s)", n, w.var, num(q.x), num(q.y)));
-                        foreach (l; via[0].on)
-                            w.add(format("%s.on(%s, %s)", w.var, n, w.name(l)));
-                        if (via[0].mid >= 0)
-                            w.add(format("%s.midpoint(%s, %s)", w.var, n, w.name(via[0].mid)));
+                        // a point of the sketch clicked: that one; else one of its own, shown, to constrain so that
+                        // it stays in its area
+                        string n;
+                        if (at[0] >= 0)
+                            n = w.name(at[0]);
+                        else
+                        {
+                            n = w.fresh("inside");
+                            w.add(format("auto %s = %s.point(%s, %s)", n, w.var, num(q.x), num(q.y)));
+                            foreach (l; via[0].on)
+                                w.add(format("%s.on(%s, %s)", w.var, n, w.name(l)));
+                            if (via[0].mid >= 0)
+                                w.add(format("%s.midpoint(%s, %s)", w.var, n, w.name(via[0].mid)));
+                        }
                         w.add(format("%s.fill(%s%s)", w.var, n, full ? "" : ", full: false"));
                         select = n;
                         break;

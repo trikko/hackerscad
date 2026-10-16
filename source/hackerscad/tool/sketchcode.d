@@ -138,6 +138,21 @@ struct SketchWriter
                 if (i != e && other.kind != "point" && other.span == en.span)
                     if (auto part = pointOf(i, e))
                         return callName(en.span, baseName(other.kind)) ~ "." ~ part;
+        // a point written inside another entity's call (s.circle(s.point(…), …)): that one's, circle.center
+        if (en.kind == "point")
+        {
+            immutable c = callToken(en.span);
+            if (c != size_t.max)
+                foreach (i, other; view.entities)
+                {
+                    if (i == e || other.kind == "point")
+                        continue;
+                    immutable oc = callToken(other.span);
+                    if (oc != size_t.max && oc < c && c < closing(oc))
+                        if (auto part = pointOf(i, e))
+                            return callName(other.span, baseName(other.kind)) ~ "." ~ part;
+                }
+        }
         return callName(en.span, baseName(en.kind));
     }
 
@@ -1065,6 +1080,19 @@ unittest
     assert(made.canFind("s.line(a, b, construction: true)") && made.canFind("vec(70, 20), construction: true)"), made);
     // plain again
     auto v2 = viewOf(made);
+    // a point written inside a circle's call: the circle's centre
+    {
+        immutable nested = "module m;\n@part\nSolid p()\n{\n    auto s = sketch();\n"
+            ~ "    s.circle(s.point(20, 10, fixed: true), r: 6.mm);\n    return box(1, 1, 1);\n}\n";
+        auto nv = viewOf(nested);
+        size_t centre;
+        foreach (i, e; nv.entities)
+            if (e.kind == "point")
+                centre = i;
+        auto nw = SketchWriter(nested, file, nv);
+        assert(nw.name(centre) == "circle.center", nw.name(centre));
+        assert(nw.result().canFind("auto circle = s.circle("), nw.result());
+    }
     // drawing as construction: the geometry is, its points and constraints are not
     auto cw = SketchWriter(src, file, v);
     cw.construction = true;

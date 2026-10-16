@@ -3914,24 +3914,21 @@ private:
             drawKnob(q, drawing, handlePixels - 3);
         foreach (q; drawingSnap)
         {
-            if (drawingSnapKind == 0)
-            {
-                drawKnob(q, Vec3(0.1, 0.55, 0.95), handlePixels);
-                continue;
-            }
-            // a hidden place, drawn apart in violet: a triangle round a line's middle, a cross where lines cross
+            // where the pointer snaps, in violet, all of one size: a square round a point of the sketch (the point
+            // left as it is), a triangle round a line's middle, a cross where lines cross
             auto b = basis();
-            immutable r = (handlePixels + 5) * mmPerPixelAt(q);
+            immutable r = (handlePixels - 1) * mmPerPixelAt(q);
             auto u = b.right * r, v = b.up * r;
             immutable violet = Vec3(0.62, 0.2, 0.85);
-            if (drawingSnapKind == 1)
-                drawPolyline([q + v, q - u * 0.87 - v * 0.5, q + u * 0.87 - v * 0.5, q + v], violet, 2.5);
+            if (drawingSnapKind == 0)
+                drawPolyline([q + u + v, q - u + v, q - u - v, q + u - v, q + u + v], violet, 2);
+            else if (drawingSnapKind == 1)
+                drawPolyline([q + v, q - u * 0.87 - v * 0.5, q + u * 0.87 - v * 0.5, q + v], violet, 2);
             else
             {
-                drawPolyline([q - u - v, q + u + v], violet, 2.5);
-                drawPolyline([q - u + v, q + u - v], violet, 2.5);
+                drawPolyline([q - u - v, q + u + v], violet, 2);
+                drawPolyline([q - u + v, q + u - v], violet, 2);
             }
-            drawKnob(q, violet, handlePixels - 4);
         }
     }
 
