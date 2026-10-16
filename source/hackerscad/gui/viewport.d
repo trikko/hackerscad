@@ -3921,13 +3921,13 @@ private:
             auto u = b.right * r, v = b.up * r;
             immutable violet = Vec3(0.62, 0.2, 0.85);
             if (drawingSnapKind == 0)
-                drawPolyline([q + u + v, q - u + v, q - u - v, q + u - v, q + u + v], violet, 2);
+                drawPolyline([q + u + v, q - u + v, q - u - v, q + u - v, q + u + v], violet, 3);
             else if (drawingSnapKind == 1)
-                drawPolyline([q + v, q - u * 0.87 - v * 0.5, q + u * 0.87 - v * 0.5, q + v], violet, 2);
+                drawPolyline([q + v, q - u * 0.87 - v * 0.5, q + u * 0.87 - v * 0.5, q + v], violet, 3);
             else
             {
-                drawPolyline([q - u - v, q + u + v], violet, 2);
-                drawPolyline([q - u + v, q + u - v], violet, 2);
+                drawPolyline([q - u - v, q + u + v], violet, 3);
+                drawPolyline([q - u + v, q + u - v], violet, 3);
             }
         }
     }

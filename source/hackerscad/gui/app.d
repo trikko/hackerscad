@@ -1859,6 +1859,7 @@ private:
             sketchEditHold = false;
             followSketch(true);
         }
+        dropHeldDrawing();
         if (o.ok)
         {
             viewport.setParts(o.parts, firstResult);

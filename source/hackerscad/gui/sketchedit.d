@@ -23,6 +23,7 @@ mixin template SketchEdit()
     Button deleteButton;
     Button constructionButton;
     bool sketchMarked;       /// the code's "picked" marks are the sketch selection's
+    bool drawingHeld;        /// the preview shows what was just drawn, until its code is evaluated
     bool drawConstruction;   /// what is drawn is construction geometry (the bar's ┄ with nothing selected)
     string drawTool;      /// the drawing tool at work (null: clicks select)
     bool sketchEditHold;  /// the bar wrote into the code: the sketch stays shown until it is evaluated
@@ -1250,6 +1251,8 @@ mixin template SketchEdit()
 
     void drawingClick(double x, double y)
     {
+        // drawing again: the preview is the new shape's, not the last one's kept
+        drawingHeld = false;
         Vec3 p;
         ptrdiff_t at = snapAt(x, y, p);
         // the fill takes a point of the sketch (it marks the area holding it) or a hidden place (its own point kept
@@ -1419,14 +1422,33 @@ mixin template SketchEdit()
         immutable tool = drawTool;
         auto pts = drawn.dup, at = drawnAt.dup;
         auto via = drawnVia.dup;
+        // what was drawn stays shown, without the stretch to the pointer, until the code written is evaluated
+        // and draws it (else it would vanish for a moment, as if deleted)
+        drawn = closed && (tool == "line" || tool == "spline") ? pts ~ pts[0] : pts;
+        showDrawing(double.nan, double.nan);
         drawn = null;
         drawnAt = null;
         drawnVia = null;
-        showDrawing(double.nan, double.nan);
+        drawingHeld = true;
         immutable least = tool == "line" ? 2 : tool == "spline" ? (closed ? 3 : 2) : 1;
-        if (pts.length < least)
-            return info("not enough points: nothing written");
-        info(writeDrawing(tool, pts, at, closed, drawConstruction, via));
+        string said = pts.length < least ? "not enough points: nothing written"
+            : writeDrawing(tool, pts, at, closed, drawConstruction, via);
+        // nothing written: nothing to wait for
+        if (!sketchEditHold)
+            dropHeldDrawing();
+        info(said);
+    }
+
+    /// The preview of what was drawn, kept until its code is evaluated, taken away.
+    void dropHeldDrawing()
+    {
+        if (!drawingHeld)
+            return;
+        drawingHeld = false;
+        viewport.drawingLines = null;
+        viewport.drawingPoints = null;
+        viewport.drawingSnap = null;
+        viewport.refresh();
     }
 
     /// The statements for what was drawn: new points made, those snapped to named.
