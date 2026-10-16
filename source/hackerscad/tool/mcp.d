@@ -1004,9 +1004,12 @@ JValue toolList()
             ~ "given here takes the view over from the cursor until Esc or on: false. align: true turns the view "
             ~ "straight back at the sketch shown (Look at sketch in the right-click menu: from outside its face, or "
             ~ "from above), after the user or you turned it. state's sketch tells from_cursor, "
-            ~ "pinned, partial, stale (and error_line).",
+            ~ "pinned, partial, stale (and error_line). A sketch made again (in a loop, or in a function called "
+            ~ "twice) is drawn one run at a time, its dimensions with it: state's sketch gives run and runs, and "
+            ~ "run (1-based, alone or with line) draws another, as the mode bar's Run button does.",
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "on": {"type": "boolean"}, `
-            ~ `"follow": {"type": "boolean"}, "pin": {"type": "boolean"}, "align": {"type": "boolean"}`, `[]`),
+            ~ `"follow": {"type": "boolean"}, "pin": {"type": "boolean"}, "align": {"type": "boolean"}, `
+            ~ `"run": {"type": "integer"}`, `[]`),
         gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
             ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "
             ~ "several times, every run), what a value row made, or what a function returns; the step of a sketch "
@@ -1074,7 +1077,9 @@ JValue toolList()
             `"points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}, `
             ~ `"screen": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}`, `[]`),
         gui("hcad_gui_selection", "The faces or edges selected in the user's 3D view, with their selectors and sizes "
-            ~ "(area, centre and normal of a face; length or radius of an edge): what the user means by \"this edge\". "
+            ~ "(area, centre and normal of a face; length along the curve or radius of an edge): what the user means by "
+            ~ "\"this edge\". sizes is what the window's info line says of it: a face's size in its own plane, an "
+            ~ "edge's length, two items how far apart, more the room they take together. "
             ~ "With selector (e.g. faces.top, edges.of(faces.top)) on part, selects what it picks, to show the user "
             ~ "which faces or edges you mean; the right-click menu then acts on them. clear: true empties it.",
             `"selector": {"type": "string"}, "part": {"type": "string", "description": "needed with several parts"}, `
@@ -1108,16 +1113,22 @@ JValue toolList()
             ~ "user_changed tells which lines the user changed since your previous hcad_gui_* call. It waits for the "
             ~ "running evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) "
             ~ "and seconds; with source: true it includes the code as it is in the editor (maybe not saved) and steps, "
-            ~ "the Steps panel row by row. cursor is the editor's cursor (line, col); sketch the sketch shown (from_cursor, "
+            ~ "the Steps panel row by row. source_hash is a fingerprint of the code: when it is the one you saw "
+            ~ "last, the code has not changed and need not be asked again; modified is false when the code is the "
+            ~ "one saved (typing and undoing back to it included). only gives just the fields named (and the "
+            ~ "window), e.g. [\"revision\", \"source_hash\", \"camera\"]: a quick look at what changed, "
+            ~ "much shorter than the whole state. cursor is the editor's cursor (line, col); sketch the sketch shown (from_cursor, "
             ~ "pinned, partial, stale) and sketch_follow the setting Show the sketch at the cursor. params give value, "
             ~ "default, type, min, max, step and choices; revision "
-            ~ "counts the evaluations, log is what the model printed, outdated says the window should be restarted; "
-            ~ "graphics tells what draws the 3D view (OpenGL renderer, software: true when the processor draws it) "
+            ~ "counts the changes to the code, log is what the model printed, outdated says the window should be restarted; "
+            ~ "graphics: true adds what draws the 3D view (OpenGL renderer, software: true when the processor draws it) "
             ~ "and how fast: frames gives, over the last frames drawn while the view moved (hcad_gui_view counts), "
             ~ "the wait from the movement to the frame (wait_ms; slow counts those over 33 ms, the jerks a user "
             ~ "sees), the time apart (interval_ms: also long when the movements come slowly), on the processor "
             ~ "(draw_ms) and on the graphics card (gpu_ms, -1 when not known), each with its _max_ms.",
-            `"now": {"type": "boolean"}, "source": {"type": "boolean"}`, `[]`),
+            `"now": {"type": "boolean"}, "source": {"type": "boolean"}, "graphics": {"type": "boolean"}, `
+            ~ `"only": {"type": "array", "items": {"type": "string"}, "description": "the fields to give, e.g. `
+            ~ `[\"revision\", \"source_hash\"]"}`, `[]`),
     );
 }
 
@@ -1724,7 +1735,9 @@ unittest
 
     // features and compare answer in a few lines; json: true gives the data
     import std.file : tempDir, write, remove;
-    immutable model = buildPath(tempDir, "hcad-mcp-compact.hcad");
+    // named after the process: two test runs at once must not share it
+    import std.process : thisProcessID;
+    immutable model = buildPath(tempDir, format("hcad-mcp-compact-%d.hcad", thisProcessID));
     write(model, "@part Solid copy() => box(20, 20, 10) - cylinder(d: 5, h: 30, center: true);\n"
         ~ "@part Solid original() => box(20, 20, 10.5) - cylinder(d: 5.5, h: 30, center: true);\n");
     scope (exit)
@@ -1754,7 +1767,7 @@ unittest
 
     // slivers the copy has (sheets a hair over the tops of two blocks apart): told, as the distances cannot,
     // each with its own box and number; the next step is said
-    immutable sliverModel = buildPath(tempDir, "hcad-mcp-sliver.hcad");
+    immutable sliverModel = buildPath(tempDir, format("hcad-mcp-sliver-%d.hcad", thisProcessID));
     write(sliverModel, "@part Solid copy() => box(10, 10, 10) + box(10, 10, 0.05).move(z: 10.03)\n"
         ~ "    + box(10, 10, 10).move(x: 30) + box(10, 10, 0.05).move(x: 30, z: 10.03);\n"
         ~ "@part Solid original() => box(10, 10, 10) + box(10, 10, 10).move(x: 30);\n");

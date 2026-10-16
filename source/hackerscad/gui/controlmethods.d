@@ -61,15 +61,38 @@ mixin template ControlMethods()
             // (then "evaluating" and "stage" tell how far it is)
             {
                 immutable withSource = p.safe!bool("source").or(false);
+                immutable withGraphics = p.safe!bool("graphics").or(false);
+                // only: the fields asked for, the window's name with them
+                string[] only;
+                if (p.has("only"))
+                {
+                    if (!p["only"].isArray)
+                        return reply(JValue.init, "only is a list of the state's fields, e.g. [\"revision\", "
+                            ~ "\"source_hash\"]");
+                    foreach (f; p["only"].get!JArray.elements)
+                    {
+                        auto name = f.isString ? f.get!string : "";
+                        if (!stateFields.canFind(name))
+                            return reply(JValue.init, format("only: no field %s in the state; its fields: %-(%s, %)",
+                                f.toJSON(), stateFields));
+                        only ~= name;
+                    }
+                }
                 JValue full()
                 {
-                    auto j = state();
-                    if (withSource)
+                    auto j = state(withGraphics || only.canFind("graphics"));
+                    if (withSource || only.canFind("source") || only.canFind("steps"))
                     {
                         j["source"] = text();
                         j["steps"] = toJSON(stepsPanel.rowsText());   // the Steps panel, row by row
                     }
-                    return j;
+                    if (only.length == 0)
+                        return j;
+                    JValue some = JSOB("window", j["window"]);
+                    foreach (name; only)
+                        if (auto v = j.getPtr(name))
+                            some[name] = *v;
+                    return some;
                 }
                 if (p.safe!bool("now").or(false))
                     reply(full(), null);
@@ -660,9 +683,37 @@ mixin template ControlMethods()
             // orange (as Inspect on them, without the solids); {"on": true} or nothing: the first sketch;
             // {"on": false}: none; {"follow": false}: the setting Show the sketch at the cursor; {"pin": true}: the sketch
             // at the cursor stays when it leaves; {"align": true}: the view straight at the sketch shown (Look at
-            // sketch). The reply lists the sketches, and state's sketch tells the one shown
-            // (from_cursor, pinned, partial, stale). An explicit request takes the view over from the cursor
+            // sketch); {"run": 2}: of a sketch made again (a loop, another call), that run drawn (1-based).
+            // The reply lists the sketches, and state's sketch tells the one shown
+            // (from_cursor, pinned, partial, stale, run of runs). An explicit request takes the view over from the cursor
             {
+                // run n of the sketch shown, or of the one line asks for: false and the reply sent when there is none
+                bool toRun()
+                {
+                    if (!has("run"))
+                        return true;
+                    immutable n = p["run"].isNumber ? cast(long) p["run"].get!double : 0;
+                    if (sketchIndices.length == 0)
+                        reply(JValue.init, "no sketch is shown: show one first (line, or the cursor in its code)");
+                    else if (n < 1 || !showSketchRun(n - 1))
+                        reply(JValue.init, frozen ? "the view is annotated: it does not change"
+                            : format("run %s: the sketch shown has %d run%s", p["run"].toJSON(), sketchIndices.length,
+                                sketchIndices.length > 1 ? "s, from 1" : " (a loop or another call makes more)"));
+                    else
+                        return true;
+                    return false;
+                }
+                if (has("run") && !has("line") && !p.has("on") && !has("align"))
+                {
+                    whenIdle(() {
+                        if (!toRun())
+                            return;
+                        auto r = state();
+                        r["sketches"] = sketchesJson();
+                        reply(r, null);
+                    });
+                    return;
+                }
                 if (has("align") && !has("line") && !p.has("on"))
                 {
                     whenIdle(() {
@@ -724,6 +775,8 @@ mixin template ControlMethods()
                         auto first = last.sketches[0].span.line;
                         inspectSketch(first, first, false);
                     }
+                    if (!hide && !toRun())
+                        return;
                     auto r = state();
                     r["sketches"] = sketchesJson();
                     reply(r, null);

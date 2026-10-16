@@ -366,6 +366,9 @@ format stamp):
   code), and a file rewritten under them makes the window ask which to keep.
   For the command line tools, save a copy elsewhere (hcad_gui_state with
   source: true gives the code) instead of moving the window to a file.
+  To see whether the user changed anything, ask hcad_gui_state only for
+  what you need (only: ["source_hash", "camera"]): the same source_hash as
+  before is the same code, no need to fetch it again.
   Never take the most recent window for the user's: if it is not clear
   which one they mean, ask, or open one of your own. Show the work in the
   window as it goes, not only pictures at the end, and leave the view on

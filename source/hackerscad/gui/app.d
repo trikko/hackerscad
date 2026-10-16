@@ -372,6 +372,18 @@ version (Windows)
     }
 }
 
+/// A fingerprint of the code, quick enough for every key typed: whether the
+/// text is back to the one saved, and, in the state, whether the code
+/// changed without sending it.
+ulong codeHash(string code)
+{
+    import std.bitmanip : littleEndianToNative;
+    import std.digest.murmurhash : MurmurHash3;
+    MurmurHash3!(128, 64) h;
+    h.put(cast(const(ubyte)[]) code);
+    return littleEndianToNative!ulong(h.finish()[0 .. 8]);
+}
+
 /// The garbage collector marks on one thread: marking in parallel spent
 /// most of its time spinning on locks, against OCCT's own threads.
 extern (C) __gshared string[] rt_options = ["gcopt=parallel:0"];
@@ -545,6 +557,7 @@ final class MainWindow
     uint[2] sketchLines;          /// the lines it was asked for (0 when none is shown)
     bool sketchHighlight;         /// what those lines make stands out (Inspect; not a step)
     size_t[] sketchIndices;       /// in last.sketches (a sketch made in a loop or a function called again: every run)
+    size_t sketchRun;             /// with several runs, the one drawn (0-based in sketchIndices)
     SketchView.Found[] sketchFound;   /// what the lines make in each
     bool positionQueued;
     Evaluator evaluator;
@@ -554,6 +567,8 @@ final class MainWindow
 
     string path;
     bool modified;
+    ulong savedHash;   /// codeHash of the text as saved, opened or made new
+    bool hasSaved;     /// false while no text was saved (an imported mesh's model)
     uint debounce;
     bool firstResult = true;
     bool fitNext;   /// frame the next result from where the view looks now (the socket's set)
@@ -1242,11 +1257,11 @@ final class MainWindow
         }
         else
             buffer.setText(exists(path) ? readText(path) : startModel);
-        modified = false;
-        updateTitle();
+        markSaved();
         buffer.connectChanged(() {
             revision++;
-            modified = true;
+            // typed and undone back to the saved text: no change
+            modified = !hasSaved || codeHash(text()) != savedHash;
             updateTitle();
             sketchLinesMoved();
             scheduleEvaluation(250);
@@ -1595,6 +1610,16 @@ private:
             if (exists(buildPath(base, sub)))
                 return buildNormalizedPath(base, sub);
         return buildPath("data", sub);
+    }
+
+    /// The text is the one saved, opened or made new: from now on, the
+    /// edits that bring it back to this are no change.
+    void markSaved()
+    {
+        modified = false;
+        savedHash = codeHash(text());
+        hasSaved = true;
+        updateTitle();
     }
 
     string text()
@@ -2250,9 +2275,9 @@ private:
         if (sceneLocked())
             return;
         // with a sketch shown, a click near one of its points shows the line that created it
-        foreach (index; sketchIndices)
-            if (index < last.sketches.length)
-                foreach (pt; last.sketches[index].points)
+        foreach (k; drawnRuns())
+            if (sketchIndices[k] < last.sketches.length)
+                foreach (pt; last.sketches[sketchIndices[k]].points)
                 {
                     double px, py;
                     if (viewport.project(pt.pos, px, py) && (px - hit.x) ^^ 2 + (py - hit.y) ^^ 2 < 64)
@@ -2272,8 +2297,9 @@ private:
             viewport.toggleSelect(hit);
             auto n = viewport.selection().length;
             immutable what = ["part", "face", "edge", "vertex"][viewport.selectMode];
-            info(format("%d %s selected · right-click for operations", n,
-                n == 1 ? what : what == "vertex" ? "vertices" : what ~ "s"));
+            auto sizes = selectionSizes();
+            info(format("%d %s selected%s · right-click for operations", n,
+                n == 1 ? what : what == "vertex" ? "vertices" : what ~ "s", sizes.length ? " · " ~ sizes : ""));
             return;
         }
         viewport.select(hit);
@@ -2314,7 +2340,10 @@ private:
         buffer.applyTagByName("picked", a, b);
         placeCursorQuietly(a);
         editor.scrollToIter(a, 0.1, true, 0, 0.3);
-        info(format("%s · %.1f × %.1f × %.1f mm", what, part.bbox.size.x, part.bbox.size.y, part.bbox.size.z));
+        // the sizes of what was picked: the part's, or the face's, edge's, vertex's
+        auto sizes = selectionSizes();
+        info(sizes.length ? what ~ " · " ~ sizes
+            : format("%s · %.1f × %.1f × %.1f mm", what, part.bbox.size.x, part.bbox.size.y, part.bbox.size.z));
     }
 
     /// Highlights a line of the editor and shows a message.
@@ -3590,6 +3619,7 @@ private:
 
     Box modeBar;
     Label modeText;
+    Button runButton;   /// Run 1 of 2: the next run of a sketch made again
 
     void buildModeBar()
     {
@@ -3607,6 +3637,16 @@ private:
         modeText.setHexpand(true);
         modeBar.append(modeText);
         modeBar.append(makePinButton());
+        // a sketch made again (a loop, another call): its runs one at a time
+        runButton = new Button;
+        runButton.addCssClass("flat");
+        runButton.setTooltipText("Show the next run of this sketch: a loop or another call made it again");
+        runButton.setVisible(false);
+        runButton.connectClicked(() {
+            if (sketchIndices.length > 1)
+                showSketchRun((drawnRuns()[0] + 1) % sketchIndices.length);
+        });
+        modeBar.append(runButton);
         auto back = new Button;
         back.setLabel("Show final model");
         back.setTooltipText("Back to the parts as the model makes them (Esc)");
@@ -3626,6 +3666,7 @@ private:
         modeText.setTooltipText(text.length > 48 && !markup ? text : null);
         modeBar.setVisible(text.length > 0);
         pinButton.setVisible(sketchFollowing && text.length > 0);
+        runButton.setVisible(text.length > 0 && sketchIndices.length > 1);
         showingStep(text.length > 0);
     }
 
@@ -3837,16 +3878,61 @@ private:
         sketchHighlight = highlight;
         sketchIndices = which;
         sketchFound = found;
-        size_t[][] lit;
-        foreach (f; found)
-            lit ~= highlight ? f.highlight : null;
-        viewport.showSketches(which, lit);
+        if (another)
+            sketchRun = 0;
+        drawRuns();
         // a sketch on a face: seen from outside that face
         if (another && which.length && which[0] < last.sketches.length && last.sketches[which[0]].placed)
             viewport.lookAlong(last.sketches[which[0]].place[3]);
         else if (another)
             viewport.setView(ViewPreset.top);
+    }
+
+    /// The runs of the sketch shown that are drawn, as positions in
+    /// sketchIndices: one at a time when a loop or another call made it
+    /// again (their dimensions would lie on each other), else all.
+    size_t[] drawnRuns()
+    {
+        size_t[] r;
+        if (sketchIndices.length > 1)
+            r ~= min(sketchRun, sketchIndices.length - 1);
+        else
+            foreach (k; 0 .. sketchIndices.length)
+                r ~= k;
+        return r;
+    }
+
+    /// Draws the runs drawnRuns gives, with their dimensions.
+    void drawRuns()
+    {
+        size_t[] shown;
+        size_t[][] lit;
+        foreach (k; drawnRuns())
+        {
+            shown ~= sketchIndices[k];
+            lit ~= sketchHighlight && k < sketchFound.length ? sketchFound[k].highlight : null;
+        }
+        viewport.showSketches(shown, lit);
         updateDimensions();
+        if (runButton !is null)
+        {
+            runButton.setLabel(format("Run %d of %d", min(sketchRun, sketchIndices.length - 1) + 1,
+                sketchIndices.length));
+            runButton.setVisible(modeBar.getVisible() && sketchIndices.length > 1);
+        }
+    }
+
+    /// Run `run` (0-based) of the sketch shown, drawn instead of the one
+    /// drawn now: the mode bar's Run button, the socket's sketch {run}.
+    /// False when the sketch shown has no such run.
+    bool showSketchRun(size_t run)
+    {
+        if (run >= sketchIndices.length || sceneLocked(false))
+            return false;
+        sketchRun = run;
+        drawRuns();
+        info(sketchFoundText());
+        return true;
     }
 
     /// Look at sketch: the view straight at the sketch shown, from outside
@@ -3873,6 +3959,7 @@ private:
         followClosed();   // the sketch at the cursor: the camera goes back
         sketchLines = [0, 0];
         sketchIndices = null;
+        sketchRun = 0;
         sketchFound = null;
         viewport.showSketches(null);
         updateDimensions();
@@ -3887,8 +3974,9 @@ private:
         string[] what;
         size_t[string] made, cons;
         string[] madeOrder, consOrder;
-        foreach (k, index; sketchIndices)
+        foreach (k; drawnRuns())
         {
+            immutable index = sketchIndices[k];
             auto f = sketchFound[k];
             foreach (e; f.entities)
             {
@@ -3906,12 +3994,13 @@ private:
             }
         }
         foreach (kind; madeOrder)
-            what ~= made[kind] > 1 ? format("%d %ss", made[kind], kind) : "a " ~ kind;
+            what ~= made[kind] > 1 ? format("%d %ss", made[kind], kind) : ("aeiou".canFind(kind[0]) ? "an " : "a ") ~ kind;
         foreach (kind; consOrder)
             what ~= cons[kind] > 1 ? format("%s ×%d", kind, cons[kind]) : kind;
         auto state = !sk.solved ? "conflicting" : sk.dof ? format("%d degree%s of freedom", sk.dof, sk.dof > 1 ? "s" : "")
             : "fully constrained";
-        auto runs = sketchIndices.length > 1 ? format(" (%d runs)", sketchIndices.length) : "";
+        auto runs = sketchIndices.length > 1
+            ? format(" (run %d of %d)", drawnRuns()[0] + 1, sketchIndices.length) : "";
         return format("sketch of line %d%s · %s%s", sk.span.line, runs, state,
             what.length && sketchHighlight ? " · " ~ what.join(", ") : "");
     }
@@ -3925,6 +4014,12 @@ private:
             return JValue(null);
         JValue j = JSOB("lines", JSAB(sketchLines[0], sketchLines[1]));
         j["status"] = sketchFoundText();
+        // a sketch made again (a loop, another call): its runs, one drawn at a time
+        if (sketchIndices.length > 1)
+        {
+            j["run"] = drawnRuns()[0] + 1;
+            j["runs"] = sketchIndices.length;
+        }
         sketchOriginJson(j);
         JValue list = JSAB();
         foreach (k, index; sketchIndices)
@@ -4322,7 +4417,7 @@ private:
         if (ne == 1 && selEdges[0] < part.edgeInfo.length)
         {
             auto e = part.edgeInfo[selEdges[0]];
-            string v = e.kind == EdgeKind.circle ? format("R %.4g mm", e.radius) : format("%.4g mm", (e.end - e.start).length);
+            string v = e.kind == EdgeKind.circle ? format("R %.4g mm", e.radius) : format("%.4g mm", e.length);
             measures ~= I(e.kind == EdgeKind.circle ? "Edge radius" : "Edge length", () => copy(v), v);
             if (e.kind == EdgeKind.circle)
             {
@@ -4826,6 +4921,123 @@ private:
     // a blind hole 5 mm deep at the clicked point: edit the depth, or use through: true
     void delegate() holeAction(string kind, string size) => () => ctx("hole", "5.mm", kind, size);
 
+    /// The sizes of what is selected, for the info line: a part's size, an
+    /// edge's length (or radius), a face's size in its own plane and area,
+    /// a vertex's place; two items how far apart; more, how much room they
+    /// take together. Null when nothing is selected.
+    string selectionSizes()
+    {
+        import hackerscad.gui.measure : measure, faceItem, edgeItem, pointItem, Item;
+        import hackerscad.kernel.brep : CylinderInfo, EdgeKind;
+        auto sel = viewport.selection();
+        if (sel.length == 0)
+            return null;
+        // to a millionth of a millimetre: no 2.7e-15 for a flat face's thickness
+        static string g(double v)
+        {
+            import std.math : round;
+            return format("%.4g", round(v * 1e6) / 1e6 + 0.0);
+        }
+        immutable mode = viewport.selectMode;
+        Item item(Hit h)
+        {
+            auto p = last.parts[h.part];
+            final switch (mode)
+            {
+            case SelectMode.edge:
+                return edgeItem(p, h.edge);
+            case SelectMode.vertex:
+                return pointItem(viewport.vertexAt(h.part, h.vertex));
+            case SelectMode.face:
+                return faceItem(p, h.face);
+            case SelectMode.part:
+                Item it;
+                it.points = [p.bbox.min, p.bbox.max];
+                return it;
+            }
+        }
+        foreach (h; sel)
+            if (h.part < 0 || h.part >= last.parts.length)
+                return null;
+        if (sel.length == 1)
+        {
+            auto h = sel[0];
+            auto p = last.parts[h.part];
+            final switch (mode)
+            {
+            case SelectMode.part:
+                return format("%s × %s × %s mm", g(p.bbox.size.x), g(p.bbox.size.y), g(p.bbox.size.z));
+            case SelectMode.vertex:
+                auto v = viewport.vertexAt(h.part, h.vertex);
+                return format("vertex at %s, %s, %s", g(v.x), g(v.y), g(v.z));
+            case SelectMode.edge:
+                if (h.edge < 0 || h.edge >= p.edgeInfo.length)
+                    return null;
+                auto e = p.edgeInfo[h.edge];
+                if (e.kind == EdgeKind.circle)
+                {
+                    // a whole circle, or an arc of it and how long it is
+                    immutable whole = abs(e.length - 2 * PI * e.radius) < 1e-3 * max(1.0, e.radius);
+                    return format("R %s · ⌀ %s mm%s", g(e.radius), g(2 * e.radius),
+                        whole ? "" : format(" · arc %s mm long", g(e.length)));
+                }
+                return format("%s mm long", g(e.length));
+            case SelectMode.face:
+                auto it = faceItem(p, h.face);
+                auto area = format("area %s mm²", g(faceArea(p, h.face)));
+                CylinderInfo c;
+                bool round;
+                try
+                    round = p.kernel !is null && p.kernel.faceCylinder(p.brep, h.face, c);
+                catch (Exception)
+                    round = false;
+                if (round)
+                    return format("⌀ %s × %s mm · %s", g(2 * c.radius), g(c.to - c.from), area);
+                if (!it.planar)
+                    return area;
+                // its size in its own plane: across and up as seen from outside it
+                auto n = it.normal;
+                Vec3 u = abs(n.z) > 0.99 ? Vec3(1, 0, 0) : Vec3(0, 0, 1).cross(n).normalized;
+                Vec3 w = n.cross(u);
+                double u0 = double.infinity, u1 = -double.infinity, w0 = double.infinity, w1 = -double.infinity;
+                foreach (q; it.points)
+                {
+                    u0 = min(u0, q.dot(u));
+                    u1 = max(u1, q.dot(u));
+                    w0 = min(w0, q.dot(w));
+                    w1 = max(w1, q.dot(w));
+                }
+                return format("%s × %s mm · %s", g(u1 - u0), g(w1 - w0), area);
+            }
+        }
+        if (sel.length == 2)
+        {
+            auto a = item(sel[0]), b = item(sel[1]);
+            if (mode == SelectMode.vertex)
+            {
+                auto d = b.points[0] - a.points[0];
+                return format("%s mm apart · %s, %s, %s along X, Y, Z", g(d.length), g(d.x), g(d.y), g(d.z));
+            }
+            auto m = measure(a, b);
+            string r = format("%s mm apart", g(m.distance));
+            if (m.gap == m.gap)
+                r ~= format(" · planes %s mm apart", g(m.gap));
+            if (m.angle == m.angle)
+                r ~= format(" · %s°", g(m.angle));
+            return r;
+        }
+        // more: the room they take together
+        Vec3 lo = Vec3(double.infinity, double.infinity, double.infinity), hi = -lo;
+        foreach (h; sel)
+            foreach (q; item(h).points)
+            {
+                lo = Vec3(min(lo.x, q.x), min(lo.y, q.y), min(lo.z, q.z));
+                hi = Vec3(max(hi.x, q.x), max(hi.y, q.y), max(hi.z, q.z));
+            }
+        auto s = hi - lo;
+        return format("together %s × %s × %s mm", g(s.x), g(s.y), g(s.z));
+    }
+
     /// Area of a B-rep face from its triangles.
     static double faceArea(PartMesh p, int face)
     {
@@ -4931,8 +5143,9 @@ private:
         // constraints on the inspected lines)
         SketchView.Dimension[] want;
         bool[] wantLit;
-        foreach (k, index; sketchIndices)
+        foreach (k; drawnRuns())
         {
+            immutable index = sketchIndices[k];
             if (index >= last.sketches.length)
                 continue;
             auto sk = last.sketches[index];
@@ -5160,8 +5373,7 @@ private:
         {
             write(path, text());
             diskTime = mtimeOf(path);
-            modified = false;
-            updateTitle();
+            markSaved();
             note("saved " ~ path);
         }
         catch (Exception e)
@@ -5281,8 +5493,7 @@ private:
         TextIter at;
         if (buffer.getIterAtLine(at, line))
             placeCursorQuietly(at);
-        modified = false;
-        updateTitle();
+        markSaved();
     }
 
     void newFile() => confirmDiscard(&startNew);
@@ -5298,8 +5509,7 @@ private:
         resetInterface();
         replaceCode(newModelTemplate);
         diskTime = 0;
-        modified = false;
-        updateTitle();
+        markSaved();
     }
 
     void openFile() => confirmDiscard(&chooseFile);
@@ -5440,6 +5650,7 @@ private:
                 ~ "@part\nSolid imported() => load(\"%s\");\n", name, baseName(file), baseName(file)));
         diskTime = 0;
         modified = true;
+        hasSaved = false;
         updateTitle();
     }
 
@@ -5454,8 +5665,7 @@ private:
         resetInterface();
         replaceCode(readText(path));
         diskTime = mtimeOf(path);
-        modified = false;
-        updateTitle();
+        markSaved();
     }
 
     // ---- external control
@@ -5637,8 +5847,7 @@ private:
                     j["shape"] = e.kind == EdgeKind.line ? "line" : e.kind == EdgeKind.circle ? "circle" : "curve";
                     j["start"] = jsonOf(e.start);
                     j["end"] = jsonOf(e.end);
-                    if (e.kind == EdgeKind.line)
-                        j["length"] = (e.end - e.start).length;
+                    j["length"] = e.length;   // along the curve
                     if (e.kind == EdgeKind.circle)
                     {
                         j["radius"] = e.radius;
@@ -5660,7 +5869,11 @@ private:
                 j["problem"] = e.msg;
             items ~= j;
         }
-        return JSOB("selection", items);
+        JValue r = JSOB("selection", items);
+        // what the info line says of it: sizes, how far apart, the room they take
+        if (auto sizes = selectionSizes())
+            r["sizes"] = sizes;
+        return r;
     }
 
     /// A measured item: a part name, a point [x, y, z], or (null) the next selected item.
@@ -5744,7 +5957,15 @@ private:
     mixin SketchFollow;
     mixin Annotate;
 
-    JValue state()
+    /// Every field the state can have, for hcad_gui_state's only.
+    static immutable string[] stateFields = ["path", "status", "window", "version", "outdated", "revision",
+        "user_changed", "evaluating", "stage", "seconds", "modified", "source_hash", "preset", "overrides", "parts",
+        "params", "presets", "inspect", "sketch", "sketch_follow", "annotations", "annotate_mode", "annotated_view",
+        "cursor", "camera", "printability", "graphics", "problems", "log", "source", "steps"];
+
+    /// The window's state, as hcad_gui_state gives it; `graphics` adds
+    /// what draws the 3D view and how fast.
+    JValue state(bool graphics = false)
     {
         JValue j = JSOB("path", path, "status", statusText);
         j["window"] = control ? control.name : null;
@@ -5762,6 +5983,7 @@ private:
             j["seconds"] = (MonoTime.currTime - evalStart).total!"msecs" / 1000.0;
         }
         j["modified"] = modified;
+        j["source_hash"] = format("%016x", codeHash(text()));
         j["preset"] = params.preset;
         j["overrides"] = JValue(params.overrides);
         JValue parts = JSAB();
@@ -5827,7 +6049,8 @@ private:
         j["camera"] = jc;
         if (viewport.printability)
             j["printability"] = printabilityJson();
-        j["graphics"] = graphicsJson();
+        if (graphics)
+            j["graphics"] = graphicsJson();
         string problems;
         foreach (d; last.diagnostics)
             problems ~= render(d, last.sources.get(d.span.file, ""));
@@ -5909,8 +6132,7 @@ private:
         resetInterface();
         replaceCode(e[0].source);
         diskTime = 0;
-        modified = false;
-        updateTitle();
+        markSaved();
         return true;
     }
 
