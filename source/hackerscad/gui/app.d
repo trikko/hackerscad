@@ -1102,18 +1102,8 @@ final class MainWindow
                     finishDrawing(false);
                     return true;
                 }
-                if (drawTool !is null && key == KEY_Escape)
-                {
-                    if (drawn.length)
-                    {
-                        drawn = null;
-                        drawnAt = null;
-                        showDrawing(double.nan, double.nan);
-                    }
-                    else
-                        startDrawing(null);
+                if (key == KEY_Escape && sketchEscape())
                     return true;
-                }
                 // moving or turning a part: Enter writes it, Esc leaves it
                 if (viewport.gizmo != Viewport.Gizmo.none && (key == KEY_Return || key == KEY_KP_Enter))
                 {
@@ -1359,6 +1349,8 @@ final class MainWindow
             keys.connectKeyPressed((uint key, uint code, ModifierType state) {
                 if (inspectKeys.canFind(key))
                     updateEditorCursor(true);
+                else if (key == KEY_Escape && sketchEscape())
+                    return true;
                 else if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback || sketchIndices.length))
                 {
                     showFinal();

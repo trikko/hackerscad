@@ -544,6 +544,24 @@ mixin template SketchEdit()
         return format("%s written in the sketch's code", tool);
     }
 
+    /// Esc in a sketch, a step at a time before leaving it: the clicks of a shape
+    /// being drawn, then the drawing tool and the selection (back to ↖). False: nothing to undo here.
+    bool sketchEscape()
+    {
+        if (drawn.length)
+        {
+            drawn = null;
+            drawnAt = null;
+            showDrawing(double.nan, double.nan);
+            return true;
+        }
+        if (drawTool is null && sketchSel.length == 0)
+            return false;
+        startDrawing(null);
+        updateSketchBar();
+        return true;
+    }
+
     // ---- drawing
 
     /// A shape drawn by clicks, the sizes the code gets: rounded to a hundredth of a
