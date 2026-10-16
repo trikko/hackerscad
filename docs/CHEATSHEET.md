@@ -288,7 +288,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.radius(c: Circle, v: Length, rx: Length, ry: Length)` — Sets a radius (an ellipse's: rx, ry).
 - `sk.diameter(c: Circle, v: Length)` — Sets a diameter.
 - `sk.angle(a: Line, b: Line, v: Angle)` — The angle between two lines, or of one line or an ellipse from X.
-- `sk.profile → Profile` — Solves the sketch and gives its outline.
+- `sk.profile → Profile` — Solves the sketch and gives its outline: its closed loops; what is drawn open (a free end) stays out, with a warning.
 - `sk.dof → int` — Degrees of freedom left.
 - `sk.solved → bool` — Whether the constraints are satisfied.
 - `pt.x → Length` — Where the point is across, solved (y: up).

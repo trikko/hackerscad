@@ -306,7 +306,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.radius(c: Circle, v: Length, rx: Length, ry: Length)</dt><dd>Sets a radius (an ellipse's: rx, ry).</dd>
 <dt>sk.diameter(c: Circle, v: Length)</dt><dd>Sets a diameter.</dd>
 <dt>sk.angle(a: Line, b: Line, v: Angle)</dt><dd>The angle between two lines, or of one line or an ellipse from X.</dd>
-<dt>sk.profile → Profile</dt><dd>Solves the sketch and gives its outline.</dd>
+<dt>sk.profile → Profile</dt><dd>Solves the sketch and gives its outline: its closed loops; what is drawn open (a free end) stays out, with a warning.</dd>
 <dt>sk.dof → int</dt><dd>Degrees of freedom left.</dd>
 <dt>sk.solved → bool</dt><dd>Whether the constraints are satisfied.</dd>
 <dt>pt.x → Length</dt><dd>Where the point is across, solved (y: up).</dd>

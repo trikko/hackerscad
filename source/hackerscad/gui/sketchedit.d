@@ -19,6 +19,7 @@ mixin template SketchEdit()
     Button[string] drawButtons;
     Button deleteButton;
     string drawTool;      /// the drawing tool at work (null: clicks select)
+    bool sketchEditHold;  /// the bar wrote into the code: the sketch stays shown until it is evaluated
     Vec3[] drawn;         /// its clicks so far, on the sketch's plane
     ptrdiff_t[] drawnAt;  /// for each: the point of the sketch it snapped to, or -1 (a new one)
 
@@ -391,8 +392,9 @@ mixin template SketchEdit()
             after = writeSteps(src, v.span.file, *v, steps);
         catch (Exception e)
             return e.msg;
+        sketchEditHold = true;
         applyEdit(editBetween(src, after, value));
-        sketchSel = null;
+        // the selection stays: another constraint on the same items, or a click on nothing for none
         return format("%s written in the sketch's code", tool);
     }
 
@@ -468,6 +470,17 @@ mixin template SketchEdit()
         // on the first point again: the lines or the curve close, and are written
         if (at == -2)
             return finishDrawing(true);
+        // on the last point again (a double click): the lines or the curve end there; a shape takes no point twice
+        if (drawn.length)
+        {
+            double lx, ly;
+            if (viewport.project(drawnSketch().world(drawn[$ - 1]), lx, ly) && (lx - x) ^^ 2 + (ly - y) ^^ 2 < 100)
+            {
+                if (drawTool == "line" || drawTool == "spline")
+                    return finishDrawing(false);
+                return;
+            }
+        }
         drawn ~= p;
         drawnAt ~= at;
         immutable needed = drawTool == "point" ? 1 : drawTool == "rect" || drawTool == "circle" ? 2
@@ -598,6 +611,19 @@ mixin template SketchEdit()
         if (last.sources.get(absolutePath(path), null) != src)
             return "the code changed since it was evaluated: wait for it, then try again";
         static string num(double x) => format("%.6g", x + 0.0);
+        // a point clicked twice in a row counts once
+        {
+            Vec3[] keptPts;
+            ptrdiff_t[] keptAt;
+            foreach (i, q; pts)
+                if (i == 0 || (q - pts[i - 1]).length > 1e-6 || at[i] != at[i - 1])
+                {
+                    keptPts ~= q;
+                    keptAt ~= at[i];
+                }
+            pts = keptPts;
+            at = keptAt;
+        }
         string select;
         try
         {
@@ -667,6 +693,7 @@ mixin template SketchEdit()
             default:
                 return "no such drawing tool: " ~ tool;
             }
+            sketchEditHold = true;
             applyEdit(editBetween(src, w.result(), select));
         }
         catch (Exception e)
@@ -692,6 +719,7 @@ mixin template SketchEdit()
         auto after = deleteFromSketch(src, v.span.file, *v, sketchSel, why);
         if (after is null)
             return why;
+        sketchEditHold = true;
         applyEdit(editBetween(src, after));
         immutable n = sketchSel.length;
         sketchSel = null;

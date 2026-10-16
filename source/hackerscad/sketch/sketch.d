@@ -112,6 +112,7 @@ final class Sketch
     Constraint[] constraints;
     double[] vars;
     double[size_t] fillets;    /// corner point → radius
+    size_t[] lastOpen;         /// what the last outline left out, open (lines, arcs, curves with a free end)
     bool[] frozen;             /// per unknown: held where it is, not an unknown at all (references)
     private bool dirty = true;
     private SolveReport last;
@@ -483,20 +484,54 @@ final class Sketch
             else if (e.kind == EntityKind.spline && !e.closed)
                 all ~= Seg(i, pos(e.refs[0], vars), pos(e.refs[1], vars), canonical(e.refs[0]), canonical(e.refs[1]));
         }
+        // a line whose ends the constraints brought together (a vertical side also made horizontal) is no edge
+        foreach (s; all)
+            if (s.ka == s.kb && entities[s.entity].kind == EntityKind.line)
+                throw new SketchException("this line has no length: its constraints brought its ends together "
+                    ~ "(a horizontal and a vertical constraint on it, or a length of 0?)", [entities[s.entity].refs[0]]);
         size_t[][] at = new size_t[][](corners.length);
         foreach (i, s; all)
         {
             at[s.ka] ~= i;
             at[s.kb] ~= i;
         }
-        foreach (k, list; at)
-            if (list.length != 2)
-                throw new SketchException(list.length < 2
-                        ? "the outline is open at this point (it must form closed loops)"
-                        : format("%d segments meet at this point; the outline must form simple loops", list.length),
-                    [cornerPoint[k]]);
-
+        // open chains (a line, an arc or a curve with a free end, and what leads to it) stay in the sketch but
+        // out of the profile: taken off from their free ends, until every point has two segments or none
         auto used = new bool[all.length];
+        auto degree = new size_t[corners.length];
+        foreach (k, list; at)
+            degree[k] = list.length;
+        lastOpen = null;
+        for (bool more = true; more;)
+        {
+            more = false;
+            foreach (k, list; at)
+                if (degree[k] == 1)
+                    foreach (i; list)
+                        if (!used[i])
+                        {
+                            used[i] = true;
+                            lastOpen ~= all[i].entity;
+                            degree[all[i].ka]--;
+                            degree[all[i].kb]--;
+                            more = true;
+                            break;
+                        }
+        }
+        foreach (k, list; at)
+            if (degree[k] > 2)
+                throw new SketchException(format("%d segments meet at this point; the outline must form simple loops",
+                    degree[k]), [cornerPoint[k]]);
+        // the loops walk only what is left
+        foreach (k, ref list; at)
+        {
+            size_t[] live;
+            foreach (i; list)
+                if (!used[i])
+                    live ~= i;
+            list = live;
+        }
+
         foreach (start; 0 .. all.length)
         {
             if (used[start])
@@ -522,7 +557,10 @@ final class Sketch
             sources ~= OutlineSource.init;
         }
         if (segs.length == 0)
-            throw new SketchException("the sketch has no outline: draw lines, arcs, circles or ellipses that are not construction");
+            throw new SketchException(lastOpen.length
+                ? "the sketch has no closed outline: what is drawn is open (join its ends to make a loop)"
+                : "the sketch has no outline: draw lines, arcs, circles or ellipses that are not construction",
+                lastOpen.length ? [entities[lastOpen[0]].refs[0]] : null);
         return segs;
     }
 

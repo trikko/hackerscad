@@ -1872,6 +1872,12 @@ private:
         stopProgress();
         showProblem(haveFirst, first, o.ok);
 
+        // what the sketch bar wrote is evaluated (well or not): the sketch follows the cursor again
+        if (sketchEditHold)
+        {
+            sketchEditHold = false;
+            followSketch(true);
+        }
         if (o.ok)
         {
             viewport.setParts(o.parts, firstResult);

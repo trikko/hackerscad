@@ -525,7 +525,7 @@ immutable Ref[] reference =
         "s.angle(a, b, 30.deg)   // between the directions of two lines",
         "s.angle(line, 30.deg)   // of a line, start → end, from X",
         "s.angle(e, 30.deg)   // of an ellipse's x axis"]),
-    P("profile", "Sketch", "Profile", "Solves the sketch and gives its outline."),
+    P("profile", "Sketch", "Profile", "Solves the sketch and gives its outline: its closed loops; what is drawn open (a free end) stays out, with a warning."),
     P("dof", "Sketch", "int", "Degrees of freedom left."),
     P("solved", "Sketch", "bool", "Whether the constraints are satisfied."),
     // what the geometry of a sketch reads back, once solved

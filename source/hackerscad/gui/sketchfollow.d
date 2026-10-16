@@ -421,7 +421,8 @@ mixin template SketchFollow()
             if (!sketchFollowing)
                 return;
             auto runs = runsOf(followSpan);
-            if (!sketchPinned || runs.length == 0)
+            // pinned, or a line the sketch bar just wrote (not yet part of the sketch until evaluated): it stays
+            if ((!sketchPinned && !sketchEditHold) || runs.length == 0)
                 return unfollow();
             return showFollowed(runs, line, col, 0, false);   // pinned: the same sketch, nothing in orange
         }

@@ -3,7 +3,7 @@
 /// outline as a Profile.
 module hackerscad.lang.sketchval;
 
-import std.algorithm : map, sort, uniq;
+import std.algorithm : canFind, map, sort, uniq;
 import std.array : array, join;
 import std.conv : to;
 import std.format : format;
@@ -159,6 +159,7 @@ final class SketchVal : ObjectVal
     size_t originRef = size_t.max;   /// the reference point at the origin
     private size_t[][size_t] edgeRefs;   /// edge of `on` → its references (more than one for a curve)
     private bool warned;
+    private bool warnedOpen;
     private string calling;   /// the constraint method running
 
     this(Interp it, Span span, bool asProfile = false)
@@ -630,8 +631,8 @@ final class SketchVal : ObjectVal
                 seg.b = seg.poles[$ - 1];
                 break;
             }
-            // the outline already drew it, trimmed by its fillets
-            if (outline.length && !e.construction)
+            // the outline already drew it, trimmed by its fillets (not what it left out, open)
+            if (!e.construction && sources.canFind!(src => src.entity == i))
                 continue;
             v.segments ~= seg;
         }
@@ -1668,6 +1669,23 @@ final class SketchVal : ObjectVal
         {
             auto where = e.entities.length && e.entities[0] < entitySpans.length ? entitySpans[e.entities[0]] : span;
             throw new HcadError(Code.sketch, e.msg, where);
+        }
+        // open lines and arcs: drawn, constrained, out of the profile; said once
+        if (sk.lastOpen.length && !warnedOpen)
+        {
+            warnedOpen = true;
+            size_t[] where;
+            foreach (e; sk.lastOpen)
+                if (e < entitySpans.length)
+                    where ~= e;
+            import std.algorithm : map, sort, uniq;
+            import std.array : array, join;
+            import std.conv : to;
+            auto lines = where.map!(e => entitySpans[e].line).array.sort.uniq.map!(l => l.to!string).array;
+            it.diagnostics ~= Diagnostic(Severity.warning, Code.sketch,
+                format("open: what line%s %s draw%s has a free end, and stays out of the profile",
+                    lines.length > 1 ? "s" : "", lines.join(", "), lines.length > 1 ? "" : "s"),
+                where.length ? entitySpans[where[0]] : span, "join its ends to the rest to make it part of a loop");
         }
         if (rep.dof && !warned)
         {
