@@ -3890,3 +3890,30 @@ unittest
             b.contains(vec(5.mm, 5.mm, 10.mm)), " ", p.contains(vec(6.mm, 0.mm)), " ", p.contains(vec(0.mm, 0.mm)));`,
         "true false false true false");
 }
+
+unittest
+{
+    mixin(slowTest);
+    // paths: a sketch's chains, a solid's edges, corners bent round, a curve from two views; a circle of
+    // area π swept along each has a volume of π times the path's length
+    expectOut(`auto s = sketch();
+        s.polyline([vec(0, 0), vec(30, 0), vec(30, 20)], closed: false);
+        s.circle(vec(60, 0), r: 5);
+        auto bent = path([vec(0, 0, 0), vec(0, 0, 40.mm), vec(50.mm, 0, 40.mm)], bend: 10.mm);
+        auto rim = box(40.mm, 30.mm, 10.mm).path(edges.loop(faces.top));
+        auto top = sketch();
+        top.polyline([vec(0, 0), vec(40, 0)], closed: false);
+        auto side = sketch(XZ.flip);
+        side.polyline([vec(0, 0), vec(40, 30)], closed: false);
+        auto rise = path(top.path, side.path);
+        writeln(format("%d %.3f %.3f %.3f %.3f", s.paths.length, len(s.paths[0]), len(bent), len(rim), len(rise)));
+        writeln(format("%.3f", rise.bbox.max.z / 1.mm));`,
+        format("2 %.3f %.3f 140.000 50.000\n30.000", 50.0, 30 + 40 + 5 * PI),
+        "import std.math;\ndouble len(Path p) => circle(r: 1.mm).sweep(p).volume / 1.mm ^^ 3 / PI;");
+    assert(error(`@part Solid p() { auto s = sketch(); s.polyline([vec(0, 0), vec(1, 0)], closed: false);
+        s.polyline([vec(2, 0), vec(3, 0)], closed: false); return circle(d: 1).sweep(s.path); }`).message.canFind("2 separate chains"));
+    assert(error(`@part Solid p() => circle(d: 1).sweep(path([vec(0, 0, 0), vec(0, 0, 5), vec(5, 0, 5)], bend: 6));`)
+        .message.canFind("does not fit"));
+    assert(error(`@part Solid p() => circle(d: 1).sweep(box(10, 10, 10).path(edges.parallel(Z)));`)
+        .message.canFind("separate pieces"));
+}

@@ -190,7 +190,7 @@ final class SketchVal : ObjectVal
     override string[] memberNames() => ["point", "line", "arc", "circle", "ellipse", "polyline", "spline", "fill", "rect", "polygon",
         "slot", "teardrop", "edges", "origin", "project", "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
         "perpendicular", "angle", "equal", "radius", "diameter", "tangent", "midpoint", "symmetric", "fillet",
-        "profile", "dof", "solved"];
+        "profile", "path", "paths", "dof", "solved"];
 
     override bool property(string name, Span at, out Value result)
     {
@@ -202,6 +202,21 @@ final class SketchVal : ObjectVal
                 if (!profileSpans.canFind(at))
                     profileSpans ~= at;
                 result = profile(at);
+                return true;
+            }
+        case "path", "paths":
+            {
+                auto all = sketchPaths(this, at);
+                if (name == "paths")
+                {
+                    result = Value.of(all);
+                    return true;
+                }
+                if (all.length != 1)
+                    throw new HcadError(Code.sketch, format("the sketch draws %d separate chains: s.paths[i] takes one "
+                        ~ "(in the order they are drawn)", all.length), at,
+                        "join them end to end, or make the others construction lines");
+                result = all[0];
                 return true;
             }
         case "dof": result = Value.integer(sk.report().dof); return true;
@@ -1790,6 +1805,44 @@ final class SketchVal : ObjectVal
         sv.place = place;
         return Value.of(sv);
     }
+}
+
+/// The chains a sketch draws (its lines, arcs, curves, circles and
+/// ellipses that are not construction, end to end) as paths, where the
+/// sketch lies.
+private Value[] sketchPaths(SketchVal sv, Span at)
+{
+    import hackerscad.kernel.brep : KernelException, OutlineSeg;
+    import hackerscad.lang.builtins : toPlace;
+
+    bool[] closed;
+    OutlineSeg[][] chains;
+    try
+        chains = sv.sk.chains(closed);
+    catch (SketchException e)
+    {
+        auto where = e.entities.length && e.entities[0] < sv.entitySpans.length ? sv.entitySpans[e.entities[0]] : at;
+        throw new HcadError(Code.sketch, e.msg, where);
+    }
+    if (chains.length == 0)
+        throw new HcadError(Code.sketch, "the sketch draws no path: draw lines, arcs, curves or circles that are not "
+            ~ "construction", at);
+    Value[] r;
+    foreach (c; chains)
+    {
+        Brep b;
+        try
+            b = sv.it.kernel.outlinePath(c ~ OutlineSeg(OutlineSeg.Kind.end));
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, at);
+        if (sv.placed)
+            b = toPlace(sv.it.kernel, sv.place, b);
+        auto p = primitive(sv.it, b, "path", at);
+        p.path = true;
+        p.pathNormal = sv.placed ? sv.place[3] : Vec3(0, 0, 1);
+        r ~= Value.of(p);
+    }
+    return r;
 }
 
 private Vec3 circumcentre(Vec3 a, Vec3 b, Vec3 c)

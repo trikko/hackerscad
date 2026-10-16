@@ -124,6 +124,10 @@
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <Precision.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopTools_HSequenceOfShape.hxx>
+#include <ShapeAnalysis_FreeBounds.hxx>
+#include <BRepBuilderAPI_FindPlane.hxx>
+#include <BRepAlgoAPI_Section.hxx>
 
 struct hc_shape {
     TopoDS_Shape shape;
@@ -3216,7 +3220,8 @@ struct OutlineFill {
 };
 
 // The loops of an outline's records (see OutlineSeg), and its forced areas.
-static void parse_outline(const double *data, int n, std::vector<TopoDS_Wire> &loops, std::vector<OutlineFill> &fills)
+static void parse_outline(const double *data, int n, std::vector<TopoDS_Wire> &loops, std::vector<OutlineFill> &fills,
+                          bool allowOpen = false)
 {
     {
         BRepBuilderAPI_MakeWire wire;
@@ -3226,7 +3231,7 @@ static void parse_outline(const double *data, int n, std::vector<TopoDS_Wire> &l
                 return;
             if (!wire.IsDone())
                 throw Standard_Failure("the outline segments do not connect");
-            if (!wire.Wire().Closed())
+            if (!allowOpen && !wire.Wire().Closed())
                 throw Standard_Failure("an outline loop is not closed");
             loops.push_back(wire.Wire());
             wire = BRepBuilderAPI_MakeWire();
@@ -3494,6 +3499,134 @@ hc_shape *hc_outline(const double *data, int n)
             return nullptr;
         }
         return primitive(profile_from_loops(loops, fills));
+    });
+}
+
+// One chain of outline records (open or closed, see hc_outline) as a path on XY.
+hc_shape *hc_outline_path(const double *data, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<TopoDS_Wire> loops;
+        std::vector<OutlineFill> fills;
+        parse_outline(data, n, loops, fills, true);
+        if (loops.size() != 1) {
+            set_error("a path is one chain of lines and curves");
+            return nullptr;
+        }
+        return primitive(loops[0]);
+    });
+}
+
+// A path in space from records of 10 doubles: kind (0 line a → b, 1 arc a →
+// b through m), a, b, m; each starting where the one before ends.
+hc_shape *hc_wire3(const double *data, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        BRepBuilderAPI_MakeWire wire;
+        for (int i = 0; i < n; i++) {
+            const double *d = data + 10 * i;
+            gp_Pnt a(d[1], d[2], d[3]), b(d[4], d[5], d[6]), m(d[7], d[8], d[9]);
+            if (d[0] == 0)
+                wire.Add(BRepBuilderAPI_MakeEdge(a, b).Edge());
+            else
+                wire.Add(BRepBuilderAPI_MakeEdge(GC_MakeArcOfCircle(a, m, b).Value()).Edge());
+            if (!wire.IsDone()) {
+                set_error("the pieces of the path do not join");
+                return nullptr;
+            }
+        }
+        return primitive(wire.Wire());
+    });
+}
+
+// Joins the edges into wires, in order end to end.
+static std::vector<TopoDS_Wire> joined_wires(const std::vector<TopoDS_Edge> &edges, double tolerance)
+{
+    Handle(TopTools_HSequenceOfShape) in = new TopTools_HSequenceOfShape, out;
+    for (const auto &e : edges)
+        in->Append(e);
+    ShapeAnalysis_FreeBounds::ConnectEdgesToWires(in, tolerance, Standard_False, out);
+    std::vector<TopoDS_Wire> r;
+    for (int i = 1; i <= out->Length(); i++)
+        r.push_back(TopoDS::Wire(out->Value(i)));
+    return r;
+}
+
+// The edges `idx` of a shape (indices as hc_edge_info's) joined into one path.
+hc_shape *hc_edges_path(const hc_shape *s, const int *idx, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const auto &em = map_of(s, TopAbs_EDGE);
+        std::vector<TopoDS_Edge> edges;
+        for (int i = 0; i < n; i++) {
+            if (idx[i] < 0 || idx[i] >= em.Extent()) {
+                set_error("edge index out of range");
+                return nullptr;
+            }
+            edges.push_back(TopoDS::Edge(em(idx[i] + 1)));
+        }
+        auto wires = joined_wires(edges, 1e-6);
+        if (wires.size() != 1) {
+            set_error(("the edges make " + std::to_string(wires.size()) +
+                       " separate pieces: a path is one chain, end to end").c_str());
+            return nullptr;
+        }
+        return primitive(wires[0]);
+    });
+}
+
+// The plane of a flat path: false when it is not flat (or a straight line).
+static bool path_plane(const TopoDS_Shape &w, gp_Pln &pln)
+{
+    BRepBuilderAPI_FindPlane fp(w, 1e-6);
+    if (!fp.Found())
+        return false;
+    pln = fp.Plane()->Pln();
+    return true;
+}
+
+// The curve in space that, seen across the plane of flat path a, is a, and
+// across b's, is b: where the two paths pushed across their planes meet.
+// na, nb: the planes' normals, or zero to find them (a straight path needs one).
+hc_shape *hc_projected_curve(const hc_shape *a, const hc_shape *b, const double na[3], const double nb[3])
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        Bnd_Box box;
+        BRepBndLib::Add(a->shape, box);
+        BRepBndLib::Add(b->shape, box);
+        const double reach = std::sqrt(box.SquareExtent()) * 2 + 10;
+        auto across = [&](const hc_shape *p, const double nv[3], const char *which) -> TopoDS_Shape {
+            gp_Vec n(nv[0], nv[1], nv[2]);
+            if (n.Magnitude() < 1e-12) {
+                gp_Pln pln;
+                if (!path_plane(p->shape, pln))
+                    throw Standard_Failure((std::string("the ") + which +
+                                            " path is not flat (or is straight): its plane cannot be found").c_str());
+                n = gp_Vec(pln.Axis().Direction());
+            }
+            n.Normalize();
+            gp_Trsf back;
+            back.SetTranslation(n * -reach);
+            TopoDS_Shape moved = BRepBuilderAPI_Transform(p->shape, back, Standard_True).Shape();
+            return BRepPrimAPI_MakePrism(moved, n * (2 * reach)).Shape();
+        };
+        TopoDS_Shape sa = across(a, na, "first"), sb = across(b, nb, "second");
+        BRepAlgoAPI_Section sec(sa, sb, Standard_False);
+        sec.Approximation(Standard_True);
+        sec.ComputePCurveOn1(Standard_False);
+        sec.Build();
+        if (!sec.IsDone())
+            throw Standard_Failure("the two paths could not be crossed");
+        std::vector<TopoDS_Edge> edges;
+        for (TopExp_Explorer e(sec.Shape(), TopAbs_EDGE); e.More(); e.Next())
+            edges.push_back(TopoDS::Edge(e.Current()));
+        if (edges.empty())
+            throw Standard_Failure("the two paths never meet: seen from each other's side, they do not overlap");
+        auto wires = joined_wires(edges, 1e-5);
+        if (wires.size() != 1)
+            throw Standard_Failure(("the two paths meet in " + std::to_string(wires.size()) +
+                                    " separate pieces: one view must not turn back on itself across the other").c_str());
+        return primitive(wires[0]);
     });
 }
 

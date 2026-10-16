@@ -189,7 +189,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.extrude(faces: Selector, depth: Length, along: Vec3) → Solid</dt><dd>Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in.</dd>
 </dl></section>
 <section><h2>Paths, sweeps and lofts</h2><dl>
-<dt>path(points: Vec[], closed: bool) → Path</dt><dd>Straight segments through the points.</dd>
+<dt>path(points: Vec[], closed: bool, bend: Length) → Path</dt><dd>Straight segments through the points; bend: every corner rounded by an arc of that radius (a bent tube or wire). body.path(edges): edges of a solid joined end to end. path(a, b): the curve in space that looks like path a seen across a's plane and like b across b's (a handle drawn from above and from the front).</dd>
 <dt>spline(points: Vec[], closed: bool) → Path</dt><dd>A smooth curve through the points.</dd>
 <dt>helix(r: Length, d: Length, pitch: Length, height: Length, left: bool) → Path</dt><dd>A helix around +Z.</dd>
 </dl></section>
@@ -313,6 +313,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.diameter(c: Circle, v: Length)</dt><dd>Sets a diameter.</dd>
 <dt>sk.angle(a: Line, b: Line, v: Angle)</dt><dd>The angle between two lines, or of one line or an ellipse from X.</dd>
 <dt>sk.profile → Profile</dt><dd>Solves the sketch and gives its outline: its closed loops; what is drawn open (a free end) stays out, with a warning.</dd>
+<dt>sk.path → Path</dt><dd>Solves the sketch and gives what it draws (lines, arcs, curves, circles, not construction) as one path, where the sketch lies: open or closed, to sweep along; an error if it draws several separate chains.</dd>
+<dt>sk.paths → Path[]</dt><dd>Every separate chain the sketch draws, as paths, in the order they are drawn.</dd>
 <dt>sk.dof → int</dt><dd>Degrees of freedom left.</dd>
 <dt>sk.solved → bool</dt><dd>Whether the constraints are satisfied.</dd>
 <dt>pt.x → Length</dt><dd>Where the point is across, solved (y: up).</dd>

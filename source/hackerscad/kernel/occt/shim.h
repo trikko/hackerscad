@@ -143,6 +143,14 @@ int hc_path_frame(const hc_shape *path, int at_end, double out[6]);
  * its x axis, mx radians from X, and by), ax ay bx by mx my. Nested loops are
  * holes. */
 hc_shape *hc_outline(const double *data, int n);
+/* one open or closed chain of outline records as a path on XY */
+hc_shape *hc_outline_path(const double *data, int n);
+/* a path in space: records of 10 doubles, kind (0 line a→b, 1 arc a→b through m), a, b, m */
+hc_shape *hc_wire3(const double *data, int n);
+/* edges of a shape (indices as hc_edge_info's) joined into one path */
+hc_shape *hc_edges_path(const hc_shape *s, const int *idx, int n);
+/* the curve that flat paths a and b both look like across their planes (normals, or zero to find them) */
+hc_shape *hc_projected_curve(const hc_shape *a, const hc_shape *b, const double na[3], const double nb[3]);
 /* an oblique prism: the profile pushed along (dx, dy, height) */
 hc_shape *hc_extrude_shear(const hc_shape *s, double height, double dx, double dy);
 /* every area an outline's loops make: the full ones first (*full_count of them), then the empty */

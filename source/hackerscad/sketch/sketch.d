@@ -614,13 +614,138 @@ final class Sketch
         return segs;
     }
 
+    /// The non-construction lines, arcs, curves, circles and ellipses joined
+    /// end to end into chains, open or closed (`closed[i]`), each as outline
+    /// segments (no `end`): the paths a sketch draws, in the order of their
+    /// first entity.
+    OutlineSeg[][] chains(out bool[] closed)
+    {
+        solveIfNeeded();
+        if (!last.solved)
+            throw new SketchException("the sketch constraints conflict", last.conflicting);
+        struct Seg
+        {
+            size_t entity;
+            Vec3 a, b;
+            size_t ka, kb;
+        }
+
+        struct Chain
+        {
+            size_t first;
+            OutlineSeg[] segs;
+            bool closed;
+        }
+
+        Chain[] found;
+        Seg[] all;
+        Vec3[] corners;
+        size_t[] cornerPoint;
+        size_t canonical(size_t p)
+        {
+            auto q = pos(p, vars);
+            foreach (i, c; corners)
+                if ((c - q).length < 1e-6 * max(1.0, q.length))
+                {
+                    if (p in fillets)
+                        cornerPoint[i] = p;
+                    return i;
+                }
+            corners ~= q;
+            cornerPoint ~= p;
+            return corners.length - 1;
+        }
+
+        foreach (i, e; entities)
+        {
+            if (e.construction)
+                continue;
+            if (e.kind == EntityKind.circle)
+            {
+                auto c = pos(e.refs[0], vars);
+                immutable r = abs(vars[e.var]);
+                found ~= Chain(i, [OutlineSeg(OutlineSeg.Kind.ellipse, c.x, c.y, r, r, 0)], true);
+            }
+            else if (e.kind == EntityKind.ellipse)
+            {
+                auto c = pos(e.refs[0], vars);
+                double rx, ry, angle;
+                ellipseOf(i, vars, rx, ry, angle);
+                found ~= Chain(i, [OutlineSeg(OutlineSeg.Kind.ellipse, c.x, c.y, rx, ry, angle)], true);
+            }
+            else if (e.kind == EntityKind.spline && e.closed)
+                found ~= Chain(i, [splineSeg(splinePoles(i))], true);
+            else if (e.kind == EntityKind.line)
+                all ~= Seg(i, pos(e.refs[0], vars), pos(e.refs[1], vars), canonical(e.refs[0]), canonical(e.refs[1]));
+            else if (e.kind == EntityKind.arc)
+                all ~= Seg(i, pos(e.refs[1], vars), pos(e.refs[2], vars), canonical(e.refs[1]), canonical(e.refs[2]));
+            else if (e.kind == EntityKind.spline)
+                all ~= Seg(i, pos(e.refs[0], vars), pos(e.refs[1], vars), canonical(e.refs[0]), canonical(e.refs[1]));
+        }
+        size_t[][] at = new size_t[][](corners.length);
+        foreach (i, sg; all)
+        {
+            if (sg.ka == sg.kb && entities[sg.entity].kind == EntityKind.line)
+                throw new SketchException("this line has no length: its constraints brought its ends together",
+                    [entities[sg.entity].refs[0]]);
+            at[sg.ka] ~= i;
+            at[sg.kb] ~= i;
+        }
+        foreach (k, list; at)
+            if (list.length > 2)
+                throw new SketchException(format("%d lines or curves meet at this point: a path is a chain, "
+                    ~ "each point joining two at most", list.length), [cornerPoint[k]]);
+        auto used = new bool[all.length];
+        OutlineSource[] sources;
+        // from a free end along to the other, then what is left: loops
+        void walk(size_t start, size_t from, bool isLoop)
+        {
+            size_t[] order;
+            bool[] rev;
+            size_t cur = start;
+            while (cur != size_t.max && !used[cur])
+            {
+                used[cur] = true;
+                immutable r = all[cur].ka != from;
+                order ~= cur;
+                rev ~= r;
+                immutable to = r ? all[cur].ka : all[cur].kb;
+                size_t next = size_t.max;
+                foreach (o; at[to])
+                    if (o != cur)
+                        next = o;
+                from = to;
+                cur = next;
+            }
+            size_t first = size_t.max;
+            foreach (o; order)
+                first = min(first, all[o].entity);
+            found ~= Chain(first, loopSegments(all, order, rev, cornerPoint, sources, isLoop), isLoop);
+        }
+        foreach (k, list; at)
+            if (list.length == 1 && !used[list[0]])
+                walk(list[0], k, false);
+        foreach (i; 0 .. all.length)
+            if (!used[i])
+                walk(i, all[i].ka, true);
+        import std.algorithm : sort;
+        found.sort!((x, y) => x.first < y.first);
+        OutlineSeg[][] r;
+        foreach (c; found)
+        {
+            r ~= c.segs;
+            closed ~= c.closed;
+        }
+        return r;
+    }
+
 private:
 
     // a function of its own, so that each delegate captures its own constraint
     Equation equation(Constraint c) => Equation(equationCount(c.kind), (const(double)[] x, double[] r) { eval(c, x, r); });
 
     OutlineSeg[] loopSegments(S)(S[] all, size_t[] order, bool[] rev, size_t[] cornerPoint,
-        ref OutlineSource[] sources)
+        ref OutlineSource[] sources, bool closed = true)
     {
         immutable n = order.length;
         // ends of every segment in walking order, trimmed by corner fillets
@@ -636,6 +761,9 @@ private:
         auto filletCorner = new size_t[n];
         foreach (i; 0 .. n)
         {
+            // an open chain's last end is no corner
+            if (!closed && i == n - 1)
+                break;
             immutable j = (i + 1) % n;
             auto s = all[order[i]];
             immutable corner = rev[i] ? s.ka : s.kb;

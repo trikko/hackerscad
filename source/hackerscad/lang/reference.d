@@ -335,7 +335,12 @@ immutable Ref[] reference =
         "Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in."),
     ]) ~
     group("Paths, sweeps and lofts", [
-    F("path", "", ["points: Vec[]", "closed: bool"], "Path", "Straight segments through the points."),
+    withForms(F("path", "", ["points: Vec[]", "closed: bool", "bend: Length"], "Path",
+        "Straight segments through the points; bend: every corner rounded by an arc of that radius (a bent tube or wire). body.path(edges): edges of a solid joined end to end. path(a, b): the curve in space that looks like path a seen across a's plane and like b across b's (a handle drawn from above and from the front)."), [
+        "path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)])             // mitred corners",
+        "path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)], bend: 5.mm) // bent round",
+        "body.path(edges.loop(faces.top))                               // along a solid's edges",
+        "path(top.path, front.path)                                     // from two views"]),
     F("spline", "", ["points: Vec[]", "closed: bool"], "Path", "A smooth curve through the points."),
     withForms(F("helix", "", ["r: Length", "d: Length", "pitch: Length", "height: Length", "left: bool"], "Path", "A helix around +Z."), [
         "helix(r: 4.mm, pitch: 1.mm, height: 20.mm)            // radius",
@@ -549,6 +554,8 @@ immutable Ref[] reference =
         "s.angle(line, 30.deg)   // of a line, start → end, from X",
         "s.angle(e, 30.deg)   // of an ellipse's x axis"]),
     P("profile", "Sketch", "Profile", "Solves the sketch and gives its outline: its closed loops; what is drawn open (a free end) stays out, with a warning."),
+    P("path", "Sketch", "Path", "Solves the sketch and gives what it draws (lines, arcs, curves, circles, not construction) as one path, where the sketch lies: open or closed, to sweep along; an error if it draws several separate chains."),
+    P("paths", "Sketch", "Path[]", "Every separate chain the sketch draws, as paths, in the order they are drawn."),
     P("dof", "Sketch", "int", "Degrees of freedom left."),
     P("solved", "Sketch", "bool", "Whether the constraints are satisfied."),
     // what the geometry of a sketch reads back, once solved

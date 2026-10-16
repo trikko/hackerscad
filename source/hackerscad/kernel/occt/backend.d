@@ -91,6 +91,24 @@ final class OcctKernel : BrepKernel
         wrap(hc_polyline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "path");
     Brep spline(const(Vec3)[] pts, bool closed) =>
         wrap(hc_spline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "spline");
+    Brep outlinePath(const(OutlineSeg)[] segs)
+    {
+        auto data = outlineData(segs);
+        return wrap(hc_outline_path(data.ptr, cast(int)(data.length / 7)), "path");
+    }
+    Brep pathOfPieces(const(PathPiece)[] pieces)
+    {
+        double[] data;
+        foreach (q; pieces)
+            data ~= [q.arc ? 1.0 : 0.0, q.a.x, q.a.y, q.a.z, q.b.x, q.b.y, q.b.z, q.m.x, q.m.y, q.m.z];
+        return wrap(hc_wire3(data.ptr, cast(int) pieces.length), "path");
+    }
+    Brep edgesPath(Brep s, const(int)[] edges) => wrap(hc_edges_path(h(s), edges.ptr, cast(int) edges.length), "path");
+    Brep projectedCurve(Brep a, Brep b, Vec3 na, Vec3 nb)
+    {
+        double[3] x = [na.x, na.y, na.z], y = [nb.x, nb.y, nb.z];
+        return wrap(hc_projected_curve(h(a), h(b), x, y), "curve from two views");
+    }
     Brep helix(double r, double pitch, double height, bool left, double taper = 0) =>
         wrap(hc_helix_tapered(r, pitch, height, left, taper), "helix");
     Brep gridSolid(const(Vec3)[] pts, int rings, int per) =>

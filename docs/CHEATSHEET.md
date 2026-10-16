@@ -167,7 +167,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 ## Paths, sweeps and lofts
 
-- `path(points: Vec[], closed: bool) → Path` — Straight segments through the points.
+- `path(points: Vec[], closed: bool, bend: Length) → Path` — Straight segments through the points; bend: every corner rounded by an arc of that radius (a bent tube or wire). body.path(edges): edges of a solid joined end to end. path(a, b): the curve in space that looks like path a seen across a's plane and like b across b's (a handle drawn from above and from the front).
 - `spline(points: Vec[], closed: bool) → Path` — A smooth curve through the points.
 - `helix(r: Length, d: Length, pitch: Length, height: Length, left: bool) → Path` — A helix around +Z.
 
@@ -295,6 +295,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.diameter(c: Circle, v: Length)` — Sets a diameter.
 - `sk.angle(a: Line, b: Line, v: Angle)` — The angle between two lines, or of one line or an ellipse from X.
 - `sk.profile → Profile` — Solves the sketch and gives its outline: its closed loops; what is drawn open (a free end) stays out, with a warning.
+- `sk.path → Path` — Solves the sketch and gives what it draws (lines, arcs, curves, circles, not construction) as one path, where the sketch lies: open or closed, to sweep along; an error if it draws several separate chains.
+- `sk.paths → Path[]` — Every separate chain the sketch draws, as paths, in the order they are drawn.
 - `sk.dof → int` — Degrees of freedom left.
 - `sk.solved → bool` — Whether the constraints are satisfied.
 - `pt.x → Length` — Where the point is across, solved (y: up).

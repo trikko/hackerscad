@@ -80,6 +80,15 @@ final class CachingKernel : BrepKernel
             inner.outline(segs));
     Brep polyline(const(Vec3)[] pts, bool closed) => op(key("polyline", flatten(pts), closed), inner.polyline(pts, closed));
     Brep spline(const(Vec3)[] pts, bool closed) => op(key("spline", flatten(pts), closed), inner.spline(pts, closed));
+    Brep outlinePath(const(OutlineSeg)[] segs) =>
+        op(key("outlinePath", segs.map!(g => [cast(double) g.kind, g.ax, g.ay, g.bx, g.by, g.mx, g.my] ~ g.poles).join),
+            inner.outlinePath(segs));
+    Brep pathOfPieces(const(PathPiece)[] pieces) =>
+        op(key("pathOfPieces", pieces.map!(q => [q.arc ? 1.0 : 0.0] ~ flatten([q.a, q.b, q.m])).join), inner.pathOfPieces(pieces));
+    Brep edgesPath(Brep s, const(int)[] edges) => op(key("edgesPath", s, edges.map!(e => cast(double) e).array),
+        inner.edgesPath(s, edges));
+    Brep projectedCurve(Brep a, Brep b, Vec3 na, Vec3 nb) =>
+        op(key("projectedCurve", a, b, na, nb), inner.projectedCurve(a, b, na, nb));
     Brep helix(double r, double pitch, double height, bool left, double taper = 0) =>
         op(key("helix", r, pitch, height, left, taper), inner.helix(r, pitch, height, left, taper));
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent) => inner.pathFrame(path, atEnd, point, tangent);

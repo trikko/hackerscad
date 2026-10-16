@@ -1117,8 +1117,56 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     }
     def("path", (ref CallArgs a) {
         // path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)]): straight segments through the points
-        auto x = Args(it, a, "path", ["points", "closed"]);
-        return pathValue(k.polyline(points(x, "points", 2), x.flag("closed", false)), "path", a.span);
+        // bend: 5.mm rounds every corner with an arc of that radius, as a bent tube
+        if (a.positional.length && a.positional[0].kind == Kind.solid && !a.positional[0].solid.path)
+        {
+            // body.path(edges.loop(faces.top)): edges of a solid joined end to end
+            auto y = Args(it, a, "path", ["solid", "edges"]);
+            auto s = y.solid("solid");
+            auto idx = resolveSelector(it, y.selector("edges", false), s, y.spanOf("edges"));
+            Brep b;
+            try
+                b = k.edgesPath(s.brep, idx);
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, e.msg, y.spanOf("edges"), "select edges that follow one another: "
+                    ~ "edges.loop(faces…), edges.chain(…)");
+            if (s.flat && s.placed)
+                b = toPlace(k, s.place, b);
+            return pathValue(b, "path", a.span);
+        }
+        if (a.positional.length == 2 && a.positional[0].kind == Kind.solid && a.positional[0].solid.path)
+        {
+            // path(top, side): the curve in space that looks like one path seen across its plane, and like
+            // the other across its own (a handle drawn from above and from the side)
+            auto y = Args(it, a, "path", ["a", "b"]);
+            SolidVal pathOf(string n)
+            {
+                auto v = y.get(n);
+                if (v.kind != Kind.solid || !v.solid.path)
+                    throw new HcadError(Code.type, format("path(a, b) takes two paths, each drawn in a plane, not %s",
+                        v.typeName), y.spanOf(n));
+                return v.solid;
+            }
+            auto pa = pathOf("a"), pb = pathOf("b");
+            if (pa.pathNormal.length > 0 && pb.pathNormal.length > 0 && abs(pa.pathNormal.dot(pb.pathNormal)) > 1 - 1e-9)
+                throw new HcadError(Code.type, "the two paths are drawn in parallel planes: they are the same view; "
+                    ~ "draw them in two planes at an angle (XY and XZ)", a.span);
+            try
+                return pathValue(k.projectedCurve(pa.brep, pb.brep, pa.pathNormal, pb.pathNormal), "path", a.span);
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, e.msg, a.span, "draw both views over the same stretch: what one "
+                    ~ "covers along the line they share, the other must cover too; a straight path's plane is known "
+                    ~ "only when drawn in a sketch (s.path)");
+        }
+        auto x = Args(it, a, "path", ["points", "closed", "bend"]);
+        auto pts = points(x, "points", 2);
+        immutable closed = x.flag("closed", false);
+        immutable bend = x.lenOr("bend", 0);
+        if (bend < 0)
+            throw new HcadError(Code.type, "bend is a radius: it must be positive", x.spanOf("bend"));
+        if (bend == 0)
+            return pathValue(k.polyline(pts, closed), "path", a.span);
+        return pathValue(k.pathOfPieces(bentPath(pts, closed, bend, x.spanOf("bend"))), "path", a.span);
     });
     def("spline", (ref CallArgs a) {
         // a smooth curve through the points
@@ -2227,6 +2275,66 @@ bool tiltedProfile(Interp it, SolidVal p, Span span, out Vec3[4] place)
     auto ax = faceXAxis(n);
     place = [o, ax, n.cross(ax), n];
     return true;
+}
+
+/// The lines through `pts` with each corner rounded by an arc of radius r
+/// (a straight corner left as it is); an error at `span` names a corner
+/// with no room for it.
+PathPiece[] bentPath(Vec3[] pts, bool closed, double r, Span span)
+{
+    // points that repeat would make a corner of no direction
+    Vec3[] p;
+    foreach (q; pts)
+        if (p.length == 0 || (q - p[$ - 1]).length > 1e-9)
+            p ~= q;
+    if (closed && p.length > 2 && (p[0] - p[$ - 1]).length <= 1e-9)
+        p = p[0 .. $ - 1];
+    immutable n = p.length;
+    if (n < 2)
+        throw new HcadError(Code.type, "a path needs two different points at least", span);
+    // at each corner: how far back along each side its arc starts, and the arc
+    auto cut = new double[n];
+    auto arc = new PathPiece[n];
+    auto rounded = new bool[n];
+    cut[] = 0;
+    foreach (i; 0 .. n)
+    {
+        if (!closed && (i == 0 || i == n - 1))
+            continue;
+        auto v = p[i], u1 = (p[(i + n - 1) % n] - v).normalized, u2 = (p[(i + 1) % n] - v).normalized;
+        immutable half = acos(max(-1.0, min(1.0, u1.dot(u2)))) / 2;
+        if (half > PI / 2 - 1e-9)
+            continue;   // straight on: nothing to round
+        if (half < 1e-9)
+            throw new HcadError(Code.type, format("the path turns right back at point %d", i), span);
+        immutable t = r / tan(half);
+        auto bis = (u1 + u2).normalized;
+        cut[i] = t;
+        rounded[i] = true;
+        arc[i] = PathPiece(true, v + u1 * t, v + u2 * t, v + bis * (r / sin(half) - r));
+    }
+    // each side must hold the arcs at both its ends
+    foreach (i; 0 .. (closed ? n : n - 1))
+    {
+        immutable j = (i + 1) % n;
+        if (cut[i] + cut[j] > (p[j] - p[i]).length + 1e-9)
+            throw new HcadError(Code.type, format("bend %.4g mm does not fit between points %d and %d: the side is "
+                ~ "%.4g mm, its corners' arcs need %.4g mm", r, i, j, (p[j] - p[i]).length, cut[i] + cut[j]), span,
+                "a smaller bend, or the points further apart");
+    }
+    PathPiece[] pieces;
+    // side after side, each followed by the arc of the corner it ends at
+    foreach (i; 0 .. (closed ? n : n - 1))
+    {
+        immutable j = (i + 1) % n;
+        auto from = p[i] + (p[j] - p[i]).normalized * cut[i];
+        auto to = p[j] + (p[i] - p[j]).normalized * cut[j];
+        if ((to - from).length > 1e-9)
+            pieces ~= PathPiece(false, from, to);
+        if (rounded[j] && (closed || j != n - 1))
+            pieces ~= arc[j];
+    }
+    return pieces;
 }
 
 /// Axis and angle of the rotation whose matrix has columns x, y, z.

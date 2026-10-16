@@ -146,6 +146,13 @@ struct OutlineSeg
     double[] poles;
 }
 
+/// A piece of a path in space: a line a → b, or an arc a → b through m.
+struct PathPiece
+{
+    bool arc;
+    Vec3 a, b, m;
+}
+
 /// A projected edge segment in a drawing view (x right, y up).
 struct ViewSegment
 {
@@ -208,6 +215,15 @@ interface BrepKernel
     /// Paths (wires) for sweeps.
     Brep polyline(const(Vec3)[] pts, bool closed);
     Brep spline(const(Vec3)[] pts, bool closed);
+    /// One chain of outline segments (see OutlineSeg; open or closed) as a path on XY.
+    Brep outlinePath(const(OutlineSeg)[] segs);
+    /// Lines and arcs end to end as a path.
+    Brep pathOfPieces(const(PathPiece)[] pieces);
+    /// Edges of `s` (indices into edges(s)) joined end to end into one path.
+    Brep edgesPath(Brep s, const(int)[] edges);
+    /// The curve that flat paths a and b both look like, seen across their
+    /// planes (normals na and nb; zero: found from the path).
+    Brep projectedCurve(Brep a, Brep b, Vec3 na, Vec3 nb);
     /// `taper`: the angle (radians) the helix's cone leans from the axis,
     /// widening as it rises when positive; 0, a cylinder of radius r.
     Brep helix(double r, double pitch, double height, bool left, double taper = 0);
