@@ -539,6 +539,14 @@ string projectionReport(string file, string part, string plane)
 /// copy", "in the copy, not in the original", "in both, different".
 string matchReport(string file, string a, string b)
 {
+    ubyte[] none;
+    return matchReport(file, a, b, null, none);
+}
+
+/// As above; `focus` (entry numbers of the report) gives `picture`, a
+/// close-up of each.
+string matchReport(string file, string a, string b, const size_t[] focus, out ubyte[] picture)
+{
     import std.algorithm : max, min;
     import std.math : abs, PI;
     import hackerscad.geom.meshfeatures;
@@ -555,6 +563,7 @@ string matchReport(string file, string a, string b)
     {
         string text;
         double weight;
+        Vec3 lo, hi;   /// where it is (on the original, when both have it)
     }
     Item[] onlyB, onlyA, different;
 
@@ -603,13 +612,13 @@ string matchReport(string file, string a, string b)
             }
         }
         if (best == 0)
-            onlyB ~= Item(describe(y), y.area);
+            onlyB ~= Item(describe(y), y.area, y.lo, y.hi);
         else
         {
             usedA[bi] = true;
             if (best == 1)
                 different ~= Item(format("%s\n      the copy: %s", describe(y), describe(fa[bi])),
-                    abs(y.area - fa[bi].area) + 0.1 * y.area);
+                    abs(y.area - fa[bi].area) + 0.1 * y.area, y.lo, y.hi);
         }
     }
     foreach (i, x; fa)
@@ -619,7 +628,7 @@ string matchReport(string file, string a, string b)
             foreach (y; fb)
                 any = any || alike(x, y) > 0;
             if (!any)
-                onlyA ~= Item(describe(x), x.area);
+                onlyA ~= Item(describe(x), x.area, x.lo, x.hi);
         }
 
     // the holes and pockets along each axis
@@ -629,6 +638,19 @@ string matchReport(string file, string a, string b)
         string where(const ScanRun r, string note = "") => format("along %s from %s to %s (%s deep): %s%s", axis,
             mm(r.from), mm(r.to), mm(r.to - r.from), r.shape.toString, note);
         double volume(const ScanRun r) => r.shape.a * r.shape.b * (r.to - r.from);
+        // its box: along the axis from … to, across it the shape's size round its centre (the
+        // scan's plane: y, z for x; x, z for y; x, y for z)
+        Vec3[2] box(const ScanRun r)
+        {
+            immutable c = r.shape.center;
+            immutable ha = max(r.shape.a, 0.5) / 2, hb = max(r.shape.b > 0 ? r.shape.b : r.shape.a, 0.5) / 2;
+            final switch (axis)
+            {
+            case "x": return [Vec3(r.from, c[0] - ha, c[1] - hb), Vec3(r.to, c[0] + ha, c[1] + hb)];
+            case "y": return [Vec3(c[0] - ha, r.from, c[1] - hb), Vec3(c[0] + ha, r.to, c[1] + hb)];
+            case "z": return [Vec3(c[0] - ha, c[1] - hb, r.from), Vec3(c[0] + ha, c[1] + hb, r.to)];
+            }
+        }
         bool overlaps(const ScanRun x, const ScanRun y) => x.from <= y.to + 0.1 && y.from <= x.to + 0.1;
         bool near(const ScanRun x, const ScanRun y)
         {
@@ -710,16 +732,16 @@ string matchReport(string file, string a, string b)
                     different ~= Item(format("%s\n      the copy: from %s to %s%s", where(y, notesB[yi]), mm(x.from),
                         mm(x.to), notesA[same]),
                         y.shape.a * y.shape.b * (abs(x.from - y.from) + abs(x.to - y.to))
-                            + (notesA[same] != notesB[yi] ? 0.2 * volume(y) : 0));
+                            + (notesA[same] != notesB[yi] ? 0.2 * volume(y) : 0), box(y)[0], box(y)[1]);
             }
             else if (close >= 0)
             {
                 used[close] = true;
                 different ~= Item(format("%s\n      the copy: %s", where(y, notesB[yi]), where(ha[close], notesA[close])),
-                    abs(volume(y) - volume(ha[close])) + 0.2 * volume(y));
+                    abs(volume(y) - volume(ha[close])) + 0.2 * volume(y), box(y)[0], box(y)[1]);
             }
             else
-                onlyB ~= Item(where(y, notesB[yi]), volume(y));
+                onlyB ~= Item(where(y, notesB[yi]), volume(y), box(y)[0], box(y)[1]);
         }
         foreach (i, x; ha)
             if (!used[i])
@@ -728,12 +750,13 @@ string matchReport(string file, string a, string b)
                 foreach (y; hb)
                     any = any || near(x, y);
                 if (!any)
-                    onlyA ~= Item(where(x, notesA[i]), volume(x));
+                    onlyA ~= Item(where(x, notesA[i]), volume(x), box(x)[0], box(x)[1]);
             }
     }
     string s = format("%s (the copy) against %s (the original):\n", a, b);
     // the largest first; under 1 mm² or 1 mm³ only counted (a sliver of a
     // face, a scan's thin step): what matters to a person comes first
+    Item[] numbered;
     void list(string title, Item[] items)
     {
         import std.algorithm : sort;
@@ -751,11 +774,33 @@ string matchReport(string file, string a, string b)
                 s ~= format("  and %d smaller ones\n", shown.length - 15);
                 break;
             }
-            s ~= "  " ~ it.text ~ "\n";
+            numbered ~= it;
+            s ~= format("  %d. %s\n", numbered.length, it.text);
         }
     }
     list("in the original, not in the copy", onlyB);
     list("in the copy, not in the original", onlyA);
     list("in both, different", different);
+    if (focus.length)
+    {
+        import hackerscad.tool.closeup : closeUps, Place;
+        Place[] places;
+        foreach (n; focus)
+        {
+            if (n < 1 || n > numbered.length)
+                throw new Exception(format("there is no entry %d: the report numbers 1 to %d", n, numbered.length));
+            auto it = numbered[n - 1];
+            import std.string : lineSplitter;
+            import std.array : array;
+            places ~= Place(format("entry %d, %s", n, it.text.lineSplitter.array[0]), it.lo, it.hi);
+        }
+        string text;
+        auto img = closeUps(ma, mb, 0x4682B4, places, 0.1, text);
+        import hackerscad.render.png : encodePng;
+        picture = encodePng(img.rgb, img.width, img.height);
+        s ~= "close-ups:\n" ~ text;
+    }
+    else if (numbered.length)
+        s ~= "(focus: N gives a close-up of entry N)\n";
     return s;
 }

@@ -101,6 +101,16 @@ options:
 /// most of its time spinning on locks, against OCCT's own threads.
 extern (C) __gshared string[] rt_options = ["gcopt=parallel:0"];
 
+/// "2,5" → [2, 5]: the entries to look at closely (--focus).
+size_t[] focusList(string arg)
+{
+    import std.algorithm : map, splitter, filter;
+    import std.array : array;
+    import std.conv : to;
+    import std.string : strip;
+    return arg.splitter(",").map!(x => x.strip).filter!(x => x.length).map!(x => x.to!size_t).array;
+}
+
 int main(string[] args)
 {
     if (args.length >= 2 && (args[1] == "--version" || args[1] == "version"))
@@ -263,10 +273,12 @@ int main(string[] args)
         }
     case "compare":
         {
-            string pa, pb, out_;
+            string pa, pb, out_, focusArg;
             double tol = 0.1;
+            bool asJson;
             try
-                getopt(args, "a", &pa, "b", &pb, "tolerance", &tol, "o|output", &out_);
+                getopt(args, "a", &pa, "b", &pb, "tolerance", &tol, "o|output", &out_, "json", &asJson,
+                    "focus", &focusArg);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -288,34 +300,21 @@ int main(string[] args)
             try
             {
                 ubyte[] png;
-                auto j = run.compare(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], tol, png);
-                writefln("largest distance %.3f mm (a to b %.3f, b to a %.3f), mean %.3f mm, %.0f%% within %g mm",
-                    j["max_mm"].floating, j["a_to_b"]["max_mm"].floating, j["b_to_a"]["max_mm"].floating,
-                    j["a_to_b"]["mean_mm"].floating, 100 * j["a_to_b"]["within_tolerance"].floating, tol);
-                // the patches, as lines
-                import std.format : format;
-                void patches(string title, JSONValue list)
-                {
-                    if (list.array.length == 0)
-                        return;
-                    writeln(title);
-                    foreach (p; list.array)
-                    {
-                        string v(JSONValue x) => format("(%g, %g, %g)", x[0].get!double, x[1].get!double, x[2].get!double);
-                        writefln("  %g mm² facing %s, %g mm off at most (%g on average): from %s to %s",
-                            p["area_mm2"].get!double, v(p["facing"]), p["worst_mm"].get!double, p["mean_mm"].get!double,
-                            v(p["from"]), v(p["to"]));
-                    }
-                }
-                patches(format("surface of %s (the original) the copy does not follow:", pb), j["b_surface_not_matched"]);
-                patches(format("surface of %s (the copy) the original does not have:", pa), j["a_surface_not_matched"]);
+                immutable ia = run.partIndices([pa], true)[0], ib = run.partIndices([pb], true)[0];
+                auto j = run.compare(ia, ib, tol, png);
+                if (asJson)
+                    writeln(j.toPrettyString());
+                else
+                    write(Run.compareText(j, run.result.parts[ia].name, run.result.parts[ib].name, 25));
+                if (auto focus = focusList(focusArg))
+                    write(run.compareFocus(j, ia, ib, focus, png));
                 if (out_.length)
                 {
                     import std.file : write;
                     write(out_, png);
                 }
             }
-            catch (HcadError e)
+            catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);
                 return 1;
@@ -324,12 +323,13 @@ int main(string[] args)
         }
     case "lines":
         {
-            string pa, pb, out_;
+            string pa, pb, out_, focusArg;
             size_t views = 12;
             double depth = 0;
             bool fixed, voids;
             try
-                getopt(args, "a", &pa, "b", &pb, "depth", &depth, "fixed", &fixed, "voids", &voids, "views", &views, "o|output", &out_);
+                getopt(args, "a", &pa, "b", &pb, "depth", &depth, "fixed", &fixed, "voids", &voids, "views", &views,
+                    "o|output", &out_, "focus", &focusArg);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -351,14 +351,15 @@ int main(string[] args)
             try
             {
                 ubyte[] png;
-                write(run.lines(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], depth, views, fixed, voids, png));
+                write(run.lines(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], depth, views, fixed, voids,
+                    png, focusList(focusArg)));
                 if (out_.length)
                 {
                     import std.file : write;
                     write(out_, png);
                 }
             }
-            catch (HcadError e)
+            catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);
                 return 1;
@@ -393,10 +394,10 @@ int main(string[] args)
         }
     case "diff":
         {
-            string pa, pb;
+            string pa, pb, out_, focusArg;
             double res = 0;
             try
-                getopt(args, "a", &pa, "b", &pb, "resolution", &res);
+                getopt(args, "a", &pa, "b", &pb, "resolution", &res, "o|output", &out_, "focus", &focusArg);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -416,8 +417,17 @@ int main(string[] args)
                 return 1;
             }
             try
-                write(run.differences(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], res));
-            catch (HcadError e)
+            {
+                ubyte[] png;
+                write(run.differences(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], res,
+                    focusList(focusArg), png));
+                if (out_.length && png.length)
+                {
+                    import std.file : write;
+                    write(out_, png);
+                }
+            }
+            catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);
                 return 1;
@@ -453,9 +463,9 @@ int main(string[] args)
         }
     case "match":
         {
-            string pa, pb;
+            string pa, pb, out_, focusArg;
             try
-                getopt(args, "a", &pa, "b", &pb);
+                getopt(args, "a", &pa, "b", &pb, "o|output", &out_, "focus", &focusArg);
             catch (GetOptException e)
             {
                 stderr.writeln("error: ", e.msg);
@@ -468,7 +478,15 @@ int main(string[] args)
             }
             import hackerscad.tool.features : matchReport;
             try
-                write(matchReport(args[1], pa, pb));
+            {
+                ubyte[] png;
+                write(matchReport(args[1], pa, pb, focusList(focusArg), png));
+                if (out_.length && png.length)
+                {
+                    import std.file : write;
+                    write(out_, png);
+                }
+            }
             catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);

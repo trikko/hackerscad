@@ -701,7 +701,9 @@ JSONValue[] toolList()
             ~ "yellow at it, red at twice it. Correct the model until it is green.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}, `
-            ~ `"json": {"type": "boolean", "description": "the whole comparison as data, every patch (long)"}`, `["a", "b"]`),
+            ~ `"json": {"type": "boolean", "description": "the whole comparison as data, every patch (long)"}, `
+            ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
+            ~ `report to look at closely: a close-up of each, from where it is in sight"}`, `["a", "b"]`),
         tool("hcad_scan", "Cut a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and its 'part') "
             ~ "all along an axis, every 'step' mm: each hole and pocket met with its shape (circle, rectangle, rounded "
             ~ "rectangle, hexagon (a nut trap), teardrop with the direction of its point, slot, D) and where it starts "
@@ -723,7 +725,8 @@ JSONValue[] toolList()
             ~ "towards each view) to compare the inside; the answer says when going deeper is no use.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "views": {"type": "integer"}, `
             ~ `"depth": {"type": "number", "description": "mm cut away towards each view; 0 the outside (default)"}, `
-            ~ `"fixed": {"type": "boolean"}, "voids": {"type": "boolean"}`, `["a", "b"]`),
+            ~ `"fixed": {"type": "boolean"}, "voids": {"type": "boolean"}, ` ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
+            ~ `report to look at closely: a close-up of each, from where it is in sight"}`, `["a", "b"]`),
         tool("hcad_diff", "Where a part of a model (a copy) differs from another (the original, e.g. a mesh loaded as a "
             ~ "see-through reference part), as pieces of material: what the copy lacks (to add) and what it has too much "
             ~ "of (to cut), largest first, each with its box, volume, centre of mass and how much of its box it fills (a "
@@ -731,7 +734,9 @@ JSONValue[] toolList()
             ~ "its shape. Both are filled into cubes of 'resolution' mm (default: the size / 250); differences thinner "
             ~ "than two cubes are listed apart, with how much they make (chamfers, lettering, notches: hcad_lines "
             ~ "shows them).",
-            modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "resolution": {"type": "number"}`, `["a", "b"]`),
+            modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "resolution": {"type": "number"}, `
+            ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
+            ~ `report to look at closely: a close-up of each, from where it is in sight"}`, `["a", "b"]`),
         tool("hcad_fit", "Tune measures of a copy to its original: the @param lengths named in 'params' (of the .hcad "
             ~ "model at 'path') are moved, by the downhill simplex method, to make the volume where part 'a' (the copy) "
             ~ "and part 'b' (the original) differ as small as it goes. Returns the values found, the volume before and "
@@ -747,7 +752,9 @@ JSONValue[] toolList()
             ~ "in the copy and not in the original, and in both but different (a chamfer, a counterbore, a teardrop "
             ~ "where the original has a circle), the largest first; a hole cut in steps (a tapered nut trap) is one "
             ~ "entry, told as stepped; slivers under 1 mm² or mm³ are only counted.",
-            `"path": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}`, `["path", "a", "b"]`),
+            `"path": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}, ` ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
+            ~ `report to look at closely: a close-up of each, from where it is in sight"}`,
+            `["path", "a", "b"]`),
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
@@ -1101,6 +1108,21 @@ JSONValue callTool(string name, JSONValue args)
 
     string arg(string key) => args.type == JSONType.object && key in args && args[key].type == JSONType.string
         ? args[key].str : null;
+    // the entries to look at closely: a number, or a list of them
+    size_t[] focus()
+    {
+        size_t[] r;
+        if (args.type != JSONType.object || "focus" !in args)
+            return r;
+        auto f = args["focus"];
+        if (f.type == JSONType.integer)
+            r ~= cast(size_t) f.integer;
+        else if (f.type == JSONType.array)
+            foreach (x; f.array)
+                if (x.type == JSONType.integer)
+                    r ~= cast(size_t) x.integer;
+        return r;
+    }
 
     switch (name)
     {
@@ -1273,6 +1295,16 @@ JSONValue callTool(string name, JSONValue args)
             auto js = "json" in args;
             text(js && js.type == JSONType.true_ ? j.toPrettyString()
                 : Run.compareText(j, run.result.parts[ia].name, run.result.parts[ib].name));
+            if (auto f = focus())
+            {
+                try
+                    text(run.compareFocus(j, ia, ib, f, png));
+                catch (Exception e)
+                {
+                    isError = true;
+                    text(e.msg);
+                }
+            }
             image(png);
             break;
         }
@@ -1310,10 +1342,10 @@ JSONValue callTool(string name, JSONValue args)
                     "depth" !in args ? 0.0 : args["depth"].type == JSONType.integer ? args["depth"].integer
                     : args["depth"].floating, v is null ? 12 : cast(size_t) v.integer,
                     "fixed" in args && args["fixed"].type == JSONType.true_, "voids" in args && args["voids"].type == JSONType.true_,
-                    png));
+                    png, focus()));
                 image(png);
             }
-            catch (HcadError e)
+            catch (Exception e)
             {
                 isError = true;
                 text(e.msg);
@@ -1333,10 +1365,13 @@ JSONValue callTool(string name, JSONValue args)
             try
             {
                 auto res = "resolution" in args;
+                ubyte[] png;
                 text(run.differences(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0],
-                    res is null ? 0 : res.type == JSONType.integer ? res.integer : res.floating));
+                    res is null ? 0 : res.type == JSONType.integer ? res.integer : res.floating, focus(), png));
+                if (png.length)
+                    image(png);
             }
-            catch (HcadError e)
+            catch (Exception e)
             {
                 isError = true;
                 text(e.msg);
@@ -1366,7 +1401,12 @@ JSONValue callTool(string name, JSONValue args)
         {
             import hackerscad.tool.features : matchReport;
             try
-                text(matchReport(arg("path"), arg("a"), arg("b")));
+            {
+                ubyte[] png;
+                text(matchReport(arg("path"), arg("a"), arg("b"), focus(), png));
+                if (png.length)
+                    image(png);
+            }
             catch (Exception e)
             {
                 isError = true;
@@ -1591,6 +1631,15 @@ unittest
     assert(compared.canFind("within tolerance") && !compared.canFind(`"a_to_b"`), compared);
     assert(callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original", "json": true}`)[0]["text"].str
         .canFind(`"a_to_b"`));
+
+    // focus: a close-up of an entry of the report, as a picture; a number past the last one is an error
+    auto close = handle(parseJSON(`{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "hcad_diff", `
+        ~ `"arguments": {` ~ where ~ `, "a": "copy", "b": "original", "focus": 1}}}`))["result"];
+    assert(!close["isError"].boolean, close.toString);
+    assert(close["content"][0]["text"].str.canFind("close-up 1") && close["content"].array[$ - 1]["type"].str == "image");
+    auto past = handle(parseJSON(`{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "hcad_diff", `
+        ~ `"arguments": {` ~ where ~ `, "a": "copy", "b": "original", "focus": [99]}}}`))["result"];
+    assert(past["isError"].boolean && past["content"].array[$ - 1]["text"].str.canFind("there is no entry 99"), past.toString);
 
     // a window's folder is checked before any window opens
     auto launch(string args) => handle(parseJSON(`{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": `

@@ -24,6 +24,7 @@ import hackerscad.render.png;
 import hackerscad.render.raster;
 import hackerscad.geom.printability : PrintCheck, checkPrint;
 import hackerscad.drawing.sheet : Sheet, toSvg, toPdf, toDxf;
+import hackerscad.tool.closeup : Place;
 
 struct RunOptions
 {
@@ -320,6 +321,7 @@ final class Run
         string vec(JSONValue v) => format("(%s, %s, %s)", mm(num(v[0])), mm(num(v[1])), mm(num(v[2])));
         immutable tol = num(j["tolerance_mm"]);
         string s = format("%s against %s, tolerance %s mm:\n", na, nb, mm(tol));
+        size_t number;
         foreach (way; [["a_to_b", na ~ " to " ~ nb], ["b_to_a", nb ~ " to " ~ na]])
         {
             auto d = j[way[0]];
@@ -339,19 +341,52 @@ final class Run
                 if (i == patches)
                 {
                     s ~= format("    and %d smaller ones (json: true lists them)\n", list.length - patches);
+                    number += list.length - patches;
                     break;
                 }
-                s ~= format("    %s mm² from %s to %s, facing %s, off by %s mm (at most %s)\n", mm(num(p["area_mm2"])),
-                    vec(p["from"]), vec(p["to"]), vec(p["facing"]), mm(num(p["mean_mm"])), mm(num(p["worst_mm"])));
+                s ~= format("    %d. %s mm² from %s to %s, facing %s, off by %s mm (at most %s)\n", ++number,
+                    mm(num(p["area_mm2"])), vec(p["from"]), vec(p["to"]), vec(p["facing"]), mm(num(p["mean_mm"])),
+                    mm(num(p["worst_mm"])));
             }
         }
-        return s;
+        return s ~ "  (focus: N gives a close-up of patch N)\n";
+    }
+
+    /// The patches of a comparison (as compare gives them), numbered as
+    /// compareText numbers them: the original's first, then the copy's.
+    static JSONValue[] comparePatches(JSONValue j) => j["b_surface_not_matched"].array ~ j["a_surface_not_matched"].array;
+
+    /// Close-ups of patches of a comparison, by their numbers.
+    string compareFocus(JSONValue j, size_t a, size_t b, const size_t[] focus, out ubyte[] picture)
+    {
+        import hackerscad.tool.closeup : Place;
+        auto list = comparePatches(j);
+        double num(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
+        Vec3 vec(JSONValue v) => Vec3(num(v[0]), num(v[1]), num(v[2]));
+        Place[] places;
+        foreach (n; focus)
+        {
+            if (n < 1 || n > list.length)
+                throw new Exception(format("there is no patch %d: the comparison numbers 1 to %d", n, list.length));
+            auto p = list[n - 1];
+            places ~= Place(format("patch %d, %g mm² off by %g mm", n, num(p["area_mm2"]), num(p["mean_mm"])),
+                vec(p["from"]), vec(p["to"]), true, vec(p["facing"]));
+        }
+        return closeUpsOf(a, b, places, num(j["tolerance_mm"]), picture);
     }
 
     /// Where part `a` (a copy) differs from part `b` (the original), as pieces
     /// of material: what a lacks (to add) and what it has too much of (to cut),
     /// largest first, each with its box, volume and how much of the box it fills.
     string differences(size_t a, size_t b, double resolution)
+    {
+        ubyte[] none;
+        return differences(a, b, resolution, null, none);
+    }
+
+    /// As above; `focus` (entry numbers of the report) gives `picture`, a
+    /// close-up of each.
+    string differences(size_t a, size_t b, double resolution, const size_t[] focus, out ubyte[] picture)
     {
         import std.algorithm : max;
         import hackerscad.geom.voxeldiff : allDifferences, Region;
@@ -401,7 +436,7 @@ final class Run
                     s ~= format("  and %d smaller ones\n", regions.length - 30);
                     break;
                 }
-                s ~= format("  %s %s mm³: %s%s\n", g.missing ? "to add" : "to cut", mm(g.volume), where(g),
+                s ~= format("  %d. %s %s mm³: %s%s\n", i + 1, g.missing ? "to add" : "to cut", mm(g.volume), where(g),
                     g.fill > 0.85 ? format(", a box (fills %d%%)", cast(int)(g.fill * 100))
                         : format(", fills %d%% of its box", cast(int)(g.fill * 100)));
                 if (i < 5)
@@ -424,10 +459,39 @@ final class Run
                     s ~= format("  and %d smaller ones\n", found.thin.length - 10);
                     break;
                 }
-                s ~= format("  %s %s mm³: %s\n", g.missing ? "to add" : "to cut", mm(g.volume), where(g));
+                s ~= format("  %d. %s %s mm³: %s\n", regions.length + i + 1, g.missing ? "to add" : "to cut",
+                    mm(g.volume), where(g));
             }
         }
+        if (focus.length)
+        {
+            import hackerscad.tool.closeup : Place;
+            auto all = regions ~ found.thin;
+            Place[] places;
+            foreach (n; focus)
+            {
+                if (n < 1 || n > all.length)
+                    throw new Exception(format("there is no entry %d: the report numbers 1 to %d", n, all.length));
+                auto g = all[n - 1];
+                places ~= Place(format("entry %d, %s %s mm³", n, g.missing ? "to add" : "to cut", mm(g.volume)), g.lo, g.hi);
+            }
+            s ~= closeUpsOf(a, b, places, 0.1, picture);
+        }
+        else
+            s ~= "  (focus: N gives a close-up of entry N)\n";
         return s;
+    }
+
+    /// Close-ups of places, as closeUps draws them, for parts a (the copy)
+    /// and b (the original); the text that goes with the picture.
+    string closeUpsOf(size_t a, size_t b, const Place[] places, double tol, out ubyte[] picture)
+    {
+        import hackerscad.tool.closeup : closeUps;
+        partMeshes();
+        string text;
+        auto img = closeUps(meshes[a], meshes[b], result.parts[a].rgb & 0xFFFFFF, places, tol, text);
+        picture = encodePng(img.rgb, img.width, img.height);
+        return "close-ups:\n" ~ text;
     }
 
     /// The drawings of part `a` (a copy) and part `b` (the original) compared
@@ -440,7 +504,8 @@ final class Run
     /// each view: the inside, once the outside matches. `voids` compares
     /// their holes, pockets and cavities made solid instead (b filled from its
     /// shadows, minus each part).
-    string lines(size_t a, size_t b, double depth, size_t shown, bool fixed, bool voids, out ubyte[] picture)
+    string lines(size_t a, size_t b, double depth, size_t shown, bool fixed, bool voids, out ubyte[] picture,
+        const size_t[] focus = null)
     {
         import hackerscad.render.linediff : fixedViews, Kind, lineDiff, orbit, sheet, telling;
         import hackerscad.geom.meshfeatures : plausible;
@@ -525,8 +590,8 @@ final class Run
                 break;
             }
             auto size = st.hi - st.lo;
-            s ~= format("  %s: about %s from (%s, %s, %s) to (%s, %s, %s), %s × %s × %s, seen from %d directions, %s\n",
-                st.kind == Kind.missing ? "only in " ~ nb : st.kind == Kind.extra ? "only in " ~ na
+            s ~= format("  %d. %s: about %s from (%s, %s, %s) to (%s, %s, %s), %s × %s × %s, seen from %d directions, %s\n",
+                i + 1, st.kind == Kind.missing ? "only in " ~ nb : st.kind == Kind.extra ? "only in " ~ na
                     : "surface facing otherwise (twisted, curved or tilted)",
                 st.kind == Kind.facing ? mm(st.length) ~ " mm²" : mm(st.length) ~ " mm of lines", mm(st.lo.x), mm(st.lo.y),
                 mm(st.lo.z), mm(st.hi.x), mm(st.hi.y), mm(st.hi.z), mm(size.x), mm(size.y), mm(size.z),
@@ -540,6 +605,26 @@ final class Run
         if (d.strokes.length && deeper)
             s ~= format("fix these first; once they match, peel deeper (depth %s mm) only if anything still differs\n",
                 mm(next));
+        if (focus.length)
+        {
+            import hackerscad.tool.closeup : Place, closeUps;
+            Place[] places;
+            foreach (n; focus)
+            {
+                if (n < 1 || n > d.strokes.length)
+                    throw new Exception(format("there is no entry %d: the report numbers 1 to %d", n, d.strokes.length));
+                auto st = d.strokes[n - 1];
+                places ~= Place(format("entry %d, %s", n, st.kind == Kind.missing ? "only in " ~ nb
+                    : st.kind == Kind.extra ? "only in " ~ na : "surface facing otherwise"), st.lo, st.hi, true,
+                    d.directions[st.seenFrom[0]].eye);
+            }
+            string text;
+            auto close = closeUps(ma, mb, result.parts[a].rgb & 0xFFFFFF, places, 0.1, text);
+            picture = encodePng(close.rgb, close.width, close.height);
+            s ~= "the picture: close-ups instead\n" ~ text;
+        }
+        else if (d.strokes.length)
+            s ~= "  (focus: N gives a close-up of entry N)\n";
         return s;
     }
 
