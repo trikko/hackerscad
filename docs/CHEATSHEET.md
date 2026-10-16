@@ -338,9 +338,9 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `X: Direction` — The X axis (also a plane normal).
 - `Y: Direction` — The Y axis.
 - `Z: Direction` — The Z axis.
-- `XY: Plane` — The XY plane.
-- `XZ: Plane` — The XZ plane.
-- `YZ: Plane` — The YZ plane.
+- `XY: Plane` — The XY plane, its normal +Z (up): a sketch on it reads as the Top view shows it.
+- `XZ: Plane` — The XZ plane, its normal -Y (towards the front): a sketch on it reads as the Front view shows it.
+- `YZ: Plane` — The YZ plane, its normal +X (to the right): a sketch on it reads as the Right view shows it.
 - `World: Frame` — The global frame.
 - `PI: number` — π.
 - `E: number` — e, the base of the natural logarithm.

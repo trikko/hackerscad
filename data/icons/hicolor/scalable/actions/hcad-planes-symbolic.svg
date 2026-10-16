@@ -1,5 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <!-- planes: one lying flat, seen at an angle, and one standing on it (filled shapes only, for symbolic recolouring) -->
-  <path fill="#2e3436" fill-rule="evenodd" d="M4 9 L0.5 14 L12 14 L15.5 9 Z M4.6 10.2 L2.9 12.8 L11.4 12.8 L13.1 10.2 Z"/>
-  <path fill="#2e3436" fill-rule="evenodd" d="M5 1 L11 1 L11 10.2 L9.8 10.2 L9.8 2.2 L6.2 2.2 L6.2 10.2 L5 10.2 Z"/>
+  <!-- planes: XZ and YZ standing across XY at the origin; below XY faint, as if behind it (filled shapes only, for symbolic recolouring) -->
+  <path fill="#2e3436" fill-opacity="0.12" d="M9.29 10.73 L15.30 7.52 L6.71 5.27 L0.70 8.48 Z"/>
+  <path fill="#2e3436" fill-opacity="0.12" d="M12.29 9.13 L12.29 4.27 L3.71 2.01 L3.71 6.87 Z"/>
+  <path fill="#2e3436" fill-opacity="0.12" d="M4.99 9.61 L4.99 4.75 L11.01 1.53 L11.01 6.39 Z"/>
+  <path fill="#2e3436" fill-opacity="0.35" d="M11.79 8.63 L11.79 14.49 L12.79 14.49 L12.79 8.63 Z M12.90 13.63 L3.35 11.12 L3.10 12.09 L12.65 14.60 Z M4.21 12.23 L4.21 6.37 L3.21 6.37 L3.21 12.23 Z M4.49 9.11 L4.49 14.97 L5.49 14.97 L5.49 9.11 Z M4.79 15.14 L11.68 11.46 L11.21 10.57 L4.32 14.26 Z M11.51 11.75 L11.51 5.89 L10.51 5.89 L10.51 11.75 Z"/>
+  <path fill="#2e3436" d="M9.08 11.41 L15.98 7.72 L15.51 6.84 L8.61 10.53 Z M15.91 7.16 L6.36 4.65 L6.10 5.62 L15.66 8.13 Z M6.92 4.59 L0.02 8.28 L0.49 9.16 L7.39 5.47 Z M0.09 8.84 L9.64 11.35 L9.90 10.38 L0.34 7.87 Z M12.79 9.63 L12.79 3.77 L11.79 3.77 L11.79 9.63 Z M12.90 3.91 L3.35 1.40 L3.10 2.37 L12.65 4.88 Z M3.21 1.51 L3.21 7.37 L4.21 7.37 L4.21 1.51 Z M5.49 10.11 L5.49 4.25 L4.49 4.25 L4.49 10.11 Z M4.79 5.43 L11.68 1.74 L11.21 0.86 L4.32 4.54 Z M10.51 1.03 L10.51 6.89 L11.51 6.89 L11.51 1.03 Z"/>
 </svg>

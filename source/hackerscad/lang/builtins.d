@@ -112,7 +112,9 @@ void installPrelude(Interp it, Env env)
     constant("Z", Value.vector(Vec3(0, 0, 1), 3, Dim.none));
     constant("nothing", Value.of(new SolidVal(null, Span.init)));
     constant("XY", planeValue(Vec3(0, 0, 0), Vec3(0, 0, 1)));
-    constant("XZ", planeValue(Vec3(0, 0, 0), Vec3(0, 1, 0)));
+    // its normal towards the front (-Y), as XY's is up and YZ's to the right: a sketch on it is seen as the
+    // Front view sees it, x to the right and y up
+    constant("XZ", planeValue(Vec3(0, 0, 0), Vec3(0, -1, 0)));
     constant("YZ", planeValue(Vec3(0, 0, 0), Vec3(1, 0, 0)));
     constant("World", frameValue(Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)));
     constant("edges", Value.make(Kind.selector, new SelectorVal));

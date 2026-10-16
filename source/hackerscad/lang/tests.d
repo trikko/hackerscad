@@ -3768,7 +3768,7 @@ unittest
     bool near(Vec3 a, Vec3 b) => (a - b).length < 1e-6;
     assert(near(box("ay")[0], Vec3(-5, 0, -10)) && near(box("ay")[1], Vec3(5, 5, 10)));
     assert(near(box("ax")[0], Vec3(-5, 35, -10)) && near(box("ax")[1], Vec3(0, 45, 10)));
-    assert(near(box("sec")[0], Vec3(-10, 82, 0)) && near(box("sec")[1], Vec3(10, 85, 30)));
+    assert(near(box("sec")[0], Vec3(-10, 75, 0)) && near(box("sec")[1], Vec3(10, 78, 30)));
     assert(near(box("turned")[0], Vec3(-5, 117, 0)) && near(box("turned")[1], Vec3(5, 120, 20)));
     assert(isClose(partVolume(r, "ay"), 1000, 1e-9) && isClose(partVolume(r, "sec"), 1800, 1e-9));
     assert(error("@part Solid p() => rect(1, 1).extrude(1, along: vec(1, 1, 0));").message.canFind("X, Y or Z"));
@@ -3903,7 +3903,7 @@ unittest
         auto rim = box(40.mm, 30.mm, 10.mm).path(edges.loop(faces.top));
         auto top = sketch();
         top.polyline([vec(0, 0), vec(40, 0)], closed: false);
-        auto side = sketch(XZ.flip);
+        auto side = sketch(XZ);
         side.polyline([vec(0, 0), vec(40, 30)], closed: false);
         auto rise = path(top.path, side.path);
         writeln(format("%d %.3f %.3f %.3f %.3f", s.paths.length, len(s.paths[0]), len(bent), len(rim), len(rise)));

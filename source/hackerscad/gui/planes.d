@@ -50,7 +50,7 @@ mixin template PlaneTools()
     {
         alias SP = Viewport.ShownPlane;
         auto o = Vec3(0, 0, 0);
-        SP[] ps = [SP("XY", o, Vec3(0, 0, 1), true), SP("XZ", o, Vec3(0, 1, 0), true), SP("YZ", o, Vec3(1, 0, 0), true)];
+        SP[] ps = [SP("XY", o, Vec3(0, 0, 1), true), SP("XZ", o, Vec3(0, -1, 0), true), SP("YZ", o, Vec3(1, 0, 0), true)];
         codePlanes = null;
         foreach (p; last.planes)
         {
