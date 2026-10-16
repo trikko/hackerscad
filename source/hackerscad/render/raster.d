@@ -20,6 +20,75 @@ enum View
     right,
 }
 
+/// Where a picture is taken from: the direction towards the viewer, and
+/// optionally a box to frame (a close-up of it, with some room around) and
+/// whether what lies nearer than the box is cut away (to see inside).
+struct Shot
+{
+    Vec3 eye = Vec3(1, -1.25, 0.95);   /// from the part towards the viewer
+    bool framed;                        /// frame lo … hi instead of the whole picture
+    Vec3 lo, hi;
+    bool cut;                           /// leave out what lies in front of the box
+
+    /// One of the named views.
+    static Shot of(View v) => Shot(viewEye(v));
+
+    /// The same direction, framed on a box.
+    Shot framing(Vec3 boxLo, Vec3 boxHi, bool cutAway = false) const
+    {
+        Shot r = this;
+        r.framed = true;
+        r.lo = boxLo;
+        r.hi = boxHi;
+        r.cut = cutAway;
+        return r;
+    }
+
+    /// In words, where it looks from and which way the axes run: "from the
+    /// front (-y), x to the right, z up".
+    string toString() const
+    {
+        import std.format : format;
+        import std.math : atan2, asin, PI;
+        auto cam = Camera(eye);
+        string axis(Vec3 v)
+        {
+            foreach (k, name; ["x", "y", "z"])
+            {
+                immutable c = [v.x, v.y, v.z][k];
+                if (abs(c) > 0.99)
+                    return (c < 0 ? "-" : "") ~ name;
+            }
+            return format("(%.2g, %.2g, %.2g)", v.x, v.y, v.z);
+        }
+        immutable e = eye.normalized;
+        string from;
+        foreach (v; [View.front, View.back, View.top, View.bottom, View.left, View.right])
+            if (viewEye(v).normalized.dot(e) > 0.999)
+                from = format("from the %s (%s)", v, axis(e));
+        if (from is null)
+            from = format("from azimuth %.3g°, elevation %.3g°", atan2(e.x, -e.y) * 180 / PI, asin(e.z) * 180 / PI);
+        return format("%s, %s to the right, %s up%s", from, axis(cam.right), axis(cam.up),
+            framed ? format(", framed on (%.4g, %.4g, %.4g) to (%.4g, %.4g, %.4g)%s", lo.x, lo.y, lo.z, hi.x, hi.y,
+                hi.z, cut ? ", what lies in front cut away" : "") : "");
+    }
+}
+
+/// The direction of a named view, towards the viewer.
+Vec3 viewEye(View v)
+{
+    final switch (v)
+    {
+    case View.iso: return Vec3(1, -1.25, 0.95);
+    case View.front: return Vec3(0, -1, 0);
+    case View.back: return Vec3(0, 1, 0);
+    case View.top: return Vec3(0, 0, 1);
+    case View.bottom: return Vec3(0, 0, -1);
+    case View.left: return Vec3(-1, 0, 0);
+    case View.right: return Vec3(1, 0, 0);
+    }
+}
+
 struct Shaded
 {
     Mesh mesh;   /// welded mesh: edges are detected from shared vertices
@@ -112,7 +181,12 @@ struct Image
 
 /// Renders the meshes from the given view, fitted to the image.
 Image render(const Shaded[] items, View view, uint width, uint height) =>
-    render(items, prepare(items), view, width, height);
+    render(items, prepare(items), Shot.of(view), width, height);
+
+/// Renders the meshes as the shot says: from its direction, framed on its box
+/// if it has one.
+Image render(const Shaded[] items, Shot shot, uint width, uint height) =>
+    render(items, prepare(items), shot, width, height);
 
 /// What does not depend on the view: computed once for a sheet of views.
 private struct Prepared
@@ -133,13 +207,13 @@ private Prepared[] prepare(const Shaded[] items)
     return r;
 }
 
-private Image render(const Shaded[] items, const Prepared[] prepared, View view, uint width, uint height)
+private Image render(const Shaded[] items, const Prepared[] prepared, Shot shot, uint width, uint height)
 {
     enum ss = 3; // supersampling factor
     auto c = Canvas(width * ss, height * ss);
     c.clear();
 
-    auto cam = Camera(view);
+    auto cam = Camera(shot.eye);
     double x0 = double.max, y0 = double.max, x1 = -double.max, y1 = -double.max, z0 = double.max, z1 = -double.max;
     foreach (it; items)
         foreach (i; 0 .. it.mesh.vertexCount)
@@ -150,8 +224,26 @@ private Image render(const Shaded[] items, const Prepared[] prepared, View view,
         }
     if (x0 > x1)
         return c.downsample(ss);
+    immutable depthRange = z1 - z0;
 
-    immutable margin = 0.08;
+    // a close-up: the frame is the box's, with room around it; what lies in
+    // front of the box (nearer the viewer) can be cut away
+    double margin = 0.08;
+    if (shot.framed)
+    {
+        x0 = y0 = z0 = double.max;
+        x1 = y1 = z1 = -double.max;
+        foreach (k; 0 .. 8)
+        {
+            auto p = cam.project(Vec3(k & 1 ? shot.hi.x : shot.lo.x, k & 2 ? shot.hi.y : shot.lo.y,
+                k & 4 ? shot.hi.z : shot.lo.z));
+            x0 = min(x0, p.x), x1 = max(x1, p.x), y0 = min(y0, p.y), y1 = max(y1, p.y);
+            z0 = min(z0, p.z), z1 = max(z1, p.z);
+        }
+        margin = 0.15;
+        if (shot.cut)
+            c.nearest = cast(float)(z1 + 0.05 * max(x1 - x0, y1 - y0, 1e-3));
+    }
     immutable k = min(c.w * (1 - 2 * margin) / max(x1 - x0, 1e-9), c.h * (1 - 2 * margin) / max(y1 - y0, 1e-9));
     immutable ox = c.w / 2.0 - k * (x0 + x1) / 2, oy = c.h / 2.0 + k * (y0 + y1) / 2;
     Vec3 toScreen(Vec3 p)
@@ -162,7 +254,7 @@ private Image render(const Shaded[] items, const Prepared[] prepared, View view,
 
 
     // opaque parts first, then the see-through ones blended over them
-    immutable edgeTolerance = 0.004 * max(z1 - z0, 1e-6);
+    immutable edgeTolerance = 0.004 * max(depthRange, 1e-6);
     Edges[] opaqueEdges;
     foreach (see; [false, true])
     {
@@ -222,11 +314,20 @@ private Image render(const Shaded[] items, const Prepared[] prepared, View view,
 /// Several views side by side in a grid (left to right, top to bottom).
 Image renderSheet(const Shaded[] items, const View[] views, uint cell, uint columns = 2)
 {
-    immutable rows = cast(uint)((views.length + columns - 1) / columns);
+    Shot[] shots;
+    foreach (v; views)
+        shots ~= Shot.of(v);
+    return renderSheet(items, shots, cell, columns);
+}
+
+/// Several shots side by side in a grid (left to right, top to bottom).
+Image renderSheet(const Shaded[] items, const Shot[] shots, uint cell, uint columns = 2)
+{
+    immutable rows = cast(uint)((shots.length + columns - 1) / columns);
     Image sheet = Image(cell * columns, cell * rows, new ubyte[cell * columns * cell * rows * 3]);
     sheet.rgb[] = 255;
     auto prepared = prepare(items);
-    foreach (i, v; views)
+    foreach (i, v; shots)
     {
         auto img = render(items, prepared, v, cell, cell);
         immutable cx = cast(uint)(i % columns) * cell, cy = cast(uint)(i / columns) * cell;
@@ -418,17 +519,12 @@ struct Camera
 
     this(View v)
     {
-        final switch (v)
-        {
-        case View.iso: eye = Vec3(1, -1.25, 0.95); break;
-        case View.front: eye = Vec3(0, -1, 0); break;
-        case View.back: eye = Vec3(0, 1, 0); break;
-        case View.top: eye = Vec3(0, 0, 1); break;
-        case View.bottom: eye = Vec3(0, 0, -1); break;
-        case View.left: eye = Vec3(-1, 0, 0); break;
-        case View.right: eye = Vec3(1, 0, 0); break;
-        }
-        eye = eye.normalized;
+        this(viewEye(v));
+    }
+
+    this(Vec3 e)
+    {
+        eye = e.normalized;
         auto worldUp = abs(eye.z) > 0.99 ? Vec3(0, eye.z > 0 ? 1 : -1, 0) : Vec3(0, 0, 1);
         right = worldUp.cross(eye).normalized;
         up = eye.cross(right);
@@ -444,6 +540,8 @@ public struct Canvas
     float[] color; // rgb
     float[] depth;
     float[] mask;  // edge coverage, before it is laid over the colours
+    /// a close-up cut: what lies nearer the viewer than this is left out
+    float nearest = float.infinity;
 
     this(uint w, uint h)
     {
@@ -486,7 +584,7 @@ public struct Canvas
                     continue;
                 immutable z = w0 * a.z + w1 * b.z + w2 * c.z;
                 immutable i = y * w + x;
-                if (z <= depth[i])
+                if (z <= depth[i] || z > nearest)
                     continue;
                 auto colour = shade((na * w0 + nb * w1 + nc * w2).normalized);
                 if (pattern)
@@ -522,7 +620,7 @@ public struct Canvas
                     continue;
                 immutable z = w0 * a.z + w1 * b.z + w2 * c.z;
                 immutable i = y * w + x;
-                if (z <= depth[i])
+                if (z <= depth[i] || z > nearest)
                     continue;
                 put(i, rgb, alpha);
                 if (alpha >= 1)
@@ -588,7 +686,7 @@ public struct Canvas
                     if (xx < 0 || yy < 0 || xx >= w || yy >= h)
                         continue;
                     immutable i = yy * w + xx;
-                    if (z < depth[i] - tolerance)
+                    if (z < depth[i] - tolerance || z > nearest)
                         continue;
                     if (toMask)
                         mask[i] = 1;
@@ -633,4 +731,37 @@ unittest
     auto img = render([Shaded(m, 0xFF0000)], View.iso, 64, 64);
     auto centre = img.rgb[(32 * 64 + 32) * 3 .. (32 * 64 + 32) * 3 + 3];
     assert(centre[0] > centre[2]); // reddish, not background
+}
+
+unittest
+{
+    // a close-up: a 1 mm box framed fills the picture; cut away, a block in
+    // front of it no longer hides it
+    Mesh cube(double x0, double y0, double z0, double s)
+    {
+        Mesh m;
+        foreach (k; 0 .. 8)
+            m.verts ~= [cast(float)(x0 + (k & 1) * s), cast(float)(y0 + ((k >> 1) & 1) * s), cast(float)(z0 + ((k >> 2) & 1) * s)];
+        m.tris = [0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6, 0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 4, 6, 0, 6, 2, 1, 3, 7, 1, 7, 5];
+        return m;
+    }
+    auto small = cube(10, 0, 0, 1), wall = cube(9, -5, -1, 3);
+    auto front = Shot.of(View.front).framing(Vec3(10, 0, 0), Vec3(11, 1, 1));
+    auto img = render([Shaded(small, 0xFF0000)], front, 64, 64);
+    size_t red;
+    foreach (q; 0 .. 64 * 64)
+        red += img.rgb[q * 3] > 150 && img.rgb[q * 3 + 2] < 120;
+    assert(red > 64 * 64 / 3, "the box fills the picture");
+    // the wall (y -5 … -2) stands between the viewer (-y) and the box: grey hides red, unless cut away
+    auto hidden = render([Shaded(small, 0xFF0000), Shaded(wall, 0x808080)], front, 64, 64);
+    auto seen = render([Shaded(small, 0xFF0000), Shaded(wall, 0x808080)], front.framing(Vec3(10, 0, 0), Vec3(11, 1, 1),
+        true), 64, 64);
+    size_t redHidden, redSeen;
+    foreach (q; 0 .. 64 * 64)
+    {
+        redHidden += hidden.rgb[q * 3] > 150 && hidden.rgb[q * 3 + 2] < 120;
+        redSeen += seen.rgb[q * 3] > 150 && seen.rgb[q * 3 + 2] < 120;
+    }
+    assert(redHidden < 50 && redSeen > 64 * 64 / 3, "cut away, the wall in front no longer hides the box");
+    assert(Shot.of(View.front).toString == "from the front (-y), x to the right, z up");
 }

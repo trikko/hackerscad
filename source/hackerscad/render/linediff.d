@@ -11,7 +11,7 @@ import std.math : abs, ceil, cos, floor, sin, sqrt, PI;
 
 import hackerscad.geom.mesh;
 import hackerscad.geom.vec;
-import hackerscad.render.raster : Image;
+import hackerscad.render.raster : Image, Shot;
 
 /// A direction to look from, in degrees: the azimuth around z (0 from the
 /// front, -y; 90 from the right, +x) and the elevation (90 from above).
@@ -21,6 +21,14 @@ struct Direction
     /// Peeled: how deep (mm, from the nearest point) the parts are cut away on the viewer's side, to
     /// see the lines inside; 0 the whole parts.
     double depth = 0;
+
+    /// The direction that looks from `eye` (towards the viewer).
+    static Direction of(Vec3 eye, double depth = 0)
+    {
+        import std.math : asin, atan2;
+        immutable e = eye.normalized;
+        return Direction(atan2(e.x, -e.y) * 180 / PI, asin(max(-1.0, min(1.0, e.z))) * 180 / PI, depth);
+    }
 
     /// From the part towards the viewer.
     Vec3 eye() const
@@ -87,8 +95,10 @@ struct LineDiff
 }
 
 /// Compares the drawings of `a` (a copy) and `b` (the original) from each
-/// direction, in pictures `size` pixels wide.
-LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint size = 300)
+/// direction, in pictures `size` pixels wide. With `close` framed, every
+/// picture is a close-up of its box (and, cut, without what lies in front).
+LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint size = 300,
+    const(Shot)* close = null)
 {
     enum ss = 2;   // drawn at twice the size: thinner lines, finer comparison
     immutable n = size * ss;
@@ -138,15 +148,32 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
                 x0 = min(x0, p.x), x1 = max(x1, p.x), y0 = min(y0, p.y), y1 = max(y1, p.y);
                 z0 = min(z0, p.z), z1 = max(z1, p.z);
             }
-        immutable k = n * 0.9 / max(x1 - x0, y1 - y0, 1e-9);
+        immutable range = z1 - z0;
+        double nearest = double.infinity, fill = 0.9;
+        if (close !is null && close.framed)
+        {
+            x0 = y0 = z0 = double.max;
+            x1 = y1 = z1 = -double.max;
+            foreach (c; 0 .. 8)
+            {
+                auto p = cam.project(Vec3(c & 1 ? close.hi.x : close.lo.x, c & 2 ? close.hi.y : close.lo.y,
+                    c & 4 ? close.hi.z : close.lo.z));
+                x0 = min(x0, p.x), x1 = max(x1, p.x), y0 = min(y0, p.y), y1 = max(y1, p.y);
+                z0 = min(z0, p.z), z1 = max(z1, p.z);
+            }
+            fill = 0.7;
+            if (close.cut)
+                nearest = z1 + 0.05 * max(x1 - x0, y1 - y0, 1e-3);
+        }
+        immutable k = n * fill / max(x1 - x0, y1 - y0, 1e-9);
         immutable ox = n / 2.0 - k * (x0 + x1) / 2, oy = n / 2.0 + k * (y0 + y1) / 2;
         Vec3 toScreen(Vec3 p)
         {
             auto q = cam.project(p);
             return Vec3(ox + k * q.x, oy - k * q.y, q.z);
         }
-        immutable tol = 0.004 * max(z1 - z0, 1e-6);
-        immutable cut = d.depth > 0 ? z1 - d.depth : double.infinity;
+        immutable tol = 0.004 * max(range, 1e-6);
+        immutable cut = min(nearest, d.depth > 0 ? z1 - d.depth : double.infinity);
         auto da = ea.draw(cam.eye, &toScreen, n, tol, cut), db = eb.draw(cam.eye, &toScreen, n, tol, cut);
 
         // lines farther than r pixels from any line of the other
@@ -680,4 +707,21 @@ unittest
     foreach (st; d.strokes)
         turned |= st.kind == Kind.facing && st.lo.x > 6 && st.hi.y < 4;
     assert(turned, "the chamfer's surface faces otherwise");
+
+    // a close-up of the chamfer from the front right: the red and blue lines
+    // fill much more of the picture than in the whole view
+    size_t coloured(const Image img)
+    {
+        size_t c;
+        foreach (q; 0 .. img.width * img.height)
+            c += img.rgb[q * 3] == 220 || img.rgb[q * 3 + 2] == 230;
+        return c;
+    }
+    auto view = [Direction(45, 20)];
+    auto whole = lineDiff(sharpCube, chamfered, view, 120);
+    auto shot = Shot(view[0].eye).framing(Vec3(7.5, -0.5, 3), Vec3(10.5, 2.5, 7));
+    auto close = lineDiff(sharpCube, chamfered, view, 120, &shot);
+    // (a third of the chamfer's height is in the frame, nearly three times larger)
+    assert(coloured(close.pictures[0]) * 10 > 13 * coloured(whole.pictures[0]), "the close-up is closer");
+    assert(abs(Direction.of(view[0].eye).azimuth - 45) < 1e-9 && abs(Direction.of(view[0].eye).elevation - 20) < 1e-9);
 }
