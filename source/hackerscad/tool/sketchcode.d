@@ -144,8 +144,11 @@ struct SketchWriter
     /// Adds a statement at the end of the sketch's code.
     void add(string statement)
     {
-        import std.algorithm : canFind, endsWith;
-        if (construction && statement.endsWith(")") && !statement.canFind(".point(") && !statement.canFind(".fill("))
+        import std.algorithm : any, canFind, endsWith;
+        // geometry only: constraints (s.on, s.midpoint…), fills and points take no construction
+        static immutable geometry = ["line", "arc", "circle", "ellipse", "polyline", "spline", "rect", "polygon",
+            "slot", "teardrop"];
+        if (construction && statement.endsWith(")") && geometry.any!(g => statement.canFind("." ~ g ~ "(")))
             statement = statement[0 .. $ - 1] ~ (statement.endsWith("()") ? "" : ", ") ~ "construction: true)";
         added ~= statement;
     }
@@ -1062,6 +1065,16 @@ unittest
     assert(made.canFind("s.line(a, b, construction: true)") && made.canFind("vec(70, 20), construction: true)"), made);
     // plain again
     auto v2 = viewOf(made);
+    // drawing as construction: the geometry is, its points and constraints are not
+    auto cw = SketchWriter(src, file, v);
+    cw.construction = true;
+    cw.add("auto q = s.point(1, 2)");
+    cw.add("auto l = s.line(a, q)");
+    cw.add("s.midpoint(q, ab)");
+    cw.add("s.on(q, ab)");
+    auto drawn = cw.result();
+    assert(drawn.canFind("s.point(1, 2);") && drawn.canFind("s.line(a, q, construction: true);")
+        && drawn.canFind("s.midpoint(q, ab);") && drawn.canFind("s.on(q, ab);"), drawn);
     auto back = setConstruction(made, file, v2, [at(8, "line")], false, why);
     assert(back !is null && back.canFind("s.line(a, b);"), back);
 }
