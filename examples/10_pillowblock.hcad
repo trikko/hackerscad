@@ -1,0 +1,175 @@
+// Pillow block: a 608 bearing housing from five sketches
+// A pillow block: a housing for a 608 ball bearing,
+// bolted down by two slotted feet. Each feature is a
+// sketch drawn on a different surface: the ground,
+// the top of the foot, the front of the foot, the
+// front of the upright and its slanted flank.
+module pillowblock;
+
+import std.shapes;
+import hardware : M5;
+
+@param("Foot length", min: 70.mm, max: 140.mm)
+immutable footLength = 90.mm;
+
+@param("Foot width", min: 20.mm, max: 50.mm)
+immutable footWidth = 30.mm;
+
+@param("Foot height", min: 5.mm, max: 15.mm)
+immutable footHeight = 8.mm;
+
+@param("Shaft height above the foot", min: 20.mm, max: 50.mm)
+immutable axisHeight = 26.mm;
+
+@param("Upright width at the bottom", min: 40.mm, max: 70.mm)
+immutable uprightWidth = 50.mm;
+
+@param("Upright thickness", min: 10.mm, max: 30.mm)
+immutable uprightDepth = 16.mm;
+
+@param("Slot travel", min: 0.mm, max: 12.mm)
+immutable travel = 6.mm;
+
+// the 608 bearing: 22 mm across, 7 mm wide
+immutable bearingD = 22.mm;
+immutable bearingWidth = 7.mm;
+
+immutable footCorner = 6.mm;
+immutable slotX = 35.mm;
+immutable spotFace = 9.mm;
+immutable topRadius = 17.mm;
+
+/// The foot seen from above, on the ground (XY).
+Profile footSketch()
+{
+    auto s = sketch();
+    auto c = s.point(0, 0, fixed: true);
+    s.rect(center: c, w: footLength, h: footWidth,
+        corner: footCorner);
+    return s.profile;
+}
+
+/// The two bolt slots, w wide: through the foot, and
+/// wider for the washers on its top face.
+Profile slotsSketch(Length w)
+{
+    auto s = sketch();
+    auto c = s.point(0, 0, fixed: true);
+    foreach (side; [-1, 1])
+    {
+        auto a = s.point(side * (slotX - travel / 2), 0);
+        auto b = s.point(side * (slotX + travel / 2), 0);
+        s.slot(a, b, w: w);
+
+        // on the long axis, slotX from the middle
+        s.horizontal(c, a);
+        s.horizontal(a, b);
+        s.distance(c, a, slotX - travel / 2, along: X);
+        s.distance(a, b, travel);
+    }
+    return s.profile;
+}
+
+/// The upright seen from the front, standing on the
+/// foot: two flanks touching the round top, and the
+/// hole for the shaft.
+Profile uprightSketch()
+{
+    auto s = sketch();
+    auto o = s.point(0, 0, fixed: true);
+    auto bl = s.point(-uprightWidth / 2, 0);
+    auto br = s.point(uprightWidth / 2, 0);
+    auto centre = s.point(0, axisHeight);
+    auto tr = s.point(topRadius, axisHeight + 4.mm);
+    auto tl = s.point(-topRadius, axisHeight + 4.mm);
+
+    auto bottom = s.line(bl, br);
+    auto right = s.line(br, tr);
+    auto top = s.arc(centre, tr, tl);
+    auto left = s.line(tl, bl);
+
+    s.horizontal(bottom);
+    s.midpoint(o, bottom);
+    s.length(bottom, uprightWidth);
+    s.vertical(o, centre);
+    s.distance(o, centre, axisHeight);
+    s.radius(top, topRadius);
+    s.tangent(right, top);
+    s.tangent(left, top);
+
+    // room for the shaft behind the bearing
+    s.circle(centre, d: bearingD - 8.mm);
+    return s.profile;
+}
+
+/// The bearing's seat, on the upright's front face:
+/// the bearing, and a notch across it to lever it out.
+Profile seatSketch()
+{
+    auto s = sketch();
+    auto c = s.point(0, 0, fixed: true);
+    s.circle(c, d: bearingD);
+    s.slot(bearingD + 6.mm, 3.mm, center: c);
+    return s.profile;
+}
+
+/// A label sunk into the slanted flank, its letters
+/// left standing.
+Profile labelSketch()
+{
+    auto s = sketch();
+    auto c = s.point(0, 0, fixed: true);
+    s.rect(center: c, w: 9.mm, h: 24.mm, corner: 2.mm);
+    return s.profile
+        - text("608", size: 5.mm).centered.rotate(90);
+}
+
+@part("White Pop")
+Solid pillowBlock()
+{
+    // 1. on the ground: the foot, its top edge rounded
+    // before anything is cut in it
+    auto foot = footSketch().extrude(footHeight);
+    auto block = foot
+        .fillet(edges.of(faces.top), r: 1.5.mm);
+
+    // 2. on the top of the foot: the slots through it,
+    // and flat seats for the washers
+    block = block.cut(slotsSketch(M5.clearance),
+        on: block.frame(faces.top), through: true);
+    block = block.cut(slotsSketch(spotFace),
+        on: block.frame(faces.top), depth: 1.5.mm);
+
+    // 3. on the front of the foot, moved back to the
+    // middle: the upright, pushed in from there
+    auto inset = (footWidth - uprightDepth) / 2;
+    auto front = block.plane(faces.front)
+        .offset(-inset)
+        .frame(origin: vec(0, 0, footHeight));
+    auto upright = uprightSketch()
+        .extrude(-uprightDepth)
+        .placeOn(front);
+    block += upright;
+
+    // where the upright meets the foot, rounded
+    block = block.fillet(
+        edges.between(faces.from(upright),
+            faces.from(foot)),
+        r: 3.mm);
+
+    // 4. on the upright's front face, round the shaft:
+    // the bearing's seat
+    auto face = faces.from(upright)
+        .filter(f => f.normal.y < -0.99);
+    block = block.cut(seatSketch(),
+        on: block.frame(face,
+            origin: vec(0, 0, footHeight + axisHeight)),
+        depth: bearingWidth + 0.2.mm);
+
+    // 5. on the right flank, leaning: the label
+    auto flank = faces.from(upright)
+        .filter(f => f.normal.x > 0.5
+            && f.normal.z > 0.1);
+    return block.cut(labelSketch(),
+        on: block.frame(flank), depth: 0.6.mm);
+}

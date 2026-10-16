@@ -72,12 +72,19 @@ dimensions and pictures, compare them with the request, fix, then export.
   distance, angle, tangent, on, equal, concentric…) and s.profile, to
   extrude or revolve.
   Prefer a sketch over unions and differences of boxes and cylinders for a
-  mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip)
-  whenever the request gives its dimensions: write each dimension as a
-  constraint, aim for s.dof == 0 (a warning lists what is left free), then
-  add 3D features (holes, fillets, shells) to the extruded solid. Examples
-  below: the medal (a first sketch, step by step) and the carlo library (a
-  clip drawn with tangent arcs, a loop and if/else).
+  mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip),
+  with the sizes given or estimated (estimated ones become @params): write
+  each dimension as a constraint, aim for s.dof == 0 (a warning lists what
+  is left free), then add 3D features (holes, fillets, shells) to the
+  extruded solid. A profile made of more than three shapes, moved by sizes
+  worked out by hand, or rounded with .offset(r).offset(-r) is an outline
+  that wants a sketch: it reads as its dimensions, keeps its tangents when
+  a @param changes, and its edges take fillets. One shape alone can stay
+  one line (rect(40.mm, 20.mm, corner: 3.mm)); in a sketch (s.rect) its
+  sizes become dimensions the user changes with a click in the window.
+  Examples below: the medal (a first sketch, step by step), the pillow
+  block (a part from five sketches on five surfaces) and the carlo library
+  (a clip drawn with tangent arcs, a loop and if/else).
 - To build on a face, take its frame and place parts built on XY (Z up):
   cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top).at(x: 10.mm)).
 - To draw an outline on a face, measured from the part's own edges, sketch
@@ -472,7 +479,8 @@ string reference(string topic = null)
     auto full = agentGuide ~ "\n" ~ import("LANGUAGE.md") ~ "\n## Example: box with lid\n\n```d\n" ~ import("04_box.hcad")
         ~ "```\n\n## Example: knob on a shaft\n\n```d\n" ~ import("07_knob.hcad")
         ~ "```\n\n## Example: a constrained sketch, a medal\n\n```d\n" ~ import("tutorial/12-medal.hcad")
-        ~ "```\n\n## Example: the shapes of a sketch\n\n```d\n" ~ import("tutorial/12-shapes.hcad") ~ "```\n"
+        ~ "```\n\n## Example: the shapes of a sketch\n\n```d\n" ~ import("tutorial/12-shapes.hcad")
+        ~ "```\n\n## Example: a pillow block, five sketches on five surfaces\n\n```d\n" ~ import("10_pillowblock.hcad") ~ "```\n"
         ~ librarySection;
     if (topic.length == 0)
         return full;
