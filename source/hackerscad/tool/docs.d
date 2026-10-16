@@ -55,7 +55,10 @@ dimensions and pictures, compare them with the request, fix, then export.
   text; combined with + - &, moved, turned, scaled, mirrored like solids,
   .round(r), .offset(d); turn them into solids with .extrude(h) or
   .revolve(axis: Y). A prism along X or Y: .extrude(h, along: Y) (the
-  profile's x along X, its y up Z); a profile in another plane (a section,
+  profile's x along X, its y up Z, towards +Y; along: X its x along Y,
+  towards +X; a negative h the other way); taper: 3.deg narrows the solid
+  going away from the profile, whichever way it goes (a negative taper
+  widens it). A profile in another plane (a section,
   one turned) extrudes across its own plane, from where it lies. On a face: body.extrude(profile, on: frame, depth:)
   adds, body.cut(profile, on: frame, depth: | through: true) removes.
 - Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),

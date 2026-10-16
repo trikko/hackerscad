@@ -310,7 +310,7 @@ immutable Ref[] reference =
     F("across", "Profile", ["axis: X | Y"], "Profile", "The profile stood up across X or Y, as extrude(along:) stands it (across X: its x along Y, its y up Z), at the origin: move it along the axis and loft through several, or extrude it where it is."),
     F("offset", "Solid", ["distance: Length"], "Solid", "Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened)."),
     withForms(F("extrude", "Profile", ["height: Length", "taper: Angle", "symmetric: bool", "twist: Angle", "along: X | Y"], "Solid",
-        "A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly. along: X or Y stands the profile up across that axis and pushes it along it. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is."), [
+        "A solid along +Z from the profile (a negative height: down, towards -Z); taper: 3.deg leans its sides in going away from the profile, whichever way the solid goes (the outline narrows, holes widen; a negative taper widens); twist: 90.deg turns it around Z as it rises, evenly. along: X stands the profile up across X (its x along Y, its y up Z) and pushes it towards +X, along: Y (its x along X) towards +Y; a negative height towards -X or -Y. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is."), [
         "rect(40.mm, 20.mm).extrude(5.mm)   // z 0 .. 5",
         "rect(40.mm, 20.mm).extrude(5.mm, along: Y)   // its x along X, y up Z: y 0 .. 5",
         "rect(40.mm, 20.mm).extrude(5.mm, along: X)   // its x along Y, y up Z: x 0 .. 5",

@@ -516,6 +516,33 @@ unittest
     auto loftBox = stood.parts[2].solid;
     assert(abs(make().kernel.bbox(loftBox.brep).size.x - 20) < 1e-6, "the loft runs along X");
 
+    // a taper narrows going away from the profile, whichever way the solid goes; along: X goes towards +X,
+    // a negative height the other way; and the reference says so
+    auto ways = runModel(q{
+        @part Solid down() => rect(10, 10).extrude(-10, taper: 10.deg);
+        @part Solid x() => rect(10, 10).extrude(10, taper: 10.deg, along: X);
+        @part Solid minusX() => rect(10, 10).extrude(-10, taper: 10.deg, along: X);
+    });
+    foreach (d; ways.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    foreach (i, lo; [-10.0, 0, -10])
+    {
+        auto b = make().kernel.bbox(ways.parts[i].solid.brep);
+        immutable from = i == 0 ? b.min.z : b.min.x, to = i == 0 ? b.max.z : b.max.x;
+        assert(abs(from - lo) < 1e-6 && abs(to - (lo + 10)) < 1e-6, ways.parts[i].name);
+    }
+    auto narrow = runModel(q{
+        @part Solid a() => rect(10, 10).extrude(-10, taper: 10.deg).section(XY.offset(-9.mm)).extrude(1);
+        @part Solid b() => rect(10, 10).extrude(-10, taper: 10.deg, along: X).section(YZ.offset(-9.mm)).extrude(1);
+    });
+    import std.math : tan;
+    immutable side = 10 - 2 * 9 * tan(10 * PI / 180);
+    foreach (i; 0 .. 2)
+        assert(isClose(partVolume(narrow, i ? "b" : "a"), side * side, 1e-4), narrow.parts[i].name);
+    import hackerscad.lang.reference : lookupRef;
+    import std.algorithm : any;
+    assert(lookupRef("extrude").any!(r => r.doc.canFind("going away from the profile") && r.doc.canFind("towards +X")));
+
     // two arcs meeting (a hole with its printing notch, grown): tapered in a moment (the draft ran for minutes)
     import std.datetime.stopwatch : StopWatch, AutoStart;
     auto clock = StopWatch(AutoStart.yes);
