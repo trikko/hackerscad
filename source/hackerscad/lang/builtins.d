@@ -2606,9 +2606,39 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
             case "pieces":
                 {
                     Value[] r;
+                    if (s.flat)
+                    {
+                        // a profile: its separate regions, each with its holes
+                        foreach (b; s.brep is null ? null : it.kernel.profileParts(s.brep, 2))
+                            r ~= Value.of(derived(it, b, [s], "pieces", span));
+                        result = Value.of(r);
+                        return true;
+                    }
                     foreach (p; piecesOf(it, s, span))
                         r ~= Value.of(p);
                     result = Value.of(r);
+                    return true;
+                }
+            case "outer", "holes":
+                {
+                    // a profile's outline without its holes, or its holes each filled
+                    if (!s.flat)
+                        return false;
+                    auto parts = s.brep is null ? null : it.kernel.profileParts(s.brep, name == "outer" ? 0 : 1);
+                    if (name == "holes")
+                    {
+                        Value[] r;
+                        foreach (b; parts)
+                            r ~= Value.of(derived(it, b, [s], "holes", span));
+                        result = Value.of(r);
+                        return true;
+                    }
+                    if (parts.length == 0)
+                        throw new HcadError(Code.type, "the profile is empty: it has no outline", span);
+                    auto b = parts[0];
+                    foreach (q; parts[1 .. $])
+                        b = it.kernel.boolean(b, q, BoolOp.fuse);
+                    result = Value.of(derived(it, b, [s], "outer", span));
                     return true;
                 }
             case "isValid": result = Value.of(s.brep !is null && it.kernel.isValid(s.brep)); return true;
@@ -2697,6 +2727,7 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
         ctx.edges = it.kernel.edges(b);
         ctx.edgeFaces = it.kernel.edgeFaces(b);
     }
+    ctx.outerEdges = (int f) => it.kernel.faceOuterEdges(b, f);
     double[][double] shares;
     ctx.overhangShares = (double angle) {
         if (auto r = angle in shares)
@@ -3847,6 +3878,41 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
                         if (f >= 0 && set.canFind(f))
                             return true;
                     return false;
+                });
+            });
+        case "loop":
+            // edges.loop(faces.top): the outer loop of each face, not the edges round its holes
+            return fn((ref CallArgs a) {
+                auto inner = faceSelector(a, "loop");
+                int[] memo;
+                const(EdgeInfo)* key;
+                return with_((size_t i, ref SelectCtx c) {
+                    if (c.edges.ptr !is key)
+                    {
+                        key = c.edges.ptr;
+                        memo = null;
+                        foreach (f; c.resolve(inner))
+                            memo ~= c.outerEdges(f);
+                    }
+                    return memo.canFind(cast(int) i);
+                });
+            });
+        case "chain":
+            // edges.chain(edges.…): those edges and every edge running on from them without a corner (tangent
+            // within `angle`, 2° unless given): a curved outline made of many pieces, taken whole
+            return fn((ref CallArgs a) {
+                auto x = Args(it, a, "chain", ["selector", "edges", "angle"]);
+                auto seed = x.selector("edges", false);
+                immutable cosTol = cos(x.angleOr("angle", 2 * PI / 180));
+                bool[] memo;
+                const(EdgeInfo)* key;
+                return with_((size_t i, ref SelectCtx c) {
+                    if (c.edges.ptr !is key)
+                    {
+                        key = c.edges.ptr;
+                        memo = tangentChain(c.edges, c.resolve(seed), cosTol);
+                    }
+                    return memo[i];
                 });
             });
         case "between":

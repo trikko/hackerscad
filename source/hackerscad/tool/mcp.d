@@ -1140,9 +1140,12 @@ JValue toolList()
             ~ "evaluation the selection stays on the same items where they are still alike (a flat face facing the "
             ~ "same way, an edge of the same kind), the others leave it, and sizes follows the model as it now is. "
             ~ "With selector (e.g. faces.top, edges.of(faces.top)) on part, selects what it picks, to show the user "
-            ~ "which faces or edges you mean; the right-click menu then acts on them. clear: true empties it.",
+            ~ "which faces or edges you mean; the right-click menu then acts on them. clear: true empties it. "
+            ~ "chain: true grows the selected edges along the edges running on from them without a corner "
+            ~ "(edges.chain), outer_edges: true turns the selected faces into the edges of their outer loops "
+            ~ "(edges.loop), as the right-click menu's Select the chain and Select its outer edges.",
             `"selector": {"type": "string"}, "part": {"type": "string", "description": "needed with several parts"}, `
-            ~ `"clear": {"type": "boolean"}`, `[]`),
+            ~ `"clear": {"type": "boolean"}, "chain": {"type": "boolean"}, "outer_edges": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_measure", "Measure in the user's window: the distance between a and b (part names, or points "
             ~ "[x, y, z]), with the closest points; without a and b, between the two selected items, with the angle "
             ~ "between them and, for parallel flat faces, the gap between their planes (a wall's thickness).",

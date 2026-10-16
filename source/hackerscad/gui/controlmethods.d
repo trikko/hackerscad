@@ -1366,6 +1366,14 @@ mixin template ControlMethods()
                 whenIdle(() {
                     if (p.safe!bool("clear").or(false))
                         clearSelection();
+                    // grown as the right-click menu does: the edges' chains, or the faces' outer edges
+                    if (p.safe!bool("chain").or(false) || p.safe!bool("outer_edges").or(false))
+                    {
+                        immutable said = growSelection(p.safe!bool("chain").or(false));
+                        import std.algorithm : startsWith;
+                        if (said.startsWith("select "))
+                            return reply(JValue.init, said);
+                    }
                     if (auto expr = arg("selector"))
                     {
                         string problem;

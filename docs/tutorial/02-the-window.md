@@ -172,6 +172,12 @@ part stays out. To take the hidden ones too, choose **Wireframe** in the
 cube's menu first: there everything is drawn, and the box takes all of it.
 In a sketch the box works the same way on its points and lines.
 
+Two more ways to pick many at once, in the right-click menu: on a picked
+edge, **Select the chain** adds every edge that runs on from it without a
+corner (a rounded outline made of many pieces, taken whole: ready to
+round or chamfer); on a picked face, **Select its outer edges** picks the
+edges round it, not those round its holes.
+
 ## The cheatsheet
 
 Press F1: a window lists everything the language has, one line each, with

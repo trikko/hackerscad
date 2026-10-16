@@ -63,7 +63,7 @@ import hackerscad.geom.vec : BBox, Vec3;
 import glib.global : idleAdd;
 
 import hackerscad.geom.mesh;
-import hackerscad.kernel.brep : EdgeKind;
+import hackerscad.kernel.brep : EdgeKind, tangentChain;
 import hackerscad.examples : examples, exampleNames;
 import hackerscad.tool.codegen : transformPart;
 import hackerscad.lang.errors;
@@ -2388,6 +2388,57 @@ private:
     /// A click in the 3D view: each item clicked joins the selection
     /// (clicked again, it leaves it), a click on nothing empties it;
     /// `alone` (a right-click away from the selection) selects it alone.
+    /// The selection grown along its edges' chains (chain: the edges running on from them without a corner,
+    /// edges.chain), or its faces turned into the edges of their outer loops (edges.loop); what the info line says.
+    string growSelection(bool chain)
+    {
+        Hit[] all = viewport.selection().dup;
+        size_t added;
+        foreach (h; viewport.selection())
+        {
+            if (h.part < 0 || h.part >= last.parts.length)
+                continue;
+            auto part = last.parts[h.part];
+            int[] edges;
+            if (chain && h.edge >= 0)
+            {
+                import std.math : cos, PI;
+                foreach (e, on; tangentChain(part.edgeInfo, [h.edge], cos(2 * PI / 180)))
+                    if (on)
+                        edges ~= cast(int) e;
+            }
+            else if (!chain && h.face >= 0 && h.edge < 0 && h.vertex < 0)
+                edges = part.kernel.faceOuterEdges(part.brep, h.face);
+            else
+                continue;
+            foreach (e; edges)
+            {
+                Hit n;
+                n.part = h.part;
+                n.edge = e;
+                n.point = part.edgeInfo[e].mid;
+                if (!all.canFind!(x => Viewport.sameItem(x, n)))
+                {
+                    all ~= n;
+                    added++;
+                }
+            }
+        }
+        if (!chain)
+            // the faces gave way to their edges
+        {
+            import std.algorithm : filter;
+            import std.array : array;
+            all = all.filter!(x => x.face < 0 || x.edge >= 0 || x.vertex >= 0).array;
+        }
+        if (all.length == 0)
+            return chain ? "select an edge first" : "select a face first";
+        viewport.setSelection(all);
+        showSelection();
+        return chain ? format("%d edges added: the chain running on without a corner", added)
+            : format("the outer edges of the faces: %d", all.length);
+    }
+
     /// A box dragged over the view: what it takes joins the selection, the sketch's when one is shown
     /// (wholly inside it; dragged right to left, what it touches too).
     void boxed(double x0, double y0, double x1, double y1, bool crossing)
@@ -4645,10 +4696,12 @@ private:
         {
             entries ~= I(ne == 1 ? "Fillet edge…" : format("Fillet %d edges…", ne), () => ctx("fillet-edge", "1.mm"));
             entries ~= I(ne == 1 ? "Chamfer edge…" : format("Chamfer %d edges…", ne), () => ctx("chamfer-edge", "0.5.mm"));
+            entries ~= I("Select the chain", () { info(growSelection(true)); });
         }
         if (nf)
         {
             entries ~= I(nf == 1 ? "Fillet face edges…" : "Fillet edges of the faces…", () => ctx("fillet-face", "1.mm"));
+            entries ~= I(nf == 1 ? "Select its outer edges" : "Select their outer edges", () { info(growSelection(false)); });
             entries ~= I(nf == 1 ? "Chamfer face edges…" : "Chamfer edges of the faces…", () => ctx("chamfer-face", "0.5.mm"));
             entries ~= I(nf == 1 ? "Shell, opening this face…" : format("Shell, opening %d faces…", nf),
                 () => ctx("shell", "2.mm"));

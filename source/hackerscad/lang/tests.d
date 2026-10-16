@@ -3864,3 +3864,19 @@ unittest
         writeln(s.volume, " ", s.bbox.size, " ", s.isValid);`, "400 mm^3 [13 mm, 11 mm, 4 mm] true");
     expectErr(`rect(10.mm, 10.mm).extrude(4.mm, shear: vec(1.mm, 0.mm), taper: 2.deg);`, "E0202");
 }
+
+unittest
+{
+    // a profile's parts: its outline without holes, its holes, its separate regions
+    expectOut(`auto p = rect(30.mm, 20.mm) - circle(d: 5.mm) - circle(vec(8.mm, 0.mm), d: 3.mm)
+            + circle(vec(30.mm, 0.mm), d: 6.mm);
+        writeln(p.pieces.length, " ", p.holes.length, " ", round(p.outer.area.to!double), " ",
+            round(p.holes[0].area.to!double + p.holes[1].area.to!double));`, "2 2 628 27");
+    // edges: the outer loop of the top (4 lines, 4 arcs, not the hole's rim), and the chain round the rounded
+    // corners from one straight edge: the same
+    expectOut(`auto b = rect(30.mm, 20.mm, corner: 4.mm).extrude(5.mm) - cylinder(d: 6.mm, h: 20.mm);
+        auto loop = b.chamfer(edges.loop(faces.top), d: 0.5.mm);
+        auto chain = b.chamfer(edges.chain(edges.between(faces.top, faces.right)), d: 0.5.mm);
+        writeln(abs(loop.volume.to!double - chain.volume.to!double) < 1e-6, " ",
+            loop.volume < b.chamfer(edges.of(faces.top), d: 0.5.mm).volume);`, "true false");
+}

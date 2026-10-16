@@ -197,7 +197,9 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.area → Area` — The surface area (of a profile: its area).
 - `s.isEmpty → bool` — Whether nothing is left.
 - `s.isValid → bool` — Whether the solid is a valid closed solid.
-- `s.pieces → Solid[]` — The separate bodies, ordered along X, then Y, then Z.
+- `s.pieces → Solid[]` — The separate bodies, ordered along X, then Y, then Z; of a profile, its separate regions, each with its holes.
+- `p.outer → Profile` — The outline without its holes (of each region, joined).
+- `p.holes → Profile[]` — Each hole of the profile, filled: a profile of its own.
 - `x.frames(n: int) → Frame[]` — n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft.
 - `p.outline(n: int, round: Length) → OutlinePoint[]` — n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1).
 - `xs.above(plane: Plane) → Solid[]` — Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).
@@ -244,6 +246,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `edges.circles → Edges` — The circular edges.
 - `edges.of(faces: Faces) → Edges` — The edges around faces: edges.of(faces.top).
 - `edges.between(a: Faces, b: Faces) → Edges` — The edges between two sets of faces.
+- `edges.loop(faces: Faces) → Edges` — The edges of the outer loop of each face, not those round its holes.
+- `edges.chain(edges: Edges, angle: Angle) → Edges` — Those edges and every edge running on from them without a corner (tangent where they meet, within angle: 2° unless given): a curved outline made of many pieces, taken whole.
 - `e.start → Vec` — Start point.
 - `e.end → Vec` — End point.
 - `e.mid → Vec` — Middle point.

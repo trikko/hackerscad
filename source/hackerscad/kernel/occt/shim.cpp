@@ -1740,7 +1740,7 @@ int hc_edge_count(const hc_shape *s) { return map_of(s, TopAbs_EDGE).Extent(); }
 
 int hc_face_count(const hc_shape *s) { return map_of(s, TopAbs_FACE).Extent(); }
 
-int hc_edge_info(const hc_shape *s, int index, double out[17])
+int hc_edge_info(const hc_shape *s, int index, double out[23])
 {
     return guarded<>(-1, [&]() -> int {
         const auto &m = map_of(s, TopAbs_EDGE);
@@ -1756,8 +1756,20 @@ int hc_edge_info(const hc_shape *s, int index, double out[17])
             out[i * 3 + 1] = p[i].Y();
             out[i * 3 + 2] = p[i].Z();
         }
-        for (int i = 9; i < 17; i++)
+        for (int i = 9; i < 23; i++)
             out[i] = 0;
+        // the unit tangents at its start and its end, along the curve's own direction (for chains of edges
+        // running on smoothly)
+        for (int k = 0; k < 2; k++) {
+            gp_Pnt q;
+            gp_Vec t;
+            c.D1(k == 0 ? u0 : u1, q, t);
+            if (t.Magnitude() > 1e-12)
+                t.Normalize();
+            out[17 + 3 * k] = t.X();
+            out[18 + 3 * k] = t.Y();
+            out[19 + 3 * k] = t.Z();
+        }
         if (c.GetType() == GeomAbs_Circle) {
             gp_Circ circ = c.Circle();
             gp_Pnt ctr = circ.Location();
@@ -1777,6 +1789,72 @@ int hc_edge_info(const hc_shape *s, int index, double out[17])
         case GeomAbs_Circle: return HC_EDGE_CIRCLE;
         default: return HC_EDGE_OTHER;
         }
+    });
+}
+
+// The edges of the outer loop of face `face` (no hole's), as indices in the
+// shape's edges: how many, at most `max` written to `out`; -1 on error.
+int hc_face_outer_edges(const hc_shape *s, int face, int *out, int max)
+{
+    return guarded<>(-1, [&]() -> int {
+        const auto &fm = map_of(s, TopAbs_FACE);
+        if (face < 0 || face >= fm.Extent()) {
+            set_error("face index out of range");
+            return -1;
+        }
+        const auto &em = map_of(s, TopAbs_EDGE);
+        const TopoDS_Wire outer = BRepTools::OuterWire(TopoDS::Face(fm(face + 1)));
+        int n = 0;
+        for (TopExp_Explorer e(outer, TopAbs_EDGE); e.More(); e.Next()) {
+            const int k = em.FindIndex(e.Current()) - 1;
+            if (k < 0)
+                continue;
+            if (n < max)
+                out[n] = k;
+            n++;
+        }
+        return n;
+    });
+}
+
+// The parts of a profile: which 0, the outline of each region without its
+// holes (a face each); 1, each hole filled (a face each); 2, each region as
+// it is. How many there are (count) and part `index`.
+static std::vector<TopoDS_Shape> profile_parts(const hc_shape *s, int which)
+{
+    std::vector<TopoDS_Shape> r;
+    for (const TopoDS_Face &face : faces_of(s->shape)) {
+        if (which == 2) {
+            r.push_back(face);
+            continue;
+        }
+        const TopoDS_Wire outer = BRepTools::OuterWire(face);
+        for (TopExp_Explorer w(face, TopAbs_WIRE); w.More(); w.Next()) {
+            const bool isOuter = w.Current().IsSame(outer);
+            if (isOuter != (which == 0))
+                continue;
+            BRepBuilderAPI_MakeFace f(TopoDS::Wire(w.Current()), Standard_True);
+            if (f.IsDone())
+                r.push_back(upward(f.Face()));
+        }
+    }
+    return r;
+}
+
+int hc_profile_part_count(const hc_shape *s, int which)
+{
+    return guarded<>(-1, [&] { return (int)profile_parts(s, which).size(); });
+}
+
+hc_shape *hc_profile_part(const hc_shape *s, int which, int index)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        auto parts = profile_parts(s, which);
+        if (index < 0 || index >= (int)parts.size()) {
+            set_error("profile part out of range");
+            return nullptr;
+        }
+        return primitive(parts[index]);
     });
 }
 

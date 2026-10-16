@@ -32,8 +32,61 @@ struct EdgeInfo
     Vec3 center, axis;   /// circles only
     double radius = 0;   /// circles only
     double length = 0;   /// along the curve
+    Vec3 startTangent, endTangent;   /// unit tangents at start and end, along the curve's direction
 
     Vec3 direction() const => (end - start).normalized;
+}
+
+/// The edges `seed` and every edge running on from them without a corner
+/// (tangent where they meet within the angle whose cosine is `cosTol`), as
+/// a flag per edge: a curved outline made of many pieces, taken whole.
+bool[] tangentChain(const(EdgeInfo)[] edges, const(int)[] seed, double cosTol)
+{
+    import std.math : abs;
+    auto on = new bool[edges.length];
+    size_t[] todo;
+    foreach (s; seed)
+        if (s >= 0 && s < edges.length && !on[s])
+        {
+            on[s] = true;
+            todo ~= s;
+        }
+    // the tangent of edge e at p, when p is one of its ends
+    bool tangentAt(size_t e, Vec3 p, out Vec3 t)
+    {
+        const g = &edges[e];
+        immutable eps = 1e-6 * (1 + p.length);
+        if ((g.start - p).length < eps)
+        {
+            t = g.startTangent;
+            return true;
+        }
+        if ((g.end - p).length < eps)
+        {
+            t = g.endTangent;
+            return true;
+        }
+        return false;
+    }
+    while (todo.length)
+    {
+        immutable e = todo[$ - 1];
+        todo = todo[0 .. $ - 1];
+        foreach (p; [edges[e].start, edges[e].end])
+        {
+            Vec3 te;
+            tangentAt(e, p, te);
+            foreach (o; 0 .. edges.length)
+            {
+                Vec3 to;
+                if (on[o] || !tangentAt(o, p, to) || abs(te.dot(to)) < cosTol)
+                    continue;
+                on[o] = true;
+                todo ~= o;
+            }
+        }
+    }
+    return on;
 }
 
 /// Where a face of an operation's result comes from: operand `input`
@@ -146,6 +199,10 @@ interface BrepKernel
     /// Outline segments: see OutlineSeg. Nested loops are holes, where loops
     /// overlap the overlap is one, and fills force an area.
     Brep outline(const(OutlineSeg)[] segs);
+    /// The edges of a face's outer loop (no hole's), as indices into edges(s).
+    int[] faceOuterEdges(Brep s, int face);
+    /// A profile's parts: which 0 each region's outline without holes, 1 each hole filled, 2 each region.
+    Brep[] profileParts(Brep p, int which);
     /// Every area the loops of an outline make, as faces: the `full` first, then the empty ones.
     Brep outlineRegions(const(OutlineSeg)[] segs, out int full);
     /// Paths (wires) for sweeps.

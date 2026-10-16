@@ -217,7 +217,9 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.area → Area</dt><dd>The surface area (of a profile: its area).</dd>
 <dt>s.isEmpty → bool</dt><dd>Whether nothing is left.</dd>
 <dt>s.isValid → bool</dt><dd>Whether the solid is a valid closed solid.</dd>
-<dt>s.pieces → Solid[]</dt><dd>The separate bodies, ordered along X, then Y, then Z.</dd>
+<dt>s.pieces → Solid[]</dt><dd>The separate bodies, ordered along X, then Y, then Z; of a profile, its separate regions, each with its holes.</dd>
+<dt>p.outer → Profile</dt><dd>The outline without its holes (of each region, joined).</dd>
+<dt>p.holes → Profile[]</dt><dd>Each hole of the profile, filled: a profile of its own.</dd>
 <dt>x.frames(n: int) → Frame[]</dt><dd>n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft.</dd>
 <dt>p.outline(n: int, round: Length) → OutlinePoint[]</dt><dd>n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1).</dd>
 <dt>xs.above(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).</dd>
@@ -263,6 +265,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>edges.circles → Edges</dt><dd>The circular edges.</dd>
 <dt>edges.of(faces: Faces) → Edges</dt><dd>The edges around faces: edges.of(faces.top).</dd>
 <dt>edges.between(a: Faces, b: Faces) → Edges</dt><dd>The edges between two sets of faces.</dd>
+<dt>edges.loop(faces: Faces) → Edges</dt><dd>The edges of the outer loop of each face, not those round its holes.</dd>
+<dt>edges.chain(edges: Edges, angle: Angle) → Edges</dt><dd>Those edges and every edge running on from them without a corner (tangent where they meet, within angle: 2° unless given): a curved outline made of many pieces, taken whole.</dd>
 <dt>e.start → Vec</dt><dd>Start point.</dd>
 <dt>e.end → Vec</dt><dd>End point.</dd>
 <dt>e.mid → Vec</dt><dd>Middle point.</dd>

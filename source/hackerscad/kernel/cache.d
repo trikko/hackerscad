@@ -73,6 +73,8 @@ final class CachingKernel : BrepKernel
     Brep revolve(Brep p, Vec3 o, Vec3 d, double angle) => op(key("revolve", p, o, d, angle), inner.revolve(p, o, d, angle));
 
     Brep outlineRegions(const(OutlineSeg)[] segs, out int full) => inner.outlineRegions(segs, full);
+    int[] faceOuterEdges(Brep s, int face) => inner.faceOuterEdges(s, face);
+    Brep[] profileParts(Brep p, int which) => inner.profileParts(p, which);
     Brep outline(const(OutlineSeg)[] segs) =>
         op(key("outline", segs.map!(g => [cast(double) g.kind, g.ax, g.ay, g.bx, g.by, g.mx, g.my] ~ g.poles).join),
             inner.outline(segs));

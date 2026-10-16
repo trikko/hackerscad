@@ -65,7 +65,10 @@ hc_shape* hc_solid(const(hc_shape)* s, int index);
 
 int hc_edge_count(const(hc_shape)* s);
 int hc_face_count(const(hc_shape)* s);
-int hc_edge_info(const(hc_shape)* s, int index, ref double[17] output);
+int hc_edge_info(const(hc_shape)* s, int index, ref double[23] output);
+int hc_face_outer_edges(const(hc_shape)* s, int face, int* output, int max);
+int hc_profile_part_count(const(hc_shape)* s, int which);
+hc_shape* hc_profile_part(const(hc_shape)* s, int which, int index);
 int hc_face_info(const(hc_shape)* s, int index, ref double[7] output);
 
 int hc_edge_faces(const(hc_shape)* s, int* output);

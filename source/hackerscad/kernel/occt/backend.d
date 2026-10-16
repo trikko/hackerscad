@@ -216,7 +216,7 @@ final class OcctKernel : BrepKernel
         auto r = new EdgeInfo[hc_edge_count(h(s))];
         foreach (i, ref e; r)
         {
-            double[17] v;
+            double[23] v;
             immutable kind = hc_edge_info(h(s), cast(int) i, v);
             check(kind >= 0, "edge query");
             e.kind = kind == HC_EDGE_LINE ? EdgeKind.line : kind == HC_EDGE_CIRCLE ? EdgeKind.circle : EdgeKind.other;
@@ -227,7 +227,32 @@ final class OcctKernel : BrepKernel
             e.axis = Vec3(v[12], v[13], v[14]);
             e.radius = v[15];
             e.length = v[16];
+            e.startTangent = Vec3(v[17], v[18], v[19]);
+            e.endTangent = Vec3(v[20], v[21], v[22]);
         }
+        return r;
+    }
+
+    int[] faceOuterEdges(Brep s, int face)
+    {
+        auto buf = new int[64];
+        immutable n = hc_face_outer_edges(h(s), face, buf.ptr, cast(int) buf.length);
+        check(n >= 0, "face loop query");
+        if (n > buf.length)
+        {
+            buf = new int[n];
+            check(hc_face_outer_edges(h(s), face, buf.ptr, n) == n, "face loop query");
+        }
+        return buf[0 .. n].dup;
+    }
+
+    Brep[] profileParts(Brep p, int which)
+    {
+        immutable n = hc_profile_part_count(h(p), which);
+        check(n >= 0, "profile parts");
+        Brep[] r;
+        foreach (i; 0 .. n)
+            r ~= wrap(hc_profile_part(h(p), which, i), "profile part");
         return r;
     }
 

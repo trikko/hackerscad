@@ -377,7 +377,11 @@ immutable Ref[] reference =
     P("area", "Shape", "Area", "The surface area (of a profile: its area)."),
     P("isEmpty", "Solid", "bool", "Whether nothing is left."),
     P("isValid", "Solid", "bool", "Whether the solid is a valid closed solid."),
-    P("pieces", "Solid", "Solid[]", "The separate bodies, ordered along X, then Y, then Z."),
+    P("pieces", "Solid", "Solid[]", "The separate bodies, ordered along X, then Y, then Z; of a profile, its separate regions, each with its holes."),
+    withForms(P("outer", "Profile", "Profile", "The outline without its holes (of each region, joined)."), [
+        "section.outer.extrude(4.mm)   // the outside of a section, its holes filled"]),
+    withForms(P("holes", "Profile", "Profile[]", "Each hole of the profile, filled: a profile of its own."), [
+        "plate.cut(p.holes[0], on: f, depth: 2.mm)   // one hole as a pocket"]),
     F("frames", "Path", ["n: int"], "Frame[]", "n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft."),
     F("outline", "Profile", ["n: int", "round: Length"], "OutlinePoint[]", "n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1)."),
     F("above", "list", ["plane: Plane"], "Solid[]", "Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p)."),
@@ -430,6 +434,11 @@ immutable Ref[] reference =
     P("circles", "Edges", "Edges", "The circular edges."),
     F("of", "Edges", ["faces: Faces"], "Edges", "The edges around faces: edges.of(faces.top)."),
     F("between", "Edges", ["a: Faces", "b: Faces"], "Edges", "The edges between two sets of faces."),
+    withForms(F("loop", "Edges", ["faces: Faces"], "Edges", "The edges of the outer loop of each face, not those round its holes."), [
+        "body.fillet(edges.loop(faces.top), r: 1.mm)   // the top's rim, the holes' rims left sharp"]),
+    withForms(F("chain", "Edges", ["edges: Edges", "angle: Angle"], "Edges",
+        "Those edges and every edge running on from them without a corner (tangent where they meet, within angle: 2° unless given): a curved outline made of many pieces, taken whole."), [
+        "body.chamfer(edges.chain(edges.between(faces.top, faces.right)), d: 0.5.mm)   // round the rounded corners"]),
     P("start", "Edge", "Vec", "Start point."),
     P("end", "Edge", "Vec", "End point."),
     P("mid", "Edge", "Vec", "Middle point."),

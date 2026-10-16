@@ -595,6 +595,8 @@ struct SelectCtx
     int[] delegate(SelectorVal) resolve;   /// nested selector on the same solid
     /// per face, the share of its area that overhangs more than `angle` (radians)
     const(double)[] delegate(double angle) overhangShares;
+    /// the edges of a face's outer loop (no hole's), by index
+    int[] delegate(int face) outerEdges;
 }
 
 alias SelectTest = bool delegate(size_t index, ref SelectCtx ctx);
