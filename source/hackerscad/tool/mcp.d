@@ -653,9 +653,14 @@ JSONValue[] toolList()
         tool("hcad_check", "Evaluate a model: parts with bounding boxes and volumes, parameters, presets, "
             ~ "writeln output, errors with line/column/suggestion and failed unittest checks.", modelProps),
         tool("hcad_render", "Evaluate a model and return the same report as hcad_check plus a PNG of the parts "
-            ~ "(default views: iso, front, top, right; 'parts' draws only some). Use it to verify the result visually.",
+            ~ "(default views: iso, front, top, right; 'parts' draws only some), and where each picture looks from. "
+            ~ "view {from: a view name or [x, y, z] towards the viewer, look_at: [x, y, z], size: mm across, cut: true "
+            ~ "leaves out what lies in front} gives one picture from there, close on a detail; opaque: true draws "
+            ~ "see-through parts solid (a reference mesh, to read its shape). Use it to verify the result visually.",
             modelProps ~ `, "views": {"type": "array", "items": {"type": "string", "enum": ["iso", "front", "back", "top", "bottom", "left", "right"]}}, `
-            ~ partsProp),
+            ~ partsProp ~ `, "view": {"type": "object", "properties": {"from": {"type": ["string", "array"]}, `
+            ~ `"look_at": {"type": "array", "items": {"type": "number"}}, "size": {"type": "number"}, "cut": {"type": "boolean"}}}, `
+            ~ `"opaque": {"type": "boolean"}`),
         tool("hcad_export", "Evaluate a model and write it to 'output' (a path, or several to write from one "
             ~ "evaluation): .3mf (one object per part, with colours), .stl (one part), .zip (one STL per part), .step or "
             ~ ".stp (one named body per part), or .png (name.png the iso view, name-views.png iso/front/top/right, "
@@ -700,10 +705,13 @@ JSONValue[] toolList()
             ~ "loaded as a see-through reference part: @part(\"slategray\", alpha: 0.3, export: false) Solid original() => "
             ~ "load(\"x.stl\");): the largest, mean and rms distance both ways, where the worst is, the share within "
             ~ "tolerance, and a picture of part a coloured by its distance from b: green within half the tolerance, "
-            ~ "yellow at it, red at twice it. Correct the model until it is green.",
+            ~ "yellow at it, red at twice it, from the 'views' (4) directions that show most of it off, or from 'view' "
+            ~ "as for hcad_render; the patches of each surface the other does not follow, numbered: focus: N gives a "
+            ~ "close-up of patch N. Correct the model until it is green.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}, `
             ~ `"json": {"type": "boolean", "description": "the whole comparison as data, every patch (long)"}, `
+            ~ `"views": {"type": "integer"}, "view": {"type": "object"}, `
             ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
             ~ `report to look at closely: a close-up of each, from where it is in sight"}`, `["a", "b"]`),
         tool("hcad_scan", "Cut a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and its 'part') "
@@ -724,16 +732,18 @@ JSONValue[] toolList()
             ~ "comparison on, with hcad_diff: what it lists is what a person sees first, and what volumes miss. Fix "
             ~ "the outside first; only once it matches, "
             ~ "and only if something still differs, 'depth' (mm) peels both like an onion (that much cut away "
-            ~ "towards each view) to compare the inside; the answer says when going deeper is no use.",
+            ~ "towards each view) to compare the inside; the answer says when going deeper is no use. The entries are "
+            ~ "numbered: focus: N gives a close-up of entry N; view (as for hcad_render) one picture from there.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "views": {"type": "integer"}, `
             ~ `"depth": {"type": "number", "description": "mm cut away towards each view; 0 the outside (default)"}, `
-            ~ `"fixed": {"type": "boolean"}, "voids": {"type": "boolean"}, ` ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
+            ~ `"fixed": {"type": "boolean"}, "voids": {"type": "boolean"}, "view": {"type": "object"}, ` ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
             ~ `report to look at closely: a close-up of each, from where it is in sight"}`, `["a", "b"]`),
         tool("hcad_diff", "Where a part of a model (a copy) differs from another (the original, e.g. a mesh loaded as a "
             ~ "see-through reference part), as pieces of material: what the copy lacks (to add) and what it has too much "
             ~ "of (to cut), largest first, each with its box, volume, centre of mass and how much of its box it fills (a "
-            ~ "full box is a box() to add or cut), and for the largest the hcad_section (plane, at, compare) that shows "
-            ~ "its shape. Both are filled into cubes of 'resolution' mm (default: the size / 250); differences thinner "
+            ~ "full box is a box() to add or cut), numbered, and for the largest the hcad_section (plane, at, compare) "
+            ~ "that shows its shape; a picture of them as boxes (green to add, red to cut), or with focus: N a close-up "
+            ~ "of entry N. Both are filled into cubes of 'resolution' mm (default: the size / 250); differences thinner "
             ~ "than two cubes are listed apart, with how much they make (chamfers, lettering, notches: hcad_lines "
             ~ "shows them).",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "resolution": {"type": "number"}, `
@@ -753,7 +763,8 @@ JSONValue[] toolList()
             ~ "finds, and the holes and pockets met along x, y and z. Lists what is in the original and not in the copy, "
             ~ "in the copy and not in the original, and in both but different (a chamfer, a counterbore, a teardrop "
             ~ "where the original has a circle), the largest first; a hole cut in steps (a tapered nut trap) is one "
-            ~ "entry, told as stepped; slivers under 1 mm² or mm³ are only counted.",
+            ~ "entry, told as stepped; slivers under 1 mm² or mm³ are only counted. Entries are numbered: focus: N "
+            ~ "gives a close-up of entry N.",
             `"path": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}, ` ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
             ~ `report to look at closely: a close-up of each, from where it is in sight"}`,
             `["path", "a", "b"]`),

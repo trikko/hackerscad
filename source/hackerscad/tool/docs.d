@@ -199,7 +199,13 @@ dimensions and pictures, compare them with the request, fix, then export.
   hcad_diff (where material is missing or too much, and the section that
   shows each region); hcad_lines (what the eye sees: chamfers, lettering,
   notches, which volumes miss); hcad_section with compare at the place
-  hcad_diff names (the copy's outline drawn on the original's).
+  hcad_diff names (the copy's outline drawn on the original's). Then look
+  closely at the first entries: focus: N (diff, compare, lines, match)
+  gives a close-up of entry N from where it is in sight (what lies in
+  front cut away when nothing is), the drawings of both and the copy
+  coloured by its distance. A view of your own: view {from, look_at,
+  size, cut} (render, compare, lines); opaque: true draws the reference
+  solid, to read its shape.
 - 4, then: hcad_match (the operations one by one: a hexagon where the copy
   has a circle, a trap cut in steps, a notch for printing); hcad_lines with
   voids and depth once the outside matches; hcad_fit only to tune sizes of

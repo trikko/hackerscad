@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-e44c5abd`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-d5056639`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-e44c5abd`:** this text is up to date.
+- **It prints `0.3.1-d5056639`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -299,7 +299,13 @@ format stamp):
   hcad_diff (where material is missing or too much, and the section that
   shows each region); hcad_lines (what the eye sees: chamfers, lettering,
   notches, which volumes miss); hcad_section with compare at the place
-  hcad_diff names (the copy's outline drawn on the original's).
+  hcad_diff names (the copy's outline drawn on the original's). Then look
+  closely at the first entries: focus: N (diff, compare, lines, match)
+  gives a close-up of entry N from where it is in sight (what lies in
+  front cut away when nothing is), the drawings of both and the copy
+  coloured by its distance. A view of your own: view {from, look_at,
+  size, cut} (render, compare, lines); opaque: true draws the reference
+  solid, to read its shape.
 - 4, then: hcad_match (the operations one by one: a hexagon where the copy
   has a circle, a trap cut in steps, a notch for printing); hcad_lines with
   voids and depth once the outside matches; hcad_fit only to tune sizes of

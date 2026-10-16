@@ -20,7 +20,10 @@ usage:
       per part), .step (one named body per part) or .png (iso view;
       name-views.png gives iso/front/top/right, name-top.png only the top,
       and so on for front, back, bottom, left, right), or .svg, .pdf, .dxf for a
-      @drawing (the first one, or --drawing NAME)
+      @drawing (the first one, or --drawing NAME); a .png from anywhere:
+      --from VIEW|X,Y,Z [--look-at X,Y,Z --size MM [--cut]] (framed on the
+      cube of that side round that point, what lies in front cut away);
+      --opaque draws see-through parts solid
   hcad check FILE.hcad [--json] [-D name=value…] [--preset NAME]
       evaluates the model and reports parts, parameters, output and problems
   hcad docs [TOPIC | --cheatsheet | --agents | --skill | --summary | --stamp]
@@ -41,13 +44,17 @@ usage:
   hcad section FILE --plane xy|xz|yz --at MM [--part NAME] [--region U0,V0,U1,V1]
       the section of a mesh, STEP file or model as lines, arcs and circles
       with their sizes, and as a sketch ready to paste; --region keeps the
-      outlines inside that rectangle of the plane; --projection: the
+      outlines inside that rectangle of the plane (when none lies wholly
+      inside, those crossing it cut at its edges); --no-sketch leaves the
+      sketch out; --projection: the
       outline of its shadow on the plane instead; --compare PART -o OUT.png:
       the sections of two parts of a model drawn on each other
-  hcad compare FILE.hcad --a PART --b PART [--tolerance MM] [-o OUT.png]
+  hcad compare FILE.hcad --a PART --b PART [--tolerance MM] [--json] [--views N] [-o OUT.png]
       how far part a is from part b (a remodelled part from the mesh it
-      copies, loaded as a reference part): distances both ways, and a
-      picture of a coloured green, yellow, red by its distance from b
+      copies, loaded as a reference part): distances both ways, the patches
+      that part (numbered), and a picture of a coloured green, yellow, red
+      by its distance from b, from the N views (4) that show most of it off
+      (or --from …, as for render)
   hcad lines FILE.hcad --a PART --b PART [--depth MM] [--voids] [--fixed] [--views N] [-o OUT.png]
       parts a (a copy) and b (the original) drawn as lines (sharp edges and
       outlines) from 62 directions around them: the lines only one has, as
@@ -59,14 +66,15 @@ usage:
       pockets and cavities made solid instead.
       Once the outside matches, and only if something still differs,
       --depth MM peels both like an onion (that much cut away towards each
-      view) to compare the inside
+      view) to compare the inside; --from … one view of your own instead
   hcad scan FILE --axis x|y|z [--step MM] [--part NAME]
       cuts all along an axis: each hole and pocket met with its shape (circle,
       rectangle, hexagon, teardrop, slot…) and where it starts and ends, and
       the outside outline's changes
-  hcad diff FILE.hcad --a PART --b PART [--resolution MM]
+  hcad diff FILE.hcad --a PART --b PART [--resolution MM] [-o OUT.png]
       where part a (a copy) differs from part b (the original): the pieces
-      of material a lacks and has too much of, with their boxes and volumes
+      of material a lacks and has too much of, numbered, with their boxes
+      and volumes, the thin ones apart; OUT.png draws them as boxes
   hcad fit FILE.hcad --a PART --b PART --param NAME [--param NAME…] [--evaluations N]
       tunes the named @param lengths so that part a (a copy) matches part b
       (the original) as closely as it goes: the volume where they differ made
@@ -74,7 +82,11 @@ usage:
   hcad match FILE.hcad --a PART --b PART
       the operations of a copy (a) and its original (b) matched one by one:
       holes, shafts, cones, roundings, planes, and the pockets met along x, y
-      and z; what has no match, however small, is listed
+      and z; what has no match, however small, is listed, numbered
+  --focus N[,M…] -o OUT.png  (compare, diff, lines, match)
+      close-ups of those entries of the report: each from where it is in
+      sight (what lies in front cut away when nothing is), the drawings of
+      both and the copy coloured by its distance
   hcad mcp
       Model Context Protocol server on stdio, for AI agents; models are
       evaluated in a worker process that is killed when an evaluation is
