@@ -44,7 +44,7 @@ bag clip, Carlo, is still open; we use it to try things.
    edited); four buttons for what a click picks, **whole parts, faces,
    edges or vertices** (Alt+1 to Alt+4; the choice is kept): the right-click
    menu offers what fits it, picked faces are striped, a picked part dotted;
-   how a left drag moves the view; the eye, to hide or show the parts, the ground grid and
+   the eye, to hide or show the parts, the ground grid and
    the axes; the cube, to choose how the parts are drawn; the section, to cut
    the model and look inside (parallel to the face you picked, if any; drag
    the squares at the plane's corners to move it, the X past them closes it); the magnifying glass, to see what a line
@@ -137,10 +137,12 @@ The editor has the keys of a code editor:
 
 ## Keys and mouse
 
-- **The view:** right drag turns it, middle drag (or Ctrl and the right
-  button) moves it, the wheel zooms; F6 frames the model; each click adds
-  what is under the pointer to what is picked (clicked again, it leaves),
-  a click on nothing, Esc or Space empties it; a right-click opens the
+- **The view:** right drag (or Shift and the left button) turns it, middle
+  drag (or Ctrl and the left or right button) moves it, the wheel zooms; F6
+  frames the model; each click adds what is under the pointer to what is
+  picked (clicked again, it leaves), a left drag a box of them (what is
+  wholly inside it; dragged from right to left, what it touches too), a
+  click on nothing, Esc or Space empties it; a right-click opens the
   menu; a double
   click on a flat face looks straight at it; Alt+1 to Alt+4 choose what a
   click picks (parts, faces, edges, vertices); **A** annotates the view; Esc

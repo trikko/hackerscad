@@ -12,12 +12,14 @@ import std.string : toStringz;
 import bindbc.opengl;
 
 import gtk.glarea : GLArea;
+import gtk.drawing_area : DrawingArea;
 import gtk.gesture_drag : GestureDrag;
 import gtk.event_controller_scroll : EventControllerScroll;
 import gtk.event_controller_motion : EventControllerMotion;
 import gtk.types : EventControllerScrollFlags;
 import gdk.glcontext : GLContext;
 import gdk.types : ModifierType;
+import cairo.context : Context;
 
 import hackerscad.geom.vec;
 import hackerscad.geom.color : alphaOf;
@@ -58,12 +60,6 @@ enum SelectMode
     vertex,
 }
 
-/// What a left-button drag does (right always rotates, middle always pans).
-enum DragMode
-{
-    rotate,
-    pan,
-}
 
 /// Result of a pick: part and B-rep face under the pointer.
 struct Hit
@@ -79,6 +75,28 @@ struct Hit
     double distance = double.infinity;
 }
 
+/// Whether the segment (ax, ay)–(bx, by) on screen meets the box from (lx, ly)
+/// to (hx, hy): an end inside it, or crossing one of its sides.
+bool boxMeetsSegment(double lx, double ly, double hx, double hy, double ax, double ay, double bx, double by)
+{
+    bool inside(double x, double y) => x >= lx && x <= hx && y >= ly && y <= hy;
+    if (inside(ax, ay) || inside(bx, by))
+        return true;
+    static double side(double px, double py, double qx, double qy, double rx, double ry) =>
+        (qx - px) * (ry - py) - (qy - py) * (rx - px);
+    bool cross(double cx, double cy, double dx, double dy) =>
+        side(ax, ay, bx, by, cx, cy) * side(ax, ay, bx, by, dx, dy) <= 0
+        && side(cx, cy, dx, dy, ax, ay) * side(cx, cy, dx, dy, bx, by) <= 0;
+    return cross(lx, ly, hx, ly) || cross(hx, ly, hx, hy) || cross(hx, hy, lx, hy) || cross(lx, hy, lx, ly);
+}
+
+unittest
+{
+    assert(boxMeetsSegment(0, 0, 10, 10, 5, 5, 20, 20));      // an end inside
+    assert(boxMeetsSegment(0, 0, 10, 10, -5, 5, 15, 5));      // through it
+    assert(!boxMeetsSegment(0, 0, 10, 10, -5, -1, 15, -1));   // under it
+}
+
 final class Viewport
 {
     /// What to say in the view when the machine's OpenGL cannot draw it and
@@ -88,7 +106,11 @@ final class Viewport
     void delegate(string help) onGlFailed;
 
     GLArea area;
-    DragMode leftMode = DragMode.rotate;
+    /// Over the view: the box of a left drag selecting what is inside it
+    DrawingArea band;
+    /// A left drag ended: the box from (x0, y0) to (x1, y1), view pixels; crossing (dragged right to left) takes
+    /// what it touches, else only what is wholly inside
+    void delegate(double x0, double y0, double x1, double y1, bool crossing) onBox;
     Shading shading = Shading.edges;
     /// Parallel projection: sizes do not shrink with the distance.
     bool orthographic;
@@ -184,7 +206,8 @@ final class Viewport
 
     // pointer and drag state
     private double pointerX = 0, pointerY = 0;
-    private bool dragging, dragPan;
+    private bool dragging, dragPan, dragBox;
+    private double boxX, boxY;   /// where a box being dragged has its other corner
     private uint dragButton;
     private double startYaw, startPitch, startX, startY;
     private Vec3 startTarget;
@@ -217,13 +240,10 @@ final class Viewport
             immutable button = g.getCurrentButton();
             immutable mods = g.getCurrentEventState();
             immutable shift = (mods & ModifierType.ShiftMask) != 0, ctrl = (mods & ModifierType.ControlMask) != 0;
-            // right rotates, middle (or ctrl + right) pans; left follows the chosen mode
-            if (button == 2)
-                dragPan = true;
-            else if (button == 3)
-                dragPan = ctrl;
-            else
-                dragPan = (leftMode == DragMode.pan) != shift;
+            // right rotates, middle (or ctrl + right) pans; left draws a box to select, with shift rotates,
+            // with ctrl pans (a touchpad has no middle button)
+            dragPan = button == 2 || ((button == 1 || button == 3) && ctrl);
+            dragBox = button == 1 && !shift && !ctrl;
             dragButton = button;
             // a left drag on the frame, arrow or rings moving or turning a part
             gizmoGrab = button == 1 && gizmo != Gizmo.none && buttonAt(x, y) == ViewButton.none ? gizmoAt(x, y) : -1;
@@ -234,6 +254,8 @@ final class Viewport
             pressedButton = button == 1 && gizmoGrab < 0 ? buttonAt(x, y) : ViewButton.none;
             sectionHandle = button == 1 && pressedButton == ViewButton.none && gizmoGrab < 0 ? handleAt(x, y) : -1;
             handleStartOffset = sectionOffset;
+            if (gizmoGrab >= 0 || pressedButton != ViewButton.none || sectionHandle >= 0 || placing)
+                dragBox = false;
             startShift = shift;
             startYaw = yaw;
             startPitch = pitch;
@@ -282,6 +304,15 @@ final class Viewport
             }
             if (!dragging && abs(dx) + abs(dy) < 4)
                 return;
+            if (dragBox)
+            {
+                dragging = true;
+                boxX = startX + dx;
+                boxY = startY + dy;
+                band.setVisible(true);
+                band.queueDraw();
+                return;
+            }
             if (!dragging)
             {
                 dragging = true;
@@ -337,6 +368,16 @@ final class Viewport
                 updateHoverCursor();
                 return;
             }
+            // a box dragged: what it takes joins the selection
+            if (dragBox && dragging)
+            {
+                dragging = false;
+                band.setVisible(false);
+                if (onBox !is null)
+                    onBox(startX, startY, startX + dx, startY + dy, startX + dx < startX);
+                updateHoverCursor();
+                return;
+            }
             // placing: a left click puts the anchor where the pointer is
             if (!dragging && dragButton == 1 && placing)
             {
@@ -379,6 +420,28 @@ final class Viewport
             updateHoverCursor();
         });
         area.addController(drag);
+
+        band = new DrawingArea;
+        band.setCanTarget(false);
+        band.setHexpand(true);
+        band.setVexpand(true);
+        band.setVisible(false);
+        band.setDrawFunc((DrawingArea, Context cr, int w, int h) {
+            if (!dragBox || !dragging)
+                return;
+            immutable x = min(startX, boxX), y = min(startY, boxY), bw = abs(boxX - startX), bh = abs(boxY - startY);
+            // dragged to the left: dashed, it takes what it touches
+            immutable crossing = boxX < startX;
+            cr.setSourceRgba(0.2, 0.55, 0.95, crossing ? 0.08 : 0.12);
+            cr.rectangle(x, y, bw, bh);
+            cr.fill();
+            cr.setSourceRgba(0.2, 0.55, 0.95, 0.9);
+            cr.setLineWidth(1);
+            if (crossing)
+                cr.setDash([5.0, 3.0], 0);
+            cr.rectangle(x + 0.5, y + 0.5, bw, bh);
+            cr.stroke();
+        });
 
         auto motion = new EventControllerMotion;
         motion.connectMotion((double x, double y, EventControllerMotion m) {
@@ -619,6 +682,124 @@ final class Viewport
                 return v;
             }
         }
+    }
+
+    /// What a box from (x0, y0) to (x1, y1) in view pixels takes in the
+    /// selection mode: wholly inside it, or (crossing) touching it; only what is
+    /// in sight (in wireframe, everything drawn), of the parts shown.
+    Hit[] boxItems(double x0, double y0, double x1, double y1, bool crossing)
+    {
+        immutable lx = min(x0, x1), hx = max(x0, x1), ly = min(y0, y1), hy = max(y0, y1);
+        bool inside(double x, double y) => x >= lx && x <= hx && y >= ly && y <= hy;
+        bool meets(double ax, double ay, double bx, double by) => boxMeetsSegment(lx, ly, hx, hy, ax, ay, bx, by);
+        immutable all = shading == Shading.wireframe;
+        // points (in the model) the box takes: all inside, or one touching; one at least in sight
+        bool takes(Vec3[] pts, bool asLine, Vec3[] sight = null)
+        {
+            bool any, every = true, visible = all;
+            int looks;   // a ray cast each: a few, spread along, are enough
+            immutable stride = max(1, pts.length / 8);
+            double px, py, qx = double.nan, qy;
+            foreach (k, q; pts)
+            {
+                if (!project(q, px, py))
+                {
+                    every = false;
+                    continue;
+                }
+                immutable inBox = inside(px, py);
+                if (inBox || (asLine && k > 0 && qx == qx && meets(qx, qy, px, py)))
+                    any = true;
+                if (!inBox)
+                    every = false;
+                if (!visible && sight is null && inBox && k % stride == 0 && looks++ < 12 && seen(q))
+                    visible = true;
+                qx = px;
+                qy = py;
+            }
+            // crossing on a line in sight through the box with no point inside it: its middle decides
+            if (!visible && any && asLine)
+                visible = seen(pts[$ / 2]);
+            // a face: in sight where its middle points are (its corners can be on the rim of one in front)
+            if (!visible && any && sight !is null)
+            {
+                immutable step = max(1, sight.length / 12);
+                for (size_t k = 0; k < sight.length && !visible; k += step)
+                    visible = seen(sight[k]);
+            }
+            return (crossing ? any : every) && visible;
+        }
+        Hit[] r;
+        foreach (i; 0 .. parts.length)
+        {
+            if (isHidden(i))
+                continue;
+            auto part = parts[i];
+            Vec3 at(Vec3 q) => previewing(i) ? placed(q) : q;
+            Vec3 vertexOf(uint v) => at(Vec3(part.vertices[v * 6], part.vertices[v * 6 + 1], part.vertices[v * 6 + 2]));
+            Hit h;
+            h.part = cast(int) i;
+            final switch (selectMode)
+            {
+            case SelectMode.part:
+                {
+                    Vec3[] pts;
+                    foreach (v; 0 .. part.vertices.length / 6)
+                        pts ~= vertexOf(cast(uint) v);
+                    if (pts.length && takes(pts, false))
+                    {
+                        h.point = at(part.bbox.center);
+                        r ~= h;
+                    }
+                    break;
+                }
+            case SelectMode.face:
+                foreach (f; 0 .. part.faceStart.length ? part.faceStart.length - 1 : 0)
+                {
+                    Vec3[] pts, middles;
+                    foreach (t; part.faceStart[f] .. part.faceStart[f + 1])
+                    {
+                        auto a = vertexOf(part.indices[3 * t]), b = vertexOf(part.indices[3 * t + 1]),
+                            c = vertexOf(part.indices[3 * t + 2]);
+                        pts ~= [a, b, c];
+                        middles ~= (a + b + c) / 3;
+                    }
+                    if (pts.length && takes(pts, false, middles))
+                    {
+                        h.face = cast(int) f;
+                        h.point = middles[0];
+                        r ~= h;
+                    }
+                }
+                h.face = -1;
+                break;
+            case SelectMode.edge:
+                foreach (k, e; part.edgeInfo)
+                {
+                    Vec3[] pts;
+                    foreach (q; edgePoints(cast(int) i, e))
+                        pts ~= at(q);
+                    if (pts.length && takes(pts, true))
+                    {
+                        h.edge = cast(int) k;
+                        h.point = pts[$ / 2];
+                        r ~= h;
+                    }
+                }
+                h.edge = -1;
+                break;
+            case SelectMode.vertex:
+                foreach (k, v; vertices(i))
+                    if (takes([at(v)], false))
+                    {
+                        h.vertex = cast(int) k;
+                        h.point = at(v);
+                        r ~= h;
+                    }
+                break;
+            }
+        }
+        return r;
     }
 
     /// Everything selected, in picking order (on one part or several).

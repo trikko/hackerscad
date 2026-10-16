@@ -292,14 +292,17 @@ its lines appear at the end of the sketch's code, as you would have typed
 them.
 
 With ↖, a click on a point or a line selects it (again: it leaves; on
-nothing: none), and the constraints that fit what is selected light up;
+nothing: none), a drag a box of them (what is wholly inside it; dragged from
+right to left, what it touches too), and the constraints that fit what is selected light up;
 the others say, when you point at them, what they need. Several lines and
 ∥: each parallel to the first. The constraints with a value (length,
 distance, angle, radius, diameter) ask for it in a field, the size it has
 now already written in: Enter writes it. Five lines and a length of 20 mm
 make one dimension and the others equal to it, so one number changes them
 all. ⌫ (or Delete) takes what is selected out of the code, with what is
-drawn on it and the constraints on them.
+drawn on it and the constraints on them. Esc goes back a step at a time: the
+shape being drawn, then the tool and the selection (back to ↖), and only
+then out of the sketch.
 
 ![Two lines of the bracket selected: the tools that fit them light up](img/15-sketch-bar.png)
 

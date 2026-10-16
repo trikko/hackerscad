@@ -534,7 +534,7 @@ final class MainWindow
     Box testsDot;         /// over its corner: yellow, not run since the last change; red, one failed
     bool testsNext;       /// the next evaluation runs them
     string statusText;   /// the latest program message (for the control socket)
-    ToggleButton paramsToggle, consoleToggle, codeToggle, viewToggle, rotateMode, panMode, sectionToggle, inspectToggle;
+    ToggleButton paramsToggle, consoleToggle, codeToggle, viewToggle, sectionToggle, inspectToggle;
     Box sectionBar, viewBar;
     DropDown sectionPlane;
     Scale sectionSlider;
@@ -638,7 +638,6 @@ final class MainWindow
             ~ "2D profiles it makes, or a function's name to see what it returns; " ~ shortcutKey ~ "+click a line does the same", false);
         inspectToggle.connectToggled(() => updateEditorCursor(false));
         buildAnnotate();
-        // left-drag mode: rotate or pan (right drag always rotates, middle pans)
         import gtk.icon_theme : IconTheme;
         import gdk.display : Display;
         IconTheme.getForDisplay(Display.getDefault()).addSearchPath(dataDir("icons"));
@@ -755,16 +754,6 @@ final class MainWindow
                 StyleContext.addProviderForDisplay(Display.getDefault(), flat, 700);
             }
         }
-        auto modes = new Box(Orientation.Horizontal, 0);
-        modes.addCssClass("linked");
-        rotateMode = toggle("object-rotate-right-symbolic", "Left drag rotates the view (right drag always rotates)", true);
-        panMode = toggle("hcad-pan-symbolic", "Left drag pans the view (middle drag or Ctrl + right drag always pan)", false);
-        panMode.setGroup(rotateMode);
-        rotateMode.connectToggled(() {
-            viewport.leftMode = rotateMode.getActive() ? DragMode.rotate : DragMode.pan;
-        });
-        modes.append(rotateMode);
-        modes.append(panMode);
 
         // Fit on its own, the views in one menu: room for what a click picks
         auto views = new Box(Orientation.Horizontal, 0);
@@ -815,7 +804,6 @@ final class MainWindow
             viewBar.append(picks);
             viewBar.append(separator());
         }
-        viewBar.append(modes);
         viewBar.append(separator());
         partsMenu = new MenuButton;   // its list is added once the parameters panel exists
         partsMenu.setIconName("view-reveal-symbolic");
@@ -831,7 +819,7 @@ final class MainWindow
         viewBar.append(sectionToggle);
         viewBar.append(inspectToggle);
         viewBar.append(annotateToggle);
-        foreach (b; [rotateMode, panMode, sectionToggle, inspectToggle])
+        foreach (b; [sectionToggle, inspectToggle])
             b.addCssClass("flat");
 
         // ---- editor
@@ -991,6 +979,7 @@ final class MainWindow
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = (Hit h) => picked(h);
+        viewport.onBox = (double x0, double y0, double x1, double y1, bool crossing) => boxed(x0, y0, x1, y1, crossing);
         viewport.onMotion = (double x, double y) => drawingMotion(x, y);
         // a double click on a flat face: the view looks straight at it
         viewport.onDoubleClick = (double x, double y) { lookAtFace(x, y); };
@@ -1038,6 +1027,7 @@ final class MainWindow
             // the layer Annotate draws on lies over the 3D view (taking the pointer from it), under what floats over both
             auto stacked = new Overlay;
             stacked.setChild(viewport.area);
+            stacked.addOverlay(viewport.band);
             stacked.addOverlay(noteArea);
             overlay.setChild(stacked);
         }
@@ -2370,6 +2360,34 @@ private:
     /// A click in the 3D view: each item clicked joins the selection
     /// (clicked again, it leaves it), a click on nothing empties it;
     /// `alone` (a right-click away from the selection) selects it alone.
+    /// A box dragged over the view: what it takes joins the selection, the sketch's when one is shown
+    /// (wholly inside it; dragged right to left, what it touches too).
+    void boxed(double x0, double y0, double x1, double y1, bool crossing)
+    {
+        if (sceneLocked())
+            return;
+        if (viewport.sketchShown)
+        {
+            if (drawnSketch() !is null && drawTool is null)
+                sketchBox(x0, y0, x1, y1, crossing);
+            return;
+        }
+        Hit[] all = viewport.selection();
+        size_t added;
+        foreach (h; viewport.boxItems(x0, y0, x1, y1, crossing))
+            if (!all.canFind!(x => Viewport.sameItem(x, h)))
+            {
+                all ~= h;
+                added++;
+            }
+        viewport.setSelection(all);
+        if (sectionToggle.getActive() && splitPart < 0)
+            refreshPlaneChoices();
+        if (added == 0)
+            return info("the box took nothing" ~ (all.length ? "" : ": drag over what to select"));
+        showSelection();
+    }
+
     void picked(Hit hit, bool alone = false)
     {
         if (sceneLocked())
@@ -3870,7 +3888,6 @@ private:
         inspectToggle.setActive(false);
         hideSketch();
         dropSketches();
-        rotateMode.setActive(true);
         shadingChoice[Shading.edges].setActive(true);
         printabilityChoice.setActive(false);
         if (overhangSpin !is null)

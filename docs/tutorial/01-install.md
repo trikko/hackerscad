@@ -46,16 +46,16 @@ that keeps bags of biscuits closed, something to play with.
 
 Move around the model with the mouse, in the big area in the middle:
 
-- **drag with the right button** to turn it;
-- **drag with the middle button** (or Ctrl and the right button) to move it;
+- **drag with the right button** (or Shift and the left button) to turn it;
+- **drag with the middle button** (or Ctrl and the left or right button) to move it;
 - **turn the wheel** to zoom in and out, towards the pointer;
 - **Fit**, in the bar over the view (or F6), frames the whole model again;
   the **View** menu next to it looks at it from the sides: **Iso**, **Top**,
   **Front** and **Right**.
 
-The left button is for clicking things, as you will see. If you prefer to
-turn the view with it, the two buttons with the arrows in the bar choose what
-a left drag does.
+The left button is for picking things, as you will see: a click picks
+what is under the pointer, a drag a box of them. On a laptop without a
+middle button, Shift and Ctrl turn the left button into the other two.
 
 ## Check
 

@@ -437,8 +437,9 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 ## Keys and mouse (on macOS, Cmd for Ctrl)
 
-- **Right drag** — turns the view
-- **Middle drag, or Ctrl + right drag** — moves the view
+- **Right drag, or Shift + left drag** — turns the view
+- **Middle drag, or Ctrl + left or right drag** — moves the view
+- **Left drag** — a box: what is wholly inside it joins what is picked (dragged right to left: what it touches too); in a sketch, its points and lines
 - **Wheel** — zooms, towards the pointer
 - **F6** — frames the whole model (Fit)
 - **Click** — adds what is under the pointer to what is picked (again: takes it away); on nothing, Esc or Space: none

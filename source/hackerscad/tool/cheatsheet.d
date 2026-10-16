@@ -126,8 +126,9 @@ struct KeyLine
 
 /// The keys and the mouse in the application (on macOS, Cmd in place of Ctrl).
 immutable KeyLine[] keyLines = [
-    KeyLine("Right drag", "turns the view"),
-    KeyLine("Middle drag, or Ctrl + right drag", "moves the view"),
+    KeyLine("Right drag, or Shift + left drag", "turns the view"),
+    KeyLine("Middle drag, or Ctrl + left or right drag", "moves the view"),
+    KeyLine("Left drag", "a box: what is wholly inside it joins what is picked (dragged right to left: what it touches too); in a sketch, its points and lines"),
     KeyLine("Wheel", "zooms, towards the pointer"),
     KeyLine("F6", "frames the whole model (Fit)"),
     KeyLine("Click", "adds what is under the pointer to what is picked (again: takes it away); on nothing, Esc or Space: none"),

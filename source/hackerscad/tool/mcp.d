@@ -814,8 +814,13 @@ JValue toolList()
             ~ "the user's click, what is there joins the selection (picked again, it leaves it; hcad_gui_selection with "
             ~ "clear: true empties it), items of several parts too, and the editor jumps to the feature that created "
             ~ "it. Returns part, face, the point and normal hit, a selector expression for that face (e.g. faces.top) to "
-            ~ "use in code, and in status the info card, one row per line (the sizes of one item, or how far apart two are).",
+            ~ "use in code, and in status the info card, one row per line (the sizes of one item, or how far apart two are). "
+            ~ "box [x0, y0, x1, y1] (fractions) drags a box instead, as the user's left drag: what is wholly inside it "
+            ~ "(crossing: true, as a drag from right to left, what it touches too), in sight and of the kind a click "
+            ~ "picks (hcad_gui_view select), joins the selection; with a sketch shown, its points and lines join the "
+            ~ "sketch's selection (state's sketch.selected).",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
+            ~ `"box": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4}, "crossing": {"type": "boolean"}, `
             ~ `"shift": {"type": "boolean", "description": "kept for older callers: every pick adds to the selection"}`, `[]`),
         gui("hcad_gui_view", "Move the user's 3D view as they do with the mouse, in this order: preset (iso, front, "
             ~ "top, right: framed on the model; fit: frame it from where it is now), look_at [x, y, z] (a model point in mm "
@@ -831,7 +836,7 @@ JValue toolList()
             ~ "cursor puts the editor's cursor at the start of a line and scrolls there (for a picture: the sketch at "
             ~ "the cursor does not follow it; hcad_gui_edit goto does); code_width sets how wide "
             ~ "the code is (pixels); theme draws the window light or dark for this run (the user's own choice, in the "
-            ~ "main menu, stays); drag is what a left drag does, rotate or pan; antialias turns the smoothing of "
+            ~ "main menu, stays); antialias turns the smoothing of "
             ~ "edges on or off for this run (hcad_gui_state's graphics tells whether it is on). "
             ~ "hidden lists the parts to hide (the others are shown); code, console, view and params show or hide "
             ~ "those panels. hcad_gui_state gives the camera.",
@@ -860,7 +865,7 @@ JValue toolList()
             ~ `"code": {"type": "boolean"}, "console": {"type": "boolean"}, "view": {"type": "boolean"}, `
             ~ `"params": {"type": "boolean"}, `
             ~ `"theme": {"type": "string", "enum": ["system", "light", "dark"]}, `
-            ~ `"drag": {"type": "string", "enum": ["rotate", "pan"]}, "antialias": {"type": "boolean"}`, `[]`),
+            ~ `"antialias": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (a cube with two "
             ~ "holes), parameters and view reset; with example, one of the Examples menu instead (" ~ exampleList
             ~ "), unsaved. Refused when the user has unsaved "

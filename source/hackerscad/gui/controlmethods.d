@@ -104,6 +104,23 @@ mixin template ControlMethods()
             {
                 // click in the 3D view: at x, y (fractions of its size) or at a model point
                 immutable shiftPick = p.safe!bool("shift").or(false);
+                // a box dragged over the view: [x0, y0, x1, y1] fractions of it
+                if (p.has("box"))
+                {
+                    if (!p["box"].isArray || p["box"].length != 4)
+                        return reply(JValue.init, "box is [x0, y0, x1, y1], fractions of the view");
+                    double[4] b;
+                    foreach (i; 0 .. 4)
+                        b[i] = numberOf(p["box"][i]) * (i % 2 ? viewport.height : viewport.width);
+                    immutable crossing = p.safe!bool("crossing").or(false);
+                    whenIdle(() {
+                        boxed(b[0], b[1], b[2], b[3], crossing);
+                        auto r = state();
+                        r["status"] = infoLabel.getText();
+                        reply(r, null);
+                    });
+                    return;
+                }
                 whenIdle(() {
                     double x, y;
                     if (auto problem = screenPoint(p, x, y))
@@ -207,9 +224,6 @@ mixin template ControlMethods()
                 // antialiasing, for this run (the user's choice in the cube menu stays)
                 if (has("antialias"))
                     viewport.setAntialias(p["antialias"].safe!bool.or(false));
-                // what a left drag does, as the two buttons of the view bar
-                if (auto v = arg("drag"))
-                    (v == "pan" ? panMode : rotateMode).setActive(true);
                 // the ground grid and the axes, as the eye's menu (kept between runs)
                 if (has("grid"))
                     gridChoice.setActive(p["grid"].safe!bool.or(false));

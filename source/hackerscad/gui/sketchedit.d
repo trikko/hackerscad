@@ -544,6 +544,52 @@ mixin template SketchEdit()
         return format("%s written in the sketch's code", tool);
     }
 
+    /// A box over the sketch drawn: its points and lines wholly inside it (crossing: touching it too) join
+    /// the selection.
+    void sketchBox(double x0, double y0, double x1, double y1, bool crossing)
+    {
+        auto v = drawnSketch();
+        immutable lx = min(x0, x1), hx = max(x0, x1), ly = min(y0, y1), hy = max(y0, y1);
+        bool inside(double x, double y) => x >= lx && x <= hx && y >= ly && y <= hy;
+        size_t[] took;
+        void take(ptrdiff_t entity)
+        {
+            import std.algorithm : canFind;
+            if (entity >= 0 && !sketchSel.canFind(cast(size_t) entity) && !took.canFind(cast(size_t) entity))
+                took ~= cast(size_t) entity;
+        }
+        foreach (pt; v.points)
+        {
+            double px, py;
+            if (viewport.project(v.world(pt.pos), px, py) && inside(px, py))
+                take(pt.entity);
+        }
+        foreach (g; v.segments)
+        {
+            if (g.entity < 0)
+                continue;
+            bool any, every = true;
+            foreach (seg; polylineOf(g))
+            {
+                double ax, ay, bx, by;
+                if (!viewport.project(v.world(seg[0]), ax, ay) || !viewport.project(v.world(seg[1]), bx, by))
+                {
+                    every = false;
+                    continue;
+                }
+                any = any || boxMeetsSegment(lx, ly, hx, hy, ax, ay, bx, by);
+                every = every && inside(ax, ay) && inside(bx, by);
+            }
+            if (crossing ? any : every)
+                take(g.entity);
+        }
+        sketchSel ~= took;
+        drawRuns();
+        updateSketchBar();
+        info(took.length ? format("%d selected in the sketch (%d by the box)", sketchSel.length, took.length)
+            : "the box took nothing: drag over points and lines of the sketch");
+    }
+
     /// Esc in a sketch, a step at a time before leaving it: the clicks of a shape
     /// being drawn, then the drawing tool and the selection (back to ↖). False: nothing to undo here.
     bool sketchEscape()
