@@ -3314,11 +3314,15 @@ static std::vector<std::pair<TopoDS_Face, bool>> outline_regions(const std::vect
         faces.push_back(upward(f.Face()));
         split.AddArgument(faces.back());
     }
-    split.Perform();
-    if (split.HasErrors())
-        throw Standard_Failure("cannot split the outline into its areas");
     TopTools_IndexedMapOfShape pieces;
-    TopExp::MapShapes(split.Shape(), TopAbs_FACE, pieces);
+    if (faces.size() == 1) // one loop: one area, nothing to split
+        pieces.Add(faces[0]);
+    else {
+        split.Perform();
+        if (split.HasErrors())
+            throw Standard_Failure("cannot split the outline into its areas");
+        TopExp::MapShapes(split.Shape(), TopAbs_FACE, pieces);
+    }
     std::vector<std::pair<TopoDS_Face, bool>> r;
     for (int i = 1; i <= pieces.Extent(); i++) {
         const TopoDS_Face piece = TopoDS::Face(pieces(i));

@@ -980,6 +980,9 @@ final class MainWindow
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = (Hit h) => picked(h);
         viewport.onSketchShown = () => showProblems();
+        viewport.onGrab = (double x, double y) => sketchGrab(x, y);
+        viewport.onGrabMove = (double x, double y) => sketchGrabMove(x, y);
+        viewport.onGrabEnd = (double x, double y) => sketchGrabEnd(x, y);
         viewport.onBox = (double x0, double y0, double x1, double y1, bool crossing) => boxed(x0, y0, x1, y1, crossing);
         viewport.onMotion = (double x, double y) => drawingMotion(x, y);
         // a double click on a flat face: the view looks straight at it
@@ -4074,6 +4077,8 @@ private:
         {
             sketchRun = 0;
             sketchSel = null;
+            selHidden = null;
+            selHiddenAt = null;
         }
         drawRuns();
         // a sketch on a face: seen from outside that face
@@ -4163,6 +4168,8 @@ private:
         sketchIndices = null;
         sketchRun = 0;
         sketchSel = null;
+        selHidden = null;
+        selHiddenAt = null;
         drawTool = null;
         drawn = null;
         drawnAt = null;

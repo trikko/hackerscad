@@ -296,8 +296,14 @@ them.
 
 With ↖, a click on a point or a line selects it (again: it leaves; on
 nothing: none), a drag a box of them (what is wholly inside it; dragged from
-right to left, what it touches too), and the constraints that fit what is selected light up;
-the others say, when you point at them, what they need. Several lines and
+right to left, what it touches too). A drag that starts on a point, a line
+or a circle moves it: where you let go is written into its `s.point(x, y)`,
+and the constraints keep it where they say (a point on a line slides along
+it). Right on the middle of a line, or where two lines cross, a mark shows:
+a click selects that place, and with a point selected too, Coincident keeps
+the point there (`s.midpoint`, or `s.on` both lines). The constraints
+that fit what is selected light up; the others say, when you point at
+them, what they need. Several lines and
 ∥: each parallel to the first. The constraints with a value (length,
 distance, angle, radius, diameter) ask for it in a field, the size it has
 now already written in: Enter writes it. Five lines and a length of 20 mm

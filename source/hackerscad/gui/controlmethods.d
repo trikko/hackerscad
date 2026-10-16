@@ -786,7 +786,8 @@ mixin template ControlMethods()
                     });
                     return;
                 }
-                if ((has("select") || has("constrain") || has("delete") || (p.has("construction") && !has("draw")))
+                if ((has("select") || has("constrain") || has("delete") || p.has("move")
+                        || (p.has("construction") && !has("draw")))
                     && !has("line") && !p.has("on"))
                 {
                     whenIdle(() {
@@ -806,6 +807,8 @@ mixin template ControlMethods()
                                 ids ~= cast(size_t) id;
                             }
                             sketchSel = ids;
+                            selHidden = null;
+                            selHiddenAt = null;
                             drawRuns();
                         }
                         string said;
@@ -814,6 +817,32 @@ mixin template ControlMethods()
                             said = deleteSelection();
                             import std.algorithm : canFind;
                             if (!said.canFind("deleted from the sketch's code"))
+                                return reply(JValue.init, said);
+                        }
+                        // dragged as the user drags them: the selected entities' points moved by [dx, dy]
+                        if (p.has("move"))
+                        {
+                            auto drawn = drawnSketch();
+                            if (drawn is null || sketchSel.length == 0)
+                                return reply(JValue.init, "move needs a sketch shown and a selection (select [ids])");
+                            if (!p["move"].isArray || p["move"].length != 2)
+                                return reply(JValue.init, "move is [dx, dy] on the sketch's plane");
+                            auto by = Vec3(numberOf(p["move"][0]), numberOf(p["move"][1]), 0);
+                            size_t[] pts;
+                            Vec3[] to;
+                            import std.algorithm : canFind;
+                            foreach (e; sketchSel)
+                                foreach (q; pointsOf(drawn, e))
+                                    if (!pts.canFind(q))
+                                        foreach (pt; drawn.points)
+                                            if (pt.entity == q)
+                                            {
+                                                pts ~= q;
+                                                to ~= pt.pos + by;
+                                            }
+                            said = moveSketchPoints(pts, to);
+                            import std.algorithm : startsWith;
+                            if (!said.startsWith("moved"))
                                 return reply(JValue.init, said);
                         }
                         if (p.has("construction") && !has("draw"))

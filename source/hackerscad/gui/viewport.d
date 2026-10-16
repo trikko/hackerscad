@@ -111,6 +111,11 @@ final class Viewport
     /// A left drag ended: the box from (x0, y0) to (x1, y1), view pixels; crossing (dragged right to left) takes
     /// what it touches, else only what is wholly inside
     void delegate(double x0, double y0, double x1, double y1, bool crossing) onBox;
+    /// A left drag begins at (x, y): true when what is there is taken to move (then onGrabMove follows the
+    /// pointer, onGrabEnd ends it), false for a box
+    bool delegate(double x, double y) onGrab;
+    void delegate(double x, double y) onGrabMove;
+    void delegate(double x, double y) onGrabEnd;
     Shading shading = Shading.edges;
     /// Parallel projection: sizes do not shrink with the distance.
     bool orthographic;
@@ -209,7 +214,7 @@ final class Viewport
 
     // pointer and drag state
     private double pointerX = 0, pointerY = 0;
-    private bool dragging, dragPan, dragBox;
+    private bool dragging, dragPan, dragBox, dragGrab;
     private double boxX, boxY;   /// where a box being dragged has its other corner
     private uint dragButton;
     private double startYaw, startPitch, startX, startY;
@@ -259,6 +264,10 @@ final class Viewport
             handleStartOffset = sectionOffset;
             if (gizmoGrab >= 0 || pressedButton != ViewButton.none || sectionHandle >= 0 || placing)
                 dragBox = false;
+            // on something a sketch can move: it moves, no box
+            dragGrab = dragBox && onGrab !is null && onGrab(x, y);
+            if (dragGrab)
+                dragBox = false;
             startShift = shift;
             startYaw = yaw;
             startPitch = pitch;
@@ -307,6 +316,13 @@ final class Viewport
             }
             if (!dragging && abs(dx) + abs(dy) < 4)
                 return;
+            if (dragGrab)
+            {
+                dragging = true;
+                if (onGrabMove !is null)
+                    onGrabMove(startX + dx, startY + dy);
+                return;
+            }
             if (dragBox)
             {
                 dragging = true;
@@ -370,6 +386,19 @@ final class Viewport
                 dragging = false;
                 updateHoverCursor();
                 return;
+            }
+            // something of a sketch moved: put where it was let go (a click without moving picks it, below)
+            if (dragGrab)
+            {
+                dragGrab = false;
+                if (dragging)
+                {
+                    dragging = false;
+                    if (onGrabEnd !is null)
+                        onGrabEnd(startX + dx, startY + dy);
+                    updateHoverCursor();
+                    return;
+                }
             }
             // a box dragged: what it takes joins the selection
             if (dragBox && dragging)
@@ -4190,7 +4219,7 @@ private:
                 // a fillet's arc stands out with its corner point
                 immutable on = (g.entity >= 0 && (cast(size_t) g.entity in lit) !is null)
                     || (g.corner >= 0 && (cast(size_t) g.corner in lit) !is null);
-                if (g.construction && !on && !g.reference)
+                if (g.construction && !g.reference)
                 {
                     // construction: dashed, a fixed share of the sketch's size each dash and gap
                     double gone = 0;
@@ -4204,8 +4233,9 @@ private:
                             immutable step = min(len - t, phase < dash ? dash - phase : 2 * dash - phase);
                             if (phase < dash)
                             {
-                                add(construction, pts[j] + (pts[j + 1] - pts[j]) * (t / len));
-                                add(construction, pts[j] + (pts[j + 1] - pts[j]) * ((t + step) / len));
+                                // selected: orange, dashed still
+                                add(on ? litLines : construction, pts[j] + (pts[j + 1] - pts[j]) * (t / len));
+                                add(on ? litLines : construction, pts[j] + (pts[j + 1] - pts[j]) * ((t + step) / len));
                             }
                             t += max(step, 1e-9);
                         }

@@ -38,6 +38,22 @@ mixin template SketchEdit()
         ptrdiff_t mid = -1;   /// the line it is the middle of
     }
     private Hidden lastHidden;   /// what snapAt found last, when it returned -3
+    Hidden[] selHidden;          /// hidden places selected with ↖ (a line's middle, a crossing): for Coincident
+    Vec3[] selHiddenAt;          /// where they are
+
+    /// The hidden place (a line's middle, where lines cross) within 5 pixels of (x, y), when no point of the
+    /// sketch is nearer: true, with where and what.
+    bool hiddenNear(double x, double y, out Vec3 at, out Hidden h)
+    {
+        auto v = drawnSketch();
+        if (v is null || snapAt(x, y, at) != -3)
+            return false;
+        double px, py;
+        if (!viewport.project(v.world(at), px, py) || (px - x) ^^ 2 + (py - y) ^^ 2 > 25)
+            return false;
+        h = lastHidden;
+        return true;
+    }
 
     /// The drawing tools: a symbol each, a name for their group's menu, and how to use it.
     static immutable string[4][] drawTools = [
@@ -341,7 +357,17 @@ mixin template SketchEdit()
         foreach (tool, b; toolButtons)
         {
             string reason = why;
-            if (reason is null)
+            if (reason is null && selHidden.length)
+            {
+                // a line's middle or a crossing selected: Coincident with a point, nothing else
+                import std.algorithm : any;
+                if (tool != "coincident")
+                    reason = "a line's middle or a crossing only takes Coincident";
+                else if (!sketchSel.any!(e => e < v.entities.length && v.entities[e].kind == "point"))
+                    reason = "select a point too: it goes to the middle or the crossing";
+                b.setSensitive(reason is null);
+            }
+            else if (reason is null)
             {
                 planConstraint(*v, sketchSel, tool, "1.mm", reason);
                 b.setSensitive(reason is null);
@@ -361,6 +387,16 @@ mixin template SketchEdit()
     /// orange could not be clicked away). Nothing selected: no mark.
     void markSketchSelection()
     {
+        // the hidden places selected: marked where they are
+        if (drawTool is null)
+        {
+            auto sv = drawnSketch();
+            viewport.drawingPoints = null;
+            if (sv !is null)
+                foreach (q; selHiddenAt)
+                    viewport.drawingPoints ~= sv.world(q);
+            viewport.refresh();
+        }
         // the mark is the 3D view's too: left alone when the sketch did not make it
         if (!sketchMarked && sketchSel.length == 0)
             return;
@@ -393,19 +429,13 @@ mixin template SketchEdit()
             editor.scrollToIter(a, 0.1, true, 0, 0.3);
     }
 
-    /// A click on the sketch drawn: the point or line under it joins its
-    /// selection (or leaves it); on nothing, the selection empties. True when
-    /// the click was on the sketch.
-    bool sketchPick(double x, double y)
+    /// The point (8 pixels away at most, first) or the line or curve (6) of the sketch drawn under view point
+    /// (x, y): its entity, or -1.
+    ptrdiff_t sketchHit(double x, double y)
     {
         auto v = drawnSketch();
         if (v is null)
-            return false;
-        if (drawTool !is null)
-        {
-            drawingClick(x, y);
-            return true;
-        }
+            return -1;
         Vec3 world(Vec3 p) => v.world(p);
         double best = 64;   // 8 pixels away at most, points first
         ptrdiff_t found = -1;
@@ -445,11 +475,140 @@ mixin template SketchEdit()
                 }
             }
         }
+        return found;
+    }
+
+    // ---- moving with the mouse
+
+    size_t[] moving;       /// the points being dragged
+    Vec3[] movingFrom;     /// where they were
+    Vec3 grabbedAt;        /// where the drag began, on the sketch's plane
+
+    /// The points that move with entity e: a point itself, a line's two, an arc's three, a circle's or an
+    /// ellipse's centre, a curve's points.
+    size_t[] pointsOf(const(SketchView)* v, size_t e)
+    {
+        auto en = v.entities[e];
+        return en.kind == "point" ? [e] : en.points.dup;
+    }
+
+    /// A drag begins at (x, y): a point, line or curve of a sketch the bar edits, with ↖, is taken to move.
+    bool sketchGrab(double x, double y)
+    {
+        if (!viewport.sketchShown || drawTool !is null || sketchUneditable() !is null)
+            return false;
+        auto v = drawnSketch();
+        immutable e = sketchHit(x, y);
+        if (e < 0 || v.entities[e].reference || !onSketchPlane(x, y, grabbedAt))
+            return false;
+        moving = pointsOf(v, e);
+        movingFrom = null;
+        foreach (p; moving)
+            foreach (pt; v.points)
+                if (pt.entity == p)
+                    movingFrom ~= pt.pos;
+        return moving.length == movingFrom.length && moving.length > 0;
+    }
+
+    /// The drag goes on: the points where they would go (the solver then keeps them to their constraints).
+    void sketchGrabMove(double x, double y)
+    {
+        auto v = drawnSketch();
+        Vec3 at;
+        if (v is null || !onSketchPlane(x, y, at))
+            return;
+        viewport.drawingPoints = null;
+        viewport.drawingLines = null;
+        foreach (k, q; movingFrom)
+        {
+            viewport.drawingPoints ~= v.world(q + (at - grabbedAt));
+            viewport.drawingLines ~= [v.world(q), v.world(q + (at - grabbedAt))];
+        }
+        viewport.refresh();
+    }
+
+    /// Let go: the points' new places written into the code.
+    void sketchGrabEnd(double x, double y)
+    {
+        viewport.drawingPoints = null;
+        viewport.drawingLines = null;
+        viewport.refresh();
+        Vec3 at;
+        if (drawnSketch() is null || !onSketchPlane(x, y, at))
+            return;
+        Vec3[] to;
+        foreach (q; movingFrom)
+            to ~= q + (at - grabbedAt);
+        info(moveSketchPoints(moving, to));
+    }
+
+    /// Writes points of the drawn sketch at new places (movePoints); what the info line says.
+    string moveSketchPoints(const(size_t)[] points, Vec3[] to)
+    {
+        import hackerscad.tool.sketchcode : movePoints, editBetween;
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        auto v = drawnSketch();
+        if (v is null)
+            return "no sketch is drawn";
+        immutable src = text();
+        if (last.sources.get(absolutePath(path), null) != src)
+            return "the code changed since it was evaluated: wait for it, then try again";
+        string why;
+        auto after = movePoints(src, v.span.file, *v, points, to, why);
+        if (after is null)
+            return why;
+        sketchEditHold = true;
+        applyEdit(editBetween(src, after));
+        return "moved: the constraints keep it where they say";
+    }
+
+    /// A click on the sketch drawn: the point or line under it joins its
+    /// selection (or leaves it); on nothing, the selection empties. True when
+    /// the click was on the sketch.
+    bool sketchPick(double x, double y)
+    {
+        // a line's middle or a crossing, right on it: into the hidden selection (again: out)
+        if (drawTool is null)
+        {
+            Vec3 hat;
+            Hidden h;
+            if (hiddenNear(x, y, hat, h))
+            {
+                foreach (k, o; selHidden)
+                    if (o.mid == h.mid && o.on == h.on)
+                    {
+                        import std.algorithm : remove;
+                        selHidden = selHidden.remove(k);
+                        selHiddenAt = selHiddenAt.remove(k);
+                        updateSketchBar();
+                        info("taken out of the selection");
+                        return true;
+                    }
+                selHidden ~= h;
+                selHiddenAt ~= hat;
+                updateSketchBar();
+                info(h.mid >= 0 ? "the middle of a line selected: with a point, Coincident keeps it there"
+                    : "where two lines cross selected: with a point, Coincident keeps it there");
+                return true;
+            }
+        }
+        auto v = drawnSketch();
+        if (v is null)
+            return false;
+        if (drawTool !is null)
+        {
+            drawingClick(x, y);
+            return true;
+        }
+        immutable found = sketchHit(x, y);
         if (found < 0)
         {
             if (sketchSel.length)
             {
                 sketchSel = null;
+                selHidden = null;
+                selHiddenAt = null;
                 drawRuns();
                 updateSketchBar();
             }
@@ -600,6 +759,8 @@ mixin template SketchEdit()
         // the sketch's lines are those of the code evaluated: it must be the same
         if (last.sources.get(absolutePath(path), null) != src)
             return "the code changed since it was evaluated: wait for it, then try again";
+        if (selHidden.length)
+            return hiddenCoincident(tool, src, v);
         string why;
         auto steps = planConstraint(*v, sketchSel, tool, value, why);
         if (steps.length == 0)
@@ -613,6 +774,40 @@ mixin template SketchEdit()
         applyEdit(editBetween(src, after, value));
         // the selection stays: another constraint on the same items, or a click on nothing for none
         return format("%s written in the sketch's code", tool);
+    }
+
+    /// Coincident with hidden places selected: each point selected kept at each place (s.midpoint, or s.on both
+    /// lines that cross); what the info line says.
+    string hiddenCoincident(string tool, string src, const(SketchView)* v)
+    {
+        import hackerscad.tool.sketchcode : SketchWriter, editBetween;
+        if (tool != "coincident")
+            return "a line's middle or a crossing only takes Coincident (with a point)";
+        size_t[] pts;
+        foreach (e; sketchSel)
+            if (v.entities[e].kind == "point")
+                pts ~= e;
+        if (pts.length == 0)
+            return "select a point too: it goes to the middle or the crossing";
+        try
+        {
+            auto w = SketchWriter(src, v.span.file, *v);
+            foreach (p; pts)
+                foreach (h; selHidden)
+                {
+                    if (h.mid >= 0)
+                        w.add(format("%s.midpoint(%s, %s)", w.var, w.name(p), w.name(h.mid)));
+                    foreach (l; h.on)
+                        w.add(format("%s.on(%s, %s)", w.var, w.name(p), w.name(l)));
+                }
+            sketchEditHold = true;
+            applyEdit(editBetween(src, w.result()));
+        }
+        catch (Exception e)
+            return e.msg;
+        selHidden = null;
+        selHiddenAt = null;
+        return "coincident written in the sketch's code";
     }
 
     /// A box over the sketch drawn: its points and lines wholly inside it (crossing: touching it too) join
@@ -865,6 +1060,8 @@ mixin template SketchEdit()
         drawnAt = null;
         drawnVia = null;
         sketchSel = null;
+        selHidden = null;
+        selHiddenAt = null;
         showDrawing(double.nan, double.nan);
         drawRuns();
         if (tool is null)
@@ -1041,8 +1238,11 @@ mixin template SketchEdit()
     void drawingClick(double x, double y)
     {
         Vec3 p;
-        // an area is clicked inside: no point to snap to
-        ptrdiff_t at = drawTool == "fill" ? -1 : snapAt(x, y, p);
+        ptrdiff_t at = snapAt(x, y, p);
+        // an area is clicked inside: no point of the sketch to take (one is on its edge), only a hidden place
+        // (the middle of a construction line, say), its point kept there
+        if (drawTool == "fill" && at != -3)
+            at = -1;
         if (at == -1 && !onSketchPlane(x, y, p))
             return;
         // on the first point again: the lines or the curve close, and are written
@@ -1167,13 +1367,26 @@ mixin template SketchEdit()
     /// The pointer moved: the preview follows it.
     void drawingMotion(double x, double y)
     {
+        // selecting: the hidden places show where the pointer is on one
+        if (drawTool is null && viewport.sketchShown && drawnSketch() !is null)
+        {
+            Vec3 at;
+            Hidden h;
+            auto before = viewport.drawingSnap;
+            viewport.drawingSnap = hiddenNear(x, y, at, h) ? [drawnSketch().world(at)] : null;
+            if (before.length || viewport.drawingSnap.length)
+                viewport.refresh();
+            return;
+        }
         if (drawTool !is null && drawn.length)
             showDrawing(x, y);
         else if (drawTool !is null)
         {
             // nothing clicked yet: only where it would snap
             Vec3 p;
-            viewport.drawingSnap = snapAt(x, y, p) != -1 ? [drawnSketch().world(p)] : null;
+            immutable sn = snapAt(x, y, p);
+            // the fill takes only hidden places
+            viewport.drawingSnap = (drawTool == "fill" ? sn == -3 : sn != -1) ? [drawnSketch().world(p)] : null;
             viewport.refresh();
         }
     }
@@ -1358,6 +1571,10 @@ mixin template SketchEdit()
                         // a point of the sketch: shown, it can be constrained to stay in its area
                         immutable n = w.fresh("inside");
                         w.add(format("auto %s = %s.point(%s, %s)", n, w.var, num(q.x), num(q.y)));
+                        foreach (l; via[0].on)
+                            w.add(format("%s.on(%s, %s)", w.var, n, w.name(l)));
+                        if (via[0].mid >= 0)
+                            w.add(format("%s.midpoint(%s, %s)", w.var, n, w.name(via[0].mid)));
                         w.add(format("%s.fill(%s%s)", w.var, n, full ? "" : ", full: false"));
                         select = n;
                         break;
@@ -1482,6 +1699,8 @@ mixin template SketchEdit()
         applyEdit(editBetween(src, after));
         immutable n = sketchSel.length;
         sketchSel = null;
+        selHidden = null;
+        selHiddenAt = null;
         return format("%d deleted from the sketch's code, with what was drawn on %s and the constraints on them",
             n, n == 1 ? "it" : "them");
     }

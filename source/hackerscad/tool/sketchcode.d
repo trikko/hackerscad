@@ -13,6 +13,7 @@ import std.format : format;
 import hackerscad.lang.errors : Span;
 import hackerscad.lang.lexer;
 import hackerscad.lang.sketchval : SketchView;
+import hackerscad.geom.vec : Vec3;
 import hackerscad.tool.codegen : CodegenException, Edit, offsetOf;
 
 /// Writes `statement(names)` at the end of sketch `v`'s code, the names
@@ -1063,4 +1064,124 @@ unittest
     auto v2 = viewOf(made);
     auto back = setConstruction(made, file, v2, [at(8, "line")], false, why);
     assert(back !is null && back.canFind("s.line(a, b);"), back);
+}
+
+/// Moves points of the sketch: their s.point(x, y) written with the places
+/// `to` (where the solver starts from: it keeps them to their constraints).
+/// Only points made by an s.point call of plain numbers in the sketch's own
+/// code can be moved; null with why for any other.
+string movePoints(string source, string file, const ref SketchView v, const(size_t)[] points, const(Vec3)[] to,
+    out string why)
+{
+    import std.algorithm : canFind;
+    SketchWriter w;
+    try
+        w = SketchWriter(source, file, v);
+    catch (CodegenException e)
+    {
+        why = e.msg;
+        return null;
+    }
+    struct Change { size_t from, to; string text; }
+    Change[] changes;
+    auto t = w.toks;
+    size_t at(size_t k) => offsetOf(source, t[k].span);
+    static string num(double x)
+    {
+        import std.math : round;
+        return format("%.6g", round(x * 100) / 100 + 0.0);
+    }
+    foreach (n, p; points)
+    {
+        auto en = v.entities[p];
+        if (en.reference)
+        {
+            why = "a face's edges and the origin are references: they stay";
+            return null;
+        }
+        immutable c = w.callToken(en.span);
+        if (c == size_t.max || c == 0 || t[c - 1].text != "point")
+        {
+            why = format("the point of line %d is made by a shape or from a vector: move it in the code", en.span.line);
+            return null;
+        }
+        // its first two arguments, each a number (maybe negative, maybe .mm), maybe named x: and y:
+        size_t k = c + 1;
+        foreach (axis; 0 .. 2)
+        {
+            if (t[k].kind == Tok.ident && t[k + 1].kind == Tok.colon)
+                k += 2;
+            immutable start = k;
+            if (t[k].kind == Tok.minus)
+                k++;
+            if (t[k].kind != Tok.intLit && t[k].kind != Tok.floatLit)
+            {
+                why = format("the place of the point of line %d is computed: change it in the code", en.span.line);
+                return null;
+            }
+            k++;
+            immutable mm = t[k].kind == Tok.dot && t[k + 1].kind == Tok.ident && t[k + 1].text == "mm";
+            if (mm)
+                k += 2;
+            if (t[k].kind != Tok.comma && t[k].kind != Tok.rparen)
+            {
+                why = format("the place of the point of line %d is computed: change it in the code", en.span.line);
+                return null;
+            }
+            changes ~= Change(at(start), at(k), num(axis == 0 ? to[n].x : to[n].y) ~ (mm ? ".mm" : ""));
+            k++;
+        }
+    }
+    import std.algorithm : sort;
+    changes.sort!((a, b) => a.from > b.from);
+    string r = source;
+    foreach (ch; changes)
+    {
+        // what stood between the number and the comma (spaces) stays out of it
+        size_t end = ch.to;
+        while (end > ch.from && (r[end - 1] == ' ' || r[end - 1] == '\t'))
+            end--;
+        r = r[0 .. ch.from] ~ ch.text ~ r[end .. $];
+    }
+    return r;
+}
+
+unittest
+{
+    import std.algorithm : canFind;
+    import std.file : tempDir;
+    import std.path : buildPath;
+    import hackerscad.lang.interp : Interp;
+    import hackerscad.lang.sketchval : SketchVal;
+    import hackerscad.kernel.occt.backend : OcctKernel;
+
+    immutable file = buildPath(tempDir, "hcad-sketchmove.hcad");
+    auto kernel = new OcctKernel;
+    SketchView viewOf(string src)
+    {
+        auto it = new Interp(kernel);
+        it.runSource(src, file);
+        return (cast(SketchVal) it.sketches[$ - 1]).view();
+    }
+    immutable src = "module m;\n@part\nSolid p()\n{\n"
+        ~ "    auto s = sketch();\n"
+        ~ "    auto a = s.point(0, -2.5.mm, fixed: true);\n"
+        ~ "    auto b = s.point(40, 2);\n"
+        ~ "    auto c = s.point(10 * 2, 2);\n"
+        ~ "    s.rect(vec(50, 0), vec(70, 20));\n"
+        ~ "    return box(1, 1, 1);\n}\n";
+    auto v = viewOf(src);
+    size_t on(uint line)
+    {
+        foreach (i, e; v.entities)
+            if (e.span.line == line && e.kind == "point")
+                return i;
+        assert(0);
+    }
+    string why;
+    auto moved = movePoints(src, file, v, [on(6), on(7)], [Vec3(1.234, -3), Vec3(42, 5.5)], why);
+    assert(moved !is null, why);
+    assert(moved.canFind("s.point(1.23, -3.mm, fixed: true)") && moved.canFind("s.point(42, 5.5)"), moved);
+    assert(movePoints(src, file, v, [on(8)], [Vec3(1, 1)], why) is null && why.canFind("computed"), why);
+    assert(movePoints(src, file, v, [on(9)], [Vec3(1, 1)], why) is null && why.canFind("shape"), why);
 }

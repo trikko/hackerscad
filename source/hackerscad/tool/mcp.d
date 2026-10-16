@@ -1047,7 +1047,9 @@ JValue toolList()
             ~ "sketch shows the areas); sizes are written as numbers (a value to change); construction: true draws it as "
             ~ "construction geometry (dashed guides to constrain to, never filled or extruded). With select instead, "
             ~ "construction: true turns the selected into construction geometry, false into plain geometry (the "
-            ~ "bar's ┄; a shape's every side changes with it). tool chooses a drawing tool of "
+            ~ "bar's ┄; a shape's every side changes with it). move [dx, dy] (with select) moves the selected "
+            ~ "entities' points by that much, as the user's drag with ↖: their s.point(x, y) rewritten, the "
+            ~ "constraints keeping them where they say (a point made by a shape or computed says so). tool chooses a drawing tool of "
             ~ "the bar instead (its button shows it; the user's right-click gives the others), and hcad_gui_pick clicks then draw, as "
             ~ "the user's: state's sketch.drawing gives what is clicked so far. delete: true (with select) takes "
             ~ "the selected entities out of the code, with what is drawn on them (a line on a point; a shape goes "
@@ -1060,7 +1062,7 @@ JValue toolList()
             ~ `"angle", "radius", "diameter"]}, "value": {"type": "string"}, `
             ~ `"draw": {"type": "string", "enum": ["point", "line", "spline", "rect", "center-rect", "turned-rect", `
             ~ `"polygon", "slot", "circle", "ellipse", "teardrop", "arc", "3-point-arc", "fill"]}, `
-            ~ `"points": {"type": "array", "items": {}}, "closed": {"type": "boolean"}, "sides": {"type": "integer"}, "construction": {"type": "boolean"}, `
+            ~ `"points": {"type": "array", "items": {}}, "closed": {"type": "boolean"}, "sides": {"type": "integer"}, "construction": {"type": "boolean"}, "move": {"type": "array", "items": {"type": "number"}}, `
             ~ `"tool": {"type": "string", "enum": ["select", "point", "line", "spline", "rect", "center-rect", `
             ~ `"turned-rect", "polygon", "slot", "circle", "ellipse", "teardrop", "arc", "3-point-arc", "fill"]}, `
             ~ `"delete": {"type": "boolean"}`, `[]`),
