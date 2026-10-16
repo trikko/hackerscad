@@ -22,6 +22,7 @@ mixin template SketchEdit()
     int polygonSides = 6;     /// what the polygon tool draws
     Button deleteButton;
     Button constructionButton;
+    bool sketchMarked;       /// the code's "picked" marks are the sketch selection's
     bool drawConstruction;   /// what is drawn is construction geometry (the bar's ┄ with nothing selected)
     string drawTool;      /// the drawing tool at work (null: clicks select)
     bool sketchEditHold;  /// the bar wrote into the code: the sketch stays shown until it is evaluated
@@ -292,6 +293,7 @@ mixin template SketchEdit()
     /// The bar shown with an editable sketch, each tool usable when the selection fits it.
     void updateSketchBar()
     {
+        markSketchSelection();
         import hackerscad.tool.sketchcode : planConstraint;
         if (sketchBar is null)
             return;
@@ -336,6 +338,44 @@ mixin template SketchEdit()
                     if (t[0] == tool)
                         b.setTooltipText(reason is null ? t[2] : t[2] ~ "\n" ~ reason);
         }
+    }
+
+    /// The lines of code that made what is selected in the sketch, marked as
+    /// a part picked in the view marks its line; the cursor stays where it
+    /// is (moving it would show the sketch at the cursor instead, and its
+    /// orange could not be clicked away). Nothing selected: no mark.
+    void markSketchSelection()
+    {
+        // the mark is the 3D view's too: left alone when the sketch did not make it
+        if (!sketchMarked && sketchSel.length == 0)
+            return;
+        TextIter s, e;
+        buffer.getBounds(s, e);
+        buffer.removeTagByName("picked", s, e);
+        sketchMarked = false;
+        auto v = drawnSketch();
+        if (v is null)
+            return;
+        foreach (id; sketchSel)
+        {
+            if (id >= v.entities.length)
+                continue;
+            auto span = v.entities[id].span;
+            TextIter a, b;
+            if (span.file != absolutePath(path) || span.line == 0 || !buffer.getIterAtLine(a, span.line - 1))
+                continue;
+            buffer.getIterAtLine(b, span.line);
+            buffer.applyTagByName("picked", a, b);
+            sketchMarked = true;
+        }
+    }
+
+    /// Scrolls the code to a line of the sketch (when it is in the open file), the cursor left alone.
+    void showSketchLine(Span span)
+    {
+        TextIter a;
+        if (span.file == absolutePath(path) && span.line > 0 && buffer.getIterAtLine(a, span.line - 1))
+            editor.scrollToIter(a, 0.1, true, 0, 0.3);
     }
 
     /// A click on the sketch drawn: the point or line under it joins its
@@ -409,7 +449,9 @@ mixin template SketchEdit()
         drawRuns();
         updateSketchBar();
         auto e = v.entities[found];
-        jumpTo(e.span, format("%d selected in the sketch · %s · line %d", sketchSel.length, e.kind, e.span.line));
+        info(format("%d selected in the sketch · %s · line %d", sketchSel.length, e.kind, e.span.line));
+        if (at < 0)
+            showSketchLine(e.span);
         return true;
     }
 
