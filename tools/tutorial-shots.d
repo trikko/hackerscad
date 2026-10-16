@@ -1,7 +1,7 @@
 /+ dub.sdl:
     name "tutorial-shots"
     dependency "hackerscad:core" path=".."
-    dependency "djson" version="~>0.9.5"
+    dependency "djson" version="~>0.9.6"
 +/
 // Rebuilds the tutorial's models and pictures: drives the application
 // through the steps of each page as a reader would (clicks, right-click

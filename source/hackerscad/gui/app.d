@@ -5763,11 +5763,7 @@ private:
         }
         j["modified"] = modified;
         j["preset"] = params.preset;
-        import std.algorithm : sort;
-        JValue ov = JSOB();
-        foreach (k; params.overrides.keys.sort)
-            ov[k] = params.overrides[k];
-        j["overrides"] = ov;
+        j["overrides"] = JValue(params.overrides);
         JValue parts = JSAB();
         foreach (pm; last.parts)
         {
@@ -5794,7 +5790,7 @@ private:
                 jp["doc"] = pi.doc;
             // the limits and steps of the panel's field, the entries of its menu
             auto limits = ["min": pi.min, "max": pi.max, "step": pi.step];
-            foreach (key; limits.keys.sort)
+            foreach (key; ["max", "min", "step"])
                 if (limits[key].kind != Kind.void_)
                     jp[key] = limits[key].toString;
             if (pi.choices.length)

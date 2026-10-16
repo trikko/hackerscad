@@ -216,7 +216,7 @@ final class ControlServer
         JValue response;
         try
         {
-            auto req = parseJSONComplete(buf[0 .. buf.indexOf('\n')].idup);
+            auto req = parseJSONComplete(buf[0 .. buf.indexOf('\n')]);
             auto method = req["method"].get!string;
             auto params = req.has("params") ? req["params"] : JSOB();
 

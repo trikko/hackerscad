@@ -10,7 +10,7 @@ targetPath "bin"
 sourcePaths "source/hackerscad/cli"
 importPaths "source"
 dependency "hackerscad:core" version="*"
-dependency "djson" version="~>0.9.5"
+dependency "djson" version="~>0.9.6"
 
 subPackage {
 	name "gui"
@@ -20,7 +20,7 @@ subPackage {
 	sourcePaths "source/hackerscad/gui"
 	importPaths "source"
 	dependency "hackerscad:core" version="*"
-	dependency "djson" version="~>0.9.5"
+	dependency "djson" version="~>0.9.6"
 	dependency "gid:gtk4" version="~>0.9.11"
 	dependency "gid:gtksource5" version="~>0.9.11"
 	dependency "gid:adw1" version="~>0.9.11"
@@ -41,7 +41,7 @@ subPackage {
 	sourcePaths "source/hackerscad"
 	importPaths "source"
 	excludedSourceFiles "source/hackerscad/cli/*" "source/hackerscad/gui/*"
-	dependency "djson" version="~>0.9.5"
+	dependency "djson" version="~>0.9.6"
 	stringImportPaths "docs" "examples" "lib" "build/gen"
 	// the list of the Examples menu, from the files in examples/
 	preBuildCommands "sh \"$PACKAGE_DIR/tools/examples-list.sh\""

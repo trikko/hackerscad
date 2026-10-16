@@ -214,7 +214,7 @@ JValue guiRequest(string window, string method, JValue params)
             throw new Exception("no answer from hackerscad");
         buf ~= chunk[0 .. n];
     }
-    auto resp = parseJSONComplete(buf[0 .. buf.indexOf('\n')].idup);
+    auto resp = parseJSONComplete(buf[0 .. buf.indexOf('\n')]);
     if (auto e = resp.getPtr("error"))
     {
         // a window started before its program was updated lacks the newest tools
