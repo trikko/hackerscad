@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-080f823b`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-2282075a`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-080f823b`:** this text is up to date.
+- **It prints `0.3.1-2282075a`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -125,7 +125,11 @@ format stamp):
   hatching); with the window, `hcad_gui_view` with `printability: true`.
 - Ask instead of guessing whenever it changes the result, and ask before
   you start, not afterwards: a font, the scale of a photo, a size of a real
-  part, the process or printer, which window, overwriting a file.
+  part, the process or printer, which window, overwriting a file. For a
+  design, few questions: those that change the result most, numbered;
+  leave the rest. Always say plainly that the user answers the ones they
+  can, the more the better, and you estimate the others, made @params to
+  change later.
 - The loop: write the model, check it, render and look, compare sizes and
   pictures with the request, fix, then export. Put the request's
   requirements in unittest blocks so the checks repeat them.
@@ -315,8 +319,9 @@ format stamp):
   the questions, before writing any code or touching the user's window
   (no hcad_gui_new, no hcad_gui_edit), even when the user says "make it"
   without giving sizes. In one message: the sizes to measure (below), the
-  font if there is lettering, and the offer "or I start now with estimated
-  sizes". Estimate only when the user answers so, or already said so in the
+  font if there is lettering, and, said plainly, that any of them can be
+  left: the more answered the better, the rest estimated from the photo
+  (they may be off: @params to correct after a test print). Estimate only when the user answers so, or already said so in the
   request ("just estimate", "I have no caliper"). Saying at the end what
   was estimated does not replace asking.
 - Do not invent shapes or sizes you are not sure of: ask. Ask in the way
