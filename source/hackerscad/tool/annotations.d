@@ -43,7 +43,9 @@ struct P
 
 /// What a point of the view shows: a part (its name, the face, the
 /// model point there and the face's normal; a selector for the face when
-/// one could be found), or the background (part empty).
+/// one could be found), or the background (part empty). On the
+/// background, `near` is the surface the mark points at: the first one
+/// ahead of an arrow's tip, else the nearest round the point.
 struct Under
 {
     P at;
@@ -51,6 +53,62 @@ struct Under
     int face = -1;
     Vec3 point, normal;
     string selector;
+    Near near;
+}
+
+/// The surface nearest a point of the background (part empty: none
+/// within reach), `pixels` away from it, `ahead` along an arrow.
+struct Near
+{
+    string part;
+    int face = -1;
+    Vec3 point, normal;
+    string selector;
+    double pixels = 0;
+    bool ahead;
+}
+
+/// The name of a colour of the palette, or of the one nearest it ("near red").
+string colourName(uint rgb)
+{
+    size_t best;
+    double bestD = double.infinity;
+    foreach (i, c; palette)
+    {
+        double d = 0;
+        foreach (shift; [16, 8, 0])
+            d += (cast(double)((c >> shift) & 255) - ((rgb >> shift) & 255)) ^^ 2;
+        if (d < bestD)
+        {
+            bestD = d;
+            best = i;
+        }
+    }
+    return bestD == 0 ? colourNames[best] : "near " ~ colourNames[best];
+}
+
+/// Where to look for what a mark points at when its key point `k` (of
+/// keyPoints) lies on the background, on a w × h view: the direction
+/// ahead in pixels (an arrow's tip: from its tail; else none) and how far
+/// to look round the point (a circle's radius, else `round` pixels).
+void searchFrom(const Annotation n, size_t k, double w, double h, out double dx, out double dy, out double reach,
+    double round = 40)
+{
+    dx = dy = 0;
+    reach = round;
+    if (n.kind == "arrow" && k == 0 && n.points.length >= 2)
+    {
+        dx = (n.points[1].x - n.points[0].x) * w;
+        dy = (n.points[1].y - n.points[0].y) * h;
+        immutable l = sqrt(dx * dx + dy * dy);
+        if (l > 0)
+        {
+            dx /= l;
+            dy /= l;
+        }
+    }
+    else if (n.kind == "circle" && n.points.length >= 2)
+        reach = max(abs(n.points[1].x - n.points[0].x) * w, abs(n.points[1].y - n.points[0].y) * h) / 2 + 10;
 }
 
 /// One mark on the view.
@@ -375,7 +433,7 @@ private JSONValue vecJson(Vec3 v) => JSONValue([round(v.x * 1000) / 1000, round(
 /// null on the background).
 JSONValue toJson(const Annotation n)
 {
-    JSONValue j = ["kind": n.kind, "by": n.by, "colour": hexOf(n.colour)];
+    JSONValue j = ["kind": n.kind, "by": n.by, "colour": hexOf(n.colour), "colour_name": colourName(n.colour)];
     j["id"] = n.id;
     JSONValue[] ps;
     foreach (p; n.points)
@@ -397,6 +455,18 @@ JSONValue toJson(const Annotation n)
             ju["normal"] = vecJson(u.normal);
             if (u.selector.length)
                 ju["selector"] = u.selector;
+        }
+        if (u.part.length == 0 && u.near.part.length)
+        {
+            JSONValue jn = ["part": u.near.part];
+            jn["face"] = u.near.face;
+            jn["point"] = vecJson(u.near.point);
+            jn["normal"] = vecJson(u.near.normal);
+            if (u.near.selector.length)
+                jn["selector"] = u.near.selector;
+            jn["pixels"] = round(u.near.pixels);
+            jn["how"] = u.near.ahead ? "ahead of the arrow" : "round the point";
+            ju["points_at"] = jn;
         }
         us ~= ju;
     }
@@ -430,6 +500,22 @@ string fromJson(JSONValue j, out Annotation n)
                 if ("selector" in ju && ju["selector"].type == JSONType.string)
                     u.selector = ju["selector"].str;
             }
+            if (auto jn = "points_at" in ju)
+                if (jn.type == JSONType.object && "part" in *jn && (*jn)["part"].type == JSONType.string)
+                {
+                    u.near.part = (*jn)["part"].str;
+                    if ("face" in *jn)
+                        u.near.face = cast(int) num((*jn)["face"]);
+                    foreach (key, ref v; ["point": &u.near.point, "normal": &u.near.normal])
+                        if (key in *jn && (*jn)[key].type == JSONType.array && (*jn)[key].array.length == 3)
+                            *v = Vec3(num((*jn)[key][0]), num((*jn)[key][1]), num((*jn)[key][2]));
+                    if ("selector" in *jn && (*jn)["selector"].type == JSONType.string)
+                        u.near.selector = (*jn)["selector"].str;
+                    if ("pixels" in *jn)
+                        u.near.pixels = num((*jn)["pixels"]);
+                    u.near.ahead = "how" in *jn && (*jn)["how"].type == JSONType.string
+                        && (*jn)["how"].str == "ahead of the arrow";
+                }
             n.under ~= u;
         }
     return null;
@@ -596,12 +682,16 @@ unittest
     AnnotationSet s;
     Annotation a = {kind: "arrow", by: "user", points: [P(0.1, 0.2), P(0.4, 0.5)], text: "hole", colour: 0x1C71D8};
     a.under = [Under(P(0.4, 0.5), "clip", 25, Vec3(1, 2, 15), Vec3(0, 0, 1), "faces.top"), Under(P(0.1, 0.2))];
+    a.under[1].near = Near("clip", 3, Vec3(0, 1, 2), Vec3(1, 0, 0), "faces.left", 12, true);
     s.add(a);
     Annotation t = {kind: "text", points: [P(0.7, 0.1)], text: "too thin?"};
     s.add(t);
     auto j = parseJSON(s.toJson().toString);
     assert(j[0]["under"][0]["part"].str == "clip" && j[0]["under"][0]["face"].integer == 25);
     assert(j[0]["under"][1]["part"].type == JSONType.null_ && j[0]["label"].str == "hole" && j[1]["text"].str == "too thin?");
+    // a point on the background says what the mark points at; the colour has its name
+    assert(j[0]["under"][1]["points_at"]["part"].str == "clip" && j[0]["under"][1]["points_at"]["how"].str == "ahead of the arrow");
+    assert(j[0]["colour_name"].str == "blue" && j[1]["colour_name"].str == "magenta" && colourName(0xE01B25) == "near red");
     foreach (k, item; j.array)
     {
         Annotation back;
@@ -611,6 +701,16 @@ unittest
         assert(back.points == orig.points && back.colour == orig.colour && back.under.length == orig.under.length);
         foreach (i, u; back.under)
             assert(u.at == orig.under[i].at && u.part == orig.under[i].part && u.face == orig.under[i].face
-                && u.point == orig.under[i].point && u.normal == orig.under[i].normal && u.selector == orig.under[i].selector);
+                && u.point == orig.under[i].point && u.normal == orig.under[i].normal && u.selector == orig.under[i].selector
+                && u.near == orig.under[i].near);
     }
+    // where to look: ahead of an arrow's tip, from its tail; round a circle as far as its radius
+    double dx, dy, reach;
+    searchFrom(a, 0, 100, 100, dx, dy, reach);
+    assert(abs(dx - sqrt(0.5)) < 1e-9 && abs(dy - sqrt(0.5)) < 1e-9 && reach == 40);
+    searchFrom(a, 1, 100, 100, dx, dy, reach);
+    assert(dx == 0 && dy == 0);
+    Annotation c = {kind: "circle", points: [P(0.1, 0.1), P(0.5, 0.3)]};
+    searchFrom(c, 0, 100, 100, dx, dy, reach);
+    assert(dx == 0 && reach == 30);
 }

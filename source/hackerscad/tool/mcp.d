@@ -40,7 +40,8 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "fits. To remodel a mesh or STEP, no questions: its sizes are there; hcad_docs topic remodel gives the "
     ~ "method, and after every change hcad_review compares the copy with the original in one call. For an outline given by its dimensions, prefer a constrained sketch. To ask or to show where, "
     ~ "frame the view on it, then mark it with hcad_gui_annotate in a colour that stands out; read the user's "
-    ~ "marks in hcad_gui_state when they say \"here\"; clear yours when done (the view is locked meanwhile).";
+    ~ "marks in hcad_gui_state when they say \"here\" or ask you to look at them (what each is on or points at, "
+    ~ "its colour's name: no screenshot needed); clear yours when done (the view is locked meanwhile).";
 
 /// Runs the server until stdin closes. Models are evaluated in a worker
 /// process (`hcad mcp --worker`): a cancelled or timed out evaluation, or one
@@ -929,9 +930,12 @@ JSONValue[] toolList()
             ~ "drops every mark; list: true; save: an absolute .png path writes the view with its marks to a "
             ~ "picture, copy: true puts it on the clipboard (the bar's Save and Copy: for a person who is not "
             ~ "looking at the window). In one call: mode, clear, remove, add, then save and copy. Returns annotations: [{id, kind, "
-            ~ "by (agent or user), points (fractions), colour, text or label, under}]: under is, for each key point "
-            ~ "(an arrow's tip then its tail, a cross's or circle's centre, a text's point, a line's ends), what the "
-            ~ "view shows there: part, face, point (mm), normal and a selector for the face, or part null. "
+            ~ "by (agent or user), points (fractions), colour (hex) and colour_name (magenta, the default, is often "
+            ~ "called purple or violet), text or label, under}]: under is, for each key point (an arrow's tip then "
+            ~ "its tail, a cross's or circle's centre, a text's point, a line's ends), what the view shows there: "
+            ~ "part, face, point (mm), normal and a selector for the face, or part null and, when the mark points at "
+            ~ "a surface near it, points_at: that surface (part, face, point, selector), pixels away, how (ahead of "
+            ~ "the arrow, or round the point). Read the marks from this or hcad_gui_state, not from a screenshot. "
             ~ "While the view is annotated hcad_gui_view cannot move it, pick, inspect, rollback, step, sketch, "
             ~ "transform, split and menu are refused, and a changed model shows only once it is live again (the "
             ~ "camera where it was): after reading the user's marks, or when yours have served, set mode: false.",
@@ -1097,7 +1101,8 @@ JSONValue[] toolList()
             `"target": {"type": "string", "enum": ["window", "cheatsheet", "colour", "about"]}`, `[]`),
         gui("hcad_gui_state", "State of the user's window: file, parameters, parts, camera, problems, version; "
             ~ "annotations lists the marks drawn on the locked 3D view, the user's (by: user) and yours, each with "
-            ~ "what lies under its key points (part, face, point in mm, selector; see hcad_gui_annotate), "
+            ~ "its colour's name and what lies under its key points (part, face, point in mm, selector; on the "
+            ~ "background points_at, what the mark points at; see hcad_gui_annotate): no screenshot needed, "
             ~ "annotate_mode whether the view is annotated, annotated_view its size and whether the model changed "
             ~ "since: when the user says \"here\", \"this\" or \"there\", look at them first; "
             ~ "user_changed tells which lines the user changed since your previous hcad_gui_* call. It waits for the "

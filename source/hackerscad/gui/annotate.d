@@ -19,7 +19,7 @@ mixin template Annotate()
     import cairo.context : Context;
     import cairo.types : Format, LineCap, LineJoin, FontSlant, FontWeight, TextExtents;
     import gtk.drawing_area : DrawingArea;
-    import hackerscad.tool.annotations : AnnotationSet, Annotation, P, Under, keyPoints, distanceTo, moveBy,
+    import hackerscad.tool.annotations : AnnotationSet, Annotation, P, Under, Near, keyPoints, distanceTo, moveBy,
         lightColour, palette, colourNames, defaultColour, crossPixels;
     import core.time : msecs;
 
@@ -533,13 +533,64 @@ mixin template Annotate()
         return u;
     }
 
-    /// What lies under mark n's key points, and its points as model points.
+    /// What lies under mark n's key points, and its points as model points;
+    /// a point on the background, the surface it points at.
     void findUnder(ref Annotation n)
     {
+        import hackerscad.tool.annotations : searchFrom;
         anchorNote(n);
         n.under = null;
-        foreach (p; keyPoints(n))
-            n.under ~= underAt(p);
+        foreach (k, p; keyPoints(n))
+        {
+            auto u = underAt(p);
+            if (u.part.length == 0)
+            {
+                double dx, dy, reach;
+                searchFrom(n, k, viewW, viewH, dx, dy, reach);
+                u.near = nearestTo(p, dx, dy, reach);
+            }
+            n.under ~= u;
+        }
+    }
+
+    /// The surface the view shows nearest p (on the background): first
+    /// along (dx, dy) up to twice `reach` pixels (ahead of an arrow), else
+    /// on rings round p up to `reach`.
+    Near nearestTo(P p, double dx, double dy, double reach)
+    {
+        import std.math : PI, cos, sin, ceil;
+        import hackerscad.tool.annotations : Near;
+        immutable x0 = p.x * viewW, y0 = p.y * viewH;
+        Near found(double x, double y, double pixels, bool ahead)
+        {
+            Near r;
+            auto hit = viewport.pickShown(x, y);
+            if (hit.part < 0 || hit.part >= last.parts.length)
+                return r;
+            auto j = hitJson(hit);
+            r = Near(last.parts[hit.part].name, hit.face, hit.point, hit.normal,
+                "selector" in j && j["selector"].type == JSONType.string ? j["selector"].str : null, pixels, ahead);
+            return r;
+        }
+        if (dx != 0 || dy != 0)
+            for (double t = 3; t <= 2 * reach; t += 3)
+            {
+                auto r = found(x0 + dx * t, y0 + dy * t, t, true);
+                if (r.part.length)
+                    return r;
+            }
+        for (double rad = 4; rad <= reach; rad += 4)
+        {
+            immutable steps = cast(int) max(8.0, ceil(2 * PI * rad / 6));
+            foreach (i; 0 .. steps)
+            {
+                immutable a = 2 * PI * i / steps;
+                auto r = found(x0 + rad * cos(a), y0 + rad * sin(a), rad, false);
+                if (r.part.length)
+                    return r;
+            }
+        }
+        return Near.init;
     }
 
     /// Where the view shows a model point; false when behind the camera.
