@@ -1111,6 +1111,36 @@ static bool closes_up(const TopoDS_Face &face, double height, double taper_rad)
     return false;
 }
 
+// A rounding that closes up at the very top (a profile offset inwards,
+// tapered back out as far): `low`, made to just below the top, with its top
+// face extruded straight the last `cap`. Empty when `low` is.
+static TopoDS_Shape capped(const TopoDS_Face &face, const TopoDS_Shape &low, double height, double cap)
+{
+    TopoDS_Shape r;
+    if (low.IsNull())
+        return r;
+    const double ztop = BRepAdaptor_Surface(face).Plane().Location().Z() + height - cap;
+    for (TopExp_Explorer e(low, TopAbs_FACE); e.More() && r.IsNull(); e.Next()) {
+        const TopoDS_Face top = TopoDS::Face(e.Current());
+        BRepAdaptor_Surface ts(top);
+        if (ts.GetType() != GeomAbs_Plane || !ts.Plane().Axis().Direction().IsParallel(gp::DZ(), 1e-9)
+            || std::abs(ts.Plane().Location().Z() - ztop) > 1e-7)
+            continue;
+        TopoDS_Face t = top;
+        t.Orientation(TopAbs_FORWARD);
+        BRepAlgoAPI_Fuse fuse(low, BRepPrimAPI_MakePrism(t, gp_Vec(0, 0, cap)).Shape());
+        if (!fuse.IsDone())
+            break;
+        ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        r = unify.Shape();
+        const double z = ztop - height + cap;
+        if (!sound_solid(r, std::min(z, z + height), std::max(z, z + height)))
+            r.Nullify();
+    }
+    return r;
+}
+
 hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -1134,6 +1164,9 @@ hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
             // an outline that changes on the way is one that closes up
             if (arcs_meet(face)) {
                 r = lofted(face, height, taper_rad);
+                const double cap = height > 0 ? 1e-3 : -1e-3;
+                if (r.IsNull() && std::abs(height) > 2 * std::abs(cap))
+                    r = capped(face, lofted(face, height - cap, taper_rad), height, cap);
                 if (r.IsNull()) {
                     set_error("tapered extrusion failed: an edge or a corner of the profile closes up before the top "
                               "(lower the height or the taper)");
@@ -1145,31 +1178,8 @@ hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
             if (r.IsNull() && !curved)
                 r = drafted_circles(face, height, taper_rad);
             const double cap = height > 0 ? 1e-3 : -1e-3;
-            if (r.IsNull() && !curved && std::abs(height) > 2 * std::abs(cap)) {
-                // a rounding that closes up at the very top (a profile
-                // offset inwards, tapered back out as far): drafted to just
-                // below, its top extruded straight the last micron
-                TopoDS_Shape low = drafted(face, height - cap, taper_rad, curved);
-                const double ztop = BRepAdaptor_Surface(face).Plane().Location().Z() + height - cap;
-                for (TopExp_Explorer e(low, TopAbs_FACE); e.More() && r.IsNull(); e.Next()) {
-                    const TopoDS_Face top = TopoDS::Face(e.Current());
-                    BRepAdaptor_Surface ts(top);
-                    if (ts.GetType() != GeomAbs_Plane || !ts.Plane().Axis().Direction().IsParallel(gp::DZ(), 1e-9)
-                        || std::abs(ts.Plane().Location().Z() - ztop) > 1e-7)
-                        continue;
-                    TopoDS_Face t = top;
-                    t.Orientation(TopAbs_FORWARD);
-                    BRepAlgoAPI_Fuse fuse(low, BRepPrimAPI_MakePrism(t, gp_Vec(0, 0, cap)).Shape());
-                    if (!fuse.IsDone())
-                        break;
-                    ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_True, Standard_True, Standard_False);
-                    unify.Build();
-                    r = unify.Shape();
-                    const double z = ztop - height + cap;
-                    if (!sound_solid(r, std::min(z, z + height), std::max(z, z + height)))
-                        r.Nullify();
-                }
-            }
+            if (r.IsNull() && !curved && std::abs(height) > 2 * std::abs(cap))
+                r = capped(face, drafted(face, height - cap, taper_rad, curved), height, cap);
             if (r.IsNull() && !curved) {
                 set_error("tapered extrusion failed: an edge or a hole of the profile closes up before the top "
                           "(lower the height or the taper; a rounded corner of radius r, as .offset(r) or "

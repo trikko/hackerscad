@@ -290,7 +290,7 @@ JSONValue toolError(string message)
 /// Tools that evaluate a model, in the worker process.
 bool evaluates(string tool) =>
     ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
-        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit", "hcad_match", "hcad_lines", "hcad_literals"].canFind(tool);
+        "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit", "hcad_match", "hcad_lines", "hcad_literals", "hcad_review"].canFind(tool);
 
 void background(JSONValue msg)
 {
@@ -681,6 +681,16 @@ JSONValue[] toolList()
             ~ "(@part(\"slategray\", alpha: 0.3, export: false) Solid original() => load(\"x.stl\");) to compare.",
             `"path": {"type": "string"}, "part": {"type": "string"}, `
             ~ `"json": {"type": "boolean", "description": "every surface as data too (long)"}`, `["path"]`),
+        tool("hcad_review", "A copy against its original, two parts of a model ('a' the copy, 'b' the original: a "
+            ~ "mesh or STEP being remodelled, or a previous version), the whole comparison round in one call: the "
+            ~ "distances both ways (as hcad_compare), the material that differs (hcad_diff), the drawings outside and "
+            ~ "of the holes and pockets made solid (hcad_lines, voids), and close-ups of the first 'each' (2) entries "
+            ~ "of each, chosen and framed where they are in sight; then whether it is done. Run it after every change "
+            ~ "of a copy. look: [x, y, z] adds a close-up of what is there (entry numbers change from one change to "
+            ~ "the next, a point does not). Not for modelling from a request: there hcad_check and hcad_render.",
+            modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "tolerance_mm": {"type": "number"}, `
+            ~ `"each": {"type": "integer"}, "voids": {"type": "boolean", "description": "the drawings of the voids too `
+            ~ `(default true)"}, "look": {"type": "array", "items": {"type": "number"}}`, `["a", "b"]`),
         tool("hcad_literals", "The numbers written more than once in a model (path), with their lines, the most used "
             ~ "first, and the ones a constant is already named after; with original (a part of the model, or a mesh "
             ~ "file), which sizes of it each one is: a hole's diameter or radius, where an axis or a flat face is. The "
@@ -1273,6 +1283,43 @@ JSONValue callTool(string name, JSONValue args)
             }
             break;
         }
+    case "hcad_review":
+        {
+            auto run = evaluateModel(options(args));
+            isError = !run.ok;
+            if (!run.ok)
+            {
+                text(run.renderedDiagnostics());
+                break;
+            }
+            try
+            {
+                double tol = 0.1;
+                if (auto t = "tolerance_mm" in args)
+                    tol = t.type == JSONType.integer ? t.integer : t.floating;
+                size_t each = 2;
+                if (auto e = "each" in args)
+                    if (e.type == JSONType.integer)
+                        each = cast(size_t) e.integer;
+                immutable voids = !("voids" in args && args["voids"].type == JSONType.false_);
+                double[] look;
+                if (auto l = "look" in args)
+                    if (l.type == JSONType.array)
+                        foreach (x; l.array)
+                            look ~= x.type == JSONType.integer ? x.integer : x.floating;
+                ubyte[][] pictures;
+                text(run.review(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0], tol, each,
+                    voids, look, pictures));
+                foreach (p; pictures)
+                    image(p);
+            }
+            catch (Exception e)
+            {
+                isError = true;
+                text(e.msg);
+            }
+            break;
+        }
     case "hcad_literals":
         {
             import hackerscad.tool.literals : literalsReport;
@@ -1710,6 +1757,15 @@ unittest
     auto sliver = callTool("hcad_compare", `{"path": ` ~ JSONValue(sliverModel).toString ~ `, "a": "copy", "b": "original"}`)
         [0]["text"].str;
     assert(sliver.canFind("a sliver") && sliver.canFind("next: diff and lines"), sliver);
+
+    // the whole round in one call: its four parts, close-ups, the pictures, and whether it is done
+    auto rev = handle(parseJSON(`{"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "hcad_review", `
+        ~ `"arguments": {` ~ where ~ `, "a": "copy", "b": "original", "each": 1}}}`))["result"];
+    assert(!rev["isError"].boolean, rev.toString);
+    immutable revText = rev["content"].array[0]["text"].str;
+    assert(revText.canFind("1. distances") && revText.canFind("2. material") && revText.canFind("4. drawings of the voids")
+        && revText.canFind("close-up 1") && revText.canFind("next:"), revText);
+    assert(rev["content"].array[$ - 1]["type"].str == "image");
 
     // two sections drawn on each other, close on a region round the hole
     auto cut = callTool("hcad_section", `{` ~ where ~ `, "part": "copy", "compare": "original", "plane": "xy", "at": 5, `

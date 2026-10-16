@@ -54,6 +54,7 @@ final class Run
     bool printability;         /// report overhangs and thin walls, mark them in pictures
     double overhangAngle = 45, minWall = 0.8;
     Shot[] freeView;           /// a PNG export: this one picture instead of the views its name asks for
+    Place[] lastEntries;       /// the entries of the last diff or lines report, numbered as it numbers them
     bool opaque;               /// a PNG export: see-through parts drawn solid
 
     private PrintCheck[] checks;
@@ -642,6 +643,10 @@ final class Run
             s ~= "  the picture: the regions as boxes, green to add, red to cut, in the copy and the original drawn "
                 ~ "see-through; iso, front, top and right\n";
         }
+        lastEntries = null;
+        foreach (i, g; regions ~ found.thin)
+            lastEntries ~= Place(format("diff %d, %s %s mm³", i + 1, g.missing ? "to add" : "to cut", mm(g.volume)),
+                g.lo, g.hi);
         if (focus.length)
         {
             import hackerscad.tool.closeup : Place;
@@ -658,6 +663,98 @@ final class Run
         }
         else if (regions.length || found.thin.length)
             s ~= "  next: a close-up (focus) of the first entries, then lines on the same parts\n";
+        return s;
+    }
+
+    /// A copy against its original, the whole round in one: the distances
+    /// (compare), the material that differs (diff), the drawings outside and,
+    /// `voids`, of the holes and pockets made solid (lines), and close-ups of
+    /// the first `each` entries of diff and of the drawings, chosen and framed
+    /// here (one where two entries are one place); `look`, a point: a close-up
+    /// of what is there too (a place that keeps its name from one change to
+    /// the next, where entry numbers do not). `pictures`: the comparison's
+    /// map, then the close-ups.
+    string review(size_t a, size_t b, double tol, size_t each, bool voids, const double[] look, out ubyte[][] pictures)
+    {
+        import std.algorithm : max, min;
+        import std.string : lineSplitter;
+        import std.array : array;
+        string s = format("review of %s against %s\n\n1. distances\n", result.parts[a].name, result.parts[b].name);
+        ubyte[] map;
+        auto j = compare(a, b, tol, map);
+        // the text without its own next step: the review says what comes next
+        string drop(string t)
+        {
+            string r;
+            foreach (l; t.lineSplitter)
+                if (!l.startsWith("  next:") && !l.startsWith("next:"))
+                    r ~= l ~ "\n";
+            return r;
+        }
+        s ~= drop(compareText(j, result.parts[a].name, result.parts[b].name));
+        pictures ~= map;
+        ubyte[] unused;
+        s ~= "\n2. material (diff)\n" ~ drop(differences(a, b, 0, null, unused));
+        Place[] candidates;
+        foreach (p; lastEntries[0 .. min(each, $)])
+            candidates ~= p;
+        // of the drawings, the entries small enough for a close-up to show more (a surface facing otherwise
+        // over half the part is better seen whole), lines one part has and the other not first
+        void closeOnes()
+        {
+            import std.algorithm : canFind;
+            Place[] small, facing;
+            foreach (p; lastEntries)
+            {
+                auto sz = p.hi - p.lo;
+                if (max(sz.x, sz.y, sz.z) > 20)
+                    continue;
+                (p.what.canFind("facing") ? facing : small) ~= p;
+            }
+            auto pick = small ~ facing;
+            candidates ~= pick[0 .. min(each, pick.length)];
+        }
+        s ~= "\n3. drawings (lines)\n" ~ drop(lines(a, b, 0, 12, false, false, unused));
+        closeOnes();
+        if (voids)
+        {
+            s ~= "\n4. drawings of the voids (lines with the holes and pockets made solid)\n"
+                ~ drop(lines(a, b, 0, 12, false, true, unused));
+            closeOnes();
+        }
+        if (look.length == 3)
+        {
+            immutable c = Vec3(look[0], look[1], look[2]);
+            candidates = Place(format("the place asked for, (%g, %g, %g)", look[0], look[1], look[2]),
+                c - Vec3(1.5, 1.5, 1.5), c + Vec3(1.5, 1.5, 1.5)) ~ candidates;
+        }
+        // one close-up where two entries are one place (their boxes touch, or nearly: the two sides of a
+        // boss, a slot's two walls)
+        Place[] places;
+        enum near = 2.0;
+        foreach (p; candidates)
+        {
+            bool seen;
+            foreach (q; places)
+                seen = seen || (p.lo.x <= q.hi.x + near && q.lo.x <= p.hi.x + near && p.lo.y <= q.hi.y + near
+                    && q.lo.y <= p.hi.y + near && p.lo.z <= q.hi.z + near && q.lo.z <= p.hi.z + near);
+            if (!seen)
+                places ~= p;
+        }
+        if (places.length)
+        {
+            ubyte[] close;
+            s ~= format("\n%d. %s", voids ? 5 : 4, closeUpsOf(a, b, places, tol, close));
+            pictures ~= close;
+            s ~= "  to look at a place again after a change, give its point: look: [x, y, z] (entry numbers change)\n";
+        }
+        // done, or what comes next
+        double share(string way) => j[way]["within_tolerance"].type == JSONType.integer
+            ? j[way]["within_tolerance"].integer : j[way]["within_tolerance"].floating;
+        immutable done = share("a_to_b") >= 0.95 && share("b_to_a") >= 0.95;
+        s ~= done ? "\nboth surfaces are 95% or more within the tolerance: if the close-ups show nothing worth "
+            ~ "fixing, name the measures that matter (hcad literals) and stop\n"
+            : "\nnext: fix what the close-ups show, then review again\n";
         return s;
     }
 
@@ -812,6 +909,11 @@ final class Run
         if (d.strokes.length && deeper)
             s ~= format("fix these first; once they match, peel deeper (depth %s mm) only if anything still differs\n",
                 mm(next));
+        lastEntries = null;
+        foreach (i, st; d.strokes)
+            lastEntries ~= Place(format("%slines %d, %s", voids ? "voids " : "", i + 1, st.kind == Kind.missing
+                ? "only in " ~ nb : st.kind == Kind.extra ? "only in " ~ na : "surface facing otherwise"), st.lo, st.hi,
+                true, d.directions[st.seenFrom[0]].eye);
         if (focus.length)
         {
             import hackerscad.tool.closeup : Place, closeUps;

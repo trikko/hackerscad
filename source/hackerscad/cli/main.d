@@ -83,6 +83,14 @@ usage:
       the operations of a copy (a) and its original (b) matched one by one:
       holes, shafts, cones, roundings, planes, and the pockets met along x, y
       and z; what has no match, however small, is listed, numbered
+  hcad review FILE.hcad --a COPY --b ORIGINAL [--tolerance MM] [--each N] [--no-voids] [--look X,Y,Z] [-o OUT.png]
+      a copy against its original (a mesh or STEP remodelled, a previous
+      version), the whole round in one: distances (compare), material
+      (diff), drawings outside and of the voids (lines), and close-ups of
+      the first N (2) entries of each, framed where they are in sight;
+      --look a point: a close-up of what is there (it keeps its place from
+      one change to the next); OUT-map.png and OUT-close.png the pictures.
+      Not for modelling from a request: there check and render
   --focus N[,M…] -o OUT.png  (compare, diff, lines, match)
       close-ups of those entries of the report: each from where it is in
       sight (what lies in front cut away when nothing is), the drawings of
@@ -486,6 +494,61 @@ int main(string[] args)
             import hackerscad.tool.fitting : fit;
             try
                 write(fit(args[1], pa, pb, names, evaluations, (string s) { stderr.writeln(s); }));
+            catch (Exception e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 1;
+            }
+            return 0;
+        }
+    case "review":
+        {
+            string pa, pb, out_, look;
+            double tol = 0.1;
+            size_t each = 2;
+            bool noVoids;
+            try
+                getopt(args, "a", &pa, "b", &pb, "tolerance", &tol, "each", &each, "no-voids", &noVoids, "look", &look,
+                    "o|output", &out_);
+            catch (GetOptException e)
+            {
+                stderr.writeln("error: ", e.msg);
+                return 2;
+            }
+            if (args.length != 2 || pa.length == 0 || pb.length == 0)
+            {
+                stderr.writeln(usage);
+                return 2;
+            }
+            RunOptions ro;
+            ro.path = args[1];
+            auto run = evaluateModel(ro);
+            if (!run.ok)
+            {
+                stderr.write(run.renderedDiagnostics());
+                return 1;
+            }
+            try
+            {
+                import std.algorithm : map;
+                import std.array : array, split;
+                import std.conv : to;
+                ubyte[][] pictures;
+                write(run.review(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], tol, each, !noVoids,
+                    look.length ? look.split(",").map!(x => x.to!double).array : null, pictures));
+                // name.png: name-map.png (the distances) and name-close.png (the close-ups)
+                if (out_.length)
+                {
+                    import std.file : write;
+                    import std.path : stripExtension;
+                    immutable stem = out_.stripExtension;
+                    if (pictures.length)
+                        write(stem ~ "-map.png", pictures[0]);
+                    if (pictures.length > 1)
+                        write(stem ~ "-close.png", pictures[1]);
+                    writefln("pictures: %s-map.png%s", stem, pictures.length > 1 ? ", " ~ stem ~ "-close.png" : "");
+                }
+            }
             catch (Exception e)
             {
                 stderr.writeln("error: ", e.msg);

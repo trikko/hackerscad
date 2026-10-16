@@ -527,6 +527,12 @@ unittest
     foreach (d; notch.diagnostics)
         assert(d.severity != Severity.error, d.message);
     assert(clock.peek.total!"seconds" < 5 && partVolume(notch, "a") > 5 && partVolume(notch, "b") > partVolume(notch, "a"));
+    // arcs that meet and corners that close exactly at the top (a hole's mouth chamfered): made
+    auto mouth = runModel(q{
+        @part Solid a() => (circle(d: 10) & rect(8, 20)).offset(0.5).extrude(0.5, taper: 45.deg);
+    });
+    foreach (d; mouth.diagnostics)
+        assert(d.severity != Severity.error, d.message);
     // a taper that closes a rounded corner on the way fails at once
     auto closing = error(q{
         @part Solid a() => rect(4, 3).offset(0.5).extrude(1, taper: 30.deg);
