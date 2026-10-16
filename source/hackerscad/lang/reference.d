@@ -631,7 +631,7 @@ immutable Recipe[] recipes = [
     Recipe("Text in relief", "text(\"ABC\", size: 5.mm).centered.extrude(0.6.mm)"),
     Recipe("Cut with a plane and keep one side", "s.halves(XY.offset(10.mm)).below"),
     Recipe("Cut with a plane into pieces", "s.split(XY.offset(10.mm))"),
-    Recipe("A reference part, shown but not exported", "@part(\"slategray\", alpha: 0.4, export: false)"),
+    Recipe("A reference part, shown but not exported", "@part(\"slategray\", alpha: 0.35, export: false)"),
     Recipe("A parameter in the side panel", "@param(\"Width\", min: 10.mm, max: 100.mm) immutable width = 40.mm;"),
     Recipe("Check a requirement", "unittest { assert(body.bbox.size.z <= 40.mm, \"too tall\"); }"),
     Recipe("Measure", "writeln(s.volume, \" \", s.bbox.size)"),

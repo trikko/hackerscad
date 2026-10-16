@@ -100,7 +100,7 @@ Solid knob()
 
 // a reference part: drawn see-through to check the fit, but left out of
 // STL/3MF/STEP exports
-@part("slategray", alpha: 0.4, export: false)
+@part("slategray", alpha: 0.35, export: false)
 Solid shaft() => dShape(shaftD, shaftFlat, shaftDepth + 12.mm).move(z: -12.mm);
 
 // unittests run after every evaluation: their output goes to the console

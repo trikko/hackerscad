@@ -32,7 +32,9 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "dimensions, problems and pictures) until the model matches the request, then hcad_export. If the user "
     ~ "has hackerscad open, hcad_gui_* tools show your work in their window: change its code with "
     ~ "hcad_gui_edit, never by writing its file; with several windows, ask which one (never assume the most "
-    ~ "recent). To show an example in a window of its own, hcad_gui_launch it with code (or copy: a file), not "
+    ~ "recent). With a window open, at the start of every turn, before thinking or editing: hcad_gui_state with "
+    ~ "only [\"source_hash\", \"user_changed\"]; if the code changed, read it again (source: true) and work on "
+    ~ "it, never on your earlier copy: the user may have edited it. To show an example in a window of its own, hcad_gui_launch it with code (or copy: a file), not "
     ~ "path: a window of no file, which a Save cannot overwrite. From a photo or a real object, your first "
     ~ "reply is the questions, before any code or hcad_gui_new/edit, even when told to make it; estimate only "
     ~ "if the user says so. Ask instead of guessing when it changes the result: the sizes of a real part to copy or build onto (say exactly what to measure), a font that cannot "
@@ -651,7 +653,8 @@ JValue toolList()
     return JSAB(
         tool("hcad_docs", "Reference of the .hcad language, the geometry API, conventions and examples. "
             ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware', 'remodel') for a short excerpt "
-            ~ "(a topic a heading names gives that whole section). format: "
+            ~ "(a topic a heading names gives that whole section; a topic also finds the words the text uses for it: "
+            ~ "rotated → angle:, bevel → chamfer, bore → hole). format: "
             ~ "cheatsheet gives every function in one line each (compact), summary the short index (llms.txt), agents "
             ~ "and skill the agent guides, stamp which docs the server has (an installed skill showing another is out "
             ~ "of date: refresh it with format skill).",
@@ -684,11 +687,12 @@ JValue toolList()
             ~ "(countersinks), spheres, roundings (radius, angle), and holes repeated on a circle or in a row, with "
             ~ "plausible rounded sizes and the measured ones. 'path' is an .stl, .obj, .3mf or .step file (or an "
             ~ ".hcad model, 'part' one of its parts). Load the mesh as a see-through reference part "
-            ~ "(@part(\"slategray\", alpha: 0.3, export: false) Solid original() => load(\"x.stl\");) to compare.",
+            ~ "(@part(\"slategray\", alpha: 0.35, export: false) Solid original() => load(\"x.stl\");) to compare.",
             `"path": {"type": "string"}, "part": {"type": "string"}, `
             ~ `"json": {"type": "boolean", "description": "every surface as data too (long)"}`, `["path"]`),
         tool("hcad_review", "A copy against its original, two parts of a model ('a' the copy, 'b' the original: a "
-            ~ "mesh or STEP being remodelled, or a previous version), the whole comparison round in one call: the "
+            ~ "mesh or STEP being remodelled, a previous version, or a part modelled from a drawing against the "
+            ~ "supplier's STEP), the whole comparison round in one call: the "
             ~ "distances both ways (as hcad_compare), the material that differs (hcad_diff), the drawings outside and "
             ~ "of the holes and pockets made solid (hcad_lines, voids), and close-ups of the first 'each' (2) entries "
             ~ "of each, chosen and framed where they are in sight; then whether it is done. Run it after every change "
@@ -720,13 +724,13 @@ JValue toolList()
             ~ `"false: the outlines only, without the sketch to paste"}`,
             `["path", "plane"]`),
         tool("hcad_compare", "How far a part of a model is from another (a remodelled part from the mesh it copies, "
-            ~ "loaded as a see-through reference part: @part(\"slategray\", alpha: 0.3, export: false) Solid original() => "
+            ~ "loaded as a see-through reference part: @part(\"slategray\", alpha: 0.35, export: false) Solid original() => "
             ~ "load(\"x.stl\");): the largest, mean and rms distance both ways, where the worst is, the share within "
             ~ "tolerance, and a picture of part a coloured by its distance from b: green within half the tolerance, "
             ~ "yellow at it, red at twice it, from the 'views' (4) directions that show most of it off, or from 'view' "
             ~ "as for hcad_render; the patches of each surface the other does not follow, and the slivers of a (walls "
             ~ "thinner than the tolerance that b has not, each in its own box), numbered: focus: N gives a close-up of "
-            ~ "entry N. Correct the model until it is green; after every change hcad_review runs this, "
+            ~ "entry N; similar patches share a line (alike): one defect repeated, to fix once. Correct the model until it is green; after every change hcad_review runs this, "
             ~ "hcad_diff, hcad_lines (outside and on the voids) and the close-ups in one call.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}, `
@@ -805,7 +809,7 @@ JValue toolList()
             ~ "the user's click, what is there joins the selection (picked again, it leaves it; hcad_gui_selection with "
             ~ "clear: true empties it), items of several parts too, and the editor jumps to the feature that created "
             ~ "it. Returns part, face, the point and normal hit, a selector expression for that face (e.g. faces.top) to "
-            ~ "use in code, and in status the sizes the info line shows (of one item, or how far apart two are).",
+            ~ "use in code, and in status the info card, one row per line (the sizes of one item, or how far apart two are).",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"shift": {"type": "boolean", "description": "kept for older callers: every pick adds to the selection"}`, `[]`),
         gui("hcad_gui_view", "Move the user's 3D view as they do with the mouse, in this order: preset (iso, front, "
@@ -960,8 +964,8 @@ JValue toolList()
             ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep), pocket (a rectangle cut "
             ~ "in), boss (a cylinder standing on the face), sketch (Sketch on face…: the part's function keeps its "
             ~ "solid in a variable and starts an empty sketch on that flat face, its edges as references; add its "
-            ~ "geometry and then cut or extrude its profile with hcad_gui_edit). With use_selection: true it acts on the Shift selection "
-            ~ "(hcad_gui_pick with shift) that contains the point, as the menu does: several edges or faces at once.",
+            ~ "geometry and then cut or extrude its profile with hcad_gui_edit). With use_selection: true it acts on the selection "
+            ~ "(each hcad_gui_pick adds to it) that contains the point, as the menu does: several edges or faces at once.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"action": {"type": "string", "enum": ["fillet-edge", "chamfer-edge", "fillet-face", "chamfer-face", `
             ~ `"shell", "draft", "extrude-face", "cut-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
@@ -971,7 +975,9 @@ JValue toolList()
             ~ `"use_selection": {"type": "boolean"}`, `["action"]`),
         gui("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) or at a model point and "
             ~ "choose entries of the menu in order, e.g. [\"Hole at point\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: "
-            ~ "what the user would do with the mouse. Entries that write code append it to the part in the editor. "
+            ~ "what the user would do with the mouse. Entries that write code append it to the part in the editor; with "
+            ~ "items of several parts selected (\"Fillet edges on 2 parts…\"), to each part in turn, the first one's "
+            ~ "value left selected and the others to change by hand. "
             ~ "Without path, returns the entries the menu has there (with sub-entries and the values it shows) and "
             ~ "chooses nothing. With open: true the menu stays open (path: only groups to open), to show it in "
             ~ "hcad_gui_screenshot. On empty space the menu lists the hidden parts. Entries that copy (Measure, "
@@ -1085,8 +1091,11 @@ JValue toolList()
             ~ `"screen": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}`, `[]`),
         gui("hcad_gui_selection", "The faces or edges selected in the user's 3D view, with their selectors and sizes "
             ~ "(area, centre and normal of a face; length along the curve or radius of an edge): what the user means by "
-            ~ "\"this edge\". sizes is what the window's info line says of it: a face's size in its own plane, an "
-            ~ "edge's length, two items how far apart, more the room they take together. "
+            ~ "\"this edge\". sizes is what the window's info card says of it, on one line: a face's size in its own "
+            ~ "plane, an edge's length, two items how far apart (nearest, farthest and mean when they differ, as for "
+            ~ "faces that are not parallel) and their angle, more the room they take together. After each "
+            ~ "evaluation the selection stays on the same items where they are still alike (a flat face facing the "
+            ~ "same way, an edge of the same kind), the others leave it, and sizes follows the model as it now is. "
             ~ "With selector (e.g. faces.top, edges.of(faces.top)) on part, selects what it picks, to show the user "
             ~ "which faces or edges you mean; the right-click menu then acts on them. clear: true empties it.",
             `"selector": {"type": "string"}, "part": {"type": "string", "description": "needed with several parts"}, `
