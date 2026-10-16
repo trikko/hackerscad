@@ -723,6 +723,7 @@ final class MainWindow
                 ~ " button.hcad-pane-close { min-width: 22px; min-height: 22px; padding: 0; opacity: 0.55; }"
                 ~ " .hcad-sketchbar { padding: 4px; }"
                 ~ " button.hcad-sketch-tool { min-width: 30px; min-height: 28px; padding: 0; font-size: 1.15em; }"
+                ~ " button.hcad-sketch-tool.hcad-tool-on { background: alpha(@accent_bg_color, 0.25); }"
                 ~ " button.hcad-pane-close:hover { opacity: 1; }"
                 ~ " label.hcad-info { padding: 4px 10px; border-radius: 6px; font-size: 0.9em;"
                 ~ " background: alpha(@window_bg_color, 0.85); border: 1px solid alpha(currentColor, 0.10); }"
@@ -989,6 +990,7 @@ final class MainWindow
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = (Hit h) => picked(h);
+        viewport.onMotion = (double x, double y) => drawingMotion(x, y);
         // a double click on a flat face: the view looks straight at it
         viewport.onDoubleClick = (double x, double y) { lookAtFace(x, y); };
         // the selection mode kept from the last run (its buttons were made before the view)
@@ -1085,6 +1087,24 @@ final class MainWindow
                 if ((key == KEY_a || key == KEY_A) && plain)
                 {
                     annotateToggle.setActive(true);
+                    return true;
+                }
+                // drawing in a sketch: Enter ends it (as drawn), Esc drops it
+                if (drawTool !is null && (key == KEY_Return || key == KEY_KP_Enter))
+                {
+                    finishDrawing(false);
+                    return true;
+                }
+                if (drawTool !is null && key == KEY_Escape)
+                {
+                    if (drawn.length)
+                    {
+                        drawn = null;
+                        drawnAt = null;
+                        showDrawing(double.nan, double.nan);
+                    }
+                    else
+                        startDrawing(null);
                     return true;
                 }
                 // moving or turning a part: Enter writes it, Esc leaves it
@@ -4092,6 +4112,12 @@ private:
         sketchIndices = null;
         sketchRun = 0;
         sketchSel = null;
+        drawTool = null;
+        drawn = null;
+        drawnAt = null;
+        viewport.drawingLines = null;
+        viewport.drawingPoints = null;
+        viewport.drawingSnap = null;
         sketchFound = null;
         viewport.showSketches(null);
         updateDimensions();
@@ -4168,6 +4194,14 @@ private:
             j["selected"] = sel;
             if (auto why = sketchUneditable())
                 j["not_editable"] = why;
+            // a drawing tool at work, and what it has clicked so far (on the sketch's plane)
+            if (drawTool !is null)
+            {
+                JValue pts = JSAB();
+                foreach (q; this.drawn)
+                    pts ~= toJSON([q.x, q.y]);
+                j["drawing"] = JSOB("tool", drawTool, "points", pts);
+            }
         }
         sketchOriginJson(j);
         JValue list = JSAB();
@@ -4447,6 +4481,9 @@ private:
 
     void contextMenu(Hit hit, double x, double y)
     {
+        // drawing in a sketch: a right-click ends what is being drawn
+        if (drawTool !is null)
+            return finishDrawing(false);
         if (hit.part < 0 || hit.part >= last.parts.length)
         {
             // a sketch shown (its parts hidden, so a click finds none): the view

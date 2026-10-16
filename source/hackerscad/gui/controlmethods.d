@@ -705,6 +705,65 @@ mixin template ControlMethods()
                 }
                 // the sketch bar: select entities of the drawn sketch (ids from state's sketch.entities), and
                 // write a constraint on what is selected, as its buttons do
+                // drawing: tool chooses a tool of the bar (then hcad_gui_pick clicks draw, as the user's do);
+                // draw writes a shape at once from its points, [x, y] on the sketch's plane or ids of its points
+                if ((has("tool") || has("draw")) && !has("line") && !p.has("on"))
+                {
+                    whenIdle(() {
+                        if (drawnSketch() is null)
+                            return reply(JValue.init, "no sketch is drawn: show one first (line)");
+                        string said;
+                        if (has("tool"))
+                        {
+                            immutable t = arg("tool");
+                            import std.algorithm : canFind, map;
+                            if (!drawTools[].map!(x => x[0]).canFind(t))
+                                return reply(JValue.init, "tool is one of select, point, line, rect, circle, arc, spline");
+                            startDrawing(t == "select" ? null : t);
+                        }
+                        if (has("draw"))
+                        {
+                            immutable t = arg("draw");
+                            if (!p.has("points") || !p["points"].isArray)
+                                return reply(JValue.init, "draw needs points: [x, y] on the sketch's plane, or ids of its points");
+                            Vec3[] pts;
+                            ptrdiff_t[] at;
+                            auto drawn = drawnSketch();
+                            foreach (q; p["points"].get!JArray.elements)
+                            {
+                                if (q.isNumber)
+                                {
+                                    immutable id = cast(long) q.get!double;
+                                    if (id < 0 || id >= drawn.entities.length || drawn.entities[id].kind != "point")
+                                        return reply(JValue.init, format("%s is not a point of the sketch", q.toJSON()));
+                                    Vec3 pos;
+                                    foreach (pt; drawn.points)
+                                        if (pt.entity == id)
+                                            pos = pt.pos;
+                                    pts ~= pos;
+                                    at ~= cast(ptrdiff_t) id;
+                                }
+                                else if (q.isArray && q.length == 2)
+                                {
+                                    pts ~= Vec3(q[0].get!double, q[1].get!double, 0);
+                                    at ~= -1;
+                                }
+                                else
+                                    return reply(JValue.init, "each point is [x, y] or the id of a point of the sketch");
+                            }
+                            said = writeDrawing(t, pts, at, p.safe!bool("closed").or(false));
+                            import std.algorithm : endsWith;
+                            if (!said.endsWith("written in the sketch's code"))
+                                return reply(JValue.init, said);
+                        }
+                        auto r = state();
+                        r["sketches"] = sketchesJson();
+                        if (said.length)
+                            r["done"] = said;
+                        reply(r, null);
+                    });
+                    return;
+                }
                 if ((has("select") || has("constrain")) && !has("line") && !p.has("on"))
                 {
                     whenIdle(() {

@@ -16,6 +16,21 @@ mixin template SketchEdit()
     size_t[] sketchSel;   /// entities of the sketch drawn, in clicking order
     Box sketchBar;
     Button[string] toolButtons;
+    Button[string] drawButtons;
+    string drawTool;      /// the drawing tool at work (null: clicks select)
+    Vec3[] drawn;         /// its clicks so far, on the sketch's plane
+    ptrdiff_t[] drawnAt;  /// for each: the point of the sketch it snapped to, or -1 (a new one)
+
+    /// The drawing tools: a symbol each, and how to use it.
+    static immutable string[3][] drawTools = [
+        ["select", "↖", "Select: a click adds a point or a line to the selection (again: takes it away)"],
+        ["point", "∙", "Point: a click puts one"],
+        ["line", "╱", "Lines: click their points; on the first again it closes, Enter or a right-click ends it"],
+        ["rect", "▭", "Rectangle: two opposite corners"],
+        ["circle", "○", "Circle: its centre, then a point on it"],
+        ["arc", "◜", "Arc: its centre, where it starts, where it ends (counter-clockwise)"],
+        ["spline", "∿", "Smooth curve: click its points; on the first again it closes, Enter or a right-click ends it"],
+    ];
 
     /// The tools, in groups: a symbol each, and what it does.
     static immutable string[3][][] toolGroups = [
@@ -38,30 +53,50 @@ mixin template SketchEdit()
             ["diameter", "⌀", "Diameter: circles and arcs that size (the others as big)"]],
     ];
 
-    /// The bar, made once: buttons by group, separators between.
+    /// The bar, made once: two columns of buttons by group, separators
+    /// between (drawing, points and curves at the left; directions and
+    /// sizes at the right), half as tall as one.
     Widget buildSketchBar()
     {
         import gtk.separator : Separator;
-        sketchBar = new Box(Orientation.Vertical, 2);
+        sketchBar = new Box(Orientation.Horizontal, 2);
         sketchBar.addCssClass("hcad-floating");
         sketchBar.addCssClass("hcad-sketchbar");
         sketchBar.setHalign(Align.Start);
         sketchBar.setValign(Align.Center);
         sketchBar.setMarginStart(8);
+        auto left = new Box(Orientation.Vertical, 2), right = new Box(Orientation.Vertical, 2);
+        sketchBar.append(left);
+        sketchBar.append(new Separator(Orientation.Vertical));
+        sketchBar.append(right);
+        Button button(string symbol, string tip)
+        {
+            auto b = new Button;
+            b.setLabel(symbol);
+            b.addCssClass("flat");
+            b.addCssClass("hcad-sketch-tool");
+            b.setTooltipText(tip);
+            return b;
+        }
+        foreach (t; drawTools)
+        {
+            auto b = button(t[1], t[2]);
+            b.connectClicked(drawClicked(t[0]));
+            drawButtons[t[0]] = b;
+            left.append(b);
+        }
+        // points and curves under the drawing tools; directions, then sizes, in the other column
         foreach (g, group; toolGroups)
         {
-            if (g)
-                sketchBar.append(new Separator(Orientation.Horizontal));
+            auto column = g == 0 || g == 2 ? left : right;
+            if (g != 1)
+                column.append(new Separator(Orientation.Horizontal));
             foreach (t; group)
             {
-                auto b = new Button;
-                b.setLabel(t[1]);
-                b.addCssClass("flat");
-                b.addCssClass("hcad-sketch-tool");
-                b.setTooltipText(t[2]);
+                auto b = button(t[1], t[2]);
                 b.connectClicked(toolClicked(t[0]));
                 toolButtons[t[0]] = b;
-                sketchBar.append(b);
+                column.append(b);
             }
         }
         sketchBar.setVisible(false);
@@ -70,6 +105,7 @@ mixin template SketchEdit()
 
     // a function of its own: closures made in a loop would share its variable
     void delegate() toolClicked(string tool) => () => runSketchTool(tool);
+    void delegate() drawClicked(string tool) => () => startDrawing(tool == "select" ? null : tool);
 
     /// The sketch drawn now (the run shown), or null.
     const(SketchView)* drawnSketch()
@@ -105,6 +141,14 @@ mixin template SketchEdit()
         auto v = drawnSketch();
         immutable why = v is null ? "none" : sketchUneditable();
         sketchBar.setVisible(v !is null && !frozen);
+        foreach (tool, b; drawButtons)
+        {
+            b.setSensitive(why is null);
+            if (tool == (drawTool is null ? "select" : drawTool))
+                b.addCssClass("hcad-tool-on");
+            else
+                b.removeCssClass("hcad-tool-on");
+        }
         foreach (tool, b; toolButtons)
         {
             string reason = why;
@@ -130,6 +174,11 @@ mixin template SketchEdit()
         auto v = drawnSketch();
         if (v is null)
             return false;
+        if (drawTool !is null)
+        {
+            drawingClick(x, y);
+            return true;
+        }
         Vec3 world(Vec3 p) => v.world(p);
         double best = 64;   // 8 pixels away at most, points first
         ptrdiff_t found = -1;
@@ -334,5 +383,283 @@ mixin template SketchEdit()
         applyEdit(editBetween(src, after, value));
         sketchSel = null;
         return format("%s written in the sketch's code", tool);
+    }
+
+    // ---- drawing
+
+    /// A drawing tool chosen (null: back to selecting); what was being drawn is dropped.
+    void startDrawing(string tool)
+    {
+        drawTool = tool;
+        drawn = null;
+        drawnAt = null;
+        sketchSel = null;
+        showDrawing(double.nan, double.nan);
+        drawRuns();
+        if (tool is null)
+            return info("");
+        foreach (t; drawTools)
+            if (t[0] == tool)
+                info(t[2] ~ " · Esc drops it");
+    }
+
+    /// Where view point (x, y) falls on the sketch's plane, in its own coordinates.
+    bool onSketchPlane(double x, double y, out Vec3 p)
+    {
+        auto v = drawnSketch();
+        if (v is null)
+            return false;
+        Vec3 o, d;
+        viewport.rayAt(x, y, o, d);
+        auto origin = v.placed ? v.place[0] : Vec3(0, 0, 0);
+        auto ax = v.placed ? v.place[1] : Vec3(1, 0, 0), ay = v.placed ? v.place[2] : Vec3(0, 1, 0);
+        auto n = v.placed ? v.place[3] : Vec3(0, 0, 1);
+        immutable dn = d.dot(n);
+        if (abs(dn) < 1e-9)
+            return false;
+        auto hit = o + d * ((origin - o).dot(n) / dn);
+        // to a tenth of a millimetre: the code reads, the constraints place it exactly
+        import std.math : round;
+        p = Vec3(round((hit - origin).dot(ax) * 10) / 10, round((hit - origin).dot(ay) * 10) / 10, 0);
+        return true;
+    }
+
+    /// The point of the sketch (or of the drawing so far) within 10 pixels of (x, y): its id (-2: the drawing's
+    /// first point), where it is; -1 when none.
+    ptrdiff_t snapAt(double x, double y, out Vec3 at)
+    {
+        auto v = drawnSketch();
+        double best = 100;
+        ptrdiff_t found = -1;
+        void consider(Vec3 p, ptrdiff_t id)
+        {
+            double px, py;
+            if (viewport.project(v.world(p), px, py) && (px - x) ^^ 2 + (py - y) ^^ 2 < best)
+            {
+                best = (px - x) ^^ 2 + (py - y) ^^ 2;
+                found = id;
+                at = p;
+            }
+        }
+        if (drawn.length >= 2 && (drawTool == "line" || drawTool == "spline"))
+            consider(drawn[0], -2);
+        foreach (pt; v.points)
+            consider(pt.pos, pt.entity);
+        return found;
+    }
+
+    void drawingClick(double x, double y)
+    {
+        Vec3 p;
+        ptrdiff_t at = snapAt(x, y, p);
+        if (at == -1 && !onSketchPlane(x, y, p))
+            return;
+        // on the first point again: the lines or the curve close, and are written
+        if (at == -2)
+            return finishDrawing(true);
+        drawn ~= p;
+        drawnAt ~= at;
+        immutable needed = drawTool == "point" ? 1 : drawTool == "rect" || drawTool == "circle" ? 2
+            : drawTool == "arc" ? 3 : size_t.max;
+        if (drawn.length >= needed)
+            return finishDrawing(false);
+        showDrawing(x, y);
+    }
+
+    /// The preview: the clicks so far, and on to the pointer at (x, y) (nan: not).
+    void showDrawing(double x, double y)
+    {
+        auto v = drawnSketch();
+        viewport.drawingLines = null;
+        viewport.drawingPoints = null;
+        viewport.drawingSnap = null;
+        if (v is null || drawTool is null)
+            return viewport.refresh();
+        Vec3[] pts = drawn.dup;
+        if (x == x)
+        {
+            Vec3 p;
+            ptrdiff_t at = snapAt(x, y, p);
+            if (at != -1)
+                viewport.drawingSnap = [v.world(p)];
+            if (at != -1 || onSketchPlane(x, y, p))
+                pts ~= p;
+        }
+        Vec3 w(Vec3 q) => v.world(q);
+        foreach (q; drawn)
+            viewport.drawingPoints ~= w(q);
+        if (pts.length >= 2)
+        {
+            import std.math : atan2, cos, sin;
+            switch (drawTool)
+            {
+            case "rect":
+                {
+                    auto a = pts[0], c = pts[1];
+                    viewport.drawingLines = [[w(a), w(Vec3(c.x, a.y)), w(c), w(Vec3(a.x, c.y)), w(a)]];
+                    break;
+                }
+            case "circle", "arc":
+                {
+                    auto c = pts[0];
+                    immutable r = (pts[1] - c).length;
+                    double a0 = 0, a1 = 2 * PI;
+                    if (drawTool == "arc" && pts.length >= 3)
+                    {
+                        a0 = atan2(pts[1].y - c.y, pts[1].x - c.x);
+                        a1 = atan2(pts[2].y - c.y, pts[2].x - c.x);
+                        while (a1 <= a0)
+                            a1 += 2 * PI;
+                    }
+                    Vec3[] ring;
+                    foreach (k; 0 .. 49)
+                    {
+                        immutable t = a0 + (a1 - a0) * k / 48;
+                        ring ~= w(c + Vec3(cos(t), sin(t)) * r);
+                    }
+                    viewport.drawingLines = [ring, [w(c), w(pts[1])]];
+                    break;
+                }
+            case "spline":
+                {
+                    import hackerscad.geom.spline : sampleSpline, splinePoles;
+                    Vec3[] clean = [pts[0]];
+                    foreach (q; pts[1 .. $])
+                        if ((q - clean[$ - 1]).length > 1e-6)
+                            clean ~= q;
+                    Vec3[] line;
+                    if (clean.length >= 2)
+                        foreach (q; sampleSpline(splinePoles(clean, false), 16))
+                            line ~= w(q);
+                    viewport.drawingLines = [line];
+                    break;
+                }
+            default:
+                {
+                    Vec3[] line;
+                    foreach (q; pts)
+                        line ~= w(q);
+                    viewport.drawingLines = [line];
+                }
+            }
+        }
+        viewport.refresh();
+    }
+
+    /// The pointer moved: the preview follows it.
+    void drawingMotion(double x, double y)
+    {
+        if (drawTool !is null && drawn.length)
+            showDrawing(x, y);
+        else if (drawTool !is null)
+        {
+            // nothing clicked yet: only where it would snap
+            Vec3 p;
+            viewport.drawingSnap = snapAt(x, y, p) != -1 ? [drawnSketch().world(p)] : null;
+            viewport.refresh();
+        }
+    }
+
+    /// Writes what was drawn into the sketch's code (closed: the lines or curve back to the first point).
+    void finishDrawing(bool closed)
+    {
+        immutable tool = drawTool;
+        auto pts = drawn.dup, at = drawnAt.dup;
+        drawn = null;
+        drawnAt = null;
+        showDrawing(double.nan, double.nan);
+        immutable least = tool == "line" ? 2 : tool == "spline" ? (closed ? 3 : 2) : 1;
+        if (pts.length < least)
+            return info("not enough points: nothing written");
+        info(writeDrawing(tool, pts, at, closed));
+    }
+
+    /// The statements for what was drawn: new points made, those snapped to named.
+    string writeDrawing(string tool, Vec3[] pts, ptrdiff_t[] at, bool closed)
+    {
+        import hackerscad.tool.sketchcode : SketchWriter, editBetween;
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        auto v = drawnSketch();
+        if (v is null)
+            return "no sketch is drawn";
+        immutable src = text();
+        if (last.sources.get(absolutePath(path), null) != src)
+            return "the code changed since it was evaluated: wait for it, then try again";
+        static string num(double x) => format("%.6g", x + 0.0);
+        string select;
+        try
+        {
+            auto w = SketchWriter(src, v.span.file, *v);
+            string[size_t] made;
+            // the point of click i: the one it snapped to, or a new one
+            string pointName(size_t i)
+            {
+                if (at[i] >= 0)
+                    return w.name(at[i]);
+                if (auto n = i in made)
+                    return *n;
+                auto n = w.fresh("p");
+                w.add(format("auto %s = %s.point(%s, %s)", n, w.var, num(pts[i].x), num(pts[i].y)));
+                made[i] = n;
+                return n;
+            }
+            switch (tool)
+            {
+            case "point":
+                select = pointName(0);
+                break;
+            case "line":
+                {
+                    string[] names;
+                    foreach (i; 0 .. pts.length)
+                        names ~= pointName(i);
+                    foreach (i; 0 .. closed ? names.length : names.length - 1)
+                        w.add(format("%s.line(%s, %s)", w.var, names[i], names[(i + 1) % names.length]));
+                    select = names[$ - 1];
+                    break;
+                }
+            case "rect":
+                {
+                    immutable n = w.fresh("rect");
+                    w.add(format("auto %s = %s.rect(%s, %s)", n, w.var, pointName(0), pointName(1)));
+                    select = n;
+                    break;
+                }
+            case "circle":
+                {
+                    immutable n = w.fresh("circle");
+                    immutable r = format("%s.mm", num((pts[1] - pts[0]).length));
+                    w.add(format("auto %s = %s.circle(%s, r: %s)", n, w.var, pointName(0), r));
+                    select = r;
+                    break;
+                }
+            case "arc":
+                {
+                    immutable n = w.fresh("arc");
+                    // its end on the circle its start gives: the solver keeps them equally far
+                    w.add(format("auto %s = %s.arc(%s, %s, %s)", n, w.var, pointName(0), pointName(1), pointName(2)));
+                    select = n;
+                    break;
+                }
+            case "spline":
+                {
+                    string[] names;
+                    foreach (i; 0 .. pts.length)
+                        names ~= pointName(i);
+                    immutable n = w.fresh("curve");
+                    import std.array : join;
+                    w.add(format("auto %s = %s.spline([%s]%s)", n, w.var, names.join(", "), closed ? ", closed: true" : ""));
+                    select = n;
+                    break;
+                }
+            default:
+                return "no such drawing tool: " ~ tool;
+            }
+            applyEdit(editBetween(src, w.result(), select));
+        }
+        catch (Exception e)
+            return e.msg;
+        return tool ~ " written in the sketch's code";
     }
 }

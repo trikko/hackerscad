@@ -146,6 +146,9 @@ struct SketchWriter
         added ~= statement;
     }
 
+    /// A name no variable of the file has yet (base, base2…), for what a statement declares.
+    string fresh(string base) => unique(base);
+
     /// The source with the names given and the statements added.
     string result()
     {

@@ -94,6 +94,12 @@ final class Viewport
     bool orthographic;
     void delegate(Hit hit) onPick;    /// part -1 when clicking the background
     void delegate(double x, double y) onDoubleClick;   /// a second left click soon after the first, in the same place
+    void delegate(double x, double y) onMotion;        /// the pointer moved over the view (not dragging)
+    /// A sketch being drawn with the sketch bar: its pieces so far and the one to the pointer, and its points (in
+    /// the model's coordinates), drawn over everything
+    Vec3[][] drawingLines;
+    Vec3[] drawingPoints;
+    Vec3[] drawingSnap;   /// the point the pointer would snap to (none: empty)
     private long lastClickAt;          /// when the last left click was (hnsecs)
     private double lastClickX = -1e9, lastClickY = -1e9;
     void delegate(Hit hit, double x, double y) onContext;   /// right click without dragging
@@ -377,7 +383,11 @@ final class Viewport
             pointerX = x;
             pointerY = y;
             if (!dragging)
+            {
                 updateHoverCursor();
+                if (onMotion !is null)
+                    onMotion(x, y);
+            }
         });
         motion.connectLeave(() {
             hover = Hit.init;
@@ -2649,6 +2659,12 @@ final class Viewport
         redraw();
     }
 
+    /// The ray under view point (x, y): from the eye, through it.
+    void rayAt(double x, double y, out Vec3 origin, out Vec3 dir) { ray(x, y, origin, dir); }
+
+    /// Draws the view again (what is drawn over the model changed).
+    void refresh() { redraw(); }
+
 private:
 
     struct Gpu
@@ -3444,6 +3460,7 @@ private:
             else
                 renderInspect();
             renderSketches();
+            renderDrawing();
             glBindVertexArray(0);
             if (onFrame !is null)
                 onFrame();
@@ -3608,6 +3625,7 @@ private:
                     standOut(parts[h.part].rgb, Vec3(1.0, 0.86, 0.0), Vec3(0.15, 0.35, 0.95), 0.32), 4);
 
         renderSketches();
+        renderDrawing();
         drawGizmo();
         if (placing)
             drawPlace();
@@ -3653,6 +3671,19 @@ private:
 
     /// What Inspect shows: solids in orange with their edges, profiles
     /// filled see-through with a strong outline, paths as lines.
+    /// A sketch being drawn: what is clicked so far, on to the pointer, and where it would snap.
+    void renderDrawing()
+    {
+        immutable drawing = Vec3(0.95, 0.45, 0.05);
+        foreach (l; drawingLines)
+            if (l.length > 1)
+                drawPolyline(l, drawing, 2);
+        foreach (q; drawingPoints)
+            drawKnob(q, drawing, handlePixels - 3);
+        foreach (q; drawingSnap)
+            drawKnob(q, Vec3(0.1, 0.55, 0.95), handlePixels);
+    }
+
     void renderInspect()
     {
         if (inspectDirty)
