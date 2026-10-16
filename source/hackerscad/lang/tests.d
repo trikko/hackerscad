@@ -3288,6 +3288,24 @@ unittest
         assert(abs(p.scale(2).area - 4 * p.area) / mm2 < 1e-6, "scale");
         assert(abs(p.scale(x: 2, y: 3).area / p.area - 6) < 1e-6, "scale x, y");
         assert(abs(p.move(x: 5.mm, y: 2.mm).bbox.center.x / 1.mm - 5) < 1e-6, "move");
+        // a mirrored or half-turned profile (its outline running the other way) fuses into one with another:
+        // one piece extruded, one outline rounded
+        immutable arm = rect(vec(52.mm, -2.mm), vec(64.mm, 18.mm));
+        immutable bar = rect(vec(-64.mm, 12.mm), vec(64.mm, 18.mm));
+        foreach (u; [bar + arm.mirror(X), arm.mirror(X) + bar, bar + arm.mirror(Y).move(y: 16.mm),
+            bar + arm.rotate(x: 180).move(y: 16.mm), bar + arm.mirror(Z)])
+        {
+            assert(abs(u.area / mm2 - 936) < 1e-6, "fused area");
+            assert(u.extrude(1.mm).pieces.length == 1 && u.round(2.mm).extrude(1.mm).pieces.length == 1, "one piece");
+        }
+        // and offset alike: the outline grows, the holes shrink, whichever way the outline runs (mirrored,
+        // half-turned, drawn clockwise)
+        immutable sym = rect(20.mm, 10.mm).round(2.mm) - circle(vec(5, 0), d: 3.mm) - circle(vec(-5, 0), d: 3.mm);
+        immutable clockwise = polygon([vec(-10, -5), vec(-10, 5), vec(10, 5), vec(10, -5)]).round(2.mm)
+            - circle(vec(5, 0), d: 3.mm) - circle(vec(-5, 0), d: 3.mm);
+        foreach (d; [1.mm, -1.mm])
+            foreach (q; [sym.mirror(X), sym.rotate(x: 180), clockwise, sym.mirror(X).mirror(Y)])
+                assert(abs((q.offset(d).area - sym.offset(d).area) / mm2) < 1e-3, "offset");
     }, decls);
 
     import std.algorithm : canFind;

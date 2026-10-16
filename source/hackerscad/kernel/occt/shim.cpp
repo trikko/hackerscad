@@ -9,6 +9,7 @@
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
 #include <TopoDS.hxx>
+#include <BRepGProp_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
@@ -351,17 +352,31 @@ hc_shape *hc_ellipse(double rx, double ry)
     });
 }
 
+// The normal of a planar face as it is oriented, or false when the face is
+// not planar.
+static bool oriented_normal(const TopoDS_Face &f, gp_Dir &n)
+{
+    // from the surface's derivatives, the face's orientation applied: a mirrored plane's own axis is not it
+    if (Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(f)).IsNull())
+        return false;
+    BRepGProp_Face props(f);
+    Standard_Real u0, u1, v0, v1;
+    props.Bounds(u0, u1, v0, v1);
+    gp_Pnt p;
+    gp_Vec v;
+    props.Normal((u0 + u1) / 2, (v0 + v1) / 2, p, v);
+    if (v.Magnitude() < 1e-12)
+        return false;
+    n = gp_Dir(v);
+    return true;
+}
+
 // Profiles face +Z whatever the winding of their outline: faces pointing
 // opposite ways do not merge in 2D booleans.
 static TopoDS_Face upward(TopoDS_Face f)
 {
-    BRepAdaptor_Surface surf(f);
-    if (surf.GetType() != GeomAbs_Plane)
-        return f;
-    gp_Dir n = surf.Plane().Axis().Direction();
-    if (f.Orientation() == TopAbs_REVERSED)
-        n.Reverse();
-    if (n.Z() < 0)
+    gp_Dir n;
+    if (oriented_normal(f, n) && n.Z() < 0)
         f.Reverse();
     return f;
 }
@@ -688,28 +703,70 @@ hc_shape *hc_offset_solid(const hc_shape *s, double d)
     });
 }
 
+// The loops of one outline (a face made of `w` alone) grown by d, or
+// shrunk: outlines, and islands where a narrow part closed up. None when
+// it vanished. Which way the kernel offsets follows how the loop runs: the
+// area says whether it grew, and a wrong way is done again the other way.
+static std::vector<TopoDS_Wire> offset_loop(const TopoDS_Wire &w, double d)
+{
+    const std::vector<TopoDS_Face> faces = faces_of(faces_from_loops({w}));
+    if (faces.empty())
+        return {};
+    auto area = [](const TopoDS_Shape &f) {
+        GProp_GProps p;
+        BRepGProp::SurfaceProperties(f, p);
+        return std::abs(p.Mass());
+    };
+    const double before = area(faces[0]);
+    auto run = [&](double by) {
+        std::vector<TopoDS_Wire> loops;
+        BRepOffsetAPI_MakeOffset mk(faces[0], GeomAbs_Arc);
+        mk.Perform(by);
+        if (!mk.IsDone())
+            return loops;
+        for (TopExp_Explorer ex(mk.Shape(), TopAbs_WIRE); ex.More(); ex.Next())
+            if (BRepBuilderAPI_MakeFace(TopoDS::Wire(ex.Current()), Standard_True).IsDone())
+                loops.push_back(TopoDS::Wire(ex.Current()));
+        return loops;
+    };
+    std::vector<TopoDS_Wire> loops = run(d);
+    const double after = loops.empty() ? 0 : area(faces_from_loops(loops));
+    if (d > 0 ? after < before : after > before)
+        loops = run(-d);
+    return loops;
+}
+
 hc_shape *hc_profile_offset(const hc_shape *s, double d)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         std::vector<TopoDS_Shape> out;
         for (const TopoDS_Face &face : faces_of(s->shape)) {
-            BRepOffsetAPI_MakeOffset mk(face, GeomAbs_Arc);
-            mk.Perform(d);
-            if (!mk.IsDone()) {
+            // the outline grown by d less each hole shrunk by d (or the other way when d < 0), exactly the
+            // face's offset: each loop offset on its own, as a face of it alone faces +Z. The offset of the
+            // face with its holes reads the holes' way from the face's orientation, and a face turned over
+            // (an outline drawn clockwise, or mirrored) grew its holes, or left nothing
+            const TopoDS_Wire outer = BRepTools::OuterWire(face);
+            const std::vector<TopoDS_Wire> grown = offset_loop(outer, d);
+            if (grown.empty()) {
                 set_error("offset failed (the profile would vanish?)");
                 return nullptr;
             }
-            // the wires it gives: outlines, holes, and islands where a narrow
-            // part of the face closed up, told apart by how they nest
-            std::vector<TopoDS_Wire> loops;
-            for (TopExp_Explorer ex(mk.Shape(), TopAbs_WIRE); ex.More(); ex.Next())
-                if (BRepBuilderAPI_MakeFace(TopoDS::Wire(ex.Current()), Standard_True).IsDone())
-                    loops.push_back(TopoDS::Wire(ex.Current()));
-            if (loops.empty()) {
+            TopoDS_Shape region = faces_from_loops(grown);
+            for (TopExp_Explorer ex(face, TopAbs_WIRE); ex.More(); ex.Next()) {
+                if (ex.Current().IsSame(outer))
+                    continue;
+                const std::vector<TopoDS_Wire> hole = offset_loop(TopoDS::Wire(ex.Current()), -d);
+                if (hole.empty())
+                    continue;   // closed up
+                region = BRepAlgoAPI_Cut(region, faces_from_loops(hole)).Shape();
+            }
+            ShapeUpgrade_UnifySameDomain unify(region, Standard_True, Standard_True, Standard_False);
+            unify.Build();
+            if (faces_of(unify.Shape()).empty()) {
                 set_error("offset left nothing");
                 return nullptr;
             }
-            out.push_back(faces_from_loops(loops));
+            out.push_back(unify.Shape());
         }
         // separate regions grown into each other become one
         return primitive(fused(out));
@@ -1293,10 +1350,29 @@ hc_shape *hc_scale_xyz(const hc_shape *s, double sx, double sy, double sz)
 
 hc_shape *hc_mirror(const hc_shape *s, double nx, double ny, double nz)
 {
-    return guarded<>((hc_shape *)nullptr, [&] {
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         gp_Trsf t;
         t.SetMirror(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(nx, ny, nz)));
-        return transformed(s, t);
+        if (TopExp_Explorer(s->shape, TopAbs_SOLID).More() || !TopExp_Explorer(s->shape, TopAbs_FACE).More())
+            return transformed(s, t);
+        // a profile: made again from its mirrored outlines, as one drawn so. Mirrored as it is, its faces lie
+        // on planes of left-handed axes, and offset (grown to nothing), unions (two faces left) and the
+        // rest read the way they face wrong
+        const TopoDS_Shape m = BRepBuilderAPI_Transform(s->shape, t, Standard_True).Shape();
+        std::vector<TopoDS_Shape> out;
+        for (const TopoDS_Face &face : faces_of(m)) {
+            std::vector<TopoDS_Wire> loops;
+            for (TopExp_Explorer ex(face, TopAbs_WIRE); ex.More(); ex.Next())
+                loops.push_back(TopoDS::Wire(ex.Current()));
+            out.push_back(faces_from_loops(loops));
+        }
+        // each face from the same face of the input, as a transform keeps them
+        const TopoDS_Shape r = compound_of(out);
+        history_new(r);
+        if (g_history.size() == faces_of(s->shape).size())
+            for (size_t k = 0; k < g_history.size(); k++)
+                g_history[k] = Origin{0, (int)k};
+        return wrap(r);
     });
 }
 
@@ -1365,9 +1441,41 @@ hc_shape *hc_boolean_merged(const hc_shape *a, const hc_shape *b, int op)
     });
 }
 
+// Profile `s` with its faces that lie on the plane of `like`'s first face
+// but face the other way turned over, so that the two fuse into one face:
+// a profile mirrored or turned half round faces -Z, and faces facing
+// opposite ways are not merged into one.
+static TopoDS_Shape facing_like(const TopoDS_Shape &like, const TopoDS_Shape &s)
+{
+    TopExp_Explorer first(like, TopAbs_FACE);
+    gp_Dir n;
+    if (!first.More() || !oriented_normal(TopoDS::Face(first.Current()), n))
+        return s;
+    bool any = false;
+    for (TopExp_Explorer e(s, TopAbs_FACE); e.More(); e.Next()) {
+        gp_Dir m;
+        if (oriented_normal(TopoDS::Face(e.Current()), m) && m.Dot(n) < -1 + 1e-9)
+            any = true;
+    }
+    if (!any)
+        return s;
+    BRep_Builder builder;
+    TopoDS_Compound c;
+    builder.MakeCompound(c);
+    for (TopExp_Explorer e(s, TopAbs_FACE); e.More(); e.Next()) {
+        gp_Dir m;
+        const TopoDS_Face &f = TopoDS::Face(e.Current());
+        builder.Add(c, oriented_normal(f, m) && m.Dot(n) < -1 + 1e-9 ? f.Reversed() : TopoDS_Shape(f));
+    }
+    return c;
+}
+
 hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        // two profiles: the second facing the way the first does
+        const bool flat = !TopExp_Explorer(a->shape, TopAbs_SOLID).More() && !TopExp_Explorer(b->shape, TopAbs_SOLID).More();
+        const TopoDS_Shape tool = flat ? facing_like(a->shape, b->shape) : b->shape;
         auto run = [&](BRepAlgoAPI_BooleanOperation &&mk) -> hc_shape * {
             TopoDS_Shape r = mk.Shape();
             // a union of solids: faces on one plane or surface become one, or
@@ -1390,7 +1498,7 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
         auto parallel = [&](BRepAlgoAPI_BooleanOperation &&mk) -> hc_shape * {
             TopTools_ListOfShape args, tools;
             args.Append(a->shape);
-            tools.Append(b->shape);
+            tools.Append(tool);
             mk.SetArguments(args);
             mk.SetTools(tools);
             mk.SetRunParallel(Standard_True);
