@@ -2205,21 +2205,43 @@ private:
     /// Shows what is selected (or a short message) at the bottom of the 3D view; empty hides it.
     void info(string text)
     {
-        if (infoLabel is null)
-        {
-            infoLabel = new Label("");
-            infoLabel.addCssClass("hcad-info");
-            infoLabel.setHalign(Align.End);
-            infoLabel.setValign(Align.End);
-            infoLabel.setMarginEnd(10);
-            infoLabel.setMarginBottom(10);
-            infoLabel.setEllipsize(EllipsizeMode.Middle);
-            infoLabel.setMaxWidthChars(70);
-            infoLabel.setCanTarget(false);
-            overlay.addOverlay(infoLabel);
-        }
+        makeInfoLabel();
         infoLabel.setLabel(text);
         infoLabel.setVisible(text.length > 0);
+    }
+
+    /// The info card at the bottom right: a title, then a row for each
+    /// size, its name dimmed, and a hint under them; wrapped, never cut.
+    void infoCard(string title, string[2][] rows, string hint = null)
+    {
+        import glib.global : markupEscapeText;
+        string esc(string t) => markupEscapeText(t);
+        string m = "<b>" ~ esc(title) ~ "</b>";
+        foreach (r; rows)
+            m ~= "\n<span alpha=\"65%\">" ~ esc(r[0]) ~ "</span>  " ~ esc(r[1]);
+        if (hint.length)
+            m ~= "\n<span alpha=\"55%\" size=\"small\">" ~ esc(hint) ~ "</span>";
+        makeInfoLabel();
+        infoLabel.setMarkup(m);
+        infoLabel.setVisible(true);
+    }
+
+    void makeInfoLabel()
+    {
+        if (infoLabel !is null)
+            return;
+        infoLabel = new Label("");
+        infoLabel.addCssClass("hcad-info");
+        infoLabel.setHalign(Align.End);
+        infoLabel.setValign(Align.End);
+        infoLabel.setMarginEnd(10);
+        infoLabel.setMarginBottom(10);
+        // long lines wrap: what it says is never cut short
+        infoLabel.setWrap(true);
+        infoLabel.setMaxWidthChars(60);
+        infoLabel.setXalign(0);
+        infoLabel.setCanTarget(false);
+        overlay.addOverlay(infoLabel);
     }
 
     Button problemBanner;
@@ -2318,7 +2340,7 @@ private:
         }
         // clicked again: it left the selection, the rest stays
         if (!viewport.selection().canFind!(h => Viewport.sameItem(h, hit)))
-            return info(selectionLine());
+            return showSelection();
         auto part = last.parts[hit.part];
         auto span = part.span;
         string what = part.name;
@@ -2344,10 +2366,8 @@ private:
         editor.scrollToIter(a, 0.1, true, 0, 0.3);
         // the sizes of what was picked: the part's, or the face's, edge's, vertex's
         if (viewport.selection().length > 1)
-            return info(selectionLine());
-        auto sizes = selectionSizes();
-        info(sizes.length ? what ~ " · " ~ sizes
-            : format("%s · %.1f × %.1f × %.1f mm", what, part.bbox.size.x, part.bbox.size.y, part.bbox.size.z));
+            return showSelection();
+        infoCard(what, selectionRows());
     }
 
     /// After an evaluation, the items selected on the parts before (`was`)
@@ -2398,25 +2418,21 @@ private:
         }
         viewport.setSelection(kept);
         if (kept.length == 1)
-        {
-            auto sizes = selectionSizes();
-            info(sizes.length ? last.parts[kept[0].part].name ~ " · " ~ sizes : "");
-        }
+            infoCard(last.parts[kept[0].part].name, selectionRows());
         else
-            info(selectionLine());
+            showSelection();
     }
 
-    /// The info line of a selection of several items: how many, their sizes
-    /// (how far apart, the room they take); empty when none is selected.
-    string selectionLine()
+    /// The info card of the selection: how many items, their sizes (how far
+    /// apart, the room they take); none when nothing is selected.
+    void showSelection()
     {
         auto n = viewport.selection().length;
         if (n == 0)
-            return "";
+            return info("");
         immutable what = ["part", "face", "edge", "vertex"][viewport.selectMode];
-        auto sizes = selectionSizes();
-        return format("%d %s selected%s · right-click for operations · a click on nothing, Esc or Space empties it", n,
-            n == 1 ? what : what == "vertex" ? "vertices" : what ~ "s", sizes.length ? " · " ~ sizes : "");
+        infoCard(format("%d %s selected", n, n == 1 ? what : what == "vertex" ? "vertices" : what ~ "s"),
+            selectionRows(), "right-click: operations · on nothing, Esc or Space: none");
     }
 
     /// Highlights a line of the editor and shows a message.
@@ -4337,7 +4353,7 @@ private:
     {
         if (!viewport.inInspect)
             return JValue(null);
-        JValue j = JSOB("status", infoLabel !is null ? infoLabel.getLabel() : "");
+        JValue j = JSOB("status", infoLabel !is null ? infoLabel.getText() : "");
         if (inspectQuery.function_.length)
             j["function"] = inspectQuery.function_;
         else
@@ -4406,12 +4422,36 @@ private:
         setContext(hit);
         auto part = last.parts[hit.part];
         auto sel = viewport.selection();
-        // items of several parts: their sizes only, as the operations write the code of one part
+        // items of several parts: the operations written in each part in turn, and the sizes
         if (sel.canFind!(h => h.part != hit.part))
         {
-            MenuEntry[] some = [MenuEntry.heading(format("%d ITEMS", sel.length), "on several parts")];
-            if (auto v = selectionSizes())
-                some ~= MenuEntry.item("Sizes", () => copy(v), v);
+            immutable nparts = selectionByPart().length;
+            immutable nfs = selFaces.length, nes = selEdges.length;
+            immutable on = format(" on %d parts…", nparts);
+            MenuEntry[] some = [MenuEntry.heading(nes ? format("%d EDGES", nes) : nfs ? format("%d FACES", nfs)
+                : format("%d ITEMS", sel.length), format("%d parts", nparts))];
+            if (nes)
+            {
+                some ~= MenuEntry.item("Fillet edges" ~ on, () => ctx("fillet-edge", "1.mm"));
+                some ~= MenuEntry.item("Chamfer edges" ~ on, () => ctx("chamfer-edge", "0.5.mm"));
+            }
+            if (nfs)
+            {
+                some ~= MenuEntry.item("Fillet edges of the faces" ~ on, () => ctx("fillet-face", "1.mm"));
+                some ~= MenuEntry.item("Chamfer edges of the faces" ~ on, () => ctx("chamfer-face", "0.5.mm"));
+                some ~= MenuEntry.item("Shell, opening the faces" ~ on, () => ctx("shell", "2.mm"));
+                some ~= MenuEntry.item("Draft faces" ~ on, () => ctx("draft", "3.deg"));
+                some ~= MenuEntry.item("Extrude faces" ~ on, () => ctx("extrude-face", "5.mm"));
+                some ~= MenuEntry.item("Cut faces" ~ on, () => ctx("cut-face", "2.mm"));
+            }
+            MenuEntry[] sizes;
+            foreach (row; selectionRows())
+            {
+                auto v = row[1];
+                sizes ~= MenuEntry.item(row[0][0 .. 1].toUpper ~ row[0][1 .. $], () => copy(v), v);
+            }
+            if (sizes.length)
+                some ~= MenuEntry.group("Measure", sizes);
             some ~= MenuEntry.item("Clear selection", () => clearSelection());
             contextPopover = popupMenu(viewport.area, x, y, some);
             return;
@@ -4856,8 +4896,75 @@ private:
     /// selected for the user to type over.
     void ctx(string action, string placeholder, string kind = null, string size = null)
     {
-        if (auto code = contextCode(action, null, kind, size))
-            appendFeature(last.parts[contextHit.part], code, placeholder);
+        auto groups = selectionByPart();
+        if (groups.length <= 1)
+        {
+            if (auto code = contextCode(action, null, kind, size))
+                appendFeature(last.parts[contextHit.part], code, placeholder);
+            return;
+        }
+        // items of several parts: the operation written in each, one after the
+        // other, the last in the code first, so that the first one's value is
+        // left selected to type over (the others are changed by hand)
+        if (busy())
+            return info("wait for the evaluation to finish, then try again");
+        struct Step
+        {
+            PartMesh part;
+            string code;
+        }
+        Step[] steps;
+        auto keepHit = contextHit;
+        auto keepFaces = selFaces, keepEdges = selEdges, keepVertices = selVertices;
+        foreach (g; groups)
+        {
+            contextOn(g);
+            if (auto code = contextCode(action, null, kind, size))
+                steps ~= Step(last.parts[g[0].part], code);
+        }
+        contextHit = keepHit;
+        selFaces = keepFaces;
+        selEdges = keepEdges;
+        selVertices = keepVertices;
+        foreach_reverse (st; steps)
+            writeFeature(st.part, st.code, placeholder);
+        if (steps.length > 1)
+            info(format("written in %d parts: the first one's value is selected, the others are changed by hand",
+                steps.length));
+    }
+
+    /// The selection's items by part, the parts in the order of their code.
+    Hit[][] selectionByPart()
+    {
+        import std.algorithm : sort;
+        Hit[][int] by;
+        foreach (h; viewport.selection())
+            if (h.part >= 0 && h.part < last.parts.length)
+                by[h.part] ~= h;
+        auto keys = by.keys;
+        keys.sort!((a, b) => last.parts[a].span.line < last.parts[b].span.line);
+        Hit[][] r;
+        foreach (k; keys)
+            r ~= by[k];
+        return r;
+    }
+
+    /// The context of the right-click menu on `hits`, items of one part.
+    void contextOn(Hit[] hits)
+    {
+        contextHit = hits[$ - 1];
+        selFaces = null;
+        selEdges = null;
+        selVertices = null;
+        foreach (h; hits)
+        {
+            if (h.edge >= 0)
+                selEdges ~= h.edge;
+            else if (h.vertex >= 0)
+                selVertices ~= h.vertex;
+            else if (h.face >= 0)
+                selFaces ~= h.face;
+        }
     }
 
     Hit contextHit;
@@ -5004,13 +5111,14 @@ private:
     // a blind hole 5 mm deep at the clicked point: edit the depth, or use through: true
     void delegate() holeAction(string kind, string size) => () => ctx("hole", "5.mm", kind, size);
 
-    /// The sizes of what is selected, for the info line: a part's size, an
-    /// edge's length (or radius), a face's size in its own plane and area,
-    /// a vertex's place; two items how far apart; more, how much room they
-    /// take together. Null when nothing is selected.
-    string selectionSizes()
+    /// The sizes of what is selected, as rows of a name and a value: a
+    /// part's size, an edge's length (or radius), a face's size in its own
+    /// plane and area, a vertex's place; two items how far apart (nearest,
+    /// farthest, on average) and at what angle; more, the room they take
+    /// together. None when nothing is selected.
+    string[2][] selectionRows()
     {
-        import hackerscad.gui.measure : measure, faceItem, edgeItem, pointItem, Item;
+        import hackerscad.gui.measure : measure, spread, faceItem, edgeItem, pointItem, Item;
         import hackerscad.kernel.brep : CylinderInfo, EdgeKind;
         auto sel = viewport.selection();
         if (sel.length == 0)
@@ -5034,8 +5142,14 @@ private:
             case SelectMode.face:
                 return faceItem(p, h.face);
             case SelectMode.part:
+                // the whole surface
                 Item it;
-                it.points = [p.bbox.min, p.bbox.max];
+                foreach (f; 0 .. cast(int) p.faceStart.length - 1)
+                {
+                    auto fi = faceItem(p, f);
+                    it.triangles ~= fi.triangles;
+                    it.points ~= fi.points;
+                }
                 return it;
             }
         }
@@ -5049,10 +5163,11 @@ private:
             final switch (mode)
             {
             case SelectMode.part:
-                return format("%s × %s × %s mm", g(p.bbox.size.x), g(p.bbox.size.y), g(p.bbox.size.z));
+                return [["size", format("%s × %s × %s mm", g(p.bbox.size.x), g(p.bbox.size.y), g(p.bbox.size.z))],
+                    ["volume", format("%s mm³", g(p.volume))]];
             case SelectMode.vertex:
                 auto v = viewport.vertexAt(h.part, h.vertex);
-                return format("vertex at %s, %s, %s", g(v.x), g(v.y), g(v.z));
+                return [["at", format("%s, %s, %s", g(v.x), g(v.y), g(v.z))]];
             case SelectMode.edge:
                 if (h.edge < 0 || h.edge >= p.edgeInfo.length)
                     return null;
@@ -5060,14 +5175,15 @@ private:
                 if (e.kind == EdgeKind.circle)
                 {
                     // a whole circle, or an arc of it and how long it is
-                    immutable whole = abs(e.length - 2 * PI * e.radius) < 1e-3 * max(1.0, e.radius);
-                    return format("R %s · ⌀ %s mm%s", g(e.radius), g(2 * e.radius),
-                        whole ? "" : format(" · arc %s mm long", g(e.length)));
+                    string[2][] r = [["radius", format("R %s mm", g(e.radius))], ["diameter", format("⌀ %s mm", g(2 * e.radius))]];
+                    if (abs(e.length - 2 * PI * e.radius) >= 1e-3 * max(1.0, e.radius))
+                        r ~= ["arc", format("%s mm long", g(e.length))];
+                    return r;
                 }
-                return format("%s mm long", g(e.length));
+                return [["length", format("%s mm", g(e.length))]];
             case SelectMode.face:
                 auto it = faceItem(p, h.face);
-                auto area = format("area %s mm²", g(faceArea(p, h.face)));
+                string[2] area = ["area", format("%s mm²", g(faceArea(p, h.face)))];
                 CylinderInfo c;
                 bool round;
                 try
@@ -5075,9 +5191,10 @@ private:
                 catch (Exception)
                     round = false;
                 if (round)
-                    return format("⌀ %s × %s mm · %s", g(2 * c.radius), g(c.to - c.from), area);
+                    return [["diameter", format("⌀ %s mm", g(2 * c.radius))], ["length", format("%s mm", g(c.to - c.from))],
+                        area];
                 if (!it.planar)
-                    return area;
+                    return [area];
                 // its size in its own plane: across and up as seen from outside it
                 auto n = it.normal;
                 Vec3 u = abs(n.z) > 0.99 ? Vec3(1, 0, 0) : Vec3(0, 0, 1).cross(n).normalized;
@@ -5090,7 +5207,7 @@ private:
                     w0 = min(w0, q.dot(w));
                     w1 = max(w1, q.dot(w));
                 }
-                return format("%s × %s mm · %s", g(u1 - u0), g(w1 - w0), area);
+                return [["size", format("%s × %s mm", g(u1 - u0), g(w1 - w0))], area];
             }
         }
         if (sel.length == 2)
@@ -5099,14 +5216,33 @@ private:
             if (mode == SelectMode.vertex)
             {
                 auto d = b.points[0] - a.points[0];
-                return format("%s mm apart · %s, %s, %s along X, Y, Z", g(d.length), g(d.x), g(d.y), g(d.z));
+                return [["distance", format("%s mm", g(d.length))],
+                    ["along X, Y, Z", format("%s, %s, %s mm", g(d.x), g(d.y), g(d.z))]];
             }
             auto m = measure(a, b);
-            string r = format("%s mm apart", g(m.distance));
+            // two parts: the nearest exactly, on the solids
+            if (mode == SelectMode.part)
+            {
+                auto pa = last.parts[sel[0].part], pb = last.parts[sel[1].part];
+                Vec3 onA, onB;
+                try
+                    m.distance = pa.kernel.distance(pa.brep, pb.brep, onA, onB);
+                catch (Exception)
+                {
+                }
+            }
+            auto s = spread(a, b);
+            string[2][] r;
+            // the same everywhere (parallel faces, parallel edges): one number
+            if (s.max - m.distance < 1e-3 * max(1.0, s.max))
+                r ~= ["distance", format("%s mm", g(m.distance))];
+            else
+                r ~= [["nearest", format("%s mm", g(m.distance))], ["farthest", format("%s mm", g(s.max))],
+                    ["mean", format("%s mm", g(s.mean))]];
             if (m.gap == m.gap)
-                r ~= format(" · planes %s mm apart", g(m.gap));
-            if (m.angle == m.angle)
-                r ~= format(" · %s°", g(m.angle));
+                r ~= ["between the planes", format("%s mm", g(m.gap))];
+            if (m.angle == m.angle && mode != SelectMode.part)
+                r ~= ["angle", format("%s°", g(m.angle))];
             return r;
         }
         // more: the room they take together
@@ -5118,7 +5254,16 @@ private:
                 hi = Vec3(max(hi.x, q.x), max(hi.y, q.y), max(hi.z, q.z));
             }
         auto s = hi - lo;
-        return format("together %s × %s × %s mm", g(s.x), g(s.y), g(s.z));
+        return [["together", format("%s × %s × %s mm", g(s.x), g(s.y), g(s.z))]];
+    }
+
+    /// The rows of selectionRows on one line, "length 78 mm · …" (for agents).
+    string selectionSizes()
+    {
+        string[] r;
+        foreach (row; selectionRows())
+            r ~= row[0] ~ " " ~ row[1];
+        return r.join(" · ");
     }
 
     /// Area of a B-rep face from its triangles.
@@ -5159,6 +5304,13 @@ private:
     {
         if (busy())
             return info("wait for the evaluation to finish, then try again");
+        writeFeature(part, call, placeholder);
+    }
+
+    /// appendFeature without waiting for the evaluation: the steps of one
+    /// operation on several parts, their selectors all from the same one.
+    void writeFeature(PartMesh part, string call, string placeholder)
+    {
         if (part.span.file != absolutePath(path))
             return info(format("part '%s' is defined in another file", part.name));
         try

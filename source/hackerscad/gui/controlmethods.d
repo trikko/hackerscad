@@ -112,7 +112,7 @@ mixin template ControlMethods()
                     hit.shift = shiftPick;   // add to the selection, as Shift+click
                     picked(hit);
                     auto r = hitJson(hit);
-                    r["status"] = infoLabel.getLabel();
+                    r["status"] = infoLabel.getText();
                     reply(r, null);
                 });
                 return;

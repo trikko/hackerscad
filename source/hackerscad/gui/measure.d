@@ -3,7 +3,7 @@
 /// are selected, and what hcad_gui_measure answers.
 module hackerscad.gui.measure;
 
-import std.math : abs, acos, PI;
+import std.math : abs, acos, sqrt, PI;
 import std.algorithm : min, max;
 
 import hackerscad.geom.vec;
@@ -142,6 +142,81 @@ Distance measure(Item a, Item b)
         if (a.planar && b.planar && abs(abs(c) - 1) < 1e-6)
             r.gap = abs(a.normal.dot(b.points[0] - a.points[0]));
     }
+    return r;
+}
+
+/// How far one item lies from the other besides the nearest points of
+/// measure: the farthest a point of either is from the other, and the mean
+/// (by area for faces, by length for edges), both ways. Parallel flat faces
+/// facing each other give the same three.
+struct Spread
+{
+    double max = 0, mean = 0;
+}
+
+/// Spread of a and b, from about `budget` points spread over each.
+Spread spread(Item a, Item b, size_t budget = 1200)
+{
+    Spread r;
+    double means = 0;
+    void from(ref const Item src, ref const Item dst)
+    {
+        Vec3[] at;
+        double[] weight;
+        double total = 0;
+        foreach (t; src.triangles)
+            total += (t[1] - t[0]).cross(t[2] - t[0]).length / 2;
+        foreach (sg; src.segments)
+            total += (sg[1] - sg[0]).length;
+        // triangles cut into k² smaller ones, segments into k pieces, k by their share of the budget
+        foreach (t; src.triangles)
+        {
+            immutable area = (t[1] - t[0]).cross(t[2] - t[0]).length / 2;
+            immutable k = cast(size_t) max(1.0, min(30.0, sqrt(budget * area / max(total, 1e-12))));
+            foreach (i; 0 .. k)
+                foreach (j; 0 .. k - i)
+                {
+                    immutable u = (i + 1.0 / 3) / k, v = (j + 1.0 / 3) / k;
+                    at ~= t[0] + (t[1] - t[0]) * u + (t[2] - t[0]) * v;
+                    weight ~= area / (k * k);
+                }
+        }
+        foreach (sg; src.segments)
+        {
+            immutable len = (sg[1] - sg[0]).length;
+            immutable k = cast(size_t) max(1.0, min(200.0, budget * len / max(total, 1e-12)));
+            foreach (i; 0 .. k)
+            {
+                at ~= sg[0] + (sg[1] - sg[0]) * ((i + 0.5) / k);
+                weight ~= len / k;
+            }
+        }
+        if (at.length == 0)
+            foreach (q; src.points)
+            {
+                at ~= q;
+                weight ~= 1;
+            }
+        double sum = 0, wsum = 0;
+        foreach (i, q; at)
+        {
+            Vec3 c;
+            immutable d = closest(dst, q, c);
+            sum += d * weight[i];
+            wsum += weight[i];
+            r.max = max(r.max, d);
+        }
+        // the corners too, for the farthest
+        foreach (q; src.points)
+        {
+            Vec3 c;
+            r.max = max(r.max, closest(dst, q, c));
+        }
+        means += wsum > 0 ? sum / wsum : 0;
+    }
+    from(a, b);
+    from(b, a);
+    r.mean = means / 2;
     return r;
 }
 
