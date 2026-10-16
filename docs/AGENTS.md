@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-77f1d5be`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-8bf6d31e`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-77f1d5be`:** this text is up to date.
+- **It prints `0.3.1-8bf6d31e`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -175,12 +175,19 @@ format stamp):
   distance, angle, tangent, on, equal, concentric…) and s.profile, to
   extrude or revolve.
   Prefer a sketch over unions and differences of boxes and cylinders for a
-  mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip)
-  whenever the request gives its dimensions: write each dimension as a
-  constraint, aim for s.dof == 0 (a warning lists what is left free), then
-  add 3D features (holes, fillets, shells) to the extruded solid. Examples
-  below: the medal (a first sketch, step by step) and the carlo library (a
-  clip drawn with tangent arcs, a loop and if/else).
+  mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip),
+  with the sizes given or estimated (estimated ones become @params): write
+  each dimension as a constraint, aim for s.dof == 0 (a warning lists what
+  is left free), then add 3D features (holes, fillets, shells) to the
+  extruded solid. A profile made of more than three shapes, moved by sizes
+  worked out by hand, or rounded with .offset(r).offset(-r) is an outline
+  that wants a sketch: it reads as its dimensions, keeps its tangents when
+  a @param changes, and its edges take fillets. One shape alone can stay
+  one line (rect(40.mm, 20.mm, corner: 3.mm)); in a sketch (s.rect) its
+  sizes become dimensions the user changes with a click in the window.
+  Examples below: the medal (a first sketch, step by step), the pillow
+  block (a part from five sketches on five surfaces) and the carlo library
+  (a clip drawn with tangent arcs, a loop and if/else).
 - To build on a face, take its frame and place parts built on XY (Z up):
   cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top).at(x: 10.mm)).
 - To draw an outline on a face, measured from the part's own edges, sketch
