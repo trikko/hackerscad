@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-37737b5f`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-9a5d35cd`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-37737b5f`:** this text is up to date.
+- **It prints `0.3.1-9a5d35cd`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -157,11 +157,16 @@ format stamp):
 - Profiles: rect, circle, ellipse, polygon, slot, teardrop (the shapes of a
   sketch, same names and arguments, centred on the origin unless given a
   point: rect(40.mm, 20.mm, corner: 3.mm), rect(p, q), circle(c, d: 5.mm),
+  rect(center: vec(15.4, 3.3), w: 5.6.mm, h: 14.mm, angle: 45.deg) (a
+  rotated one, round a point),
   polygon(6, d: 13.mm, fit: "sides"), slot(p, q, w: 6.mm)), polygon(points),
   text; combined with + - &, moved, turned, scaled, mirrored like solids,
   .round(r), .offset(d); turn them into solids with .extrude(h) or
   .revolve(axis: Y). A prism along X or Y: .extrude(h, along: Y) (the
-  profile's x along X, its y up Z); a profile in another plane (a section,
+  profile's x along X, its y up Z, towards +Y; along: X its x along Y,
+  towards +X; a negative h the other way); taper: 3.deg narrows the solid
+  going away from the profile, whichever way it goes (a negative taper
+  widens it). A profile in another plane (a section,
   one turned) extrudes across its own plane, from where it lies. On a face: body.extrude(profile, on: frame, depth:)
   adds, body.cut(profile, on: frame, depth: | through: true) removes.
 - Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),
@@ -309,8 +314,9 @@ format stamp):
   command line). One call does it all: the distances both ways, the
   material that differs, the drawings outside and of the voids, and
   close-ups of the first entries of each, chosen and framed where they are
-  in sight; it ends saying whether it is done or what comes next. Fix what
-  the close-ups show and review again. To look at a place again after a
+  in sight; it ends saying whether it is done or what comes next. It is a
+  summary, the first three entries of each report; detail: true gives
+  them all. Fix what the close-ups show and review again. To look at a place again after a
   change, give its point (look: [x, y, z]): entry numbers change, points
   do not. The single tools (hcad_compare, hcad_diff, hcad_lines, focus,
   view) go deeper on one place; hcad_section with compare where the
