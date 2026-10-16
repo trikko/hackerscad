@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-da68e948`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-38a4eb53`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-da68e948`:** this text is up to date.
+- **It prints `0.3.1-38a4eb53`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -79,6 +79,9 @@ format stamp):
   code), and a file rewritten under them makes the window ask which to keep.
   For the command line tools, save a copy elsewhere (hcad_gui_state with
   source: true gives the code) instead of moving the window to a file.
+  To see whether the user changed anything, ask hcad_gui_state only for
+  what you need (only: ["source_hash", "camera"]): the same source_hash as
+  before is the same code, no need to fetch it again.
   Never take the most recent window for the user's: if it is not clear
   which one they mean, ask, or open one of your own. Show the work in the
   window as it goes, not only pictures at the end, and leave the view on
