@@ -3232,9 +3232,79 @@ static gp_Pnt inside_point(const TopoDS_Face &f)
 // line crosses, each full or empty: full inside an odd number of loops (a loop
 // in a loop is a hole, where two overlap the overlap is), unless a fill says
 // otherwise (the last one in the area).
+// Whether any two loops of an outline cross or touch (boxes apart are not measured).
+static bool loops_meet(const std::vector<TopoDS_Wire> &loops)
+{
+    std::vector<Bnd_Box> boxes(loops.size());
+    for (size_t i = 0; i < loops.size(); i++)
+        BRepBndLib::Add(loops[i], boxes[i]);
+    for (size_t i = 0; i < loops.size(); i++)
+        for (size_t j = i + 1; j < loops.size(); j++) {
+            if (boxes[i].IsOut(boxes[j]))
+                continue;
+            BRepExtrema_DistShapeShape d(loops[i], loops[j]);
+            if (d.IsDone() && d.Value() < 1e-7)
+                return true;
+        }
+    return false;
+}
+
 static std::vector<std::pair<TopoDS_Face, bool>> outline_regions(const std::vector<TopoDS_Wire> &loops,
                                                                  const std::vector<OutlineFill> &fills)
 {
+    if (fills.empty() && !loops_meet(loops)) {
+        // apart: each loop's area less the loops right inside it, full at an odd depth
+        struct Loop {
+            TopoDS_Face face;
+            double area;
+            gp_Pnt probe;
+            Bnd_Box box;
+        };
+        std::vector<Loop> ls;
+        for (auto &w : loops) {
+            BRepBuilderAPI_MakeFace f(w, Standard_True);
+            if (!f.IsDone())
+                throw Standard_Failure("an outline loop is not planar");
+            GProp_GProps p;
+            BRepGProp::SurfaceProperties(f.Face(), p);
+            TopExp_Explorer v(w, TopAbs_VERTEX);
+            Loop l{upward(f.Face()), std::abs(p.Mass()), BRep_Tool::Pnt(TopoDS::Vertex(v.Current())), Bnd_Box()};
+            BRepBndLib::Add(w, l.box);
+            ls.push_back(l);
+        }
+        std::sort(ls.begin(), ls.end(), [](const Loop &a, const Loop &b) { return a.area > b.area; });
+        // the loop each lies in directly: the smallest holding it
+        std::vector<int> parent(ls.size(), -1), depth(ls.size(), 0);
+        for (size_t i = 0; i < ls.size(); i++)
+            for (size_t j = 0; j < i; j++)
+                if (!ls[j].box.IsOut(ls[i].box)
+                    && BRepClass_FaceClassifier(ls[j].face, ls[i].probe, 1e-6).State() == TopAbs_IN)
+                    parent[i] = (int)j;   // later ones are smaller: the last is the nearest
+        for (size_t i = 0; i < ls.size(); i++)
+            depth[i] = parent[i] < 0 ? 0 : depth[parent[i]] + 1;
+        std::vector<std::pair<TopoDS_Face, bool>> r;
+        for (size_t i = 0; i < ls.size(); i++) {
+            TopTools_ListOfShape children;
+            for (size_t j = i + 1; j < ls.size(); j++)
+                if (parent[j] == (int)i)
+                    children.Append(ls[j].face);
+            TopoDS_Shape area = ls[i].face;
+            if (!children.IsEmpty()) {
+                TopTools_ListOfShape args;
+                args.Append(ls[i].face);
+                BRepAlgoAPI_Cut cut;
+                cut.SetArguments(args);
+                cut.SetTools(children);
+                cut.Build();
+                if (!cut.IsDone())
+                    throw Standard_Failure("cannot split the outline into its areas");
+                area = cut.Shape();
+            }
+            for (TopExp_Explorer f(area, TopAbs_FACE); f.More(); f.Next())
+                r.push_back({TopoDS::Face(f.Current()), depth[i] % 2 == 0});
+        }
+        return r;
+    }
     std::vector<TopoDS_Face> faces;
     BOPAlgo_Builder split;
     for (auto &w : loops) {
@@ -3269,13 +3339,7 @@ static std::vector<std::pair<TopoDS_Face, bool>> outline_regions(const std::vect
 // loops cross or touch or areas are forced, its full areas joined.
 static TopoDS_Shape profile_from_loops(const std::vector<TopoDS_Wire> &loops, const std::vector<OutlineFill> &fills)
 {
-    bool meet = false;
-    for (size_t i = 0; i < loops.size() && !meet && fills.empty(); i++)
-        for (size_t j = i + 1; j < loops.size() && !meet; j++) {
-            BRepExtrema_DistShapeShape d(loops[i], loops[j]);
-            meet = d.IsDone() && d.Value() < 1e-7;
-        }
-    if (fills.empty() && !meet)
+    if (fills.empty() && !loops_meet(loops))
         return faces_from_loops(loops);
     std::vector<TopoDS_Shape> full;
     for (auto &r : outline_regions(loops, fills))
