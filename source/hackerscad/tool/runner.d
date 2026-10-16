@@ -340,6 +340,32 @@ final class Run
         // on b (the original): what the copy does not follow; on a: what the copy has that b does not
         j["b_surface_not_matched"] = list(meshes[b], meshes[a]);
         j["a_surface_not_matched"] = list(meshes[a], meshes[b]);
+        // walls thinner than the tolerance that the copy has and the original has not: two pieces of the copy a
+        // hair apart (a sliver), which the distances only show as an offset
+        {
+            import hackerscad.geom.printability : checkPrint;
+            import std.algorithm : min, max;
+            import std.math : PI;
+            auto ca = checkPrint(faceMeshes[a].verts, 3, faceMeshes[a].tris, PI / 2, tol);
+            auto cb = checkPrint(meshes[b].verts, 3, meshes[b].tris, PI / 2, tol);
+            if (ca.thinArea > cb.thinArea + 0.5)
+            {
+                Vec3 lo = Vec3(double.infinity, double.infinity, double.infinity), hi = -lo;
+                auto fm = faceMeshes[a];
+                foreach (t; 0 .. fm.triangleCount)
+                    if (ca.isThin(t))
+                        foreach (k; 0 .. 3)
+                        {
+                            auto q = fm.vertex(fm.tris[3 * t + k]);
+                            lo = Vec3(min(lo.x, q.x), min(lo.y, q.y), min(lo.z, q.z));
+                            hi = Vec3(max(hi.x, q.x), max(hi.y, q.y), max(hi.z, q.z));
+                        }
+                JSONValue sl = ["area_mm2": plausible(ca.thinArea - cb.thinArea), "thinnest_mm": plausible(ca.thinnest)];
+                sl["from"] = [plausible(lo.x), plausible(lo.y), plausible(lo.z)];
+                sl["to"] = [plausible(hi.x), plausible(hi.y), plausible(hi.z)];
+                j["a_slivers"] = sl;
+            }
+        }
         uint[] colors;
         auto map = deviationMap(faceMeshes[a], meshes[b], max(0.3, bb.size.length / 150), tol, colors);
         auto s = Shaded(map.welded(1e-6), result.parts[a].rgb, map);
@@ -440,19 +466,53 @@ final class Run
             if (list.length == 0)
                 continue;
             s ~= format("  %s (%d patches, the largest first):\n", side[1], list.length);
+            // patches alike (one notch repeated, the two sides of one slot): one line, the others' numbers after it
+            bool alike(JSONValue p, JSONValue q)
+            {
+                import std.algorithm : max;
+                import std.math : abs;
+                // the same way, or mirrored (the two sides of a slot face each other)
+                foreach (k; 0 .. 3)
+                    if (abs(abs(num(p["facing"][k])) - abs(num(q["facing"][k]))) > 0.15)
+                        return false;
+                immutable ap = num(p["area_mm2"]), aq = num(q["area_mm2"]);
+                return abs(ap - aq) <= 0.2 * max(ap, aq) && abs(num(p["mean_mm"]) - num(q["mean_mm"])) <= 0.05;
+            }
+            immutable first = number;
+            auto shown = new bool[list.length];
+            size_t lines;
             foreach (i, p; list)
             {
-                if (i == patches)
+                if (shown[i])
+                    continue;
+                if (lines == patches)
                 {
-                    s ~= format("    and %d smaller ones (json: true lists them)\n", list.length - patches);
-                    number += list.length - patches;
+                    size_t left;
+                    foreach (sh; shown)
+                        left += !sh;
+                    s ~= format("    and %d smaller ones (json: true lists them)\n", left);
                     break;
                 }
-                s ~= format("    %d. %s mm² from %s to %s, facing %s, off by %s mm (at most %s)\n", ++number,
+                shown[i] = true;
+                string others;
+                foreach (k; i + 1 .. list.length)
+                    if (!shown[k] && alike(p, list[k]))
+                    {
+                        shown[k] = true;
+                        others ~= format("%s%d at %s", others.length ? ", " : "", first + k + 1,
+                            vec(list[k]["centre"]));
+                    }
+                s ~= format("    %d. %s mm² from %s to %s, facing %s, off by %s mm (at most %s)%s\n", first + i + 1,
                     mm(num(p["area_mm2"])), vec(p["from"]), vec(p["to"]), vec(p["facing"]), mm(num(p["mean_mm"])),
-                    mm(num(p["worst_mm"])));
+                    mm(num(p["worst_mm"])), others.length ? "; alike: " ~ others : "");
+                lines++;
             }
+            number = first + list.length;
         }
+        if (auto sl = "a_slivers" in j)
+            s ~= format("  %s has walls thinner than the tolerance that %s has not, %s mm² (thinnest %s mm) from %s to %s: "
+                ~ "two pieces a hair apart, a sliver left between them? Cut a section there\n", na, nb,
+                mm(num((*sl)["area_mm2"])), mm(num((*sl)["thinnest_mm"])), vec((*sl)["from"]), vec((*sl)["to"]));
         if ("pictures" in j)
         {
             s ~= "  the picture (the copy coloured by its distance: green within half the tolerance, yellow at it, red "
@@ -460,7 +520,7 @@ final class Run
             foreach (i, c; j["pictures"].array)
                 s ~= format("    %d. %s\n", i + 1, c.str);
         }
-        return s ~ "  (focus: N gives a close-up of patch N)\n";
+        return s ~ "  next: diff and lines on the same parts, and a close-up (focus) of the first entries of each\n";
     }
 
     /// The patches of a comparison (as compare gives them), numbered as
@@ -594,8 +654,8 @@ final class Run
             }
             s ~= closeUpsOf(a, b, places, 0.1, picture);
         }
-        else
-            s ~= "  (focus: N gives a close-up of entry N)\n";
+        else if (regions.length || found.thin.length)
+            s ~= "  next: a close-up (focus) of the first entries, then lines on the same parts\n";
         return s;
     }
 
@@ -776,7 +836,7 @@ final class Run
             s ~= format("the picture: one view instead, seen %s\n", *free);
         }
         else if (d.strokes.length)
-            s ~= "  (focus: N gives a close-up of entry N)\n";
+            s ~= "  next: a close-up (focus) of the first entries; once fixed, compare again\n";
         return s;
     }
 
@@ -926,4 +986,21 @@ unittest
     auto shots = Run.offViews(map, [0xDC3232, 0xDC3232, 0x3CAA5A], 2);
     assert(shots.length >= 1 && shots[0].eye.x > 0.5, "the first view faces the red square");
     assert(Run.offViews(map, [0x3CAA5A, 0x3CAA5A, 0x3CAA5A], 4).length == 4, "all green: the usual four");
+}
+
+unittest
+{
+    // the comparison's text: patches alike (here the two sides of a slot, facing each other) on one line, numbered
+    import std.algorithm : canFind;
+    JSONValue j = parseJSON(`{"tolerance_mm": 0.1, "max_mm": 0.3,
+        "a_to_b": {"max_mm": 0.3, "mean_mm": 0.01, "rms_mm": 0.02, "within_tolerance": 0.97, "worst_at": [0, 0, 0]},
+        "b_to_a": {"max_mm": 0.2, "mean_mm": 0.01, "rms_mm": 0.02, "within_tolerance": 0.98, "worst_at": [0, 0, 0]},
+        "b_surface_not_matched": [
+            {"area_mm2": 4, "mean_mm": 0.2, "worst_mm": 0.3, "facing": [1, 0, 0], "from": [0, 0, 0], "to": [0, 1, 1], "centre": [0, 0.5, 0.5]},
+            {"area_mm2": 4.2, "mean_mm": 0.21, "worst_mm": 0.3, "facing": [-1, 0, 0], "from": [5, 0, 0], "to": [5, 1, 1], "centre": [5, 0.5, 0.5]},
+            {"area_mm2": 1, "mean_mm": 0.5, "worst_mm": 0.6, "facing": [0, 0, 1], "from": [0, 0, 9], "to": [1, 1, 9], "centre": [0.5, 0.5, 9]}],
+        "a_surface_not_matched": []}`);
+    immutable t = Run.compareText(j, "copy", "original");
+    assert(t.canFind("1. 4 mm²") && t.canFind("alike: 2 at (5, 0.5, 0.5)") && t.canFind("3. 1 mm²"), t);
+    assert(!t.canFind("\n    2. "), t);
 }

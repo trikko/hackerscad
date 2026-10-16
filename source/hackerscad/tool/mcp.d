@@ -1699,6 +1699,16 @@ unittest
         ~ `"arguments": {` ~ where ~ `, "view": {"from": "right", "look_at": [0, 0, 5], "size": 10}}}}`))["result"];
     assert(seen["content"].array[$ - 2]["text"].str.canFind("seen from the right (x)"), seen.toString);
 
+    // a sliver the copy has (a sheet a hair over its top): told, as the distances cannot; the next step is said
+    immutable sliverModel = buildPath(tempDir, "hcad-mcp-sliver.hcad");
+    write(sliverModel, "@part Solid copy() => box(10, 10, 10) + box(10, 10, 0.05).move(z: 10.03);\n"
+        ~ "@part Solid original() => box(10, 10, 10);\n");
+    scope (exit)
+        remove(sliverModel);
+    auto sliver = callTool("hcad_compare", `{"path": ` ~ JSONValue(sliverModel).toString ~ `, "a": "copy", "b": "original"}`)
+        [0]["text"].str;
+    assert(sliver.canFind("a sliver") && sliver.canFind("next: diff and lines"), sliver);
+
     // two sections drawn on each other, close on a region round the hole
     auto cut = callTool("hcad_section", `{` ~ where ~ `, "part": "copy", "compare": "original", "plane": "xy", "at": 5, `
         ~ `"region": [-4, -4, 4, 4]}`);

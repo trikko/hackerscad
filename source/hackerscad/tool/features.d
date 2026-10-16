@@ -865,6 +865,6 @@ string matchReport(string file, string a, string b, const size_t[] focus, out ub
         s ~= "close-ups:\n" ~ text;
     }
     else if (numbered.length)
-        s ~= "(focus: N gives a close-up of entry N)\n";
+        s ~= "next: a close-up (focus) of the first entries\n";
     return s;
 }

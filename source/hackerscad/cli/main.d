@@ -336,7 +336,7 @@ int main(string[] args)
                 if (asJson)
                     writeln(j.toPrettyString());
                 else
-                    write(Run.compareText(j, run.result.parts[ia].name, run.result.parts[ib].name, 25));
+                    write(Run.compareText(j, run.result.parts[ia].name, run.result.parts[ib].name, 10));
                 if (auto focus = focusList(focusArg))
                     write(run.compareFocus(j, ia, ib, focus, png));
                 if (out_.length)
