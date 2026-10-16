@@ -331,6 +331,9 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     // sketches are shown even when the evaluation failed (conflicting
     // constraints, an error after them): then marked partial
     o.sketches = sketchViews(it, absolutePath(req.path), !o.ok);
+    // the planes kept in variables of the module nothing used yet: shown too
+    if (o.ok)
+        it.touchPlaneGlobals(absolutePath(req.path));
     foreach (p; it.planes)
         if (p.span.file == absolutePath(req.path))
             o.planes ~= p;

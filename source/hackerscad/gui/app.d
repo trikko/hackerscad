@@ -4736,6 +4736,26 @@ private:
                         info(problem);
                 });
             }
+            // planes from the faces: on one, moved off it; halfway between two
+            if (nf <= 2 && wholePartFn(contextHit.part) !is null)
+            {
+                immutable index = contextHit.part;
+                auto faces = selFaces.dup;
+                entries ~= I(nf == 1 ? "Plane on face…" : "Plane between faces", () {
+                    if (auto problem = planeOnFaces(index, faces))
+                        info(problem);
+                });
+            }
+        }
+        // a plane through three corners
+        if (nv == 3)
+        {
+            immutable index = contextHit.part;
+            auto vertices = selVertices.dup;
+            entries ~= I("Plane through the 3 points", () {
+                if (auto problem = planeThroughVertices(index, vertices))
+                    info(problem);
+            });
         }
         if (hit.face >= 0)
         {

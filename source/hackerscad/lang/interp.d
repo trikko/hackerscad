@@ -149,11 +149,12 @@ private enum Flow
     return_,
 }
 
-/// A plane the code made, where.
+/// A plane the code kept in a variable: where, and the variable's name.
 struct PlaneMade
 {
     Vec3 origin, normal;
-    Span span;
+    Span span;      /// the variable's name, where it is declared
+    string name;
 }
 
 final class Interp
@@ -177,7 +178,7 @@ final class Interp
     string[] presetNames;
     FeatureInfo[] features;
     ObjectVal[] sketches;     /// sketches created by the run, for the GUI
-    PlaneMade[] planes;       /// planes the code made (plane(), offset, flip), for the GUI to show
+    PlaneMade[] planes;       /// planes the code kept in variables, for the GUI to show
     /// Whether the model's unittests run (the window: only when asked, F5).
     bool runUnittests = true;
     /// Records in `trace` the geometry the calls of the evaluated file make
@@ -806,6 +807,49 @@ final class Interp
         return false;
     }
 
+    /// A plane kept in variable `name`: noted for the window to show.
+    private void notePlane(string name, Value v, Span span)
+    {
+        import hackerscad.lang.builtins : planeDef;
+        if (v.kind == Kind.struct_ && v.st.def is planeDef)
+            planes ~= PlaneMade(v.st.fields[0].v.v, v.st.fields[1].v.v, span, name);
+    }
+
+    /// The module-level variables of the module at `path` that nothing used
+    /// and that are planes made cheaply (from XY, XZ, YZ or plane(…), moved
+    /// with offset or flip): evaluated now, so that the window shows them.
+    void touchPlaneGlobals(string path)
+    {
+        auto m = path in modules;
+        if (m is null)
+            return;
+        static bool cheapPlane(Expr e)
+        {
+            if (auto i = cast(Ident) e)
+                return i.name == "XY" || i.name == "XZ" || i.name == "YZ";
+            if (auto mem = cast(Member) e)
+                return (mem.name == "flip") && cheapPlane(mem.object);
+            if (auto c = cast(Call) e)
+            {
+                if (auto i = cast(Ident) c.callee)
+                    return i.name == "plane";
+                if (auto mem = cast(Member) c.callee)
+                    return (mem.name == "offset" || mem.name == "flip") && cheapPlane(mem.object);
+            }
+            return false;
+        }
+        foreach (name, d; m.env.pending.dup)
+            if (d.init !is null && cheapPlane(d.init))
+            {
+                try
+                    global(m.env, name, d.nameSpan);
+                catch (HcadError)
+                {
+                    // not shown: the model's own run says what is wrong, if it uses it
+                }
+            }
+    }
+
     /// Evaluates a module-level variable on first use (order independent,
     /// like D module scope), applying @param overrides.
     Value global(Env env, string name, Span span)
@@ -829,6 +873,7 @@ final class Interp
             v = applyParam(d, *pa, v, env);
         env.vars[name] = v;
         env.pending.remove(name);
+        notePlane(name, v, d.nameSpan);
         return v;
     }
 
@@ -953,6 +998,7 @@ final class Interp
                 env.types[v.name] = Env.Typed(v.type, env.mod);
             }
             env.vars[v.name] = val;
+            notePlane(v.name, val, v.nameSpan);
             if (v.storage != Storage.auto_)
                 env.readonly[v.name] = true;
             return Flow.normal;

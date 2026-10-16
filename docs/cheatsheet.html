@@ -194,7 +194,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>helix(r: Length, d: Length, pitch: Length, height: Length, left: bool) → Path</dt><dd>A helix around +Z.</dd>
 </dl></section>
 <section><h2>Planes, axes and frames</h2><dl>
-<dt>plane(origin: Vec, normal: Direction) → Plane</dt><dd>plane(origin:, normal:), plane(p1, p2, p3), or body.plane(faces.top).</dd>
+<dt>plane(origin: Vec, normal: Direction) → Plane</dt><dd>plane(origin:, normal:), plane(p1, p2, p3), body.plane(faces.top), or body.plane(faces.top, faces.bottom) halfway between two parallel faces.</dd>
 <dt>axis(origin: Vec, direction: Direction) → Axis</dt><dd>axis(origin:, direction:), axis(p1, p2), or body.axis(edges…).</dd>
 <dt>s.frame(face: Faces, origin: Vec, x: Direction) → Frame</dt><dd>A frame on a face: origin at its centre, Z outwards.</dd>
 <dt>f.at(x: Length, y: Length, z: Length) → Frame</dt><dd>The frame with its origin moved, in local coordinates.</dd>

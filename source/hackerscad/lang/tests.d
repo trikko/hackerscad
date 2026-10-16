@@ -3936,3 +3936,18 @@ unittest
     assert(error(`@part Solid p() => rect(10, 2).sweep(helix(r: 10, pitch: 5, height: 20), twist: 90.deg, up: Z);`)
         .message.canFind("give one"));
 }
+
+unittest
+{
+    // halfway between two parallel faces; faces at an angle have no such plane
+    expectOut(`auto b = box(20.mm, 10.mm, 30.mm);
+        writeln(b.plane(faces.top, faces.bottom));`, "Plane(origin: [0 mm, 0 mm, 15 mm], normal: [0, 0, 1])");
+    assert(error(`@part Solid p() { auto b = box(2, 2, 2); auto m = b.plane(faces.top, faces.front); return b; }`)
+        .message.canFind("not parallel"));
+    // the planes kept in variables are noted for the window, named after them
+    auto it = make();
+    auto r = runModel("immutable mid = XY.offset(5.mm);\n@part Solid p() { auto side = XZ.flip; return box(1, 1, 1).halves(mid).below; }\n", it);
+    assert(r.diagnostics.length == 0);
+    // in the order they are made: mid when the part first uses it
+    assert(it.planes.map!(p => p.name).array == ["side", "mid"], it.planes.map!(p => p.name).join(" "));
+}

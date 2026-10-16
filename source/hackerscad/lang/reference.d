@@ -352,10 +352,11 @@ immutable Ref[] reference =
         "helix(d: 8.mm, pitch: 1.mm, height: 20.mm, left: true) // left-handed"]),
     ]) ~
     group("Planes, axes and frames", [
-    withForms(F("plane", "", ["origin: Vec", "normal: Direction"], "Plane", "plane(origin:, normal:), plane(p1, p2, p3), or body.plane(faces.top)."), [
-        "plane(origin: p, normal: Z)   // a point and a normal",
-        "plane(p1, p2, p3)             // through three points",
-        "body.plane(faces.top)         // the plane of a face"]),
+    withForms(F("plane", "", ["origin: Vec", "normal: Direction"], "Plane", "plane(origin:, normal:), plane(p1, p2, p3), body.plane(faces.top), or body.plane(faces.top, faces.bottom) halfway between two parallel faces."), [
+        "plane(origin: p, normal: Z)              // a point and a normal",
+        "plane(p1, p2, p3)                        // through three points",
+        "body.plane(faces.top)                    // the plane of a face",
+        "body.plane(faces.top, faces.bottom)      // halfway between two parallel faces"]),
     withForms(F("axis", "", ["origin: Vec", "direction: Direction"], "Axis", "axis(origin:, direction:), axis(p1, p2), or body.axis(edges…)."), [
         "axis(origin: p, direction: Z)   // a point and a direction",
         "axis(p1, p2)                    // through two points",

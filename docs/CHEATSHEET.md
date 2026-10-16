@@ -173,7 +173,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 ## Planes, axes and frames
 
-- `plane(origin: Vec, normal: Direction) → Plane` — plane(origin:, normal:), plane(p1, p2, p3), or body.plane(faces.top).
+- `plane(origin: Vec, normal: Direction) → Plane` — plane(origin:, normal:), plane(p1, p2, p3), body.plane(faces.top), or body.plane(faces.top, faces.bottom) halfway between two parallel faces.
 - `axis(origin: Vec, direction: Direction) → Axis` — axis(origin:, direction:), axis(p1, p2), or body.axis(edges…).
 - `s.frame(face: Faces, origin: Vec, x: Direction) → Frame` — A frame on a face: origin at its centre, Z outwards.
 - `f.at(x: Length, y: Length, z: Length) → Frame` — The frame with its origin moved, in local coordinates.

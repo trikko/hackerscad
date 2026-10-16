@@ -839,7 +839,7 @@ JValue toolList()
             ~ "main menu, stays); antialias turns the smoothing of "
             ~ "edges on or off for this run (hcad_gui_state's graphics tells whether it is on). "
             ~ "hidden lists the parts to hide (the others are shown); code, console, view and params show or hide "
-            ~ "those panels. planes shows XY, XZ, YZ and the planes the code makes (named after their variables), as the "
+            ~ "those panels. planes shows XY, XZ, YZ and the planes the code keeps in variables (named after them), as the "
             ~ "view bar's planes button does, to draw a sketch on one (hcad_gui_feature action sketch with plane); "
             ~ "hcad_gui_state lists them while shown. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
@@ -988,7 +988,7 @@ JValue toolList()
             ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert"]}, `
             ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6 or M8 for holes; any that fits the cylinder for thread (M10, M12…)"}, `
             ~ `"use_selection": {"type": "boolean"}, `
-            ~ `"plane": {"type": "string", "description": "action sketch on a plane instead of a face: XY, XZ, YZ, or a plane the code made, by its name"}`, `["action"]`),
+            ~ `"plane": {"type": "string", "description": "action sketch on a plane instead of a face: XY, XZ, YZ, or a plane the code keeps in a variable, by its name"}`, `["action"]`),
         gui("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) or at a model point and "
             ~ "choose entries of the menu in order, e.g. [\"Hole at point\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: "
             ~ "what the user would do with the mouse. Entries that write code append it to the part in the editor; with "

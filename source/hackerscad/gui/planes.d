@@ -3,7 +3,7 @@
 /// imports as its own.
 ///
 /// The view bar's planes button (and View › Show planes) shows XY, XZ and YZ
-/// and the planes the code makes (plane(), offset, flip, body.plane): a
+/// and the planes the code keeps in variables: a
 /// click picks one, its right-click menu writes a sketch on it into the
 /// code. New sketch… (View menu) draws on the face or plane picked, or,
 /// with neither, shows the planes and waits for a click on one (or on a
@@ -16,7 +16,7 @@ mixin template PlaneTools()
 
     ToggleButton planesToggle;    /// the view bar's: planes shown
     bool sketchOnNextPlane;       /// New sketch… with nothing picked: the next plane or flat face clicked gets it
-    PlaneMade[] codePlanes;       /// what the code made, for the shown planes past the main three
+    PlaneMade[] codePlanes;       /// the code's, for the shown planes past the main three
 
     enum mainPlanes = 3;
 
@@ -44,8 +44,8 @@ mixin template PlaneTools()
             planesToggle.setActive(on);
     }
 
-    /// The planes to show: the main ones, then each one the code made (once
-    /// per place, after its variable), up to 24.
+    /// The planes to show: the main ones, then each one the code kept in a
+    /// variable (once per place, named after it), up to 24.
     void refreshPlanes()
     {
         alias SP = Viewport.ShownPlane;
@@ -63,28 +63,9 @@ mixin template PlaneTools()
             if (seen)
                 continue;   // a main plane (XZ.flip), or one made already
             codePlanes ~= p;
-            ps ~= SP(planeLabel(p), p.origin, p.normal, false);
+            ps ~= SP(p.name, p.origin, p.normal, false);
         }
         viewport.setPlanes(ps);
-    }
-
-    /// What a plane the code made is called: the variable it is kept in, else its line.
-    string planeLabel(PlaneMade p)
-    {
-        auto v = planeVariable(p);
-        return v.length ? v : format("line %d", p.span.line);
-    }
-
-    /// The variable a plane is assigned to on its line (`auto mid = XY.offset(…)`), or null.
-    string planeVariable(PlaneMade p)
-    {
-        import std.regex : matchFirst, regex;
-        import std.string : splitLines;
-        auto lines = text().splitLines;
-        if (p.span.line < 1 || p.span.line > lines.length)
-            return null;
-        auto m = lines[p.span.line - 1].matchFirst(regex(`(?:auto|immutable|const|Plane)\s+([A-Za-z_]\w*)\s*=[^=]`));
-        return m.empty ? null : m[1];
     }
 
     /// The function of the open file whose lines hold `line`, or null (at module level).
@@ -118,13 +99,9 @@ mixin template PlaneTools()
         if (i < mainPlanes)
             return viewport.planes[i].name;
         auto p = codePlanes[i - mainPlanes];
-        auto v = planeVariable(p);
-        if (v.length)
-        {
-            auto fn = functionAtLine(p.span.line);
-            if (fn is null || (part !is null && fn == part))
-                return v;
-        }
+        auto fn = functionAtLine(p.span.line);
+        if (fn is null || (part !is null && fn == part))
+            return p.name;
         static string n(double x) => format("%g", abs(x) < 1e-9 ? 0 : x);
         return format("plane(origin: vec(%s, %s, %s), normal: vec(%s, %s, %s))", n(p.origin.x), n(p.origin.y), n(p.origin.z),
             n(p.normal.x), n(p.normal.y), n(p.normal.z));
@@ -223,6 +200,10 @@ mixin template PlaneTools()
                 if (auto problem = sketchOnPlaneOf(index))
                     info(problem);
             }),
+            MenuEntry.item("Offset plane…", () {
+                if (auto problem = offsetPlane(index))
+                    info(problem);
+            }),
             MenuEntry.item("Hide planes", () => setPlanesShown(false))];
     }
 
@@ -254,5 +235,89 @@ mixin template PlaneTools()
             if (p.name == name)
                 return cast(int) i;
         return -1;
+    }
+
+    /// Writes a plane into part `part` (null: the module), its code `expr`
+    /// (%BODY%: the part's solid), `placeholder` selected; the planes shown
+    /// so it shows. The problem, or null.
+    string writePlane(string part, string expr, string placeholder)
+    {
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        try
+        {
+            import hackerscad.tool.codegen : planeVariable;
+            applyEdit(planeVariable(text(), path, part, expr, placeholder));
+        }
+        catch (CodegenException e)
+            return e.msg;
+        setPlanesShown(true);
+        info(placeholder.length ? "type the distance; the new plane shows in violet: right-click it to sketch on it"
+            : "the new plane shows in violet: right-click it to sketch on it");
+        return null;
+    }
+
+    /// The part of the open file `index` is, whole (not a piece of @parts), or null.
+    string wholePartFn(int index)
+    {
+        if (index < 0 || index >= last.parts.length || isPiece(index))
+            return null;
+        auto part = last.parts[index];
+        return part.span.file == absolutePath(path) ? part.fn : null;
+    }
+
+    /// Plane on face…: the plane of one flat face, moved off it; Plane
+    /// between faces: halfway between two that face each other.
+    string planeOnFaces(int index, int[] faces)
+    {
+        auto fn = wholePartFn(index);
+        if (fn is null)
+            return "a plane on faces goes in a whole part of this file (not a piece of @parts)";
+        import hackerscad.gui.measure : faceItem;
+        foreach (f; faces)
+            if (!faceItem(last.parts[index], f).planar)
+                return "a plane goes on flat faces";
+        SolidVal sv;
+        auto it = selectorInterp(last.parts[index], sv);
+        try
+        {
+            if (faces.length == 1)
+                return writePlane(fn, "%BODY%.plane(" ~ facesSelector(it, sv, faces) ~ ").offset(5.mm)", "5.mm");
+            auto a = faceItem(last.parts[index], faces[0]).normal, b = faceItem(last.parts[index], faces[1]).normal;
+            if (abs(abs(a.dot(b)) - 1) > 1e-6)
+                return "the two faces are not parallel: no plane lies halfway between them";
+            return writePlane(fn, "%BODY%.plane(" ~ facesSelector(it, sv, faces[0 .. 1]) ~ ", "
+                ~ facesSelector(it, sv, faces[1 .. 2]) ~ ")", null);
+        }
+        catch (HcadError e)
+            return "fix the errors in the code first: " ~ e.msg;
+    }
+
+    /// Plane through points: three corners, as coordinates.
+    string planeThroughVertices(int index, int[] vertices)
+    {
+        static string mm(double v) => format("%g.mm", abs(v) < 1e-9 ? 0 : v);
+        string[] pts;
+        Vec3[] at;
+        foreach (v; vertices)
+        {
+            auto q = viewport.vertexAt(index, v);
+            at ~= q;
+            pts ~= format("vec(%s, %s, %s)", mm(q.x), mm(q.y), mm(q.z));
+        }
+        if ((at[1] - at[0]).cross(at[2] - at[0]).length < 1e-9)
+            return "the three points are on one line: they do not define a plane";
+        auto fn = wholePartFn(index);
+        return writePlane(fn !is null ? fn : cursorPart(), format("plane(%s, %s, %s)", pts[0], pts[1], pts[2]), null);
+    }
+
+    /// Offset plane…: shown plane i moved along its normal, into the part the
+    /// cursor is in (or the module).
+    string offsetPlane(int i)
+    {
+        if (i < 0 || i >= viewport.planes.length)
+            return "no such plane";
+        immutable part = cursorPart();
+        return writePlane(part, planeCodeFor(i, part) ~ ".offset(10.mm)", "10.mm");
     }
 }

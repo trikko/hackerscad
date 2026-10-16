@@ -1572,24 +1572,30 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
 
     // ---- planes
-    // a plane the code makes: also kept for the window to show
-    Value madePlane(Vec3 o, Vec3 n, Span span)
-    {
-        it.planes ~= PlaneMade(o, n, span);
-        return planeValue(o, n);
-    }
     def("plane", (ref CallArgs a) {
         // plane(origin: vec(0, 0, 10), normal: Z) or body.plane(faces.top)
         if (a.positional.length && a.positional[0].kind == Kind.solid)
         {
-            auto x = Args(it, a, "plane", ["solid", "face"]);
+            // body.plane(faces.top, faces.bottom): halfway between two flat faces that face each other
+            auto x = Args(it, a, "plane", ["solid", "face", "other"]);
             auto s = x.solid("solid");
-            auto idx = resolveSelector(it, x.selector("face", true), s, x.spanOf("face"));
-            if (idx.length != 1)
-                throw new HcadError(Code.type, format("plane needs exactly one face, the selector matched %d", idx.length),
-                    x.spanOf("face"));
-            auto f = k.faces(s.brep)[idx[0]];
-            return madePlane(f.center, f.normal, a.span);
+            FaceInfo oneFace(string n)
+            {
+                auto idx = resolveSelector(it, x.selector(n, true), s, x.spanOf(n));
+                if (idx.length != 1)
+                    throw new HcadError(Code.type, format("plane needs exactly one face, the selector matched %d",
+                        idx.length), x.spanOf(n));
+                return k.faces(s.brep)[idx[0]];
+            }
+            auto f = oneFace("face");
+            if (!x.has("other"))
+                return planeValue(f.center, f.normal);
+            auto g = oneFace("other");
+            if (abs(abs(f.normal.dot(g.normal)) - 1) > 1e-6)
+                throw new HcadError(Code.type, "the two faces are not parallel: no plane lies halfway between them",
+                    x.spanOf("other"));
+            immutable gap = (g.center - f.center).dot(f.normal);
+            return planeValue(f.center + f.normal * (gap / 2), f.normal);
         }
         if (a.positional.length == 3)
         {
@@ -1599,7 +1605,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             auto n = (p2 - p1).cross(p3 - p1);
             if (n.length < 1e-9)
                 throw new HcadError(Code.type, "the three points are on one line: they do not define a plane", a.span);
-            return madePlane(p1, n.normalized, a.span);
+            return planeValue(p1, n.normalized);
         }
         if (a.positional.length == 2 && isAxis(a.positional[0]))
         {
@@ -1611,11 +1617,10 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             auto n = d.cross(p - o);
             if (n.length < 1e-9)
                 throw new HcadError(Code.type, "the point is on the axis: it does not define a plane", x.spanOf("point"));
-            return madePlane(o, n.normalized, a.span);
+            return planeValue(o, n.normalized);
         }
         auto x = Args(it, a, "plane", ["origin", "normal"]);
-        return madePlane(x.has("origin") ? x.vecLen("origin") : Vec3(0, 0, 0), x.has("normal") ? x.dir("normal") : Vec3(0, 0, 1),
-            a.span);
+        return planeValue(x.has("origin") ? x.vecLen("origin") : Vec3(0, 0, 0), x.has("normal") ? x.dir("normal") : Vec3(0, 0, 1));
     });
 
     // ---- axes
@@ -1794,13 +1799,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto x = Args(it, a, "offset", ["plane", "distance"]);
         Vec3 o, n;
         planeArg(x, "plane", o, n);
-        return madePlane(o + n * x.len("distance"), n, a.span);
+        return planeValue(o + n * x.len("distance"), n);
     });
     def("flip", (ref CallArgs a) {
         auto x = Args(it, a, "flip", ["plane"]);
         Vec3 o, n;
         planeArg(x, "plane", o, n);
-        return madePlane(o, -n, a.span);
+        return planeValue(o, -n);
     });
     // s.halves(plane): the two sides of a cut, .above where the normal points, .below the other
     Value[2] cutSides(ref CallArgs a, string name)

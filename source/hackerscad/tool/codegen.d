@@ -1373,6 +1373,127 @@ unittest
     assert(sketchOnPlane("", "m.hcad", null, "XY").apply("").startsWith("@part\n"));
 }
 
+/// A plane kept in a variable of part `part`, just before its return:
+/// `expr` is its code, where `%BODY%` stands for the part's solid (then
+/// kept in a variable, as sketchOnFace keeps it); `placeholder`, a piece of
+/// it, is selected to type over (null: the cursor after the line). With no
+/// part (null), a module-level constant at the end of the file.
+Edit planeVariable(string source, string file, string part, string expr, string placeholder)
+{
+    import std.algorithm : canFind, countUntil;
+    import std.regex : matchFirst, regex;
+    import std.string : replace, strip;
+    bool[string] used;
+    foreach (t; lex(source, file))
+        if (t.kind == Tok.ident)
+            used[t.text] = true;
+    string unique(string name)
+    {
+        auto n = name;
+        for (int k = 2; n in used; k++)
+            n = format("%s%d", name, k);
+        used[n] = true;
+        return n;
+    }
+    // plane1, plane2…: plane alone would hide the function plane()
+    string name;
+    for (int k = 1; ; k++)
+        if ((name = format("plane%d", k)) !in used)
+            break;
+    used[name] = true;
+    Edit e;
+    void select(size_t lineStartInText, string line)
+    {
+        immutable at = placeholder.length ? line.countUntil(placeholder) : -1;
+        if (at >= 0)
+        {
+            e.selectOffset = e.offset + lineStartInText + at;
+            e.selectLength = placeholder.length;
+        }
+        else
+            e.selectOffset = e.offset + lineStartInText + line.length;
+    }
+    if (part is null)
+    {
+        size_t end = source.length;
+        while (end > 0 && (source[end - 1] == '\n' || source[end - 1] == ' '))
+            end--;
+        e.offset = end;
+        e.length = source.length - end;
+        e.text = end > 0 ? "\n\n" : "";
+        immutable line = format("immutable %s = %s;", name, expr);
+        select(e.text.length, line);
+        e.text ~= line ~ "\n";
+        return e;
+    }
+    auto r = returned(source, file, part);
+    auto fn = r.fn;
+    auto toks = r.toks;
+    immutable returnedExpr = source[r.start .. r.end].strip;
+    immutable needBody = expr.canFind("%BODY%");
+    immutable plain = fn.exprBody is null && !returnedExpr.matchFirst(regex(`^[A-Za-z_]\w*$`)).empty;
+    immutable body = !needBody || plain ? returnedExpr : unique("body");
+    string[] lines;
+    if (needBody && !plain)
+        lines ~= [format("auto %s = %s;", body, returnedExpr), ""];
+    immutable planeLine = lines.length;
+    lines ~= [format("auto %s = %s;", name, expr.replace("%BODY%", body)), "", format("return %s;", body)];
+    immutable semi = offsetOf(source, toks[r.last].span) + 1;
+    string indent;
+    if (fn.exprBody !is null)
+    {
+        size_t cut = offsetOf(source, toks[r.first - 1].span);
+        while (cut > 0 && (source[cut - 1] == ' ' || source[cut - 1] == '\t' || source[cut - 1] == '\n'))
+            cut--;
+        indent = "    ";
+        e.offset = cut;
+        e.length = semi - cut;
+        e.text = "\n{\n";
+    }
+    else
+    {
+        immutable ret = offsetOf(source, toks[r.first - 1].span);
+        size_t lineStart = ret;
+        while (lineStart > 0 && source[lineStart - 1] != '\n')
+            lineStart--;
+        indent = source[lineStart .. ret];
+        e.offset = lineStart;
+        e.length = semi - lineStart;
+    }
+    foreach (k, l; lines)
+    {
+        if (k == planeLine)
+            select(e.text.length + indent.length, l);
+        e.text ~= l.length ? indent ~ l : "";
+        if (k + 1 < lines.length)
+            e.text ~= "\n";
+    }
+    if (fn.exprBody !is null)
+        e.text ~= "\n}";
+    return e;
+}
+
+unittest
+{
+    // on a face: the body kept in a variable, the offset selected
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto e = planeVariable(src, "m.hcad", "p", "%BODY%.plane(faces.top).offset(5.mm)", "5.mm");
+    auto a = e.apply(src);
+    assert(a.canFind("Solid p()\n{\n    auto body = box(10, 10, 10);\n\n    auto plane1 = body.plane(faces.top).offset(5.mm);\n\n"
+        ~ "    return body;\n}\n"), a);
+    assert(a[e.selectOffset .. e.selectOffset + e.selectLength] == "5.mm");
+    // a main plane moved, in a block: no body needed
+    auto b = "module m;\n\n@part\nSolid p()\n{\n    auto s = box(4, 4, 4);\n    return s;\n}\n";
+    auto c = planeVariable(b, "m.hcad", "p", "XZ.offset(10.mm)", "10.mm").apply(b);
+    assert(c.canFind("    auto s = box(4, 4, 4);\n    auto plane1 = XZ.offset(10.mm);\n\n    return s;\n}"), c);
+    // no part: a constant of the module
+    auto d = "module m;\n";
+    auto f = planeVariable(d, "m.hcad", null, "XY.offset(10.mm)", "10.mm");
+    auto g = f.apply(d);
+    assert(g == "module m;\n\nimmutable plane1 = XY.offset(10.mm);\n", g);
+    assert(g[f.selectOffset .. f.selectOffset + f.selectLength] == "10.mm");
+}
+
 /// colourPart for piece `index` of a @parts function: `.color("…")` on that
 /// piece only, in place of the colour it ends with, or added. The colour is selected.
 Edit colourPiece(string source, string file, string part, size_t index, bool fromSolid, string colour)
