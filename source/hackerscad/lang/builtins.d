@@ -3102,6 +3102,8 @@ Value transformed(Interp it, Span span, SolidVal s, Brep delegate(Brep) f, strin
         auto feature = &it.features[s.creators[0] - 1];
         if (feature.result is s && feature.frame is it.callFrame && feature.statement is it.currentStatement)
         {
+            if (!feature.moved)
+                feature.made = s;
             feature.result = r;
             feature.moved = true;
         }

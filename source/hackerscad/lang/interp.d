@@ -55,6 +55,7 @@ struct FeatureInfo
     Span span;
     SolidVal result;   /// the solid right after the feature (for rollback views)
     bool moved;        /// result is the solid moved, turned or mirrored right after it was made
+    SolidVal made;     /// moved: the solid as the feature made it, before
     SolidVal[] operands;   /// of a union, difference or intersection: the two solids it combined
     Object frame;      /// the function call it ran in (Interp.callFrame)
     Object statement;  /// the statement it ran in (Interp.currentStatement)
@@ -394,6 +395,14 @@ final class Interp
                         if (fi.result is null || fi.result.brep is null || fi.result.flat || fi.result.path
                             || kernel.isValid(fi.result.brep))
                             continue;
+                        // sound as made, broken once moved or turned: the move broke it
+                        if (fi.moved && fi.made !is null && fi.made.brep !is null && kernel.isValid(fi.made.brep))
+                        {
+                            where = format(": first broken by moving or turning what the %s at line %d made", fi.kind,
+                                fi.span.line);
+                            at_ = fi.span;
+                            break;
+                        }
                         bool sound = true;
                         foreach (o; fi.operands)
                             if (o !is null && o.brep !is null && !o.flat && !o.path && !kernel.isValid(o.brep))
