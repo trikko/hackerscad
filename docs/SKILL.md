@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-4d4ae9e3`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-536a51f7`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-4d4ae9e3`:** this text is up to date.
+- **It prints `0.3.1-536a51f7`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -314,14 +314,18 @@ format stamp):
   hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" |
   "countersink")); then check.
 - Then build in steps, as on a machine: each further feature (a boss, a
-  pocket, a slot, a rib, a step) is usually a sketch on the face it starts
-  from, body.sketch(faces.…), measured from that face's edges, then
-  extruded from it or cut into it; on the faces it makes, again. Not one
-  profile with everything at once: each step reads as what it does, and
-  follows its face when a @param moves it. Example: the pillow block. A
-  feature with a tool of its own takes that tool instead: hole() for a
-  screw, shell for thin walls, a loop for a pattern, a library part, a
-  loft or sweep for a shape that changes along its length.
+  pocket, a slot, a rib, a step) starts from a face and is extruded from
+  it or cut into it; on the faces it makes, again. Not one profile with
+  everything at once: each step reads as what it does, and follows its
+  face when a @param moves it. A feature of one shape at a place you know
+  is one profile on the face: body.cut(circle(d: 6.mm), on:
+  body.frame(faces.top), depth: 3.mm), body.extrude(rect(10.mm, 4.mm),
+  on: …). A sketch on the face, body.sketch(faces.…), when its outline has
+  several shapes or relations (tangent, equal), or its place is measured
+  from the face's edges. A feature with a tool of its own takes that tool:
+  hole() for a screw, shell for thin walls, a loop for a pattern, a
+  library part, a loft or sweep for a shape that changes along its length.
+  Example: the pillow block.
 - Fits: ask how it will be made (FDM, resin, machined) before choosing
   clearances; for FDM about 0.2–0.3 mm for a sliding fit, press fits from a
   test print. Put clearances in @params.
@@ -364,10 +368,13 @@ format stamp):
 - 2, build from the largest to the smallest: the outside as one outline
   per stretch, the sketch hcad_section gives at that level pasted and
   extruded; then, as for any prismatic part, the features on its faces in
-  steps: for each, usually a section of the original parallel to that
-  face, just inside it, its sketch pasted and extruded from the face or
-  cut into it (the sketch is in the plane's own coordinates: extrude it
-  along that axis from the face's level); the chamfers of the end faces
+  steps: one of one shape (a round hole, a rectangular pocket, a boss) is
+  a profile with the sizes hcad_scan and hcad_features give (hole() when
+  they name a screw size); one whose outline has several shapes, a
+  section of the original parallel to that face, just inside it, its
+  sketch pasted and extruded from the face or cut into it (the sketch is
+  in the plane's own coordinates: extrude it along that axis from the
+  face's level); the chamfers of the end faces
   before anything is cut in them; then holes, pockets and traps; last
   small chamfers, notches and lettering. Lettering (small regular grooves
   0.5 mm deep in a face are lettering, not notches): cut a section 0.25 mm
