@@ -346,26 +346,95 @@ final class Run
         {
             import hackerscad.geom.printability : checkPrint;
             import std.algorithm : min, max;
-            import std.math : PI;
+            import std.math : PI, floor;
             auto ca = checkPrint(faceMeshes[a].verts, 3, faceMeshes[a].tris, PI / 2, tol);
             auto cb = checkPrint(meshes[b].verts, 3, meshes[b].tris, PI / 2, tol);
-            if (ca.thinArea > cb.thinArea + 0.5)
+            // the copy's thin triangles, gathered into places (centres within a millimetre of each other),
+            // each its own box and area; a place where the original is thin too is the original's own wall
+            auto fm = faceMeshes[a];
+            Vec3 centre(const Mesh m, size_t t) => (m.vertex(m.tris[3 * t]) + m.vertex(m.tris[3 * t + 1])
+                + m.vertex(m.tris[3 * t + 2])) / 3;
+            Vec3[] theirs;
+            foreach (t; 0 .. meshes[b].triangleCount)
+                if (cb.isThin(t))
+                    theirs ~= centre(meshes[b], t);
+            size_t[] thin;
+            foreach (t; 0 .. fm.triangleCount)
+                if (ca.isThin(t))
+                    thin ~= t;
+            auto group = new size_t[thin.length];
+            foreach (i, ref g; group)
+                g = i;
+            size_t root(size_t i)
             {
-                Vec3 lo = Vec3(double.infinity, double.infinity, double.infinity), hi = -lo;
-                auto fm = faceMeshes[a];
-                foreach (t; 0 .. fm.triangleCount)
-                    if (ca.isThin(t))
-                        foreach (k; 0 .. 3)
-                        {
-                            auto q = fm.vertex(fm.tris[3 * t + k]);
-                            lo = Vec3(min(lo.x, q.x), min(lo.y, q.y), min(lo.z, q.z));
-                            hi = Vec3(max(hi.x, q.x), max(hi.y, q.y), max(hi.z, q.z));
-                        }
-                JSONValue sl = ["area_mm2": plausible(ca.thinArea - cb.thinArea), "thinnest_mm": plausible(ca.thinnest)];
-                sl["from"] = [plausible(lo.x), plausible(lo.y), plausible(lo.z)];
-                sl["to"] = [plausible(hi.x), plausible(hi.y), plausible(hi.z)];
-                j["a_slivers"] = sl;
+                while (group[i] != i)
+                    i = group[i] = group[group[i]];
+                return i;
             }
+            long[3] cell(Vec3 p) => [cast(long) floor(p.x), cast(long) floor(p.y), cast(long) floor(p.z)];
+            // a triangle is where its corners and centre are: large ones of one sheet join by their corners
+            Vec3[4] marks(size_t t) => [fm.vertex(fm.tris[3 * t]), fm.vertex(fm.tris[3 * t + 1]),
+                fm.vertex(fm.tris[3 * t + 2]), centre(fm, t)];
+            size_t[][long[3]] byCell;
+            foreach (i, t; thin)
+                foreach (q; marks(t))
+                    byCell[cell(q)] ~= i;
+            foreach (i, t; thin)
+                foreach (q; marks(t))
+                {
+                    immutable c = cell(q);
+                    foreach (dx; -1 .. 2)
+                        foreach (dy; -1 .. 2)
+                            foreach (dz; -1 .. 2)
+                                if (auto others = [c[0] + dx, c[1] + dy, c[2] + dz] in byCell)
+                                    foreach (o; *others)
+                                        group[root(o)] = root(i);
+                }
+            struct Sliver
+            {
+                Vec3 lo, hi;
+                double area = 0;
+            }
+            Sliver[size_t] places;
+            foreach (i, t; thin)
+            {
+                auto sl = root(i) in places;
+                if (sl is null)
+                {
+                    places[root(i)] = Sliver(Vec3(double.infinity, double.infinity, double.infinity),
+                        Vec3(-double.infinity, -double.infinity, -double.infinity));
+                    sl = root(i) in places;
+                }
+                auto p0 = fm.vertex(fm.tris[3 * t]), p1 = fm.vertex(fm.tris[3 * t + 1]), p2 = fm.vertex(fm.tris[3 * t + 2]);
+                sl.area += (p1 - p0).cross(p2 - p0).length / 2 * ca.thin[t];
+                foreach (q; [p0, p1, p2])
+                {
+                    sl.lo = Vec3(min(sl.lo.x, q.x), min(sl.lo.y, q.y), min(sl.lo.z, q.z));
+                    sl.hi = Vec3(max(sl.hi.x, q.x), max(sl.hi.y, q.y), max(sl.hi.z, q.z));
+                }
+            }
+            Sliver[] kept;
+            foreach (sl; places)
+            {
+                bool original;
+                foreach (q; theirs)
+                    original = original || (q.x >= sl.lo.x - 0.5 && q.x <= sl.hi.x + 0.5 && q.y >= sl.lo.y - 0.5
+                        && q.y <= sl.hi.y + 0.5 && q.z >= sl.lo.z - 0.5 && q.z <= sl.hi.z + 0.5);
+                if (!original && sl.area >= 0.5)
+                    kept ~= sl;
+            }
+            import std.algorithm : sort;
+            kept.sort!((x, y) => x.area > y.area);
+            JSONValue[] slivers;
+            foreach (sl; kept[0 .. min(5, kept.length)])
+            {
+                JSONValue js = ["area_mm2": plausible(sl.area)];
+                js["from"] = [plausible(sl.lo.x), plausible(sl.lo.y), plausible(sl.lo.z)];
+                js["to"] = [plausible(sl.hi.x), plausible(sl.hi.y), plausible(sl.hi.z)];
+                slivers ~= js;
+            }
+            if (slivers.length)
+                j["a_slivers"] = slivers;
         }
         uint[] colors;
         auto map = deviationMap(faceMeshes[a], meshes[b], max(0.3, bb.size.length / 150), tol, colors);
@@ -513,9 +582,13 @@ final class Run
             number = first + list.length;
         }
         if (auto sl = "a_slivers" in j)
-            s ~= format("  %s has walls thinner than the tolerance that %s has not, %s mm² (thinnest %s mm) from %s to %s: "
-                ~ "two pieces a hair apart, a sliver left between them? Cut a section there\n", na, nb,
-                mm(num((*sl)["area_mm2"])), mm(num((*sl)["thinnest_mm"])), vec((*sl)["from"]), vec((*sl)["to"]));
+        {
+            s ~= format("  walls thinner than the tolerance that %s has and %s has not (two pieces a hair apart, a "
+                ~ "sliver left between them):\n", na, nb);
+            foreach (p; sl.array)
+                s ~= format("    %d. %s mm² from %s to %s\n", ++number, mm(num(p["area_mm2"])), vec(p["from"]),
+                    vec(p["to"]));
+        }
         if ("pictures" in j)
         {
             s ~= "  the picture (the copy coloured by its distance: green within half the tolerance, yellow at it, red "
@@ -528,7 +601,8 @@ final class Run
 
     /// The patches of a comparison (as compare gives them), numbered as
     /// compareText numbers them: the original's first, then the copy's.
-    static JSONValue[] comparePatches(JSONValue j) => j["b_surface_not_matched"].array ~ j["a_surface_not_matched"].array;
+    static JSONValue[] comparePatches(JSONValue j) => j["b_surface_not_matched"].array ~ j["a_surface_not_matched"].array
+        ~ ("a_slivers" in j ? j["a_slivers"].array : null);
 
     /// Close-ups of patches of a comparison, by their numbers.
     string compareFocus(JSONValue j, size_t a, size_t b, const size_t[] focus, out ubyte[] picture)
@@ -543,8 +617,10 @@ final class Run
             if (n < 1 || n > list.length)
                 throw new Exception(format("there is no patch %d: the comparison numbers 1 to %d", n, list.length));
             auto p = list[n - 1];
-            places ~= Place(format("patch %d, %g mm² off by %g mm", n, num(p["area_mm2"]), num(p["mean_mm"])),
-                vec(p["from"]), vec(p["to"]), true, vec(p["facing"]));
+            places ~= "facing" in p
+                ? Place(format("patch %d, %g mm² off by %g mm", n, num(p["area_mm2"]), num(p["mean_mm"])),
+                    vec(p["from"]), vec(p["to"]), true, vec(p["facing"]))
+                : Place(format("patch %d, a sliver of %g mm²", n, num(p["area_mm2"])), vec(p["from"]), vec(p["to"]));
         }
         return closeUpsOf(a, b, places, num(j["tolerance_mm"]), picture);
     }
@@ -695,7 +771,13 @@ final class Run
         pictures ~= map;
         ubyte[] unused;
         s ~= "\n2. material (diff)\n" ~ drop(differences(a, b, 0, null, unused));
+        // the slivers first: what the numbers hardly show
+        double num(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
+        Vec3 vec(JSONValue v) => Vec3(num(v[0]), num(v[1]), num(v[2]));
         Place[] candidates;
+        if (auto sl = "a_slivers" in j)
+            foreach (p; sl.array[0 .. min(3, $)])
+                candidates ~= Place(format("a sliver of %g mm²", num(p["area_mm2"])), vec(p["from"]), vec(p["to"]));
         foreach (p; lastEntries[0 .. min(each, $)])
             candidates ~= p;
         // of the drawings, the entries small enough for a close-up to show more (a surface facing otherwise

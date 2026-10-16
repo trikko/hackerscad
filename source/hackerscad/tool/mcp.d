@@ -716,8 +716,9 @@ JSONValue[] toolList()
             ~ "load(\"x.stl\");): the largest, mean and rms distance both ways, where the worst is, the share within "
             ~ "tolerance, and a picture of part a coloured by its distance from b: green within half the tolerance, "
             ~ "yellow at it, red at twice it, from the 'views' (4) directions that show most of it off, or from 'view' "
-            ~ "as for hcad_render; the patches of each surface the other does not follow, numbered: focus: N gives a "
-            ~ "close-up of patch N. Correct the model until it is green; after every change hcad_review runs this, "
+            ~ "as for hcad_render; the patches of each surface the other does not follow, and the slivers of a (walls "
+            ~ "thinner than the tolerance that b has not, each in its own box), numbered: focus: N gives a close-up of "
+            ~ "entry N. Correct the model until it is green; after every change hcad_review runs this, "
             ~ "hcad_diff, hcad_lines (outside and on the voids) and the close-ups in one call.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}, `
@@ -1747,15 +1748,23 @@ unittest
         ~ `"arguments": {` ~ where ~ `, "view": {"from": "right", "look_at": [0, 0, 5], "size": 10}}}}`))["result"];
     assert(seen["content"].array[$ - 2]["text"].str.canFind("seen from the right (x)"), seen.toString);
 
-    // a sliver the copy has (a sheet a hair over its top): told, as the distances cannot; the next step is said
+    // slivers the copy has (sheets a hair over the tops of two blocks apart): told, as the distances cannot,
+    // each with its own box and number; the next step is said
     immutable sliverModel = buildPath(tempDir, "hcad-mcp-sliver.hcad");
-    write(sliverModel, "@part Solid copy() => box(10, 10, 10) + box(10, 10, 0.05).move(z: 10.03);\n"
-        ~ "@part Solid original() => box(10, 10, 10);\n");
+    write(sliverModel, "@part Solid copy() => box(10, 10, 10) + box(10, 10, 0.05).move(z: 10.03)\n"
+        ~ "    + box(10, 10, 10).move(x: 30) + box(10, 10, 0.05).move(x: 30, z: 10.03);\n"
+        ~ "@part Solid original() => box(10, 10, 10) + box(10, 10, 10).move(x: 30);\n");
     scope (exit)
         remove(sliverModel);
     auto sliver = callTool("hcad_compare", `{"path": ` ~ JSONValue(sliverModel).toString ~ `, "a": "copy", "b": "original"}`)
         [0]["text"].str;
     assert(sliver.canFind("a sliver") && sliver.canFind("next: diff and lines"), sliver);
+    import std.regex : matchAll;
+    assert(sliver.matchAll(`    \d+\. [\d.]+ mm² from \([^)]*\) to \([^)]*\)\n`).array.length == 2, sliver);
+    auto sliverClose = callTool("hcad_compare", `{"path": ` ~ JSONValue(sliverModel).toString
+        ~ `, "a": "copy", "b": "original", "focus": 2}`);
+    assert(sliverClose.array[$ - 1]["type"].str == "image" && sliverClose.toString.canFind("a sliver of"),
+        sliverClose.toString);
 
     // the whole round in one call: its four parts, close-ups, the pictures, and whether it is done
     auto rev = handle(parseJSON(`{"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "hcad_review", `
