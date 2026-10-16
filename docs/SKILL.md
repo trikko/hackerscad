@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-2282075a`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-4d4ae9e3`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-2282075a`:** this text is up to date.
+- **It prints `0.3.1-4d4ae9e3`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -212,20 +212,22 @@ format stamp):
   s.slot, s.teardrop), then constraints (horizontal, vertical, length,
   distance, angle, tangent, on, equal, concentric…) and s.profile, to
   extrude or revolve.
-  Prefer a sketch over unions and differences of boxes and cylinders for a
-  mechanical part's outline (a bracket, a plate, a cam, a gasket, a clip),
-  with the sizes given or estimated (estimated ones become @params): write
-  each dimension as a constraint, aim for s.dof == 0 (a warning lists what
-  is left free), then add 3D features (holes, fillets, shells) to the
-  extruded solid. A profile made of more than three shapes, moved by sizes
-  worked out by hand, or rounded with .offset(r).offset(-r) is an outline
-  that wants a sketch: it reads as its dimensions, keeps its tangents when
-  a @param changes, and its edges take fillets. One shape alone can stay
-  one line (rect(40.mm, 20.mm, corner: 3.mm)); in a sketch (s.rect) its
-  sizes become dimensions the user changes with a click in the window.
-  Examples below: the medal (a first sketch, step by step), the pillow
-  block (a part from five sketches on five surfaces) and the carlo library
-  (a clip drawn with tangent arcs, a loop and if/else).
+  Prefer a sketch over unions and differences of boxes and cylinders for
+  the outline of a prismatic part (built from flat outlines, extruded,
+  revolved and cut: a bracket, a plate, a case, a holder, a knob, a cam, a
+  gasket, a clip; not a sculpted shape like a figurine), with the sizes
+  given or estimated (estimated ones become @params): write each dimension
+  as a constraint, aim for s.dof == 0 (a warning lists what is left free),
+  then add 3D features (holes, fillets, shells) to the extruded solid. A
+  profile made of more than three shapes, moved by sizes worked out by
+  hand, or rounded with .offset(r).offset(-r) is an outline that wants a
+  sketch: it reads as its dimensions, keeps its tangents when a @param
+  changes, and its edges take fillets. One shape alone can stay one line
+  (rect(40.mm, 20.mm, corner: 3.mm)); in a sketch (s.rect) its sizes
+  become dimensions the user changes with a click in the window. Examples
+  below: the medal (a first sketch, step by step), the pillow block (a
+  part from five sketches on five surfaces) and the carlo library (a clip
+  drawn with tangent arcs, a loop and if/else).
 - To build on a face, take its frame and place parts built on XY (Z up):
   cylinder(d: 8.mm, h: 5.mm).placeOn(body.frame(faces.top).at(x: 10.mm)).
 - To draw an outline on a face, measured from the part's own edges, sketch
@@ -306,11 +308,20 @@ format stamp):
   or an SVG on a shape: profile operations (+ - &, .offset). They mix:
   s.profile + circle(d: 5.mm).
 
-## Mechanical parts and 3D printing
-- A mechanical part: its outline as a sketch from the drawing's dimensions,
+## Prismatic parts and 3D printing
+- A prismatic part: its outline as a sketch from the drawing's dimensions,
   extruded or revolved; then fillets and chamfers; then holes (hardware:
   hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" |
   "countersink")); then check.
+- Then build in steps, as on a machine: each further feature (a boss, a
+  pocket, a slot, a rib, a step) is usually a sketch on the face it starts
+  from, body.sketch(faces.…), measured from that face's edges, then
+  extruded from it or cut into it; on the faces it makes, again. Not one
+  profile with everything at once: each step reads as what it does, and
+  follows its face when a @param moves it. Example: the pillow block. A
+  feature with a tool of its own takes that tool instead: hole() for a
+  screw, shell for thin walls, a loop for a pattern, a library part, a
+  loft or sweep for a shape that changes along its length.
 - Fits: ask how it will be made (FDM, resin, machined) before choosing
   clearances; for FDM about 0.2–0.3 mm for a sliding fit, press fits from a
   test print. Put clearances in @params.
@@ -351,12 +362,18 @@ format stamp):
   the scans name: exact lines and arcs (region: only the outlines inside a
   rectangle, a lettering, a pocket).
 - 2, build from the largest to the smallest: the outside as one outline
-  per stretch, extruded; the chamfers of its end faces before anything is
-  cut in them; then holes, pockets and traps; last small chamfers, notches
-  and lettering. Lettering (small regular grooves 0.5 mm deep in a face
-  are lettering, not notches): cut a section 0.25 mm inside the face,
-  paste the sketch hcad_section gives with region round the letters (it
-  solves as it is), extrude it 0.5 mm into the face; never trace by hand.
+  per stretch, the sketch hcad_section gives at that level pasted and
+  extruded; then, as for any prismatic part, the features on its faces in
+  steps: for each, usually a section of the original parallel to that
+  face, just inside it, its sketch pasted and extruded from the face or
+  cut into it (the sketch is in the plane's own coordinates: extrude it
+  along that axis from the face's level); the chamfers of the end faces
+  before anything is cut in them; then holes, pockets and traps; last
+  small chamfers, notches and lettering. Lettering (small regular grooves
+  0.5 mm deep in a face are lettering, not notches): cut a section 0.25 mm
+  inside the face, paste the sketch hcad_section gives with region round
+  the letters (it solves as it is), extrude it 0.5 mm into the face; never
+  trace by hand.
 - 3, THE ROUND: after every change, hcad_review (hcad review on the
   command line). One call does it all: the distances both ways, the
   material that differs, the drawings outside and of the voids, and
