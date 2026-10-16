@@ -344,6 +344,15 @@ void page15()
         view(`{"preset": "iso"}`);
         shot("15-" ~ name);
     }
+    // the sketch bar: the bracket's sketch shown, its bottom and top lines selected (ids 4 and 6)
+    open(buildPath(dir, "sketch.hcad"));
+    req("sketch", format(`{"line": %d}`, lineOf("auto bottom")));
+    req("sketch", `{"select": [4, 6]}`);
+    view(`{"projection": "orthographic", "preset": "top"}`);
+    view(`{"preset": "fit"}`);
+    shot("15-sketch-bar", lineOf("auto bottom"));
+    req("sketch", `{"on": false}`);
+    view(`{"projection": "perspective", "preset": "iso"}`);
 }
 
 void page12()

@@ -271,6 +271,37 @@ A double click on a flat face (or **Look at face** in the same menu) turns the
 view straight at it; with a sketch shown, **Look at sketch** in the right-click
 menu turns it back onto the sketch after you have turned it round.
 
+### Drawing and constraining with the mouse
+
+While a sketch is shown, and its code can be written from the window (the
+sketch kept in a variable, `auto s = sketch();`, in the model's own file,
+not made inside a loop), a bar runs down the left of the view.
+
+Its left column draws: ↖ selects, ∙ puts a point, ╱ draws lines (click
+their points; on the first again they close, Enter or a right-click ends
+them), ▭ a rectangle by two corners, ○ a circle by its centre and a point
+on it, ◜ an arc by its centre, start and end, ∿ a smooth curve through the
+points clicked. A click near a point of the sketch uses that point; Esc
+drops what is being drawn. Nothing is written until the shape is done: then
+its lines appear at the end of the sketch's code, as you would have typed
+them.
+
+With ↖, a click on a point or a line selects it (again: it leaves; on
+nothing: none), and the constraints that fit what is selected light up;
+the others say, when you point at them, what they need. Several lines and
+∥: each parallel to the first. The constraints with a value (length,
+distance, angle, radius, diameter) ask for it in a field, the size it has
+now already written in: Enter writes it. Five lines and a length of 20 mm
+make one dimension and the others equal to it, so one number changes them
+all. ⌫ (or Delete) takes what is selected out of the code, with what is
+drawn on it and the constraints on them.
+
+![Two lines of the bracket selected: the tools that fit them light up](img/15-sketch-bar.png)
+
+Every tool writes code, which Ctrl+Z takes back and which reads like the
+rest: `s.parallel(bottom, top);`. A line that had no name gets one when a
+constraint needs it (`auto line2 = s.line(b, c);`).
+
 ## Curved shapes: lofts and sweeps
 
 `loft([…])` passes smoothly through outlines at different heights, a vase
