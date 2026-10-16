@@ -90,7 +90,7 @@ import hackerscad.lang.sketchval : SketchView, Stretch;
 import hackerscad.gui.sketchfollow;
 import hackerscad.gui.annotate : Annotate;
 import hackerscad.tool.guiclient : toOverrides;
-import std.json;
+import djson;
 
 /// The key held to click a line of code and see what it makes: Ctrl, and
 /// Cmd on macOS, where Ctrl+click is the right click.
@@ -2029,14 +2029,14 @@ private:
     }
 
     /// What draws the window, for diagnosis (state, About).
-    JSONValue graphicsJson()
+    JValue graphicsJson()
     {
         import std.process : environment;
-        JSONValue g = ["renderer": viewport.glRenderer, "version": viewport.glVersion, "vendor": viewport.glVendor];
+        JValue g = JSOB("renderer", viewport.glRenderer, "version", viewport.glVersion, "vendor", viewport.glVendor);
         g["software"] = viewport.softwareGl();
         g["antialias"] = viewport.antialiasing();
         auto f = viewport.frameStats();
-        JSONValue frames = ["frames": f.frames, "slow": f.slow];
+        JValue frames = JSOB("frames", f.frames, "slow", f.slow);
         frames["draw_ms"] = f.drawMs;
         frames["draw_max_ms"] = f.drawMaxMs;
         frames["gpu_ms"] = f.gpuMs;
@@ -3339,22 +3339,22 @@ private:
     SpinButton overhangSpin, wallSpin;
 
     /// What the printability style finds, per part shown.
-    JSONValue printabilityJson()
+    JValue printabilityJson()
     {
-        JSONValue[] ps;
+        JValue ps = JSAB();
         foreach (i, p; last.parts)
         {
             if (viewport.isHidden(i))
                 continue;
             auto pc = viewport.printCheckOf(i);
-            JSONValue jp = ["part": p.name];
+            JValue jp = JSOB("part", p.name);
             jp["overhang_mm2"] = pc.overhangArea;
             jp["thin_wall_mm2"] = pc.thinArea;
             if (pc.thinArea > 0)
                 jp["thinnest_mm"] = pc.thinnest;
             ps ~= jp;
         }
-        JSONValue j = ["overhang_angle_deg": viewport.overhangAngle * 180 / PI, "min_wall_mm": viewport.minWall];
+        JValue j = JSOB("overhang_angle_deg", viewport.overhangAngle * 180 / PI, "min_wall_mm", viewport.minWall);
         j["parts"] = ps;
         return j;
     }
@@ -3919,50 +3919,46 @@ private:
     /// The sketch shown, for agents (null when none is): its state, the
     /// points that can still move, and what the lines asked for make or
     /// constrain in it.
-    JSONValue shownSketchJson()
+    JValue shownSketchJson()
     {
         if (sketchIndices.length == 0)
-            return JSONValue(null);
-        JSONValue j = ["lines": [sketchLines[0], sketchLines[1]]];
+            return JValue(null);
+        JValue j = JSOB("lines", JSAB(sketchLines[0], sketchLines[1]));
         j["status"] = sketchFoundText();
         sketchOriginJson(j);
-        JSONValue[] list;
+        JValue list = JSAB();
         foreach (k, index; sketchIndices)
         {
             if (index >= last.sketches.length)
                 continue;
             auto sk = last.sketches[index];
-            JSONValue js = ["line": JSONValue(sk.span.line), "solved": JSONValue(sk.solved)];
+            JValue js = JSOB("line", sk.span.line, "solved", sk.solved);
             js["degrees_of_freedom"] = sk.dof;
             sketchPlaneJson(js, sk);
-            JSONValue[] free;
+            JValue free = JSAB();
             foreach (pt; sk.points)
                 if (pt.free)
-                    free ~= JSONValue(["line": JSONValue(pt.span.line), "x": JSONValue(pt.pos.x), "y": JSONValue(pt.pos.y)]);
+                    free ~= JSOB("line", pt.span.line, "x", pt.pos.x, "y", pt.pos.y);
             js["free_points"] = free;
             js["dimensions"] = sk.dimensions.length;
             if (sketchHighlight)
             {
                 auto f = sketchFound[k];
-                JSONValue entity(size_t e)
+                JValue entity(size_t e)
                 {
-                    JSONValue je = ["id": JSONValue(e), "kind": JSONValue(sk.entities[e].kind),
-                        "line": JSONValue(sk.entities[e].span.line)];
+                    JValue je = JSOB("id", e, "kind", sk.entities[e].kind, "line", sk.entities[e].span.line);
                     if (sk.entities[e].construction)
                         je["construction"] = true;
                     return je;
                 }
-                JSONValue[] es, cs, lit;
+                JValue es = JSAB(), cs = JSAB(), lit = JSAB();
                 foreach (e; f.entities)
                     es ~= entity(e);
                 foreach (c; f.constraints)
                 {
                     auto rc = sk.constraints[c];
-                    JSONValue jc = ["kind": JSONValue(rc.kind), "line": JSONValue(rc.span.line)];
-                    JSONValue[] ids;
-                    foreach (e; rc.entities)
-                        ids ~= JSONValue(e);
-                    jc["entities"] = ids;
+                    JValue jc = JSOB("kind", rc.kind, "line", rc.span.line);
+                    jc["entities"] = toJSON(rc.entities);
                     if (rc.dimension >= 0)
                         jc["dimension"] = sk.dimensions[rc.dimension].label;
                     if (rc.conflicting)
@@ -4169,19 +4165,19 @@ private:
     }
 
     /// What Inspect shows, for agents (null when it is off).
-    JSONValue inspectJson()
+    JValue inspectJson()
     {
         if (!viewport.inInspect)
-            return JSONValue(null);
-        JSONValue j = ["status": infoLabel !is null ? infoLabel.getLabel() : ""];
+            return JValue(null);
+        JValue j = JSOB("status", infoLabel !is null ? infoLabel.getLabel() : "");
         if (inspectQuery.function_.length)
             j["function"] = inspectQuery.function_;
         else
-            j["lines"] = [inspectQuery.from, inspectQuery.to];
-        JSONValue[] items;
+            j["lines"] = JSAB(inspectQuery.from, inspectQuery.to);
+        JValue items = JSAB();
         foreach (i, e; inspectShown)
         {
-            JSONValue it = ["line": e.site.line];
+            JValue it = JSOB("line", e.site.line);
             it["function"] = e.fn;
             it["kind"] = e.kind;
             it["calls"] = e.calls;
@@ -4192,8 +4188,8 @@ private:
             if (i < inspectMeshes.length && (inspectMeshes[i].vertices.length || inspectMeshes[i].edgeInfo.length))
             {
                 auto b = inspectMeshes[i].bbox;
-                it["min"] = [b.min.x, b.min.y, b.min.z];
-                it["max"] = [b.max.x, b.max.y, b.max.z];
+                it["min"] = toJSON([b.min.x, b.min.y, b.min.z]);
+                it["max"] = toJSON([b.max.x, b.max.y, b.max.z]);
             }
             items ~= it;
         }
@@ -5031,12 +5027,12 @@ private:
 
     /// A sketch drawn on a face or plane, for agents: where (origin, x, y,
     /// normal; points are given in its x, y) and how many references it has.
-    static void sketchPlaneJson(ref JSONValue js, const SketchView sk)
+    static void sketchPlaneJson(ref JValue js, const SketchView sk)
     {
         if (!sk.placed)
             return;
-        JSONValue v(Vec3 p) => JSONValue([p.x, p.y, p.z]);
-        js["plane"] = ["origin": v(sk.place[0]), "x": v(sk.place[1]), "y": v(sk.place[2]), "normal": v(sk.place[3])];
+        JValue v(Vec3 p) => toJSON([p.x, p.y, p.z]);
+        js["plane"] = JSOB("origin", v(sk.place[0]), "x", v(sk.place[1]), "y", v(sk.place[2]), "normal", v(sk.place[3]));
         size_t refs;
         foreach (e; sk.entities)
             refs += e.reference && e.kind != "point";
@@ -5046,12 +5042,12 @@ private:
     /// The sketches of the model, for the control socket: whether each is
     /// solved, how many points can still move, and its dimensions with the
     /// place of their value in the code (to change it with "dimension").
-    JSONValue sketchesJson()
+    JValue sketchesJson()
     {
-        JSONValue[] r;
+        JValue r = JSAB();
         foreach (i, sk; last.sketches)
         {
-            JSONValue js = ["line": JSONValue(sk.span.line), "solved": JSONValue(sk.solved)];
+            JValue js = JSOB("line", sk.span.line, "solved", sk.solved);
             js["degrees_of_freedom"] = sk.dof;
             sketchPlaneJson(js, sk);
             if (i < staleSketch.length && staleSketch[i])
@@ -5062,10 +5058,10 @@ private:
             foreach (pt; sk.points)
                 free += pt.free;
             js["free_points"] = free;
-            JSONValue[] ds;
+            JValue ds = JSAB();
             foreach (d; sk.dimensions)
             {
-                JSONValue jd = ["label": JSONValue(d.label), "line": JSONValue(d.value.line), "col": JSONValue(d.value.col)];
+                JValue jd = JSOB("label", d.label, "line", d.value.line, "col", d.value.col);
                 if (d.value.file != absolutePath(path))
                     jd["file"] = d.value.file;
                 else
@@ -5081,7 +5077,7 @@ private:
             js["dimensions"] = ds;
             r ~= js;
         }
-        return JSONValue(r);
+        return r;
     }
 
     /// Edits the value of a dimension in place: the source is rewritten.
@@ -5525,41 +5521,41 @@ private:
     /// The code as the agent last saw it (after its previous request): what
     /// the user changed since then is reported in the state.
     string agentText;
-    JSONValue userChange;
+    JValue userChange;
     ulong revision;     /// goes up at every change of the code
 
-    void handleControl(string method, JSONValue p, void delegate(JSONValue, string) reply)
+    void handleControl(string method, JValue p, void delegate(JValue, string) reply)
     {
         if (agentText !is null)
             userChange = changedLines(agentText, text());
-        dispatchControl(method, p, (JSONValue r, string e) {
+        dispatchControl(method, p, (JValue r, string e) {
             agentText = text();
-            userChange = JSONValue.init;
+            userChange = JValue.init;
             reply(r, e);
         });
     }
 
     /// The lines of `after` that differ from `before` (null when equal).
-    static JSONValue changedLines(string before, string after)
+    static JValue changedLines(string before, string after)
     {
         import std.string : splitLines;
         if (before == after)
-            return JSONValue(null);
+            return JValue(null);
         auto a = before.splitLines, b = after.splitLines;
         size_t head, tail;
         while (head < a.length && head < b.length && a[head] == b[head])
             head++;
         while (tail < a.length - head && tail < b.length - head && a[$ - 1 - tail] == b[$ - 1 - tail])
             tail++;
-        JSONValue j = ["from": head + 1, "to": b.length - tail, "replaced_lines": a.length - tail - head];
+        JValue j = JSOB("from", head + 1, "to", b.length - tail, "replaced_lines", a.length - tail - head);
         return j;
     }
 
     /// The window point a request aims at: "point" [x, y, z] in model mm, or
     /// "x" and "y" as fractions of the view. Null, or what is wrong.
-    string screenPoint(JSONValue p, out double x, out double y)
+    string screenPoint(JValue p, out double x, out double y)
     {
-        if ("point" in p && p["point"].type == JSONType.array)
+        if (p.has("point") && p["point"].isArray)
         {
             auto v = vec3Of(p["point"]);
             double fx, fy;
@@ -5574,15 +5570,14 @@ private:
             y = fy * viewport.height;
             return null;
         }
-        x = ("x" in p ? numberOf(p["x"]) : 0.5) * viewport.width;
-        y = ("y" in p ? numberOf(p["y"]) : 0.5) * viewport.height;
+        x = (p.has("x") ? numberOf(p["x"]) : 0.5) * viewport.width;
+        y = (p.has("y") ? numberOf(p["y"]) : 0.5) * viewport.height;
         return null;
     }
 
-    static double numberOf(JSONValue v) => v.type == JSONType.integer ? v.integer : v.type == JSONType.uinteger
-        ? v.uinteger : v.floating;
-    static Vec3 vec3Of(JSONValue v) => Vec3(numberOf(v[0]), numberOf(v[1]), v.array.length > 2 ? numberOf(v[2]) : 0);
-    static JSONValue jsonOf(Vec3 v) => JSONValue([v.x, v.y, v.z]);
+    static double numberOf(JValue v) => v.get!double;
+    static Vec3 vec3Of(JValue v) => Vec3(numberOf(v[0]), numberOf(v[1]), v.length > 2 ? numberOf(v[2]) : 0);
+    static JValue jsonOf(Vec3 v) => toJSON([v.x, v.y, v.z]);
 
     /// Index of the part named `name`; without a name, the only part. -1, with `problem` set, otherwise.
     int partIndex(string name, out string problem)
@@ -5597,9 +5592,9 @@ private:
     }
 
     /// What the view shows under window point (x, y), with a selector for it.
-    JSONValue hitJson(Hit hit)
+    JValue hitJson(Hit hit)
     {
-        JSONValue r = ["part": hit.part >= 0 ? JSONValue(last.parts[hit.part].name) : JSONValue(null)];
+        JValue r = JSOB("part", hit.part >= 0 ? JValue(last.parts[hit.part].name) : JValue(null));
         if (hit.part < 0)
             return r;
         r["face"] = hit.face;
@@ -5620,9 +5615,9 @@ private:
     }
 
     /// The selected faces and edges, with selectors and sizes.
-    JSONValue selectionJson()
+    JValue selectionJson()
     {
-        JSONValue[] items;
+        JValue items = JSAB();
         foreach (h; viewport.selection())
         {
             if (h.part < 0 || h.part >= last.parts.length)
@@ -5630,7 +5625,7 @@ private:
             auto part = last.parts[h.part];
             SolidVal sv;
             auto it = selectorInterp(part, sv);
-            JSONValue j = ["part": part.name];
+            JValue j = JSOB("part", part.name);
             try
             {
                 if (h.edge >= 0)
@@ -5665,23 +5660,23 @@ private:
                 j["problem"] = e.msg;
             items ~= j;
         }
-        return JSONValue(["selection": JSONValue(items)]);
+        return JSOB("selection", items);
     }
 
     /// A measured item: a part name, a point [x, y, z], or (null) the next selected item.
-    string measureItem(JSONValue v, ref size_t nextSelected, out Item item, out int wholePart)
+    string measureItem(JValue v, ref size_t nextSelected, out Item item, out int wholePart)
     {
         import hackerscad.gui.measure : faceItem, edgeItem, pointItem;
         wholePart = -1;
-        if (v.type == JSONType.array)
+        if (v.isArray)
         {
             item = pointItem(vec3Of(v));
             return null;
         }
-        if (v.type == JSONType.string)
+        if (v.isString)
         {
             string problem;
-            immutable i = partIndex(v.str, problem);
+            immutable i = partIndex(v.get!string, problem);
             if (i < 0)
                 return problem;
             wholePart = i;
@@ -5703,9 +5698,9 @@ private:
     }
 
     /// A menu as JSON: entries with their label, value and sub-entries; headings as titles.
-    static JSONValue menuJson(MenuEntry[] entries)
+    static JValue menuJson(MenuEntry[] entries)
     {
-        JSONValue[] r;
+        JValue r = JSAB();
         foreach (e; entries)
         {
             final switch (e.kind)
@@ -5713,12 +5708,12 @@ private:
             case MenuEntry.Kind.separator:
                 continue;
             case MenuEntry.Kind.heading:
-                r ~= JSONValue(["heading": e.label ~ (e.detail.length ? " · " ~ e.detail : "")]);
+                r ~= JSOB("heading", e.label ~ (e.detail.length ? " · " ~ e.detail : ""));
                 continue;
             case MenuEntry.Kind.item, MenuEntry.Kind.group:
                 break;
             }
-            JSONValue j = ["label": e.label];
+            JValue j = JSOB("label", e.label);
             if (e.detail.length)
                 j["value"] = e.detail;
             if (!e.enabled)
@@ -5727,7 +5722,7 @@ private:
                 j["entries"] = menuJson(e.children);
             r ~= j;
         }
-        return JSONValue(r);
+        return r;
     }
 
     /// The executable on disk is not the one running (rebuilt or updated).
@@ -5749,16 +5744,16 @@ private:
     mixin SketchFollow;
     mixin Annotate;
 
-    JSONValue state()
+    JValue state()
     {
-        JSONValue j = ["path": path, "status": statusText];
+        JValue j = JSOB("path", path, "status", statusText);
         j["window"] = control ? control.name : null;
         j["version"] = appVersion;
         if (exeChanged())
             j["outdated"] = "hackerscad was rebuilt or updated after this window started: ask the user to restart it "
                 ~ "to get the newest tools";
         j["revision"] = revision;
-        if (userChange.type != JSONType.null_)
+        if (!userChange.isNull)
             j["user_changed"] = userChange;
         j["evaluating"] = evaluator.busy;
         if (evaluator.busy)
@@ -5768,16 +5763,17 @@ private:
         }
         j["modified"] = modified;
         j["preset"] = params.preset;
-        JSONValue[string] ov;
-        foreach (k, v; params.overrides)
-            ov[k] = v;
+        import std.algorithm : sort;
+        JValue ov = JSOB();
+        foreach (k; params.overrides.keys.sort)
+            ov[k] = params.overrides[k];
         j["overrides"] = ov;
-        JSONValue[] parts;
+        JValue parts = JSAB();
         foreach (pm; last.parts)
         {
             import hackerscad.geom.color : hexColor;
-            JSONValue jp = ["name": pm.name, "color": hexColor(pm.rgb)];
-            jp["size"] = [pm.bbox.size.x, pm.bbox.size.y, pm.bbox.size.z];
+            JValue jp = JSOB("name", pm.name, "color", hexColor(pm.rgb));
+            jp["size"] = toJSON([pm.bbox.size.x, pm.bbox.size.y, pm.bbox.size.z]);
             jp["volume_mm3"] = pm.volume;
             jp["line"] = pm.span.line;
             jp["hidden"] = viewport.isHidden(parts.length);
@@ -5788,29 +5784,30 @@ private:
             parts ~= jp;
         }
         j["parts"] = parts;
-        JSONValue[] ps;
+        JValue ps = JSAB();
         foreach (pi; last.params)
         {
-            JSONValue jp = ["name": pi.name, "value": pi.value.toString];
+            JValue jp = JSOB("name", pi.name, "value", pi.value.toString);
             jp["default"] = pi.defaultValue.toString;
             jp["type"] = pi.value.typeName;
             if (pi.doc.length)
                 jp["doc"] = pi.doc;
             // the limits and steps of the panel's field, the entries of its menu
-            foreach (key, v; ["min": pi.min, "max": pi.max, "step": pi.step])
-                if (v.kind != Kind.void_)
-                    jp[key] = v.toString;
+            auto limits = ["min": pi.min, "max": pi.max, "step": pi.step];
+            foreach (key; limits.keys.sort)
+                if (limits[key].kind != Kind.void_)
+                    jp[key] = limits[key].toString;
             if (pi.choices.length)
             {
-                JSONValue[] cs;
+                JValue cs = JSAB();
                 foreach (c; pi.choices)
-                    cs ~= JSONValue(c.toString);
+                    cs ~= c.toString;
                 jp["choices"] = cs;
             }
             ps ~= jp;
         }
         j["params"] = ps;
-        j["presets"] = last.presets;
+        j["presets"] = toJSON(last.presets);
         j["inspect"] = inspectJson();
         j["sketch"] = shownSketchJson();
         j["sketch_follow"] = followCursor;
@@ -5818,11 +5815,11 @@ private:
         {
             TextIter it;
             buffer.getIterAtMark(it, buffer.getInsert());
-            j["cursor"] = ["line": it.getLine() + 1, "col": it.getLineOffset() + 1];
+            j["cursor"] = JSOB("line", it.getLine() + 1, "col", it.getLineOffset() + 1);
         }
         auto cam = viewport.camera();
-        JSONValue jc = ["yaw": cam.yaw, "pitch": cam.pitch, "distance": cam.distance];
-        jc["target"] = [cam.target.x, cam.target.y, cam.target.z];
+        JValue jc = JSOB("yaw", cam.yaw, "pitch", cam.pitch, "distance", cam.distance);
+        jc["target"] = toJSON([cam.target.x, cam.target.y, cam.target.z]);
         jc["projection"] = cam.orthographic ? "orthographic" : "perspective";
         jc["grid"] = viewport.showGrid;
         jc["axes"] = viewport.showAxes;

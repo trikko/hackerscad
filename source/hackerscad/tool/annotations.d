@@ -15,7 +15,7 @@ module hackerscad.tool.annotations;
 
 import std.algorithm : max, min;
 import std.format : format;
-import std.json;
+import djson;
 import std.math : abs, round, sqrt;
 
 import hackerscad.geom.vec;
@@ -239,37 +239,32 @@ bool colourOf(string s, out uint rgb)
 /// a point of the view: [x, y, z] in mm, a part's name, {"part": name,
 /// "face": i}. `box` is set (and `hasBox`) to the rectangle a part covers,
 /// for a circle round it. Null, or what is wrong.
-alias PointReader = string delegate(JSONValue v, out P p, out P[2] box, out bool hasBox);
+alias PointReader = string delegate(JValue v, out P p, out P[2] box, out bool hasBox);
 
-private double num(JSONValue v)
+private double num(JValue v)
 {
-    switch (v.type)
-    {
-    case JSONType.integer: return v.integer;
-    case JSONType.uinteger: return v.uinteger;
-    case JSONType.float_: return v.floating;
-    default: throw new JSONException("not a number");
-    }
+    if (!v.isNumber)
+        throw new JSONException("not a number");
+    return v.get!double;
 }
 
-private bool isNumber(JSONValue v) => v.type == JSONType.integer || v.type == JSONType.uinteger
-    || v.type == JSONType.float_;
+private bool isNumber(JValue v) => v.isNumber;
 
 enum pointHelp = "a point is [x, y] as fractions of the view (0..1 from the top left), {\"px\": [x, y]} in "
     ~ "pixels, [x, y, z] in mm, a part's name or {\"part\": name, \"face\": i}";
 
 /// Reads a point of a request on a w × h view. Null, or what is wrong.
-string readPoint(JSONValue v, PointReader read, double w, double h, out P p, out P[2] box, out bool hasBox)
+string readPoint(JValue v, PointReader read, double w, double h, out P p, out P[2] box, out bool hasBox)
 {
-    if (v.type == JSONType.array && v.array.length == 2 && isNumber(v[0]) && isNumber(v[1]))
+    if (v.isArray && v.length == 2 && isNumber(v[0]) && isNumber(v[1]))
     {
         p = P(num(v[0]), num(v[1]));
         return null;
     }
-    if (v.type == JSONType.object && "px" in v)
+    if (v.isObject && v.has("px"))
     {
         auto q = v["px"];
-        if (q.type != JSONType.array || q.array.length != 2 || !isNumber(q[0]) || !isNumber(q[1]))
+        if (!q.isArray || q.length != 2 || !isNumber(q[0]) || !isNumber(q[1]))
             return "px is [x, y] in pixels of the view";
         p = P(num(q[0]) / w, num(q[1]) / h);
         return null;
@@ -285,34 +280,34 @@ string readPoint(JSONValue v, PointReader read, double w, double h, out P p, out
 /// [corner, corner]}, {"circle": {"center": P, "radius": pixels}},
 /// {"circle": P} (round a part when P names one), {"freehand": [P, …]},
 /// {"text": "…", "at": P}. Null, or what is wrong.
-string readAnnotation(JSONValue it, PointReader read, double w, double h, out Annotation n)
+string readAnnotation(JValue it, PointReader read, double w, double h, out Annotation n)
 {
     import std.algorithm : canFind;
-    if (it.type != JSONType.object)
+    if (!it.isObject)
         return "each annotation is an object: {\"arrow\": [tail, tip]}, {\"cross\": point}, {\"circle\": point}, {\"text\": \"…\", \"at\": point}…";
-    JSONValue spec;
+    JValue spec;
     bool given;
-    if ("kind" in it && it["kind"].type == JSONType.string)
+    if (it.has("kind") && it["kind"].isString)
     {
-        n.kind = it["kind"].str;
-        if ("points" in it)
+        n.kind = it["kind"].get!string;
+        if (it.has("points"))
         {
             spec = it["points"];
             given = true;
         }
-        else if ("at" in it)
+        else if (it.has("at"))
         {
             spec = it["at"];
             given = true;
         }
-        if (n.kind == "text" && "text" in it && it["text"].type == JSONType.string)
-            n.text = it["text"].str;
+        if (n.kind == "text" && it.has("text") && it["text"].isString)
+            n.text = it["text"].get!string;
     }
-    else if ("text" in it && it["text"].type == JSONType.string)
+    else if (it.has("text") && it["text"].isString)
     {
         n.kind = "text";
-        n.text = it["text"].str;
-        if ("at" in it)
+        n.text = it["text"].get!string;
+        if (it.has("at"))
         {
             spec = it["at"];
             given = true;
@@ -320,7 +315,7 @@ string readAnnotation(JSONValue it, PointReader read, double w, double h, out An
     }
     else
         foreach (k; ["arrow", "cross", "circle", "freehand"])
-            if (k in it)
+            if (it.has(k))
             {
                 n.kind = k;
                 spec = it[k];
@@ -331,16 +326,16 @@ string readAnnotation(JSONValue it, PointReader read, double w, double h, out An
         return "kind is arrow, cross, circle, freehand or text";
     if (!given)
         return n.kind == "text" ? "a text needs at: where it goes" : n.kind ~ " needs its points";
-    if ("label" in it)
+    if (it.has("label"))
     {
-        if (it["label"].type != JSONType.string)
+        if (!it["label"].isString)
             return "label is a text";
         if (n.kind == "text" && n.text.length == 0)
-            n.text = it["label"].str;
+            n.text = it["label"].get!string;
         else if (n.kind != "text")
-            n.text = it["label"].str;
+            n.text = it["label"].get!string;
     }
-    string point(JSONValue v, out P p, out P[2] box, out bool hasBox) => readPoint(v, read, w, h, p, box, hasBox);
+    string point(JValue v, out P p, out P[2] box, out bool hasBox) => readPoint(v, read, w, h, p, box, hasBox);
     P p;
     P[2] box;
     bool hasBox;
@@ -348,9 +343,9 @@ string readAnnotation(JSONValue it, PointReader read, double w, double h, out An
     {
     case "arrow":
     case "freehand":
-        if (spec.type != JSONType.array || spec.array.length < 2 || (n.kind == "arrow" && spec.array.length != 2))
+        if (!spec.isArray || spec.length < 2 || (n.kind == "arrow" && spec.length != 2))
             return n.kind == "arrow" ? "arrow is [tail, tip]" : "freehand is a list of points, two at least";
-        foreach (v; spec.array)
+        foreach (v; spec)
         {
             if (auto problem = point(v, p, box, hasBox))
                 return problem;
@@ -358,18 +353,18 @@ string readAnnotation(JSONValue it, PointReader read, double w, double h, out An
         }
         break;
     case "circle":
-        if (spec.type == JSONType.object && "center" in spec)
+        if (spec.isObject && spec.has("center"))
         {
             if (auto problem = point(spec["center"], p, box, hasBox))
                 return problem;
-            immutable r = "radius" in spec && isNumber(spec["radius"]) ? num(spec["radius"]) : 28;
+            immutable r = spec.has("radius") && isNumber(spec["radius"]) ? num(spec["radius"]) : 28;
             if (r <= 0)
                 return "radius is in pixels, more than 0";
             n.points = [P(p.x - r / w, p.y - r / h), P(p.x + r / w, p.y + r / h)];
         }
-        else if (spec.type == JSONType.array && spec.array.length == 2 && !isNumber(spec[0]))
+        else if (spec.isArray && spec.length == 2 && !isNumber(spec[0]))
         {
-            foreach (v; spec.array)
+            foreach (v; spec)
             {
                 if (auto problem = point(v, p, box, hasBox))
                     return problem;
@@ -391,14 +386,14 @@ string readAnnotation(JSONValue it, PointReader read, double w, double h, out An
         }
         break;
     case "cross":
-        if (spec.type == JSONType.array && spec.array.length == 1)
+        if (spec.isArray && spec.length == 1)
             spec = spec[0];
         if (auto problem = point(spec, p, box, hasBox))
             return problem;
         n.points = [p];
         break;
     case "text":
-        if (spec.type == JSONType.array && spec.array.length == 1)
+        if (spec.isArray && spec.length == 1)
             spec = spec[0];
         if (auto problem = point(spec, p, box, hasBox))
             return problem;
@@ -408,43 +403,43 @@ string readAnnotation(JSONValue it, PointReader read, double w, double h, out An
         break;
     }
     foreach (key; ["colour", "color"])
-        if (key in it && it[key].type != JSONType.null_)
+        if (it.has(key) && !it[key].isNull)
         {
-            if (it[key].type != JSONType.string || !colourOf(it[key].str, n.colour))
+            if (!it[key].isString || !colourOf(it[key].get!string, n.colour))
                 return "colour is \"#RRGGBB\" or magenta, red, orange, yellow, green, blue, black, white";
         }
-    if ("by" in it && it["by"].type == JSONType.string)
+    if (it.has("by") && it["by"].isString)
     {
-        if (it["by"].str != "agent" && it["by"].str != "user")
+        if (it["by"].get!string != "agent" && it["by"].get!string != "user")
             return "by is agent or user";
-        n.by = it["by"].str;
+        n.by = it["by"].get!string;
     }
     if (n.kind == "arrow" && abs(n.points[1].x - n.points[0].x) + abs(n.points[1].y - n.points[0].y) < 1e-6)
         return "the arrow's tail and tip are the same point";
     return null;
 }
 
-private JSONValue pointJson(P p) => JSONValue([round(p.x * 10000) / 10000, round(p.y * 10000) / 10000]);
-private JSONValue vecJson(Vec3 v) => JSONValue([round(v.x * 1000) / 1000, round(v.y * 1000) / 1000, round(v.z * 1000) / 1000]);
+private JValue pointJson(P p) => toJSON([round(p.x * 10000) / 10000, round(p.y * 10000) / 10000]);
+private JValue vecJson(Vec3 v) => toJSON([round(v.x * 1000) / 1000, round(v.y * 1000) / 1000, round(v.z * 1000) / 1000]);
 
 /// An annotation as the state lists it: id, kind, by, points (fractions of
 /// the view), colour, text, and under: for each key point, what the
 /// picture shows there (part, face, point in mm, normal, selector; part
 /// null on the background).
-JSONValue toJson(const Annotation n)
+JValue toJson(const Annotation n)
 {
-    JSONValue j = ["kind": n.kind, "by": n.by, "colour": hexOf(n.colour), "colour_name": colourName(n.colour)];
+    JValue j = JSOB("kind", n.kind, "by", n.by, "colour", hexOf(n.colour), "colour_name", colourName(n.colour));
     j["id"] = n.id;
-    JSONValue[] ps;
+    JValue ps = JSAB();
     foreach (p; n.points)
         ps ~= pointJson(p);
     j["points"] = ps;
     if (n.text.length)
         j[n.kind == "text" ? "text" : "label"] = n.text;
-    JSONValue[] us;
+    JValue us = JSAB();
     foreach (u; n.under)
     {
-        JSONValue ju = ["at": pointJson(u.at)];
+        JValue ju = JSOB("at", pointJson(u.at));
         if (u.part.length == 0)
             ju["part"] = null;
         else
@@ -458,7 +453,7 @@ JSONValue toJson(const Annotation n)
         }
         if (u.part.length == 0 && u.near.part.length)
         {
-            JSONValue jn = ["part": u.near.part];
+            JValue jn = JSOB("part", u.near.part);
             jn["face"] = u.near.face;
             jn["point"] = vecJson(u.near.point);
             jn["normal"] = vecJson(u.near.normal);
@@ -475,46 +470,46 @@ JSONValue toJson(const Annotation n)
 }
 
 /// Reads an annotation as toJson writes it.
-string fromJson(JSONValue j, out Annotation n)
+string fromJson(JValue j, out Annotation n)
 {
     if (auto problem = readAnnotation(j, null, 1, 1, n))
         return problem;
-    if ("id" in j)
+    if (j.has("id"))
         n.id = cast(uint) num(j["id"]);
-    if ("under" in j && j["under"].type == JSONType.array)
-        foreach (ju; j["under"].array)
+    if (j.has("under") && j["under"].isArray)
+        foreach (ju; j["under"])
         {
             Under u;
             P[2] box;
             bool hasBox;
-            if ("at" in ju)
+            if (ju.has("at"))
                 readPoint(ju["at"], null, 1, 1, u.at, box, hasBox);
-            if ("part" in ju && ju["part"].type == JSONType.string)
+            if (ju.has("part") && ju["part"].isString)
             {
-                u.part = ju["part"].str;
-                if ("face" in ju)
+                u.part = ju["part"].get!string;
+                if (ju.has("face"))
                     u.face = cast(int) num(ju["face"]);
                 foreach (key, ref v; ["point": &u.point, "normal": &u.normal])
-                    if (key in ju && ju[key].type == JSONType.array && ju[key].array.length == 3)
+                    if (ju.has(key) && ju[key].isArray && ju[key].length == 3)
                         *v = Vec3(num(ju[key][0]), num(ju[key][1]), num(ju[key][2]));
-                if ("selector" in ju && ju["selector"].type == JSONType.string)
-                    u.selector = ju["selector"].str;
+                if (ju.has("selector") && ju["selector"].isString)
+                    u.selector = ju["selector"].get!string;
             }
-            if (auto jn = "points_at" in ju)
-                if (jn.type == JSONType.object && "part" in *jn && (*jn)["part"].type == JSONType.string)
+            if (auto jn = ju.getPtr("points_at"))
+                if (jn.isObject && jn.has("part") && (*jn)["part"].isString)
                 {
-                    u.near.part = (*jn)["part"].str;
-                    if ("face" in *jn)
+                    u.near.part = (*jn)["part"].get!string;
+                    if (jn.has("face"))
                         u.near.face = cast(int) num((*jn)["face"]);
                     foreach (key, ref v; ["point": &u.near.point, "normal": &u.near.normal])
-                        if (key in *jn && (*jn)[key].type == JSONType.array && (*jn)[key].array.length == 3)
+                        if (jn.has(key) && (*jn)[key].isArray && (*jn)[key].length == 3)
                             *v = Vec3(num((*jn)[key][0]), num((*jn)[key][1]), num((*jn)[key][2]));
-                    if ("selector" in *jn && (*jn)["selector"].type == JSONType.string)
-                        u.near.selector = (*jn)["selector"].str;
-                    if ("pixels" in *jn)
+                    if (jn.has("selector") && (*jn)["selector"].isString)
+                        u.near.selector = (*jn)["selector"].get!string;
+                    if (jn.has("pixels"))
                         u.near.pixels = num((*jn)["pixels"]);
-                    u.near.ahead = "how" in *jn && (*jn)["how"].type == JSONType.string
-                        && (*jn)["how"].str == "ahead of the arrow";
+                    u.near.ahead = jn.has("how") && (*jn)["how"].isString
+                        && (*jn)["how"].get!string == "ahead of the arrow";
                 }
             n.under ~= u;
         }
@@ -576,12 +571,12 @@ struct AnnotationSet
         return k;
     }
 
-    JSONValue toJson() const
+    JValue toJson() const
     {
-        JSONValue[] r;
+        JValue r = JSAB();
         foreach (n; items)
             r ~= .toJson(n);
-        return JSONValue(r);
+        return r;
     }
 }
 
@@ -632,16 +627,16 @@ unittest
 unittest
 {
     // reading requests on a 200 × 100 view: fractions, pixels, points the window turns into the view.s
-    string read(JSONValue v, out P p, out P[2] box, out bool hasBox)
+    string read(JValue v, out P p, out P[2] box, out bool hasBox)
     {
-        if (v.type == JSONType.string && v.str == "clip")
+        if (v.isString && v.get!string == "clip")
         {
             p = P(0.5, 0.5);
             box = [P(0.4, 0.3), P(0.6, 0.7)];
             hasBox = true;
             return null;
         }
-        if (v.type == JSONType.array && v.array.length == 3)
+        if (v.isArray && v.length == 3)
         {
             p = P(0.25, 0.75);
             return null;
@@ -649,31 +644,31 @@ unittest
         return "no part named that";
     }
     Annotation n;
-    assert(readAnnotation(parseJSON(`{"arrow": [[0.1, 0.2], {"px": [100, 50]}], "colour": "red"}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"arrow": [[0.1, 0.2], {"px": [100, 50]}], "colour": "red"}`), &read, 200, 100, n) is null);
     assert(n.kind == "arrow" && n.points == [P(0.1, 0.2), P(0.5, 0.5)] && n.colour == 0xE01B24 && n.by == "agent");
-    assert(readAnnotation(parseJSON(`{"arrow": [[0, 0], [10, 20, 30]], "label": "hole"}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"arrow": [[0, 0], [10, 20, 30]], "label": "hole"}`), &read, 200, 100, n) is null);
     assert(n.points[1] == P(0.25, 0.75) && n.text == "hole");
-    assert(readAnnotation(parseJSON(`{"circle": "clip"}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"circle": "clip"}`), &read, 200, 100, n) is null);
     assert(abs(n.points[0].x - 0.35) < 1e-12 && abs(n.points[1].y - 0.8) < 1e-12);
-    assert(readAnnotation(parseJSON(`{"circle": {"center": [0.5, 0.5], "radius": 20}}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"circle": {"center": [0.5, 0.5], "radius": 20}}`), &read, 200, 100, n) is null);
     assert(abs(n.points[0].x - 0.4) < 1e-12 && abs(n.points[1].y - 0.7) < 1e-12);
-    assert(readAnnotation(parseJSON(`{"circle": [[0.1, 0.1], [0.3, 0.4]], "colour": "#123456"}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"circle": [[0.1, 0.1], [0.3, 0.4]], "colour": "#123456"}`), &read, 200, 100, n) is null);
     assert(n.points == [P(0.1, 0.1), P(0.3, 0.4)] && n.colour == 0x123456);
-    assert(readAnnotation(parseJSON(`{"text": "PLA", "at": [0.1, 0.9]}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"text": "PLA", "at": [0.1, 0.9]}`), &read, 200, 100, n) is null);
     assert(n.kind == "text" && n.text == "PLA" && n.points == [P(0.1, 0.9)]);
-    assert(readAnnotation(parseJSON(`{"freehand": [[0, 0], [0.1, 0.1], [0.2, 0]], "by": "user"}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"freehand": [[0, 0], [0.1, 0.1], [0.2, 0]], "by": "user"}`), &read, 200, 100, n) is null);
     assert(n.points.length == 3 && n.by == "user");
-    assert(readAnnotation(parseJSON(`{"cross": [10, 20, 30], "colour": "yellow"}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"cross": [10, 20, 30], "colour": "yellow"}`), &read, 200, 100, n) is null);
     assert(n.kind == "cross" && n.points == [P(0.25, 0.75)] && n.colour == 0xF6D32D);
-    assert(readAnnotation(parseJSON(`{"kind": "cross", "points": [[0.2, 0.3]]}`), &read, 200, 100, n) is null);
+    assert(readAnnotation(parseJSONComplete(`{"kind": "cross", "points": [[0.2, 0.3]]}`), &read, 200, 100, n) is null);
     assert(n.points == [P(0.2, 0.3)]);
 
-    assert(readAnnotation(parseJSON(`{"arrow": [[0, 0]]}`), &read, 200, 100, n) !is null);
-    assert(readAnnotation(parseJSON(`{"arrow": [[0, 0], "box"]}`), &read, 200, 100, n) == "no part named that");
-    assert(readAnnotation(parseJSON(`{"arrow": [[0.5, 0.5], [0.5, 0.5]]}`), &read, 200, 100, n) !is null);
-    assert(readAnnotation(parseJSON(`{"kind": "blob", "points": []}`), &read, 200, 100, n) !is null);
-    assert(readAnnotation(parseJSON(`{"kind": "text", "at": [0, 0]}`), &read, 200, 100, n) !is null);
-    assert(readAnnotation(parseJSON(`{"circle": [0.5, 0.5], "colour": "pink"}`), &read, 200, 100, n) !is null);
+    assert(readAnnotation(parseJSONComplete(`{"arrow": [[0, 0]]}`), &read, 200, 100, n) !is null);
+    assert(readAnnotation(parseJSONComplete(`{"arrow": [[0, 0], "box"]}`), &read, 200, 100, n) == "no part named that");
+    assert(readAnnotation(parseJSONComplete(`{"arrow": [[0.5, 0.5], [0.5, 0.5]]}`), &read, 200, 100, n) !is null);
+    assert(readAnnotation(parseJSONComplete(`{"kind": "blob", "points": []}`), &read, 200, 100, n) !is null);
+    assert(readAnnotation(parseJSONComplete(`{"kind": "text", "at": [0, 0]}`), &read, 200, 100, n) !is null);
+    assert(readAnnotation(parseJSONComplete(`{"circle": [0.5, 0.5], "colour": "pink"}`), &read, 200, 100, n) !is null);
 }
 
 unittest
@@ -686,13 +681,13 @@ unittest
     s.add(a);
     Annotation t = {kind: "text", points: [P(0.7, 0.1)], text: "too thin?"};
     s.add(t);
-    auto j = parseJSON(s.toJson().toString);
-    assert(j[0]["under"][0]["part"].str == "clip" && j[0]["under"][0]["face"].integer == 25);
-    assert(j[0]["under"][1]["part"].type == JSONType.null_ && j[0]["label"].str == "hole" && j[1]["text"].str == "too thin?");
+    auto j = parseJSONComplete(s.toJson().toString);
+    assert(j[0]["under"][0]["part"].get!string == "clip" && j[0]["under"][0]["face"].get!long == 25);
+    assert(j[0]["under"][1]["part"].isNull && j[0]["label"].get!string == "hole" && j[1]["text"].get!string == "too thin?");
     // a point on the background says what the mark points at; the colour has its name
-    assert(j[0]["under"][1]["points_at"]["part"].str == "clip" && j[0]["under"][1]["points_at"]["how"].str == "ahead of the arrow");
-    assert(j[0]["colour_name"].str == "blue" && j[1]["colour_name"].str == "magenta" && colourName(0xE01B25) == "near red");
-    foreach (k, item; j.array)
+    assert(j[0]["under"][1]["points_at"]["part"].get!string == "clip" && j[0]["under"][1]["points_at"]["how"].get!string == "ahead of the arrow");
+    assert(j[0]["colour_name"].get!string == "blue" && j[1]["colour_name"].get!string == "magenta" && colourName(0xE01B25) == "near red");
+    foreach (size_t k, item; j)
     {
         Annotation back;
         assert(fromJson(item, back) is null);

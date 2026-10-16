@@ -5,7 +5,7 @@
 module hackerscad.gui.settings;
 
 import std.file : mkdirRecurse, readText, write;
-import std.json;
+import djson;
 import std.path : buildPath, dirName;
 import std.process : environment;
 
@@ -31,10 +31,10 @@ string setting(string key, string fallback)
 {
     try
     {
-        auto j = parseJSON(readText(settingsFile()));
-        if (auto v = key in j.object)
-            if (v.type == JSONType.string)
-                return v.str;
+        auto j = parseJSONComplete(readText(settingsFile()));
+        if (auto v = j.getPtr(key))
+            if (v.isString)
+                return v.get!string;
     }
     catch (Exception)
     {
@@ -46,19 +46,19 @@ string setting(string key, string fallback)
 /// written leaves the preference for this run only.
 void setSetting(string key, string value)
 {
-    JSONValue j = JSONValue((JSONValue[string]).init);
+    JValue j = JSOB();
     try
-        j = parseJSON(readText(settingsFile()));
+        j = parseJSONComplete(readText(settingsFile()));
     catch (Exception)
     {
     }
-    if (j.type != JSONType.object)
-        j = JSONValue((JSONValue[string]).init);
+    if (!j.isObject)
+        j = JSOB();
     j[key] = value;
     try
     {
         mkdirRecurse(dirName(settingsFile()));
-        write(settingsFile(), j.toPrettyString ~ "\n");
+        write(settingsFile(), j.toJSON(true) ~ "\n");
     }
     catch (Exception)
     {

@@ -5,7 +5,7 @@ module hackerscad.tool.features;
 
 import std.file : exists, read, readText;
 import std.format : format;
-import std.json;
+import djson;
 import std.path : extension;
 import std.string : toLower;
 
@@ -61,18 +61,18 @@ Mesh meshOf(string file, string part = null)
     }
 }
 
-private JSONValue v3(Vec3 v) => JSONValue([plausible(v.x), plausible(v.y), plausible(v.z)]);
+private JValue v3(Vec3 v) => toJSON([plausible(v.x), plausible(v.y), plausible(v.z)]);
 
 /// The analysis as JSON: the size, every surface (rounded values with the
 /// measured diameter alongside), the patterns.
-JSONValue featuresJson(const Analysis a)
+JValue featuresJson(const Analysis a)
 {
     import std.math : PI;
-    JSONValue j = ["size_mm": v3(a.hi - a.lo), "min_mm": v3(a.lo), "max_mm": v3(a.hi)];
-    JSONValue[] fs;
+    JValue j = JSOB("size_mm", v3(a.hi - a.lo), "min_mm", v3(a.lo), "max_mm", v3(a.hi));
+    JValue fs = JSAB();
     foreach (i, f; a.features)
     {
-        JSONValue jf = ["index": JSONValue(i), "area_mm2": JSONValue(plausible(f.area)), "triangles": JSONValue(f.triangles)];
+        JValue jf = JSOB("index", i, "area_mm2", plausible(f.area), "triangles", f.triangles);
         final switch (f.kind)
         {
         case Surface.plane:
@@ -83,7 +83,7 @@ JSONValue featuresJson(const Analysis a)
             {
                 jf["chamfer_mm"] = plausible(f.leg);
                 jf["width_mm"] = plausible(f.width);
-                jf["between"] = [v3(f.sides[0]), v3(f.sides[1])];
+                jf["between"] = JSAB(v3(f.sides[0]), v3(f.sides[1]));
             }
             break;
         case Surface.cylinder:
@@ -118,7 +118,7 @@ JSONValue featuresJson(const Analysis a)
             {
                 jf["axis"] = v3(f.axis);
                 jf["through_mm"] = v3(f.point);
-                jf["from_axis_mm"] = [plausible(f.radius), plausible(f.outer)];
+                jf["from_axis_mm"] = toJSON([plausible(f.radius), plausible(f.outer)]);
             }
             break;
         }
@@ -128,10 +128,10 @@ JSONValue featuresJson(const Analysis a)
         fs ~= jf;
     }
     j["surfaces"] = fs;
-    JSONValue[] ps;
+    JValue ps = JSAB();
     foreach (p; a.patterns)
     {
-        JSONValue jp = ["surfaces": JSONValue(p.members), "count": JSONValue(p.members.length)];
+        JValue jp = JSOB("surfaces", toJSON(p.members), "count", p.members.length);
         jp["diameter_mm"] = plausible(a.features[p.members[0]].diameter);
         if (p.circular)
         {

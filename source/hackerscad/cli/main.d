@@ -2,7 +2,7 @@ module hackerscad.cli.main;
 
 import std.stdio;
 import std.getopt;
-import std.json;
+import djson;
 import std.string : indexOf;
 
 import hackerscad.lang.errors;
@@ -245,7 +245,7 @@ int main(string[] args)
             {
                 auto a = analyse(meshOf(args[1], part));
                 if (asJson)
-                    writeln(featuresJson(a).toPrettyString(JSONOptions.doNotEscapeSlashes));
+                    writeln(featuresJson(a).toJSON(true));
                 else
                     write(report(a));
             }
@@ -344,7 +344,7 @@ int main(string[] args)
                 auto free = freeShotArg(from, lookAt, size, cut);
                 auto j = run.compare(ia, ib, tol, png, free.length ? &free[0] : null, views);
                 if (asJson)
-                    writeln(j.toPrettyString());
+                    writeln(j.toJSON(true));
                 else
                     write(Run.compareText(j, run.result.parts[ia].name, run.result.parts[ib].name, 10));
                 if (auto focus = focusList(focusArg))
@@ -676,7 +676,7 @@ int main(string[] args)
 
     if (json)
     {
-        writeln(run.report().toPrettyString(JSONOptions.doNotEscapeSlashes));
+        writeln(run.report().toJSON(true));
         return run.hasErrors ? 1 : 0;
     }
 

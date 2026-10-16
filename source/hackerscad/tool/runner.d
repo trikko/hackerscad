@@ -8,7 +8,7 @@ import std.array : array;
 import std.datetime.stopwatch : StopWatch, AutoStart;
 import std.file : exists, readText, getcwd, write;
 import std.format : format;
-import std.json;
+import djson;
 import std.path : absolutePath, buildPath, dirName, extension;
 import std.string : toLower;
 
@@ -302,7 +302,7 @@ final class Run
     /// How far part `a` is from part `b` (a remodelled part from the mesh it
     /// copies): the distances both ways, and pictures of `a` coloured by its
     /// distance from `b` (green within tol / 2, yellow at tol, red at twice it).
-    JSONValue compare(size_t a, size_t b, double tol, out ubyte[] picture, const(Shot)* free = null, size_t views = 4)
+    JValue compare(size_t a, size_t b, double tol, out ubyte[] picture, const(Shot)* free = null, size_t views = 4)
     {
         import hackerscad.geom.deviation : deviation, deviationMap;
         import std.algorithm : max;
@@ -310,30 +310,28 @@ final class Run
         auto bb = kernel.bbox(result.parts[a].solid.brep);
         immutable spacing = max(0.2, bb.size.length / 300);
         auto ab = deviation(faceMeshes[a], meshes[b], spacing), ba = deviation(meshes[b], faceMeshes[a], spacing);
-        JSONValue j = ["max_mm": max(ab.max, ba.max)];
-        j["a_to_b"] = ["max_mm": JSONValue(ab.max), "mean_mm": JSONValue(ab.mean), "rms_mm": JSONValue(ab.rms),
-            "within_tolerance": JSONValue(ab.within(tol))];
-        j["a_to_b"]["worst_at"] = [ab.worstAt.x, ab.worstAt.y, ab.worstAt.z];
-        j["b_to_a"] = ["max_mm": JSONValue(ba.max), "mean_mm": JSONValue(ba.mean), "rms_mm": JSONValue(ba.rms),
-            "within_tolerance": JSONValue(ba.within(tol))];
-        j["b_to_a"]["worst_at"] = [ba.worstAt.x, ba.worstAt.y, ba.worstAt.z];
+        JValue j = JSOB("max_mm", max(ab.max, ba.max));
+        j["a_to_b"] = JSOB("max_mm", ab.max, "mean_mm", ab.mean, "rms_mm", ab.rms, "within_tolerance", ab.within(tol));
+        j["a_to_b"]["worst_at"] = toJSON([ab.worstAt.x, ab.worstAt.y, ab.worstAt.z]);
+        j["b_to_a"] = JSOB("max_mm", ba.max, "mean_mm", ba.mean, "rms_mm", ba.rms, "within_tolerance", ba.within(tol));
+        j["b_to_a"]["worst_at"] = toJSON([ba.worstAt.x, ba.worstAt.y, ba.worstAt.z]);
         j["tolerance_mm"] = tol;
         // the places where the surfaces part, in numbers: small things the volumes miss (a chamfer, a
         // notch, a countersink)
         import hackerscad.geom.deviation : patches;
         import hackerscad.geom.meshfeatures : plausible;
-        JSONValue[] list(const Mesh from, const Mesh to)
+        JValue list(const Mesh from, const Mesh to)
         {
-            JSONValue[] r;
+            JValue r = JSAB();
             foreach (i, p; patches(from, to, tol, 0.5))
             {
                 if (i == 25)
                     break;
-                JSONValue jp = ["area_mm2": plausible(p.area), "worst_mm": plausible(p.worst), "mean_mm": plausible(p.mean)];
-                jp["from"] = [plausible(p.lo.x), plausible(p.lo.y), plausible(p.lo.z)];
-                jp["to"] = [plausible(p.hi.x), plausible(p.hi.y), plausible(p.hi.z)];
-                jp["centre"] = [plausible(p.centre.x), plausible(p.centre.y), plausible(p.centre.z)];
-                jp["facing"] = [plausible(p.normal.x), plausible(p.normal.y), plausible(p.normal.z)];
+                JValue jp = JSOB("area_mm2", plausible(p.area), "worst_mm", plausible(p.worst), "mean_mm", plausible(p.mean));
+                jp["from"] = toJSON([plausible(p.lo.x), plausible(p.lo.y), plausible(p.lo.z)]);
+                jp["to"] = toJSON([plausible(p.hi.x), plausible(p.hi.y), plausible(p.hi.z)]);
+                jp["centre"] = toJSON([plausible(p.centre.x), plausible(p.centre.y), plausible(p.centre.z)]);
+                jp["facing"] = toJSON([plausible(p.normal.x), plausible(p.normal.y), plausible(p.normal.z)]);
                 r ~= jp;
             }
             return r;
@@ -425,12 +423,12 @@ final class Run
             }
             import std.algorithm : sort;
             kept.sort!((x, y) => x.area > y.area);
-            JSONValue[] slivers;
+            JValue slivers = JSAB();
             foreach (sl; kept[0 .. min(5, kept.length)])
             {
-                JSONValue js = ["area_mm2": plausible(sl.area)];
-                js["from"] = [plausible(sl.lo.x), plausible(sl.lo.y), plausible(sl.lo.z)];
-                js["to"] = [plausible(sl.hi.x), plausible(sl.hi.y), plausible(sl.hi.z)];
+                JValue js = JSOB("area_mm2", plausible(sl.area));
+                js["from"] = toJSON([plausible(sl.lo.x), plausible(sl.lo.y), plausible(sl.lo.z)]);
+                js["to"] = toJSON([plausible(sl.hi.x), plausible(sl.hi.y), plausible(sl.hi.z)]);
                 slivers ~= js;
             }
             if (slivers.length)
@@ -443,9 +441,9 @@ final class Run
         auto shots = free !is null ? [*free] : offViews(map, colors, views);
         auto img = shots.length == 1 ? render([s], shots[0], 1000, 700) : renderSheet([s], shots, 450);
         picture = encodePng(img.rgb, img.width, img.height);
-        JSONValue[] captions;
+        JValue captions = JSAB();
         foreach (sh; shots)
-            captions ~= JSONValue(sh.toString);
+            captions ~= sh.toString;
         j["pictures"] = captions;
         return j;
     }
@@ -509,7 +507,7 @@ final class Run
     /// The comparison `compare` gives, as a few lines of text: the distances
     /// both ways, where the worst is, and the largest patches of each surface
     /// the other does not follow (`patches` of them), one line each.
-    static string compareText(JSONValue j, string na, string nb, size_t patches = 8)
+    static string compareText(JValue j, string na, string nb, size_t patches = 8)
     {
         import hackerscad.geom.meshfeatures : plausible;
         string mm(double v)
@@ -517,8 +515,8 @@ final class Run
             immutable p = plausible(v);
             return format("%g", p == 0 ? 0.0 : p);
         }
-        double num(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
-        string vec(JSONValue v) => format("(%s, %s, %s)", mm(num(v[0])), mm(num(v[1])), mm(num(v[2])));
+        double num(JValue v) => v.get!double;
+        string vec(JValue v) => format("(%s, %s, %s)", mm(num(v[0])), mm(num(v[1])), mm(num(v[2])));
         immutable tol = num(j["tolerance_mm"]);
         string s = format("%s against %s, tolerance %s mm:\n", na, nb, mm(tol));
         size_t number;
@@ -534,12 +532,12 @@ final class Run
         foreach (side; [["b_surface_not_matched", "on " ~ nb ~ ", what " ~ na ~ " does not follow"],
                 ["a_surface_not_matched", "on " ~ na ~ ", what " ~ nb ~ " does not have"]])
         {
-            auto list = j[side[0]].array;
+            auto list = j[side[0]].get!JArray.elements;
             if (list.length == 0)
                 continue;
             s ~= format("  %s (%d patches, the largest first):\n", side[1], list.length);
             // patches alike (one notch repeated, the two sides of one slot): one line, the others' numbers after it
-            bool alike(JSONValue p, JSONValue q)
+            bool alike(JValue p, JValue q)
             {
                 import std.algorithm : max;
                 import std.math : abs;
@@ -581,43 +579,43 @@ final class Run
             }
             number = first + list.length;
         }
-        if (auto sl = "a_slivers" in j)
+        if (auto sl = j.getPtr("a_slivers"))
         {
             s ~= format("  walls thinner than the tolerance that %s has and %s has not (two pieces a hair apart, a "
                 ~ "sliver left between them):\n", na, nb);
-            foreach (p; sl.array)
+            foreach (p; sl.get!JArray.elements)
                 s ~= format("    %d. %s mm² from %s to %s\n", ++number, mm(num(p["area_mm2"])), vec(p["from"]),
                     vec(p["to"]));
         }
-        if ("pictures" in j)
+        if (j.has("pictures"))
         {
             s ~= "  the picture (the copy coloured by its distance: green within half the tolerance, yellow at it, red "
                 ~ "at twice it), left to right and top to bottom:\n";
-            foreach (i, c; j["pictures"].array)
-                s ~= format("    %d. %s\n", i + 1, c.str);
+            foreach (i, c; j["pictures"].get!JArray.elements)
+                s ~= format("    %d. %s\n", i + 1, c.get!string);
         }
         return s ~ "  next: diff and lines on the same parts, and a close-up (focus) of the first entries of each\n";
     }
 
     /// The patches of a comparison (as compare gives them), numbered as
     /// compareText numbers them: the original's first, then the copy's.
-    static JSONValue[] comparePatches(JSONValue j) => j["b_surface_not_matched"].array ~ j["a_surface_not_matched"].array
-        ~ ("a_slivers" in j ? j["a_slivers"].array : null);
+    static JValue[] comparePatches(JValue j) => j["b_surface_not_matched"].get!JArray.elements
+        ~ j["a_surface_not_matched"].get!JArray.elements ~ (j.has("a_slivers") ? j["a_slivers"].get!JArray.elements : null);
 
     /// Close-ups of patches of a comparison, by their numbers.
-    string compareFocus(JSONValue j, size_t a, size_t b, const size_t[] focus, out ubyte[] picture)
+    string compareFocus(JValue j, size_t a, size_t b, const size_t[] focus, out ubyte[] picture)
     {
         import hackerscad.tool.closeup : Place;
         auto list = comparePatches(j);
-        double num(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
-        Vec3 vec(JSONValue v) => Vec3(num(v[0]), num(v[1]), num(v[2]));
+        double num(JValue v) => v.get!double;
+        Vec3 vec(JValue v) => Vec3(num(v[0]), num(v[1]), num(v[2]));
         Place[] places;
         foreach (n; focus)
         {
             if (n < 1 || n > list.length)
                 throw new Exception(format("there is no patch %d: the comparison numbers 1 to %d", n, list.length));
             auto p = list[n - 1];
-            places ~= "facing" in p
+            places ~= p.has("facing")
                 ? Place(format("patch %d, %g mm² off by %g mm", n, num(p["area_mm2"]), num(p["mean_mm"])),
                     vec(p["from"]), vec(p["to"]), true, vec(p["facing"]))
                 : Place(format("patch %d, a sliver of %g mm²", n, num(p["area_mm2"])), vec(p["from"]), vec(p["to"]));
@@ -811,11 +809,11 @@ final class Run
         ubyte[] unused;
         s ~= "\n2. material (diff)\n" ~ drop(differences(a, b, 0, null, unused));
         // the slivers first: what the numbers hardly show
-        double num(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
-        Vec3 vec(JSONValue v) => Vec3(num(v[0]), num(v[1]), num(v[2]));
+        double num(JValue v) => v.get!double;
+        Vec3 vec(JValue v) => Vec3(num(v[0]), num(v[1]), num(v[2]));
         Place[] candidates;
-        if (auto sl = "a_slivers" in j)
-            foreach (p; sl.array[0 .. min(3, $)])
+        if (auto sl = j.getPtr("a_slivers"))
+            foreach (p; sl.get!JArray.elements[0 .. min(3, $)])
                 candidates ~= Place(format("a sliver of %g mm²", num(p["area_mm2"])), vec(p["from"]), vec(p["to"]));
         foreach (p; lastEntries[0 .. min(each, $)])
             candidates ~= p;
@@ -872,8 +870,7 @@ final class Run
         if (left)
             s ~= format("\n%d more entries left out of this summary: detail: true gives the whole reports\n", left);
         // done, or what comes next
-        double share(string way) => j[way]["within_tolerance"].type == JSONType.integer
-            ? j[way]["within_tolerance"].integer : j[way]["within_tolerance"].floating;
+        double share(string way) => j[way]["within_tolerance"].get!double;
         immutable done = share("a_to_b") >= 0.95 && share("b_to_a") >= 0.95;
         s ~= done ? "\nboth surfaces are 95% or more within the tolerance: if the close-ups show nothing worth "
             ~ "fixing, name the measures that matter (hcad literals) and stop\n"
@@ -1070,22 +1067,22 @@ final class Run
     }
 
     /// Machine-readable summary for scripts and agents.
-    JSONValue report()
+    JValue report()
     {
-        JSONValue j = ["ok": JSONValue(!hasErrors)];
+        JValue j = JSOB("ok", !hasErrors);
         j["milliseconds"] = milliseconds;
-        JSONValue[] parts;
+        JValue parts = JSAB();
         foreach (pi, p; result.parts)
         {
             auto bb = kernel.bbox(p.solid.brep);
-            JSONValue jp = ["name": p.name];
+            JValue jp = JSOB("name", p.name);
             if (p.label != p.name)
                 jp["export_name"] = p.label;
             jp["color"] = hexColor(p.rgb);
             if (!p.export_)
                 jp["export"] = false;
-            jp["bbox"] = ["min": [bb.min.x, bb.min.y, bb.min.z], "max": [bb.max.x, bb.max.y, bb.max.z],
-                "size": [bb.size.x, bb.size.y, bb.size.z]];
+            jp["bbox"] = JSOB("min", toJSON([bb.min.x, bb.min.y, bb.min.z]), "max", toJSON([bb.max.x, bb.max.y, bb.max.z]),
+                "size", toJSON([bb.size.x, bb.size.y, bb.size.z]));
             try
                 jp["volume_mm3"] = kernel.volume(p.solid.brep);
             catch (KernelException)
@@ -1094,7 +1091,7 @@ final class Run
             if (printability)
             {
                 auto pc = printChecks()[pi];
-                JSONValue jpr = ["overhang_mm2": pc.overhangArea, "thin_wall_mm2": pc.thinArea];
+                JValue jpr = JSOB("overhang_mm2", pc.overhangArea, "thin_wall_mm2", pc.thinArea);
                 if (pc.thinArea > 0)
                     jpr["thinnest_mm"] = pc.thinnest;
                 jp["printability"] = jpr;
@@ -1103,38 +1100,39 @@ final class Run
             parts ~= jp;
         }
         j["parts"] = parts;
-        JSONValue[] drawings;
+        JValue drawings = JSAB();
         foreach (d; result.drawings)
-            drawings ~= JSONValue(d.name);
+            drawings ~= d.name;
         j["drawings"] = drawings;
 
-        JSONValue[] params;
+        JValue params = JSAB();
         foreach (p; result.params.length ? result.params : interp.params)
         {
-            JSONValue jp = ["name": p.name, "value": p.value.toString, "default": p.defaultValue.toString,
-                "type": p.value.typeName];
+            JValue jp = JSOB("name", p.name, "value", p.value.toString, "default", p.defaultValue.toString,
+                "type", p.value.typeName);
             if (p.doc.length) jp["doc"] = p.doc;
             if (p.min.kind != Kind.void_) jp["min"] = p.min.toString;
             if (p.max.kind != Kind.void_) jp["max"] = p.max.toString;
-            if (p.choices.length) jp["choices"] = p.choices.map!(c => c.toString).array;
+            if (p.choices.length) jp["choices"] = toJSON(p.choices.map!(c => c.toString).array);
             if (p.presets.length)
             {
-                JSONValue[string] ps;
-                foreach (name, v; p.presets)
-                    ps[name] = v.toString;
+                import std.algorithm : sort;
+                JValue ps = JSOB();
+                foreach (name; p.presets.keys.sort)
+                    ps[name] = p.presets[name].toString;
                 jp["presets"] = ps;
             }
             params ~= jp;
         }
         j["params"] = params;
-        j["presets"] = result.presets.length ? result.presets : interp.presetNames;
-        j["log"] = (result.log.length ? result.log : interp.log).map!(l => l.text).array;
+        j["presets"] = toJSON(result.presets.length ? result.presets : interp.presetNames);
+        j["log"] = toJSON((result.log.length ? result.log : interp.log).map!(l => l.text).array);
 
-        JSONValue[] diags;
+        JValue diags = JSAB();
         foreach (d; fatal ~ result.diagnostics)
         {
-            JSONValue jd = ["severity": format("%s", d.severity), "code": d.code, "message": d.message,
-                "file": d.span.file];
+            JValue jd = JSOB("severity", format("%s", d.severity), "code", d.code, "message", d.message,
+                "file", d.span.file);
             jd["line"] = d.span.line;
             jd["column"] = d.span.col;
             if (d.suggestion.length) jd["suggestion"] = d.suggestion;
@@ -1221,7 +1219,7 @@ unittest
 {
     // the comparison's text: patches alike (here the two sides of a slot, facing each other) on one line, numbered
     import std.algorithm : canFind;
-    JSONValue j = parseJSON(`{"tolerance_mm": 0.1, "max_mm": 0.3,
+    JValue j = parseJSONComplete(`{"tolerance_mm": 0.1, "max_mm": 0.3,
         "a_to_b": {"max_mm": 0.3, "mean_mm": 0.01, "rms_mm": 0.02, "within_tolerance": 0.97, "worst_at": [0, 0, 0]},
         "b_to_a": {"max_mm": 0.2, "mean_mm": 0.01, "rms_mm": 0.02, "within_tolerance": 0.98, "worst_at": [0, 0, 0]},
         "b_surface_not_matched": [

@@ -6,15 +6,15 @@ module hackerscad.gui.controlmethods;
 
 mixin template ControlMethods()
 {
-    void dispatchControl(string method, JSONValue p, void delegate(JSONValue, string) reply)
+    void dispatchControl(string method, JValue p, void delegate(JValue, string) reply)
     {
-        string arg(string k) => k in p && p[k].type == JSONType.string ? p[k].str : null;
-        bool has(string k) => k in p && p[k].type != JSONType.null_;
+        string arg(string k) => p.safe!string(k).or(null);
+        bool has(string k) => p.has(k) && !p[k].isNull;
         // the view is annotated: what would change what it shows waits until it is live again
         {
             import std.algorithm : canFind;
             if (frozen && ["pick", "transform", "split", "inspect", "rollback", "step", "sketch", "menu"].canFind(method))
-                return reply(JSONValue.init, "the view is annotated (locked, with marks on it): " ~ method ~ " would "
+                return reply(JValue.init, "the view is annotated (locked, with marks on it): " ~ method ~ " would "
                     ~ "change what it shows; hcad_gui_annotate mode: false (or the user's Done) takes it back to the live view");
         }
         switch (method)
@@ -23,11 +23,11 @@ mixin template ControlMethods()
             {
                 auto file = absolutePath(arg("path"));
                 if (!exists(file))
-                    return reply(JSONValue.init, "file not found: " ~ file);
+                    return reply(JValue.init, "file not found: " ~ file);
                 if (auto why = notAModel(file))
-                    return reply(JSONValue.init, why ~ " To use a mesh or CAD file, write a model that calls load() on it.");
-                if (modified && !("force" in p && p["force"].type == JSONType.true_))
-                    return reply(JSONValue.init, "the user has unsaved changes in " ~ baseName(path)
+                    return reply(JValue.init, why ~ " To use a mesh or CAD file, write a model that calls load() on it.");
+                if (modified && !p.safe!bool("force").or(false))
+                    return reply(JValue.init, "the user has unsaved changes in " ~ baseName(path)
                         ~ ": ask them to save, or pass force: true to discard them");
                 load(file);
                 whenIdle(() => reply(state(), null));
@@ -38,18 +38,18 @@ mixin template ControlMethods()
                 replaceCode(s);
             // a preset first (it clears the values set by hand), then the
             // values given with it, on top
-            if ("preset" in p)
+            if (p.has("preset"))
             {
                 params.preset = arg("preset");
                 params.overrides = null;
             }
-            if ("params" in p)
+            if (p.has("params"))
                 foreach (k, v; toOverrides(p["params"]))
                     params.overrides[k] = v;
             // the parameters' ↺: back to the code's value (or the preset's)
-            if ("reset" in p && p["reset"].type == JSONType.array)
-                foreach (n; p["reset"].array)
-                    params.overrides.remove(n.str);
+            if (p.has("reset") && p["reset"].isArray)
+                foreach (n; p["reset"].get!JArray.elements)
+                    params.overrides.remove(n.get!string);
             params.invalidate();
             // frame the changed model, keeping the angle it is seen from
             fitNext = true;
@@ -60,18 +60,18 @@ mixin template ControlMethods()
             // after the running evaluation, or right away with "now": true
             // (then "evaluating" and "stage" tell how far it is)
             {
-                immutable withSource = "source" in p && p["source"].type == JSONType.true_;
-                JSONValue full()
+                immutable withSource = p.safe!bool("source").or(false);
+                JValue full()
                 {
                     auto j = state();
                     if (withSource)
                     {
                         j["source"] = text();
-                        j["steps"] = stepsPanel.rowsText();   // the Steps panel, row by row
+                        j["steps"] = toJSON(stepsPanel.rowsText());   // the Steps panel, row by row
                     }
                     return j;
                 }
-                if ("now" in p && p["now"].type == JSONType.true_)
+                if (p.safe!bool("now").or(false))
                     reply(full(), null);
                 else
                     whenIdle(() => reply(full(), null));
@@ -80,11 +80,11 @@ mixin template ControlMethods()
         case "pick":
             {
                 // click in the 3D view: at x, y (fractions of its size) or at a model point
-                immutable shiftPick = "shift" in p && p["shift"].type == JSONType.true_;
+                immutable shiftPick = p.safe!bool("shift").or(false);
                 whenIdle(() {
                     double x, y;
                     if (auto problem = screenPoint(p, x, y))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     auto hit = viewport.pickAt(x, y);
                     hit.shift = shiftPick;   // add to the selection, as Shift+click
                     picked(hit);
@@ -101,7 +101,7 @@ mixin template ControlMethods()
                 // the view is annotated: it is locked, so the marks stay on what they mark
                 if (frozen && (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom")
                         || has("size") || has("projection") || has("look_at_face")))
-                    return reply(JSONValue.init, "the view is annotated (locked, with marks on it): it cannot move "
+                    return reply(JValue.init, "the view is annotated (locked, with marks on it): it cannot move "
                         ~ "until hcad_gui_annotate mode: false (or the user's Done) takes it back to the live view");
                 // moved as the user moves it: the frames count in graphics' figures
                 if (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom") || has("size"))
@@ -119,9 +119,9 @@ mixin template ControlMethods()
                 {
                     double fx, fy;
                     if (auto problem = screenPoint(p["look_at_face"], fx, fy))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     if (auto problem = lookAtFace(fx, fy))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     viewport.moved();
                 }
                 // centred on a model point, `size` mm across the view
@@ -152,7 +152,7 @@ mixin template ControlMethods()
                     import std.algorithm : countUntil;
                     immutable at = ["part", "face", "edge", "vertex"].countUntil(v);
                     if (at < 0)
-                        return reply(JSONValue.init, "select is part, face, edge or vertex");
+                        return reply(JValue.init, "select is part, face, edge or vertex");
                     selectChoice[at].setActive(true);
                 }
                 // how shiny the surfaces are, as the cube's Shine choices (kept between runs)
@@ -161,12 +161,12 @@ mixin template ControlMethods()
                     import std.algorithm : countUntil;
                     immutable at = ["none", "normal", "high"].countUntil(v);
                     if (at < 0)
-                        return reply(JSONValue.init, "shine must be none, normal or high");
+                        return reply(JValue.init, "shine must be none, normal or high");
                     shineChoice[at].setActive(true);
                 }
                 // the printability marks, over any style, as the cube's check box
                 if (has("printability"))
-                    printabilityChoice.setActive(p["printability"].type == JSONType.true_);
+                    printabilityChoice.setActive(p["printability"].safe!bool.or(false));
                 // the printability marks' limits, as their two fields
                 if (has("overhang_angle"))
                     overhangSpin.setValue(num(p["overhang_angle"]));
@@ -178,26 +178,26 @@ mixin template ControlMethods()
                 if (auto v = arg("theme"))
                 {
                     if (!["system", "light", "dark"].canFind(v))
-                        return reply(JSONValue.init, "theme must be system, light or dark");
+                        return reply(JValue.init, "theme must be system, light or dark");
                     StyleManager.getDefault().setColorScheme(schemeFor(v));
                 }
                 // antialiasing, for this run (the user's choice in the cube menu stays)
                 if (has("antialias"))
-                    viewport.setAntialias(p["antialias"].type == JSONType.true_);
+                    viewport.setAntialias(p["antialias"].safe!bool.or(false));
                 // what a left drag does, as the two buttons of the view bar
                 if (auto v = arg("drag"))
                     (v == "pan" ? panMode : rotateMode).setActive(true);
                 // the ground grid and the axes, as the eye's menu (kept between runs)
                 if (has("grid"))
-                    gridChoice.setActive(p["grid"].type == JSONType.true_);
+                    gridChoice.setActive(p["grid"].safe!bool.or(false));
                 if (has("axes"))
-                    axesChoice.setActive(p["axes"].type == JSONType.true_);
+                    axesChoice.setActive(p["axes"].safe!bool.or(false));
                 // the parts hidden with the eye of the view bar
                 if (has("hidden"))
                 {
                     bool[string] hide;
-                    foreach (n; p["hidden"].array)
-                        hide[n.str] = true;
+                    foreach (n; p["hidden"].get!JArray.elements)
+                        hide[n.get!string] = true;
                     foreach (i, pm; last.parts)
                         setPartVisible(i, (pm.name in hide) is null);
                 }
@@ -237,13 +237,13 @@ mixin template ControlMethods()
                         viewMenuButton.popup();
                 }
                 if (has("console"))
-                    consoleToggle.setActive(p["console"].type == JSONType.true_);
+                    consoleToggle.setActive(p["console"].safe!bool.or(false));
                 if (has("params"))
-                    paramsToggle.setActive(p["params"].type == JSONType.true_);
+                    paramsToggle.setActive(p["params"].safe!bool.or(false));
                 if (has("code"))
-                    codeToggle.setActive(p["code"].type == JSONType.true_);
+                    codeToggle.setActive(p["code"].safe!bool.or(false));
                 if (has("view"))
-                    viewToggle.setActive(p["view"].type == JSONType.true_);
+                    viewToggle.setActive(p["view"].safe!bool.or(false));
                 whenIdle(() => reply(state(), null));
                 return;
             }
@@ -253,7 +253,7 @@ mixin template ControlMethods()
                 // Split…'s ✓ (the upper half in another colour); {"part": "clip", "show": true} opens
                 // Split… on it for the user to place the plane, writing nothing; "show": false closes it
                 whenIdle(() {
-                    if ("show" in p && p["show"].type == JSONType.false_)
+                    if (!p.safe!bool("show").or(true))
                     {
                         if (splitPart >= 0)
                             sectionToggle.setActive(false);
@@ -265,8 +265,8 @@ mixin template ControlMethods()
                         if (q.name == name || (name is null && last.parts.length == 1))
                             index = cast(int) i;
                     if (index < 0)
-                        return reply(JSONValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
-                    if ("show" in p && p["show"].type == JSONType.true_)
+                        return reply(JValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
+                    if (p.safe!bool("show").or(false))
                     {
                         startSplit(index);
                         return reply(state(), null);
@@ -275,11 +275,11 @@ mixin template ControlMethods()
                     auto n = plane == "xy" ? Vec3(0, 0, 1) : plane == "xz" ? Vec3(0, 1, 0) : plane == "yz" ? Vec3(1, 0, 0)
                         : Vec3(0, 0, 0);
                     if (n.length == 0)
-                        return reply(JSONValue.init, "plane is xy, xz or yz");
+                        return reply(JValue.init, "plane is xy, xz or yz");
                     if (!has("at"))
-                        return reply(JSONValue.init, "at: where the plane is, in mm along its normal (z for xy)");
+                        return reply(JValue.init, "at: where the plane is, in mm along its normal (z for xy)");
                     if (auto problem = writeSplit(index, n, numberOf(p["at"])))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     whenIdle(() => reply(state(), null));
                 });
                 return;
@@ -298,13 +298,13 @@ mixin template ControlMethods()
                         if (q.name == name || (name is null && last.parts.length == 1))
                             index = cast(int) i;
                     if (index < 0)
-                        return reply(JSONValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
+                        return reply(JValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
                     import hackerscad.geom.color : partPalette;
                     import std.ascii : isHexDigit;
                     import std.algorithm : all;
                     import std.uni : sicmp, toUpper;
                     // a palette name as the palette writes it, or #RRGGBB
-                    if ("wheel" in p && p["wheel"].type == JSONType.true_)
+                    if (p.safe!bool("wheel").or(false))
                     {
                         showColourWheel(index);
                         return reply(state(), null);
@@ -328,12 +328,12 @@ mixin template ControlMethods()
                         string[] names;
                         foreach (c; partPalette)
                             names ~= c.name;
-                        return reply(JSONValue.init, "colour is one of " ~ names.join(", ") ~ ", or #RRGGBB");
+                        return reply(JValue.init, "colour is one of " ~ names.join(", ") ~ ", or #RRGGBB");
                     }
                     auto q = last.parts[index];
-                    immutable everyPiece = "all" in p && p["all"].type == JSONType.true_;
+                    immutable everyPiece = p.safe!bool("all").or(false);
                     if (auto problem = writeColour(q.fn, everyPiece ? -1 : q.piece, q.fromSolid, colour))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     whenIdle(() => reply(state(), null));
                 });
                 return;
@@ -352,7 +352,7 @@ mixin template ControlMethods()
                         if (q.name == name || (name is null && last.parts.length == 1))
                             index = cast(int) i;
                     if (index < 0)
-                        return reply(JSONValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
+                        return reply(JValue.init, name is null ? "say which part" : "no part named '" ~ name ~ "'");
                     // an axis: origin [x, y, z] mm and direction [x, y, z], for hinge
                     Vec3 hingeAt, hingeAlong;
                     immutable hasAxis = has("origin") && has("direction");
@@ -375,13 +375,13 @@ mixin template ControlMethods()
                             {
                                 auto q = p["scale"];
                                 Vec3 f = Vec3(1, 1, 1);
-                                if (q.type == JSONType.array && q.array.length == 3)
+                                if (q.isArray && q.length == 3)
                                     foreach (i; 0 .. 3)
                                         f[i] = numberOf(q[i]);
                                 else
                                     f = Vec3(1, 1, 1) * numberOf(q);
                                 if (f.x <= 0 || f.y <= 0 || f.z <= 0)
-                                    return reply(JSONValue.init, "scale factors must be positive");
+                                    return reply(JValue.init, "scale factors must be positive");
                                 viewport.previewScale(f);
                                 transformValue.setLabel(transformText());
                             }
@@ -389,7 +389,7 @@ mixin template ControlMethods()
                         else if (show == "hinge" && hasAxis && hingeAlong.length > 0)
                             startHinge(index, hingeAt, hingeAlong, "the axis");
                         else
-                            return reply(JSONValue.init, "show is move, rotate, scale, hinge (with origin and direction) or none");
+                            return reply(JValue.init, "show is move, rotate, scale, hinge (with origin and direction) or none");
                         return reply(state(), null);
                     }
                     // Place on…: {"place": {"from": […], "from_normal": […], "to": […], "to_normal": […], "spin": 0}}
@@ -404,14 +404,14 @@ mixin template ControlMethods()
                             return r;
                         }
                         foreach (k; ["from", "from_normal", "to", "to_normal"])
-                            if (q.type != JSONType.object || !(k in q) || q[k].type != JSONType.array || q[k].array.length != 3)
-                                return reply(JSONValue.init, "place needs from, from_normal, to and to_normal, each [x, y, z]");
+                            if (!q.isObject || !q.has(k) || !q[k].isArray || q[k].length != 3)
+                                return reply(JValue.init, "place needs from, from_normal, to and to_normal, each [x, y, z]");
                         Vec3 axis;
                         double angle;
                         Viewport.faceTurn(v3("from_normal"), v3("to_normal"), axis, angle);
-                        immutable spin = "spin" in q ? numberOf(q["spin"]) : 0;
+                        immutable spin = q.has("spin") ? numberOf(q["spin"]) : 0;
                         // show: the placing previewed with its ring, for the user to spin and confirm
-                        if ("show" in q && q["show"].type == JSONType.true_)
+                        if (q.safe!bool("show").or(false))
                         {
                             viewport.startPlace(index, v3("from"), v3("from_normal"));
                             viewport.previewPlace(v3("to"), v3("to_normal"));
@@ -421,7 +421,7 @@ mixin template ControlMethods()
                             return reply(state(), null);
                         }
                         if (auto problem = writePlace(index, v3("from"), axis, angle, v3("to"), spin, v3("to_normal").normalized))
-                            return reply(JSONValue.init, problem);
+                            return reply(JValue.init, problem);
                         whenIdle(() => reply(state(), null));
                         return;
                     }
@@ -429,9 +429,9 @@ mixin template ControlMethods()
                     if (has("hinge"))
                     {
                         if (!hasAxis || hingeAlong.length == 0)
-                            return reply(JSONValue.init, "hinge turns about an axis: give origin [x, y, z] (mm) and direction [x, y, z]");
+                            return reply(JValue.init, "hinge turns about an axis: give origin [x, y, z] (mm) and direction [x, y, z]");
                         if (auto problem = writeHinge(index, numberOf(p["hinge"]), hingeAt, hingeAlong))
-                            return reply(JSONValue.init, problem);
+                            return reply(JValue.init, problem);
                         whenIdle(() => reply(state(), null));
                         return;
                     }
@@ -442,17 +442,17 @@ mixin template ControlMethods()
                     {
                         kind = "scale";
                         auto q = p["scale"];
-                        if (q.type == JSONType.array && q.array.length == 3)
+                        if (q.isArray && q.length == 3)
                             foreach (i; 0 .. 3)
                                 v[i] = numberOf(q[i]);
-                        else if (q.type == JSONType.integer || q.type == JSONType.uinteger || q.type == JSONType.float_)
+                        else if (q.isNumber)
                             v = Vec3(1, 1, 1) * numberOf(q);
                         else
-                            return reply(JSONValue.init, "scale is a factor, or [x, y, z] factors");
+                            return reply(JValue.init, "scale is a factor, or [x, y, z] factors");
                         if (v.x <= 0 || v.y <= 0 || v.z <= 0)
-                            return reply(JSONValue.init, "scale factors must be positive");
+                            return reply(JValue.init, "scale factors must be positive");
                         if (v.x == 1 && v.y == 1 && v.z == 1)
-                            return reply(JSONValue.init, "a scale of 1 changes nothing");
+                            return reply(JValue.init, "a scale of 1 changes nothing");
                         // the middle of the bottom of its box stays where it is
                         auto b = last.parts[index].bbox;
                         around = Vec3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, b.min.z);
@@ -460,8 +460,8 @@ mixin template ControlMethods()
                     else if (has("move"))
                     {
                         kind = "move";
-                        if (p["move"].type != JSONType.array || p["move"].array.length != 3)
-                            return reply(JSONValue.init, "move is [x, y, z] in mm");
+                        if (!p["move"].isArray || p["move"].length != 3)
+                            return reply(JValue.init, "move is [x, y, z] in mm");
                         foreach (i; 0 .. 3)
                             v[i] = numberOf(p["move"][i]);
                     }
@@ -469,17 +469,17 @@ mixin template ControlMethods()
                     {
                         kind = "rotate";
                         auto r = p["rotate"];
-                        immutable axis = r.type == JSONType.object && "axis" in r && r["axis"].type == JSONType.string
-                            ? ["x": 0, "y": 1, "z": 2].get(r["axis"].str, -1) : -1;
-                        if (axis < 0 || "angle" !in r)
-                            return reply(JSONValue.init, "rotate is {\"axis\": \"x\", \"y\" or \"z\", \"angle\": degrees}");
+                        immutable axis = r.isObject && r.has("axis") && r["axis"].isString
+                            ? ["x": 0, "y": 1, "z": 2].get(r["axis"].get!string, -1) : -1;
+                        if (axis < 0 || !r.has("angle"))
+                            return reply(JValue.init, "rotate is {\"axis\": \"x\", \"y\" or \"z\", \"angle\": degrees}");
                         v[axis] = numberOf(r["angle"]);
                     }
                     else
-                        return reply(JSONValue.init, "give move, rotate, scale or show");
+                        return reply(JValue.init, "give move, rotate, scale or show");
                     cancelTransform();
                     if (auto problem = writeTransform(index, kind, v, around))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     whenIdle(() => reply(state(), null));
                 });
                 return;
@@ -490,15 +490,15 @@ mixin template ControlMethods()
                 // on what is there or (use_selection) on the Shift selection that contains it;
                 // "action": "sketch" is Sketch on face…
                 auto act = arg("action"), value = arg("value"), kind = arg("kind"), size = arg("size");
-                immutable useSelection = has("use_selection") && p["use_selection"].type == JSONType.true_;
+                immutable useSelection = has("use_selection") && p["use_selection"].safe!bool.or(false);
                 whenIdle(() {
                     double x, y;
                     if (auto problem = screenPoint(p, x, y))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     // whatever the user's selection mode: the face there, and an edge near the point
                     auto hit = viewport.pickAny(x, y);
                     if (hit.part < 0)
-                        return reply(JSONValue.init, "nothing under that point");
+                        return reply(JValue.init, "nothing under that point");
                     hit.edge = viewport.nearestEdge(hit.part, hit.face, x, y, 12);
                     if (!useSelection)
                         picked(hit);
@@ -507,12 +507,12 @@ mixin template ControlMethods()
                     if (act == "sketch")
                     {
                         if (auto problem = sketchOnFaceOf(hit.part, hit.face))
-                            return reply(JSONValue.init, problem);
+                            return reply(JValue.init, problem);
                         return whenIdle(() => reply(state(), null));
                     }
                     auto code = contextCode(act, value, kind, size);
                     if (code.length == 0)
-                        return reply(JSONValue.init, "unknown action, or it does not apply there: use fillet-edge, "
+                        return reply(JValue.init, "unknown action, or it does not apply there: use fillet-edge, "
                             ~ "chamfer-edge (an edge), fillet-face, chamfer-face, shell, draft, extrude-face, cut-face (faces), thread (size: an ISO size that fits the cylinder, e.g. M8), hole (kind: "
                             ~ "clearance, tap or insert; size: M2 to M8), pocket or boss (a face), sketch (a flat face)");
                     appendFeature(last.parts[hit.part], code, null);
@@ -526,16 +526,16 @@ mixin template ControlMethods()
             }
         case "new":
             // a new model from the template, as New; unsaved changes need force
-            if (modified && !("force" in p && p["force"].type == JSONType.true_))
-                return reply(JSONValue.init, "the model has unsaved changes: save it, or pass force: true to discard "
+            if (modified && !p.safe!bool("force").or(false))
+                return reply(JValue.init, "the model has unsaved changes: save it, or pass force: true to discard "
                     ~ "them (ask the user first)");
             // with "source": that code, in a model of no file (Save asks for a name): to show
             // an example the user can try things in without overwriting anything
-            if ("source" in p && p["source"].type == JSONType.string)
+            if (p.has("source") && p["source"].isString)
             {
                 startNew();
                 agentText = null;
-                replaceCode(p["source"].str);
+                replaceCode(p["source"].get!string);
                 modified = false;
                 updateTitle();
             }
@@ -543,7 +543,7 @@ mixin template ControlMethods()
             else if (auto ex = arg("example"))
             {
                 if (!startExample(ex))
-                    return reply(JSONValue.init, "no example named '" ~ ex ~ "': " ~ exampleNames());
+                    return reply(JValue.init, "no example named '" ~ ex ~ "': " ~ exampleNames());
             }
             else
                 startNew();
@@ -553,7 +553,7 @@ mixin template ControlMethods()
             {
                 // the window's name, as clicking it in the header bar
                 if (auto why = control.rename(arg("name")))
-                    return reply(JSONValue.init, why);
+                    return reply(JValue.init, why);
                 showWindowName();
                 reply(state(), null);
                 return;
@@ -565,21 +565,21 @@ mixin template ControlMethods()
                 // "open": true it stays open (path: groups to open), for a screenshot; {"bar": "view", "path":
                 // ["Sketches", "line 12 · …"]}: the view bar's View menu instead
                 string[] path;
-                immutable keep = "open" in p && p["open"].type == JSONType.true_;
-                if ("path" in p && p["path"].type == JSONType.array)
-                    foreach (v; p["path"].array)
-                        path ~= v.str;
-                immutable list = !("path" in p) || path.length == 0;
+                immutable keep = p.safe!bool("open").or(false);
+                if (p.has("path") && p["path"].isArray)
+                    foreach (v; p["path"].get!JArray.elements)
+                        path ~= v.get!string;
+                immutable list = !p.has("path") || path.length == 0;
                 if (arg("bar").length)
                 {
                     // the view bar's View menu: its presets, and Sketches, one entry per sketch of the model
                     if (arg("bar") != "view")
-                        return reply(JSONValue.init, "bar is view (the View menu of the view bar)");
+                        return reply(JValue.init, "bar is view (the View menu of the view bar)");
                     whenIdle(() {
                         if (list)
-                            return reply(JSONValue(["entries": menuJson(viewMenuEntries())]), null);
+                            return reply(JSOB("entries", menuJson(viewMenuEntries())), null);
                         if (auto problem = runMenuPath(viewMenuEntries(), path))
-                            return reply(JSONValue.init, problem);
+                            return reply(JValue.init, problem);
                         whenIdle(() => reply(state(), null));
                     });
                     return;
@@ -587,14 +587,14 @@ mixin template ControlMethods()
                 whenIdle(() {
                     double x, y;
                     if (auto problem = screenPoint(p, x, y))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     auto hit = viewport.pickAt(x, y);
                     // on empty space the menu lists the hidden parts, when there are some
                     bool anyHidden;
                     foreach (i; 0 .. last.parts.length)
                         anyHidden = anyHidden || viewport.isHidden(i);
                     if (hit.part < 0 && !anyHidden)
-                        return reply(JSONValue.init, "nothing under that point: the menu opens on a part (or, on empty "
+                        return reply(JValue.init, "nothing under that point: the menu opens on a part (or, on empty "
                             ~ "space, lists the hidden parts: none is hidden)");
                     contextMenu(hit, x, y);
                     if (list)
@@ -602,11 +602,11 @@ mixin template ControlMethods()
                         auto entries = lastMenuEntries();
                         if (!keep)
                             closeLastMenu();
-                        return reply(JSONValue(["entries": menuJson(entries)]), null);
+                        return reply(JSOB("entries", menuJson(entries)), null);
                     }
                     lastCopied = null;
                     if (auto problem = activateMenuPath(path))
-                        return reply(JSONValue.init, problem);
+                        return reply(JValue.init, problem);
                     whenIdle(() {
                         // an entry that copies (Measure, Copy as code): the text too
                         auto r = state();
@@ -620,7 +620,7 @@ mixin template ControlMethods()
         case "section":
             {
                 // {"plane": "xy" | "xz" | "yz" | "face", "at": 0..1 along the model, "flip": false}; {"on": false} hides it
-                if ("on" in p && p["on"].type == JSONType.false_)
+                if (!p.safe!bool("on").or(true))
                 {
                     sectionToggle.setActive(false);
                     whenIdle(() => reply(state(), null));
@@ -633,7 +633,7 @@ mixin template ControlMethods()
                 auto which = arg("plane").length ? planes.countUntil(arg("plane"))
                     : wasOn ? sectionPlane.getSelected() : 0;
                 if (which < 0)
-                    return reply(JSONValue.init, "plane must be xy, xz, yz or face");
+                    return reply(JValue.init, "plane must be xy, xz, yz or face");
                 immutable changed = !wasOn || which != sectionPlane.getSelected() || which == 3;
                 sectionUpdating = true;
                 sectionPlane.setSelected(cast(uint) which);
@@ -641,13 +641,13 @@ mixin template ControlMethods()
                 sectionToggle.setActive(true);
                 if (changed)
                     updateSection(true);
-                if ("at" in p)
+                if (p.has("at"))
                 {
                     auto adj = sectionSlider.getAdjustment();
                     sectionSlider.setValue(adj.getLower() + p["at"].get!double * (adj.getUpper() - adj.getLower()));
                 }
-                if ("flip" in p)
-                    sectionFlip.setActive(p["flip"].type == JSONType.true_);
+                if (p.has("flip"))
+                    sectionFlip.setActive(p["flip"].safe!bool.or(false));
                 whenIdle(() {
                     auto r = state();
                     r["section"] = sectionLabel.getLabel();
@@ -663,11 +663,11 @@ mixin template ControlMethods()
             // sketch). The reply lists the sketches, and state's sketch tells the one shown
             // (from_cursor, pinned, partial, stale). An explicit request takes the view over from the cursor
             {
-                if (has("align") && !has("line") && !("on" in p))
+                if (has("align") && !has("line") && !p.has("on"))
                 {
                     whenIdle(() {
                         if (!alignToSketch())
-                            return reply(JSONValue.init, frozen ? "the view is annotated: it does not move"
+                            return reply(JValue.init, frozen ? "the view is annotated: it does not move"
                                 : "no sketch is shown: show one first (line, or the cursor in its code)");
                         auto r = state();
                         r["sketches"] = sketchesJson();
@@ -675,21 +675,21 @@ mixin template ControlMethods()
                     });
                     return;
                 }
-                immutable hide = "on" in p && p["on"].type == JSONType.false_;
+                immutable hide = !p.safe!bool("on").or(true);
                 // follow: the setting Show the sketch at the cursor; pin: the pin of the mode bar, which keeps
                 // the sketch at the cursor shown when the cursor leaves its code; alone, they show nothing else
                 if (has("pin"))
                 {
                     if (!sketchFollowing)
-                        return reply(JSONValue.init, "pin keeps the sketch shown at the cursor: none is (move the "
+                        return reply(JValue.init, "pin keeps the sketch shown at the cursor: none is (move the "
                             ~ "cursor into a sketch's code with hcad_gui_edit goto)");
-                    pinButton.setActive(p["pin"].type == JSONType.true_);
+                    pinButton.setActive(p["pin"].safe!bool.or(false));
                 }
                 if (has("follow") || has("pin"))
                 {
                     if (has("follow"))
-                        setFollow(p["follow"].type == JSONType.true_);
-                    if (!has("line") && !("on" in p))
+                        setFollow(p["follow"].safe!bool.or(false));
+                    if (!has("line") && !p.has("on"))
                     {
                         whenIdle(() {
                             auto r = state();
@@ -714,13 +714,13 @@ mixin template ControlMethods()
                         immutable from = cast(uint) p["line"].get!long;
                         immutable to = has("to_line") ? max(from, cast(uint) p["to_line"].get!long) : from;
                         if (!inspectSketch(from, to, true))
-                            return reply(JSONValue.init, from == to ? format("line %d is not part of a sketch", from)
+                            return reply(JValue.init, from == to ? format("line %d is not part of a sketch", from)
                                 : format("lines %d–%d are not part of a sketch", from, to));
                     }
                     else
                     {
                         if (last.sketches.length == 0)
-                            return reply(JSONValue.init, "the model has no sketch");
+                            return reply(JValue.init, "the model has no sketch");
                         auto first = last.sketches[0].span.line;
                         inspectSketch(first, first, false);
                     }
@@ -734,11 +734,11 @@ mixin template ControlMethods()
             {
                 // {"row": 3}: a row of the Steps panel clicked (0-based, as state's steps lists them)
                 if (!has("row"))
-                    return reply(JSONValue.init, "give row: the index of the Steps panel row (state with source: true "
+                    return reply(JValue.init, "give row: the index of the Steps panel row (state with source: true "
                         ~ "lists them)");
                 sideStack.setVisibleChildName("steps");
                 if (!stepsPanel.activate(cast(int) p["row"].get!long))
-                    return reply(JSONValue.init, "no such row, or it is a heading");
+                    return reply(JValue.init, "no such row, or it is a heading");
                 whenIdle(() => reply(state(), null));
                 return;
             }
@@ -747,7 +747,7 @@ mixin template ControlMethods()
                 // {"line": 12, "col": 30, "value": "40.mm"}: a sketch dimension changed, as clicking it;
                 // {"line": 12, "col": 30, "edit": true}: its field opened for the user to type in, as a click
                 // on it does (the sketch must be shown)
-                if (has("edit") && p["edit"].type == JSONType.true_)
+                if (has("edit") && p["edit"].safe!bool.or(false))
                 {
                     foreach (i, d; dims)
                         if (d.value.line == p["line"].get!long && d.value.col == p["col"].get!long)
@@ -756,10 +756,10 @@ mixin template ControlMethods()
                             whenIdle(() => reply(state(), null));
                             return;
                         }
-                    return reply(JSONValue.init, "no dimension shown there: show its sketch first (hcad_gui_sketch)");
+                    return reply(JValue.init, "no dimension shown there: show its sketch first (hcad_gui_sketch)");
                 }
                 if (!has("line") || !has("col") || arg("value").length == 0)
-                    return reply(JSONValue.init, "give line and col of the dimension (hcad_gui_sketch lists them) and "
+                    return reply(JValue.init, "give line and col of the dimension (hcad_gui_sketch lists them) and "
                         ~ "the new value");
                 try
                 {
@@ -768,7 +768,7 @@ mixin template ControlMethods()
                     applyEdit(e);
                 }
                 catch (Exception ex)
-                    return reply(JSONValue.init, ex.msg);
+                    return reply(JValue.init, ex.msg);
                 whenIdle(() {
                     auto r = state();
                     r["sketches"] = sketchesJson();
@@ -796,18 +796,18 @@ mixin template ControlMethods()
                             if (fn.name == name)
                             {
                                 if (!inspectFunction(fn))
-                                    return reply(JSONValue.init, format("'%s' returned no solid, profile or path", name));
+                                    return reply(JValue.init, format("'%s' returned no solid, profile or path", name));
                                 return whenIdle(() => reply(state(), null));
                             }
                             names ~= fn.name;
                         }
-                        return reply(JSONValue.init, format("no function '%s' in the model (there are: %s)", name,
+                        return reply(JValue.init, format("no function '%s' in the model (there are: %s)", name,
                             names.join(", ")));
                     }
                     immutable from = cast(uint) p["line"].get!long;
                     immutable to = has("to_line") ? cast(uint) p["to_line"].get!long : from;
                     if (!inspectLines(from, max(from, to), -1))
-                        return reply(JSONValue.init, from == to
+                        return reply(JValue.init, from == to
                             ? format("line %d made no solid, profile or path and is not part of a sketch", from)
                             : format("lines %d–%d made no solid, profile or path and are not part of a sketch", from, to));
                     whenIdle(() => reply(state(), null));
@@ -817,7 +817,7 @@ mixin template ControlMethods()
         case "rollback":
             {
                 // {"line": 12}: the model right after the feature on that line; no line: the final model
-                if ("line" !in p)
+                if (!p.has("line"))
                 {
                     showFinal();
                     whenIdle(() => reply(state(), null));
@@ -829,7 +829,7 @@ mixin template ControlMethods()
                     if (f.span.line == line && f.span.file == absolutePath(path))
                         id = cast(uint)(i + 1);
                 if (id == 0)
-                    return reply(JSONValue.init, format("no feature on line %d", line));
+                    return reply(JValue.init, format("no feature on line %d", line));
                 showSketchOn(line, line, false);   // as its step does: a sketch's, with the sketch
                 rollTo(id);
                 whenIdle(() => reply(state(), null));
@@ -840,23 +840,23 @@ mixin template ControlMethods()
                 // the window's model as shown (parameters, preset): .3mf .stl .step .png
                 auto file = arg("path");
                 if (file is null)
-                    return reply(JSONValue.init, "missing 'path'");
+                    return reply(JValue.init, "missing 'path'");
                 whenIdle(() {
                     try
                     {
                         string[] only;
-                        if ("parts" in p && p["parts"].type == JSONType.array)
-                            foreach (v; p["parts"].array)
-                                only ~= v.str;
-                        auto warnings = exportTo(file, only, has("one_object") && p["one_object"].type == JSONType.true_);
+                        if (p.has("parts") && p["parts"].isArray)
+                            foreach (v; p["parts"].get!JArray.elements)
+                                only ~= v.get!string;
+                        auto warnings = exportTo(file, only, has("one_object") && p["one_object"].safe!bool.or(false));
                         note("exported " ~ file);
-                        JSONValue r = ["path": file];
+                        JValue r = JSOB("path", file);
                         if (warnings.length)
-                            r["warnings"] = warnings;
+                            r["warnings"] = toJSON(warnings);
                         reply(r, null);
                     }
                     catch (Exception e)
-                        reply(JSONValue.init, e.msg);
+                        reply(JValue.init, e.msg);
                 });
                 return;
             }
@@ -867,13 +867,13 @@ mixin template ControlMethods()
                 import hackerscad.tool.complete : complete;
                 auto src = text();
                 size_t at;
-                if ("line" in p)
+                if (p.has("line"))
                 {
                     TextIter it;
-                    buffer.getIterAtLineOffset(it, cast(int) p["line"].integer - 1,
-                        "col" in p ? cast(int) p["col"].integer - 1 : 0);
+                    buffer.getIterAtLineOffset(it, cast(int) p["line"].get!long - 1,
+                        p.has("col") ? cast(int) p["col"].get!long - 1 : 0);
                     at = toUTFindex(src, it.getOffset());
-                    if ("show" in p && p["show"].boolean)
+                    if (p.has("show") && p["show"].get!bool)
                     {
                         placeCursorQuietly(it);
                         editor.scrollToMark(buffer.getInsert(), 0, true, 0, 0.35);
@@ -887,10 +887,10 @@ mixin template ControlMethods()
                     at = toUTFindex(src, it.getOffset());
                 }
                 auto r = complete(src, at, path, completion.libraryDirs);
-                JSONValue[] items;
+                JValue items = JSAB();
                 foreach (c; r.items[0 .. $ < 50 ? $ : 50])
-                    items ~= JSONValue(["label": c.label, "kind": c.kind, "detail": c.detail, "doc": c.doc]);
-                JSONValue j = ["prefix": r.prefix];
+                    items ~= JSOB("label", c.label, "kind", c.kind, "detail", c.detail, "doc", c.doc);
+                JValue j = JSOB("prefix", r.prefix);
                 j["items"] = items;
                 if (r.signature.length)
                 {
@@ -900,7 +900,7 @@ mixin template ControlMethods()
                     if (r.forms.length)
                         j["forms"] = r.forms;
                 }
-                if ("show" in p && p["show"].boolean)
+                if (p.has("show") && p["show"].get!bool)
                 {
                     // the list as the user would see it, in the window
                     editor.grabFocus();
@@ -915,20 +915,20 @@ mixin template ControlMethods()
             showCheatsheet();
             if (auto q = arg("query"))
                 cheatsheet.search(q);
-            reply(JSONValue(["opened": true]), null);
+            reply(JSOB("opened", true), null);
             return;
         case "save":
             {
                 // to the window's file, or to path (then the window follows it, like Save As)
                 auto target = arg("path").length ? absolutePath(arg("path")) : path;
                 if (baseName(target) == "untitled.hcad" && !exists(target))
-                    return reply(JSONValue.init, "the model has no file yet: pass path");
-                if (target != path && exists(target) && !("force" in p && p["force"].type == JSONType.true_))
-                    return reply(JSONValue.init, target ~ " exists: pass force: true to overwrite it (ask the user first)");
+                    return reply(JValue.init, "the model has no file yet: pass path");
+                if (target != path && exists(target) && !p.safe!bool("force").or(false))
+                    return reply(JValue.init, target ~ " exists: pass force: true to overwrite it (ask the user first)");
                 try
                     write(target, text());
                 catch (Exception e)
-                    return reply(JSONValue.init, "cannot save: " ~ e.msg);
+                    return reply(JValue.init, "cannot save: " ~ e.msg);
                 path = target;
                 diskTime = mtimeOf(path);
                 modified = false;
@@ -943,8 +943,8 @@ mixin template ControlMethods()
                 import hackerscad.gui.editortools : FoundText;
                 auto what = arg("text");
                 if (what.length == 0)
-                    return reply(JSONValue.init, "find needs text");
-                bool flag(string k) => k in p && p[k].type == JSONType.true_;
+                    return reply(JValue.init, "find needs text");
+                bool flag(string k) => p.safe!bool(k).or(false);
                 // "show": true opens the find bar on it, for the user (nothing replaced)
                 if (flag("show"))
                 {
@@ -956,22 +956,22 @@ mixin template ControlMethods()
                 immutable replacing = has("replace");
                 if (auto problem = editorTools.findText(what, flag("regex"), flag("case"), flag("word"),
                         replacing ? arg("replace") : null, replacing, found, replaced))
-                    return reply(JSONValue.init, "bad regular expression: " ~ problem);
+                    return reply(JValue.init, "bad regular expression: " ~ problem);
                 if (replacing)
                 {
-                    JSONValue j = ["replaced": replaced];
+                    JValue j = JSOB("replaced", replaced);
                     whenIdle(() { j["state"] = state(); reply(j, null); });
                     return;
                 }
-                JSONValue[] list;
+                JValue list = JSAB();
                 foreach (f; found)
                 {
-                    JSONValue m = ["text": f.text];
+                    JValue m = JSOB("text", f.text);
                     m["line"] = f.line;
                     m["column"] = f.column;
                     list ~= m;
                 }
-                JSONValue j = ["matches": JSONValue(list)];
+                JValue j = JSOB("matches", list);
                 j["count"] = list.length;
                 return reply(j, null);
             }
@@ -998,7 +998,7 @@ mixin template ControlMethods()
                     immutable A[string] actions = ["comment": A.comment, "duplicate": A.duplicate, "delete": A.remove,
                         "move_up": A.up, "move_down": A.down, "indent": A.indent, "unindent": A.unindent];
                     if (!(act in actions))
-                        return reply(JSONValue.init, "action is comment, duplicate, delete, move_up, move_down, indent or unindent");
+                        return reply(JValue.init, "action is comment, duplicate, delete, move_up, move_down, indent or unindent");
                     int from, to;
                     if (has("lines"))
                     {
@@ -1006,7 +1006,7 @@ mixin template ControlMethods()
                         to = cast(int) numberOf(p["lines"][1]);
                     }
                     if (!editorTools.lineAction(actions[act], from, to))
-                        return reply(JSONValue.init, "nothing to do there");
+                        return reply(JValue.init, "nothing to do there");
                     whenIdle(() => reply(state(), null));
                     return;
                 }
@@ -1023,9 +1023,9 @@ mixin template ControlMethods()
                     auto old = arg("old");
                     auto at = src.indexOf(old);
                     if (old.length == 0 || at < 0)
-                        return reply(JSONValue.init, "'old' is not in the code (hcad_gui_state with source: true shows it)");
+                        return reply(JValue.init, "'old' is not in the code (hcad_gui_state with source: true shows it)");
                     if (src[at + old.length .. $].indexOf(old) >= 0)
-                        return reply(JSONValue.init, "'old' appears more than once: include more of the code around it");
+                        return reply(JValue.init, "'old' appears more than once: include more of the code around it");
                     buffer.getIterAtOffset(a, cast(int) count(src[0 .. at]));
                     buffer.getIterAtOffset(b, cast(int) count(src[0 .. at + old.length]));
                     with_ = arg("new");
@@ -1035,7 +1035,7 @@ mixin template ControlMethods()
                     immutable from = cast(int) numberOf(has("lines") ? p["lines"][0] : p["insert"]);
                     immutable to = has("lines") ? cast(int) numberOf(p["lines"][1]) : from - 1;
                     if (from < 1 || from > lineCount + 1 || to < from - 1 || to > lineCount)
-                        return reply(JSONValue.init, format("lines out of range: the code has %d lines", lineCount));
+                        return reply(JValue.init, format("lines out of range: the code has %d lines", lineCount));
                     with_ = arg("text");
                     if (from > lineCount)
                         buffer.getEndIter(a);
@@ -1056,7 +1056,7 @@ mixin template ControlMethods()
                     }
                 }
                 else
-                    return reply(JSONValue.init, "pass old and new, lines and text, or insert and text");
+                    return reply(JValue.init, "pass old and new, lines and text, or insert and text");
                 immutable startOffset = a.getOffset();
                 buffer.beginUserAction();
                 buffer.delete_(a, b);
@@ -1076,7 +1076,7 @@ mixin template ControlMethods()
                 editor.scrollToIter(s, 0.1, true, 0, 0.3);
                 whenIdle(() {
                     auto r = state();
-                    r["lines"] = [first, max(first, lastLine)];
+                    r["lines"] = JSAB(first, max(first, lastLine));
                     reply(r, null);
                 });
                 return;
@@ -1084,7 +1084,7 @@ mixin template ControlMethods()
         case "undo":
             {
                 // {"redo": true} redoes; "steps" repeats
-                immutable redo = "redo" in p && p["redo"].type == JSONType.true_;
+                immutable redo = p.safe!bool("redo").or(false);
                 immutable steps = has("steps") ? cast(int) numberOf(p["steps"]) : 1;
                 int done;
                 foreach (i; 0 .. steps)
@@ -1098,7 +1098,7 @@ mixin template ControlMethods()
                     done++;
                 }
                 if (done == 0)
-                    return reply(JSONValue.init, redo ? "nothing to redo" : "nothing to undo");
+                    return reply(JValue.init, redo ? "nothing to redo" : "nothing to undo");
                 whenIdle(() {
                     auto r = state();
                     r[redo ? "redone" : "undone"] = done;
@@ -1110,29 +1110,29 @@ mixin template ControlMethods()
             {
                 // model points to view fractions ("points"), view fractions to what is there ("screen")
                 whenIdle(() {
-                    JSONValue r = JSONValue((JSONValue[string]).init);
+                    JValue r = JSOB();
                     if (has("points"))
                     {
-                        JSONValue[] out_;
-                        foreach (v; p["points"].array)
+                        JValue out_ = JSAB();
+                        foreach (v; p["points"].get!JArray.elements)
                         {
                             double fx, fy;
                             bool visible;
                             if (viewport.fractionOf(vec3Of(v), fx, fy, visible))
                             {
-                                JSONValue j = ["x": fx, "y": fy];
+                                JValue j = JSOB("x", fx, "y", fy);
                                 j["visible"] = visible && fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1;
                                 out_ ~= j;
                             }
                             else
-                                out_ ~= JSONValue(["behind_camera": true]);
+                                out_ ~= JSOB("behind_camera", true);
                         }
                         r["points"] = out_;
                     }
                     if (has("screen"))
                     {
-                        JSONValue[] out_;
-                        foreach (v; p["screen"].array)
+                        JValue out_ = JSAB();
+                        foreach (v; p["screen"].get!JArray.elements)
                             out_ ~= hitJson(viewport.pickAt(numberOf(v[0]) * viewport.width, numberOf(v[1]) * viewport.height));
                         r["screen"] = out_;
                     }
@@ -1144,14 +1144,14 @@ mixin template ControlMethods()
             {
                 // {"selector": "faces.top", "part": "lid"} selects, {"clear": true} empties; always the selection back
                 whenIdle(() {
-                    if ("clear" in p && p["clear"].type == JSONType.true_)
+                    if (p.safe!bool("clear").or(false))
                         clearSelection();
                     if (auto expr = arg("selector"))
                     {
                         string problem;
                         immutable pi = partIndex(arg("part"), problem);
                         if (pi < 0)
-                            return reply(JSONValue.init, problem);
+                            return reply(JValue.init, problem);
                         auto part = last.parts[pi];
                         SolidVal sv;
                         auto it = selectorInterp(part, sv);
@@ -1160,9 +1160,9 @@ mixin template ControlMethods()
                         try
                             found = it.trySelector(expr, sv, faces);
                         catch (Exception e)
-                            return reply(JSONValue.init, e.msg);
+                            return reply(JValue.init, e.msg);
                         if (found.length == 0)
-                            return reply(JSONValue.init, expr ~ " selects nothing on " ~ part.name);
+                            return reply(JValue.init, expr ~ " selects nothing on " ~ part.name);
                         auto infos = faces ? part.kernel.faces(part.brep) : null;
                         Hit[] hits;
                         foreach (i; found)
@@ -1198,24 +1198,24 @@ mixin template ControlMethods()
                     size_t next;
                     Item ia, ib;
                     int pa, pb;
-                    if (auto problem = measureItem(has("a") ? p["a"] : JSONValue(null), next, ia, pa))
-                        return reply(JSONValue.init, problem);
-                    if (auto problem = measureItem(has("b") ? p["b"] : JSONValue(null), next, ib, pb))
-                        return reply(JSONValue.init, problem);
-                    JSONValue r;
+                    if (auto problem = measureItem(has("a") ? p["a"] : JValue(null), next, ia, pa))
+                        return reply(JValue.init, problem);
+                    if (auto problem = measureItem(has("b") ? p["b"] : JValue(null), next, ib, pb))
+                        return reply(JValue.init, problem);
+                    JValue r;
                     if (pa >= 0 && pb >= 0)
                     {
                         // two parts: exact, on the solids
                         Vec3 onA, onB;
                         auto d = last.parts[pa].kernel.distance(last.parts[pa].brep, last.parts[pb].brep, onA, onB);
-                        r = JSONValue(["distance": d]);
+                        r = JSOB("distance", d);
                         r["on_a"] = jsonOf(onA);
                         r["on_b"] = jsonOf(onB);
                     }
                     else
                     {
                         auto m = measure(ia, ib);
-                        r = JSONValue(["distance": m.distance]);
+                        r = JSOB("distance", m.distance);
                         r["on_a"] = jsonOf(m.onA);
                         r["on_b"] = jsonOf(m.onB);
                         if (m.angle == m.angle)
@@ -1233,7 +1233,7 @@ mixin template ControlMethods()
                 immutable was = evaluator.busy;
                 if (was)
                     stopEvaluation();
-                reply(JSONValue(["stopped": was]), null);
+                reply(JSOB("stopped", was), null);
                 return;
             }
         case "test":
@@ -1241,7 +1241,7 @@ mixin template ControlMethods()
                 // runs the model's unittests, as F5: how many, how many failed, the state (problems)
                 runTests();
                 whenIdle(() {
-                    JSONValue j = ["unittests": last.unittests, "failed": last.unittestsFailed];
+                    JValue j = JSOB("unittests", last.unittests, "failed", last.unittestsFailed);
                     j["ran"] = last.unittestsRan;
                     j["state"] = state();
                     reply(j, null);
@@ -1250,22 +1250,22 @@ mixin template ControlMethods()
             }
         case "about":
             // {"debug": true}: the debug information About copies, without opening it
-            if ("debug" in p && p["debug"].type == JSONType.true_)
+            if (p.safe!bool("debug").or(false))
             {
-                reply(JSONValue(["debug": debugReport()]), null);
+                reply(JSOB("debug", debugReport()), null);
                 return;
             }
             // {"close": true} closes it
-            if ("close" in p && p["close"].type == JSONType.true_)
+            if (p.safe!bool("close").or(false))
             {
                 immutable was = aboutDialog !is null;
                 if (was)
                     aboutDialog.close();
-                reply(JSONValue(["closed": was]), null);
+                reply(JSOB("closed", was), null);
                 return;
             }
             showAbout();
-            reply(JSONValue(["opened": true]), null);
+            reply(JSOB("opened", true), null);
             return;
         case "annotate":
             {
@@ -1284,47 +1284,47 @@ mixin template ControlMethods()
                     import hackerscad.tool.annotations : readAnnotation, Annotation;
                     if (has("mode"))
                     {
-                        if (p["mode"].type == JSONType.true_)
+                        if (p["mode"].safe!bool.or(false))
                         {
                             if (!lockView(false))
-                                return reply(JSONValue.init, "the 3D view is hidden: show it (view: true) to annotate it");
+                                return reply(JValue.init, "the 3D view is hidden: show it (view: true) to annotate it");
                         }
-                        else if (p["mode"].type == JSONType.false_)
+                        else if (!p["mode"].safe!bool.or(true))
                             unlockView();
                         else
-                            return reply(JSONValue.init, "mode is true (annotate) or false (the live view)");
+                            return reply(JValue.init, "mode is true (annotate) or false (the live view)");
                     }
                     if (has("clear"))
                     {
                         auto c = p["clear"];
-                        if (c.type == JSONType.true_)
+                        if (c.safe!bool.or(false))
                             clearNotes(null);
-                        else if (c.type == JSONType.string && (c.str == "agent" || c.str == "user"))
-                            clearNotes(c.str);
-                        else if (c.type != JSONType.false_)
-                            return reply(JSONValue.init, "clear is true (all), \"agent\" or \"user\"");
+                        else if (c.isString && (c.get!string == "agent" || c.get!string == "user"))
+                            clearNotes(c.get!string);
+                        else if (!c.isBool)
+                            return reply(JValue.init, "clear is true (all), \"agent\" or \"user\"");
                     }
-                    JSONValue[] missing;
+                    JValue missing = JSAB();
                     if (has("remove"))
                     {
-                        auto ids = p["remove"].type == JSONType.array ? p["remove"].array : [p["remove"]];
+                        auto ids = p["remove"].isArray ? p["remove"].get!JArray.elements : [p["remove"]];
                         foreach (v; ids)
                         {
-                            if (v.type != JSONType.integer && v.type != JSONType.uinteger)
-                                return reply(JSONValue.init, "remove is a list of annotation ids");
+                            if (!v.isNumber)
+                                return reply(JValue.init, "remove is a list of annotation ids");
                             if (notes.find(cast(uint) numberOf(v)) is null)
                                 missing ~= v;
                             else
                                 removeNote(cast(uint) numberOf(v));
                         }
                     }
-                    JSONValue[] ids;
+                    JValue ids = JSAB();
                     if (has("add"))
                     {
                         immutable wasFrozen = frozen;
                         if (!lockView(false))
-                            return reply(JSONValue.init, "the 3D view is hidden: show it (view: true) to annotate it");
-                        auto items = p["add"].type == JSONType.array ? p["add"].array : [p["add"]];
+                            return reply(JValue.init, "the 3D view is hidden: show it (view: true) to annotate it");
+                        auto items = p["add"].isArray ? p["add"].get!JArray.elements : [p["add"]];
                         Annotation[] adding;
                         foreach (k, it; items)
                         {
@@ -1334,36 +1334,36 @@ mixin template ControlMethods()
                                 // nothing added: the view as it was
                                 if (!wasFrozen)
                                     unlockView();
-                                return reply(JSONValue.init, items.length > 1 ? format("item %d: %s", k, problem) : problem);
+                                return reply(JValue.init, items.length > 1 ? format("item %d: %s", k, problem) : problem);
                             }
-                            if (!("by" in it))
+                            if (!it.has("by"))
                                 n.by = "agent";
                             findUnder(n);
                             adding ~= n;
                         }
                         foreach (n; adding)
-                            ids ~= JSONValue(notes.add(n));
+                            ids ~= notes.add(n);
                         notesChanged();
                     }
-                    JSONValue r = ["annotations": notes.toJson()];
-                    if (has("save") || ("copy" in p && p["copy"].type == JSONType.true_))
+                    JValue r = JSOB("annotations", notes.toJson());
+                    if (has("save") || p.safe!bool("copy").or(false))
                     {
                         if (!frozen)
-                            return reply(JSONValue.init, "the view is not annotated: add marks (or mode: true) first");
+                            return reply(JValue.init, "the view is not annotated: add marks (or mode: true) first");
                         if (has("save"))
                         {
                             import std.path : isAbsolute;
                             immutable file = arg("save");
                             if (!file.isAbsolute)
-                                return reply(JSONValue.init, "save takes an absolute path to a .png file");
+                                return reply(JValue.init, "save takes an absolute path to a .png file");
                             if (auto problem = writeAnnotated(file))
-                                return reply(JSONValue.init, problem);
+                                return reply(JValue.init, problem);
                             r["saved"] = file;
                         }
-                        if ("copy" in p && p["copy"].type == JSONType.true_)
+                        if (p.safe!bool("copy").or(false))
                         {
                             if (!copyAnnotated())
-                                return reply(JSONValue.init, "the view could not be drawn (is the screen locked?)");
+                                return reply(JValue.init, "the view could not be drawn (is the screen locked?)");
                             r["copied"] = true;
                         }
                     }
@@ -1380,17 +1380,17 @@ mixin template ControlMethods()
             {
                 auto file = arg("path");
                 if (file is null)
-                    return reply(JSONValue.init, "missing 'path'");
+                    return reply(JValue.init, "missing 'path'");
                 // the cheatsheet window, when asked for and open
                 if (arg("target") == "cheatsheet" && cheatsheet is null)
-                    return reply(JSONValue.init, "the cheatsheet is not open: open it with the cheatsheet method first");
+                    return reply(JValue.init, "the cheatsheet is not open: open it with the cheatsheet method first");
                 // the colour wheel (Colour › Other…), when open
                 immutable wheelOpen = colourWheel !is null && colourWheel.win.getVisible();
                 if (arg("target") == "colour" && !wheelOpen)
-                    return reply(JSONValue.init, "the colour wheel is not open: open it with the colour method, wheel: true");
+                    return reply(JValue.init, "the colour wheel is not open: open it with the colour method, wheel: true");
                 // the About window, when open
                 if (arg("target") == "about" && aboutDialog is null)
-                    return reply(JSONValue.init, "the About window is not open: open it with the about method first");
+                    return reply(JValue.init, "the About window is not open: open it with the about method first");
                 imported!"gtk.window".Window other = arg("target") == "cheatsheet" ? cheatsheet.widget
                     : arg("target") == "colour" ? colourWheel.win : arg("target") == "about" ? aboutDialog.window : null;
                 // after a change GTK draws the window at its next frame, which
@@ -1402,7 +1402,7 @@ mixin template ControlMethods()
                 {
                     if (screenshot(file, other))
                     {
-                        reply(JSONValue(["path": file]), null);
+                        reply(JSOB("path", file), null);
                         return false;
                     }
                     if (++tries < 10)
@@ -1414,11 +1414,11 @@ mixin template ControlMethods()
                     auto pixels = other is null ? viewport.renderImage(w, h) : null;
                     if (pixels is null)
                     {
-                        reply(JSONValue.init, "the window has not been drawn: is the screen locked?");
+                        reply(JValue.init, "the window has not been drawn: is the screen locked?");
                         return false;
                     }
                     write(file, encodePng(pixels, w, h));
-                    auto r = JSONValue(["path": file]);
+                    auto r = JSOB("path", file);
                     r["note"] = "the window is hidden or covered, so it has not been drawn since the latest change: "
                         ~ "this is the 3D view alone";
                     reply(r, null);
@@ -1431,7 +1431,7 @@ mixin template ControlMethods()
                 return;
             }
         default:
-            reply(JSONValue.init, "unknown method: " ~ method);
+            reply(JValue.init, "unknown method: " ~ method);
         }
     }
 }

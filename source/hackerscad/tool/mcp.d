@@ -12,7 +12,7 @@ import std.conv : to;
 import std.exception : enforce;
 import std.file : exists, read, remove, tempDir;
 import std.format : format;
-import std.json;
+import djson;
 import std.path : buildPath;
 import std.stdio : stdin, stdout, stderr;
 import std.string : strip;
@@ -149,27 +149,27 @@ private void process(string line, Worker worker)
     {
         if (line.strip.length == 0)
             return;
-        JSONValue msg;
+        JValue msg;
         try
-            msg = parseJSON(line);
+            msg = parseJSONComplete(line);
         catch (JSONException)
         {
-            send(errorResponse(JSONValue(null), -32700, "parse error"));
+            send(errorResponse(JValue(null), -32700, "parse error"));
             return;
         }
-        immutable method = "method" in msg && msg["method"].type == JSONType.string ? msg["method"].str : "";
-        auto params = "params" in msg ? msg["params"] : JSONValue(null);
-        if (method == "notifications/cancelled" && params.type == JSONType.object && "requestId" in params)
+        immutable method = msg.has("method") && msg["method"].isString ? msg["method"].get!string : "";
+        auto params = msg.has("params") ? msg["params"] : JValue(null);
+        if (method == "notifications/cancelled" && params.isObject && params.has("requestId"))
             worker.cancel(params["requestId"]);
-        else if (method == "tools/call" && "id" in msg && params.type == JSONType.object && "name" in params
-            && evaluates(params["name"].str))
+        else if (method == "tools/call" && msg.has("id") && params.isObject && params.has("name")
+            && evaluates(params["name"].get!string))
             worker.start(msg["id"], line);
         else if (method == "tools/call")
             background(msg);    // the GUI tools can wait for the window
         else
         {
             auto response = handle(msg);
-            if (response.type != JSONType.null_)
+            if (!response.isNull)
                 send(response);
         }
     }
@@ -214,24 +214,24 @@ void serveWorker()
             line = queue[0];
             queue = queue[1 .. $];
         }
-        JSONValue response;
+        JValue response;
         try
-            response = handle(parseJSON(line));
+            response = handle(parseJSONComplete(line));
         catch (JSONException)
-            response = errorResponse(JSONValue(null), -32700, "parse error");
-        if (response.type != JSONType.null_)
+            response = errorResponse(JValue(null), -32700, "parse error");
+        if (!response.isNull)
             send(response);
         releaseMemory();
     }
 }
 
 /// Handles one JSON-RPC message; returns null for notifications.
-JSONValue handle(JSONValue msg)
+JValue handle(JValue msg)
 {
-    auto id = "id" in msg ? msg["id"] : JSONValue(null);
-    immutable isNotification = ("id" in msg) is null;
-    auto method = "method" in msg ? msg["method"].str : "";
-    auto params = "params" in msg ? msg["params"] : JSONValue((JSONValue[string]).init);
+    auto id = msg.has("id") ? msg["id"] : JValue(null);
+    immutable isNotification = !msg.has("id");
+    auto method = msg.has("method") ? msg["method"].get!string : "";
+    auto params = msg.has("params") ? msg["params"] : JSOB();
 
     try
     {
@@ -239,25 +239,25 @@ JSONValue handle(JSONValue msg)
         {
         case "initialize":
             {
-                auto requested = "protocolVersion" in params ? params["protocolVersion"].str : "2025-06-18";
-                JSONValue r = ["protocolVersion": requested];
+                auto requested = params.has("protocolVersion") ? params["protocolVersion"].get!string : "2025-06-18";
+                JValue r = JSOB("protocolVersion", requested);
                 // the tools change when the program is rebuilt or updated (see restart)
-                r["capabilities"] = ["tools": JSONValue(["listChanged": true])];
-                r["serverInfo"] = ["name": "hackerscad", "version": serverVersion];
+                r["capabilities"] = JSOB("tools", JSOB("listChanged", true));
+                r["serverInfo"] = JSOB("name", "hackerscad", "version", serverVersion);
                 r["instructions"] = instructions;
                 return result(id, r);
             }
         case "notifications/initialized", "notifications/cancelled":
-            return JSONValue(null);
+            return JValue(null);
         case "ping":
-            return result(id, JSONValue((JSONValue[string]).init));
+            return result(id, JSOB());
         case "tools/list":
-            return result(id, JSONValue(["tools": JSONValue(toolList())]));
+            return result(id, JSOB("tools", toolList()));
         case "tools/call":
-            return result(id, callTool(params["name"].str, "arguments" in params ? params["arguments"] : JSONValue(null)));
+            return result(id, callTool(params["name"].get!string, params.has("arguments") ? params["arguments"] : JValue(null)));
         default:
             if (isNotification)
-                return JSONValue(null);
+                return JValue(null);
             return errorResponse(id, -32601, "method not found: " ~ method);
         }
     }
@@ -267,9 +267,9 @@ JSONValue handle(JSONValue msg)
 
 private:
 
-void send(JSONValue v)
+void send(JValue v)
 {
-    sendLine(v.toString(JSONOptions.doNotEscapeSlashes));
+    sendLine(v.toJSON());
 }
 
 void sendLine(string line)
@@ -281,9 +281,9 @@ void sendLine(string line)
     }
 }
 
-JSONValue toolError(string message)
+JValue toolError(string message)
 {
-    JSONValue r = ["content": [JSONValue(["type": "text", "text": message])]];
+    JValue r = JSOB("content", JSAB(JSOB("type", "text", "text", message)));
     r["isError"] = true;
     return r;
 }
@@ -293,7 +293,7 @@ bool evaluates(string tool) =>
     ["hcad_check", "hcad_render", "hcad_export", "hcad_drawing", "hcad_measure", "hcad_features", "hcad_section",
         "hcad_compare", "hcad_scan", "hcad_diff", "hcad_fit", "hcad_match", "hcad_lines", "hcad_literals", "hcad_review"].canFind(tool);
 
-void background(JSONValue msg)
+void background(JValue msg)
 {
     import core.thread : Thread;
     atomicOp!"+="(guiCalls, 1);
@@ -301,7 +301,7 @@ void background(JSONValue msg)
         scope (exit)
             atomicOp!"-="(guiCalls, 1);
         auto response = handle(msg);
-        if (response.type != JSONType.null_)
+        if (!response.isNull)
             send(response);
     });
     t.isDaemon = true;
@@ -346,7 +346,7 @@ final class Worker
     }
 
     /// Evaluates a tools/call in the background; the response is sent from there.
-    void start(JSONValue id, string line)
+    void start(JValue id, string line)
     {
         import core.thread : Thread;
         immutable key = id.toString;
@@ -358,7 +358,7 @@ final class Worker
     }
 
     /// A cancelled request gets no response (as the protocol asks).
-    void cancel(JSONValue id)
+    void cancel(JValue id)
     {
         immutable key = id.toString;
         synchronized (state)
@@ -386,7 +386,7 @@ final class Worker
 
 private:
 
-    void call(JSONValue id, string key, string line)
+    void call(JValue id, string key, string line)
     {
         turn.lock();
         scope (exit)
@@ -587,19 +587,19 @@ version (CRuntime_Glibc)
 version (OSX)
     extern (C) int sysctlbyname(const(char)* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen) nothrow @nogc;
 
-JSONValue result(JSONValue id, JSONValue r)
+JValue result(JValue id, JValue r)
 {
-    JSONValue v = ["jsonrpc": "2.0"];
+    JValue v = JSOB("jsonrpc", "2.0");
     v["id"] = id;
     v["result"] = r;
     return v;
 }
 
-JSONValue errorResponse(JSONValue id, int code, string message)
+JValue errorResponse(JValue id, int code, string message)
 {
-    JSONValue v = ["jsonrpc": "2.0"];
+    JValue v = JSOB("jsonrpc", "2.0");
     v["id"] = id;
-    JSONValue e = ["message": message];
+    JValue e = JSOB("message", message);
     e["code"] = code;
     v["error"] = e;
     return v;
@@ -607,7 +607,7 @@ JSONValue errorResponse(JSONValue id, int code, string message)
 
 // ---------------------------------------------------------------- tools
 
-JSONValue schema(string json) => parseJSON(json);
+JValue schema(string json) => parseJSONComplete(json);
 
 enum modelProps = `
     "source": {"type": "string", "description": "Model source (.hcad). If omitted, the file at 'path' is read."},
@@ -619,11 +619,11 @@ enum modelProps = `
     "overhang_angle": {"type": "number", "description": "printability: overhangs steeper than this many degrees from a wall need supports (default 45)."},
     "min_wall": {"type": "number", "description": "printability: walls thinner than this many mm do not print (default 0.8)."}`;
 
-JSONValue[] toolList()
+JValue toolList()
 {
-    JSONValue tool(string name, string description, string properties, string required = "[]")
+    JValue tool(string name, string description, string properties, string required = "[]")
     {
-        JSONValue t = ["name": name, "description": description];
+        JValue t = JSOB("name", name, "description", description);
         t["inputSchema"] = schema(`{"type": "object", "properties": {` ~ properties ~ `}, "required": ` ~ required ~ `}`);
         return t;
     }
@@ -638,12 +638,12 @@ JSONValue[] toolList()
     auto exampleEnum = examples.map!(e => `"` ~ e.name ~ `"`).join(", ");
 
     // every GUI tool can name the window, when several are open
-    JSONValue gui(string name, string description, string properties, string required = "[]") =>
+    JValue gui(string name, string description, string properties, string required = "[]") =>
         tool(name, description, `"window": {"type": "string", "description": "Name of the hackerscad window (shown in `
             ~ `its header bar; hcad_gui_windows lists them). Needed only when several are open."}`
             ~ (properties.length ? ", " ~ properties : ""), required);
 
-    return [
+    return JSAB(
         tool("hcad_docs", "Reference of the .hcad language, the geometry API, conventions and examples. "
             ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware', 'remodel') for a short excerpt "
             ~ "(a topic a heading names gives that whole section). format: "
@@ -1118,66 +1118,65 @@ JSONValue[] toolList()
             ~ "sees), the time apart (interval_ms: also long when the movements come slowly), on the processor "
             ~ "(draw_ms) and on the graphics card (gpu_ms, -1 when not known), each with its _max_ms.",
             `"now": {"type": "boolean"}, "source": {"type": "boolean"}`, `[]`),
-    ];
+    );
 }
 
-JSONValue callTool(string name, JSONValue args)
+JValue callTool(string name, JValue args)
 {
-    JSONValue[] content;
+    JValue content = JSAB();
     bool isError;
 
     void text(string s)
     {
-        content ~= JSONValue(["type": "text", "text": s]);
+        content ~= JSOB("type", "text", "text", s);
     }
 
     void image(const(ubyte)[] png)
     {
-        JSONValue c = ["type": "image", "mimeType": "image/png"];
+        JValue c = JSOB("type", "image", "mimeType", "image/png");
         c["data"] = Base64.encode(png).idup;
         content ~= c;
     }
 
-    string arg(string key) => args.type == JSONType.object && key in args && args[key].type == JSONType.string
-        ? args[key].str : null;
+    string arg(string key) => args.safe!string(key).or(null);
     // a picture from anywhere: view {from, look_at, size, cut}; none when not given
     Shot[] viewArg()
     {
-        if (args.type != JSONType.object || "view" !in args || args["view"].type != JSONType.object)
+        if (!args.isObject || !args.has("view") || !args["view"].isObject)
             return null;
         auto v = args["view"];
         string from;
-        if (auto f = "from" in v)
+        if (auto f = v.getPtr("from"))
         {
-            if (f.type == JSONType.string)
-                from = f.str;
-            else if (f.type == JSONType.array)
-                from = format("%s,%s,%s", f.array[0].toString, f.array[1].toString, f.array[2].toString);
+            if (f.isString)
+                from = f.get!string;
+            else if (f.isArray)
+                from = format("%s,%s,%s", (*f)[0].toString, (*f)[1].toString, (*f)[2].toString);
         }
         double[] at;
-        if (auto l = "look_at" in v)
-            if (l.type == JSONType.array)
-                foreach (x; l.array)
-                    at ~= x.type == JSONType.integer ? x.integer : x.floating;
+        if (auto l = v.getPtr("look_at"))
+            if (l.isArray)
+                foreach (x; *l)
+                    at ~= x.get!double;
         double size = 0;
-        if (auto sz = "size" in v)
-            size = sz.type == JSONType.integer ? sz.integer : sz.floating;
-        immutable cut = "cut" in v && v["cut"].type == JSONType.true_;
+        if (auto sz = v.getPtr("size"))
+            size = sz.get!double;
+        immutable cut = v.safe!bool("cut").or(false);
         return [Run.freeShot(from, at, size, cut)];
     }
     // the entries to look at closely: a number, or a list of them
     size_t[] focus()
     {
         size_t[] r;
-        if (args.type != JSONType.object || "focus" !in args)
+        if (!args.isObject || !args.has("focus"))
             return r;
         auto f = args["focus"];
-        if (f.type == JSONType.integer)
-            r ~= cast(size_t) f.integer;
-        else if (f.type == JSONType.array)
-            foreach (x; f.array)
-                if (x.type == JSONType.integer)
-                    r ~= cast(size_t) x.integer;
+        if (f.isNumber)
+            r ~= cast(size_t) f.get!long;
+        else if (f.isArray)
+            foreach (x; f)
+                if (x.isNumber)
+                    r ~= cast(size_t) x.get!long;
         return r;
     }
 
@@ -1203,35 +1202,34 @@ JSONValue callTool(string name, JSONValue args)
             auto run = evaluateModel(options(args));
             isError = run.hasErrors;
             string[] only;
-            if (args.type == JSONType.object && "parts" in args && args["parts"].type == JSONType.array)
-                foreach (v; args["parts"].array)
-                    only ~= v.str;
+            if (args.isObject && args.has("parts") && args["parts"].isArray)
+                foreach (v; args["parts"])
+                    only ~= v.get!string;
             if (name == "hcad_export" && run.ok)
             {
                 // one file, or several from one evaluation
                 string[] outputs;
-                if (args.type == JSONType.object && "output" in args && args["output"].type == JSONType.array)
-                    foreach (v; args["output"].array)
-                        outputs ~= v.str;
+                if (args.isObject && args.has("output") && args["output"].isArray)
+                    foreach (v; args["output"])
+                        outputs ~= v.get!string;
                 else if (arg("output").length)
                     outputs = [arg("output")];
                 enforce(outputs.length, "missing 'output'");
-                immutable oneObject = args.type == JSONType.object && "one_object" in args
-                    && args["one_object"].type == JSONType.true_;
+                immutable oneObject = args.safe!bool("one_object").or(false);
                 foreach (output; outputs)
                 {
                     run.exportTo(output, only, oneObject);
                     text("written " ~ output);
                 }
             }
-            text(run.report().toPrettyString(JSONOptions.doNotEscapeSlashes));
+            text(run.report().toJSON(true));
             auto diags = run.renderedDiagnostics();
             if (diags.length)
                 text(diags);
             if (name == "hcad_render" && run.ok && run.result.parts.length)
             {
                 auto free = viewArg();
-                immutable opaque = args.type == JSONType.object && "opaque" in args && args["opaque"].type == JSONType.true_;
+                immutable opaque = args.safe!bool("opaque").or(false);
                 // where each picture looks from, then the picture
                 string where = "the picture";
                 if (free.length)
@@ -1275,10 +1273,10 @@ JSONValue callTool(string name, JSONValue args)
             try
             {
                 auto a = analyse(meshOf(arg("path"), arg("part")));
-                if (auto js = "json" in args)
-                    if (js.type == JSONType.true_)
+                if (auto js = args.getPtr("json"))
+                    if (js.safe!bool.or(false))
                     {
-                        text(report(a) ~ "\n" ~ featuresJson(a).toPrettyString(JSONOptions.doNotEscapeSlashes));
+                        text(report(a) ~ "\n" ~ featuresJson(a).toJSON(true));
                         break;
                     }
                 text(report(a) ~ "(json: true gives every surface as data)\n");
@@ -1302,21 +1300,21 @@ JSONValue callTool(string name, JSONValue args)
             try
             {
                 double tol = 0.1;
-                if (auto t = "tolerance_mm" in args)
-                    tol = t.type == JSONType.integer ? t.integer : t.floating;
+                if (auto t = args.getPtr("tolerance_mm"))
+                    tol = t.get!double;
                 size_t each = 2;
-                if (auto e = "each" in args)
-                    if (e.type == JSONType.integer)
-                        each = cast(size_t) e.integer;
-                immutable voids = !("voids" in args && args["voids"].type == JSONType.false_);
+                if (auto e = args.getPtr("each"))
+                    if (e.isNumber)
+                        each = cast(size_t) e.get!long;
+                immutable voids = args.safe!bool("voids").or(true);
                 double[] look;
-                if (auto l = "look" in args)
-                    if (l.type == JSONType.array)
-                        foreach (x; l.array)
-                            look ~= x.type == JSONType.integer ? x.integer : x.floating;
+                if (auto l = args.getPtr("look"))
+                    if (l.isArray)
+                        foreach (x; *l)
+                            look ~= x.get!double;
                 ubyte[][] pictures;
                 text(run.review(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0], tol, each,
-                    voids, look, pictures, "detail" in args && args["detail"].type == JSONType.true_));
+                    voids, look, pictures, args.safe!bool("detail").or(false)));
                 foreach (p; pictures)
                     image(p);
             }
@@ -1344,14 +1342,14 @@ JSONValue callTool(string name, JSONValue args)
             import hackerscad.tool.features : sectionReport, sectionOverlay, projectionReport;
             try
             {
-                auto at = "at" in args;
-                immutable level = at is null ? 0 : at.type == JSONType.integer ? at.integer : at.floating;
-                immutable withSketch = !("sketch" in args && args["sketch"].type == JSONType.false_);
+                auto at = args.getPtr("at");
+                immutable level = at is null ? 0 : at.get!double;
+                immutable withSketch = args.safe!bool("sketch").or(true);
                 double[] region;
-                if (auto rg = "region" in args)
-                    if (rg.type == JSONType.array)
-                        foreach (x; rg.array)
-                            region ~= x.type == JSONType.integer ? x.integer : x.floating;
+                if (auto rg = args.getPtr("region"))
+                    if (rg.isArray)
+                        foreach (x; *rg)
+                            region ~= x.get!double;
                 if (arg("compare").length)
                 {
                     string t;
@@ -1359,9 +1357,9 @@ JSONValue callTool(string name, JSONValue args)
                     text(t);
                     image(png);
                 }
-                else if (auto pr = "projection" in args)
+                else if (auto pr = args.getPtr("projection"))
                 {
-                    if (pr.type == JSONType.true_)
+                    if (pr.safe!bool.or(false))
                         text(projectionReport(arg("path"), arg("part"), arg("plane")));
                     else
                         text(sectionReport(arg("path"), arg("part"), arg("plane"), level, region, withSketch));
@@ -1399,17 +1397,17 @@ JSONValue callTool(string name, JSONValue args)
                 break;
             }
             double tol = 0.1;
-            if (auto t = "tolerance_mm" in args)
-                tol = t.type == JSONType.integer ? t.integer : t.floating;
+            if (auto t = args.getPtr("tolerance_mm"))
+                tol = t.get!double;
             ubyte[] png;
             auto free = viewArg();
             size_t count = 4;
-            if (auto vc = "views" in args)
-                if (vc.type == JSONType.integer)
-                    count = cast(size_t) vc.integer;
+            if (auto vc = args.getPtr("views"))
+                if (vc.isNumber)
+                    count = cast(size_t) vc.get!long;
             auto j = run.compare(ia, ib, tol, png, free.length ? &free[0] : null, count);
-            auto js = "json" in args;
-            text(js && js.type == JSONType.true_ ? j.toPrettyString()
+            auto js = args.getPtr("json");
+            text(js && js.safe!bool.or(false) ? j.toJSON(true)
                 : Run.compareText(j, run.result.parts[ia].name, run.result.parts[ib].name));
             if (auto f = focus())
             {
@@ -1429,9 +1427,9 @@ JSONValue callTool(string name, JSONValue args)
             import hackerscad.tool.features : scanReport;
             try
             {
-                auto st = "step" in args;
+                auto st = args.getPtr("step");
                 text(scanReport(arg("path"), arg("part"), arg("axis"),
-                    st is null ? 0 : st.type == JSONType.integer ? st.integer : st.floating));
+                    st is null ? 0 : st.get!double));
             }
             catch (Exception e)
             {
@@ -1452,12 +1450,11 @@ JSONValue callTool(string name, JSONValue args)
             import hackerscad.lang.errors : HcadError;
             try
             {
-                auto v = "views" in args;
+                auto v = args.getPtr("views");
                 ubyte[] png;
                 text(run.lines(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0],
-                    "depth" !in args ? 0.0 : args["depth"].type == JSONType.integer ? args["depth"].integer
-                    : args["depth"].floating, v is null ? 12 : cast(size_t) v.integer,
-                    "fixed" in args && args["fixed"].type == JSONType.true_, "voids" in args && args["voids"].type == JSONType.true_,
+                    !args.has("depth") ? 0.0 : args["depth"].get!double, v is null ? 12 : cast(size_t) v.get!long,
+                    args.safe!bool("fixed").or(false), args.safe!bool("voids").or(false),
                     png, focus(), viewArg().length ? &viewArg()[0] : null));
                 image(png);
             }
@@ -1480,10 +1477,10 @@ JSONValue callTool(string name, JSONValue args)
             import hackerscad.lang.errors : HcadError;
             try
             {
-                auto res = "resolution" in args;
+                auto res = args.getPtr("resolution");
                 ubyte[] png;
                 text(run.differences(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0],
-                    res is null ? 0 : res.type == JSONType.integer ? res.integer : res.floating, focus(), png));
+                    res is null ? 0 : res.get!double, focus(), png));
                 if (png.length)
                     image(png);
             }
@@ -1500,11 +1497,11 @@ JSONValue callTool(string name, JSONValue args)
             try
             {
                 string[] names;
-                if (auto ps = "params" in args)
-                    foreach (v; ps.array)
-                        names ~= v.str;
-                auto ev = "evaluations" in args;
-                text(fit(arg("path"), arg("a"), arg("b"), names, ev is null ? 60 : cast(int) ev.integer));
+                if (auto ps = args.getPtr("params"))
+                    foreach (v; ps.get!JArray.elements)
+                        names ~= v.get!string;
+                auto ev = args.getPtr("evaluations");
+                text(fit(arg("path"), arg("a"), arg("b"), names, ev is null ? 60 : cast(int) ev.get!long));
             }
             catch (Exception e)
             {
@@ -1553,10 +1550,10 @@ JSONValue callTool(string name, JSONValue args)
                 }
                 Vec3 pa, pb;
                 immutable d = run.kernel.distance(a, b, pa, pb);
-                JSONValue j = ["distance_mm": d];
-                j["point_a"] = [pa.x, pa.y, pa.z];
-                j["point_b"] = [pb.x, pb.y, pb.z];
-                text(j.toPrettyString());
+                JValue j = JSOB("distance_mm", d);
+                j["point_a"] = toJSON([pa.x, pa.y, pa.z]);
+                j["point_b"] = toJSON([pb.x, pb.y, pb.z]);
+                text(j.toJSON(true));
             }
             else
                 text(run.renderedDiagnostics());
@@ -1568,8 +1565,8 @@ JSONValue callTool(string name, JSONValue args)
             "hcad_gui_transform", "hcad_gui_colour", "hcad_gui_split", "hcad_gui_annotate":
         {
             auto method = name["hcad_gui_".length .. $];
-            auto r = guiRequest(arg("window"), method, args.type == JSONType.object ? args : JSONValue((JSONValue[string]).init));
-            text(r.toPrettyString(JSONOptions.doNotEscapeSlashes));
+            auto r = guiRequest(arg("window"), method, args.isObject ? args : JSOB());
+            text(r.toJSON(true));
             break;
         }
     case "hcad_gui_launch":
@@ -1601,23 +1598,23 @@ JSONValue callTool(string name, JSONValue args)
                 dir = absolutePath(dir);
             }
             auto r = launchWindow(code !is null ? null : arg("path"), arg("name"), code, dir);
-            if (r.type == JSONType.string)
-                return toolError(r.str);
-            text(r.toPrettyString(JSONOptions.doNotEscapeSlashes));
+            if (r.isString)
+                return toolError(r.get!string);
+            text(r.toJSON(true));
             break;
         }
     case "hcad_gui_windows":
         {
-            JSONValue[] list;
+            JValue list = JSAB();
             foreach (w; openWindows())
             {
-                JSONValue now = ["now": true];
+                JValue now = JSOB("now", true);
                 try
                 {
                     auto st = guiRequest(w, "state", now);
-                    JSONValue e = ["name": w];
+                    JValue e = JSOB("name", w);
                     foreach (k; ["path", "modified", "evaluating", "version", "outdated"])
-                        if (k in st)
+                        if (st.has(k))
                             e[k] = st[k];
                     list ~= e;
                 }
@@ -1625,7 +1622,7 @@ JSONValue callTool(string name, JSONValue args)
                 {
                 }
             }
-            text(list.length ? JSONValue(list).toPrettyString(JSONOptions.doNotEscapeSlashes)
+            text(list.length ? list.toJSON(true)
                 : "no hackerscad window is open: open one with hcad_gui_launch (or the user starts it with "
                 ~ "`hackerscad model.hcad`)");
             break;
@@ -1633,7 +1630,7 @@ JSONValue callTool(string name, JSONValue args)
     case "hcad_gui_screenshot":
         {
             auto file = buildPath(tempDir, format("hackerscad-shot-%s.png", randomName()));
-            JSONValue p = ["path": file];
+            JValue p = JSOB("path", file);
             if (auto t = arg("target"))
                 p["target"] = t;
             auto r = guiRequest(arg("window"), "screenshot", p);
@@ -1642,13 +1639,13 @@ JSONValue callTool(string name, JSONValue args)
                 image(cast(ubyte[]) read(file));
                 remove(file);
             }
-            text(r.toPrettyString(JSONOptions.doNotEscapeSlashes));
+            text(r.toJSON(true));
             break;
         }
     default:
         throw new Exception("unknown tool: " ~ name);
     }
-    JSONValue r = ["content": content];
+    JValue r = JSOB("content", content);
     r["isError"] = isError;
     return r;
 }
@@ -1656,34 +1653,34 @@ JSONValue callTool(string name, JSONValue args)
 // the server is long-lived: agents iterating on a model reuse unchanged geometry
 CachingKernel sharedCache;
 
-RunOptions options(JSONValue args)
+RunOptions options(JValue args)
 {
     RunOptions o;
     if (sharedCache is null)
         sharedCache = new CachingKernel(new OcctKernel);
     o.cache = sharedCache;
-    if (args.type != JSONType.object)
+    if (!args.isObject)
         return o;
-    if (auto p = "path" in args) o.path = p.str;
-    if (auto s = "source" in args) o.source = s.str;
-    if (auto p = "preset" in args) o.preset = p.str;
-    if (auto p = "drawing" in args) o.drawing = p.str;
-    if (auto t = "tolerance" in args)
+    if (auto p = args.getPtr("path")) o.path = p.get!string;
+    if (auto s = args.getPtr("source")) o.source = s.get!string;
+    if (auto p = args.getPtr("preset")) o.preset = p.get!string;
+    if (auto p = args.getPtr("drawing")) o.drawing = p.get!string;
+    if (auto t = args.getPtr("tolerance"))
     {
-        o.tolerance = t.type == JSONType.integer ? t.integer : t.floating;
+        o.tolerance = t.get!double;
         enforce(o.tolerance > 0, "'tolerance' must be a positive number of mm");
     }
-    if (auto ps = "params" in args)
+    if (auto ps = args.getPtr("params"))
         o.overrides = toOverrides(*ps);
-    double number(JSONValue v) => v.type == JSONType.integer ? v.integer : v.floating;
-    if (auto v = "printability" in args)
-        o.printability = v.type == JSONType.true_;
-    if (auto v = "overhang_angle" in args)
+    double number(JValue v) => v.get!double;
+    if (auto v = args.getPtr("printability"))
+        o.printability = v.safe!bool.or(false);
+    if (auto v = args.getPtr("overhang_angle"))
     {
         o.overhangAngle = number(*v);
         enforce(o.overhangAngle >= 0 && o.overhangAngle < 90, "'overhang_angle' is in degrees from 0 to 90");
     }
-    if (auto v = "min_wall" in args)
+    if (auto v = args.getPtr("min_wall"))
     {
         o.minWall = number(*v);
         enforce(o.minWall > 0, "'min_wall' must be a positive number of mm");
@@ -1691,11 +1688,11 @@ RunOptions options(JSONValue args)
     return o;
 }
 
-View[] views(JSONValue args)
+View[] views(JValue args)
 {
-    if (args.type != JSONType.object || "views" !in args)
+    if (!args.isObject || !args.has("views"))
         return [View.iso, View.front, View.top, View.right];
-    return args["views"].array.map!(v => v.str.to!View).array;
+    return args["views"].get!JArray.elements.map!(v => v.get!string.to!View).array;
 }
 
 string randomName()
@@ -1706,24 +1703,24 @@ string randomName()
 
 unittest
 {
-    auto init = handle(parseJSON(`{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}`));
-    assert(init["result"]["serverInfo"]["name"].str == "hackerscad");
-    assert(handle(parseJSON(`{"jsonrpc": "2.0", "method": "notifications/initialized"}`)).type == JSONType.null_);
-    auto list = handle(parseJSON(`{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}`));
-    assert(list["result"]["tools"].array.map!(t => t["name"].str).canFind("hcad_render"));
-    assert(handle(parseJSON(`{"jsonrpc": "2.0", "id": 3, "method": "nope"}`))["error"]["code"].integer == -32601);
+    auto init = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}`));
+    assert(init["result"]["serverInfo"]["name"].get!string == "hackerscad");
+    assert(handle(parseJSONComplete(`{"jsonrpc": "2.0", "method": "notifications/initialized"}`)).isNull);
+    auto list = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}`));
+    assert(list["result"]["tools"].get!JArray.elements.map!(t => t["name"].get!string).canFind("hcad_render"));
+    assert(handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 3, "method": "nope"}`))["error"]["code"].get!long == -32601);
 
-    auto call = handle(parseJSON(`{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "hcad_render",
+    auto call = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "hcad_render",
         "arguments": {"source": "@part Solid p() => box(10, 20, 30);", "views": ["iso"]}}}`));
-    auto content = call["result"]["content"].array;
-    assert(!call["result"]["isError"].boolean);
-    assert(content[0]["text"].str.canFind(`"volume_mm3": 6000`));
-    assert(content[$ - 1]["type"].str == "image");
+    auto content = call["result"]["content"].get!JArray.elements;
+    assert(!call["result"]["isError"].get!bool);
+    assert(content[0]["text"].get!string.canFind(`"volume_mm3": 6000`));
+    assert(content[$ - 1]["type"].get!string == "image");
 
-    auto bad = handle(parseJSON(`{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "hcad_check",
+    auto bad = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "hcad_check",
         "arguments": {"source": "@part Solid p() => box(10, 20, 30).fillet(edges, radius: 1);"}}}`));
-    assert(bad["result"]["isError"].boolean);
-    assert(bad["result"]["content"][0]["text"].str.canFind("did you mean 'r'?"));
+    assert(bad["result"]["isError"].get!bool);
+    assert(bad["result"]["content"][0]["text"].get!string.canFind("did you mean 'r'?"));
 
     // features and compare answer in a few lines; json: true gives the data
     import std.file : tempDir, write, remove;
@@ -1732,28 +1729,28 @@ unittest
         ~ "@part Solid original() => box(20, 20, 10.5) - cylinder(d: 5.5, h: 30, center: true);\n");
     scope (exit)
         remove(model);
-    JSONValue callTool(string tool, string args)
+    JValue callTool(string tool, string args)
     {
-        auto r = handle(parseJSON(`{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "` ~ tool
+        auto r = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "` ~ tool
             ~ `", "arguments": ` ~ args ~ `}}`));
-        assert(!r["result"]["isError"].boolean, r.toString);
+        assert(!r["result"]["isError"].get!bool, r.toString);
         return r["result"]["content"];
     }
-    immutable where = `"path": ` ~ JSONValue(model).toString;
-    auto features = callTool("hcad_features", `{` ~ where ~ `, "part": "copy"}`)[0]["text"].str;
+    immutable where = `"path": ` ~ JValue(model).toString;
+    auto features = callTool("hcad_features", `{` ~ where ~ `, "part": "copy"}`)[0]["text"].get!string;
     assert(features.canFind("hole ⌀5") && !features.canFind(`"kind"`), features);
-    assert(callTool("hcad_features", `{` ~ where ~ `, "part": "copy", "json": true}`)[0]["text"].str.canFind(`"kind"`));
-    auto compared = callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original"}`)[0]["text"].str;
+    assert(callTool("hcad_features", `{` ~ where ~ `, "part": "copy", "json": true}`)[0]["text"].get!string.canFind(`"kind"`));
+    auto compared = callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original"}`)[0]["text"].get!string;
     assert(compared.canFind("within tolerance") && !compared.canFind(`"a_to_b"`), compared);
-    assert(callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original", "json": true}`)[0]["text"].str
+    assert(callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original", "json": true}`)[0]["text"].get!string
         .canFind(`"a_to_b"`));
 
     // the pictures say where they look from; a view from anywhere
-    auto views = callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original"}`)[0]["text"].str;
+    auto views = callTool("hcad_compare", `{` ~ where ~ `, "a": "copy", "b": "original"}`)[0]["text"].get!string;
     assert(views.canFind("the picture") && views.canFind("1. from"), views);
-    auto seen = handle(parseJSON(`{"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "hcad_render", `
+    auto seen = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "hcad_render", `
         ~ `"arguments": {` ~ where ~ `, "view": {"from": "right", "look_at": [0, 0, 5], "size": 10}}}}`))["result"];
-    assert(seen["content"].array[$ - 2]["text"].str.canFind("seen from the right (x)"), seen.toString);
+    assert(seen["content"].get!JArray.elements[$ - 2]["text"].get!string.canFind("seen from the right (x)"), seen.toString);
 
     // slivers the copy has (sheets a hair over the tops of two blocks apart): told, as the distances cannot,
     // each with its own box and number; the next step is said
@@ -1763,50 +1760,50 @@ unittest
         ~ "@part Solid original() => box(10, 10, 10) + box(10, 10, 10).move(x: 30);\n");
     scope (exit)
         remove(sliverModel);
-    auto sliver = callTool("hcad_compare", `{"path": ` ~ JSONValue(sliverModel).toString ~ `, "a": "copy", "b": "original"}`)
-        [0]["text"].str;
+    auto sliver = callTool("hcad_compare", `{"path": ` ~ JValue(sliverModel).toString ~ `, "a": "copy", "b": "original"}`)
+        [0]["text"].get!string;
     assert(sliver.canFind("a sliver") && sliver.canFind("next: diff and lines"), sliver);
     import std.regex : matchAll;
     assert(sliver.matchAll(`    \d+\. [\d.]+ mm² from \([^)]*\) to \([^)]*\)\n`).array.length == 2, sliver);
-    auto sliverClose = callTool("hcad_compare", `{"path": ` ~ JSONValue(sliverModel).toString
+    auto sliverClose = callTool("hcad_compare", `{"path": ` ~ JValue(sliverModel).toString
         ~ `, "a": "copy", "b": "original", "focus": 2}`);
-    assert(sliverClose.array[$ - 1]["type"].str == "image" && sliverClose.toString.canFind("a sliver of"),
+    assert(sliverClose.get!JArray.elements[$ - 1]["type"].get!string == "image" && sliverClose.toString.canFind("a sliver of"),
         sliverClose.toString);
 
     // the whole round in one call: its four parts, close-ups, the pictures, and whether it is done
-    auto rev = handle(parseJSON(`{"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "hcad_review", `
+    auto rev = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "hcad_review", `
         ~ `"arguments": {` ~ where ~ `, "a": "copy", "b": "original", "each": 1}}}`))["result"];
-    assert(!rev["isError"].boolean, rev.toString);
-    immutable revText = rev["content"].array[0]["text"].str;
+    assert(!rev["isError"].get!bool, rev.toString);
+    immutable revText = rev["content"].get!JArray.elements[0]["text"].get!string;
     assert(revText.canFind("1. distances") && revText.canFind("2. material") && revText.canFind("4. drawings of the voids")
         && revText.canFind("close-up 1") && revText.canFind("next:"), revText);
     // the summary leaves out the captions, the whole reports do not
     assert(!revText.canFind("\nthe picture") && !revText.canFind("  the picture"), revText);
     auto revWhole = callTool("hcad_review", `{` ~ where ~ `, "a": "copy", "b": "original", "each": 1, "detail": true}`);
-    assert(revWhole.array[0]["text"].str.canFind("\nthe picture"), revWhole.toString);
-    assert(rev["content"].array[$ - 1]["type"].str == "image");
+    assert(revWhole.get!JArray.elements[0]["text"].get!string.canFind("\nthe picture"), revWhole.toString);
+    assert(rev["content"].get!JArray.elements[$ - 1]["type"].get!string == "image");
 
     // two sections drawn on each other, close on a region round the hole
     auto cut = callTool("hcad_section", `{` ~ where ~ `, "part": "copy", "compare": "original", "plane": "xy", "at": 5, `
         ~ `"region": [-4, -4, 4, 4]}`);
-    assert(cut.array[$ - 1]["type"].str == "image");
+    assert(cut.get!JArray.elements[$ - 1]["type"].get!string == "image");
 
     // focus: a close-up of an entry of the report, as a picture; a number past the last one is an error
-    auto close = handle(parseJSON(`{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "hcad_diff", `
+    auto close = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "hcad_diff", `
         ~ `"arguments": {` ~ where ~ `, "a": "copy", "b": "original", "focus": 1}}}`))["result"];
-    assert(!close["isError"].boolean, close.toString);
-    assert(close["content"][0]["text"].str.canFind("close-up 1") && close["content"].array[$ - 1]["type"].str == "image");
-    auto past = handle(parseJSON(`{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "hcad_diff", `
+    assert(!close["isError"].get!bool, close.toString);
+    assert(close["content"][0]["text"].get!string.canFind("close-up 1") && close["content"].get!JArray.elements[$ - 1]["type"].get!string == "image");
+    auto past = handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "hcad_diff", `
         ~ `"arguments": {` ~ where ~ `, "a": "copy", "b": "original", "focus": [99]}}}`))["result"];
-    assert(past["isError"].boolean && past["content"].array[$ - 1]["text"].str.canFind("there is no entry 99"), past.toString);
+    assert(past["isError"].get!bool && past["content"].get!JArray.elements[$ - 1]["text"].get!string.canFind("there is no entry 99"), past.toString);
 
     // a window's folder is checked before any window opens
-    auto launch(string args) => handle(parseJSON(`{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": `
+    auto launch(string args) => handle(parseJSONComplete(`{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": `
         ~ `{"name": "hcad_gui_launch", "arguments": ` ~ args ~ `}}`))["result"];
     auto noDir = launch(`{"code": "@part Solid p() => box(1, 1, 1);", "dir": "/no/such/folder"}`);
-    assert(noDir["isError"].boolean && noDir["content"][0]["text"].str.canFind("no folder"));
-    auto onFile = launch(`{` ~ where ~ `, "dir": ` ~ JSONValue(tempDir).toString ~ `}`);
-    assert(onFile["isError"].boolean && onFile["content"][0]["text"].str.canFind("window on a file"));
+    assert(noDir["isError"].get!bool && noDir["content"][0]["text"].get!string.canFind("no folder"));
+    auto onFile = launch(`{` ~ where ~ `, "dir": ` ~ JValue(tempDir).toString ~ `}`);
+    assert(onFile["isError"].get!bool && onFile["content"][0]["text"].get!string.canFind("window on a file"));
 }
 
 /// The desktop application next to this program: the AppImage this runs
@@ -1838,7 +1835,7 @@ string[] guiCommand()
 /// its state and name, or (a string) why it could not. `dir`: the folder a
 /// window of no file works in (its untitled model is there, and load() reads
 /// the files there and below); none, the server's.
-JSONValue launchWindow(string path, string name, string code = null, string dir = null)
+JValue launchWindow(string path, string name, string code = null, string dir = null)
 {
     import core.thread : Thread;
     import core.time : MonoTime, msecs, seconds;
@@ -1847,18 +1844,18 @@ JSONValue launchWindow(string path, string name, string code = null, string dir 
     import std.stdio : File;
     version (linux)
         if (environment.get("WAYLAND_DISPLAY") is null && environment.get("DISPLAY") is null)
-            return JSONValue("no screen here (neither WAYLAND_DISPLAY nor DISPLAY is set): the user has to open "
+            return JValue("no screen here (neither WAYLAND_DISPLAY nor DISPLAY is set): the user has to open "
                 ~ "hackerscad on their computer");
     auto cmd = guiCommand();
     if (cmd is null)
-        return JSONValue("cannot find the hackerscad application next to this hcad: set HCAD_GUI to its path");
+        return JValue("cannot find the hackerscad application next to this hcad: set HCAD_GUI to its path");
     if (name.length)
     {
         auto n = normalizeWindowName(name);
         if (n is null)
-            return JSONValue("a window name is letters, digits and dashes");
+            return JValue("a window name is letters, digits and dashes");
         if (windowAlive(n))
-            return JSONValue("a window is already called " ~ n ~ ": use it, or choose another name");
+            return JValue("a window is already called " ~ n ~ ": use it, or choose another name");
         name = n;
     }
     else
@@ -1879,7 +1876,7 @@ JSONValue launchWindow(string path, string name, string code = null, string dir 
     {
         import std.file : exists;
         if (!exists(path))
-            return JSONValue("no file at " ~ path);
+            return JValue("no file at " ~ path);
         args ~= absolutePath(path);
     }
     version (Windows)
@@ -1892,19 +1889,19 @@ JSONValue launchWindow(string path, string name, string code = null, string dir 
             Config.detached | Config.suppressConsole, dir);
     }
     catch (Exception e)
-        return JSONValue("cannot start " ~ args[0] ~ ": " ~ e.msg);
+        return JValue("cannot start " ~ args[0] ~ ": " ~ e.msg);
     // the window answers once GTK is up; a slow first start (the AppImage
     // unpacking, the font cache) can take a while
     immutable until = MonoTime.currTime + 60.seconds;
     while (!windowAlive(name))
     {
         if (MonoTime.currTime > until)
-            return JSONValue("the window did not answer within a minute");
+            return JValue("the window did not answer within a minute");
         Thread.sleep(200.msecs);
     }
     // its state after the first evaluation
-    auto st = guiRequest(name, "state", JSONValue((JSONValue[string]).init));
-    if (st.type == JSONType.object)
+    auto st = guiRequest(name, "state", JSOB());
+    if (st.isObject)
         st["window"] = name;
     return st;
 }

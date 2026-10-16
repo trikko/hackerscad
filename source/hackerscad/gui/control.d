@@ -6,7 +6,7 @@ import core.sync.semaphore : Semaphore;
 import core.thread : Thread;
 import core.time : msecs;
 import std.file : exists, remove;
-import std.json;
+import djson;
 import std.socket;
 import std.conv : octal;
 import std.string : indexOf;
@@ -18,7 +18,7 @@ import hackerscad.tool.guiclient : socketPath, controlDir, controlSocket, window
     randomWindowName, removeStaleChannels;
 
 /// Called on the main thread; must eventually call `reply` exactly once.
-alias Handler = void delegate(string method, JSONValue params, void delegate(JSONValue result, string error) reply);
+alias Handler = void delegate(string method, JValue params, void delegate(JValue result, string error) reply);
 
 /// The control channel of one window, under a name agents use to tell the
 /// windows apart: random at start, the user can change it.
@@ -213,20 +213,20 @@ final class ControlServer
             buf ~= chunk[0 .. n];
         }
 
-        JSONValue response;
+        JValue response;
         try
         {
-            auto req = parseJSON(buf[0 .. buf.indexOf('\n')]);
-            auto method = req["method"].str;
-            auto params = "params" in req ? req["params"] : JSONValue((JSONValue[string]).init);
+            auto req = parseJSONComplete(buf[0 .. buf.indexOf('\n')].idup);
+            auto method = req["method"].get!string;
+            auto params = req.has("params") ? req["params"] : JSOB();
 
             // run on the GTK thread and wait for the answer
             auto done = new Semaphore(0);
-            JSONValue result;
+            JValue result;
             string error;
             idleAdd(PRIORITY_DEFAULT, () {
                 try
-                    handler(method, params, (JSONValue r, string e) {
+                    handler(method, params, (JValue r, string e) {
                         result = r;
                         error = e;
                         done.notify();
@@ -240,12 +240,12 @@ final class ControlServer
             });
             done.wait();
             if (error.length)
-                response = JSONValue(["error": error]);
+                response = JSOB("error", error);
             else
-                response = JSONValue(["result": result]);
+                response = JSOB("result", result);
         }
         catch (Exception e)
-            response = JSONValue(["error": e.msg]);
-        client.send(response.toString(JSONOptions.doNotEscapeSlashes) ~ "\n");
+            response = JSOB("error", e.msg);
+        client.send(response.toJSON() ~ "\n");
     }
 }

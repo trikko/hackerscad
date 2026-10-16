@@ -282,8 +282,9 @@ hackerscad is built on [Open CASCADE Technology](https://dev.opencascade.org),
 [GTK](https://gtk.org),
 [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/),
 [GtkSourceView](https://wiki.gnome.org/Projects/GtkSourceView),
-[giD](https://github.com/Kymorphia/gid) and
-[bindbc-opengl](https://github.com/BindBC/bindbc-opengl). `hcad --version` and
+[giD](https://github.com/Kymorphia/gid),
+[bindbc-opengl](https://github.com/BindBC/bindbc-opengl) and
+[djson](https://github.com/trikko/djson). `hcad --version` and
 the About window list them with their licences. The Windows package also
 ships [Mesa](https://mesa3d.org)'s software OpenGL and Microsoft's Visual C++
 runtime (`vcruntime140.dll`), redistributed under their licences.

@@ -1,6 +1,7 @@
 /+ dub.sdl:
     name "tutorial-shots"
     dependency "hackerscad:core" path=".."
+    dependency "djson" version="~>0.9.5"
 +/
 // Rebuilds the tutorial's models and pictures: drives the application
 // through the steps of each page as a reader would (clicks, right-click
@@ -19,7 +20,7 @@ import std.array : array;
 import std.conv : to;
 import std.file : exists, mkdirRecurse, remove, tempDir, write;
 import std.format : format;
-import std.json;
+import djson;
 import std.path : absolutePath, buildPath;
 import std.process : execute, spawnProcess, Pid, kill, wait, thisProcessID;
 import std.stdio : writeln;
@@ -562,9 +563,9 @@ void stop()
     wait(app);
 }
 
-JSONValue req(string method, string params) => guiRequest(window, method, parseJSON(params));
+JValue req(string method, string params) => guiRequest(window, method, parseJSONComplete(params));
 
-void open(string file) => cast(void) req("open", JSONValue(["path": JSONValue(absolutePath(file)), "force": JSONValue(true)]).toString);
+void open(string file) => cast(void) req("open", JSOB("path", absolutePath(file), "force", true).toString);
 
 void view(string params)
 {
@@ -572,7 +573,7 @@ void view(string params)
     Thread.sleep(300.msecs);   // the view redrawn
 }
 
-string source() => req("state", `{"source": true}`)["source"].str;
+string source() => req("state", `{"source": true}`)["source"].get!string;
 
 /// Replaces the whole code, and saves it to the working file.
 void setSource(string code)
@@ -583,7 +584,7 @@ void setSource(string code)
 /// What typing does: `old`, which appears once, becomes `new_`.
 void type(string old, string new_)
 {
-    req("edit", JSONValue(["old": old, "new": new_]).toString);
+    req("edit", JSOB("old", old, "new", new_).toString);
     req("state", `{}`);
 }
 
@@ -593,14 +594,14 @@ void paste(string before, string after) => type(before, after);
 void appendSource(string code)
 {
     auto lines = source().lineSplitter.array.length;
-    req("edit", JSONValue(["insert": JSONValue(lines + 1), "text": JSONValue(code)]).toString);
+    req("edit", JSOB("insert", lines + 1, "text", code).toString);
     req("state", `{}`);
 }
 
 /// A click on a model point; with Shift it adds to the selection.
 void click(double[] point, bool shift)
 {
-    req("pick", JSONValue(["point": JSONValue(point), "shift": JSONValue(shift)]).toString);
+    req("pick", JSOB("point", toJSON(point), "shift", shift).toString);
 }
 
 void clearSelection() => cast(void) req("selection", `{"clear": true}`);
@@ -609,9 +610,9 @@ void clearSelection() => cast(void) req("selection", `{"clear": true}`);
 void menu(double[] point, string[] path)
 {
     closeMenus();
-    auto p = JSONValue(["point": JSONValue(point)]);
+    auto p = JSOB("point", toJSON(point));
     if (path.length)
-        p["path"] = JSONValue(path);
+        p["path"] = toJSON(path);
     else
         p["open"] = true;
     req("menu", p.toString);
@@ -621,7 +622,7 @@ void menu(double[] point, string[] path)
 void menuOpen(double[] point, string[] path)
 {
     closeMenus();
-    req("menu", JSONValue(["point": JSONValue(point), "path": JSONValue(path), "open": JSONValue(true)]).toString);
+    req("menu", JSOB("point", toJSON(point), "path", toJSON(path), "open", true).toString);
 }
 
 void closeMenus() => view(`{"menu": "none"}`);
@@ -662,9 +663,9 @@ void shot(string name, int line = 1)
     if (line > 0)
         view(format(`{"cursor": %d}`, line));
     Thread.sleep(300.msecs);
-    auto r = req("screenshot", JSONValue(["path": JSONValue(absolutePath(buildPath(img, name ~ ".png")))]).toString);
-    if ("note" in r)
-        throw new Exception(name ~ ": " ~ r["note"].str);
+    auto r = req("screenshot", JSOB("path", absolutePath(buildPath(img, name ~ ".png"))).toString);
+    if (r.has("note"))
+        throw new Exception(name ~ ": " ~ r["note"].get!string);
     writeln("  ", name);
 }
 

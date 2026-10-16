@@ -1750,10 +1750,10 @@ unittest
     // pairs in tools/win-forwarders.sh and packaging/macos/package.sh) are
     // tied to the version they were seen in
     import std.file : thisExePath, readText;
-    import std.json : parseJSON;
+    import djson : parseJSONComplete;
     import std.path : dirName;
     auto root = dirName(dirName(dirName(thisExePath)));
-    immutable v = parseJSON(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"].str;
+    immutable v = parseJSONComplete(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"].get!string;
     assert(v == "0.9.13", "gid is now " ~ v ~ ": check whether GLArea.getError still frees the error it does not own, "
         ~ "and whether symbols are still looked up in the first library of a pair only; drop the WORKAROUNDs it "
         ~ "fixed, then put the new version here");

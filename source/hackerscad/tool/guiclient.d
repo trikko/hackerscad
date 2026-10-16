@@ -5,7 +5,7 @@ module hackerscad.tool.guiclient;
 
 import std.conv : to;
 import std.format : format;
-import std.json;
+import djson;
 import std.path : buildPath;
 import std.process : environment;
 import std.socket;
@@ -170,7 +170,7 @@ string randomWindowName()
 /// Sends {"method": …, "params": …} to a window and returns the "result"
 /// member. Without a name, the only open window; with several, an error
 /// that lists them.
-JSONValue guiRequest(string window, string method, JSONValue params)
+JValue guiRequest(string window, string method, JValue params)
 {
     import std.array : join;
     import std.algorithm : canFind;
@@ -200,9 +200,9 @@ JSONValue guiRequest(string window, string method, JSONValue params)
         throw new Exception(format("the hackerscad window '%s' does not answer", window));
     sock.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(60));
 
-    JSONValue req = ["method": method];
+    JValue req = JSOB("method", method);
     req["params"] = params;
-    auto line = req.toString(JSONOptions.doNotEscapeSlashes) ~ "\n";
+    auto line = req.toJSON() ~ "\n";
     sock.send(line);
 
     char[] buf;
@@ -214,37 +214,40 @@ JSONValue guiRequest(string window, string method, JSONValue params)
             throw new Exception("no answer from hackerscad");
         buf ~= chunk[0 .. n];
     }
-    auto resp = parseJSON(buf[0 .. buf.indexOf('\n')]);
-    if (auto e = "error" in resp)
+    auto resp = parseJSONComplete(buf[0 .. buf.indexOf('\n')].idup);
+    if (auto e = resp.getPtr("error"))
     {
         // a window started before its program was updated lacks the newest tools
-        if (e.str == "unknown method: " ~ method)
+        if (e.get!string == "unknown method: " ~ method)
             throw new Exception(format("the hackerscad window '%s' runs an older version without '%s': ask the user "
                 ~ "to restart it", window, method));
-        throw new Exception(e.str);
+        throw new Exception(e.get!string);
     }
     return resp["result"];
 }
 
 /// JSON parameter values → .hcad expressions: numbers are in the model
 /// unit, strings are expressions, booleans are booleans.
-string[string] toOverrides(JSONValue params)
+string[string] toOverrides(JValue params)
 {
     string[string] r;
-    if (params.type != JSONType.object)
+    if (!params.isObject)
         return r;
-    foreach (name, v; params.object)
+    foreach (string name, v; params)
     {
-        switch (v.type)
+        if (v.isString)
+            r[name] = v.get!string;
+        else if (v.isNumber)
         {
-        case JSONType.string: r[name] = v.str; break;
-        case JSONType.integer: r[name] = v.integer.to!string; break;
-        case JSONType.uinteger: r[name] = v.uinteger.to!string; break;
-        case JSONType.float_: r[name] = format("%.10g", v.floating); break;
-        case JSONType.true_: r[name] = "true"; break;
-        case JSONType.false_: r[name] = "false"; break;
-        default: throw new Exception(format("parameter '%s': unsupported value %s", name, v));
+            // a whole number as it is, others to ten digits
+            immutable x = v.get!double;
+            r[name] = x >= -9.2e18 && x <= 9.2e18 && x == cast(long) x ? (cast(long) x).to!string
+                : format("%.10g", x);
         }
+        else if (v.isBool)
+            r[name] = v.get!bool ? "true" : "false";
+        else
+            throw new Exception(format("parameter '%s': unsupported value %s", name, v));
     }
     return r;
 }
@@ -253,7 +256,7 @@ import core.time : dur;
 
 unittest
 {
-    auto o = toOverrides(parseJSON(`{"w": 80, "h": "2.5.cm", "f": 1.5, "b": true}`));
+    auto o = toOverrides(parseJSONComplete(`{"w": 80, "h": "2.5.cm", "f": 1.5, "b": true}`));
     assert(o["w"] == "80" && o["h"] == "2.5.cm" && o["f"] == "1.5" && o["b"] == "true");
 
     assert(normalizeWindowName("  Benchy Hull! v2 ") == "benchy-hull-v2");

@@ -702,7 +702,7 @@ mixin template SketchFollow()
     }
 
     /// The sketch state for agents: where the one shown comes from.
-    void sketchOriginJson(ref JSONValue j)
+    void sketchOriginJson(ref JValue j)
     {
         j["from_cursor"] = sketchFollowing;
         j["pinned"] = sketchPinned;

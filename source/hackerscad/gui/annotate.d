@@ -528,8 +528,8 @@ mixin template Annotate()
         u.face = hit.face;
         u.point = hit.point;
         u.normal = hit.normal;
-        if ("selector" in j && j["selector"].type == JSONType.string)
-            u.selector = j["selector"].str;
+        if (j.has("selector") && j["selector"].isString)
+            u.selector = j["selector"].get!string;
         return u;
     }
 
@@ -569,7 +569,7 @@ mixin template Annotate()
                 return r;
             auto j = hitJson(hit);
             r = Near(last.parts[hit.part].name, hit.face, hit.point, hit.normal,
-                "selector" in j && j["selector"].type == JSONType.string ? j["selector"].str : null, pixels, ahead);
+                j.has("selector") && j["selector"].isString ? j["selector"].get!string : null, pixels, ahead);
             return r;
         }
         if (dx != 0 || dy != 0)
@@ -606,10 +606,10 @@ mixin template Annotate()
     /// The control socket's points that are not in the view's terms:
     /// [x, y, z] mm, a part's name (its centre of mass, and its box for a
     /// circle round it), {"part": name, "face": i} (the face's centre).
-    string readNotePoint(JSONValue v, out P p, out P[2] box, out bool hasBox)
+    string readNotePoint(JValue v, out P p, out P[2] box, out bool hasBox)
     {
         import hackerscad.tool.annotations : pointHelp;
-        if (v.type == JSONType.array && v.array.length == 3)
+        if (v.isArray && v.length == 3)
         {
             if (!viewPointOf(vec3Of(v), p))
                 return "that point is behind the camera";
@@ -617,12 +617,12 @@ mixin template Annotate()
         }
         string part;
         int face = -1;
-        if (v.type == JSONType.string)
-            part = v.str;
-        else if (v.type == JSONType.object && "part" in v && v["part"].type == JSONType.string)
+        if (v.isString)
+            part = v.get!string;
+        else if (v.isObject && v.has("part") && v["part"].isString)
         {
-            part = v["part"].str;
-            if ("face" in v && v["face"].type != JSONType.null_)
+            part = v["part"].get!string;
+            if (v.has("face") && !v["face"].isNull)
                 face = cast(int) numberOf(v["face"]);
         }
         else
@@ -1144,14 +1144,14 @@ mixin template Annotate()
     }
 
     /// The annotations for the state, and whether the view is annotated.
-    void annotationsState(ref JSONValue j)
+    void annotationsState(ref JValue j)
     {
         refreshNotes();
         j["annotations"] = notes.toJson();
         j["annotate_mode"] = frozen;
         if (frozen)
         {
-            JSONValue v = ["width": viewW, "height": viewH];
+            JValue v = JSOB("width", viewW, "height", viewH);
             v["model_changed"] = changedSinceFrozen;
             j["annotated_view"] = v;
         }
