@@ -3880,3 +3880,13 @@ unittest
         writeln(abs(loop.volume.to!double - chain.volume.to!double) < 1e-6, " ",
             loop.volume < b.chamfer(edges.of(faces.top), d: 0.5.mm).volume);`, "true false");
 }
+
+unittest
+{
+    // contains: inside a solid (its surface and the holes out), inside a profile's area
+    expectOut(`auto b = box(20.mm, 20.mm, 10.mm) - cylinder(d: 6.mm, h: 30.mm);
+        auto p = rect(20.mm, 10.mm) - circle(d: 4.mm);
+        writeln(b.contains(vec(5.mm, 5.mm, 5.mm)), " ", b.contains(vec(0.mm, 0.mm, 5.mm)), " ",
+            b.contains(vec(5.mm, 5.mm, 10.mm)), " ", p.contains(vec(6.mm, 0.mm)), " ", p.contains(vec(0.mm, 0.mm)));`,
+        "true false false true false");
+}

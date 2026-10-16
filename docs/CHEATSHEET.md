@@ -197,6 +197,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.area → Area` — The surface area (of a profile: its area).
 - `s.isEmpty → bool` — Whether nothing is left.
 - `s.isValid → bool` — Whether the solid is a valid closed solid.
+- `s.contains(point: Vec) → bool` — Whether a point lies inside the solid (on its surface: no); of a profile, inside its area, the point taken onto its plane.
 - `s.pieces → Solid[]` — The separate bodies, ordered along X, then Y, then Z; of a profile, its separate regions, each with its holes.
 - `p.outer → Profile` — The outline without its holes (of each region, joined).
 - `p.holes → Profile[]` — Each hole of the profile, filled: a profile of its own.

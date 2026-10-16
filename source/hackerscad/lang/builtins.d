@@ -2641,6 +2641,28 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
                     result = Value.of(derived(it, b, [s], "outer", span));
                     return true;
                 }
+            case "contains":
+                {
+                    // body.contains(p): whether point p lies inside the solid (on its surface: no); a profile, inside
+                    // its area (p taken onto its plane)
+                    result = method((ref CallArgs a) {
+                        auto x = Args(it, a, "contains", ["solid", "point"]);
+                        auto q = x.vecLen("point");
+                        if (s.brep is null)
+                            return Value.of(false);
+                        if (!s.flat)
+                            return Value.of(it.kernel.inside(s.brep, q));
+                        // a profile drawn on a face lies on XY in its frame's coordinates
+                        if (s.placed)
+                        {
+                            auto d = q - s.place[0];
+                            q = Vec3(d.dot(s.place[1]), d.dot(s.place[2]), 0);
+                        }
+                        auto slab = it.kernel.extrude(s.brep, 1, 0);
+                        return Value.of(it.kernel.inside(slab, Vec3(q.x, q.y, 0.5)));
+                    });
+                    return true;
+                }
             case "isValid": result = Value.of(s.brep !is null && it.kernel.isValid(s.brep)); return true;
             default: return false;
             }

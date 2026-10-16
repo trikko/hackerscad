@@ -217,6 +217,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.area → Area</dt><dd>The surface area (of a profile: its area).</dd>
 <dt>s.isEmpty → bool</dt><dd>Whether nothing is left.</dd>
 <dt>s.isValid → bool</dt><dd>Whether the solid is a valid closed solid.</dd>
+<dt>s.contains(point: Vec) → bool</dt><dd>Whether a point lies inside the solid (on its surface: no); of a profile, inside its area, the point taken onto its plane.</dd>
 <dt>s.pieces → Solid[]</dt><dd>The separate bodies, ordered along X, then Y, then Z; of a profile, its separate regions, each with its holes.</dd>
 <dt>p.outer → Profile</dt><dd>The outline without its holes (of each region, joined).</dd>
 <dt>p.holes → Profile[]</dt><dd>Each hole of the profile, filled: a profile of its own.</dd>

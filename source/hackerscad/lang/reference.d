@@ -377,6 +377,9 @@ immutable Ref[] reference =
     P("area", "Shape", "Area", "The surface area (of a profile: its area)."),
     P("isEmpty", "Solid", "bool", "Whether nothing is left."),
     P("isValid", "Solid", "bool", "Whether the solid is a valid closed solid."),
+    withForms(F("contains", "Solid", ["point: Vec"], "bool", "Whether a point lies inside the solid (on its surface: no); of a profile, inside its area, the point taken onto its plane."), [
+        "assert(body.contains(vec(10.mm, 5.mm, 2.mm)), \"the boss is solid there\")",
+        "sides.above.contains(vec(30.mm, 15.mm, 2.mm)) ? sides.above : sides.below   // the half a point is in"]),
     P("pieces", "Solid", "Solid[]", "The separate bodies, ordered along X, then Y, then Z; of a profile, its separate regions, each with its holes."),
     withForms(P("outer", "Profile", "Profile", "The outline without its holes (of each region, joined)."), [
         "section.outer.extrude(4.mm)   // the outside of a section, its holes filled"]),
