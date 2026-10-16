@@ -1092,17 +1092,17 @@ Solid sampler()
 // A pillow block: a housing for a 608 ball bearing,
 // bolted down by two slotted feet. Each feature is a
 // sketch drawn on a different surface: the ground,
-// the top of the foot, the front of the foot, the
+// the front of the foot, the top of the foot, the
 // front of the upright and its slanted flank.
 module pillowblock;
 
 import std.shapes;
 import hardware : M5;
 
-@param("Foot length", min: 70.mm, max: 140.mm)
+@param("Foot length", min: 80.mm, max: 140.mm)
 immutable footLength = 90.mm;
 
-@param("Foot width", min: 20.mm, max: 50.mm)
+@param("Foot width", min: 30.mm, max: 50.mm)
 immutable footWidth = 30.mm;
 
 @param("Foot height", min: 5.mm, max: 15.mm)
@@ -1114,10 +1114,10 @@ immutable axisHeight = 26.mm;
 @param("Upright width at the bottom", min: 40.mm, max: 70.mm)
 immutable uprightWidth = 50.mm;
 
-@param("Upright thickness", min: 10.mm, max: 30.mm)
+@param("Upright thickness", min: 10.mm, max: 20.mm)
 immutable uprightDepth = 16.mm;
 
-@param("Slot travel", min: 0.mm, max: 12.mm)
+@param("Slot travel", min: 2.mm, max: 10.mm)
 immutable travel = 6.mm;
 
 // the 608 bearing: 22 mm across, 7 mm wide
@@ -1125,9 +1125,19 @@ immutable bearingD = 22.mm;
 immutable bearingWidth = 7.mm;
 
 immutable footCorner = 6.mm;
-immutable slotX = 35.mm;
 immutable spotFace = 9.mm;
 immutable topRadius = 17.mm;
+
+// the slots halfway between the upright and the ends
+immutable slotX = (uprightWidth + footLength) / 4;
+
+unittest
+{
+    assert(footLength / 2 - slotX
+        >= travel / 2 + spotFace / 2 + 2.mm,
+        "no room for the slots: a longer foot, a "
+        ~ "narrower upright or less travel");
+}
 
 /// The foot seen from above, on the ground (XY).
 Profile footSketch()
@@ -1223,14 +1233,7 @@ Solid pillowBlock()
     auto block = foot
         .fillet(edges.of(faces.top), r: 1.5.mm);
 
-    // 2. on the top of the foot: the slots through it,
-    // and flat seats for the washers
-    block = block.cut(slotsSketch(M5.clearance),
-        on: block.frame(faces.top), through: true);
-    block = block.cut(slotsSketch(spotFace),
-        on: block.frame(faces.top), depth: 1.5.mm);
-
-    // 3. on the front of the foot, moved back to the
+    // 2. on the front of the foot, moved back to the
     // middle: the upright, pushed in from there
     auto inset = (footWidth - uprightDepth) / 2;
     auto front = block.plane(faces.front)
@@ -1247,6 +1250,14 @@ Solid pillowBlock()
             faces.from(foot)),
         r: 3.mm);
 
+    // 3. on the top of the foot: the slots through it,
+    // and flat seats for the washers
+    auto top = foot.frame(faces.top);
+    block = block.cut(slotsSketch(M5.clearance),
+        on: top, through: true);
+    block = block.cut(slotsSketch(spotFace),
+        on: top, depth: 1.5.mm);
+
     // 4. on the upright's front face, round the shaft:
     // the bearing's seat
     auto face = faces.from(upright)
@@ -1258,8 +1269,7 @@ Solid pillowBlock()
 
     // 5. on the right flank, leaning: the label
     auto flank = faces.from(upright)
-        .filter(f => f.normal.x > 0.5
-            && f.normal.z > 0.1);
+        .farthest(X);
     return block.cut(labelSketch(),
         on: block.frame(flank), depth: 0.6.mm);
 }
