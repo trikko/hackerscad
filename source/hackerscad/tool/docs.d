@@ -51,6 +51,8 @@ dimensions and pictures, compare them with the request, fix, then export.
 - Profiles: rect, circle, ellipse, polygon, slot, teardrop (the shapes of a
   sketch, same names and arguments, centred on the origin unless given a
   point: rect(40.mm, 20.mm, corner: 3.mm), rect(p, q), circle(c, d: 5.mm),
+  rect(center: vec(15.4, 3.3), w: 5.6.mm, h: 14.mm, angle: 45.deg) (a
+  rotated one, round a point),
   polygon(6, d: 13.mm, fit: "sides"), slot(p, q, w: 6.mm)), polygon(points),
   text; combined with + - &, moved, turned, scaled, mirrored like solids,
   .round(r), .offset(d); turn them into solids with .extrude(h) or
@@ -470,7 +472,22 @@ string reference(string topic = null)
     // whole blocks (a bullet with its continuation lines, a code block, a
     // paragraph) that mention the topic, under their heading; a heading that
     // names it brings its whole section
+    // a word and the ones the text uses for it: a search for "rotated" finds angle:, one for "bevel" chamfer
     auto t = topic.toLower;
+    static immutable string[][] alike = [["rotate", "rotated", "rotation", "turned", "tilted", "slanted", "angle:"],
+        ["chamfer", "bevel"], ["hole", "bore"]];
+    string[] words = [t];
+    foreach (group; alike)
+        if (group.canFind(t))
+            words = group.dup;
+    bool mentions(string s)
+    {
+        auto low = s.toLower;
+        foreach (w; words)
+            if (low.canFind(w))
+                return true;
+        return false;
+    }
     struct Found
     {
         string heading, text;
@@ -483,7 +500,7 @@ string reference(string topic = null)
     void flush()
     {
         import std.algorithm : count;
-        if (block.length && (sectionNamed || block.toLower.canFind(t)))
+        if (block.length && (sectionNamed || mentions(block)))
             found ~= Found(heading, block, block.startsWith("```") && block.count('\n') > 40);
         block = null;
     }
@@ -514,7 +531,7 @@ string reference(string topic = null)
         {
             flush();
             heading = line;
-            sectionNamed = line.toLower.canFind(t);
+            sectionNamed = mentions(line);
             continue;
         }
         if (line.strip.length == 0 || line.startsWith("- "))
@@ -561,6 +578,9 @@ unittest
     // a short excerpt, not the whole tour, the examples and the libraries
     auto e = reference("extrude");
     assert(e.length <= 13_000 && !e.canFind("A tour of the language"), e[0 .. 200]);
+    // a word the text says otherwise: a rotated rectangle is found by its angle:, a bevel as a chamfer
+    assert(reference("rotated").canFind("w: 5.6.mm, h: 14.mm, angle: 45.deg"));
+    assert(reference("bevel").canFind("chamfer("));
 }
 
 unittest

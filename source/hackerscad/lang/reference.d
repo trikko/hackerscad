@@ -273,12 +273,13 @@ immutable Ref[] reference =
     ]) ~
     group("Profiles (2D)", [
     withForms(F("rect", "", ["w: Length", "h: Length", "p: Vec", "q: Vec", "center: Vec", "angle: Angle", "corner: Length"], "Profile",
-        "A rectangle: centred on the origin (or center:), from two opposite corners, or from one corner and its size; angle: turns it, corner: rounds its corners. s.rect with everything given."), [
+        "A rectangle: centred on the origin (or center:), from two opposite corners, or from one corner and its size; angle: turns it about its centre (a rotated, tilted rectangle, at an angle), corner: rounds its corners. s.rect with everything given."), [
         "rect(40.mm, 20.mm)                    // centred on the origin; rect(20.mm), a square",
         "rect(vec(0, 0), vec(40, 20))          // two opposite corners",
         "rect(vec(0, 0), w: 40.mm, h: 20.mm)   // from its lower left corner",
         "rect(center: c, w: 40.mm, h: 20.mm)   // round a point",
         "rect(40.mm, 20.mm, angle: 30.deg)     // turned about its centre",
+        "rect(center: vec(15.4, 3.3), w: 5.6.mm, h: 14.mm, angle: 45.deg)   // a slanted slot round a point",
         "rect(40.mm, 20.mm, corner: 3.mm)      // round corners"]),
     withForms(F("circle", "", ["r: Length", "d: Length", "center: Vec"], "Profile", "A circle centred on the origin, or round a point. s.circle with everything given."), [
         "circle(5.mm)              // radius",
