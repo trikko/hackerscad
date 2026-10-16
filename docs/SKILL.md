@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-d5056639`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-aefca4a4`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-d5056639`:** this text is up to date.
+- **It prints `0.3.1-aefca4a4`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -132,7 +132,8 @@ format stamp):
 - Lengths: write units (60.mm, 2.5.cm, 1.inch). Bare numbers passed to
   geometry are millimetres. Never add a bare number to a length (60.mm + 5 is
   an error; write 60.mm + 5.mm, or d.to!double for the bare number a length
-  stands for in this file).
+  stands for in this file). Your own functions take Length parameters
+  (Solid peg(Length d) …): a bare number passes as mm, a @param as it is.
 - Angles: rotate(z: 45) uses degrees; 30.deg is explicit.
 - Primitives stand on the XY plane and are centred in X and Y:
   box(x, y, z) spans z = 0 .. z; cylinder(r: or d:, h:) also; center: true
@@ -299,18 +300,21 @@ format stamp):
 - 2, build from the largest to the smallest: the outside as one outline
   per stretch, extruded; the chamfers of its end faces before anything is
   cut in them; then holes, pockets and traps; last small chamfers, notches
-  and lettering.
-- 3, compare every round with three tools, from the first round on:
-  hcad_diff (where material is missing or too much, and the section that
-  shows each region); hcad_lines (what the eye sees: chamfers, lettering,
-  notches, which volumes miss); hcad_section with compare at the place
-  hcad_diff names (the copy's outline drawn on the original's). Then look
-  closely at the first entries: focus: N (diff, compare, lines, match)
-  gives a close-up of entry N from where it is in sight (what lies in
-  front cut away when nothing is), the drawings of both and the copy
-  coloured by its distance. A view of your own: view {from, look_at,
-  size, cut} (render, compare, lines); opaque: true draws the reference
-  solid, to read its shape.
+  and lettering. Helpers take Length parameters (Solid bx(Length x0,
+  Length x1)): numbers and @params both pass, no .to!double. Lettering:
+  paste the sketch hcad_section gives with region round the letters (it
+  solves as it is), extrude it 0.5 mm into the face; never trace by hand.
+- 3, THE ROUND, after every change, all four, in this order, however
+  close it looks (each sees what the others miss):
+    a. hcad_compare: the distances both ways;
+    b. hcad_diff: material missing or too much, the thin differences apart;
+    c. hcad_lines: what the eye sees (chamfers, lettering, notches);
+    d. focus: 1 and 2 on diff and on lines: close-ups of their first
+       entries, from where they are in sight, then fix what they show.
+  Each report ends with "next:", the step after it. To understand a shape:
+  hcad_section with compare where hcad_diff says; view {from, look_at,
+  size, cut} (render, compare, lines) for a picture from anywhere;
+  opaque: true draws the reference solid, to read its shape.
 - 4, then: hcad_match (the operations one by one: a hexagon where the copy
   has a circle, a trap cut in steps, a notch for printing); hcad_lines with
   voids and depth once the outside matches; hcad_fit only to tune sizes of

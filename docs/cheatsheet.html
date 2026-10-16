@@ -176,6 +176,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>text(text: string, size: Length, font: string) → Profile</dt><dd>A text outline starting at the origin on the baseline.</dd>
 <dt>p.round(r: Length) → Profile</dt><dd>Rounds every corner, outward and inward, holes too; an error names a corner r is too large for.</dd>
 <dt>p.offset(distance: Length) → Profile</dt><dd>Grows (d &gt; 0) or shrinks the outline; on a plane, the parallel plane.</dd>
+<dt>p.across(axis: X | Y) → Profile</dt><dd>The profile stood up across X or Y, as extrude(along:) stands it (across X: its x along Y, its y up Z), at the origin: move it along the axis and loft through several, or extrude it where it is.</dd>
 <dt>s.offset(distance: Length) → Solid</dt><dd>Grows (d &gt; 0) or shrinks the solid, round where it turns (its walls thickened).</dd>
 <dt>p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle, along: X | Y) → Solid</dt><dd>A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly. along: X or Y stands the profile up across that axis and pushes it along it. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is.</dd>
 <dt>p.revolve(axis: Axis, angle: Angle) → Solid</dt><dd>Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.</dd>

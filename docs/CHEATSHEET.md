@@ -153,6 +153,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `text(text: string, size: Length, font: string) → Profile` — A text outline starting at the origin on the baseline.
 - `p.round(r: Length) → Profile` — Rounds every corner, outward and inward, holes too; an error names a corner r is too large for.
 - `p.offset(distance: Length) → Profile` — Grows (d > 0) or shrinks the outline; on a plane, the parallel plane.
+- `p.across(axis: X | Y) → Profile` — The profile stood up across X or Y, as extrude(along:) stands it (across X: its x along Y, its y up Z), at the origin: move it along the axis and loft through several, or extrude it where it is.
 - `s.offset(distance: Length) → Solid` — Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened).
 - `p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle, along: X | Y) → Solid` — A solid along +Z from the profile; taper: 3.deg leans its sides in (the outline narrows, holes widen); twist: 90.deg turns it around Z as it rises, evenly. along: X or Y stands the profile up across that axis and pushes it along it. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is.
 - `p.revolve(axis: Axis, angle: Angle) → Solid` — Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.

@@ -15,7 +15,8 @@ dimensions and pictures, compare them with the request, fix, then export.
 - Lengths: write units (60.mm, 2.5.cm, 1.inch). Bare numbers passed to
   geometry are millimetres. Never add a bare number to a length (60.mm + 5 is
   an error; write 60.mm + 5.mm, or d.to!double for the bare number a length
-  stands for in this file).
+  stands for in this file). Your own functions take Length parameters
+  (Solid peg(Length d) …): a bare number passes as mm, a @param as it is.
 - Angles: rotate(z: 45) uses degrees; 30.deg is explicit.
 - Primitives stand on the XY plane and are centred in X and Y:
   box(x, y, z) spans z = 0 .. z; cylinder(r: or d:, h:) also; center: true
@@ -182,18 +183,21 @@ dimensions and pictures, compare them with the request, fix, then export.
 - 2, build from the largest to the smallest: the outside as one outline
   per stretch, extruded; the chamfers of its end faces before anything is
   cut in them; then holes, pockets and traps; last small chamfers, notches
-  and lettering.
-- 3, compare every round with three tools, from the first round on:
-  hcad_diff (where material is missing or too much, and the section that
-  shows each region); hcad_lines (what the eye sees: chamfers, lettering,
-  notches, which volumes miss); hcad_section with compare at the place
-  hcad_diff names (the copy's outline drawn on the original's). Then look
-  closely at the first entries: focus: N (diff, compare, lines, match)
-  gives a close-up of entry N from where it is in sight (what lies in
-  front cut away when nothing is), the drawings of both and the copy
-  coloured by its distance. A view of your own: view {from, look_at,
-  size, cut} (render, compare, lines); opaque: true draws the reference
-  solid, to read its shape.
+  and lettering. Helpers take Length parameters (Solid bx(Length x0,
+  Length x1)): numbers and @params both pass, no .to!double. Lettering:
+  paste the sketch hcad_section gives with region round the letters (it
+  solves as it is), extrude it 0.5 mm into the face; never trace by hand.
+- 3, THE ROUND, after every change, all four, in this order, however
+  close it looks (each sees what the others miss):
+    a. hcad_compare: the distances both ways;
+    b. hcad_diff: material missing or too much, the thin differences apart;
+    c. hcad_lines: what the eye sees (chamfers, lettering, notches);
+    d. focus: 1 and 2 on diff and on lines: close-ups of their first
+       entries, from where they are in sight, then fix what they show.
+  Each report ends with "next:", the step after it. To understand a shape:
+  hcad_section with compare where hcad_diff says; view {from, look_at,
+  size, cut} (render, compare, lines) for a picture from anywhere;
+  opaque: true draws the reference solid, to read its shape.
 - 4, then: hcad_match (the operations one by one: a hexagon where the copy
   has a circle, a trap cut in steps, a notch for printing); hcad_lines with
   voids and depth once the outside matches; hcad_fit only to tune sizes of
@@ -348,7 +352,7 @@ basic construct once, with comments saying what each makes appear; in the applic
 - **Profiles** (2D shapes on the XY plane, type `Profile`):
   - The shapes are those of a sketch (below), with the same names and arguments: a profile's shape is a one-shape sketch with everything given, centred on the origin unless a point is given (a vector, `vec(10, 5)` or `[10, 5]`). `rect(w, h)` (`rect(20.mm)`, a square), `rect(p, q)` (two opposite corners), `rect(p, w:, h:)` (from its lower left corner) or `rect(center: c, w:, h:)`, with `angle: 30.deg` (turned, its first side that far from X) and `corner: 3.mm` (the four corners rounded); `circle(r | d)` or `circle(c, r | d)`; `ellipse(rx, ry)` or `ellipse(c, rx:, ry:)`, with `angle:`; `polygon(6, d: 10.mm)` or `polygon(c, 6, d: 10.mm)`, regular (d/r through the corners; `fit: "sides"`: the circle the sides touch, `d` across the flats; `angle:` the direction of its first corner, else its first side lies at the bottom, horizontal); `slot(length, w)` (a stadium, length end to end along X; `angle:` turned, `center:` elsewhere) or `slot(p, q, w:)` (round two centres); `teardrop(r | d, angle:, flat:)` or `teardrop(c, r | d, …)` (see Printing).
   - Not sketch shapes: `polygon([vec(0, 0), vec(30, 0), vec(0, 20)])` (through the points; `smooth: true`, a smooth closed curve through them), `text("text", size: 10.mm, font: "Sans")` (starting at the origin on the baseline) and `load("outline.svg")` (see Importing parts).
-  - Combine with `+ - &`: profiles overlap, add up and cut each other, where a sketch draws one outline; a sketch's `s.profile` is a Profile too, so the two mix (`s.profile - circle(d: 5.mm)`). Profiles move, turn, scale and mirror like solids: `p.move(x: 10.mm, y: 5.mm)`, `p.rotate(30.deg)` or `p.rotate(z: 30)` (in its plane, about the origin; `around: q` about a point), `p.scale(2)` or `p.scale(x: 2, y: 3)`, `p.mirror(X)` (across the line through the origin with that normal). `.round(r)` rounds the corners; `.offset(d)` grows (d > 0) or shrinks it; `.area`.
+  - Combine with `+ - &`: profiles overlap, add up and cut each other, where a sketch draws one outline; a sketch's `s.profile` is a Profile too, so the two mix (`s.profile - circle(d: 5.mm)`). Profiles move, turn, scale and mirror like solids: `p.move(x: 10.mm, y: 5.mm)`, `p.rotate(30.deg)` or `p.rotate(z: 30)` (in its plane, about the origin; `around: q` about a point), `p.scale(2)` or `p.scale(x: 2, y: 3)`, `p.mirror(X)` (across the line through the origin with that normal). `.round(r)` rounds the corners; `.offset(d)` grows (d > 0) or shrinks it; `.area`. `p.across(X)` stands it up across X as `extrude(along: X)` does (its x along Y, its y up Z; `across(Y)`: its x along X): `loft([a.across(X), b.across(X).move(x: 20.mm)])` lofts along X.
   - `.extrude(h)` makes a solid along +Z (negative h goes down); options `taper: 3.deg` (the sides lean in towards the top, staying flat and meeting at sharp edges: the outline narrows and the holes widen; a negative taper the other way; `h` is still the height along Z, and an edge or hole of the profile that would close up before the top is an error), `symmetric: true`, `twist: 90.deg` (the profile turns around Z as it rises, evenly: twisted vases, spiral columns; `twist: 2 * 360.deg` two turns; not with `taper`). `along: Y` stands the profile up across Y (its x along X, its y up Z) and pushes it towards +Y, `along: X` across X (its x along Y, its y up Z) towards +X; a negative height goes the other way: a prism along X or Y without turning anything. A profile lying in another plane, a section (`body.section(XZ.offset(10.mm)).extrude(2.mm)`), one turned or moved whole, or one drawn on a face, is extruded across its own plane, along its normal, from where it lies.
   - `.revolve()`: turned around the axis, standing up: the profile's x is the radius and its y the height along Z (pots, bottles, knobs). `.revolve(axis: X, angle: 180.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`), without standing up; `angle:` turns less than all the way.
   - On a face or plane, add or remove material in one step: `carlo().extrude(circle(d: 6.mm), on: frame, depth: 5.mm)` grows outwards along the frame's Z; `carlo().cut(circle(d: 6.mm), on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. Both accept `taper:`.
