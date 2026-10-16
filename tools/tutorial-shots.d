@@ -53,7 +53,7 @@ void main(string[] args)
     // a click picks faces, whatever an earlier run left chosen
     view(`{"select": "face"}`);
     auto pages = [&page1, &page2, &page3, &page4, &page5, &page6, &page7, &page8, &page9, &page10, &page11, &page12,
-        &page13, &page14];
+        &page13, &page14, &page15];
     if (args.length > 1)
         foreach (n; args[1 .. $])
             pages[n.to!int - 1]();
@@ -279,47 +279,70 @@ void page11()
 
 void page14()
 {
+    // the pillow block: its upright's sketch from above, the
+    // part, then with other sizes, and with no room left for the slots
+    import std.file : copy;
+    auto dir = buildPath(tempDir, "tutorial");
+    mkdirRecurse(dir);
+    auto file = buildPath(dir, "pillow-block.hcad");
+    copy(buildPath(docs, "14-pillow-block.hcad"), file);
+    open(file);
+    sketchShot("14-upright-sketch", "s.tangent(right, top)");
+    view(`{"projection": "perspective", "preset": "iso"}`);
+    view(`{"preset": "fit"}`);
+    shot("14-pillow-block", lineOf("Solid pillowBlock()"));
+    req("set", `{"params": {"uprightWidth": 70, "axisHeight": 40, "footLength": 120}}`);
+    view(`{"preset": "fit"}`);
+    shot("14-pillow-block-changed", lineOf("@param(\"Foot length\""));
+    req("set", `{"params": {"uprightWidth": 70, "axisHeight": 40, "footLength": 90}}`);
+    req("test", `{}`);
+    shot("14-pillow-block-no-room", lineOf("unittest"));
+    req("set", `{"preset": ""}`);   // back to the defaults
+}
+
+void page15()
+{
     import std.file : copy;
     auto dir = buildPath(tempDir, "tutorial");
     // the language tour, from the Examples menu
     req("new", `{"example": "language", "force": true}`);
     view(`{"preset": "iso"}`);
-    shot("14-examples");
+    shot("15-examples");
 
     // the hook: made longer with the mouse, then made printable
     auto hook = buildPath(dir, "hook.hcad");
-    copy(buildPath(docs, "14-hook-1.hcad"), hook);
+    copy(buildPath(docs, "15-hook-1.hcad"), hook);
     open(hook);
     view(`{"preset": "iso", "style": "edges"}`);
-    shot("14-hook");
+    shot("15-hook");
     menu([0, -22, 33], ["Extrude face…"]);
     type("depth: 5.mm", "depth: 10.mm");
     clearSelection();
     view(`{"preset": "iso"}`);
-    shot("14-hook-longer", lineOf(".extrude("));
+    shot("15-hook-longer", lineOf(".extrude("));
     // seen from below, with the printability marks
     view(`{"printability": true, "orbit": [0, -50]}`);
-    shot("14-hook-print");
+    shot("15-hook-print");
     // laid on its back, where it stays
     type("        .extrude(faces.front, depth: 10.mm);", "        .extrude(faces.front, depth: 10.mm)\n        .rotate(x: -90);");
     view(`{"preset": "iso"}`);
-    shot("14-hook-back", lineOf(".rotate("));
+    shot("15-hook-back", lineOf(".rotate("));
     // two gussets under the arm
     type("    return (plate + arm)\n", gussets12);
     view(`{"preset": "iso"}`);
-    shot("14-hook-final", lineOf("auto gusset"));
+    shot("15-hook-final", lineOf("auto gusset"));
     view(`{"printability": false}`);
-    write(buildPath(docs, "14-hook.hcad"), source());
+    write(buildPath(docs, "15-hook.hcad"), source());
 
     // a label from a drawing, and the models of the other sections
     copy(buildPath(docs, "leaf.svg"), buildPath(dir, "leaf.svg"));
     foreach (name; ["label", "sketch", "jug", "fixings"])
     {
         auto file = buildPath(dir, name ~ ".hcad");
-        copy(buildPath(docs, "14-" ~ name ~ ".hcad"), file);
+        copy(buildPath(docs, "15-" ~ name ~ ".hcad"), file);
         open(file);
         view(`{"preset": "iso"}`);
-        shot("14-" ~ name);
+        shot("15-" ~ name);
     }
 }
 

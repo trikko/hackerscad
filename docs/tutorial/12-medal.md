@@ -269,7 +269,7 @@ code):
   straight sides; `s.slot(30.mm, 8.mm, center: c)` by its length, along X.
 - `s.teardrop(c, d: 5.mm)`: a round hole with a point on top, which prints
   lying on its side; `flat: true` cuts the point. The sampler leaves it out:
-  [page 14](14-going-further.md) shows where it helps.
+  [page 15](15-going-further.md) shows where it helps.
 - `s.on(shape, circle)`: every corner of a shape on the circle, the shape
   inside it; `s.tangent(shape, circle)`: every side touching it, the shape
   round it. A circle with `construction: true` is a guide, not part of the
@@ -325,7 +325,7 @@ raises the profile from the face it was drawn on, 1 mm out.
 Put the cursor in `face()` and the view shows its sketch twice, once for
 each place it is drawn; on the cube, the face's edges are in it too, in
 violet: they are the face's own outline, fixed, and the rules could measure
-from them (`s.edges` lists them). [Chapter 14](14-going-further.md#a-sketch-on-a-face) does that, with a groove along
+from them (`s.edges` lists them). [Chapter 15](15-going-further.md#a-sketch-on-a-face) does that, with a groove along
 Carlo's jaw.
 
 ## What a sketch can do

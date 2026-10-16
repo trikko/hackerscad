@@ -38,7 +38,7 @@ bag clip, Carlo, is still open; we use it to try things.
    view straight at it (**Look at face** in the menu does the same);
    **Sketch on face…** starts a sketch on it, and on a face a sketch made,
    **Edit sketch…** shows that sketch ([chapters 12](12-medal.md) and
-   [14](14-going-further.md)).
+   [15](15-going-further.md)).
 2. **The view bar.** Fit, and the views in the **View** menu (Iso, Top,
    Front, Right, and **Sketches**, the model's sketches: one opens to be
    edited); four buttons for what a click picks, **whole parts, faces,

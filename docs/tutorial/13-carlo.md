@@ -1,4 +1,4 @@
-[← A first sketch: a medal](12-medal.md) · [Contents](../TUTORIAL.md) · [Going further →](14-going-further.md)
+[← A first sketch: a medal](12-medal.md) · [Contents](../TUTORIAL.md) · [A pillow block, drawn with sketches →](14-pillow-block.md)
 
 # 13. Carlo, drawn with a sketch
 
@@ -226,4 +226,4 @@ line), `on` (a point on a line, circle or arc), `parallel`,
 `diameter`, `tangent`, `midpoint`, `symmetric` and `concentric`; the
 [language reference](../LANGUAGE.md) describes each one.
 
-[← A first sketch: a medal](12-medal.md) · [Contents](../TUTORIAL.md) · [Going further →](14-going-further.md)
+[← A first sketch: a medal](12-medal.md) · [Contents](../TUTORIAL.md) · [A pillow block, drawn with sketches →](14-pillow-block.md)

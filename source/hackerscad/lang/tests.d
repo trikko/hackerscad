@@ -687,6 +687,49 @@ unittest
 
 unittest
 {
+    // the pillow block of the tutorial's page 14 is the example's, but for the first line (the
+    // menu's entry), and every piece of code on the page is a piece of it, word for word
+    import std.file : thisExePath, readText;
+    import std.path : dirName;
+    import std.string : indexOf, split;
+    auto root = dirName(dirName(dirName(thisExePath)));
+    auto model = readText(buildPath(root, "docs", "tutorial", "14-pillow-block.hcad"));
+    auto example = readText(buildPath(root, "examples", "10_pillowblock.hcad"));
+    assert(example[example.indexOf("\n") + 1 .. $] == model,
+        "docs/tutorial/14-pillow-block.hcad differs from examples/10_pillowblock.hcad");
+    auto page = readText(buildPath(root, "docs", "tutorial", "14-pillow-block.md")).split("```d\n");
+    assert(page.length > 1);
+    foreach (block; page[1 .. $])
+    {
+        auto code = block[0 .. block.indexOf("```\n")];
+        assert(model.indexOf(code) >= 0, "a piece of code on page 14 is not in its model:\n" ~ code);
+    }
+}
+
+unittest
+{
+    mixin(slowTest);
+    // the pillow block holds together at the ends of its parameters, its sketches fully constrained
+    import std.file : thisExePath;
+    import std.path : dirName;
+    auto path = buildPath(dirName(dirName(dirName(thisExePath))), "examples", "10_pillowblock.hcad");
+    string[string][] cases = [null, ["travel": "2", "uprightDepth": "20"],
+        ["footLength": "140", "footWidth": "50", "footHeight": "15", "axisHeight": "50", "uprightWidth": "70",
+            "uprightDepth": "10", "travel": "10"],
+        ["footLength": "80", "uprightWidth": "40", "axisHeight": "50", "footHeight": "5", "travel": "2"]];
+    foreach (o; cases)
+    {
+        auto it = make();
+        it.overrides = o;
+        auto r = it.run(path);
+        foreach (d; r.diagnostics)
+            assert(d.severity != Severity.error && d.severity != Severity.warning, o.to!string ~ ": " ~ d.message);
+        assert(r.parts.length == 1 && kernel.isValid(r.parts[0].solid.brep), o.to!string);
+    }
+}
+
+unittest
+{
     mixin(slowTest);
     // the shipped example evaluates with the expected parts and checks
     import std.file : thisExePath, exists;
