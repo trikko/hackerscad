@@ -836,7 +836,9 @@ final class Run
             s ~= format("the picture: one view instead, seen %s\n", *free);
         }
         else if (d.strokes.length)
-            s ~= "  next: a close-up (focus) of the first entries; once fixed, compare again\n";
+            s ~= voids ? "  next: a close-up (focus) of the first entries; once fixed, compare again\n"
+                : "  next: the same with voids (the holes and pockets made solid), and a close-up (focus) of the first "
+                    ~ "entries of each\n";
         return s;
     }
 

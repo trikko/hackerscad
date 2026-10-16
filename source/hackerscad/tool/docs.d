@@ -203,8 +203,11 @@ dimensions and pictures, compare them with the request, fix, then export.
   close it looks (each sees what the others miss):
     a. hcad_compare: the distances both ways;
     b. hcad_diff: material missing or too much, the thin differences apart;
-    c. hcad_lines: what the eye sees (chamfers, lettering, notches);
-    d. focus: 1 and 2 on diff and on lines: close-ups of their first
+    c. hcad_lines: what the eye sees (chamfers, lettering, notches); and
+       hcad_lines with voids: true when the part has holes, pockets or
+       cavities (most printed parts do): the same for the voids made
+       solid, what the outside hides (roofs, nut traps, channels);
+    d. focus: 1 and 2 on diff and on both lines: close-ups of their first
        entries, from where they are in sight, then fix what they show.
   Each report ends with "next:", the step after it. To understand a shape:
   hcad_section with compare where hcad_diff says; view {from, look_at,
@@ -212,8 +215,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   opaque: true draws the reference solid, to read its shape.
 - 4, then: hcad_match (the operations one by one: a hexagon where the copy
   has a circle, a trap cut in steps, a notch for printing); hcad_lines with
-  voids and depth once the outside matches; hcad_fit only to tune sizes of
-  a shape already right.
+  depth once the outside and the voids match; hcad_fit only to tune sizes
+  of a shape already right.
 - 5, done when hcad_compare finds 95% or more of both surfaces within
   0.1 mm, and hcad_lines lists nothing large.
 - 6, name the measures that matter: hcad_literals lists the numbers the

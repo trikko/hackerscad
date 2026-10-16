@@ -708,7 +708,8 @@ JSONValue[] toolList()
             ~ "yellow at it, red at twice it, from the 'views' (4) directions that show most of it off, or from 'view' "
             ~ "as for hcad_render; the patches of each surface the other does not follow, numbered: focus: N gives a "
             ~ "close-up of patch N. Correct the model until it is green; after every change, compare, then hcad_diff, "
-            ~ "hcad_lines and close-ups (focus) of their first entries.",
+            ~ "hcad_lines (and with voids: true when the part has holes or pockets) and close-ups (focus) of their "
+            ~ "first entries.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, `
             ~ `"tolerance_mm": {"type": "number", "description": "the distance that counts as matching (default 0.1)"}, `
             ~ `"json": {"type": "boolean", "description": "the whole comparison as data, every patch (long)"}, `
