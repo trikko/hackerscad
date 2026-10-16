@@ -121,7 +121,7 @@ mixin template SketchEdit()
     /// The tools, in groups: a symbol each, and what it does.
     static immutable string[3][][] toolGroups = [
         [["coincident", "●", "Coincident: points on the first, or on a line or curve"],
-            ["fix", "⚓", "Fix: pin the points where they are"]],
+            ["fix", "⚓\uFE0E", "Fix: pin the points where they are"]],
         [["horizontal", "―", "Horizontal: lines level, or two points at one height"],
             ["vertical", "|", "Vertical: lines upright, or two points one above the other"],
             ["parallel", "∥", "Parallel: lines parallel to the first"],
