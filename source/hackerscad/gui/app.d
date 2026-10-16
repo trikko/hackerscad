@@ -719,6 +719,8 @@ final class MainWindow
                 ~ " border: 1px solid alpha(currentColor, 0.3); }"
                 ~ " popover.hcad-menu .hcad-menu-heading { padding: 4px 14px 2px 14px; font-size: 0.78em; font-weight: bold;"
                 ~ " opacity: 0.55; }"
+                ~ " button.hcad-pane-close { min-width: 22px; min-height: 22px; padding: 0; opacity: 0.55; }"
+                ~ " button.hcad-pane-close:hover { opacity: 1; }"
                 ~ " label.hcad-info { padding: 4px 10px; border-radius: 6px; font-size: 0.9em;"
                 ~ " background: alpha(@window_bg_color, 0.85); border: 1px solid alpha(currentColor, 0.10); }"
                 ~ " button.hcad-problem { padding: 6px 12px; border-radius: 8px; font-weight: normal;"
@@ -887,6 +889,21 @@ final class MainWindow
         editorScroll.setChild(editor);
         editorScroll.setVexpand(true);
         auto editorPane = new Box(Orientation.Vertical, 0);
+        {
+            // a title with the pane's X, as the console has
+            auto title = new Label("Code");
+            title.addCssClass("caption-heading");
+            title.addCssClass("dim-label");
+            title.setXalign(0);
+            title.setHexpand(true);
+            title.setMarginStart(8);
+            title.setMarginTop(4);
+            title.setMarginBottom(2);
+            auto head = new Box(Orientation.Horizontal, 0);
+            head.append(title);
+            head.append(closeButton(codeToggle, "Hide the code (F7)"));
+            editorPane.append(head);
+        }
         editorPane.append(editorTools.bar);
         editorPane.append(editorScroll);
 
@@ -950,6 +967,7 @@ final class MainWindow
         auto consoleHead = new Box(Orientation.Horizontal, 0);
         consoleHead.append(consoleTitle);
         consoleHead.append(testsCorner);
+        consoleHead.append(closeButton(consoleToggle, "Hide the console (" ~ shortcutKey ~ "+J)"));
         auto consolePane = new Box(Orientation.Vertical, 0);
         consolePane.append(consoleHead);
         consolePane.append(consoleOverlay);
@@ -1115,7 +1133,15 @@ final class MainWindow
         switcher.setStack(stack);
         switcher.setPolicy(ViewSwitcherPolicy.Narrow);
         auto sidebar = new Box(Orientation.Vertical, 0);
-        sidebar.append(switcher);
+        auto sideHead = new Box(Orientation.Horizontal, 0);
+        switcher.setHexpand(true);
+        sideHead.append(switcher);
+        {
+            auto x = closeButton(paramsToggle, "Hide the parameters (F9)");
+            x.setMarginEnd(6);
+            sideHead.append(x);
+        }
+        sidebar.append(sideHead);
         sidebar.append(stack);
 
         // the view tools float over the 3D view, slightly see-through
@@ -1162,7 +1188,8 @@ final class MainWindow
             immutable rightShown = viewToggle.getActive() || paramsToggle.getActive();
             if (!leftShown && !rightShown)
             {
-                changed.setActive(true);   // the last pane stays
+                // the last pane closed: the 3D view comes back
+                viewToggle.setActive(true);
                 return;
             }
             left.setVisible(leftShown);
@@ -1404,6 +1431,21 @@ private:
                 viewport.setSelection(null);
             }
         };
+    }
+
+    /// The X of a pane: it hides the pane, as its button in the header bar
+    /// does (and that button shows it again).
+    static Button closeButton(ToggleButton pane, string tooltip)
+    {
+        auto b = new Button;
+        b.setIconName("window-close-symbolic");
+        b.addCssClass("flat");
+        b.addCssClass("circular");
+        b.addCssClass("hcad-pane-close");
+        b.setTooltipText(tooltip);
+        b.setValign(Align.Center);
+        b.connectClicked(() => pane.setActive(false));
+        return b;
     }
 
     ToggleButton toggle(string icon, string tooltip, bool active)

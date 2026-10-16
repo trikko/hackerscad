@@ -49,7 +49,8 @@ final class ParamsPanel
         widget.setMarginTop(8);
         widget.setMarginBottom(8);
         widget.setMarginStart(10);
-        widget.setMarginEnd(10);
+        // the overlay scroll bar runs down the right edge: the fields' + stays clear of it
+        widget.setMarginEnd(20);
         auto title = new Label("Parameters");
         title.addCssClass("heading");
         title.setHalign(Align.Start);
@@ -330,6 +331,7 @@ private:
                 double lo = p.min.isNum ? p.min.n.value * k : -1e6, hi = p.max.isNum ? p.max.n.value * k : 1e6;
                 immutable step = v.n.isInt ? 1 : p.step.isNum ? p.step.n.value * k : (hi - lo) <= 20 ? 0.1 : 1;
                 auto spin = SpinButton.newWithRange(lo, hi, step);
+                wheelScrollsPanel(spin);
                 spin.setDigits(v.n.isInt ? 0 : 2);
                 spin.setValue(v.n.value * k);
                 immutable suffix = v.n.dim == Dim.length ? ".mm" : isAngle ? ".deg" : "";
@@ -352,6 +354,31 @@ private:
         default:
             return new Label(v.toString);
         }
+    }
+
+    /// The wheel over a field scrolls the panel: it changes the value only
+    /// once the field has been clicked into (a turn meant for the list must
+    /// not change a size by mistake).
+    static void wheelScrollsPanel(Widget w)
+    {
+        import gtk.event_controller_scroll : EventControllerScroll;
+        import gtk.scrolled_window : ScrolledWindow;
+        import gtk.types : EventControllerScrollFlags, PropagationPhase, StateFlags;
+        import gdk.types : ScrollUnit;
+        auto scroll = new EventControllerScroll(EventControllerScrollFlags.Vertical);
+        scroll.setPropagationPhase(PropagationPhase.Capture);
+        scroll.connectScroll((double dx, double dy, EventControllerScroll sc) {
+            if (w.getStateFlags() & StateFlags.FocusWithin)
+                return false;
+            if (auto panel = cast(ScrolledWindow) w.getAncestor(ScrolledWindow._getGType()))
+            {
+                auto adj = panel.getVadjustment();
+                // a wheel notch scrolls about three lines; touchpads report pixels
+                adj.setValue(adj.getValue() + (sc.getUnit() == ScrollUnit.Wheel ? dy * 50 : dy));
+            }
+            return true;
+        });
+        w.addController(scroll);
     }
 
     Widget withUnit(Widget w, string unit)

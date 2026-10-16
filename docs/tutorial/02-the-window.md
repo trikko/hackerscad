@@ -74,7 +74,9 @@ in the rest of this tutorial). **Examples** opens ready models to try:
 Carlo, the bag clip, the espresso cup of the README, the planter this tutorial builds, a tour
 of the language that shows `if`, `for`, `while`, `switch`, functions and
 structs, each with what it makes appear, and more complete models. The buttons at the top right show or hide
-the console, the code, the view and the parameters (Ctrl+J, F7, F8, F9). The
+the console, the code, the view and the parameters (Ctrl+J, F7, F8, F9); the
+✕ at the top of the code, the console and the parameters hides them too
+(with nothing else left, the view comes back). The
 menu (☰) has New, Open, Save As,
 Export, the Cheatsheet, this tutorial, and the style: light, dark, or as the
 system is set.
