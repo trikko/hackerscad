@@ -144,7 +144,12 @@ mixin template SketchEdit()
             return;
         auto v = drawnSketch();
         immutable why = v is null ? "none" : sketchUneditable();
-        sketchBar.setVisible(v !is null && !frozen);
+        immutable shown = v !is null && !frozen;
+        sketchBar.setVisible(shown);
+        // what the bar covers, for the view to frame the sketch beside it
+        int least, natural, b0, b1;
+        sketchBar.measure(Orientation.Horizontal, -1, least, natural, b0, b1);
+        viewport.leftInset = shown ? natural + 16 : 0;
         if (deleteButton !is null)
             deleteButton.setSensitive(why is null && sketchSel.length > 0);
         foreach (tool, b; drawButtons)

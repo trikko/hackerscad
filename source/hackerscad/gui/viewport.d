@@ -178,6 +178,8 @@ final class Viewport
     private double distance = 150, yaw = -PI / 3, pitch = PI / 6;
     private bool firstModel = true;   // the window's first model is seen from a little higher
     private double fitRoom = 1;       // the next fit this much farther (the first model's)
+    /// Pixels at the left of the view a bar covers (the sketch bar): fit frames the model in the rest
+    double leftInset = 0;
     private enum fovy = 30.0 * PI / 180;
 
     // pointer and drag state
@@ -2368,7 +2370,7 @@ final class Viewport
         // framed now when the view has a size, so that a zoom or pan right
         // after it starts from the framed camera
         if (area.getWidth() > 0 && area.getHeight() > 0)
-            applyFit(cast(double) area.getWidth() / area.getHeight());
+            applyFit(max(1.0, area.getWidth() - leftInset) / area.getHeight());
         else
             fitPending = true;
         redraw();
@@ -2909,6 +2911,7 @@ private:
             }
             distance = max(h, w / aspect) / tan(fovy / 2) * 1.08 * fitRoom;
             fitRoom = 1;
+            besideInset();
             return;
         }
         immutable radius = max(1.0, (hi - lo).length / 2);
@@ -2917,6 +2920,17 @@ private:
         immutable fov = min(fovy, 2 * atan(tan(fovy / 2) * aspect));
         distance = radius / sin(fov / 2) * 1.02 * fitRoom;
         fitRoom = 1;
+        besideInset();
+    }
+
+    /// The framed model moved right by half what a bar at the left covers: in the middle of the rest.
+    private void besideInset()
+    {
+        if (leftInset <= 0 || area.getHeight() <= 0)
+            return;
+        // millimetres per pixel at the depth of what is looked at
+        immutable perPixel = 2 * distance * tan(fovy / 2) / area.getHeight();
+        target = target - basis().right * (leftInset / 2 * perPixel);
     }
 
     void realize()
