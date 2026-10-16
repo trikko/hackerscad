@@ -749,8 +749,10 @@ final class Run
     /// here (one where two entries are one place); `look`, a point: a close-up
     /// of what is there too (a place that keeps its name from one change to
     /// the next, where entry numbers do not). `pictures`: the comparison's
-    /// map, then the close-ups.
-    string review(size_t a, size_t b, double tol, size_t each, bool voids, const double[] look, out ubyte[][] pictures)
+    /// map, then the close-ups. Without `detail`, a summary: of each report its
+    /// totals and first three entries, no captions of pictures.
+    string review(size_t a, size_t b, double tol, size_t each, bool voids, const double[] look, out ubyte[][] pictures,
+        bool detail = false)
     {
         import std.algorithm : max, min;
         import std.string : lineSplitter;
@@ -758,13 +760,50 @@ final class Run
         string s = format("review of %s against %s\n\n1. distances\n", result.parts[a].name, result.parts[b].name);
         ubyte[] map;
         auto j = compare(a, b, tol, map);
-        // the text without its own next step: the review says what comes next
+        // the text without its own next step (the review says what comes next); in the summary, of each list
+        // the first three entries (with the lines under them), and no captions of pictures nor counts of the rest
+        size_t left;
         string drop(string t)
         {
+            import std.regex : ctRegex, matchFirst;
+            import std.string : stripLeft;
+            enum entry = ctRegex!`^\s*\d+\. `;
             string r;
+            size_t shown;
+            bool skipping, caption;
             foreach (l; t.lineSplitter)
-                if (!l.startsWith("  next:") && !l.startsWith("next:"))
+            {
+                if (l.startsWith("  next:") || l.startsWith("next:"))
+                    continue;
+                if (detail)
+                {
                     r ~= l ~ "\n";
+                    continue;
+                }
+                immutable indent = l.length - l.stripLeft.length;
+                if (l.stripLeft.startsWith("the picture") || l.startsWith("fix these first")
+                    || l.matchFirst(ctRegex!`^\s*and \d+ (smaller|less)`))
+                {
+                    caption = l.stripLeft.startsWith("the picture");
+                    continue;
+                }
+                if (l.matchFirst(entry))
+                {
+                    if (caption)
+                        continue;
+                    skipping = ++shown > 3;
+                    left += skipping;
+                }
+                else if (indent >= 6 && (skipping || caption))
+                    continue;    // a line under an entry left out
+                else
+                {
+                    shown = 0;
+                    skipping = caption = false;
+                }
+                if (!skipping)
+                    r ~= l ~ "\n";
+            }
             return r;
         }
         s ~= drop(compareText(j, result.parts[a].name, result.parts[b].name));
@@ -830,6 +869,8 @@ final class Run
             pictures ~= close;
             s ~= "  to look at a place again after a change, give its point: look: [x, y, z] (entry numbers change)\n";
         }
+        if (left)
+            s ~= format("\n%d more entries left out of this summary: detail: true gives the whole reports\n", left);
         // done, or what comes next
         double share(string way) => j[way]["within_tolerance"].type == JSONType.integer
             ? j[way]["within_tolerance"].integer : j[way]["within_tolerance"].floating;

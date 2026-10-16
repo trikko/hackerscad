@@ -687,10 +687,12 @@ JSONValue[] toolList()
             ~ "of the holes and pockets made solid (hcad_lines, voids), and close-ups of the first 'each' (2) entries "
             ~ "of each, chosen and framed where they are in sight; then whether it is done. Run it after every change "
             ~ "of a copy. look: [x, y, z] adds a close-up of what is there (entry numbers change from one change to "
-            ~ "the next, a point does not). Not for modelling from a request: there hcad_check and hcad_render.",
+            ~ "the next, a point does not). A summary: of each report the totals and the first three entries; detail: "
+            ~ "true the whole reports. Not for modelling from a request: there hcad_check and hcad_render.",
             modelProps ~ `, "a": {"type": "string"}, "b": {"type": "string"}, "tolerance_mm": {"type": "number"}, `
             ~ `"each": {"type": "integer"}, "voids": {"type": "boolean", "description": "the drawings of the voids too `
-            ~ `(default true)"}, "look": {"type": "array", "items": {"type": "number"}}`, `["a", "b"]`),
+            ~ `(default true)"}, "look": {"type": "array", "items": {"type": "number"}}, "detail": {"type": "boolean", `
+            ~ `"description": "the whole reports, every entry and caption (long)"}`, `["a", "b"]`),
         tool("hcad_literals", "The numbers written more than once in a model (path), with their lines, the most used "
             ~ "first, and the ones a constant is already named after; with original (a part of the model, or a mesh "
             ~ "file), which sizes of it each one is: a hole's diameter or radius, where an axis or a flat face is. The "
@@ -1309,7 +1311,7 @@ JSONValue callTool(string name, JSONValue args)
                             look ~= x.type == JSONType.integer ? x.integer : x.floating;
                 ubyte[][] pictures;
                 text(run.review(run.partIndices([arg("a")], true)[0], run.partIndices([arg("b")], true)[0], tol, each,
-                    voids, look, pictures));
+                    voids, look, pictures, "detail" in args && args["detail"].type == JSONType.true_));
                 foreach (p; pictures)
                     image(p);
             }
@@ -1773,6 +1775,10 @@ unittest
     immutable revText = rev["content"].array[0]["text"].str;
     assert(revText.canFind("1. distances") && revText.canFind("2. material") && revText.canFind("4. drawings of the voids")
         && revText.canFind("close-up 1") && revText.canFind("next:"), revText);
+    // the summary leaves out the captions, the whole reports do not
+    assert(!revText.canFind("\nthe picture") && !revText.canFind("  the picture"), revText);
+    auto revWhole = callTool("hcad_review", `{` ~ where ~ `, "a": "copy", "b": "original", "each": 1, "detail": true}`);
+    assert(revWhole.array[0]["text"].str.canFind("\nthe picture"), revWhole.toString);
     assert(rev["content"].array[$ - 1]["type"].str == "image");
 
     // two sections drawn on each other, close on a region round the hole

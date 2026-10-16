@@ -83,13 +83,15 @@ usage:
       the operations of a copy (a) and its original (b) matched one by one:
       holes, shafts, cones, roundings, planes, and the pockets met along x, y
       and z; what has no match, however small, is listed, numbered
-  hcad review FILE.hcad --a COPY --b ORIGINAL [--tolerance MM] [--each N] [--no-voids] [--look X,Y,Z] [-o OUT.png]
+  hcad review FILE.hcad --a COPY --b ORIGINAL [--tolerance MM] [--each N] [--no-voids] [--look X,Y,Z] [--detail] [-o OUT.png]
       a copy against its original (a mesh or STEP remodelled, a previous
       version), the whole round in one: distances (compare), material
       (diff), drawings outside and of the voids (lines), and close-ups of
       the first N (2) entries of each, framed where they are in sight;
       --look a point: a close-up of what is there (it keeps its place from
       one change to the next); OUT-map.png and OUT-close.png the pictures.
+      A summary: of each report its totals and first three entries;
+      --detail the whole reports
       Not for modelling from a request: there check and render
   --focus N[,M…] -o OUT.png  (compare, diff, lines, match)
       close-ups of those entries of the report: each from where it is in
@@ -506,9 +508,9 @@ int main(string[] args)
             string pa, pb, out_, look;
             double tol = 0.1;
             size_t each = 2;
-            bool noVoids;
+            bool noVoids, detail;
             try
-                getopt(args, "a", &pa, "b", &pb, "tolerance", &tol, "each", &each, "no-voids", &noVoids, "look", &look,
+                getopt(args, "a", &pa, "b", &pb, "tolerance", &tol, "each", &each, "no-voids", &noVoids, "detail", &detail, "look", &look,
                     "o|output", &out_);
             catch (GetOptException e)
             {
@@ -535,7 +537,7 @@ int main(string[] args)
                 import std.conv : to;
                 ubyte[][] pictures;
                 write(run.review(run.partIndices([pa], true)[0], run.partIndices([pb], true)[0], tol, each, !noVoids,
-                    look.length ? look.split(",").map!(x => x.to!double).array : null, pictures));
+                    look.length ? look.split(",").map!(x => x.to!double).array : null, pictures, detail));
                 // name.png: name-map.png (the distances) and name-close.png (the close-ups)
                 if (out_.length)
                 {

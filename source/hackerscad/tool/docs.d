@@ -203,8 +203,9 @@ dimensions and pictures, compare them with the request, fix, then export.
   command line). One call does it all: the distances both ways, the
   material that differs, the drawings outside and of the voids, and
   close-ups of the first entries of each, chosen and framed where they are
-  in sight; it ends saying whether it is done or what comes next. Fix what
-  the close-ups show and review again. To look at a place again after a
+  in sight; it ends saying whether it is done or what comes next. It is a
+  summary, the first three entries of each report; detail: true gives
+  them all. Fix what the close-ups show and review again. To look at a place again after a
   change, give its point (look: [x, y, z]): entry numbers change, points
   do not. The single tools (hcad_compare, hcad_diff, hcad_lines, focus,
   view) go deeper on one place; hcad_section with compare where the
