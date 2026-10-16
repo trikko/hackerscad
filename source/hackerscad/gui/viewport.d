@@ -162,7 +162,7 @@ final class Viewport
     private int sketchFillCount;   /// vertices of the triangles of the areas the profiles shown fill
     private bool sketchDirty;
     /// lines, construction lines, highlighted lines, free points, fixed points, highlighted points (end indices)
-    private int[8] sketchRanges;
+    private int[9] sketchRanges;
 
     private uint program, gridVao, gridVbo;
     private int gridCount;
@@ -4100,6 +4100,10 @@ private:
         else
             glUniform3f(uColor, 0.05f, 0.05f, 0.08f);
         glDrawArrays(GL_POINTS, sketchRanges[3], sketchRanges[4] - sketchRanges[3]);
+        // the points of fills (s.fill): the areas' colour, deeper, a little larger: they mark an area, not a corner
+        glPointSize(10);
+        glUniform3f(uColor, 0.0f, 0.62f, 0.78f);
+        glDrawArrays(GL_POINTS, sketchRanges[7], sketchRanges[8] - sketchRanges[7]);
         glPointSize(11);
         glUniform3f(uColor, 1.0f, 0.55f, 0.05f);
         glDrawArrays(GL_POINTS, sketchRanges[4], sketchRanges[5] - sketchRanges[4]);
@@ -4123,7 +4127,7 @@ private:
 
     void uploadSketches()
     {
-        float[] lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts, fill;
+        float[] lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts, fillPts, fill;
 
         // a sketch on a face is drawn where it lies
         SketchView placing;
@@ -4216,7 +4220,8 @@ private:
                 }
             }
             foreach (p; sk.points)
-                add((p.entity in lit) !is null ? litPts : p.reference ? refPts : p.free ? freePts : fixedPts, p.pos);
+                add((p.entity in lit) !is null ? litPts : p.reference ? refPts : p.fill ? fillPts : p.free ? freePts
+                    : fixedPts, p.pos);
             // the areas the profile fills: their triangles
             foreach (r; sk.regions)
                 if (r.full)
@@ -4225,9 +4230,9 @@ private:
         }
         positionBuffer(sketchFillVao, sketchFillVbo, fill);
         sketchFillCount = cast(int)(fill.length / 3);
-        auto all = lines ~ construction ~ litLines ~ freePts ~ fixedPts ~ litPts ~ refLines ~ refPts;
+        auto all = lines ~ construction ~ litLines ~ freePts ~ fixedPts ~ litPts ~ refLines ~ refPts ~ fillPts;
         int end = 0;
-        foreach (i, part; [lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts])
+        foreach (i, part; [lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts, fillPts])
         {
             end += cast(int)(part.length / 3);
             sketchRanges[i] = end;

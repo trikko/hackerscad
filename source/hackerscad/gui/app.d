@@ -4161,6 +4161,7 @@ private:
         drawTool = null;
         drawn = null;
         drawnAt = null;
+        drawnVia = null;
         viewport.drawingLines = null;
         viewport.drawingPoints = null;
         viewport.drawingSnap = null;

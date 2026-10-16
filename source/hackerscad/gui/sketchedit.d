@@ -28,6 +28,16 @@ mixin template SketchEdit()
     bool sketchEditHold;  /// the bar wrote into the code: the sketch stays shown until it is evaluated
     Vec3[] drawn;         /// its clicks so far, on the sketch's plane
     ptrdiff_t[] drawnAt;  /// for each: the point of the sketch it snapped to, or -1 (a new one)
+    Hidden[] drawnVia;    /// for each: the hidden place it snapped to (a crossing, a middle), if any
+
+    /// A place to snap to that is no point of the sketch, shown only under the pointer: where two lines cross
+    /// (the new point stays on both) or the middle of a line (it stays there).
+    struct Hidden
+    {
+        size_t[] on;          /// the lines it is on (a crossing)
+        ptrdiff_t mid = -1;   /// the line it is the middle of
+    }
+    private Hidden lastHidden;   /// what snapAt found last, when it returned -3
 
     /// The drawing tools: a symbol each, a name for their group's menu, and how to use it.
     static immutable string[4][] drawTools = [
@@ -655,6 +665,7 @@ mixin template SketchEdit()
         {
             drawn = null;
             drawnAt = null;
+            drawnVia = null;
             showDrawing(double.nan, double.nan);
             return true;
         }
@@ -848,6 +859,7 @@ mixin template SketchEdit()
         drawTool = tool;
         drawn = null;
         drawnAt = null;
+        drawnVia = null;
         sketchSel = null;
         showDrawing(double.nan, double.nan);
         drawRuns();
@@ -898,6 +910,50 @@ mixin template SketchEdit()
             consider(drawn[0], -2);
         foreach (pt; v.points)
             consider(pt.pos, pt.entity);
+        if (found != -1)
+            return found;
+        // no point near: the middles of lines, and where lines cross
+        Vec3 posOf(size_t id)
+        {
+            foreach (pt; v.points)
+                if (pt.entity == id)
+                    return pt.pos;
+            return Vec3.init;
+        }
+        size_t[] lineIds;
+        Vec3[2][] ends;
+        foreach (id, e; v.entities)
+            if (e.kind == "line" && e.points.length == 2)
+            {
+                lineIds ~= id;
+                ends ~= [posOf(e.points[0]), posOf(e.points[1])];
+            }
+        Hidden[] hidden;
+        foreach (k, id; lineIds)
+        {
+            consider((ends[k][0] + ends[k][1]) * 0.5, -3 - cast(ptrdiff_t) hidden.length);
+            hidden ~= Hidden(null, id);
+        }
+        foreach (i; 0 .. lineIds.length)
+            foreach (j; i + 1 .. lineIds.length)
+            {
+                auto a = ends[i][0], b = ends[i][1], c = ends[j][0], d = ends[j][1];
+                immutable den = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
+                if (abs(den) < 1e-12)
+                    continue;
+                immutable t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / den;
+                immutable u = ((c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)) / den;
+                // inside both, not at an end (an end is a point already)
+                if (t <= 1e-6 || t >= 1 - 1e-6 || u <= 1e-6 || u >= 1 - 1e-6)
+                    continue;
+                consider(a + (b - a) * t, -3 - cast(ptrdiff_t) hidden.length);
+                hidden ~= Hidden([lineIds[i], lineIds[j]]);
+            }
+        if (found <= -3)
+        {
+            lastHidden = hidden[-3 - found];
+            return -3;
+        }
         return found;
     }
 
@@ -923,7 +979,8 @@ mixin template SketchEdit()
             }
         }
         drawn ~= p;
-        drawnAt ~= at;
+        drawnVia ~= at == -3 ? lastHidden : Hidden.init;
+        drawnAt ~= at == -3 ? -1 : at;
         if (drawn.length >= drawClicks(drawTool))
             return finishDrawing(false);
         showDrawing(x, y);
@@ -1045,17 +1102,19 @@ mixin template SketchEdit()
     {
         immutable tool = drawTool;
         auto pts = drawn.dup, at = drawnAt.dup;
+        auto via = drawnVia.dup;
         drawn = null;
         drawnAt = null;
+        drawnVia = null;
         showDrawing(double.nan, double.nan);
         immutable least = tool == "line" ? 2 : tool == "spline" ? (closed ? 3 : 2) : 1;
         if (pts.length < least)
             return info("not enough points: nothing written");
-        info(writeDrawing(tool, pts, at, closed, drawConstruction));
+        info(writeDrawing(tool, pts, at, closed, drawConstruction, via));
     }
 
     /// The statements for what was drawn: new points made, those snapped to named.
-    string writeDrawing(string tool, Vec3[] pts, ptrdiff_t[] at, bool closed, bool construction)
+    string writeDrawing(string tool, Vec3[] pts, ptrdiff_t[] at, bool closed, bool construction, Hidden[] via = null)
     {
         import hackerscad.tool.sketchcode : SketchWriter, editBetween;
         if (busy())
@@ -1067,18 +1126,22 @@ mixin template SketchEdit()
         if (last.sources.get(absolutePath(path), null) != src)
             return "the code changed since it was evaluated: wait for it, then try again";
         static string num(double x) => format("%.6g", x + 0.0);
+        via.length = pts.length;
         // a point clicked twice in a row counts once
         {
             Vec3[] keptPts;
             ptrdiff_t[] keptAt;
+            Hidden[] keptVia;
             foreach (i, q; pts)
                 if (i == 0 || (q - pts[i - 1]).length > 1e-6 || at[i] != at[i - 1])
                 {
                     keptPts ~= q;
                     keptAt ~= at[i];
+                    keptVia ~= via[i];
                 }
             pts = keptPts;
             at = keptAt;
+            via = keptVia;
         }
         immutable clicks = drawClicks(tool);
         if (clicks != size_t.max && pts.length != clicks)
@@ -1099,6 +1162,11 @@ mixin template SketchEdit()
                 auto n = w.fresh("p");
                 w.add(format("auto %s = %s.point(%s, %s)", n, w.var, num(pts[i].x), num(pts[i].y)));
                 made[i] = n;
+                // snapped to where lines cross, or to a line's middle: it stays there
+                foreach (l; via[i].on)
+                    w.add(format("%s.on(%s, %s)", w.var, n, w.name(l)));
+                if (via[i].mid >= 0)
+                    w.add(format("%s.midpoint(%s, %s)", w.var, n, w.name(via[i].mid)));
                 return n;
             }
             switch (tool)
@@ -1206,8 +1274,11 @@ mixin template SketchEdit()
                             here ~= k;
                     if (here.length == 0)
                     {
-                        w.add(format("%s.fill(vec(%s, %s)%s)", w.var, num(q.x), num(q.y), full ? "" : ", full: false"));
-                        select = format("%s.fill(vec(%s, %s)", w.var, num(q.x), num(q.y));
+                        // a point of the sketch: shown, it can be constrained to stay in its area
+                        immutable n = w.fresh("inside");
+                        w.add(format("auto %s = %s.point(%s, %s)", n, w.var, num(q.x), num(q.y)));
+                        w.add(format("%s.fill(%s%s)", w.var, n, full ? "" : ", full: false"));
+                        select = n;
                         break;
                     }
                     import std.string : splitLines, KeepTerminator, indexOf;

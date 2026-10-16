@@ -686,6 +686,10 @@ final class SketchVal : ObjectVal
                 continue;
             v.segments ~= seg;
         }
+        // the points of fills: drawn apart, they mark an area
+        foreach (ref pt; v.points)
+            foreach (f; sk.fills)
+                pt.fill = pt.fill || f.point == pt.entity;
 
         // every constraint call, valueless ones too (tag 0, the implicit ones, is not a call)
         bool[size_t] conflicting;   // by tag
@@ -1820,6 +1824,7 @@ struct SketchView
         bool construction;
         size_t entity;      /// its id in entities
         bool reference;     /// a reference point (a corner of the face, the origin): fixed, drawn apart
+        bool fill;          /// it marks an area full or empty (s.fill): drawn in the colour of the areas
     }
 
     /// Every area the closed loops make (fillets and all), the smallest no line crosses: triangles in the

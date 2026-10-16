@@ -419,8 +419,30 @@ final class Sketch
 
     SolveReport report()
     {
+        import std.algorithm : canFind, filter;
+        import std.array : array;
         solveIfNeeded();
-        return last;
+        auto r = last;
+        // a point only there for s.fill(p): where it is matters only in its area, its two degrees of freedom are
+        // not missing constraints (constrained, it counts as any point)
+        bool[size_t] seen;
+        foreach (f; fills)
+        {
+            if (f.point < 0 || (f.point in seen) !is null || !r.freePoints.canFind(f.point))
+                continue;
+            seen[f.point] = true;
+            immutable p = cast(size_t) f.point;
+            bool used;
+            foreach (i, e; entities)
+                used = used || (i != p && (e.refs[].canFind(p) && e.kind != EntityKind.point || e.through.canFind(p)));
+            foreach (c; constraints)
+                used = used || c.refs[].canFind(p);
+            if (used)
+                continue;
+            r.dof -= r.dof >= 2 ? 2 : r.dof;
+            r.freePoints = r.freePoints.filter!(x => x != p).array;
+        }
+        return r;
     }
 
     /// Closed loops of the non-construction lines, arcs, circles and ellipses.

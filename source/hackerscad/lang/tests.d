@@ -3837,6 +3837,8 @@ unittest
     assert(near(area(two ~ "s.fill(vec(-5, 0), full: false);\n"), PI * 100 - lens));
     // a point of the sketch: the area holding it, wherever the constraints put it
     assert(near(area(two ~ "auto c = s.point(6, 1);\ns.fill(c);\n"), 2 * PI * 100 - lens));
+    // a point there only for a fill: no degrees of freedom left by it
+    assert(output(two ~ "auto c = s.point(6, 1);\ns.fill(c);\nwriteln(s.dof);") == "0");
     // a nested loop's hole filled: an island again
     assert(near(area("auto s = sketch();\ns.circle(s.point(0, 0, fixed: true), r: 10.mm);\n"
         ~ "s.circle(s.point(0, 0), r: 5.mm);\ns.fill(vec(0, 0));\n"), PI * 100));

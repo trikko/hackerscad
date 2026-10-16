@@ -144,7 +144,7 @@ struct SketchWriter
     void add(string statement)
     {
         import std.algorithm : canFind, endsWith;
-        if (construction && statement.endsWith(")") && !statement.canFind(".point("))
+        if (construction && statement.endsWith(")") && !statement.canFind(".point(") && !statement.canFind(".fill("))
             statement = statement[0 .. $ - 1] ~ (statement.endsWith("()") ? "" : ", ") ~ "construction: true)";
         added ~= statement;
     }

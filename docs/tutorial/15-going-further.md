@@ -287,7 +287,10 @@ clicked; with the rectangle, one from its centre, one turned (a side, then
 how far the other), a regular polygon (its sides in the menu) and a slot;
 with the circle, an ellipse and a teardrop; with the arc, one through three
 points. The button keeps the kind chosen last. A click near a point of the
-sketch uses that point; Esc drops what is being drawn. Nothing is written until the shape is done: then
+sketch uses that point; near no point, the middle of a line or the place
+where two lines cross (construction lines too) shows a mark when you pass
+over it, and a click there makes a point that stays there (`s.midpoint`,
+or `s.on` both lines). Esc drops what is being drawn. Nothing is written until the shape is done: then
 its lines appear at the end of the sketch's code, as you would have typed
 them.
 
@@ -307,7 +310,11 @@ selected, it makes what you draw next construction geometry. The area the
 profile will fill is tinted, so you see at once what will be extruded and
 what is a hole. A loop inside another is a hole, and where two loops
 overlap, so is the overlap; ◩ changes that: click inside a closed area and
-it turns full or empty, written as `s.fill(vec(x, y))` (or `full: false`). Esc goes back a step at a time: the
+it turns full or empty, written as a point of its own, drawn in the
+areas' colour, and `s.fill(inside)` (or `full: false`). Constrain that
+point like any other to keep it in its area when the sketch changes (to
+the two places where the circles cross, say); left free, it does not count
+among the degrees of freedom. Esc goes back a step at a time: the
 shape being drawn, then the tool and the selection (back to ↖), and only
 then out of the sketch.
 
