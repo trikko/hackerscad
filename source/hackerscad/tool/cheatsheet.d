@@ -137,6 +137,7 @@ immutable KeyLine[] keyLines = [
     KeyLine("Alt+1 … Alt+4", "a click picks whole parts, faces, edges or vertices"),
     KeyLine("A", "annotates the view: arrows, crosses, circles, text; Done or Esc goes back"),
     KeyLine("Esc", "closes what is shown over the model: a sketch, a step, Inspect, the marks"),
+    KeyLine("X, in a sketch", "what is selected to construction geometry (dashed guides) or back; nothing selected: what you draw next"),
     KeyLine("Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E", "new, open, save, export"),
     KeyLine("Ctrl+J, F7, F8, F9", "show or hide the console, the code, the view, the parameters"),
     KeyLine("Ctrl+I, or Ctrl+click on a line", "shows what the line makes, in the view"),

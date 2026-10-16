@@ -58,7 +58,7 @@ import gtk.gesture_click : GestureClick;
 import gtk.event_controller_key : EventControllerKey;
 import gtk.event_controller_motion : EventControllerMotion;
 import gdk.types : ModifierType, KEY_Escape, KEY_space, KEY_Return, KEY_KP_Enter, KEY_Control_L, KEY_Control_R,
-    KEY_Meta_L, KEY_Meta_R, KEY_a, KEY_A, KEY_Delete, KEY_BackSpace;
+    KEY_Meta_L, KEY_Meta_R, KEY_a, KEY_A, KEY_x, KEY_X, KEY_Delete, KEY_BackSpace;
 import hackerscad.geom.vec : BBox, Vec3;
 import glib.global : idleAdd;
 
@@ -979,6 +979,7 @@ final class MainWindow
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
         viewport.onPick = (Hit h) => picked(h);
+        viewport.onSketchShown = () => showProblems();
         viewport.onBox = (double x0, double y0, double x1, double y1, bool crossing) => boxed(x0, y0, x1, y1, crossing);
         viewport.onMotion = (double x, double y) => drawingMotion(x, y);
         // a double click on a flat face: the view looks straight at it
@@ -1084,6 +1085,13 @@ final class MainWindow
                 if (sketchSel.length && (key == KEY_Delete || key == KEY_BackSpace))
                 {
                     info(deleteSelection());
+                    return true;
+                }
+                // X in a sketch that can be edited: the bar's ┄
+                if ((key == KEY_x || key == KEY_X) && viewport.sketchShown && drawnSketch() !is null
+                    && sketchUneditable() is null && !(state & (ModifierType.ControlMask | ModifierType.AltMask)))
+                {
+                    info(constructionClicked());
                     return true;
                 }
                 // drawing in a sketch: Enter ends it (as drawn), Esc drops it
@@ -1825,35 +1833,22 @@ private:
             updateSection(false);
         updateDimensions();
 
-        TextIter s, e;
-        buffer.getBounds(s, e);
-        foreach (tag; ["error", "error-line", "warning", "warning-line"])
-            buffer.removeTagByName(tag, s, e);
-        buffer.removeSourceMarks(s, e, null);
-
         string log;
         foreach (l; o.log)
             log ~= l.text ~ "\n";
         size_t errors;
-        Diagnostic first;
-        bool haveFirst;
         foreach (d; o.diagnostics)
         {
             errors += d.severity == Severity.error;
             log ~= render(d, o.sources.get(d.span.file, "")) ~ "\n";
-            if (d.span.file == absolutePath(path) && d.span.line > 0)
-                markProblem(d.span, d.severity == Severity.error ? "error" : "warning");
-            if (!haveFirst || (d.severity == Severity.error && first.severity != Severity.error))
-            {
-                first = d;
-                haveFirst = true;
-            }
         }
         modelOutput = log;
         busyIndicator.stop();
         busyIndicator.setTooltipText(null);
         stopProgress();
-        showProblem(haveFirst, first, o.ok);
+        problems = o.diagnostics.dup;
+        problemsEvaluated = o.ok;
+        showProblems();
 
         // what the sketch bar wrote is evaluated (well or not): the sketch follows the cursor again
         if (sketchEditHold)
@@ -2308,6 +2303,35 @@ private:
     Button problemBanner;
     Label problemText;
     Span problemSpan;
+    Diagnostic[] problems;     /// the last run's
+    bool problemsEvaluated;    /// whether that run made the model
+
+    /// The last run's problems marked in the code, the first in the banner. A
+    /// sketch's warnings (free points, open lines) only while a sketch is
+    /// shown: else they are in the log alone, not always in sight.
+    void showProblems()
+    {
+        TextIter s, e;
+        buffer.getBounds(s, e);
+        foreach (tag; ["error", "error-line", "warning", "warning-line"])
+            buffer.removeTagByName(tag, s, e);
+        buffer.removeSourceMarks(s, e, null);
+        Diagnostic first;
+        bool haveFirst;
+        foreach (d; problems)
+        {
+            if (d.severity != Severity.error && d.code == Code.sketch && !viewport.sketchShown)
+                continue;
+            if (d.span.file == absolutePath(path) && d.span.line > 0)
+                markProblem(d.span, d.severity == Severity.error ? "error" : "warning");
+            if (!haveFirst || (d.severity == Severity.error && first.severity != Severity.error))
+            {
+                first = d;
+                haveFirst = true;
+            }
+        }
+        showProblem(haveFirst, first, problemsEvaluated);
+    }
 
     /// A banner over the 3D view with the first problem; it jumps to the line.
     void showProblem(bool any, Diagnostic d, bool evaluated)

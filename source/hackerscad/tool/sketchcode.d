@@ -143,8 +143,14 @@ struct SketchWriter
     /// Adds a statement at the end of the sketch's code.
     void add(string statement)
     {
+        import std.algorithm : canFind, endsWith;
+        if (construction && statement.endsWith(")") && !statement.canFind(".point("))
+            statement = statement[0 .. $ - 1] ~ (statement.endsWith("()") ? "" : ", ") ~ "construction: true)";
         added ~= statement;
     }
+
+    /// What add adds is construction geometry (its points stay plain).
+    bool construction;
 
     /// A name no variable of the file has yet (base, base2…), for what a statement declares.
     string fresh(string base) => unique(base);
@@ -935,4 +941,126 @@ unittest
     immutable used = src[0 .. src.length - 26] ~ "    writeln(ab.length);\n" ~ src[src.length - 26 .. $];
     auto u = viewOf(used);
     assert(deleteFromSketch(used, file, u, [at(9, "line")], why) is null && why.canFind("ab is still used"), why);
+}
+
+/// Turns the entities `ids` into construction geometry (drawn dashed, out of the
+/// profile), or back when all of them are already: `construction: true` added to
+/// the calls that made them, or taken away. A call makes all it makes so (a
+/// shape's every side). The new source, or null with why; `on` tells which way.
+string toggleConstruction(string source, string file, const ref SketchView v, const(size_t)[] ids, out string why,
+    out bool on)
+{
+    import std.algorithm : all, canFind;
+    if (ids.length == 0)
+    {
+        why = "select what to turn into construction geometry, or back";
+        return null;
+    }
+    SketchWriter w;
+    try
+        w = SketchWriter(source, file, v);
+    catch (CodegenException e)
+    {
+        why = e.msg;
+        return null;
+    }
+    foreach (e; ids)
+        if (v.entities[e].reference)
+        {
+            why = "a face's edges and the origin are references: always out of the profile";
+            return null;
+        }
+    on = !ids.all!(e => v.entities[e].construction);
+    // the calls, each once, with the edit each needs
+    struct Change { size_t from, to; string text; }
+    Change[] changes;
+    size_t[] calls;
+    foreach (e; ids)
+    {
+        immutable c = w.callToken(v.entities[e].span);
+        if (c == size_t.max || !w.direct(c))
+        {
+            why = format("line %d is in a loop, an if or another function: change it by hand", v.entities[e].span.line);
+            return null;
+        }
+        if (calls.canFind(c) || v.entities[e].construction == on)
+            continue;
+        calls ~= c;
+        immutable close = w.closing(c);
+        auto t = w.toks;
+        // construction: given already (as false, or true to take away)
+        ptrdiff_t named = -1;
+        int depth;
+        foreach (k; c + 1 .. close)
+        {
+            immutable kk = t[k].kind;
+            if (kk == Tok.lparen || kk == Tok.lbracket || kk == Tok.lbrace)
+                depth++;
+            else if (kk == Tok.rparen || kk == Tok.rbracket || kk == Tok.rbrace)
+                depth--;
+            else if (depth == 0 && kk == Tok.ident && t[k].text == "construction" && t[k + 1].kind == Tok.colon)
+                named = k;
+        }
+        size_t at(size_t k) => offsetOf(source, t[k].span);
+        if (named >= 0)
+        {
+            // its value, to the next comma or the closing bracket
+            size_t end = named + 2;
+            while (end < close && t[end].kind != Tok.comma)
+                end++;
+            if (t[named - 1].kind == Tok.comma)
+                changes ~= Change(at(named - 1), at(end), on ? ", construction: true" : "");
+            else
+                changes ~= Change(at(named), end < close ? at(end + 1) : at(end), on ? "construction: true"
+                    ~ (end < close ? ", " : "") : "");
+        }
+        else if (on)
+            changes ~= Change(at(close), at(close), t[close - 1].kind == Tok.lparen ? "construction: true"
+                : ", construction: true");
+    }
+    import std.algorithm : sort;
+    changes.sort!((a, b) => a.from > b.from);
+    string r = source;
+    foreach (ch; changes)
+        r = r[0 .. ch.from] ~ ch.text ~ r[ch.to .. $];
+    return r;
+}
+
+unittest
+{
+    import std.algorithm : canFind, filter;
+    import std.array : array;
+    import std.file : tempDir;
+    import std.path : buildPath;
+    import hackerscad.lang.interp : Interp;
+    import hackerscad.lang.sketchval : SketchVal;
+    import hackerscad.kernel.occt.backend : OcctKernel;
+
+    immutable file = buildPath(tempDir, "hcad-sketchconstruction.hcad");
+    auto kernel = new OcctKernel;
+    SketchView viewOf(string src)
+    {
+        auto it = new Interp(kernel);
+        it.runSource(src, file);
+        return (cast(SketchVal) it.sketches[$ - 1]).view();
+    }
+    immutable src = "module m;\n@part\nSolid p()\n{\n"
+        ~ "    auto s = sketch();\n"
+        ~ "    auto a = s.point(0, 0, fixed: true);\n"
+        ~ "    auto b = s.point(40, 2);\n"
+        ~ "    auto ab = s.line(a, b);\n"
+        ~ "    auto r = s.rect(vec(50, 0), vec(70, 20), construction: false);\n"
+        ~ "    return box(1, 1, 1);\n}\n";
+    auto v = viewOf(src);
+    size_t at(uint line, string kind) => v.entities.length.iota.filter!(i => v.entities[i].span.line == line
+        && v.entities[i].kind == kind).front;
+    string why;
+    bool on;
+    auto made = toggleConstruction(src, file, v, [at(8, "line"), at(9, "line")], why, on);
+    assert(made !is null && on, why);
+    assert(made.canFind("s.line(a, b, construction: true)") && made.canFind("vec(70, 20), construction: true)"), made);
+    // all construction now: back
+    auto v2 = viewOf(made);
+    auto back = toggleConstruction(made, file, v2, [at(8, "line")], why, on);
+    assert(back !is null && !on && back.canFind("s.line(a, b);"), back);
 }

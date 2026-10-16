@@ -527,6 +527,7 @@ final class SketchVal : ObjectVal
             {
             }
         }
+        v.fill = fillLoops(outline);
         // the call that made a fillet, by corner point
         Span[size_t] filletAt;
         foreach (tag, kind; constraintKinds)
@@ -1772,6 +1773,10 @@ struct SketchView
         bool reference;     /// a reference point (a corner of the face, the origin): fixed, drawn apart
     }
 
+    /// The closed loops of the profile (as s.profile will make it, fillets and all), in the sketch's
+    /// coordinates: what is inside an odd number of them gets extruded
+    Vec3[][] fill;
+
     struct Segment
     {
         int kind;           /// 0 line a → b, 1 arc around c from a to b (counter-clockwise), 2 circle around c,
@@ -2189,4 +2194,86 @@ final class SketchEntityVal : ObjectVal
             }
         }
     }
+}
+
+/// The loops of an outline (as Sketch.outline gives it, `end` between loops)
+/// as closed polylines: each piece sampled and joined to the last where they
+/// meet (turned round when it runs the other way).
+Vec3[][] fillLoops(const(imported!"hackerscad.kernel.brep".OutlineSeg)[] outline)
+{
+    import std.math : atan2, cos, sin, PI;
+    import hackerscad.kernel.brep : OutlineSeg;
+    import hackerscad.geom.spline : sampleSpline;
+    Vec3[][] loops;
+    Vec3[] loop;
+    void close()
+    {
+        if (loop.length >= 3)
+            loops ~= loop;
+        loop = null;
+    }
+    foreach (g; outline)
+    {
+        Vec3[] pts;
+        final switch (g.kind)
+        {
+        case OutlineSeg.Kind.end:
+            close();
+            continue;
+        case OutlineSeg.Kind.line:
+            pts = [Vec3(g.ax, g.ay, 0), Vec3(g.bx, g.by, 0)];
+            break;
+        case OutlineSeg.Kind.arc:
+            {
+                // from a through m to b
+                auto a = Vec3(g.ax, g.ay, 0), m = Vec3(g.mx, g.my, 0), b = Vec3(g.bx, g.by, 0);
+                auto c = circumcentre(a, m, b);
+                immutable r = (a - c).length;
+                double ang(Vec3 q) => atan2(q.y - c.y, q.x - c.x);
+                double ccw(double from, double to)
+                {
+                    double x = to - from;
+                    while (x < 0)
+                        x += 2 * PI;
+                    return x;
+                }
+                immutable a0 = ang(a), sweepB = ccw(a0, ang(b));
+                // counter-clockwise when m lies on the way, else clockwise
+                immutable sweep = ccw(a0, ang(m)) < sweepB ? sweepB : sweepB - 2 * PI;
+                foreach (k; 0 .. 33)
+                {
+                    immutable t = a0 + sweep * k / 32;
+                    pts ~= c + Vec3(cos(t), sin(t), 0) * r;
+                }
+                break;
+            }
+        case OutlineSeg.Kind.ellipse:
+            {
+                auto c = Vec3(g.ax, g.ay, 0);
+                immutable ux = Vec3(cos(g.mx), sin(g.mx), 0), uy = Vec3(-sin(g.mx), cos(g.mx), 0);
+                foreach (k; 0 .. 65)
+                {
+                    immutable t = 2 * PI * k / 64;
+                    pts ~= c + ux * (g.bx * cos(t)) + uy * (g.by * sin(t));
+                }
+                break;
+            }
+        case OutlineSeg.Kind.spline:
+            {
+                Vec3[] poles;
+                foreach (q; 0 .. g.poles.length / 2)
+                    poles ~= Vec3(g.poles[2 * q], g.poles[2 * q + 1], 0);
+                pts = sampleSpline(poles, 16);
+                break;
+            }
+        }
+        if (loop.length && (pts[$ - 1] - loop[$ - 1]).length < (pts[0] - loop[$ - 1]).length)
+        {
+            import std.algorithm : reverse;
+            pts.reverse();
+        }
+        loop ~= loop.length ? pts[1 .. $] : pts;
+    }
+    close();
+    return loops;
 }

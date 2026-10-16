@@ -772,7 +772,8 @@ mixin template ControlMethods()
                                 else
                                     return reply(JValue.init, "each point is [x, y] or the id of a point of the sketch");
                             }
-                            said = writeDrawing(t, pts, at, p.safe!bool("closed").or(false));
+                            said = writeDrawing(t, pts, at, p.safe!bool("closed").or(false),
+                                p.safe!bool("construction").or(false));
                             import std.algorithm : endsWith;
                             if (!said.endsWith("written in the sketch's code"))
                                 return reply(JValue.init, said);
@@ -785,7 +786,8 @@ mixin template ControlMethods()
                     });
                     return;
                 }
-                if ((has("select") || has("constrain") || has("delete")) && !has("line") && !p.has("on"))
+                if ((has("select") || has("constrain") || has("delete") || (p.has("construction") && !has("draw")))
+                    && !has("line") && !p.has("on"))
                 {
                     whenIdle(() {
                         if (has("select"))
@@ -812,6 +814,15 @@ mixin template ControlMethods()
                             said = deleteSelection();
                             import std.algorithm : canFind;
                             if (!said.canFind("deleted from the sketch's code"))
+                                return reply(JValue.init, said);
+                        }
+                        if (p.has("construction") && !has("draw") && p.safe!bool("construction").or(false))
+                        {
+                            if (sketchSel.length == 0)
+                                return reply(JValue.init, "construction: true needs a selection (select [ids])");
+                            said = constructionSelection();
+                            import std.algorithm : canFind;
+                            if (!said.canFind(" geometry"))
                                 return reply(JValue.init, said);
                         }
                         if (has("constrain"))

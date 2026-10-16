@@ -300,7 +300,12 @@ distance, angle, radius, diameter) ask for it in a field, the size it has
 now already written in: Enter writes it. Five lines and a length of 20 mm
 make one dimension and the others equal to it, so one number changes them
 all. ⌫ (or Delete) takes what is selected out of the code, with what is
-drawn on it and the constraints on them. Esc goes back a step at a time: the
+drawn on it and the constraints on them. ┄ (or X) turns what is selected
+into construction geometry: dashed guides, such as a centre line, to
+constrain to, never filled or extruded (again: back); with nothing
+selected, it makes what you draw next construction geometry. The area the
+profile will fill is tinted, so you see at once what will be extruded and
+what is a hole. Esc goes back a step at a time: the
 shape being drawn, then the tool and the selection (back to ↖), and only
 then out of the sketch.
 

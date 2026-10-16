@@ -21,6 +21,8 @@ mixin template SketchEdit()
     string[] drawChoice;      /// that tool
     int polygonSides = 6;     /// what the polygon tool draws
     Button deleteButton;
+    Button constructionButton;
+    bool drawConstruction;   /// what is drawn is construction geometry (the bar's ┄ with nothing selected)
     string drawTool;      /// the drawing tool at work (null: clicks select)
     bool sketchEditHold;  /// the bar wrote into the code: the sketch stays shown until it is evaluated
     Vec3[] drawn;         /// its clicks so far, on the sketch's plane
@@ -154,6 +156,10 @@ mixin template SketchEdit()
         deleteButton = button("⌫", "Delete what is selected, what is drawn on it and the constraints on them (Delete)");
         deleteButton.connectClicked(() { info(deleteSelection()); });
         left.append(deleteButton);
+        constructionButton = button("┄", "Construction: what is selected becomes construction geometry (dashed, a guide "
+            ~ "to constrain to, never filled or extruded), or back; with nothing selected, what you draw next is (X)");
+        constructionButton.connectClicked(() { info(constructionClicked()); });
+        left.append(constructionButton);
         // points and curves under the drawing tools; directions, then sizes, in the other column
         foreach (g, group; toolGroups)
         {
@@ -299,6 +305,14 @@ mixin template SketchEdit()
         viewport.leftInset = shown ? natural + 16 : 0;
         if (deleteButton !is null)
             deleteButton.setSensitive(why is null && sketchSel.length > 0);
+        if (constructionButton !is null)
+        {
+            constructionButton.setSensitive(why is null);
+            if (drawConstruction)
+                constructionButton.addCssClass("hcad-tool-on");
+            else
+                constructionButton.removeCssClass("hcad-tool-on");
+        }
         foreach (g, b; drawButtons)
         {
             b.setSensitive(why is null);
@@ -993,11 +1007,11 @@ mixin template SketchEdit()
         immutable least = tool == "line" ? 2 : tool == "spline" ? (closed ? 3 : 2) : 1;
         if (pts.length < least)
             return info("not enough points: nothing written");
-        info(writeDrawing(tool, pts, at, closed));
+        info(writeDrawing(tool, pts, at, closed, drawConstruction));
     }
 
     /// The statements for what was drawn: new points made, those snapped to named.
-    string writeDrawing(string tool, Vec3[] pts, ptrdiff_t[] at, bool closed)
+    string writeDrawing(string tool, Vec3[] pts, ptrdiff_t[] at, bool closed, bool construction)
     {
         import hackerscad.tool.sketchcode : SketchWriter, editBetween;
         if (busy())
@@ -1029,6 +1043,7 @@ mixin template SketchEdit()
         try
         {
             auto w = SketchWriter(src, v.span.file, *v);
+            w.construction = construction;
             string[size_t] made;
             // the point of click i: the one it snapped to, or a new one
             string pointName(size_t i)
@@ -1153,6 +1168,43 @@ mixin template SketchEdit()
     }
 
     /// Deletes what is selected in the sketch from its code (see deleteFromSketch); what the info line says.
+    /// The bar's ┄: the selection to construction geometry or back (toggleConstruction); with nothing
+    /// selected, drawing as construction on or off. What the info line says.
+    string constructionClicked()
+    {
+        if (sketchSel.length == 0)
+        {
+            drawConstruction = !drawConstruction;
+            updateSketchBar();
+            return drawConstruction ? "what you draw now is construction geometry: dashed guides, never filled (┄ again: "
+                ~ "back to normal)" : "what you draw is normal geometry again";
+        }
+        return constructionSelection();
+    }
+
+    /// The selection to construction geometry, or back when all of it is; what the info line says.
+    string constructionSelection()
+    {
+        import hackerscad.tool.sketchcode : toggleConstruction, editBetween;
+        if (busy())
+            return "wait for the evaluation to finish, then try again";
+        auto v = drawnSketch();
+        if (v is null)
+            return "no sketch is drawn";
+        immutable src = text();
+        if (last.sources.get(absolutePath(path), null) != src)
+            return "the code changed since it was evaluated: wait for it, then try again";
+        string why;
+        bool on;
+        auto after = toggleConstruction(src, v.span.file, *v, sketchSel, why, on);
+        if (after is null)
+            return why;
+        sketchEditHold = true;
+        applyEdit(editBetween(src, after));
+        return on ? "construction geometry now: dashed, out of what is filled and extruded (a shape's every side)"
+            : "normal geometry again: part of the outline";
+    }
+
     string deleteSelection()
     {
         import hackerscad.tool.sketchcode : deleteFromSketch, editBetween;

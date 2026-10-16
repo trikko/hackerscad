@@ -277,10 +277,10 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.edges → Entity[]</dt><dd>A sketch on a face: the face's edges as references (fixed construction lines, arcs, circles), each loop from its lowest edge counter-clockwise, as a rect's sides: bottom, right, top, left; the outside first.</dd>
 <dt>sk.origin → Point</dt><dd>A sketch on a face or plane: its origin (the face's centre) as a fixed reference point.</dd>
 <dt>sk.project(edges: Edges) → Entity[]</dt><dd>Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them.</dd>
-<dt>sk.point(x: Length, y: Length, fixed: bool) → Point</dt><dd>A point where it starts; constraints move it.</dd>
-<dt>sk.line(p: Point, q: Point) → Line</dt><dd>A line between two points.</dd>
-<dt>sk.arc(center: Point, start: Point, end: Point) → Arc</dt><dd>An arc, counter-clockwise.</dd>
-<dt>sk.polyline(points, closed: bool) → Line[]</dt><dd>Lines through points (vectors become new points).</dd>
+<dt>sk.point(x: Length, y: Length, fixed: bool, construction: bool) → Point</dt><dd>A point where it starts; constraints move it.</dd>
+<dt>sk.line(p: Point, q: Point, construction: bool) → Line</dt><dd>A line between two points; construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never part of the profile.</dd>
+<dt>sk.arc(center: Point, start: Point, end: Point, construction: bool) → Arc</dt><dd>An arc, counter-clockwise.</dd>
+<dt>sk.polyline(points, closed: bool, construction: bool) → Line[]</dt><dd>Lines through points (vectors become new points).</dd>
 <dt>sk.spline(points, closed: bool) → SketchSpline</dt><dd>A smooth curve through points (vectors become new points): open, its ends join lines and arcs as theirs do; closed: true, a loop of its own. Its points move it: constrain them.</dd>
 <dt>sk.circle(center: Point, r: Length, d: Length) → Circle</dt><dd>A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…).</dd>
 <dt>sk.ellipse(center: Point, rx: Length, ry: Length, angle: Angle) → Ellipse</dt><dd>An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints. The same shape as the profile ellipse(…).</dd>
@@ -434,6 +434,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>Alt+1 … Alt+4</dt><dd>a click picks whole parts, faces, edges or vertices</dd>
 <dt>A</dt><dd>annotates the view: arrows, crosses, circles, text; Done or Esc goes back</dd>
 <dt>Esc</dt><dd>closes what is shown over the model: a sketch, a step, Inspect, the marks</dd>
+<dt>X, in a sketch</dt><dd>what is selected to construction geometry (dashed guides) or back; nothing selected: what you draw next</dd>
 <dt>Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E</dt><dd>new, open, save, export</dd>
 <dt>Ctrl+J, F7, F8, F9</dt><dd>show or hide the console, the code, the view, the parameters</dd>
 <dt>Ctrl+I, or Ctrl+click on a line</dt><dd>shows what the line makes, in the view</dd>

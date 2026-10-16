@@ -116,7 +116,8 @@ final class Viewport
     bool orthographic;
     void delegate(Hit hit) onPick;    /// part -1 when clicking the background
     void delegate(double x, double y) onDoubleClick;   /// a second left click soon after the first, in the same place
-    void delegate(double x, double y) onMotion;        /// the pointer moved over the view (not dragging)
+    void delegate(double x, double y) onMotion;
+    void delegate() onSketchShown;   /// a sketch began to be drawn, or none is any more        /// the pointer moved over the view (not dragging)
     /// A sketch being drawn with the sketch bar: its pieces so far and the one to the pointer, and its points (in
     /// the model's coordinates), drawn over everything
     Vec3[][] drawingLines;
@@ -157,6 +158,8 @@ final class Viewport
     private bool[size_t][] litEntities;  /// for each shown sketch, the entities that stand out
     private bool[] fadedSketches;        /// by index in sketches: drawn faint
     private uint sketchVao, sketchVbo;
+    private uint sketchFillVao, sketchFillVbo;
+    private int[2][] sketchFillRanges;   /// first vertex and count of each loop of the profiles shown
     private bool sketchDirty;
     /// lines, construction lines, highlighted lines, free points, fixed points, highlighted points (end indices)
     private int[8] sketchRanges;
@@ -2448,6 +2451,10 @@ final class Viewport
     /// constrains). Nothing: no sketch drawn.
     void showSketches(size_t[] which, size_t[][] highlight = null)
     {
+        immutable was = sketchShown;
+        scope (exit)
+            if (was != sketchShown && onSketchShown !is null)
+                onSketchShown();
         shownSketches = null;
         litEntities = null;
         foreach (k, i; which)
@@ -4033,6 +4040,36 @@ private:
                     }
         }
         glDisable(GL_DEPTH_TEST);
+        // what the profile will fill: inside an odd number of its loops (a loop inside another is a hole),
+        // tinted and lightly striped, under the lines
+        if (sketchFillRanges.length)
+        {
+            glEnable(GL_STENCIL_TEST);
+            glClear(GL_STENCIL_BUFFER_BIT);
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+            glDepthMask(GL_FALSE);
+            glStencilFunc(GL_ALWAYS, 0, 0xFF);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_INVERT);
+            glUniform1i(uFlat, 1);
+            glBindVertexArray(sketchFillVao);
+            foreach (r; sketchFillRanges)
+                glDrawArrays(GL_TRIANGLE_FAN, r[0], r[1]);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            // each pixel once: the count goes back to 0 where it is drawn
+            glStencilFunc(GL_NOTEQUAL, 0, 0xFF);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glUniform1i(uFlat, 3);
+            glUniform1f(uAlpha, darkStyle ? 0.22 : 0.18);
+            glUniform3f(uColor, 0.06f, 0.76f, 0.95f);   // the parts' colour (Sky Pop)
+            foreach (r; sketchFillRanges)
+                glDrawArrays(GL_TRIANGLE_FAN, r[0], r[1]);
+            glDisable(GL_BLEND);
+            glDisable(GL_STENCIL_TEST);
+            glDepthMask(GL_TRUE);
+            glUniform1f(uAlpha, 1);
+        }
         glUniform1i(uFlat, 1);
         // the last good sketch, while the code has an error: faint
         bool faded;
@@ -4101,7 +4138,8 @@ private:
 
     void uploadSketches()
     {
-        float[] lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts;
+        float[] lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts, fill;
+        sketchFillRanges = null;
         // a sketch on a face is drawn where it lies
         SketchView placing;
         void add(ref float[] a, Vec3 v)
@@ -4117,6 +4155,18 @@ private:
             auto sk = sketches[index];
             placing = sk;
             auto lit = litEntities[s];
+            // the dashes of construction lines: from the sketch's size
+            double dash = 1;
+            {
+                Vec3 lo = Vec3(double.max, double.max, 0), hi = Vec3(-double.max, -double.max, 0);
+                foreach (p; sk.points)
+                {
+                    lo = Vec3(min(lo.x, p.pos.x), min(lo.y, p.pos.y), 0);
+                    hi = Vec3(max(hi.x, p.pos.x), max(hi.y, p.pos.y), 0);
+                }
+                if (sk.points.length)
+                    dash = max(0.2, (hi - lo).length / 150);
+            }
             foreach (g; sk.segments)
             {
                 Vec3[] pts;
@@ -4151,6 +4201,29 @@ private:
                 // a fillet's arc stands out with its corner point
                 immutable on = (g.entity >= 0 && (cast(size_t) g.entity in lit) !is null)
                     || (g.corner >= 0 && (cast(size_t) g.corner in lit) !is null);
+                if (g.construction && !on && !g.reference)
+                {
+                    // construction: dashed, a fixed share of the sketch's size each dash and gap
+                    double gone = 0;
+                    foreach (j; 0 .. pts.length - 1)
+                    {
+                        immutable len = (pts[j + 1] - pts[j]).length;
+                        double t = 0;
+                        while (t < len)
+                        {
+                            immutable phase = (gone + t) % (2 * dash);
+                            immutable step = min(len - t, phase < dash ? dash - phase : 2 * dash - phase);
+                            if (phase < dash)
+                            {
+                                add(construction, pts[j] + (pts[j + 1] - pts[j]) * (t / len));
+                                add(construction, pts[j] + (pts[j + 1] - pts[j]) * ((t + step) / len));
+                            }
+                            t += max(step, 1e-9);
+                        }
+                        gone += len;
+                    }
+                    continue;
+                }
                 foreach (j; 0 .. pts.length - 1)
                 {
                     add(on ? litLines : g.reference ? refLines : g.construction ? construction : lines, pts[j]);
@@ -4159,7 +4232,15 @@ private:
             }
             foreach (p; sk.points)
                 add((p.entity in lit) !is null ? litPts : p.reference ? refPts : p.free ? freePts : fixedPts, p.pos);
+            // what will be filled: each loop a fan, counted even-odd in the stencil when drawn
+            foreach (loop; sk.fill)
+            {
+                sketchFillRanges ~= [cast(int)(fill.length / 3), cast(int) loop.length];
+                foreach (q; loop)
+                    add(fill, q);
+            }
         }
+        positionBuffer(sketchFillVao, sketchFillVbo, fill);
         auto all = lines ~ construction ~ litLines ~ freePts ~ fixedPts ~ litPts ~ refLines ~ refPts;
         int end = 0;
         foreach (i, part; [lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts])
@@ -4773,6 +4854,13 @@ void main()
     if (uFlat == 1)
     {
         frag = vec4(uColor, uAlpha);
+        return;
+    }
+    if (uFlat == 3)
+    {
+        // a sketch's area the profile fills: tinted, with faint stripes
+        float stripe = mod(gl_FragCoord.x + gl_FragCoord.y, 12.0) < 1.5 ? 1.0 : 0.0;
+        frag = vec4(uColor, uAlpha + 0.22 * stripe);
         return;
     }
     if (uFlat == 2)
