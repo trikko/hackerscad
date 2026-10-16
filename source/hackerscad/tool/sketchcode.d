@@ -1,0 +1,467 @@
+/// Turns edits made on a sketch in the window into its code: the name of
+/// each point, line or curve (a variable, an element of a shape's lines, a
+/// line's point, a face's edge), a name given where a call has none, and new
+/// statements written at the end of the sketch's code. A sketch made inside
+/// a loop or an if, or an entity made in another function, is left alone,
+/// with why.
+module hackerscad.tool.sketchcode;
+
+import std.algorithm : count, countUntil, max, min;
+import std.range : iota;
+import std.format : format;
+
+import hackerscad.lang.errors : Span;
+import hackerscad.lang.lexer;
+import hackerscad.lang.sketchval : SketchView;
+import hackerscad.tool.codegen : CodegenException, Edit, offsetOf;
+
+/// Writes `statement(names)` at the end of sketch `v`'s code, the names
+/// those of entities `ids` (given first where a call has none): the new
+/// source. The statement is one line, without its indentation or `;`.
+string writeToSketch(string source, string file, const ref SketchView v, const(size_t)[] ids,
+    string delegate(string[] names) statement)
+{
+    auto w = SketchWriter(source, file, v);
+    string[] names;
+    foreach (e; ids)
+        names ~= w.name(e);
+    w.add(statement(names));
+    return w.result();
+}
+
+/// Writes statements into a sketch's code (see the module's comment).
+struct SketchWriter
+{
+    string source;
+    const(SketchView)* view;
+    Token[] toks;
+    string var;               /// the sketch's variable
+    string file;
+    size_t bodyOpen, bodyClose;   /// the braces of the function the sketch is made in (token indices)
+    private bool[string] used;
+    private Insert[] inserts;
+    private string[] added;
+    private string[size_t] named;   /// call statement start (token) → the name given
+
+    private struct Insert
+    {
+        size_t offset;
+        string text;
+    }
+
+    /// The statements of the function's body, first and last token each (a
+    /// loop or an if with its block is one)
+    private size_t[2][] statements;
+
+    this(string source, string file, const ref SketchView v)
+    {
+        this.source = source;
+        this.file = file;
+        view = &v;
+        if (v.span.file != file)
+            throw new CodegenException("the sketch is made in another file (" ~ v.span.file ~ "): its code is edited there");
+        toks = lex(source, file);
+        // the names a variable could clash with (not a method after a dot, nor a named argument's label)
+        foreach (i, t; toks)
+            if (t.kind == Tok.ident && !(i > 0 && toks[i - 1].kind == Tok.dot)
+                && !(i + 1 < toks.length && toks[i + 1].kind == Tok.colon))
+                used[t.text] = true;
+        // the sketch's call: `auto s = sketch();` or `auto s = body.sketch(faces.top);`
+        immutable call = callToken(v.span);
+        if (call == size_t.max)
+            throw new CodegenException("the sketch's code is no longer where it was: evaluate again");
+        immutable st = statementStart(call);
+        if (!(toks[st].kind == Tok.kwAuto && toks[st + 1].kind == Tok.ident && toks[st + 2].kind == Tok.assign
+                && closing(call) + 1 < toks.length && toks[closing(call) + 1].kind == Tok.semicolon))
+            throw new CodegenException("the sketch is not kept in a variable (auto s = sketch();): its code is "
+                ~ "edited by hand");
+        var = toks[st + 1].text;
+        // the function it is made in: the outermost braces round it
+        size_t depth0Open = size_t.max;
+        int depth;
+        foreach (i; 0 .. call)
+        {
+            if (toks[i].kind == Tok.lbrace)
+            {
+                if (depth == 0)
+                    depth0Open = i;
+                depth++;
+            }
+            else if (toks[i].kind == Tok.rbrace)
+                depth--;
+        }
+        if (depth0Open == size_t.max)
+            throw new CodegenException("the sketch is not made in a function");
+        bodyOpen = depth0Open;
+        bodyClose = closing(bodyOpen);
+        splitBody();
+        if (!direct(call))
+            throw new CodegenException("the sketch is made inside a loop or an if: its code is edited by hand");
+    }
+
+    /// The code that names entity `e`; a name is given to its call where
+    /// it has none. Throws when it cannot be named from here.
+    string name(size_t e)
+    {
+        auto en = view.entities[e];
+        if (en.edge >= 0)
+            return format("%s.edges[%d]", var, en.edge);
+        if (en.origin)
+            return var ~ ".origin";
+        // a corner of the face it is drawn on: an end of one of its edges
+        if (en.reference)
+        {
+            foreach (i, other; view.entities)
+                if (other.edge >= 0)
+                    if (auto part = pointOf(i, e))
+                        return format("%s.edges[%d].%s", var, other.edge, part);
+            throw new CodegenException("this reference has no name in the code");
+        }
+        // made by a call that returned a list: its element, or a point of one
+        foreach (l; view.lists)
+            if (l.call == en.span)
+            {
+                immutable k = l.entities.countUntil(e);
+                if (k >= 0)
+                    return format("%s[%d]", callName(l.call, methodOf(l.call)), k);
+                foreach (j, other; l.entities)
+                    if (auto part = pointOf(other, e))
+                        return format("%s[%d].%s", callName(l.call, methodOf(l.call)), j, part);
+                // a helper of the shape (a construction diagonal, a centre): not in what it returns
+                throw new CodegenException(format("what line %d draws to help its shape has no name of its own",
+                    en.span.line));
+            }
+        // a point made by the call of another entity (a vector where a point goes): that one's
+        if (en.kind == "point")
+            foreach (i, other; view.entities)
+                if (i != e && other.kind != "point" && other.span == en.span)
+                    if (auto part = pointOf(i, e))
+                        return callName(en.span, baseName(other.kind)) ~ "." ~ part;
+        return callName(en.span, baseName(en.kind));
+    }
+
+    /// Adds a statement at the end of the sketch's code.
+    void add(string statement)
+    {
+        added ~= statement;
+    }
+
+    /// The source with the names given and the statements added.
+    string result()
+    {
+        // where the statements go: after the last statement of the function holding the sketch's code (a loop
+        // that makes some of it: after the loop), at its indentation
+        size_t lastRange = rangeOf(callToken(view.span));
+        void see(Span s)
+        {
+            immutable c = callToken(s);
+            if (c != size_t.max && c > bodyOpen && c < bodyClose)
+                lastRange = max(lastRange, rangeOf(c));
+        }
+        foreach (en; view.entities)
+            if (!en.reference)
+                see(en.span);
+        foreach (c; view.constraints)
+            see(c.span);
+        immutable lastStart = statements[lastRange][0], last = statements[lastRange][1];
+        size_t lineStart = offsetOf(source, toks[lastStart].span);
+        while (lineStart > 0 && source[lineStart - 1] != '\n')
+            lineStart--;
+        size_t indentEnd = lineStart;
+        while (indentEnd < source.length && (source[indentEnd] == ' ' || source[indentEnd] == '\t'))
+            indentEnd++;
+        immutable indent = source[lineStart .. indentEnd];
+        size_t at = offsetOf(source, toks[last].span) + 1;
+        while (at < source.length && source[at] != '\n')
+            at++;
+        string text;
+        foreach (st; added)
+            text ~= "\n" ~ indent ~ st ~ ";";
+        auto all = inserts ~ Insert(at, text);
+        // from the end: the offsets before each stay valid
+        import std.algorithm : sort;
+        all.sort!((a, b) => a.offset > b.offset);
+        string r = source;
+        foreach (ins; all)
+            r = r[0 .. ins.offset] ~ ins.text ~ r[ins.offset .. $];
+        return r;
+    }
+
+private:
+
+    /// The variable a call's result is kept in, given one (`auto line2 =`)
+    /// when it stands alone as a statement.
+    string callName(Span s, string base)
+    {
+        immutable c = callToken(s);
+        if (c == size_t.max)
+            throw new CodegenException("the sketch's code is no longer where it was: evaluate again");
+        if (c < bodyOpen || c > bodyClose)
+            throw new CodegenException(format("line %d is in another function: its code is edited by hand", s.line));
+        if (!direct(c))
+            throw new CodegenException(format("line %d is inside a loop or an if: what it makes is named by hand",
+                s.line));
+        immutable st = statementStart(c);
+        immutable end = closing(c);
+        immutable whole = end + 1 < toks.length && toks[end + 1].kind == Tok.semicolon;
+        // auto name = s.line(…);
+        if (whole && toks[st].kind == Tok.kwAuto && toks[st + 1].kind == Tok.ident && toks[st + 2].kind == Tok.assign)
+            return toks[st + 1].text;
+        // s.line(…); alone: it gets a name
+        if (whole && toks[st].kind == Tok.ident && toks[st].text == var && st + 3 == c)
+        {
+            if (auto n = st in named)
+                return *n;
+            auto n = unique(base);
+            inserts ~= Insert(offsetOf(source, toks[st].span), "auto " ~ n ~ " = ");
+            named[st] = n;
+            return n;
+        }
+        throw new CodegenException(format("what line %d makes has no name of its own: name it by hand", s.line));
+    }
+
+    /// How point `p` is reached from entity `e` (start, center, points[2]…), or null.
+    string pointOf(size_t e, size_t p)
+    {
+        auto en = view.entities[e];
+        immutable k = en.points.countUntil(p);
+        if (k < 0)
+            return null;
+        switch (en.kind)
+        {
+        case "line": return k == 0 ? "start" : "end";
+        case "arc": return ["center", "start", "end"][k];
+        case "circle", "ellipse": return "center";
+        case "spline": return format("points[%d]", k);
+        default: return null;
+        }
+    }
+
+    static string baseName(string kind) => kind == "point" ? "p" : kind == "spline" ? "curve" : kind;
+
+    string unique(string base)
+    {
+        auto n = base;
+        for (int k = 2; n in used; k++)
+            n = format("%s%d", base, k);
+        used[n] = true;
+        return n;
+    }
+
+    /// The `(` of the call at span s, or size_t.max.
+    size_t callToken(Span s)
+    {
+        if (s.file != file)
+            return size_t.max;
+        foreach (i, t; toks)
+            if (t.span.line == s.line && t.span.col == s.col)
+                return t.kind == Tok.lparen ? i : size_t.max;
+        return size_t.max;
+    }
+
+    /// The method a call names (rect, slot…), for the name its result gets.
+    string methodOf(Span s)
+    {
+        immutable c = callToken(s);
+        return c != size_t.max && c > 0 && toks[c - 1].kind == Tok.ident ? toks[c - 1].text : "lines";
+    }
+
+    /// The `)` (or `}`, `]`) that closes the bracket at i.
+    size_t closing(size_t i)
+    {
+        int depth;
+        foreach (j; i .. toks.length)
+        {
+            immutable k = toks[j].kind;
+            if (k == Tok.lparen || k == Tok.lbracket || k == Tok.lbrace)
+                depth++;
+            else if (k == Tok.rparen || k == Tok.rbracket || k == Tok.rbrace)
+                if (--depth == 0)
+                    return j;
+        }
+        return toks.length - 1;
+    }
+
+    /// The first token of the statement holding token i.
+    size_t statementStart(size_t i)
+    {
+        int depth;
+        while (i > 0)
+        {
+            immutable k = toks[i - 1].kind;
+            if (k == Tok.rparen || k == Tok.rbracket)
+                depth++;
+            else if (k == Tok.lparen || k == Tok.lbracket)
+            {
+                if (depth == 0)
+                    break;   // inside a call's arguments: the caller decides
+                depth--;
+            }
+            else if (depth == 0 && (k == Tok.semicolon || k == Tok.lbrace || k == Tok.rbrace))
+                break;
+            i--;
+        }
+        return i;
+    }
+
+    void splitBody()
+    {
+        size_t i = bodyOpen + 1;
+        while (i < bodyClose)
+        {
+            immutable first = i;
+            int depth;
+            for (; i < bodyClose; i++)
+            {
+                immutable k = toks[i].kind;
+                if (k == Tok.lparen || k == Tok.lbracket || k == Tok.lbrace)
+                    depth++;
+                else if (k == Tok.rparen || k == Tok.rbracket || k == Tok.rbrace)
+                {
+                    depth--;
+                    // a block closed: the statement ends, unless an else follows
+                    if (depth == 0 && k == Tok.rbrace && !(i + 1 < bodyClose && toks[i + 1].kind == Tok.kwElse))
+                        break;
+                }
+                else if (depth == 0 && k == Tok.semicolon)
+                    break;
+            }
+            statements ~= [first, min(i, bodyClose - 1)];
+            i++;
+        }
+    }
+
+    /// The statement of the body holding token i.
+    size_t rangeOf(size_t i)
+    {
+        foreach (k, r; statements)
+            if (i >= r[0] && i <= r[1])
+                return k;
+        return 0;
+    }
+
+    /// Whether the call at token i is in a statement of the body itself (not in a loop's, an if's).
+    bool direct(size_t i)
+    {
+        if (i <= bodyOpen || i >= bodyClose)
+            return false;
+        immutable r = statements[rangeOf(i)];
+        immutable k = toks[r[0]].kind;
+        if (k == Tok.kwForeach || k == Tok.kwForeachReverse || k == Tok.kwFor || k == Tok.kwWhile || k == Tok.kwIf
+            || k == Tok.lbrace)
+            return false;
+        return true;
+    }
+}
+
+/// The edit that turns `before` into `after` (one undo step): what lies
+/// between their common start and end, `select` (if any) selected in what
+/// is written.
+Edit editBetween(string before, string after, string select = null)
+{
+    size_t head;
+    while (head < before.length && head < after.length && before[head] == after[head])
+        head++;
+    size_t tail;
+    while (tail < before.length - head && tail < after.length - head && before[$ - 1 - tail] == after[$ - 1 - tail])
+        tail++;
+    Edit e;
+    e.offset = head;
+    e.length = before.length - head - tail;
+    e.text = after[head .. $ - tail];
+    e.selectOffset = after.length - tail;
+    if (select.length)
+    {
+        // the last place it starts in what was written (its end may be in the common tail: "…);" then "…);")
+        import std.string : indexOf;
+        for (ptrdiff_t k = after.indexOf(select, head); k >= 0 && k <= after.length - tail;
+            k = after.indexOf(select, k + 1))
+        {
+            e.selectOffset = k;
+            e.selectLength = select.length;
+        }
+    }
+    return e;
+}
+
+unittest
+{
+    import std.algorithm : canFind, filter, map;
+    import std.array : array;
+    import std.file : tempDir;
+    import std.path : buildPath;
+    import std.string : indexOf;
+    import hackerscad.lang.interp : Interp;
+    import hackerscad.lang.sketchval : SketchVal;
+    import hackerscad.kernel.occt.backend : OcctKernel;
+
+    immutable file = buildPath(tempDir, "hcad-sketchcode.hcad");
+    auto kernel = new OcctKernel;
+    SketchView viewOf(string src)
+    {
+        auto it = new Interp(kernel);
+        it.runSource(src, file);
+        assert(it.sketches.length, src);
+        return (cast(SketchVal) it.sketches[$ - 1]).view();
+    }
+    // the entity a line makes, by its text
+    size_t made(const ref SketchView v, string src, string text, size_t nth = 0)
+    {
+        immutable line = cast(uint) src[0 .. src.indexOf(text)].count('\n') + 1;
+        auto ids = v.entities.length.iota.filter!(i => v.entities[i].span.line == line).array;
+        return ids[nth];
+    }
+
+    immutable src = "module m;\n\n@part\nSolid p()\n{\n"
+        ~ "    auto s = sketch();\n"
+        ~ "    auto a = s.point(0, 0, fixed: true);\n"
+        ~ "    auto b = s.point(40, 2);\n"
+        ~ "    auto c = s.point(40, 30);\n"
+        ~ "    auto bottom = s.line(a, b);\n"
+        ~ "    s.line(b, c);\n"
+        ~ "    auto r = s.rect(vec(50, 0), vec(70, 20));\n"
+        ~ "    auto w = s.spline([c, vec(20, 40), a]);\n"
+        ~ "    foreach (k; [0, 1])\n"
+        ~ "        s.point(80 + k * 10, 0);\n"
+        ~ "    return box(1, 1, 1);\n}\n";
+    auto v = viewOf(src);
+    auto w = SketchWriter(src, file, v);
+    assert(w.var == "s");
+    assert(w.name(made(v, src, "auto a =")) == "a");
+    assert(w.name(made(v, src, "auto bottom")) == "bottom");
+    // a call alone gets a name, once
+    immutable side = made(v, src, "s.line(b, c)");
+    assert(w.name(side) == "line" && w.name(side) == "line");
+    // a shape's lines, and its corners through them
+    auto rect = v.lists.filter!(l => l.call.line == 12).front;
+    assert(w.name(rect.entities[2]) == "r[2]");
+    immutable corner = v.entities[rect.entities[1]].points[0];
+    assert(w.name(corner) == "r[1].start" || w.name(corner) == "r[0].end", w.name(corner));
+    // a vector where a point goes: the point is the curve's
+    immutable curve = made(v, src, "auto w", 1);
+    assert(v.entities[curve].kind == "spline");
+    immutable mid = v.entities[curve].points[1];
+    assert(w.name(mid) == "w.points[1]", w.name(mid));
+    // made in a loop: left alone
+    import std.exception : assertThrown;
+    assertThrown!CodegenException(w.name(made(v, src, "s.point(80")));
+    // a constraint written after the loop, before the return; the model still runs, one more constraint
+    w.add(format("s.horizontal(%s)", w.name(made(v, src, "auto bottom"))));
+    w.add(format("s.vertical(%s)", w.name(side)));
+    auto after = w.result();
+    assert(after.canFind("    auto line = s.line(b, c);\n"), after);
+    assert(after.canFind("        s.point(80 + k * 10, 0);\n    s.horizontal(bottom);\n    s.vertical(line);\n    return"), after);
+    auto v2 = viewOf(after);
+    assert(v2.constraints.length == v.constraints.length + 2);
+    // the edit: one undo step, what changed
+    auto e = editBetween(src, after, "s.vertical(line)");
+    assert(e.apply(src) == after);
+    assert(after[e.selectOffset .. e.selectOffset + e.selectLength] == "s.vertical(line)",
+        format("%s %s %s", e.selectOffset, e.selectLength, after[e.selectOffset .. $]));
+
+    // a sketch in a loop, or not in a variable: not edited from the window
+    immutable looped = "module m;\n@part Solid p()\n{\n    foreach (k; [1])\n    {\n        auto s = sketch();\n"
+        ~ "        s.point(0, 0);\n    }\n    return box(1, 1, 1);\n}\n";
+    auto lv = viewOf(looped);
+    assertThrown!CodegenException(SketchWriter(looped, file, lv));
+}

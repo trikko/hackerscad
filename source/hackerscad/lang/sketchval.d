@@ -261,7 +261,7 @@ final class SketchVal : ObjectVal
                 // s.polyline([p1, p2, p3], closed: true): lines between consecutive points (SketchPoints or
                 // vectors, which become new points)
                 auto x = Args(it, a, "polyline", ["sketch", "points", "closed", "construction"]);
-                return polyline(x, x.flag("closed", true), a.span);
+                return returned(a.span, polyline(x, x.flag("closed", true), a.span));
             };
         case "spline":
             return (ref CallArgs a) {
@@ -483,6 +483,8 @@ final class SketchVal : ObjectVal
         SketchView v;
         v.span = span;
         v.profiles = profileSpans.dup;
+        foreach (call, ids; lists)
+            v.lists ~= SketchView.List(call, ids.dup);
         v.placed = placed;
         if (placed)
             v.place = place;
@@ -496,8 +498,22 @@ final class SketchVal : ObjectVal
             free[p] = true;
         Span spanOf(size_t e) => e < entitySpans.length && entitySpans[e] != Span.init ? entitySpans[e] : span;
         foreach (i, e; sk.entities)
-            v.entities ~= SketchView.Entity(["point", "line", "arc", "circle", "ellipse", "spline"][e.kind], spanOf(i), e.construction,
-                e.reference);
+        {
+            auto ve = SketchView.Entity(["point", "line", "arc", "circle", "ellipse", "spline"][e.kind], spanOf(i),
+                e.construction, e.reference);
+            final switch (e.kind)
+            {
+            case EntityKind.point: break;
+            case EntityKind.line: ve.points = e.refs[0 .. 2].dup; break;
+            case EntityKind.arc: ve.points = e.refs[].dup; break;
+            case EntityKind.circle, EntityKind.ellipse: ve.points = [e.refs[0]]; break;
+            case EntityKind.spline: ve.points = e.through.dup; break;
+            }
+            import std.algorithm : countUntil;
+            ve.edge = faceEdges.countUntil(i);
+            ve.origin = i == originRef;
+            v.entities ~= ve;
+        }
         // the outline as the profile will have it (with corner fillets), when it can be built
         import hackerscad.kernel.brep : OutlineSeg;
         OutlineSeg[] outline;
@@ -761,16 +777,35 @@ final class SketchVal : ObjectVal
 
     Value shape(string name, ref Args x, Span s)
     {
+        Value r;
         switch (name)
         {
-        case "circle": return circleShape(x, s);
-        case "ellipse": return ellipseShape(x, s);
-        case "rect": return rectShape(x, s);
-        case "polygon": return x.has("points") ? polygonOfPoints(x, s) : polygonShape(x, s);
-        case "slot": return slotShape(x, s);
-        case "teardrop": return teardropShape(x, s);
+        case "circle": r = circleShape(x, s); break;
+        case "ellipse": r = ellipseShape(x, s); break;
+        case "rect": r = rectShape(x, s); break;
+        case "polygon": r = x.has("points") ? polygonOfPoints(x, s) : polygonShape(x, s); break;
+        case "slot": r = slotShape(x, s); break;
+        case "teardrop": r = teardropShape(x, s); break;
         default: assert(0, name);
         }
+        return returned(s, r);
+    }
+
+    /// The entities a call returned in a list (a shape's lines, a
+    /// polyline's), by call: to write the code that names one, r[1].
+    size_t[][Span] lists;
+
+    Value returned(Span s, Value r)
+    {
+        if (r.kind == Kind.array)
+        {
+            size_t[] ids;
+            foreach (v; r.arr)
+                if (auto e = v.kind == Kind.object_ ? cast(SketchEntityVal) v.obj : null)
+                    ids ~= e.id;
+            lists[s] = ids;
+        }
+        return r;
     }
 
     /// The outline of a one-shape sketch with everything given: a profile's rect, circle…
@@ -1699,10 +1734,14 @@ struct SketchView
     /// A point, line, arc, circle or ellipse of the sketch, by its id (the order they were made in).
     struct Entity
     {
-        string kind;        /// "point", "line", "arc", "circle" or "ellipse"
+        string kind;        /// "point", "line", "arc", "circle", "ellipse" or "spline"
         Span span;          /// the call that made it
         bool construction;
         bool reference;     /// a face's edge or the origin, on a sketch drawn on a face
+        size_t[] points;    /// the points it is drawn through: a line's two, an arc's centre, start and end, the
+                            /// centre of a circle or an ellipse, a spline's points in order
+        ptrdiff_t edge = -1;   /// a reference: its place in the sketch's edges (s.edges[edge])
+        bool origin;        /// the reference point at the origin (s.origin)
     }
 
     struct Point
@@ -1772,6 +1811,14 @@ struct SketchView
     Entity[] entities;
     Constraint[] constraints;
     Span[] profiles;        /// where its .profile was read
+    /// The calls that returned a list of entities (a shape's lines, a
+    /// polyline's), in their order: r[k] of such a call's result.
+    struct List
+    {
+        Span call;
+        size_t[] entities;
+    }
+    List[] lists;
     bool partial;           /// made by a run an error stopped: what came after the error is missing
 
     /// A point of the sketch (x, y in its plane) in the model's coordinates.
