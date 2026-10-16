@@ -172,6 +172,8 @@ struct SketchWriter
                 see(en.span);
         foreach (c; view.constraints)
             see(c.span);
+        foreach (f; view.fills)
+            see(f.span);
         immutable lastStart = statements[lastRange][0], last = statements[lastRange][1];
         size_t lineStart = offsetOf(source, toks[lastStart].span);
         while (lineStart > 0 && source[lineStart - 1] != '\n')

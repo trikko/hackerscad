@@ -9,7 +9,7 @@ import std.format : format;
 import std.string : toLower, toUpper;
 import std.array : join;
 import std.algorithm : endsWith;
-import std.math : abs, PI;
+import std.math : abs, PI, round;
 import std.algorithm : min, max, canFind, clamp;
 
 import adw.application : AdwApplication = Application;
@@ -4238,6 +4238,15 @@ private:
             foreach (x; sketchSel)
                 sel ~= x;
             j["selected"] = sel;
+            // the closed areas: full (extruded) or empty, and a point inside each
+            JValue areas = JSAB();
+            foreach (r; drawn.regions)
+                if (r.triangles.length >= 3)
+                {
+                    auto c = (r.triangles[0] + r.triangles[1] + r.triangles[2]) / 3;
+                    areas ~= JSOB("full", r.full, "inside", JSAB(round(c.x * 100) / 100, round(c.y * 100) / 100));
+                }
+            j["areas"] = areas;
             if (auto why = sketchUneditable())
                 j["not_editable"] = why;
             // a drawing tool at work, and what it has clicked so far (on the sketch's plane)

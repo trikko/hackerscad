@@ -496,6 +496,13 @@ immutable Ref[] reference =
         "A hole that prints sideways: an arc round the centre and two lines tangent to it meeting above it, angle (45° unless given) from the vertical; flat: true cuts the point with a line on the circle's top ([arc, line, flat, line]). The same shape as the profile teardrop(…)."), [
         "s.teardrop(c, d: 5.mm)   // 0 dof once c is fixed",
         "s.teardrop(c, d: 5.mm, angle: 30.deg, flat: true)   // sharper, the point cut flat"]),
+    withForms(F("fill", "Sketch", ["at: Point | Vec", "full: bool"], "", "The area of the profile holding `at` full "
+        ~ "(or full: false, empty), whatever the loops round it say: by default an area is full inside an odd number "
+        ~ "of loops (a loop in a loop is a hole; where two loops overlap, so is the overlap). A point of the sketch "
+        ~ "keeps it in its area as the constraints move it; the last fill in an area counts."), [
+        "s.fill(vec(6, 0))   // where two circles overlap: full too",
+        "s.fill(vec(0, 0), full: false)   // that area left empty",
+        "s.fill(c)   // the area holding point c, wherever it goes"]),
     F("coincident", "Sketch", ["p: Point", "q: Point"], "", "Two points in the same place."),
     F("length", "Sketch", ["line: Line", "v: Length"], "", "Sets the length of a line."),
     withForms(F("distance", "Sketch", ["a: Point", "b: Point | Line", "v: Length", "along: X | Y"], "", "Sets how far a point is from another point (along: X or Y only across or up), or from a line."), [

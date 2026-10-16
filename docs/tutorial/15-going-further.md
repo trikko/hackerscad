@@ -305,7 +305,9 @@ into construction geometry: dashed guides, such as a centre line, to
 constrain to, never filled or extruded (again: back); with nothing
 selected, it makes what you draw next construction geometry. The area the
 profile will fill is tinted, so you see at once what will be extruded and
-what is a hole. Esc goes back a step at a time: the
+what is a hole. A loop inside another is a hole, and where two loops
+overlap, so is the overlap; ◩ changes that: click inside a closed area and
+it turns full or empty, written as `s.fill(vec(x, y))` (or `full: false`). Esc goes back a step at a time: the
 shape being drawn, then the tool and the selection (back to ↖), and only
 then out of the sketch.
 

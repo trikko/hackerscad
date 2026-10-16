@@ -151,6 +151,7 @@ final class SketchVal : ObjectVal
     string[] constraintKinds; /// by tag: the method that made it ("tangent", "fillet"…)
     size_t[][] constraintRefs;   /// by tag: the entities it involves
     Span[] profileSpans;      /// where `.profile` was read
+    Span[] fillSpans;         /// the s.fill calls, in order
     bool asProfile;           /// a profile's one-shape sketch: everything given, not shown as a sketch
     bool placed;              /// drawn on a face or plane: its frame below (else on XY)
     Vec3[4] place;            /// origin, x, y, z
@@ -186,7 +187,7 @@ final class SketchVal : ObjectVal
             !r.solved ? "conflicting" : r.dof ? format("%d degrees of freedom", r.dof) : "fully constrained");
     }
 
-    override string[] memberNames() => ["point", "line", "arc", "circle", "ellipse", "polyline", "spline", "rect", "polygon",
+    override string[] memberNames() => ["point", "line", "arc", "circle", "ellipse", "polyline", "spline", "fill", "rect", "polygon",
         "slot", "teardrop", "edges", "origin", "project", "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
         "perpendicular", "angle", "equal", "radius", "diameter", "tangent", "midpoint", "symmetric", "fillet",
         "profile", "dof", "solved"];
@@ -263,6 +264,22 @@ final class SketchVal : ObjectVal
                 // vectors, which become new points)
                 auto x = Args(it, a, "polyline", ["sketch", "points", "closed", "construction"]);
                 return returned(a.span, polyline(x, x.flag("closed", true), a.span));
+            };
+        case "fill":
+            return (ref CallArgs a) {
+                // s.fill(at, full: false): the area of the profile holding `at` (a SketchPoint, which follows the
+                // constraints, or a vector) full or empty whatever the loops round it say
+                auto x = Args(it, a, "fill", ["sketch", "at", "full"]);
+                auto at = x.get("at");
+                if (at.kind == Kind.object_ && cast(SketchEntityVal) at.obj)
+                    sk.fill(pointOf(at, x.spanOf("at")), x.flag("full", true));
+                else
+                {
+                    auto q = vecOf(x, at, x.spanOf("at"));
+                    sk.fill(Vec3(q.x, q.y, 0), x.flag("full", true));
+                }
+                fillSpans ~= a.span;
+                return Value.init;
             };
         case "spline":
             return (ref CallArgs a) {
@@ -527,7 +544,39 @@ final class SketchVal : ObjectVal
             {
             }
         }
-        v.fill = fillLoops(outline);
+        // its areas, as the kernel splits them (the same as the profile's)
+        if (outline.length)
+        {
+            try
+            {
+                import std.algorithm : max;
+                int full;
+                auto all = it.kernel.outlineRegions(outline, full);
+                Vec3 hi;
+                foreach (g; outline)
+                    if (g.kind != OutlineSeg.Kind.end && g.kind != OutlineSeg.Kind.fill)
+                        hi = Vec3(max(hi.x, abs(g.ax), abs(g.bx)), max(hi.y, abs(g.ay), abs(g.by)), 0);
+                auto m = it.kernel.tessellate(all, max(0.005, hi.length * 0.002), 0.2);
+                foreach (f; 0 .. m.faceStart.length ? m.faceStart.length - 1 : 0)
+                {
+                    SketchView.Region r;
+                    r.full = f < full;
+                    foreach (t; m.faceStart[f] .. m.faceStart[f + 1])
+                        foreach (k; 0 .. 3)
+                        {
+                            immutable q = m.tris[3 * t + k];
+                            r.triangles ~= Vec3(m.verts[3 * q], m.verts[3 * q + 1], 0);
+                        }
+                    v.regions ~= r;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+        foreach (k, f; sk.fills)
+            v.fills ~= SketchView.Fill(f.point >= 0 ? sk.position(f.point) : f.at, k < fillSpans.length ? fillSpans[k] : span,
+                f.full);
         // the call that made a fillet, by corner point
         Span[size_t] filletAt;
         foreach (tag, kind; constraintKinds)
@@ -1773,9 +1822,39 @@ struct SketchView
         bool reference;     /// a reference point (a corner of the face, the origin): fixed, drawn apart
     }
 
-    /// The closed loops of the profile (as s.profile will make it, fillets and all), in the sketch's
-    /// coordinates: what is inside an odd number of them gets extruded
-    Vec3[][] fill;
+    /// Every area the closed loops make (fillets and all), the smallest no line crosses: triangles in the
+    /// sketch's coordinates, and whether s.profile fills it
+    Region[] regions;
+
+    struct Region
+    {
+        Vec3[] triangles;   /// three corners each
+        bool full;
+
+        /// Whether point p (in the sketch's coordinates) is in it.
+        bool holds(Vec3 p) const
+        {
+            static double side(Vec3 a, Vec3 b, Vec3 q) => (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x);
+            for (size_t t = 0; t + 2 < triangles.length; t += 3)
+            {
+                auto a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
+                immutable d1 = side(a, b, p), d2 = side(b, c, p), d3 = side(c, a, p);
+                if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0))
+                    return true;
+            }
+            return false;
+        }
+    }
+
+    /// The fills (s.fill) of the sketch: where each is, the call, and which way.
+    Fill[] fills;
+
+    struct Fill
+    {
+        Vec3 at;
+        Span span;
+        bool full;
+    }
 
     struct Segment
     {
@@ -2196,84 +2275,3 @@ final class SketchEntityVal : ObjectVal
     }
 }
 
-/// The loops of an outline (as Sketch.outline gives it, `end` between loops)
-/// as closed polylines: each piece sampled and joined to the last where they
-/// meet (turned round when it runs the other way).
-Vec3[][] fillLoops(const(imported!"hackerscad.kernel.brep".OutlineSeg)[] outline)
-{
-    import std.math : atan2, cos, sin, PI;
-    import hackerscad.kernel.brep : OutlineSeg;
-    import hackerscad.geom.spline : sampleSpline;
-    Vec3[][] loops;
-    Vec3[] loop;
-    void close()
-    {
-        if (loop.length >= 3)
-            loops ~= loop;
-        loop = null;
-    }
-    foreach (g; outline)
-    {
-        Vec3[] pts;
-        final switch (g.kind)
-        {
-        case OutlineSeg.Kind.end:
-            close();
-            continue;
-        case OutlineSeg.Kind.line:
-            pts = [Vec3(g.ax, g.ay, 0), Vec3(g.bx, g.by, 0)];
-            break;
-        case OutlineSeg.Kind.arc:
-            {
-                // from a through m to b
-                auto a = Vec3(g.ax, g.ay, 0), m = Vec3(g.mx, g.my, 0), b = Vec3(g.bx, g.by, 0);
-                auto c = circumcentre(a, m, b);
-                immutable r = (a - c).length;
-                double ang(Vec3 q) => atan2(q.y - c.y, q.x - c.x);
-                double ccw(double from, double to)
-                {
-                    double x = to - from;
-                    while (x < 0)
-                        x += 2 * PI;
-                    return x;
-                }
-                immutable a0 = ang(a), sweepB = ccw(a0, ang(b));
-                // counter-clockwise when m lies on the way, else clockwise
-                immutable sweep = ccw(a0, ang(m)) < sweepB ? sweepB : sweepB - 2 * PI;
-                foreach (k; 0 .. 33)
-                {
-                    immutable t = a0 + sweep * k / 32;
-                    pts ~= c + Vec3(cos(t), sin(t), 0) * r;
-                }
-                break;
-            }
-        case OutlineSeg.Kind.ellipse:
-            {
-                auto c = Vec3(g.ax, g.ay, 0);
-                immutable ux = Vec3(cos(g.mx), sin(g.mx), 0), uy = Vec3(-sin(g.mx), cos(g.mx), 0);
-                foreach (k; 0 .. 65)
-                {
-                    immutable t = 2 * PI * k / 64;
-                    pts ~= c + ux * (g.bx * cos(t)) + uy * (g.by * sin(t));
-                }
-                break;
-            }
-        case OutlineSeg.Kind.spline:
-            {
-                Vec3[] poles;
-                foreach (q; 0 .. g.poles.length / 2)
-                    poles ~= Vec3(g.poles[2 * q], g.poles[2 * q + 1], 0);
-                pts = sampleSpline(poles, 16);
-                break;
-            }
-        }
-        if (loop.length && (pts[$ - 1] - loop[$ - 1]).length < (pts[0] - loop[$ - 1]).length)
-        {
-            import std.algorithm : reverse;
-            pts.reverse();
-        }
-        loop ~= loop.length ? pts[1 .. $] : pts;
-    }
-    close();
-    return loops;
-}

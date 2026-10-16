@@ -113,6 +113,28 @@ final class Sketch
     double[] vars;
     double[size_t] fillets;    /// corner point → radius
     size_t[] lastOpen;         /// what the last outline left out, open (lines, arcs, curves with a free end)
+    Fill[] fills;              /// areas forced full or empty, in order (the last in an area counts)
+
+    /// The area of the profile holding a point (a point of the sketch, as solved, or a fixed place) made full or
+    /// empty whatever the loops round it say.
+    struct Fill
+    {
+        ptrdiff_t point = -1;   /// a point of the sketch, or -1
+        Vec3 at;                /// else this place
+        bool full;
+    }
+
+    /// Forces the area holding point `p` full or empty.
+    void fill(size_t p, bool full)
+    {
+        fills ~= Fill(p, Vec3.init, full);
+    }
+
+    /// Forces the area holding place `at` full or empty.
+    void fill(Vec3 at, bool full)
+    {
+        fills ~= Fill(-1, at, full);
+    }
     bool[] frozen;             /// per unknown: held where it is, not an unknown at all (references)
     private bool dirty = true;
     private SolveReport last;
@@ -561,6 +583,12 @@ final class Sketch
                 ? "the sketch has no closed outline: what is drawn is open (join its ends to make a loop)"
                 : "the sketch has no outline: draw lines, arcs, circles or ellipses that are not construction",
                 lastOpen.length ? [entities[lastOpen[0]].refs[0]] : null);
+        foreach (f; fills)
+        {
+            auto place = f.point >= 0 ? pos(f.point, vars) : f.at;
+            segs ~= OutlineSeg(OutlineSeg.Kind.fill, place.x, place.y, f.full ? 1 : 0);
+            sources ~= OutlineSource.init;
+        }
         return segs;
     }
 

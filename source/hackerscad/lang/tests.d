@@ -3816,3 +3816,28 @@ unittest
         assert(x.severity != Severity.error, x.message);
 }
 
+
+unittest
+{
+    // loops that overlap: the overlap is a hole (even-odd), and s.fill makes an area full or empty
+    import std.conv : to;
+    import std.math : PI, acos, sqrt, isClose;
+    immutable two = "auto s = sketch();\n"
+        ~ "s.circle(s.point(0, 0, fixed: true), r: 10.mm);\n"
+        ~ "s.circle(s.point(12, 0, fixed: true), r: 10.mm);\n";
+    double area(string code)
+    {
+        import std.array : split;
+        return output(code ~ "writeln(s.profile.extrude(1.mm).volume);").split(" ")[0].to!double;   // "… mm³"
+    }
+    immutable lens = 200 * acos(0.6) - 6 * sqrt(400.0 - 144);   // what the two circles share
+    bool near(double a, double b) => isClose(a, b, 1e-4);
+    assert(near(area(two), 2 * (PI * 100 - lens)), area(two).to!string);
+    assert(near(area(two ~ "s.fill(vec(6, 0));\n"), 2 * PI * 100 - lens));
+    assert(near(area(two ~ "s.fill(vec(-5, 0), full: false);\n"), PI * 100 - lens));
+    // a point of the sketch: the area holding it, wherever the constraints put it
+    assert(near(area(two ~ "auto c = s.point(6, 1);\ns.fill(c);\n"), 2 * PI * 100 - lens));
+    // a nested loop's hole filled: an island again
+    assert(near(area("auto s = sketch();\ns.circle(s.point(0, 0, fixed: true), r: 10.mm);\n"
+        ~ "s.circle(s.point(0, 0), r: 5.mm);\ns.fill(vec(0, 0));\n"), PI * 100));
+}

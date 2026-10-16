@@ -81,10 +81,11 @@ class KernelException : Exception
 /// One piece of a planar outline: a line a → b, an arc a → b through m, the
 /// end of a loop, a whole ellipse (a loop of its own, before an end):
 /// centre a, radii bx (along its own x axis, mx radians from X) and by, or a
-/// smooth curve a → b given by its poles.
+/// smooth curve a → b given by its poles; or, after the loops, the area
+/// holding point a forced full (bx 1) or empty (bx 0).
 struct OutlineSeg
 {
-    enum Kind : int { line, arc, end, ellipse, spline }
+    enum Kind : int { line, arc, end, ellipse, spline, fill = 6 }
     Kind kind;
     double ax = 0, ay = 0, bx = 0, by = 0, mx = 0, my = 0;
     /// a spline a → b: the poles of its cubic Bézier pieces (x y each, three
@@ -140,8 +141,11 @@ interface BrepKernel
     Brep extrude(Brep profile, double height, double taper);
     /// Profile → solid of revolution around an axis in its plane.
     Brep revolve(Brep profile, Vec3 origin, Vec3 direction, double angle);
-    /// Outline segments: see OutlineSeg. Nested loops are holes.
+    /// Outline segments: see OutlineSeg. Nested loops are holes, where loops
+    /// overlap the overlap is one, and fills force an area.
     Brep outline(const(OutlineSeg)[] segs);
+    /// Every area the loops of an outline make, as faces: the `full` first, then the empty ones.
+    Brep outlineRegions(const(OutlineSeg)[] segs, out int full);
     /// Paths (wires) for sweeps.
     Brep polyline(const(Vec3)[] pts, bool closed);
     Brep spline(const(Vec3)[] pts, bool closed);

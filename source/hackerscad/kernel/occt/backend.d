@@ -58,6 +58,21 @@ final class OcctKernel : BrepKernel
 
     Brep outline(const(OutlineSeg)[] segs)
     {
+        auto data = outlineData(segs);
+        return wrap(hc_outline(data.ptr, cast(int)(data.length / 7)), "outline");
+    }
+
+    Brep outlineRegions(const(OutlineSeg)[] segs, out int full)
+    {
+        auto data = outlineData(segs);
+        int count;
+        auto r = wrap(hc_outline_regions(data.ptr, cast(int)(data.length / 7), &count), "outline's areas");
+        full = count;
+        return r;
+    }
+
+    private static double[] outlineData(const(OutlineSeg)[] segs)
+    {
         // seven numbers a segment; a spline's poles follow it, one record each (kind 5)
         double[] data;
         foreach (g; segs)
@@ -68,7 +83,7 @@ final class OcctKernel : BrepKernel
                 foreach (k; 0 .. poles)
                     data ~= [5.0, g.poles[2 * k], g.poles[2 * k + 1], 0, 0, 0, 0];
         }
-        return wrap(hc_outline(data.ptr, cast(int)(data.length / 7)), "outline");
+        return data;
     }
     Brep polyline(const(Vec3)[] pts, bool closed) =>
         wrap(hc_polyline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "path");

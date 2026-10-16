@@ -159,7 +159,7 @@ final class Viewport
     private bool[] fadedSketches;        /// by index in sketches: drawn faint
     private uint sketchVao, sketchVbo;
     private uint sketchFillVao, sketchFillVbo;
-    private int[2][] sketchFillRanges;   /// first vertex and count of each loop of the profiles shown
+    private int sketchFillCount;   /// vertices of the triangles of the areas the profiles shown fill
     private bool sketchDirty;
     /// lines, construction lines, highlighted lines, free points, fixed points, highlighted points (end indices)
     private int[8] sketchRanges;
@@ -4040,33 +4040,18 @@ private:
                     }
         }
         glDisable(GL_DEPTH_TEST);
-        // what the profile will fill: inside an odd number of its loops (a loop inside another is a hole),
-        // tinted and lightly striped, under the lines
-        if (sketchFillRanges.length)
+        // what the profile will fill, tinted and lightly striped, under the lines
+        if (sketchFillCount)
         {
-            glEnable(GL_STENCIL_TEST);
-            glClear(GL_STENCIL_BUFFER_BIT);
-            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
             glDepthMask(GL_FALSE);
-            glStencilFunc(GL_ALWAYS, 0, 0xFF);
-            glStencilOp(GL_KEEP, GL_KEEP, GL_INVERT);
-            glUniform1i(uFlat, 1);
             glBindVertexArray(sketchFillVao);
-            foreach (r; sketchFillRanges)
-                glDrawArrays(GL_TRIANGLE_FAN, r[0], r[1]);
-            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-            // each pixel once: the count goes back to 0 where it is drawn
-            glStencilFunc(GL_NOTEQUAL, 0, 0xFF);
-            glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glUniform1i(uFlat, 3);
             glUniform1f(uAlpha, darkStyle ? 0.22 : 0.18);
             glUniform3f(uColor, 0.06f, 0.76f, 0.95f);   // the parts' colour (Sky Pop)
-            foreach (r; sketchFillRanges)
-                glDrawArrays(GL_TRIANGLE_FAN, r[0], r[1]);
+            glDrawArrays(GL_TRIANGLES, 0, sketchFillCount);
             glDisable(GL_BLEND);
-            glDisable(GL_STENCIL_TEST);
             glDepthMask(GL_TRUE);
             glUniform1f(uAlpha, 1);
         }
@@ -4139,7 +4124,7 @@ private:
     void uploadSketches()
     {
         float[] lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts, fill;
-        sketchFillRanges = null;
+
         // a sketch on a face is drawn where it lies
         SketchView placing;
         void add(ref float[] a, Vec3 v)
@@ -4232,15 +4217,14 @@ private:
             }
             foreach (p; sk.points)
                 add((p.entity in lit) !is null ? litPts : p.reference ? refPts : p.free ? freePts : fixedPts, p.pos);
-            // what will be filled: each loop a fan, counted even-odd in the stencil when drawn
-            foreach (loop; sk.fill)
-            {
-                sketchFillRanges ~= [cast(int)(fill.length / 3), cast(int) loop.length];
-                foreach (q; loop)
-                    add(fill, q);
-            }
+            // the areas the profile fills: their triangles
+            foreach (r; sk.regions)
+                if (r.full)
+                    foreach (q; r.triangles)
+                        add(fill, q);
         }
         positionBuffer(sketchFillVao, sketchFillVbo, fill);
+        sketchFillCount = cast(int)(fill.length / 3);
         auto all = lines ~ construction ~ litLines ~ freePts ~ fixedPts ~ litPts ~ refLines ~ refPts;
         int end = 0;
         foreach (i, part; [lines, construction, litLines, freePts, fixedPts, litPts, refLines, refPts])

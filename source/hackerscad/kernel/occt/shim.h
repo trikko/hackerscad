@@ -140,6 +140,8 @@ int hc_path_frame(const hc_shape *path, int at_end, double out[6]);
  * its x axis, mx radians from X, and by), ax ay bx by mx my. Nested loops are
  * holes. */
 hc_shape *hc_outline(const double *data, int n);
+/* every area an outline's loops make: the full ones first (*full_count of them), then the empty */
+hc_shape *hc_outline_regions(const double *data, int n, int *full_count);
 
 /* Sweeps a profile (drawn on XY around the origin) along a path; the profile
  * starts normal to the path, its +Y as close to world +Z as possible.

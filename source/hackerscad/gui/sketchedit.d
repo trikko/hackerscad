@@ -45,12 +45,13 @@ mixin template SketchEdit()
         ["teardrop", "△", "Teardrop", "Teardrop (a hole that prints sideways, its point up): its centre, then a point on its circle"],
         ["arc", "◜", "Arc by its centre", "Arc: its centre, where it starts, where it ends (counter-clockwise)"],
         ["3-point-arc", "⌒", "Arc through 3 points", "Arc through three points: where it starts, where it ends, a point on it"],
+        ["fill", "◩", "Fill", "Fill: a click inside a closed area makes it full (extruded) or empty"],
     ];
 
     /// The drawing tools by button: a right-click (or a click on the one at work) gives the others of its group.
     static immutable string[][] drawGroups = [["select"], ["point"], ["line", "spline"],
         ["rect", "center-rect", "turned-rect", "polygon", "slot"], ["circle", "ellipse", "teardrop"],
-        ["arc", "3-point-arc"]];
+        ["arc", "3-point-arc"], ["fill"]];
 
     /// The row of drawTools for `tool`.
     static string[4] drawToolInfo(string tool)
@@ -66,7 +67,7 @@ mixin template SketchEdit()
     {
         switch (tool)
         {
-        case "point":
+        case "point", "fill":
             return 1;
         case "rect", "center-rect", "polygon", "circle", "teardrop":
             return 2;
@@ -903,7 +904,8 @@ mixin template SketchEdit()
     void drawingClick(double x, double y)
     {
         Vec3 p;
-        ptrdiff_t at = snapAt(x, y, p);
+        // an area is clicked inside: no point to snap to
+        ptrdiff_t at = drawTool == "fill" ? -1 : snapAt(x, y, p);
         if (at == -1 && !onSketchPlane(x, y, p))
             return;
         // on the first point again: the lines or the curve close, and are written
@@ -1186,6 +1188,65 @@ mixin template SketchEdit()
                     }
                     select = n;
                     break;
+                }
+            case "fill":
+                {
+                    auto q = pts[0];
+                    ptrdiff_t region = -1;
+                    foreach (k, r; v.regions)
+                        if (r.holds(q))
+                            region = k;
+                    if (region < 0)
+                        return "click inside a closed area of the sketch";
+                    immutable full = !v.regions[region].full;
+                    // fills already in that area: the last one turned, the others gone; else a new one
+                    size_t[] here;
+                    foreach (k, f; v.fills)
+                        if (v.regions[region].holds(f.at))
+                            here ~= k;
+                    if (here.length == 0)
+                    {
+                        w.add(format("%s.fill(vec(%s, %s)%s)", w.var, num(q.x), num(q.y), full ? "" : ", full: false"));
+                        select = format("%s.fill(vec(%s, %s)", w.var, num(q.x), num(q.y));
+                        break;
+                    }
+                    import std.string : splitLines, KeepTerminator, indexOf;
+                    auto lines = src.splitLines(KeepTerminator.yes);
+                    foreach_reverse (k; here)
+                    {
+                        immutable l = v.fills[k].span.line;
+                        if (v.fills[k].span.file != v.span.file || l == 0 || l > lines.length)
+                            return format("the fill at line %d is not in this file: change it by hand", l);
+                        auto line = lines[l - 1];
+                        immutable open = line.indexOf(".fill(");
+                        if (open < 0)
+                            return format("line %d: change the fill there by hand", l);
+                        if (k != here[$ - 1])
+                        {
+                            lines[l - 1] = "";
+                            continue;
+                        }
+                        // its first argument as written, then full or not
+                        size_t i = open + 6;
+                        int depth;
+                        while (i < line.length && !(depth == 0 && (line[i] == ',' || line[i] == ')')))
+                        {
+                            depth += line[i] == '(' || line[i] == '[' ? 1 : line[i] == ')' || line[i] == ']' ? -1 : 0;
+                            i++;
+                        }
+                        auto end = i;
+                        depth = 0;
+                        while (end < line.length && !(depth == 0 && line[end] == ')'))
+                        {
+                            depth += line[end] == '(' ? 1 : line[end] == ')' ? -1 : 0;
+                            end++;
+                        }
+                        lines[l - 1] = line[0 .. i] ~ (full ? "" : ", full: false") ~ line[end .. $];
+                    }
+                    import std.array : join;
+                    sketchEditHold = true;
+                    applyEdit(editBetween(src, lines.join));
+                    return format("the area made %s: fill written in the sketch's code", full ? "full" : "empty");
                 }
             case "spline":
                 {

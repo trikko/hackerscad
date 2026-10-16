@@ -117,6 +117,7 @@
 #include <TopoDS_Shell.hxx>
 #include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
+#include <BOPAlgo_Builder.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <Precision.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
@@ -3082,10 +3083,16 @@ hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, doub
     });
 }
 
-hc_shape *hc_outline(const double *data, int n)
+// An area of an outline forced full or empty: the one holding (x, y).
+struct OutlineFill {
+    gp_Pnt at;
+    bool full;
+};
+
+// The loops of an outline's records (see OutlineSeg), and its forced areas.
+static void parse_outline(const double *data, int n, std::vector<TopoDS_Wire> &loops, std::vector<OutlineFill> &fills)
 {
-    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
-        std::vector<TopoDS_Wire> loops;
+    {
         BRepBuilderAPI_MakeWire wire;
         bool open = false;
         auto close = [&] {
@@ -3113,6 +3120,9 @@ hc_shape *hc_outline(const double *data, int n)
                 break;
             case 2: // end of loop
                 close();
+                break;
+            case 6: // the area holding a full (d[3] != 0) or empty
+                fills.push_back({a, d[3] != 0});
                 break;
             case 3: { // a whole ellipse around a: radii d[3] along its x axis (d[5] radians from X) and d[4]
                 double rx = d[3], ry = d[4], t = d[5];
@@ -3189,11 +3199,133 @@ hc_shape *hc_outline(const double *data, int n)
             }
         }
         close();
+    }
+}
+
+// A point well inside a flat face: the middle of the largest triangle of its mesh.
+static gp_Pnt inside_point(const TopoDS_Face &f)
+{
+    Bnd_Box box;
+    BRepBndLib::Add(f, box);
+    const double size = std::sqrt(box.SquareExtent());
+    BRepMesh_IncrementalMesh(f, std::max(1e-4, size * 0.01), Standard_False, 0.3);
+    TopLoc_Location loc;
+    Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(f, loc);
+    if (tri.IsNull() || tri->NbTriangles() == 0)
+        throw Standard_Failure("an area of the outline cannot be meshed");
+    double best = -1;
+    gp_Pnt at;
+    for (int t = 1; t <= tri->NbTriangles(); t++) {
+        int i1, i2, i3;
+        tri->Triangle(t).Get(i1, i2, i3);
+        const gp_Pnt a = tri->Node(i1).Transformed(loc), b = tri->Node(i2).Transformed(loc), c = tri->Node(i3).Transformed(loc);
+        const double area = gp_Vec(a, b).Crossed(gp_Vec(a, c)).Magnitude();
+        if (area > best) {
+            best = area;
+            at = gp_Pnt((a.X() + b.X() + c.X()) / 3, (a.Y() + b.Y() + c.Y()) / 3, (a.Z() + b.Z() + c.Z()) / 3);
+        }
+    }
+    return at;
+}
+
+// The areas the loops of an outline cut the plane into, the smallest that no
+// line crosses, each full or empty: full inside an odd number of loops (a loop
+// in a loop is a hole, where two overlap the overlap is), unless a fill says
+// otherwise (the last one in the area).
+static std::vector<std::pair<TopoDS_Face, bool>> outline_regions(const std::vector<TopoDS_Wire> &loops,
+                                                                 const std::vector<OutlineFill> &fills)
+{
+    std::vector<TopoDS_Face> faces;
+    BOPAlgo_Builder split;
+    for (auto &w : loops) {
+        BRepBuilderAPI_MakeFace f(w, Standard_True);
+        if (!f.IsDone())
+            throw Standard_Failure("an outline loop is not planar");
+        faces.push_back(upward(f.Face()));
+        split.AddArgument(faces.back());
+    }
+    split.Perform();
+    if (split.HasErrors())
+        throw Standard_Failure("cannot split the outline into its areas");
+    TopTools_IndexedMapOfShape pieces;
+    TopExp::MapShapes(split.Shape(), TopAbs_FACE, pieces);
+    std::vector<std::pair<TopoDS_Face, bool>> r;
+    for (int i = 1; i <= pieces.Extent(); i++) {
+        const TopoDS_Face piece = TopoDS::Face(pieces(i));
+        const gp_Pnt probe = inside_point(piece);
+        int depth = 0;
+        for (auto &f : faces)
+            depth += BRepClass_FaceClassifier(f, probe, 1e-7).State() == TopAbs_IN;
+        bool full = depth % 2 == 1;
+        for (auto &fill : fills)
+            if (BRepClass_FaceClassifier(piece, fill.at, 1e-7).State() == TopAbs_IN)
+                full = fill.full;
+        r.push_back({piece, full});
+    }
+    return r;
+}
+
+// The profile of an outline: its loops nested (faces_from_loops), or, when
+// loops cross or touch or areas are forced, its full areas joined.
+static TopoDS_Shape profile_from_loops(const std::vector<TopoDS_Wire> &loops, const std::vector<OutlineFill> &fills)
+{
+    bool meet = false;
+    for (size_t i = 0; i < loops.size() && !meet && fills.empty(); i++)
+        for (size_t j = i + 1; j < loops.size() && !meet; j++) {
+            BRepExtrema_DistShapeShape d(loops[i], loops[j]);
+            meet = d.IsDone() && d.Value() < 1e-7;
+        }
+    if (fills.empty() && !meet)
+        return faces_from_loops(loops);
+    std::vector<TopoDS_Shape> full;
+    for (auto &r : outline_regions(loops, fills))
+        if (r.second)
+            full.push_back(r.first);
+    if (full.empty())
+        throw Standard_Failure("every area of the outline is left empty");
+    TopoDS_Shape joined = fused(full);
+    ShapeUpgrade_UnifySameDomain unify(joined, Standard_True, Standard_True, Standard_False);
+    unify.Build();
+    return unify.Shape();
+}
+
+hc_shape *hc_outline(const double *data, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<TopoDS_Wire> loops;
+        std::vector<OutlineFill> fills;
+        parse_outline(data, n, loops, fills);
         if (loops.empty()) {
             set_error("the outline is empty");
             return nullptr;
         }
-        return primitive(faces_from_loops(loops));
+        return primitive(profile_from_loops(loops, fills));
+    });
+}
+
+hc_shape *hc_outline_regions(const double *data, int n, int *full_count)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<TopoDS_Wire> loops;
+        std::vector<OutlineFill> fills;
+        parse_outline(data, n, loops, fills);
+        if (loops.empty()) {
+            set_error("the outline is empty");
+            return nullptr;
+        }
+        auto regions = outline_regions(loops, fills);
+        BRep_Builder b;
+        TopoDS_Compound c;
+        b.MakeCompound(c);
+        int count = 0;
+        for (int pass = 0; pass < 2; pass++)
+            for (auto &r : regions)
+                if (r.second == (pass == 0)) {
+                    b.Add(c, r.first);
+                    count += pass == 0;
+                }
+        *full_count = count;
+        return primitive(c);
     });
 }
 
