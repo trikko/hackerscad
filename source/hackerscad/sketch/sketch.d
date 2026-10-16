@@ -31,7 +31,8 @@ enum EntityKind
     line,
     arc,
     circle,
-    ellipse
+    ellipse,
+    spline
 }
 
 struct Entity
@@ -41,6 +42,8 @@ struct Entity
     size_t var;           /// point: index of x (y follows); circle: index of the radius; ellipse: rx (ry, angle follow)
     bool construction;
     bool reference;       /// geometry from outside the sketch (a face's edges): fixed, not part of the outline
+    size_t[] through;     /// spline: the points it goes through, in order (refs[0] and refs[1]: its two ends)
+    bool closed;          /// spline: round from the last point back to the first, smoothly (a loop of its own)
 }
 
 enum ConstraintKind
@@ -152,6 +155,40 @@ final class Sketch
         return entities.length - 1;
     }
 
+    /// A smooth curve through points (see hackerscad.geom.spline): open, its
+    /// ends join lines and arcs as theirs do; closed, a loop of its own. It
+    /// adds no unknowns: its points move it.
+    size_t spline(size_t[] pts, bool closed, bool construction = false)
+    {
+        foreach (p; pts)
+            expect(p, EntityKind.point);
+        if (pts.length < (closed ? 3 : 2))
+            throw new SketchException(closed ? "a closed spline needs at least 3 points" : "a spline needs at least 2 points");
+        foreach (i; 0 .. closed ? pts.length : pts.length - 1)
+            if (pts[i] == pts[(i + 1) % pts.length])
+                throw new SketchException("a spline goes through two different points in a row", [pts[i]]);
+        Entity e = Entity(EntityKind.spline, [pts[0], pts[$ - 1], 0], 0, construction);
+        e.through = pts.dup;
+        e.closed = closed;
+        entities ~= e;
+        dirty = true;
+        return entities.length - 1;
+    }
+
+    /// The Bézier poles of spline `e` as it lies now (hackerscad.geom.spline).
+    Vec3[] splinePoles(size_t e)
+    {
+        import hackerscad.geom.spline : poles = splinePoles;
+        solveIfNeeded();
+        Vec3[] pts;
+        foreach (p; entities[e].through)
+            pts ~= pos(p, vars);
+        foreach (i; 0 .. entities[e].closed ? pts.length : pts.length - 1)
+            if ((pts[(i + 1) % pts.length] - pts[i]).length < 1e-9)
+                throw new SketchException("two points in a row of a spline lie on each other", [entities[e].through[i]]);
+        return poles(pts, entities[e].closed);
+    }
+
     /// An ellipse: radius rx along its own x axis, which is `angle` from X, and ry across.
     size_t ellipse(size_t center, double rx, double ry, double angle, bool construction = false)
     {
@@ -177,7 +214,7 @@ final class Sketch
         case EntityKind.point: frozen[v .. v + 2] = true; break;
         case EntityKind.circle: frozen[v] = true; break;
         case EntityKind.ellipse: frozen[v .. v + 3] = true; break;
-        case EntityKind.line, EntityKind.arc: break;
+        case EntityKind.line, EntityKind.arc, EntityKind.spline: break;
         }
         dirty = true;
     }
@@ -402,6 +439,12 @@ final class Sketch
                 segs ~= OutlineSeg(OutlineSeg.Kind.end);
                 sources ~= [OutlineSource(i), OutlineSource.init];
             }
+            else if (e.kind == EntityKind.spline && e.closed && !e.construction)
+            {
+                segs ~= splineSeg(splinePoles(i));
+                segs ~= OutlineSeg(OutlineSeg.Kind.end);
+                sources ~= [OutlineSource(i), OutlineSource.init];
+            }
 
         // lines and arcs, joined at points that coincide after solving
         struct Seg
@@ -437,6 +480,8 @@ final class Sketch
                 all ~= Seg(i, pos(e.refs[0], vars), pos(e.refs[1], vars), canonical(e.refs[0]), canonical(e.refs[1]));
             else if (e.kind == EntityKind.arc)
                 all ~= Seg(i, pos(e.refs[1], vars), pos(e.refs[2], vars), canonical(e.refs[1]), canonical(e.refs[2]));
+            else if (e.kind == EntityKind.spline && !e.closed)
+                all ~= Seg(i, pos(e.refs[0], vars), pos(e.refs[1], vars), canonical(e.refs[0]), canonical(e.refs[1]));
         }
         size_t[][] at = new size_t[][](corners.length);
         foreach (i, s; all)
@@ -546,6 +591,15 @@ private:
                     sources ~= OutlineSource(all[order[i]].entity);
                 }
             }
+            else if (e.kind == EntityKind.spline)
+            {
+                import std.algorithm : reverse;
+                auto poles = splinePoles(all[order[i]].entity);
+                if (rev[i])
+                    poles.reverse();
+                segs ~= splineSeg(poles);
+                sources ~= OutlineSource(all[order[i]].entity);
+            }
             else
             {
                 auto m = arcMid(all[order[i]].entity);
@@ -559,6 +613,15 @@ private:
             }
         }
         return segs;
+    }
+
+    /// A spline's piece of outline: its ends, and all its poles.
+    static OutlineSeg splineSeg(Vec3[] poles)
+    {
+        auto g = OutlineSeg(OutlineSeg.Kind.spline, poles[0].x, poles[0].y, poles[$ - 1].x, poles[$ - 1].y);
+        foreach (q; poles)
+            g.poles ~= [q.x, q.y];
+        return g;
     }
 
     static double acos(double c)

@@ -21,7 +21,7 @@ struct Ref
     /// For methods and properties, what they apply to: Solid, Profile,
     /// Shape (both), Path, Frame, Plane, Axis, Vec, BBox, Edges, Faces,
     /// Edge, Face, list, number, Sketch, SketchPoint, SketchLine, SketchCircle,
-    /// SketchEllipse, Drawing. Empty for free names.
+    /// SketchEllipse, SketchSpline, Drawing. Empty for free names.
     string on;
     string[] params;   /// "name: Type", in order; named arguments use the name
     string type;       /// what it gives
@@ -455,6 +455,9 @@ immutable Ref[] reference =
     F("line", "Sketch", ["p: Point", "q: Point"], "Line", "A line between two points."),
     F("arc", "Sketch", ["center: Point", "start: Point", "end: Point"], "Arc", "An arc, counter-clockwise."),
     F("polyline", "Sketch", ["points", "closed: bool"], "Line[]", "Lines through points (vectors become new points)."),
+    F("spline", "Sketch", ["points", "closed: bool"], "SketchSpline", "A smooth curve through points (vectors become "
+        ~ "new points): open, its ends join lines and arcs as theirs do; closed: true, a loop of its own. Its points "
+        ~ "move it: constrain them."),
     withForms(F("circle", "Sketch", ["center: Point", "r: Length", "d: Length"], "Circle",
         "A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…)."), [
         "s.circle(c, d: 10.mm)   // 0 dof once c is fixed",
@@ -529,8 +532,8 @@ immutable Ref[] reference =
     P("x", "SketchPoint", "Length", "Where the point is across, solved (y: up)."),
     P("y", "SketchPoint", "Length", "Where the point is up, solved."),
     P("pos", "SketchPoint", "Vec", "Where the point is, solved: vec(x, y)."),
-    P("start", "SketchLine", "SketchPoint", "Its first point (end: the other one); an arc's too."),
-    P("end", "SketchLine", "SketchPoint", "Its last point; an arc's too."),
+    P("start", "SketchLine", "SketchPoint", "Its first point (end: the other one); an arc's and a spline's too."),
+    P("end", "SketchLine", "SketchPoint", "Its last point; an arc's and a spline's too (a closed spline's: its first)."),
     P("length", "SketchLine", "Length", "How long it is, solved."),
     P("mid", "SketchLine", "Vec", "Its middle, solved."),
     P("center", "SketchCircle", "SketchPoint", "The centre of a circle, an arc or an ellipse."),
@@ -538,6 +541,9 @@ immutable Ref[] reference =
     P("rx", "SketchEllipse", "Length", "The radius along the ellipse's own x axis, solved."),
     P("ry", "SketchEllipse", "Length", "The radius across, solved."),
     P("angle", "SketchEllipse", "Angle", "How far the ellipse's x axis is turned from X, solved."),
+    P("points", "SketchSpline", "SketchPoint[]", "The points the spline goes through, in order."),
+    P("closed", "SketchSpline", "bool", "Whether it goes round back to its first point."),
+    P("length", "SketchSpline", "Length", "How long it is along the curve, solved."),
     ]) ~
     group("Drawings", [
     F("drawing", "", ["size: string", "title: string", "author: string", "material: string", "projection: string",

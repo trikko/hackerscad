@@ -185,7 +185,7 @@ final class SketchVal : ObjectVal
             !r.solved ? "conflicting" : r.dof ? format("%d degrees of freedom", r.dof) : "fully constrained");
     }
 
-    override string[] memberNames() => ["point", "line", "arc", "circle", "ellipse", "polyline", "rect", "polygon",
+    override string[] memberNames() => ["point", "line", "arc", "circle", "ellipse", "polyline", "spline", "rect", "polygon",
         "slot", "teardrop", "edges", "origin", "project", "coincident", "concentric", "fix", "horizontal", "vertical", "length", "distance", "on", "parallel",
         "perpendicular", "angle", "equal", "radius", "diameter", "tangent", "midpoint", "symmetric", "fillet",
         "profile", "dof", "solved"];
@@ -263,6 +263,13 @@ final class SketchVal : ObjectVal
                 auto x = Args(it, a, "polyline", ["sketch", "points", "closed", "construction"]);
                 return polyline(x, x.flag("closed", true), a.span);
             };
+        case "spline":
+            return (ref CallArgs a) {
+                // s.spline([p1, p2, p3], closed: false): a smooth curve through the points (SketchPoints or vectors,
+                // which become new points); open, its ends join lines and arcs; closed, a loop of its own
+                auto x = Args(it, a, "spline", ["sketch", "points", "closed", "construction"]);
+                return spline(x, x.flag("closed", false), a.span);
+            };
         case "circle", "ellipse", "rect", "polygon", "slot", "teardrop":
             return (ref CallArgs a) {
                 auto x = Args(it, a, name, ["sketch"] ~ shapeParams(name, a, 1) ~ ["construction"]);
@@ -299,7 +306,7 @@ final class SketchVal : ObjectVal
                     {
                     case EntityKind.point: return e;
                     case EntityKind.arc, EntityKind.circle, EntityKind.ellipse: return sk.entities[e].refs[0];
-                    case EntityKind.line:
+                    case EntityKind.line, EntityKind.spline:
                         throw new HcadError(Code.type, format("'%s' must be a circle, an arc, an ellipse or a point", n),
                             x.spanOf(n));
                     }
@@ -489,7 +496,7 @@ final class SketchVal : ObjectVal
             free[p] = true;
         Span spanOf(size_t e) => e < entitySpans.length && entitySpans[e] != Span.init ? entitySpans[e] : span;
         foreach (i, e; sk.entities)
-            v.entities ~= SketchView.Entity(["point", "line", "arc", "circle", "ellipse"][e.kind], spanOf(i), e.construction,
+            v.entities ~= SketchView.Entity(["point", "line", "arc", "circle", "ellipse", "spline"][e.kind], spanOf(i), e.construction,
                 e.reference);
         // the outline as the profile will have it (with corner fillets), when it can be built
         import hackerscad.kernel.brep : OutlineSeg;
@@ -542,6 +549,15 @@ final class SketchVal : ObjectVal
                 seg.r = (a - c).length;
                 v.segments ~= seg;
             }
+            else if (g.kind == OutlineSeg.Kind.spline)
+            {
+                seg.kind = 4;
+                foreach (q; 0 .. g.poles.length / 2)
+                    seg.poles ~= Vec3(g.poles[2 * q], g.poles[2 * q + 1], 0);
+                seg.a = seg.poles[0];
+                seg.b = seg.poles[$ - 1];
+                v.segments ~= seg;
+            }
             else if (g.kind == OutlineSeg.Kind.ellipse)
             {
                 // a circle's outline is a round ellipse: drawn as the circle it is
@@ -587,6 +603,15 @@ final class SketchVal : ObjectVal
                 seg.kind = 3;
                 seg.c = sk.position(e.refs[0]);
                 sk.ellipseAxes(i, seg.r, seg.r2, seg.angle);
+                break;
+            case EntityKind.spline:
+                seg.kind = 4;
+                try
+                    seg.poles = sk.splinePoles(i);
+                catch (SketchException)
+                    continue;   // two of its points on each other: nothing to draw
+                seg.a = seg.poles[0];
+                seg.b = seg.poles[$ - 1];
                 break;
             }
             // the outline already drew it, trimmed by its fillets
@@ -1051,6 +1076,27 @@ final class SketchVal : ObjectVal
         foreach (i; 0 .. closed ? ps.length : ps.length - 1)
             lines ~= made(s, () => sk.line(ps[i], ps[(i + 1) % ps.length], cons));
         return Value.of(lines);
+    }
+
+    Value spline(ref Args x, bool closed, Span s)
+    {
+        auto v = x.get("points");
+        if (v.kind != Kind.array || v.arr.length < (closed ? 3 : 2))
+            throw new HcadError(Code.type, closed ? "a closed spline needs an array of at least 3 points"
+                : "spline needs an array of at least 2 points", x.spanOf("points"));
+        size_t[] ps;
+        foreach (p; v.arr)
+        {
+            if (p.kind == Kind.object_ && cast(SketchEntityVal) p.obj)
+                ps ~= pointOf(p, x.spanOf("points"));
+            else
+            {
+                auto q = vecOf(x, p, x.spanOf("points"));
+                ps ~= newPoint(q.x, q.y, s);
+            }
+        }
+        immutable cons = construction(x);
+        return made(s, () => sk.spline(ps, closed, cons));
     }
 
     Value slotShape(ref Args x, Span s)
@@ -1672,9 +1718,11 @@ struct SketchView
     struct Segment
     {
         int kind;           /// 0 line a → b, 1 arc around c from a to b (counter-clockwise), 2 circle around c,
-                            /// 3 ellipse around c (radius r along its x axis, `angle` from X, r2 across)
+                            /// 3 ellipse around c (radius r along its x axis, `angle` from X, r2 across),
+                            /// 4 spline a → b (its Bézier poles in `poles`, as hackerscad.geom.spline gives them)
         Vec3 a, b, c;
         double r = 0, r2 = 0, angle = 0;
+        Vec3[] poles;
         bool construction;
         ptrdiff_t entity = -1;   /// the line, arc, circle or ellipse it draws (or part of it); -1 for a fillet's arc
         ptrdiff_t corner = -1;   /// a corner fillet's arc: the point it rounds
@@ -1953,7 +2001,7 @@ final class SketchEntityVal : ObjectVal
         this.id = id;
     }
 
-    private Entity e() const => owner.sk.entities[id];
+    private const(Entity) e() const => owner.sk.entities[id];
 
     override string typeName() const
     {
@@ -1964,6 +2012,7 @@ final class SketchEntityVal : ObjectVal
         case EntityKind.arc: return "SketchArc";
         case EntityKind.circle: return "SketchCircle";
         case EntityKind.ellipse: return "SketchEllipse";
+        case EntityKind.spline: return "SketchSpline";
         }
     }
 
@@ -1984,6 +2033,7 @@ final class SketchEntityVal : ObjectVal
         case EntityKind.arc: return ["center", "start", "end", "radius"];
         case EntityKind.circle: return ["center", "radius"];
         case EntityKind.ellipse: return ["center", "rx", "ry", "angle"];
+        case EntityKind.spline: return ["points", "start", "end", "closed", "length"];
         }
     }
 
@@ -2044,6 +2094,33 @@ final class SketchEntityVal : ObjectVal
                 case "angle": result = Value.number(t, Dim.angle); return true;
                 default: return false;
                 }
+            }
+        case EntityKind.spline:
+            switch (name)
+            {
+            case "points":
+                {
+                    Value[] r;
+                    foreach (p; e.through)
+                        r ~= point(p);
+                    result = Value.of(r);
+                    return true;
+                }
+            case "start": result = point(e.through[0]); return true;
+            case "end": result = point(e.closed ? e.through[0] : e.through[$ - 1]); return true;
+            case "closed": result = Value.of(e.closed); return true;
+            case "length":
+                {
+                    // along the curve
+                    import hackerscad.geom.spline : sampleSpline;
+                    auto pts = sampleSpline(sk.splinePoles(id), 64);
+                    double l = 0;
+                    foreach (k; 1 .. pts.length)
+                        l += (pts[k] - pts[k - 1]).length;
+                    result = len(l);
+                    return true;
+                }
+            default: return false;
             }
         }
     }

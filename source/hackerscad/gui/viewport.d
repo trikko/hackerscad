@@ -3896,6 +3896,11 @@ private:
                 Vec3[] pts;
                 if (g.kind == 0)
                     pts = [g.a, g.b];
+                else if (g.kind == 4)
+                {
+                    import hackerscad.geom.spline : sampleSpline;
+                    pts = sampleSpline(g.poles);
+                }
                 else
                 {
                     import std.math : atan2;

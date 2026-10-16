@@ -1677,6 +1677,64 @@ unittest
 
 unittest
 {
+    // a sketch's spline: closed, a loop of its own; open, its ends join lines; drawn as the profile has it,
+    // smooth (a fillet along it and round the corner where it meets a line takes what it should, no more)
+    import hackerscad.lang.sketchval : SketchVal;
+    import std.algorithm : filter;
+    auto it = make();
+    auto r = runModel(q{
+        Profile pebble()
+        {
+            auto s = sketch();
+            s.spline([vec(0, 0), vec(30, -5), vec(45, 15), vec(20, 30), vec(-5, 18)], closed: true);
+            return s.profile;
+        }
+        Profile wave()
+        {
+            auto s = sketch();
+            auto a = s.point(0, 0, fixed: true), b = s.point(60, 0, fixed: true);
+            auto c = s.point(60, 20, fixed: true), m = s.point(30, 30, fixed: true), d = s.point(0, 20, fixed: true);
+            s.line(a, b);
+            s.line(b, c);
+            auto w = s.spline([c, m, d]);
+            s.line(d, a);
+            writeln(w.points.length, " ", w.closed, " ", w.start.x, " ", w.end.x, " ", w.length > 60.mm);
+            return s.profile;
+        }
+        @part Solid flat() => pebble().extrude(5.mm);
+        @part Solid round() => pebble().extrude(5.mm).fillet(edges.of(faces.top), r: 1.mm);
+        @part Solid block() => wave().extrude(8.mm);
+        @part Solid soft() => wave().extrude(8.mm).fillet(edges.of(faces.top), r: 1.mm);
+    }, it);
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(r.log[0].text == "3 false 60 mm 0 mm true", r.log[0].text);
+    double vol(string name) => kernel.volume(r.parts.filter!(p => p.name == name).front.solid.brep);
+    foreach (p; r.parts)
+        assert(kernel.isValid(p.solid.brep), p.name);
+    // a fillet of r 1 takes (1 - π/4) mm² along each mm of edge: about 30 mm³ round the pebble, 35 round the wave
+    immutable pebbleCut = vol("flat") - vol("round"), waveCut = vol("block") - vol("soft");
+    assert(pebbleCut > 20 && pebbleCut < 40, format("%s", pebbleCut));
+    assert(waveCut > 25 && waveCut < 45, format("%s", waveCut));
+    // the view draws the spline as the profile has it: one segment of kind 4, through its points
+    // (each call of wave() makes its sketch again: the last one)
+    auto v = (cast(SketchVal) it.sketches[$ - 1]).view();
+    auto curve = v.segments.filter!(g => g.kind == 4).array;
+    assert(curve.length == 1 && v.entities[curve[0].entity].kind == "spline", format("%s", v.segments.map!(g => g.kind)));
+    assert((curve[0].poles[0] - Vec3(60, 20, 0)).length < 1e-9 || (curve[0].poles[0] - Vec3(0, 20, 0)).length < 1e-9);
+    assert(curve[0].poles.length == 7);
+
+    // too few points, two in a row on each other
+    foreach (bad; ["s.spline([vec(0, 0), vec(10, 0), vec(5, 8)], closed: true); s.spline([vec(0, 0), vec(1, 1)], closed: true);",
+            "auto p = s.point(0, 0); s.spline([p, p, vec(10, 0)]);"])
+    {
+        auto e = error("@part Solid p() { auto s = sketch(); " ~ bad ~ " return s.profile.extrude(1); }");
+        assert(e.message.canFind("spline"), e.message);
+    }
+}
+
+unittest
+{
     mixin(slowTest);
     // built-in libraries
     auto r = runModel(q{

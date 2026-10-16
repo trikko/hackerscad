@@ -81,6 +81,9 @@
 #include <BRepLib.hxx>
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
+#include <TColStd_Array1OfInteger.hxx>
+#include <TColStd_Array1OfReal.hxx>
 #include <TColStd_HArray1OfReal.hxx>
 #include <TColgp_Array2OfPnt.hxx>
 #include <BRepClass_FaceClassifier.hxx>
@@ -3122,6 +3125,64 @@ hc_shape *hc_outline(const double *data, int n)
                     wire.Add(BRepBuilderAPI_MakeEdge(gp_Circ(ax, rx)).Edge());
                 else
                     wire.Add(BRepBuilderAPI_MakeEdge(gp_Elips(ax, rx, ry)).Edge());
+                open = true;
+                break;
+            }
+            case 4: { // a smooth curve a → b: d[5] pole records follow (cubic Bézier pieces, three poles each, then b)
+                const int m = (int)d[5];
+                if (m < 4 || (m - 1) % 3 != 0 || i + m >= n)
+                    throw Standard_Failure("a spline of the outline has a wrong number of poles");
+                std::vector<gp_Pnt> poles;
+                for (int k = 1; k <= m; k++) {
+                    const double *q = data + 7 * (i + k);
+                    poles.emplace_back(q[1], q[2], 0);
+                }
+                i += m;
+                const int pieces = (m - 1) / 3;
+                Handle(Geom_BSplineCurve) curve;
+                if (poles.front().Distance(poles.back()) < Precision::Confusion()) {
+                    // round on itself: the pieces as one cubic B-spline (knots three deep where they meet,
+                    // then taken out: the curve is smooth there to its second derivative), periodic
+                    TColgp_Array1OfPnt pp(1, m);
+                    for (int k = 0; k < m; k++)
+                        pp.SetValue(k + 1, poles[k]);
+                    TColStd_Array1OfReal knots(1, pieces + 1);
+                    TColStd_Array1OfInteger mults(1, pieces + 1);
+                    for (int k = 0; k <= pieces; k++) {
+                        knots.SetValue(k + 1, k);
+                        mults.SetValue(k + 1, k == 0 || k == pieces ? 4 : 3);
+                    }
+                    curve = new Geom_BSplineCurve(pp, knots, mults, 3);
+                    for (int k = pieces; k >= 2; k--)
+                        curve->RemoveKnot(k, 1, 1e-9);
+                    try {
+                        curve->SetPeriodic();
+                    } catch (Standard_Failure &) {
+                    }
+                } else {
+                    // open: OpenCascade's own cubic through the pieces' ends, their steps as its parameters
+                    // and the pieces' tangents at its two ends (a cubic through given points and end
+                    // tangents is one curve: the pieces'), smooth from the start, with no approximation:
+                    // fillets meeting other edges at its ends come out right
+                    Handle(TColgp_HArray1OfPnt) through = new TColgp_HArray1OfPnt(1, pieces + 1);
+                    Handle(TColStd_HArray1OfReal) params = new TColStd_HArray1OfReal(1, pieces + 1);
+                    double t = 0;
+                    for (int k = 0; k <= pieces; k++) {
+                        if (k > 0)
+                            t += poles[3 * k].Distance(poles[3 * (k - 1)]);
+                        through->SetValue(k + 1, poles[3 * k]);
+                        params->SetValue(k + 1, t);
+                    }
+                    GeomAPI_Interpolate interp(through, params, Standard_False, 1e-9);
+                    const double h0 = poles[3].Distance(poles[0]), h1 = poles[m - 1].Distance(poles[m - 4]);
+                    gp_Vec t0(poles[0], poles[1]), t1(poles[m - 2], poles[m - 1]);
+                    interp.Load(t0 * (3 / h0), t1 * (3 / h1), Standard_False);
+                    interp.Perform();
+                    if (!interp.IsDone())
+                        throw Standard_Failure("cannot make the spline of the outline");
+                    curve = interp.Curve();
+                }
+                wire.Add(BRepBuilderAPI_MakeEdge(curve).Edge());
                 open = true;
                 break;
             }

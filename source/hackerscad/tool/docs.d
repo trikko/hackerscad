@@ -85,8 +85,9 @@ dimensions and pictures, compare them with the request, fix, then export.
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
 - Exact 2D outlines with dimensions: auto s = sketch(); points, lines, arcs,
-  circles, ellipses and shapes (s.rect, s.polygon(c, 6, d:, fit: "sides"),
-  s.slot, s.teardrop), then constraints (horizontal, vertical, length,
+  circles, ellipses, splines (s.spline([p, q, r]): a smooth curve through
+  points, closed: true a loop of its own) and shapes (s.rect, s.polygon(c,
+  6, d:, fit: "sides"), s.slot, s.teardrop), then constraints (horizontal, vertical, length,
   distance, angle, tangent, on, equal, concentric…) and s.profile, to
   extrude or revolve.
   Prefer a sketch over unions and differences of boxes and cylinders for

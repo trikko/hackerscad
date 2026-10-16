@@ -58,10 +58,17 @@ final class OcctKernel : BrepKernel
 
     Brep outline(const(OutlineSeg)[] segs)
     {
+        // seven numbers a segment; a spline's poles follow it, one record each (kind 5)
         double[] data;
         foreach (g; segs)
-            data ~= [cast(double) g.kind, g.ax, g.ay, g.bx, g.by, g.mx, g.my];
-        return wrap(hc_outline(data.ptr, cast(int) segs.length), "outline");
+        {
+            immutable poles = g.poles.length / 2;
+            data ~= [cast(double) g.kind, g.ax, g.ay, g.bx, g.by, g.kind == OutlineSeg.Kind.spline ? poles : g.mx, g.my];
+            if (g.kind == OutlineSeg.Kind.spline)
+                foreach (k; 0 .. poles)
+                    data ~= [5.0, g.poles[2 * k], g.poles[2 * k + 1], 0, 0, 0, 0];
+        }
+        return wrap(hc_outline(data.ptr, cast(int)(data.length / 7)), "outline");
     }
     Brep polyline(const(Vec3)[] pts, bool closed) =>
         wrap(hc_polyline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "path");

@@ -79,13 +79,17 @@ class KernelException : Exception
 }
 
 /// One piece of a planar outline: a line a → b, an arc a → b through m, the
-/// end of a loop, or a whole ellipse (a loop of its own, before an end):
-/// centre a, radii bx (along its own x axis, mx radians from X) and by.
+/// end of a loop, a whole ellipse (a loop of its own, before an end):
+/// centre a, radii bx (along its own x axis, mx radians from X) and by, or a
+/// smooth curve a → b given by its poles.
 struct OutlineSeg
 {
-    enum Kind : int { line, arc, end, ellipse }
+    enum Kind : int { line, arc, end, ellipse, spline }
     Kind kind;
     double ax = 0, ay = 0, bx = 0, by = 0, mx = 0, my = 0;
+    /// a spline a → b: the poles of its cubic Bézier pieces (x y each, three
+    /// per piece and then b), joined into one curve
+    double[] poles;
 }
 
 /// A projected edge segment in a drawing view (x right, y up).
