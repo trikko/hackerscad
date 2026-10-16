@@ -1024,10 +1024,20 @@ JValue toolList()
             ~ "from above), after the user or you turned it. state's sketch tells from_cursor, "
             ~ "pinned, partial, stale (and error_line). A sketch made again (in a loop, or in a function called "
             ~ "twice) is drawn one run at a time, its dimensions with it: state's sketch gives run and runs, and "
-            ~ "run (1-based, alone or with line) draws another, as the mode bar's Run button does.",
+            ~ "run (1-based, alone or with line) draws another, as the mode bar's Run button does. The sketch bar "
+            ~ "(at the left of the view, when the drawn sketch's code can be written to: else state's sketch says "
+            ~ "not_editable): select [ids] chooses entities of the drawn sketch (state's sketch.entities: id, kind, "
+            ~ "line), as clicks on them do, and constrain writes a constraint on what is selected into the code, as "
+            ~ "its buttons do: horizontal, vertical (each line, or two points), parallel, equal, concentric, "
+            ~ "coincident (to the first), perpendicular, midpoint, symmetric, tangent (a curve and lines), on, fix, "
+            ~ "and with value (\"20.mm\", \"30.deg\") length, distance, angle, radius, diameter (a value on "
+            ~ "several: one dimension, the others equal to it). A selection that does not fit says why.",
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "on": {"type": "boolean"}, `
             ~ `"follow": {"type": "boolean"}, "pin": {"type": "boolean"}, "align": {"type": "boolean"}, `
-            ~ `"run": {"type": "integer"}`, `[]`),
+            ~ `"run": {"type": "integer"}, "select": {"type": "array", "items": {"type": "integer"}}, `
+            ~ `"constrain": {"type": "string", "enum": ["coincident", "on", "horizontal", "vertical", "parallel", `
+            ~ `"perpendicular", "equal", "tangent", "concentric", "midpoint", "symmetric", "fix", "length", "distance", `
+            ~ `"angle", "radius", "diameter"]}, "value": {"type": "string"}`, `[]`),
         gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
             ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "
             ~ "several times, every run), what a value row made, or what a function returns; the step of a sketch "

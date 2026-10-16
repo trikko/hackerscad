@@ -88,6 +88,7 @@ import hackerscad.lang.interp : Interp, TraceEntry, FunctionInfo, callsOf;
 import hackerscad.lang.value : Kind, SolidVal;
 import hackerscad.lang.sketchval : SketchView, Stretch;
 import hackerscad.gui.sketchfollow;
+import hackerscad.gui.sketchedit;
 import hackerscad.gui.annotate : Annotate;
 import hackerscad.tool.guiclient : toOverrides;
 import djson;
@@ -720,6 +721,8 @@ final class MainWindow
                 ~ " popover.hcad-menu .hcad-menu-heading { padding: 4px 14px 2px 14px; font-size: 0.78em; font-weight: bold;"
                 ~ " opacity: 0.55; }"
                 ~ " button.hcad-pane-close { min-width: 22px; min-height: 22px; padding: 0; opacity: 0.55; }"
+                ~ " .hcad-sketchbar { padding: 4px; }"
+                ~ " button.hcad-sketch-tool { min-width: 30px; min-height: 28px; padding: 0; font-size: 1.15em; }"
                 ~ " button.hcad-pane-close:hover { opacity: 1; }"
                 ~ " label.hcad-info { padding: 4px 10px; border-radius: 6px; font-size: 0.9em;"
                 ~ " background: alpha(@window_bg_color, 0.85); border: 1px solid alpha(currentColor, 0.10); }"
@@ -1156,6 +1159,7 @@ final class MainWindow
         tools.append(modeBar);
         tools.append(annotateBar);
         overlay.addOverlay(tools);
+        overlay.addOverlay(buildSketchBar());
         info("");
         overlay.setVexpand(true);
 
@@ -2345,19 +2349,10 @@ private:
     {
         if (sceneLocked())
             return;
-        // with a sketch shown, a click near one of its points shows the line that created it
-        foreach (k; drawnRuns())
-            if (sketchIndices[k] < last.sketches.length)
-                foreach (pt; last.sketches[sketchIndices[k]].points)
-                {
-                    double px, py;
-                    if (viewport.project(pt.pos, px, py) && (px - hit.x) ^^ 2 + (py - hit.y) ^^ 2 < 64)
-                    {
-                        jumpTo(pt.span, format("sketch point · line %d%s", pt.span.line,
-                            pt.free ? " · can still move" : " · fully constrained"));
-                        return;
-                    }
-                }
+        // with a sketch shown, a click on one of its points or lines selects it (the bar at the left constrains
+        // what is selected) and shows the line that made it; on nothing, the sketch's selection empties
+        if (viewport.sketchShown && sketchPick(hit.x, hit.y))
+            return;
         // a click on nothing closes Inspect; not a sketch shown: in its
         // empty space a click is part of working on it (Esc closes it)
         if (hit.part < 0 && viewport.inInspect && !viewport.sketchShown)
@@ -4010,7 +4005,10 @@ private:
         sketchIndices = which;
         sketchFound = found;
         if (another)
+        {
             sketchRun = 0;
+            sketchSel = null;
+        }
         drawRuns();
         // a sketch on a face: seen from outside that face
         if (another && which.length && which[0] < last.sketches.length && last.sketches[which[0]].placed)
@@ -4041,10 +4039,12 @@ private:
         foreach (k; drawnRuns())
         {
             shown ~= sketchIndices[k];
-            lit ~= sketchHighlight && k < sketchFound.length ? sketchFound[k].highlight : null;
+            // what is selected stands out; else what the cursor's line makes
+            lit ~= sketchSel.length ? sketchSel.dup : sketchHighlight && k < sketchFound.length ? sketchFound[k].highlight : null;
         }
         viewport.showSketches(shown, lit);
         updateDimensions();
+        updateSketchBar();
         if (runButton !is null)
         {
             runButton.setLabel(format("Run %d of %d", min(sketchRun, sketchIndices.length - 1) + 1,
@@ -4091,9 +4091,11 @@ private:
         sketchLines = [0, 0];
         sketchIndices = null;
         sketchRun = 0;
+        sketchSel = null;
         sketchFound = null;
         viewport.showSketches(null);
         updateDimensions();
+        updateSketchBar();
     }
 
     /// "sketch of line 37 · fully constrained · 2 lines, 1 constraint (tangent)"
@@ -4150,6 +4152,22 @@ private:
         {
             j["run"] = drawnRuns()[0] + 1;
             j["runs"] = sketchIndices.length;
+        }
+        // what the sketch bar works on: the drawn sketch's entities by id, those selected, and whether its code
+        // can be written to from here (else why not)
+        if (auto drawn = drawnSketch())
+        {
+            JValue ents = JSAB();
+            foreach (id, e; drawn.entities)
+                if (!e.reference || e.edge >= 0 || e.origin)
+                    ents ~= JSOB("id", id, "kind", e.kind, "line", e.span.line);
+            j["entities"] = ents;
+            JValue sel = JSAB();
+            foreach (x; sketchSel)
+                sel ~= x;
+            j["selected"] = sel;
+            if (auto why = sketchUneditable())
+                j["not_editable"] = why;
         }
         sketchOriginJson(j);
         JValue list = JSAB();
@@ -6251,6 +6269,7 @@ private:
     // the control socket's methods: gui/controlmethods
     mixin ControlMethods;
     mixin SketchFollow;
+    mixin SketchEdit;
     mixin Annotate;
 
     /// Every field the state can have, for hcad_gui_state's only.

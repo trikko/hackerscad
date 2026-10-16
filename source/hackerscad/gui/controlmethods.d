@@ -703,6 +703,46 @@ mixin template ControlMethods()
                         return true;
                     return false;
                 }
+                // the sketch bar: select entities of the drawn sketch (ids from state's sketch.entities), and
+                // write a constraint on what is selected, as its buttons do
+                if ((has("select") || has("constrain")) && !has("line") && !p.has("on"))
+                {
+                    whenIdle(() {
+                        if (has("select"))
+                        {
+                            auto drawn = drawnSketch();
+                            if (drawn is null)
+                                return reply(JValue.init, "no sketch is drawn: show one first (line)");
+                            if (!p["select"].isArray)
+                                return reply(JValue.init, "select is a list of entity ids (state's sketch.entities)");
+                            size_t[] ids;
+                            foreach (x; p["select"].get!JArray.elements)
+                            {
+                                immutable id = x.isNumber ? cast(long) x.get!double : -1;
+                                if (id < 0 || id >= drawn.entities.length)
+                                    return reply(JValue.init, format("no entity %s in the sketch drawn", x.toJSON()));
+                                ids ~= cast(size_t) id;
+                            }
+                            sketchSel = ids;
+                            drawRuns();
+                        }
+                        string said;
+                        if (has("constrain"))
+                        {
+                            immutable tool = arg("constrain");
+                            said = applySketchTool(tool, arg("value"));
+                            import std.algorithm : startsWith;
+                            if (!said.startsWith(tool ~ " written"))
+                                return reply(JValue.init, said);
+                        }
+                        auto r = state();
+                        r["sketches"] = sketchesJson();
+                        if (said.length)
+                            r["done"] = said;
+                        reply(r, null);
+                    });
+                    return;
+                }
                 if (has("run") && !has("line") && !p.has("on") && !has("align"))
                 {
                     whenIdle(() {
