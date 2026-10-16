@@ -278,11 +278,16 @@ sketch kept in a variable, `auto s = sketch();`, in the model's own file,
 not made inside a loop), a bar runs down the left of the view.
 
 Its left column draws: ↖ selects, ∙ puts a point, ╱ draws lines (click
-their points; on the first again they close, Enter or a right-click ends
-them), ▭ a rectangle by two corners, ○ a circle by its centre and a point
-on it, ◜ an arc by its centre, start and end, ∿ a smooth curve through the
-points clicked. A click near a point of the sketch uses that point; Esc
-drops what is being drawn. Nothing is written until the shape is done: then
+their points; on the first again they close, a double click, Enter or a
+right-click ends them), ▭ a rectangle by two corners, ○ a circle by its
+centre and a point on it, ◜ an arc by its centre, start and end. A button
+with a small mark in its corner has other kinds: right-click it (or click
+it again) for its menu. With the lines, ∿ a smooth curve through the points
+clicked; with the rectangle, one from its centre, one turned (a side, then
+how far the other), a regular polygon (its sides in the menu) and a slot;
+with the circle, an ellipse and a teardrop; with the arc, one through three
+points. The button keeps the kind chosen last. A click near a point of the
+sketch uses that point; Esc drops what is being drawn. Nothing is written until the shape is done: then
 its lines appear at the end of the sketch's code, as you would have typed
 them.
 

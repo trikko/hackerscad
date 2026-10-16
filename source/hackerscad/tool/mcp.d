@@ -1032,10 +1032,14 @@ JValue toolList()
             ~ "coincident (to the first), perpendicular, midpoint, symmetric, tangent (a curve and lines), on, fix, "
             ~ "and with value (\"20.mm\", \"30.deg\") length, distance, angle, radius, diameter (a value on "
             ~ "several: one dimension, the others equal to it). A selection that does not fit says why. Drawing: "
-            ~ "draw (point, line, rect, circle, arc, spline) with points ([x, y] on the sketch's plane, or ids of "
-            ~ "its points to join) writes the shape at once (closed: true joins a line or a spline back to its "
-            ~ "first point; a circle is its centre and a point on it, an arc its centre, start and end, a rect two "
-            ~ "corners); tool chooses a drawing tool of the bar instead, and hcad_gui_pick clicks then draw, as "
+            ~ "draw with points ([x, y] on the sketch's plane, or ids of its points to join) writes the shape at "
+            ~ "once, the points its button's clicks: point (1), line and spline (2 or more; closed: true joins them "
+            ~ "back to the first), rect (two corners), center-rect (centre, corner), turned-rect (one side's ends, "
+            ~ "then a point on the opposite side), polygon (centre, a corner; sides, 6 unless given), slot (its ends' "
+            ~ "centres, then a point on its side), circle and teardrop (centre, a point on it), ellipse (centre, end of "
+            ~ "its rx axis, a point as far as ry), arc (centre, start, end, counter-clockwise), 3-point-arc (start, "
+            ~ "end, a point on it); sizes are written as numbers (a value to change). tool chooses a drawing tool of "
+            ~ "the bar instead (its button shows it; the user's right-click gives the others), and hcad_gui_pick clicks then draw, as "
             ~ "the user's: state's sketch.drawing gives what is clicked so far. delete: true (with select) takes "
             ~ "the selected entities out of the code, with what is drawn on them (a line on a point; a shape goes "
             ~ "whole) and the constraints on them; a name still used elsewhere in the code stops it, and says where.",
@@ -1045,9 +1049,11 @@ JValue toolList()
             ~ `"constrain": {"type": "string", "enum": ["coincident", "on", "horizontal", "vertical", "parallel", `
             ~ `"perpendicular", "equal", "tangent", "concentric", "midpoint", "symmetric", "fix", "length", "distance", `
             ~ `"angle", "radius", "diameter"]}, "value": {"type": "string"}, `
-            ~ `"draw": {"type": "string", "enum": ["point", "line", "rect", "circle", "arc", "spline"]}, `
-            ~ `"points": {"type": "array", "items": {}}, "closed": {"type": "boolean"}, `
-            ~ `"tool": {"type": "string", "enum": ["select", "point", "line", "rect", "circle", "arc", "spline"]}, `
+            ~ `"draw": {"type": "string", "enum": ["point", "line", "spline", "rect", "center-rect", "turned-rect", `
+            ~ `"polygon", "slot", "circle", "ellipse", "teardrop", "arc", "3-point-arc"]}, `
+            ~ `"points": {"type": "array", "items": {}}, "closed": {"type": "boolean"}, "sides": {"type": "integer"}, `
+            ~ `"tool": {"type": "string", "enum": ["select", "point", "line", "spline", "rect", "center-rect", `
+            ~ `"turned-rect", "polygon", "slot", "circle", "ellipse", "teardrop", "arc", "3-point-arc"]}, `
             ~ `"delete": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
             ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "

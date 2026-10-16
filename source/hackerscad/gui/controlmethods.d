@@ -713,13 +713,20 @@ mixin template ControlMethods()
                         if (drawnSketch() is null)
                             return reply(JValue.init, "no sketch is drawn: show one first (line)");
                         string said;
+                        if (p.has("sides"))
+                        {
+                            immutable n = p.safe!double("sides").or(0);
+                            if (n < 3 || n > 64 || n != cast(int) n)
+                                return reply(JValue.init, "sides is a whole number from 3 to 64");
+                            polygonSides = cast(int) n;
+                        }
                         if (has("tool"))
                         {
                             immutable t = arg("tool");
                             import std.algorithm : canFind, map;
                             if (!drawTools[].map!(x => x[0]).canFind(t))
-                                return reply(JValue.init, "tool is one of select, point, line, rect, circle, arc, spline");
-                            startDrawing(t == "select" ? null : t);
+                                return reply(JValue.init, "tool is one of " ~ drawTools[].map!(x => x[0]).join(", "));
+                            chooseDrawTool(t);
                         }
                         if (has("draw"))
                         {

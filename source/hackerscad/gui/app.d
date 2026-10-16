@@ -724,6 +724,7 @@ final class MainWindow
                 ~ " .hcad-sketchbar { padding: 4px; }"
                 ~ " button.hcad-sketch-tool { min-width: 30px; min-height: 28px; padding: 0; font-size: 1.15em; }"
                 ~ " button.hcad-sketch-tool.hcad-tool-on { background: alpha(@accent_bg_color, 0.25); }"
+                ~ " label.hcad-tool-more { font-size: 0.45em; opacity: 0.55; margin: 0 1px 1px 0; }"
                 ~ " button.hcad-pane-close:hover { opacity: 1; }"
                 ~ " label.hcad-info { padding: 4px 10px; border-radius: 6px; font-size: 0.9em;"
                 ~ " background: alpha(@window_bg_color, 0.85); border: 1px solid alpha(currentColor, 0.10); }"

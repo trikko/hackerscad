@@ -16,23 +16,63 @@ mixin template SketchEdit()
     size_t[] sketchSel;   /// entities of the sketch drawn, in clicking order
     Box sketchBar;
     Button[string] toolButtons;
-    Button[string] drawButtons;
+    Button[] drawButtons;     /// one per group of drawTools
+    Label[] drawLabels;       /// the symbol each shows: its group's tool chosen last
+    string[] drawChoice;      /// that tool
+    int polygonSides = 6;     /// what the polygon tool draws
     Button deleteButton;
     string drawTool;      /// the drawing tool at work (null: clicks select)
     bool sketchEditHold;  /// the bar wrote into the code: the sketch stays shown until it is evaluated
     Vec3[] drawn;         /// its clicks so far, on the sketch's plane
     ptrdiff_t[] drawnAt;  /// for each: the point of the sketch it snapped to, or -1 (a new one)
 
-    /// The drawing tools: a symbol each, and how to use it.
-    static immutable string[3][] drawTools = [
-        ["select", "↖", "Select: a click adds a point or a line to the selection (again: takes it away)"],
-        ["point", "∙", "Point: a click puts one"],
-        ["line", "╱", "Lines: click their points; on the first again it closes, Enter or a right-click ends it"],
-        ["rect", "▭", "Rectangle: two opposite corners"],
-        ["circle", "○", "Circle: its centre, then a point on it"],
-        ["arc", "◜", "Arc: its centre, where it starts, where it ends (counter-clockwise)"],
-        ["spline", "∿", "Smooth curve: click its points; on the first again it closes, Enter or a right-click ends it"],
+    /// The drawing tools: a symbol each, a name for their group's menu, and how to use it.
+    static immutable string[4][] drawTools = [
+        ["select", "↖", "Select", "Select: a click adds a point or a line to the selection (again: takes it away)"],
+        ["point", "∙", "Point", "Point: a click puts one"],
+        ["line", "╱", "Lines", "Lines: click their points; on the first again it closes, a double click, Enter or a right-click ends them"],
+        ["spline", "∿", "Smooth curve", "Smooth curve: click its points; on the first again it closes, a double click, Enter or a right-click ends it"],
+        ["rect", "▭", "Rectangle by corners", "Rectangle: two opposite corners"],
+        ["center-rect", "⊡", "Rectangle from its centre", "Rectangle from its centre: the centre, then a corner"],
+        ["turned-rect", "◇", "Turned rectangle", "Turned rectangle: one side's two ends, then how far the other side is"],
+        ["polygon", "⬡", "Regular polygon", "Regular polygon: its centre, then a corner (the sides: in the menu)"],
+        ["slot", "⊂⊃", "Slot", "Slot: the centres of its two ends, then how wide"],
+        ["circle", "○", "Circle", "Circle: its centre, then a point on it"],
+        ["ellipse", "⬭", "Ellipse", "Ellipse: its centre, the end of its long axis, then how wide"],
+        ["teardrop", "△", "Teardrop", "Teardrop (a hole that prints sideways, its point up): its centre, then a point on its circle"],
+        ["arc", "◜", "Arc by its centre", "Arc: its centre, where it starts, where it ends (counter-clockwise)"],
+        ["3-point-arc", "⌒", "Arc through 3 points", "Arc through three points: where it starts, where it ends, a point on it"],
     ];
+
+    /// The drawing tools by button: a right-click (or a click on the one at work) gives the others of its group.
+    static immutable string[][] drawGroups = [["select"], ["point"], ["line", "spline"],
+        ["rect", "center-rect", "turned-rect", "polygon", "slot"], ["circle", "ellipse", "teardrop"],
+        ["arc", "3-point-arc"]];
+
+    /// The row of drawTools for `tool`.
+    static string[4] drawToolInfo(string tool)
+    {
+        foreach (t; drawTools)
+            if (t[0] == tool)
+                return t;
+        return ["", "", "", ""];
+    }
+
+    /// How many clicks a drawing tool takes (size_t.max: until it is ended).
+    static size_t drawClicks(string tool)
+    {
+        switch (tool)
+        {
+        case "point":
+            return 1;
+        case "rect", "center-rect", "polygon", "circle", "teardrop":
+            return 2;
+        case "turned-rect", "slot", "ellipse", "arc", "3-point-arc":
+            return 3;
+        default:
+            return size_t.max;
+        }
+    }
 
     /// The tools, in groups: a symbol each, and what it does.
     static immutable string[3][][] toolGroups = [
@@ -74,19 +114,43 @@ mixin template SketchEdit()
         Button button(string symbol, string tip)
         {
             auto b = new Button;
-            b.setLabel(symbol);
+            if (symbol !is null)
+                b.setLabel(symbol);
             b.addCssClass("flat");
             b.addCssClass("hcad-sketch-tool");
-            b.setTooltipText(tip);
+            if (tip !is null)
+                b.setTooltipText(tip);
             return b;
         }
-        foreach (t; drawTools)
+        foreach (g, group; drawGroups)
         {
-            auto b = button(t[1], t[2]);
-            b.connectClicked(drawClicked(t[0]));
-            drawButtons[t[0]] = b;
+            auto b = button(null, null);
+            auto label = new Label(drawToolInfo(group[0])[1]);
+            if (group.length > 1)
+            {
+                // a corner mark: there is a menu of the group's other tools
+                auto overlay = new Overlay;
+                overlay.setChild(label);
+                auto mark = new Label("◢");
+                mark.addCssClass("hcad-tool-more");
+                mark.setHalign(Align.End);
+                mark.setValign(Align.End);
+                overlay.addOverlay(mark);
+                b.setChild(overlay);
+                auto menuClick = new GestureClick;
+                menuClick.setButton(3);
+                menuClick.connectPressed(drawMenuPressed(g));
+                b.addController(menuClick);
+            }
+            else
+                b.setChild(label);
+            b.connectClicked(drawClicked(g));
+            drawButtons ~= b;
+            drawLabels ~= label;
+            drawChoice ~= group[0];
             left.append(b);
         }
+        updateDrawTips();
         deleteButton = button("⌫", "Delete what is selected, what is drawn on it and the constraints on them (Delete)");
         deleteButton.connectClicked(() { info(deleteSelection()); });
         left.append(deleteButton);
@@ -110,7 +174,89 @@ mixin template SketchEdit()
 
     // a function of its own: closures made in a loop would share its variable
     void delegate() toolClicked(string tool) => () => runSketchTool(tool);
-    void delegate() drawClicked(string tool) => () => startDrawing(tool == "select" ? null : tool);
+    void delegate() drawClicked(size_t g) => () {
+        // the tool at work clicked again: the menu of its group
+        if (drawGroups[g].length > 1 && drawTool == drawChoice[g])
+            return drawMenu(g);
+        startDrawing(drawChoice[g] == "select" ? null : drawChoice[g]);
+    };
+    void delegate(int, double, double, GestureClick) drawMenuPressed(size_t g) =>
+        (int n, double x, double y, GestureClick c) => drawMenu(g);
+
+    /// Each drawing button's tooltip: its tool, and its group's menu.
+    void updateDrawTips()
+    {
+        foreach (g, b; drawButtons)
+            b.setTooltipText(drawToolInfo(drawChoice[g])[3]
+                ~ (drawGroups[g].length > 1 ? "\nRight-click: the other kinds" : ""));
+    }
+
+    /// The menu of a drawing button: its group's tools (the polygon with its sides); one chosen starts it.
+    void drawMenu(size_t g)
+    {
+        import gtk.spin_button : SpinButton;
+        import gtk.types : PositionType;
+        auto pop = new Popover;
+        auto list = new Box(Orientation.Vertical, 0);
+        foreach (tool; drawGroups[g])
+        {
+            immutable t = drawToolInfo(tool);
+            auto row = new Box(Orientation.Horizontal, 6);
+            auto item = new Button;
+            item.addCssClass("flat");
+            auto inside = new Box(Orientation.Horizontal, 8);
+            auto symbol = new Label(t[1]);
+            symbol.setWidthChars(2);
+            inside.append(symbol);
+            auto name = new Label(t[2]);
+            name.setXalign(0);
+            name.setHexpand(true);
+            inside.append(name);
+            item.setChild(inside);
+            item.setHexpand(true);
+            item.setTooltipText(t[3]);
+            item.connectClicked(menuChoice(pop, g, tool));
+            row.append(item);
+            if (tool == "polygon")
+            {
+                auto sides = SpinButton.newWithRange(3, 64, 1);
+                sides.setValue(polygonSides);
+                sides.setTooltipText("Its number of sides");
+                sides.connectValueChanged(() { polygonSides = cast(int) sides.getValue(); });
+                row.append(sides);
+            }
+            list.append(row);
+        }
+        pop.setChild(list);
+        pop.setParent(drawButtons[g]);
+        pop.setPosition(PositionType.Right);
+        pop.connectClosed(() { idleAdd(PRIORITY_DEFAULT, () { pop.unparent(); return false; }); });
+        pop.popup();
+    }
+
+    // a function of its own, as toolClicked: closures made in the menu's loop would share its variable
+    void delegate() menuChoice(Popover pop, size_t g, string tool) => () {
+        pop.popdown();
+        chooseDrawTool(g, tool);
+    };
+
+    /// Tool `tool` of group g chosen (from its menu, or by name): its button shows it, and it starts.
+    void chooseDrawTool(size_t g, string tool)
+    {
+        drawChoice[g] = tool;
+        drawLabels[g].setLabel(drawToolInfo(tool)[1]);
+        updateDrawTips();
+        startDrawing(tool == "select" ? null : tool);
+    }
+
+    /// startDrawing for any tool, by name: its button shows it first.
+    void chooseDrawTool(string tool)
+    {
+        foreach (g, group; drawGroups)
+            foreach (t; group)
+                if (t == tool)
+                    return drawButtons.length ? chooseDrawTool(g, tool) : startDrawing(tool == "select" ? null : tool);
+    }
 
     /// The sketch drawn now (the run shown), or null.
     const(SketchView)* drawnSketch()
@@ -153,10 +299,10 @@ mixin template SketchEdit()
         viewport.leftInset = shown ? natural + 16 : 0;
         if (deleteButton !is null)
             deleteButton.setSensitive(why is null && sketchSel.length > 0);
-        foreach (tool, b; drawButtons)
+        foreach (g, b; drawButtons)
         {
             b.setSensitive(why is null);
-            if (tool == (drawTool is null ? "select" : drawTool))
+            if (drawChoice[g] == (drawTool is null ? "select" : drawTool))
                 b.addCssClass("hcad-tool-on");
             else
                 b.removeCssClass("hcad-tool-on");
@@ -400,6 +546,181 @@ mixin template SketchEdit()
 
     // ---- drawing
 
+    /// A shape drawn by clicks, the sizes the code gets: rounded to a hundredth of a
+    /// millimetre and a tenth of a degree (the clicks are to a tenth of a millimetre).
+    struct DrawnShape
+    {
+        size_t[] uses;       /// the clicks its statement names, in order
+        double w, h, r, angle;
+        Vec3 center;         /// a 3-point arc's centre, a new point
+        Vec3[][] outline;    /// to preview it
+    }
+
+    /// The shape tool `tool` makes from the clicks `pts` (as many as it takes, or
+    /// the first ones and the pointer); null, or why it cannot (too few, in a line, no size).
+    static string shapeOf(string tool, const(Vec3)[] pts, int sides, out DrawnShape d)
+    {
+        import std.math : atan2, cos, sin, round, abs, PI;
+        static double mm(double x) => round(x * 100) / 100;
+        static double deg(double a) => round(a * 180 / PI * 10) / 10;
+        static Vec3 dir(double a) => Vec3(cos(a), sin(a));
+        static Vec3[] arcPoints(Vec3 c, double r, double a0, double a1, Vec3 ax = Vec3(1, 0), Vec3 ay = Vec3(0, 1),
+            double ry = double.nan)
+        {
+            Vec3[] ring;
+            foreach (k; 0 .. 49)
+            {
+                immutable t = a0 + (a1 - a0) * k / 48;
+                ring ~= c + ax * (r * cos(t)) + ay * ((ry == ry ? ry : r) * sin(t));
+            }
+            return ring;
+        }
+        if (pts.length < 2)
+            return "click more";
+        auto a = pts[0], b = pts[1];
+        switch (tool)
+        {
+        case "center-rect":
+            d.w = mm(2 * abs(b.x - a.x));
+            d.h = mm(2 * abs(b.y - a.y));
+            if (d.w == 0 || d.h == 0)
+                return "a rectangle needs a width and a height";
+            d.uses = [0];
+            auto c = a - (b - a);
+            d.outline = [[c, Vec3(b.x, c.y), b, Vec3(c.x, b.y), c]];
+            return null;
+        case "turned-rect":
+            {
+                immutable len = (b - a).length;
+                if (len == 0)
+                    return "a side needs a length";
+                auto u = (b - a) / len, n = Vec3(-u.y, u.x);
+                if (pts.length < 3)
+                {
+                    d.outline = [[a, b]];
+                    return "click how far the other side is";
+                }
+                double h = (pts[2] - a).dot(n);
+                // the other side on the right: the rectangle starts at the second click, the side the other way
+                size_t from = 0;
+                if (h < 0)
+                {
+                    from = 1;
+                    u = u * -1;
+                    n = n * -1;
+                    h = -h;
+                }
+                auto p = pts[from];
+                d.w = mm(len);
+                d.h = mm(h);
+                d.angle = deg(atan2(u.y, u.x));
+                if (d.h == 0)
+                    return "a rectangle needs a height";
+                d.uses = [from];
+                d.outline = [[p, p + u * len, p + u * len + n * h, p + n * h, p]];
+                return null;
+            }
+        case "polygon":
+            {
+                d.r = mm((b - a).length);
+                if (d.r == 0)
+                    return "a polygon needs a size";
+                d.angle = deg(atan2(b.y - a.y, b.x - a.x));
+                d.uses = [0];
+                Vec3[] ring;
+                foreach (k; 0 .. sides + 1)
+                    ring ~= a + dir(d.angle * PI / 180 + 2 * PI * k / sides) * d.r;
+                d.outline = [ring];
+                return null;
+            }
+        case "slot":
+            {
+                immutable len = (b - a).length;
+                if (len == 0)
+                    return "a slot's ends need to be apart";
+                if (pts.length < 3)
+                {
+                    d.outline = [[a, b]];
+                    return "click how wide";
+                }
+                auto u = (b - a) / len, n = Vec3(-u.y, u.x);
+                d.w = mm(2 * abs((pts[2] - a).dot(n)));
+                if (d.w == 0)
+                    return "a slot needs a width";
+                d.uses = [0, 1];
+                immutable r = d.w / 2, t = atan2(u.y, u.x);
+                d.outline = [[a + n * r, b + n * r] ~ arcPoints(b, r, t + PI / 2, t - PI / 2)
+                    ~ [a - n * r] ~ arcPoints(a, r, t - PI / 2, t - 3 * PI / 2)];
+                return null;
+            }
+        case "ellipse":
+            {
+                d.w = mm((b - a).length);   // rx
+                if (d.w == 0)
+                    return "an ellipse needs a size";
+                auto u = (b - a) / (b - a).length, n = Vec3(-u.y, u.x);
+                d.angle = deg(atan2(u.y, u.x));
+                if (pts.length < 3)
+                {
+                    d.outline = [[a, b]];
+                    return "click how wide";
+                }
+                d.h = mm(abs((pts[2] - a).dot(n)));   // ry
+                if (d.h == 0)
+                    return "an ellipse needs a width";
+                d.uses = [0];
+                d.outline = [arcPoints(a, d.w, 0, 2 * PI, u, n, d.h)];
+                return null;
+            }
+        case "teardrop":
+            {
+                d.r = mm((b - a).length);
+                if (d.r == 0)
+                    return "a teardrop needs a size";
+                d.uses = [0];
+                // its point straight up, the sides at 45°
+                auto tip = a + Vec3(0, d.r * 2 ^^ 0.5);
+                auto ring = arcPoints(a, d.r, PI / 4 + PI / 2, PI / 4 + 2 * PI);
+                d.outline = [[tip] ~ ring ~ [tip]];
+                return null;
+            }
+        case "3-point-arc":
+            {
+                if (pts.length < 3)
+                {
+                    d.outline = [[a, b]];
+                    return "click a point on it";
+                }
+                auto m = pts[2];
+                // the centre: as far from all three
+                immutable den = 2 * (a.x * (b.y - m.y) + b.x * (m.y - a.y) + m.x * (a.y - b.y));
+                if (abs(den) < 1e-9)
+                    return "the three points are in a line: no arc goes through them";
+                immutable a2 = a.dot(a), b2 = b.dot(b), m2 = m.dot(m);
+                auto c = Vec3((a2 * (b.y - m.y) + b2 * (m.y - a.y) + m2 * (a.y - b.y)) / den,
+                    (a2 * (m.x - b.x) + b2 * (a.x - m.x) + m2 * (b.x - a.x)) / den);
+                d.center = Vec3(round(c.x * 100) / 100, round(c.y * 100) / 100);
+                // counter-clockwise from start to end through the third, else the other way round
+                double angleOf(Vec3 q) => atan2(q.y - c.y, q.x - c.x);
+                double ccw(double from, double to)
+                {
+                    double x = to - from;
+                    while (x < 0)
+                        x += 2 * PI;
+                    return x;
+                }
+                immutable through = ccw(angleOf(a), angleOf(m)) < ccw(angleOf(a), angleOf(b));
+                d.uses = through ? [0, 1] : [1, 0];
+                auto s0 = pts[d.uses[0]], s1 = pts[d.uses[1]];
+                immutable a0 = angleOf(s0);
+                d.outline = [arcPoints(c, (s0 - c).length, a0, a0 + ccw(a0, angleOf(s1)))];
+                return null;
+            }
+        default:
+            return "no such shape: " ~ tool;
+        }
+    }
+
     /// A drawing tool chosen (null: back to selecting); what was being drawn is dropped.
     void startDrawing(string tool)
     {
@@ -411,9 +732,7 @@ mixin template SketchEdit()
         drawRuns();
         if (tool is null)
             return info("");
-        foreach (t; drawTools)
-            if (t[0] == tool)
-                info(t[2] ~ " · Esc drops it");
+        info(drawToolInfo(tool)[3] ~ " · Esc drops it");
     }
 
     /// Where view point (x, y) falls on the sketch's plane, in its own coordinates.
@@ -483,9 +802,7 @@ mixin template SketchEdit()
         }
         drawn ~= p;
         drawnAt ~= at;
-        immutable needed = drawTool == "point" ? 1 : drawTool == "rect" || drawTool == "circle" ? 2
-            : drawTool == "arc" ? 3 : size_t.max;
-        if (drawn.length >= needed)
+        if (drawn.length >= drawClicks(drawTool))
             return finishDrawing(false);
         showDrawing(x, y);
     }
@@ -542,6 +859,23 @@ mixin template SketchEdit()
                         ring ~= w(c + Vec3(cos(t), sin(t)) * r);
                     }
                     viewport.drawingLines = [ring, [w(c), w(pts[1])]];
+                    break;
+                }
+            case "center-rect", "turned-rect", "polygon", "slot", "ellipse", "teardrop", "3-point-arc":
+                {
+                    DrawnShape shape;
+                    Vec3[][] lines;
+                    if (shapeOf(drawTool, pts, polygonSides, shape) is null)
+                        lines = shape.outline;
+                    else
+                        lines = [pts];   // too few clicks, or in a line: what is clicked
+                    foreach (line; lines)
+                    {
+                        Vec3[] world;
+                        foreach (q; line)
+                            world ~= w(q);
+                        viewport.drawingLines ~= world;
+                    }
                     break;
                 }
             case "spline":
@@ -624,6 +958,9 @@ mixin template SketchEdit()
             pts = keptPts;
             at = keptAt;
         }
+        immutable clicks = drawClicks(tool);
+        if (clicks != size_t.max && pts.length != clicks)
+            return format("%s takes %d point%s", tool, clicks, clicks == 1 ? "" : "s");
         string select;
         try
         {
@@ -676,6 +1013,56 @@ mixin template SketchEdit()
                     immutable n = w.fresh("arc");
                     // its end on the circle its start gives: the solver keeps them equally far
                     w.add(format("auto %s = %s.arc(%s, %s, %s)", n, w.var, pointName(0), pointName(1), pointName(2)));
+                    select = n;
+                    break;
+                }
+            case "center-rect", "turned-rect", "polygon", "slot", "ellipse", "teardrop", "3-point-arc":
+                {
+                    DrawnShape d;
+                    if (auto why = shapeOf(tool, pts, polygonSides, d))
+                        return why;
+                    static string mm(double x) => format("%s.mm", num(x));
+                    static string deg(double x) => format("%s.deg", num(x));
+                    string[] use;
+                    foreach (i; d.uses)
+                        use ~= pointName(i);
+                    string n;
+                    switch (tool)
+                    {
+                    case "center-rect":
+                        n = w.fresh("rect");
+                        w.add(format("auto %s = %s.rect(center: %s, w: %s, h: %s)", n, w.var, use[0], mm(d.w), mm(d.h)));
+                        break;
+                    case "turned-rect":
+                        n = w.fresh("rect");
+                        w.add(format("auto %s = %s.rect(%s, w: %s, h: %s, angle: %s)", n, w.var, use[0], mm(d.w),
+                            mm(d.h), deg(d.angle)));
+                        break;
+                    case "polygon":
+                        n = w.fresh("polygon");
+                        w.add(format("auto %s = %s.polygon(%s, %d, r: %s, angle: %s)", n, w.var, use[0], polygonSides,
+                            mm(d.r), deg(d.angle)));
+                        break;
+                    case "slot":
+                        n = w.fresh("slot");
+                        w.add(format("auto %s = %s.slot(%s, %s, w: %s)", n, w.var, use[0], use[1], mm(d.w)));
+                        break;
+                    case "ellipse":
+                        n = w.fresh("ellipse");
+                        w.add(format("auto %s = %s.ellipse(%s, rx: %s, ry: %s, angle: %s)", n, w.var, use[0], mm(d.w),
+                            mm(d.h), deg(d.angle)));
+                        break;
+                    case "teardrop":
+                        n = w.fresh("teardrop");
+                        w.add(format("auto %s = %s.teardrop(%s, r: %s)", n, w.var, use[0], mm(d.r)));
+                        break;
+                    default:   // 3-point-arc: its centre a new point, kept as far from both ends by the solver
+                        immutable c = w.fresh("p");
+                        w.add(format("auto %s = %s.point(%s, %s)", c, w.var, num(d.center.x), num(d.center.y)));
+                        n = w.fresh("arc");
+                        w.add(format("auto %s = %s.arc(%s, %s, %s)", n, w.var, c, use[0], use[1]));
+                        break;
+                    }
                     select = n;
                     break;
                 }
