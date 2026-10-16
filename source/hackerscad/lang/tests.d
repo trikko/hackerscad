@@ -3843,3 +3843,16 @@ unittest
     assert(near(area("auto s = sketch();\ns.circle(s.point(0, 0, fixed: true), r: 10.mm);\n"
         ~ "s.circle(s.point(0, 0), r: 5.mm);\ns.fill(vec(0, 0));\n"), PI * 100));
 }
+
+unittest
+{
+    // an ellipse's offset is a curve "the ellipse, d away": kept so, the solid it makes broke once copied by a
+    // move (unorientable faces); made a B-spline through it, it stays valid, its size the same
+    expectOut(`auto p = (ellipse(25.mm, 19.mm).move(x: 20.mm, y: 12.mm) - circle(d: 8.mm).move(x: 20.mm, y: 12.mm))
+            .offset(-2.mm);
+        auto s = p.extrude(3.mm);
+        writeln(s.isValid, " ", s.move(y: 50.mm).isValid, " ", s.move(x: 0.mm).isValid, " ",
+            ellipse(25.mm, 19.mm).offset(-2.mm).extrude(3.mm).rotate(z: 30).isValid, " ",
+            abs(s.volume.to!double - s.move(y: 50.mm).volume.to!double) < 1e-6);`,
+        "true true true true true");
+}

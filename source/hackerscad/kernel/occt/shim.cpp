@@ -118,6 +118,9 @@
 #include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BOPAlgo_Builder.hxx>
+#include <Geom_TrimmedCurve.hxx>
+#include <Geom_OffsetCurve.hxx>
+#include <GeomConvert_ApproxCurve.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <Precision.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
@@ -707,6 +710,43 @@ hc_shape *hc_offset_solid(const hc_shape *s, double d)
     });
 }
 
+// Wire `w` with each offset curve (what the kernel's offset makes of an
+// ellipse or a spline: the curve kept as "that one, d away") made a B-spline
+// through it, to 1e-7 mm. Kept as offset curves, the faces they bound come
+// out unorientable once the solid is copied (moved, turned): invalid.
+// Lines and arcs stay what they are.
+static TopoDS_Wire without_offset_curves(const TopoDS_Wire &w)
+{
+    bool any = false;
+    for (TopExp_Explorer e(w, TopAbs_EDGE); e.More() && !any; e.Next()) {
+        double f, l;
+        Handle(Geom_Curve) c = BRep_Tool::Curve(TopoDS::Edge(e.Current()), f, l);
+        any = !c.IsNull() && c->IsKind(STANDARD_TYPE(Geom_OffsetCurve));
+    }
+    if (!any)
+        return w;
+    BRepBuilderAPI_MakeWire mk;
+    for (BRepTools_WireExplorer e(w); e.More(); e.Next()) {
+        const TopoDS_Edge edge = e.Current();
+        double f, l;
+        Handle(Geom_Curve) c = BRep_Tool::Curve(edge, f, l);
+        if (c.IsNull() || !c->IsKind(STANDARD_TYPE(Geom_OffsetCurve))) {
+            mk.Add(edge);
+            continue;
+        }
+        GeomConvert_ApproxCurve approx(new Geom_TrimmedCurve(c, f, l), 1e-7, GeomAbs_C2, 200, 9);
+        if (!approx.HasResult())
+            return w;   // left as it was: valid until copied
+        Handle(Geom_Curve) b = approx.Curve();
+        if (edge.Orientation() == TopAbs_REVERSED)
+            b->Reverse();
+        mk.Add(BRepBuilderAPI_MakeEdge(b).Edge());
+    }
+    if (!mk.IsDone() || !mk.Wire().Closed())
+        return w;
+    return mk.Wire();
+}
+
 // The loops of one outline (a face made of `w` alone) grown by d, or
 // shrunk: outlines, and islands where a narrow part closed up. None when
 // it vanished. Which way the kernel offsets follows how the loop runs: the
@@ -730,7 +770,7 @@ static std::vector<TopoDS_Wire> offset_loop(const TopoDS_Wire &w, double d)
             return loops;
         for (TopExp_Explorer ex(mk.Shape(), TopAbs_WIRE); ex.More(); ex.Next())
             if (BRepBuilderAPI_MakeFace(TopoDS::Wire(ex.Current()), Standard_True).IsDone())
-                loops.push_back(TopoDS::Wire(ex.Current()));
+                loops.push_back(without_offset_curves(TopoDS::Wire(ex.Current())));
         return loops;
     };
     std::vector<TopoDS_Wire> loops = run(d);
