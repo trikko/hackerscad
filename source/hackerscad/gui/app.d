@@ -5506,6 +5506,10 @@ private:
         TextIter a, b;
         buffer.getIterAtLineIndex(a, l0, i0);
         buffer.getIterAtLineIndex(b, l1, i1);
+        // written by the program: no completion list or signature pops up over it
+        completion.quiet = true;
+        scope (exit)
+            completion.quiet = false;
         buffer.beginUserAction();
         buffer.delete_(a, b);
         buffer.getIterAtLineIndex(a, l0, i0);
@@ -5518,7 +5522,9 @@ private:
         buffer.getIterAtLineIndex(b, l1, i1);
         buffer.selectRange(a, b);
         editor.scrollToIter(a, 0.1, false, 0, 0);
-        editor.grabFocus();
+        // the sketch bar wrote it: the keys stay with the view (Delete, Esc, X act on the sketch)
+        if (!sketchEditHold)
+            editor.grabFocus();
     }
 
     // ---- sketch dimensions over the 3D view

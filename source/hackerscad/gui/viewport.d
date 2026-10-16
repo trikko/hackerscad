@@ -128,6 +128,7 @@ final class Viewport
     Vec3[][] drawingLines;
     Vec3[] drawingPoints;
     Vec3[] drawingSnap;   /// the point the pointer would snap to (none: empty)
+    int drawingSnapKind;  /// what it is: 0 a point, 1 a line's middle, 2 where two lines cross
     private long lastClickAt;          /// when the last left click was (hnsecs)
     private double lastClickX = -1e9, lastClickY = -1e9;
     void delegate(Hit hit, double x, double y) onContext;   /// right click without dragging
@@ -3912,7 +3913,26 @@ private:
         foreach (q; drawingPoints)
             drawKnob(q, drawing, handlePixels - 3);
         foreach (q; drawingSnap)
-            drawKnob(q, Vec3(0.1, 0.55, 0.95), handlePixels);
+        {
+            if (drawingSnapKind == 0)
+            {
+                drawKnob(q, Vec3(0.1, 0.55, 0.95), handlePixels);
+                continue;
+            }
+            // a hidden place, drawn apart in violet: a triangle round a line's middle, a cross where lines cross
+            auto b = basis();
+            immutable r = (handlePixels + 5) * mmPerPixelAt(q);
+            auto u = b.right * r, v = b.up * r;
+            immutable violet = Vec3(0.62, 0.2, 0.85);
+            if (drawingSnapKind == 1)
+                drawPolyline([q + v, q - u * 0.87 - v * 0.5, q + u * 0.87 - v * 0.5, q + v], violet, 2.5);
+            else
+            {
+                drawPolyline([q - u - v, q + u + v], violet, 2.5);
+                drawPolyline([q - u + v, q + u - v], violet, 2.5);
+            }
+            drawKnob(q, violet, handlePixels - 4);
+        }
     }
 
     void renderInspect()

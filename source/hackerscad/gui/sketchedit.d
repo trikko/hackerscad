@@ -41,6 +41,19 @@ mixin template SketchEdit()
     Hidden[] selHidden;          /// hidden places selected with ↖ (a line's middle, a crossing): for Coincident
     Vec3[] selHiddenAt;          /// where they are
 
+    /// What a hidden place is, for the info line: "the middle of the line at line 7", "where … cross".
+    string hiddenText(Hidden h)
+    {
+        auto v = drawnSketch();
+        uint lineOf(size_t e) => v is null || e >= v.entities.length ? 0 : v.entities[e].span.line;
+        if (h.mid >= 0)
+            return format("the middle of the %s at line %d", v.entities[h.mid].kind, lineOf(h.mid));
+        if (h.on.length == 2)
+            return format("where the %s at line %d and the %s at line %d cross", v.entities[h.on[0]].kind,
+                lineOf(h.on[0]), v.entities[h.on[1]].kind, lineOf(h.on[1]));
+        return "a hidden place";
+    }
+
     /// The hidden place (a line's middle, where lines cross) within 5 pixels of (x, y), when no point of the
     /// sketch is nearer: true, with where and what.
     bool hiddenNear(double x, double y, out Vec3 at, out Hidden h)
@@ -1283,6 +1296,9 @@ mixin template SketchEdit()
             ptrdiff_t at = snapAt(x, y, p);
             if (at != -1)
                 viewport.drawingSnap = [v.world(p)];
+            viewport.drawingSnapKind = at == -3 ? (lastHidden.mid >= 0 ? 1 : 2) : 0;
+            if (at == -3)
+                info(hiddenText(lastHidden) ~ ": the point goes there, kept there");
             if (at != -1 || onSketchPlane(x, y, p))
                 pts ~= p;
         }
@@ -1373,7 +1389,11 @@ mixin template SketchEdit()
             Vec3 at;
             Hidden h;
             auto before = viewport.drawingSnap;
-            viewport.drawingSnap = hiddenNear(x, y, at, h) ? [drawnSketch().world(at)] : null;
+            immutable near = hiddenNear(x, y, at, h);
+            viewport.drawingSnap = near ? [drawnSketch().world(at)] : null;
+            viewport.drawingSnapKind = near ? (h.mid >= 0 ? 1 : 2) : 0;
+            if (near)
+                info(hiddenText(h) ~ ": a click selects it");
             if (before.length || viewport.drawingSnap.length)
                 viewport.refresh();
             return;
@@ -1387,6 +1407,9 @@ mixin template SketchEdit()
             immutable sn = snapAt(x, y, p);
             // the fill takes only hidden places
             viewport.drawingSnap = (drawTool == "fill" ? sn == -3 : sn != -1) ? [drawnSketch().world(p)] : null;
+            viewport.drawingSnapKind = sn == -3 ? (lastHidden.mid >= 0 ? 1 : 2) : 0;
+            if (sn == -3)
+                info(hiddenText(lastHidden) ~ ": the point goes there, kept there");
             viewport.refresh();
         }
     }

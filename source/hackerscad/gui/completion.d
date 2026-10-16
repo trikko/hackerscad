@@ -40,6 +40,8 @@ final class EditorCompletion
     /// The model's path and the library folders, for the imports.
     string delegate() path;
     string[] libraryDirs;
+    /// The program is changing the code (the sketch bar, a menu, an agent): no list, no signature
+    bool quiet;
 
     this(SourceView view, SourceBuffer buffer)
     {
@@ -54,19 +56,24 @@ final class EditorCompletion
 
         // typing opens or updates the list; the signature follows the cursor
         buffer.connectInsertText((TextIter at, string text) {
+            if (quiet)
+                return hide();
             if (text.length == 1)
                 schedule(text[0] == '.' || text[0] == '@' || text[0] == '(' || text[0] == ',' || isWordChar(text[0]), false);
             else
                 hide();
         }, Yes.After);
         buffer.connectDeleteRange((TextIter a, TextIter b) {
+            if (quiet)
+                return hide();
             if (list.getVisible())
                 schedule(false, false);
             else
                 updateSignatureSoon();
         }, Yes.After);
         auto click = new GestureClick;
-        click.connectPressed(() { hide(); updateSignatureSoon(); });
+        // a click only places the cursor (or picks a line): the signature is for typing
+        click.connectPressed(() { hide(); });
         view.addController(click);
 
         // help on the name under the pointer
