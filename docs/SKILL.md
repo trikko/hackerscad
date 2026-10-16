@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-594c80d0`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-080f823b`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-594c80d0`:** this text is up to date.
+- **It prints `0.3.1-080f823b`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -79,15 +79,18 @@ format stamp):
   code), and a file rewritten under them makes the window ask which to keep.
   For the command line tools, save a copy elsewhere (hcad_gui_state with
   source: true gives the code) instead of moving the window to a file.
-  To see whether the user changed anything, ask hcad_gui_state only for
-  what you need (only: ["source_hash", "camera"]): the same source_hash as
+  With a window open, at the start of every turn, before thinking or
+  editing: hcad_gui_state with only ["source_hash", "user_changed"]; if
+  the code changed, read it again (source: true) and work on it, never on
+  your earlier copy: the user may have edited it. The same source_hash as
   before is the same code, no need to fetch it again. The other hcad_gui_*
   tools reply with the whole state too: give them only as well
   (hcad_gui_edit with only: ["revision", "problems", "parts"]).
   Never take the most recent window for the user's: if it is not clear
   which one they mean, ask, or open one of your own. Show the work in the
   window as it goes, not only pictures at the end, and leave the view on
-  what changed (hcad_gui_view preset fit). To show the user what you mean
+  what changed (hcad_gui_view look_at it, with a size that shows where it
+  is; preset fit when the whole model changed). To show the user what you mean
   ("the hole goes here", "this wall is too thin"), mark up the view with
   hcad_gui_annotate (arrows, crosses, circles, text over it, the view
   locked meanwhile); the user marks it the same way in Annotate mode. When they say
@@ -125,6 +128,9 @@ format stamp):
   `--printability` adds per part the overhangs needing supports and the
   walls too thin to print (marked in the pictures: red stripes, violet
   hatching); with the window, `hcad_gui_view` with `printability: true`.
+- Ask instead of guessing whenever it changes the result, and ask before
+  you start, not afterwards: a font, the scale of a photo, a size of a real
+  part, the process or printer, which window, overwriting a file.
 - The loop: write the model, check it, render and look, compare sizes and
   pictures with the request, fix, then export. Put the request's
   requirements in unittest blocks so the checks repeat them.
@@ -136,13 +142,19 @@ format stamp):
       Solid body() { ... }
 - Reference objects (the shaft a knob fits on, the phone a stand holds) are
   parts too, see-through and not exported, so the fit can be checked:
-      @part("slategray", alpha: 0.4, export: false)
+      @part("slategray", alpha: 0.35, export: false)
 - Lengths: write units (60.mm, 2.5.cm, 1.inch). Bare numbers passed to
   geometry are millimetres. Never add a bare number to a length (60.mm + 5 is
   an error; write 60.mm + 5.mm, or d.to!double for the bare number a length
-  stands for in this file). Your own functions take Length parameters
-  (Solid peg(Length d) …): a bare number passes as mm, a @param as it is.
+  stands for in this file). Vectors too: write the unit on every number,
+  for clarity (vec(6.25.mm, 31.5.mm)); a vector of bare numbers and one of
+  lengths do not add (vec(1, 2) + vec(1.mm, 2.mm) is an error). Your own
+  functions take Length parameters
+  (Solid peg(Length d) …): a bare number passes as mm, a @param as it is,
+  no .to!double.
 - Angles: rotate(z: 45) uses degrees; 30.deg is explicit.
+- A number takes its unit after a dot: 8.2.mm, not 8.2mm (in -D too).
+  There is no cast: x.to!int, x.to!double, round(x), floor(x), ceil(x).
 - Primitives stand on the XY plane and are centred in X and Y:
   box(x, y, z) spans z = 0 .. z; cylinder(r: or d:, h:) also; center: true
   centres in Z. sphere(r) is centred on the origin.
@@ -159,6 +171,13 @@ format stamp):
   the cut that narrows it, or make the size smaller).
 - To round or chamfer the edges a cut left behind, select them by provenance:
   .fillet(edges.between(faces.from(holes), faces.top), r: 0.5.mm).
+- Select by provenance, not by position: edges.between(faces.from(upright),
+  faces.from(foot)) follows the @params, a filter on e.mid.z does not.
+  faces.top is the highest face (after an upright with a round top is
+  added, that top, no longer the foot's); faces.normal(Z) also takes
+  curved faces whose normal at their centre points up; faces.from(foot)
+  has neither problem, and a frame can be taken on the solid before
+  (foot.frame(faces.top)).
 - Cut with planes: body.split(body.plane(faces.top).offset(-10.mm)) gives
   .above and .below; s.pieces lists separate bodies, ordered along X, Y, Z.
 - Profiles: rect, circle, ellipse, polygon, slot, teardrop (the shapes of a
@@ -172,10 +191,15 @@ format stamp):
   .revolve(axis: Y). A prism along X or Y: .extrude(h, along: Y) (the
   profile's x along X, its y up Z, towards +Y; along: X its x along Y,
   towards +X; a negative h the other way); taper: 3.deg narrows the solid
-  going away from the profile, whichever way it goes (a negative taper
-  widens it). A profile in another plane (a section,
-  one turned) extrudes across its own plane, from where it lies. On a face: body.extrude(profile, on: frame, depth:)
-  adds, body.cut(profile, on: frame, depth: | through: true) removes.
+  and widens its holes going away from the profile, whichever way it goes
+  (a negative taper widens it and narrows the holes). A profile in another
+  plane (a section, one turned or moved, one drawn on a face) extrudes
+  across its own plane, from where it lies. On a face:
+  body.extrude(profile, on: frame, depth:) adds, body.cut(profile, on:
+  frame, depth: | through: true) removes.
+  Stand a profile up with p.across(X) or across(Y) (as extrude(along:)
+  does), not with rotate: loft([a.across(X), b.across(X).move(x: 20.mm)])
+  runs along X.
 - Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
@@ -236,6 +260,10 @@ format stamp):
   centerDistance); import hinges (hinge(…).fixed/.moving, print in place);
   import snaps (snapHook, snapSlot); import enclosures (roundedBox, tray,
   enclosure(vec(x, y, z)).base/.lid).
+- Before modelling anything common by hand (a teardrop, a screw hole, a
+  nut trap, a thread, a slot, a rounded box), look for it: hcad_docs with
+  a topic, or format: cheatsheet (every function in one line); write your
+  own only when nothing fits.
 - Functions are ordinary arguments: xs.map(x => x * 2), xs.filter(f).
 - Your own modules: import parts.bracket; is parts/bracket.hcad next to the
   model; import pizza; is pizza.hcad or pizza/package.hcad (which can
@@ -256,7 +284,8 @@ format stamp):
   (not right after { or another comment); comments say why.
 - For an example, a trial or an explanation that needs some object to work
   on (to move, cut, place, measure), use Carlo, the mascot clip: import
-  carlo; then carlo(), and call it Carlo. Not instead of an object the
+  carlo; then carlo(), and call it Carlo (always the same, recognisable,
+  small and quick to evaluate). Not instead of an object the
   request names (the phone, the shaft): model that one.
 
 ## Sketches: habits
@@ -275,10 +304,9 @@ format stamp):
 
 ## Mechanical parts and 3D printing
 - A mechanical part: its outline as a sketch from the drawing's dimensions,
-  extruded or revolved; then holes (hardware: hole(M3, depth, "clearance" |
-  "tap" | "insert" | "counterbore" | "countersink")), then fillets and
-  chamfers (before shells and holes; a radius smaller than the faces next
-  to the edge); then check.
+  extruded or revolved; then fillets and chamfers; then holes (hardware:
+  hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" |
+  "countersink")); then check.
 - Fits: ask how it will be made (FDM, resin, machined) before choosing
   clearances; for FDM about 0.2–0.3 mm for a sliding fit, press fits from a
   test print. Put clearances in @params.
@@ -310,7 +338,7 @@ format stamp):
 ## Remodelling a mesh or STEP
 - The sizes are in the file: start at once, no questions. Load it as a
   see-through reference part beside the copy (@part("slategray", alpha:
-  0.3, export: false) Solid original() => load("x.stl");), straightened
+  0.35, export: false) Solid original() => load("x.stl");), straightened
   if tilted (load(…).aligned).
 - 1, read it: hcad_features (chamfers with their size, holes, surfaces
   turned round an axis), hcad_scan along x, y and z (the holes and pockets
@@ -320,8 +348,8 @@ format stamp):
 - 2, build from the largest to the smallest: the outside as one outline
   per stretch, extruded; the chamfers of its end faces before anything is
   cut in them; then holes, pockets and traps; last small chamfers, notches
-  and lettering. Helpers take Length parameters (Solid bx(Length x0,
-  Length x1)): numbers and @params both pass, no .to!double. Lettering:
+  and lettering. Lettering (small regular grooves 0.5 mm deep in a face
+  are lettering, not notches): cut a section 0.25 mm inside the face,
   paste the sketch hcad_section gives with region round the letters (it
   solves as it is), extrude it 0.5 mm into the face; never trace by hand.
 - 3, THE ROUND: after every change, hcad_review (hcad review on the
@@ -355,8 +383,7 @@ format stamp):
   of sideways holes, a layer closing a hole for a millimetre (printed over,
   drilled after), teardrop points cut flat at an angle that is not 45°
   (read it from the section, not teardrop()), nut traps wider at the mouth,
-  0.5 mm chamfers where holes open. Small regular grooves 0.5 mm deep in a
-  face are lettering: trace it from a section 0.25 mm inside the face.
+  0.5 mm chamfers where holes open.
 
 ## Before saying it is done
 - No errors and no warnings (an under-constrained sketch's warning counts);
@@ -364,10 +391,7 @@ format stamp):
   overlap ((a & b).volume); printability looked at if it is to be printed;
   the pictures actually looked at.
 - Say what was not checked (a fit that needs a test print, a size guessed).
-- Ask instead of guessing whenever it changes the result, and ask before
-  you start, not afterwards: a font, the scale
-  of a photo, a size of a real part, the process or printer, which window,
-  overwriting a file.
+- Say it briefly, and name the @params the user can change to try variants.
 
 ## Showing and asking with annotations (hcad_gui_annotate)
 - Use them to ask and to answer, not only words: "is this the face you

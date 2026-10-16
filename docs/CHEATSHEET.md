@@ -426,7 +426,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - Text in relief: `text("ABC", size: 5.mm).centered.extrude(0.6.mm)`
 - Cut with a plane and keep one side: `s.halves(XY.offset(10.mm)).below`
 - Cut with a plane into pieces: `s.split(XY.offset(10.mm))`
-- A reference part, shown but not exported: `@part("slategray", alpha: 0.4, export: false)`
+- A reference part, shown but not exported: `@part("slategray", alpha: 0.35, export: false)`
 - A parameter in the side panel: `@param("Width", min: 10.mm, max: 100.mm) immutable width = 40.mm;`
 - Check a requirement: `unittest { assert(body.bbox.size.z <= 40.mm, "too tall"); }`
 - Measure: `writeln(s.volume, " ", s.bbox.size)`

@@ -31,7 +31,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>text("ABC", size: 5.mm).centered.extrude(0.6.mm)</dt><dd>Text in relief</dd>
 <dt>s.halves(XY.offset(10.mm)).below</dt><dd>Cut with a plane and keep one side</dd>
 <dt>s.split(XY.offset(10.mm))</dt><dd>Cut with a plane into pieces</dd>
-<dt>@part("slategray", alpha: 0.4, export: false)</dt><dd>A reference part, shown but not exported</dd>
+<dt>@part("slategray", alpha: 0.35, export: false)</dt><dd>A reference part, shown but not exported</dd>
 <dt>@param("Width", min: 10.mm, max: 100.mm) immutable width = 40.mm;</dt><dd>A parameter in the side panel</dd>
 <dt>unittest { assert(body.bbox.size.z &lt;= 40.mm, "too tall"); }</dt><dd>Check a requirement</dd>
 <dt>writeln(s.volume, " ", s.bbox.size)</dt><dd>Measure</dd>

@@ -11,13 +11,19 @@ dimensions and pictures, compare them with the request, fix, then export.
       Solid body() { ... }
 - Reference objects (the shaft a knob fits on, the phone a stand holds) are
   parts too, see-through and not exported, so the fit can be checked:
-      @part("slategray", alpha: 0.4, export: false)
+      @part("slategray", alpha: 0.35, export: false)
 - Lengths: write units (60.mm, 2.5.cm, 1.inch). Bare numbers passed to
   geometry are millimetres. Never add a bare number to a length (60.mm + 5 is
   an error; write 60.mm + 5.mm, or d.to!double for the bare number a length
-  stands for in this file). Your own functions take Length parameters
-  (Solid peg(Length d) …): a bare number passes as mm, a @param as it is.
+  stands for in this file). Vectors too: write the unit on every number,
+  for clarity (vec(6.25.mm, 31.5.mm)); a vector of bare numbers and one of
+  lengths do not add (vec(1, 2) + vec(1.mm, 2.mm) is an error). Your own
+  functions take Length parameters
+  (Solid peg(Length d) …): a bare number passes as mm, a @param as it is,
+  no .to!double.
 - Angles: rotate(z: 45) uses degrees; 30.deg is explicit.
+- A number takes its unit after a dot: 8.2.mm, not 8.2mm (in -D too).
+  There is no cast: x.to!int, x.to!double, round(x), floor(x), ceil(x).
 - Primitives stand on the XY plane and are centred in X and Y:
   box(x, y, z) spans z = 0 .. z; cylinder(r: or d:, h:) also; center: true
   centres in Z. sphere(r) is centred on the origin.
@@ -34,6 +40,13 @@ dimensions and pictures, compare them with the request, fix, then export.
   the cut that narrows it, or make the size smaller).
 - To round or chamfer the edges a cut left behind, select them by provenance:
   .fillet(edges.between(faces.from(holes), faces.top), r: 0.5.mm).
+- Select by provenance, not by position: edges.between(faces.from(upright),
+  faces.from(foot)) follows the @params, a filter on e.mid.z does not.
+  faces.top is the highest face (after an upright with a round top is
+  added, that top, no longer the foot's); faces.normal(Z) also takes
+  curved faces whose normal at their centre points up; faces.from(foot)
+  has neither problem, and a frame can be taken on the solid before
+  (foot.frame(faces.top)).
 - Cut with planes: body.split(body.plane(faces.top).offset(-10.mm)) gives
   .above and .below; s.pieces lists separate bodies, ordered along X, Y, Z.
 - Profiles: rect, circle, ellipse, polygon, slot, teardrop (the shapes of a
@@ -47,10 +60,15 @@ dimensions and pictures, compare them with the request, fix, then export.
   .revolve(axis: Y). A prism along X or Y: .extrude(h, along: Y) (the
   profile's x along X, its y up Z, towards +Y; along: X its x along Y,
   towards +X; a negative h the other way); taper: 3.deg narrows the solid
-  going away from the profile, whichever way it goes (a negative taper
-  widens it). A profile in another plane (a section,
-  one turned) extrudes across its own plane, from where it lies. On a face: body.extrude(profile, on: frame, depth:)
-  adds, body.cut(profile, on: frame, depth: | through: true) removes.
+  and widens its holes going away from the profile, whichever way it goes
+  (a negative taper widens it and narrows the holes). A profile in another
+  plane (a section, one turned or moved, one drawn on a face) extrudes
+  across its own plane, from where it lies. On a face:
+  body.extrude(profile, on: frame, depth:) adds, body.cut(profile, on:
+  frame, depth: | through: true) removes.
+  Stand a profile up with p.across(X) or across(Y) (as extrude(along:)
+  does), not with rotate: loft([a.across(X), b.across(X).move(x: 20.mm)])
+  runs along X.
 - Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
@@ -111,6 +129,10 @@ dimensions and pictures, compare them with the request, fix, then export.
   centerDistance); import hinges (hinge(…).fixed/.moving, print in place);
   import snaps (snapHook, snapSlot); import enclosures (roundedBox, tray,
   enclosure(vec(x, y, z)).base/.lid).
+- Before modelling anything common by hand (a teardrop, a screw hole, a
+  nut trap, a thread, a slot, a rounded box), look for it: hcad_docs with
+  a topic, or format: cheatsheet (every function in one line); write your
+  own only when nothing fits.
 - Functions are ordinary arguments: xs.map(x => x * 2), xs.filter(f).
 - Your own modules: import parts.bracket; is parts/bracket.hcad next to the
   model; import pizza; is pizza.hcad or pizza/package.hcad (which can
@@ -131,7 +153,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   (not right after { or another comment); comments say why.
 - For an example, a trial or an explanation that needs some object to work
   on (to move, cut, place, measure), use Carlo, the mascot clip: import
-  carlo; then carlo(), and call it Carlo. Not instead of an object the
+  carlo; then carlo(), and call it Carlo (always the same, recognisable,
+  small and quick to evaluate). Not instead of an object the
   request names (the phone, the shaft): model that one.
 
 ## Sketches: habits
@@ -150,10 +173,9 @@ dimensions and pictures, compare them with the request, fix, then export.
 
 ## Mechanical parts and 3D printing
 - A mechanical part: its outline as a sketch from the drawing's dimensions,
-  extruded or revolved; then holes (hardware: hole(M3, depth, "clearance" |
-  "tap" | "insert" | "counterbore" | "countersink")), then fillets and
-  chamfers (before shells and holes; a radius smaller than the faces next
-  to the edge); then check.
+  extruded or revolved; then fillets and chamfers; then holes (hardware:
+  hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" |
+  "countersink")); then check.
 - Fits: ask how it will be made (FDM, resin, machined) before choosing
   clearances; for FDM about 0.2–0.3 mm for a sliding fit, press fits from a
   test print. Put clearances in @params.
@@ -185,7 +207,7 @@ dimensions and pictures, compare them with the request, fix, then export.
 ## Remodelling a mesh or STEP
 - The sizes are in the file: start at once, no questions. Load it as a
   see-through reference part beside the copy (@part("slategray", alpha:
-  0.3, export: false) Solid original() => load("x.stl");), straightened
+  0.35, export: false) Solid original() => load("x.stl");), straightened
   if tilted (load(…).aligned).
 - 1, read it: hcad_features (chamfers with their size, holes, surfaces
   turned round an axis), hcad_scan along x, y and z (the holes and pockets
@@ -195,8 +217,8 @@ dimensions and pictures, compare them with the request, fix, then export.
 - 2, build from the largest to the smallest: the outside as one outline
   per stretch, extruded; the chamfers of its end faces before anything is
   cut in them; then holes, pockets and traps; last small chamfers, notches
-  and lettering. Helpers take Length parameters (Solid bx(Length x0,
-  Length x1)): numbers and @params both pass, no .to!double. Lettering:
+  and lettering. Lettering (small regular grooves 0.5 mm deep in a face
+  are lettering, not notches): cut a section 0.25 mm inside the face,
   paste the sketch hcad_section gives with region round the letters (it
   solves as it is), extrude it 0.5 mm into the face; never trace by hand.
 - 3, THE ROUND: after every change, hcad_review (hcad review on the
@@ -230,8 +252,7 @@ dimensions and pictures, compare them with the request, fix, then export.
   of sideways holes, a layer closing a hole for a millimetre (printed over,
   drilled after), teardrop points cut flat at an angle that is not 45°
   (read it from the section, not teardrop()), nut traps wider at the mouth,
-  0.5 mm chamfers where holes open. Small regular grooves 0.5 mm deep in a
-  face are lettering: trace it from a section 0.25 mm inside the face.
+  0.5 mm chamfers where holes open.
 
 ## Before saying it is done
 - No errors and no warnings (an under-constrained sketch's warning counts);
@@ -239,10 +260,7 @@ dimensions and pictures, compare them with the request, fix, then export.
   overlap ((a & b).volume); printability looked at if it is to be printed;
   the pictures actually looked at.
 - Say what was not checked (a fit that needs a test print, a size guessed).
-- Ask instead of guessing whenever it changes the result, and ask before
-  you start, not afterwards: a font, the scale
-  of a photo, a size of a real part, the process or printer, which window,
-  overwriting a file.
+- Say it briefly, and name the @params the user can change to try variants.
 
 ## Showing and asking with annotations (hcad_gui_annotate)
 - Use them to ask and to answer, not only words: "is this the face you
@@ -340,7 +358,7 @@ basic construct once, with comments saying what each makes appear; in the applic
 - **`@preset("name", value)`** on a parameter gives its value in a named preset (`--preset name`, or the preset menu in the GUI). A preset is the set of values declared under its name; parameters without a value for it keep their default.
   - Parameters never change during an evaluation: their value is decided beforehand, from default, then preset, then explicit override.
   - Like a configuration table: every parameter is a column, every preset a row.
-- **`@part("colour")`** above **`Solid name() { … }`** declares an exported body: a separate object in 3MF, a separate named body in STEP, its own file in a zip of STLs (`name.stl`; a lone `.stl` takes one part). A part is evaluated once per run even when other parts refer to it. Without a colour a part is Sky Pop (`#0FC3F2`). `@part("slategray", alpha: 0.4)` makes it see-through; `export: false` makes it a reference part (a shaft, a board, the object a holder is for): drawn in the view and in PNGs, left out of STL, 3MF and STEP. `name: "Tank"` is the part's name in exported files (object, body and file names) instead of the function's; two parts cannot share one.
+- **`@part("colour")`** above **`Solid name() { … }`** declares an exported body: a separate object in 3MF, a separate named body in STEP, its own file in a zip of STLs (`name.stl`; a lone `.stl` takes one part). A part is evaluated once per run even when other parts refer to it. Without a colour a part is Sky Pop (`#0FC3F2`). `@part("slategray", alpha: 0.35)` makes it see-through; `export: false` makes it a reference part (a shaft, a board, the object a holder is for): drawn in the view and in PNGs, left out of STL, 3MF and STEP. `name: "Tank"` is the part's name in exported files (object, body and file names) instead of the function's; two parts cannot share one.
 - **`@parts`** above a function makes **a part of each separate body** it returns: of a `Solid` (two halves of a cut, copies that do not touch, the objects of a loaded 3MF) or of each element of a `Solid[]`. The parts are named after the function with a number, `jaws1`, `jaws2`… (just `jaws` when there is one), in the order of `.pieces` (along X, then Y, then Z); how many there are comes from the evaluation, so a parameter can change it. It takes what `@part` takes, plus `varied: true`, which gives the pieces colours that tell apart (the first in the part's colour). A piece coloured on its own (`pieces[1] = pieces[1].color("Blue Pop");`, what the menu's Colour writes on a piece) keeps its colour; the others take the annotation's. A solid in a `Solid[]` made of several bodies stays one part. An empty `Solid[]` makes no part: a part to choose with a parameter, `@parts Solid[] lid() => withLid ? [makeLid()] : [];`. `@part` on a function returning a `Solid[]` is an error that points at `@parts`; on a `Solid` of several bodies it is one part (one object in 3MF).
   ```d
   import carlo;   // Carlo, the mascot clip: an object to try things on
@@ -909,7 +927,7 @@ Solid knob()
 
 // a reference part: drawn see-through to check the fit, but left out of
 // STL/3MF/STEP exports
-@part("slategray", alpha: 0.4, export: false)
+@part("slategray", alpha: 0.35, export: false)
 Solid shaft() => dShape(shaftD, shaftFlat, shaftDepth + 12.mm).move(z: -12.mm);
 
 // unittests run after every evaluation: their output goes to the console
