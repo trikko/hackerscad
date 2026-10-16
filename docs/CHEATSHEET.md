@@ -437,7 +437,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - **Middle drag, or Ctrl + right drag** — moves the view
 - **Wheel** — zooms, towards the pointer
 - **F6** — frames the whole model (Fit)
-- **Click / Shift+click** — picks what is under the pointer / adds it to what is picked
+- **Click** — adds what is under the pointer to what is picked (again: takes it away); on nothing, Esc or Space: none
 - **Right-click** — what can be done there: fillets, holes, Move…, Colour, Sketch on face…
 - **Double click on a flat face** — the view straight at that face
 - **Alt+1 … Alt+4** — a click picks whole parts, faces, edges or vertices
