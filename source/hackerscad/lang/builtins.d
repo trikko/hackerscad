@@ -1185,17 +1185,57 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     def("sweep", (ref CallArgs a) {
         // circle(d: 4.mm).sweep(path): the profile, drawn on XY around the origin, starts
         // at the beginning of the path and normal to it, its +Y kept towards world +Z;
-        // twist: 360.deg turns it once around the path on the way, evenly
-        auto x = Args(it, a, "sweep", ["profile", "path", "frenet", "twist"]);
+        // how it turns about the path on the way: as little as it can, or frenet: true (the
+        // curvature), twist: 360.deg (once, evenly; or t => angle, 0 to 1 along it), up: Z
+        // (its +Y towards Z all along), guide: rail (its +Y towards that path)
+        auto x = Args(it, a, "sweep", ["profile", "path", "frenet", "twist", "up", "guide"]);
         auto p = profileArg(x, "profile");
-        auto pv = x.get("path");
-        if (pv.kind != Kind.solid || !pv.solid.path)
-            throw new HcadError(Code.type, format("'path' must be a Path (path, spline, helix), not %s", pv.typeName), x.spanOf("path"));
-        immutable twist = x.angleOr("twist", 0);
-        if (twist != 0 && x.flag("frenet", false))
-            throw new HcadError(Code.type, "a twisted sweep turns the profile its own way: leave frenet out", x.spanOf("frenet"));
-        auto sv = derived(it, k.sweep(nonEmpty(p, a.span), pv.solid.brep, x.flag("frenet", false), twist), [p], "sweep",
-            a.span);
+        SolidVal pathOf(string n)
+        {
+            auto pv = x.get(n);
+            if (pv.kind != Kind.solid || !pv.solid.path)
+                throw new HcadError(Code.type, format("'%s' must be a Path (path, spline, helix), not %s", n, pv.typeName),
+                    x.spanOf(n));
+            return pv.solid;
+        }
+        auto route = pathOf("path");
+        immutable frenet = x.flag("frenet", false);
+        string[] ways;
+        foreach (n; ["frenet", "twist", "up", "guide"])
+            if (x.has(n) && (n != "frenet" || frenet))
+                ways ~= n;
+        if (ways.length > 1)
+            throw new HcadError(Code.type, format("%s and %s both decide how the profile turns about the path: give one",
+                ways[0], ways[1]), x.spanOf(ways[1]));
+        Brep made;
+        try
+        {
+            if (x.has("twist") && x.get("twist").isCallable)
+            {
+                // a roll that varies along the path: the function at 65 places from 0 (the start) to 1 (the end)
+                auto f = x.get("twist");
+                double[] angles;
+                foreach (i; 0 .. 65)
+                {
+                    auto v = call1(it, f, Value.number(i / 64.0), x.spanOf("twist"));
+                    if (!v.isNum || (v.n.dim != Dim.angle && v.n.dim != Dim.none))
+                        throw new HcadError(Code.units, format("twist: t => … must give an Angle, not %s", v.typeName),
+                            x.spanOf("twist"));
+                    angles ~= v.n.dim == Dim.angle ? v.n.value : v.n.value * PI / 180;
+                }
+                // the turn is counted from the start: f(0) is where the profile starts, unturned
+                made = k.sweepRoll(nonEmpty(p, a.span), route.brep, angles, Vec3(0, 0, 0), null);
+            }
+            else if (x.has("up"))
+                made = k.sweepRoll(nonEmpty(p, a.span), route.brep, null, x.dir("up"), null);
+            else if (x.has("guide"))
+                made = k.sweepRoll(nonEmpty(p, a.span), route.brep, null, Vec3(0, 0, 0), pathOf("guide").brep);
+            else
+                made = k.sweep(nonEmpty(p, a.span), route.brep, frenet, x.angleOr("twist", 0));
+        }
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span);
+        auto sv = derived(it, made, [p], "sweep", a.span);
         sv.flat = false;
         sv.placed = false;
         return Value.of(sv);

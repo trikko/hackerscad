@@ -240,6 +240,10 @@ interface BrepKernel
     /// `twist`: radians the profile turns about the path from its start to
     /// its end, evenly along it.
     Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0);
+    /// The same, the profile's roll about the path decided by `angles`
+    /// (radians, evenly along it, from where it would turn by itself), or kept
+    /// towards `up` (non-zero), or towards the curve `guide` (non-null).
+    Brep sweepRoll(Brep profile, Brep path, const(double)[] angles, Vec3 up, Brep guide);
     Brep loft(Brep[] profiles, bool ruled);
     /// Hidden-line projection: `dir` points from the model to the viewer.
     ViewSegment[] hiddenLines(Brep s, Vec3 dir, Vec3 up, double deflection);

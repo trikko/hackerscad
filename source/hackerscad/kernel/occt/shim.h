@@ -161,6 +161,9 @@ hc_shape *hc_outline_regions(const double *data, int n, int *full_count);
  * frenet = 1 follows the path's curvature (helices). */
 hc_shape *hc_sweep(const hc_shape *profile, const hc_shape *path, int frenet);
 hc_shape *hc_sweep_twisted(const hc_shape *profile, const hc_shape *path, int frenet, double twist);
+/* the same, the roll decided by frenet, n angles evenly along the path, a fixed up (zero: none) or a guide (null: none) */
+hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet, const double *angles, int n,
+                      const double up[3], const hc_shape *guide);
 /* A solid through profiles already placed in space (ruled: flat sides). */
 hc_shape *hc_loft(const hc_shape *const *profiles, int n, int ruled);
 

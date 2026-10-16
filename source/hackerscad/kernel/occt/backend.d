@@ -135,6 +135,12 @@ final class OcctKernel : BrepKernel
     }
     Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0) =>
         wrap(hc_sweep_twisted(h(profile), h(path), frenet, twist), "sweep");
+    Brep sweepRoll(Brep profile, Brep path, const(double)[] angles, Vec3 up, Brep guide)
+    {
+        double[3] u = [up.x, up.y, up.z];
+        return wrap(hc_sweep_ex(h(profile), h(path), 0, angles.ptr, cast(int) angles.length, u,
+            guide is null ? null : h(guide)), "sweep");
+    }
     Brep loft(Brep[] profiles, bool ruled)
     {
         const(hc_shape)*[] ps;
@@ -429,7 +435,11 @@ private:
     static void check(bool ok, string op)
     {
         if (!ok)
-            throw new KernelException(op ~ " failed: " ~ hc_last_error().fromStringz.idup);
+        {
+            import std.string : chompPrefix;
+            // OpenCascade's own failures carry their class's name: not for the user
+            throw new KernelException(op ~ " failed: " ~ hc_last_error().fromStringz.idup.chompPrefix("Standard_Failure: "));
+        }
     }
 }
 

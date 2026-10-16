@@ -114,6 +114,7 @@
 #include <ShapeBuild_ReShape.hxx>
 #include <BRepTools_History.hxx>
 #include <memory>
+#include <functional>
 #include <TopoDS_Shell.hxx>
 #include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -128,6 +129,7 @@
 #include <ShapeAnalysis_FreeBounds.hxx>
 #include <BRepBuilderAPI_FindPlane.hxx>
 #include <BRepAlgoAPI_Section.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 
 struct hc_shape {
     TopoDS_Shape shape;
@@ -4100,7 +4102,60 @@ int hc_path_sample(const hc_shape *path, int n, double *out)
 // there). The reference it turns from follows the spine without turning on
 // its own. The sweep finds the guide where the plane normal to the spine
 // cuts it.
-static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, double twist, double radius)
+// The roll at fraction f of the path, from `n` angles evenly along it.
+static double roll_at(const double *angles, int n, double f)
+{
+    if (n < 2)
+        return n == 1 ? angles[0] * f : 0;
+    const double x = std::max(0.0, std::min(1.0, f)) * (n - 1);
+    const int k = std::min(n - 2, (int)x);
+    return angles[k] + (angles[k + 1] - angles[k]) * (x - k);
+}
+
+// The roll along the path (n angles evenly along it, from 0) that keeps the
+// profile's +Y towards `towards(fraction, point, tangent)`, from a profile
+// placed with its +X along `start`: against the reference carried along the
+// path without turning, as twist_guide carries it.
+static std::vector<double> roll_towards(const TopoDS_Wire &spine, gp_Dir start, int n,
+                                        const std::function<gp_Vec(double, const gp_Pnt &, const gp_Vec &)> &towards)
+{
+    BRepAdaptor_CompCurve c(spine);
+    GCPnts_UniformAbscissa ua(c, n);
+    if (!ua.IsDone() || ua.NbPoints() != n)
+        throw Standard_Failure("the path is too short to sweep along");
+    std::vector<double> r;
+    gp_Vec ref(start);
+    double last = 0;
+    for (int i = 1; i <= n; i++) {
+        gp_Pnt p;
+        gp_Vec t;
+        c.D1(ua.Parameter(i), p, t);
+        if (t.Magnitude() < 1e-12)
+            throw Standard_Failure("the path stops along the way");
+        t.Normalize();
+        ref = ref - t * ref.Dot(t);
+        if (ref.Magnitude() < 1e-9)
+            throw Standard_Failure("the path turns too sharply");
+        ref.Normalize();
+        const gp_Vec refY = t.Crossed(ref);
+        gp_Vec d = towards((i - 1.0) / (n - 1.0), p, t);
+        d = d - t * d.Dot(t);
+        if (d.Magnitude() < 1e-9)
+            throw Standard_Failure((std::string("at ") + std::to_string((int)std::lround(100.0 * (i - 1) / (n - 1))) +
+                                    "% of its way").c_str());
+        double a = std::atan2(refY.Crossed(d).Dot(t), refY.Dot(d));
+        // no jumps of a whole turn from one place to the next
+        while (a - last > M_PI)
+            a -= 2 * M_PI;
+        while (a - last < -M_PI)
+            a += 2 * M_PI;
+        r.push_back(a);
+        last = a;
+    }
+    return r;
+}
+
+static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, const double *angles, int nAngles, double radius)
 {
     BRepAdaptor_CompCurve c(spine);
     // how the path bends: the guide keeps well inside its tightest bend (a
@@ -4124,7 +4179,10 @@ static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, double tw
     }
     radius = std::min(radius, 0.2 * tightest);
     // points close enough for an interpolation to follow the winding
-    const double turns = (std::abs(twist) + turning) / (2 * M_PI);
+    double winding = 0;   // how far the roll goes, back and forth
+    for (int k = 1; k < nAngles; k++)
+        winding += std::abs(angles[k] - angles[k - 1]);
+    const double turns = (winding + turning) / (2 * M_PI);
     const int n = std::min(2000, std::max(24, (int)std::ceil(turns * 72) + 24));
     GCPnts_UniformAbscissa ua(c, n + 1);
     if (!ua.IsDone() || ua.NbPoints() < 3)
@@ -4144,7 +4202,7 @@ static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, double tw
             throw Standard_Failure("the path turns too sharply to twist along");
         ref.Normalize();
         const double f = (i - 1.0) / (ua.NbPoints() - 1.0);
-        const gp_Vec turned = ref.Rotated(gp_Ax1(gp::Origin(), gp_Dir(t)), twist * f);
+        const gp_Vec turned = ref.Rotated(gp_Ax1(gp::Origin(), gp_Dir(t)), roll_at(angles, nAngles, f));
         pts->SetValue(i, p.Translated(turned * radius));
     }
     GeomAPI_Interpolate in(pts, Standard_False, 1e-9);
@@ -4161,35 +4219,86 @@ hc_shape *hc_sweep(const hc_shape *profile, const hc_shape *path, int frenet)
 
 hc_shape *hc_sweep_twisted(const hc_shape *profile, const hc_shape *path, int frenet, double twist)
 {
+    const double angles[2] = {0, twist};
+    const double none[3] = {0, 0, 0};
+    return hc_sweep_ex(profile, path, frenet, angles, twist != 0 ? 2 : 0, none, nullptr);
+}
+
+// The sweep, its roll about the path decided one way: frenet (the
+// curvature), `angles` (n of them evenly along it, turned from where it
+// would be), `up` (its +Y kept towards that direction) or `guide` (its +Y
+// towards that curve); else it turns as little as it can.
+hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet, const double *angles, int nAngles,
+                      const double up_[3], const hc_shape *guide_)
+{
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         TopoDS_Wire spine = single_wire(path->shape);
-        // the profile is drawn on XY around the origin: carry it to the start of
-        // the path, normal to it, keeping its +Y as close to world +Z as possible
         BRepAdaptor_CompCurve c(spine);
         gp_Pnt p;
         gp_Vec t;
         c.D1(c.FirstParameter(), p, t);
         gp_Dir tz(t);
+        const gp_Vec fixedUp(up_[0], up_[1], up_[2]);
+        const bool upMode = fixedUp.Magnitude() > 1e-12;
+        // the profile is drawn on XY around the origin: carry it to the start of
+        // the path, normal to it, its +Y as close to world +Z as possible (or
+        // to `up`, or towards the guide)
         gp_Vec up(0, 0, 1);
         if (std::abs(gp_Dir(up).Dot(tz)) > 0.999)
             up = gp_Vec(0, 1, 0);
+        TopoDS_Wire userGuide;
+        if (guide_ != nullptr)
+            userGuide = single_wire(guide_->shape);
+        BRepAdaptor_CompCurve g;
+        if (!userGuide.IsNull())
+            g.Initialize(userGuide, Standard_False);
+        // the way +Y should point at fraction f of the path: up, or the guide's point as far along it
+        auto towards = [&](double f, const gp_Pnt &q, const gp_Vec &) -> gp_Vec {
+            if (upMode)
+                return fixedUp;
+            gp_Pnt on;
+            GCPnts_AbscissaPoint ap(g, f * GCPnts_AbscissaPoint::Length(g), g.FirstParameter());
+            on = g.Value(ap.Parameter());
+            return gp_Vec(q, on);
+        };
+        if (upMode || guide_ != nullptr) {
+            up = towards(0, p, gp_Vec(tz));
+            if ((up - gp_Vec(tz) * up.Dot(gp_Vec(tz))).Magnitude() < 1e-9)
+                throw Standard_Failure(upMode ? "the path starts along up: there the profile's +Y cannot point up"
+                                              : "the guide starts straight ahead of the path: it must run beside it");
+        }
         gp_Dir y(up - gp_Vec(tz) * up.Dot(gp_Vec(tz)));
         gp_Dir x = y.Crossed(tz);
         gp_Trsf place;
         place.SetTransformation(gp_Ax3(p, tz, x), gp_Ax3(gp::XOY()));
         TopoDS_Shape moved = BRepBuilderAPI_Transform(profile->shape, place, true).Shape();
         ProfileLoops loops = loops_of(moved);
-        // a twist: a guide winding around the path turns the profile
+        // the roll: given, or towards up or the guide, made by a guide winding round the path
+        std::vector<double> rolls(angles, angles + nAngles);
+        if (upMode || guide_ != nullptr) {
+            try {
+                rolls = roll_towards(spine, x, 257, towards);
+            } catch (Standard_Failure &e) {
+                const std::string where = e.GetMessageString();
+                if (where.rfind("at ", 0) != 0)
+                    throw;
+                throw Standard_Failure((upMode ? where + " the path runs along up: there the profile's +Y cannot point "
+                                                         "up; give a guide instead"
+                                               : where + " the guide lies straight ahead of the path: it must run "
+                                                         "beside it").c_str());
+            }
+        }
         TopoDS_Wire guide;
-        if (twist != 0) {
+        if (!rolls.empty()) {
             Bnd_Box bb;
             BRepBndLib::Add(moved, bb);
             const double radius = std::max(1.0, std::sqrt(bb.SquareExtent()));
-            guide = twist_guide(spine, x, twist, radius);
+            guide = twist_guide(spine, x, rolls.data(), (int)rolls.size(), radius);
         }
         auto pipe = [&](const TopoDS_Wire &w) {
             BRepOffsetAPI_MakePipeShell mk(spine);
-            if (twist != 0)
+            // the roll's guide winds round the path, in the planes across it
+            if (!guide.IsNull())
                 mk.SetMode(guide, Standard_False);
             else if (frenet)
                 mk.SetMode(Standard_True);

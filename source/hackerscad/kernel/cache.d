@@ -99,6 +99,9 @@ final class CachingKernel : BrepKernel
             inner.gridHollow(outside, outerRings, inside, innerRings, per));
     Brep sweep(Brep profile, Brep path, bool frenet, double twist = 0) =>
         op(key("sweep", profile, path, frenet, twist), inner.sweep(profile, path, frenet, twist));
+    Brep sweepRoll(Brep profile, Brep path, const(double)[] angles, Vec3 up, Brep guide) =>
+        guide is null ? op(key("sweepRoll", profile, path, angles, up), inner.sweepRoll(profile, path, angles, up, null))
+            : op(key("sweepRoll", profile, path, angles, up, guide), inner.sweepRoll(profile, path, angles, up, guide));
     Brep loft(Brep[] profiles, bool ruled)
     {
         ulong[] ks;

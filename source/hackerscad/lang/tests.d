@@ -3917,3 +3917,22 @@ unittest
     assert(error(`@part Solid p() => circle(d: 1).sweep(box(10, 10, 10).path(edges.parallel(Z)));`)
         .message.canFind("separate pieces"));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // the roll about the path: up, a guide or a twist that varies keep the profile across the path, so the
+    // volume stays the area times the length; up along the path, or two ways at once, are errors
+    expectOut(`auto road = spline([vec(0, 0, 0), vec(40.mm, 30.mm, 5.mm), vec(80.mm, -10.mm, 15.mm), vec(120.mm, 20.mm, 0)]);
+        auto rail = spline([vec(0, 0, 20.mm), vec(40.mm, 50.mm, 25.mm), vec(80.mm, -30.mm, 35.mm), vec(120.mm, 20.mm, 20.mm)]);
+        auto bar = rect(10.mm, 2.mm);
+        immutable plain = bar.sweep(road).volume;
+        writeln(abs(bar.sweep(road, up: Z).volume / plain - 1) < 1e-4, " ",
+            abs(bar.sweep(road, guide: rail).volume / plain - 1) < 1e-4, " ",
+            abs(bar.sweep(road, twist: t => 60.deg * sin(t * 720.deg)).volume / plain - 1) < 1e-4);`,
+        "true true true", "import std.math;");
+    assert(error(`@part Solid p() => rect(10, 2).sweep(path([vec(0, 0, 0), vec(30, 0, 0), vec(30, 0, 30)], bend: 8), up: Z);`)
+        .message.canFind("runs along up"));
+    assert(error(`@part Solid p() => rect(10, 2).sweep(helix(r: 10, pitch: 5, height: 20), twist: 90.deg, up: Z);`)
+        .message.canFind("give one"));
+}

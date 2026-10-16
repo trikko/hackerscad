@@ -108,6 +108,8 @@ hc_shape* hc_outline(const(double)* data, int n);
 hc_shape* hc_extrude_shear(const(hc_shape)* s, double height, double dx, double dy);
 hc_shape* hc_outline_regions(const(double)* data, int n, int* fullCount);
 hc_shape* hc_sweep(const(hc_shape)* profile, const(hc_shape)* path, int frenet);
+hc_shape* hc_sweep_ex(const(hc_shape)* profile, const(hc_shape)* path, int frenet, const(double)* angles, int n,
+    ref const double[3] up, const(hc_shape)* guide);
 hc_shape* hc_sweep_twisted(const(hc_shape)* profile, const(hc_shape)* path, int frenet, double twist);
 hc_shape* hc_loft(const(hc_shape*)* profiles, int n, int ruled);
 int hc_hlr(const(hc_shape)* s, double dx, double dy, double dz, double ux, double uy, double uz, double deflection,
