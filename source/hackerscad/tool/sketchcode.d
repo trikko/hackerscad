@@ -207,9 +207,13 @@ private:
         immutable st = statementStart(c);
         immutable end = closing(c);
         immutable whole = end + 1 < toks.length && toks[end + 1].kind == Tok.semicolon;
-        // auto name = s.line(…);
-        if (whole && toks[st].kind == Tok.kwAuto && toks[st + 1].kind == Tok.ident && toks[st + 2].kind == Tok.assign)
-            return toks[st + 1].text;
+        // auto name = s.line(…); or one of several: auto a = s.line(…), b = s.line(…);
+        immutable after = end + 1 < toks.length ? toks[end + 1].kind : Tok.eof;
+        if (c >= 6 && toks[c - 1].kind == Tok.ident && toks[c - 2].kind == Tok.dot && toks[c - 3].kind == Tok.ident
+            && toks[c - 4].kind == Tok.assign && toks[c - 5].kind == Tok.ident
+            && (toks[c - 6].kind == Tok.kwAuto || toks[c - 6].kind == Tok.comma)
+            && (after == Tok.semicolon || after == Tok.comma))
+            return toks[c - 5].text;
         // s.line(…); alone: it gets a name
         if (whole && toks[st].kind == Tok.ident && toks[st].text == var && st + 3 == c)
         {
@@ -815,8 +819,34 @@ string deleteFromSketch(string source, string file, const ref SketchView v, cons
                 v.entities[g].span.line));
         // the whole statement must be the call: auto x = s.line(…); or s.line(…);
         auto t = w.toks;
-        if (t[st[0]].kind == Tok.kwAuto && t[st[0] + 1].kind == Tok.ident)
-            names[t[st[0] + 1].text] = true;
+        // the names the statement declares (auto a = …, b = …)
+        string[] declared;
+        int depth;
+        foreach (k; st[0] .. st[1])
+        {
+            immutable kk = t[k].kind;
+            if (kk == Tok.lparen || kk == Tok.lbracket || kk == Tok.lbrace)
+                depth++;
+            else if (kk == Tok.rparen || kk == Tok.rbracket || kk == Tok.rbrace)
+                depth--;
+            else if (depth == 0 && kk == Tok.ident && k + 1 < t.length && t[k + 1].kind == Tok.assign
+                && (t[k - 1].kind == Tok.kwAuto || t[k - 1].kind == Tok.comma))
+                declared ~= t[k].text;
+        }
+        if (declared.length > 1)
+        {
+            // all of them must go: the entities each declares
+            foreach (i, en; v.entities)
+                if ((i in gone) is null && !en.reference)
+                {
+                    immutable ci = w.callToken(en.span);
+                    if (ci != size_t.max && ci >= st[0] && ci <= st[1])
+                        return fail(format("line %d declares %-(%s, %) together: delete it by hand, or split it",
+                            v.entities[g].span.line, declared));
+                }
+        }
+        foreach (d; declared)
+            names[d] = true;
         starts ~= st[0];
     }
     foreach (c; v.constraints)
