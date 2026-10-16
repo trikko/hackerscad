@@ -465,3 +465,281 @@ unittest
     auto lv = viewOf(looped);
     assertThrown!CodegenException(SketchWriter(looped, file, lv));
 }
+
+/// One statement a sketch tool writes: `format` with the names of `ids` in it, in order.
+struct SketchStep
+{
+    string format;
+    size_t[] ids;
+}
+
+/// The constraint tools of the sketch bar.
+immutable string[] sketchTools = ["coincident", "on", "horizontal", "vertical", "parallel", "perpendicular", "equal",
+    "tangent", "concentric", "midpoint", "symmetric", "fix", "length", "distance", "angle", "radius", "diameter"];
+
+/// The tools that take a value (a length, an angle).
+immutable string[] valueTools = ["length", "distance", "angle", "radius", "diameter"];
+
+/// What constraint tool `tool` writes for the entities `sel` of sketch `v`,
+/// selected in that order (`value` for the tools that take one, "20.mm",
+/// "30.deg"): several items get it each (horizontal, vertical, fix), or
+/// relative to the first (parallel, equal, concentric, coincident), a value
+/// on several is one dimension and the others equal to it. Empty, with
+/// `why`, when the selection does not fit the tool.
+SketchStep[] planConstraint(const ref SketchView v, const(size_t)[] sel, string tool, string value, out string why)
+{
+    size_t[] points, lines, rounds, ellipses, others;
+    foreach (e; sel)
+    {
+        switch (v.entities[e].kind)
+        {
+        case "point": points ~= e; break;
+        case "line": lines ~= e; break;
+        case "circle", "arc": rounds ~= e; break;
+        case "ellipse": ellipses ~= e; break;
+        default: others ~= e; break;
+        }
+    }
+    immutable n = sel.length;
+    SketchStep[] steps;
+    SketchStep step(string f, size_t[] ids...) => SketchStep(f, ids.dup);
+    // each item to the first: a, b; a, c; …
+    SketchStep[] toFirst(string call, const(size_t)[] items)
+    {
+        SketchStep[] r;
+        foreach (x; items[1 .. $])
+            r ~= step("s." ~ call ~ "(%s, %s)", items[0], x);
+        return r;
+    }
+    bool only(const(size_t)[] kind, size_t least = 1) => kind.length == n && n >= least;
+    string fail(string reason)
+    {
+        why = reason;
+        return null;
+    }
+    auto curves = rounds ~ ellipses;
+    switch (tool)
+    {
+    case "horizontal", "vertical":
+        if (only(lines))
+            foreach (l; lines)
+                steps ~= step("s." ~ tool ~ "(%s)", l);
+        else if (only(points, 2) && n == 2)
+            steps ~= step("s." ~ tool ~ "(%s, %s)", points[0], points[1]);
+        else if (tool == "horizontal" && only(ellipses))
+            foreach (e; ellipses)
+                steps ~= step("s.horizontal(%s)", e);
+        else
+            fail(tool ~ ": lines (each made " ~ tool ~ "), or two points (lined up " ~ (tool == "horizontal"
+                ? "level" : "upright") ~ ")");
+        break;
+    case "parallel":
+        if (only(lines, 2))
+            steps = toFirst("parallel", lines);
+        else
+            fail("parallel: two lines or more (each parallel to the first)");
+        break;
+    case "perpendicular":
+        if (only(lines, 2) && n == 2)
+            steps ~= step("s.perpendicular(%s, %s)", lines[0], lines[1]);
+        else
+            fail("perpendicular: two lines");
+        break;
+    case "equal":
+        if (only(lines, 2))
+            steps = toFirst("equal", lines);
+        else if (only(rounds, 2))
+            steps = toFirst("equal", rounds);
+        else if (only(ellipses) && n == 1)
+            steps ~= step("s.equal(%s)", ellipses[0]);
+        else
+            fail("equal: lines (as long as the first), or circles and arcs (as big as the first)");
+        break;
+    case "concentric":
+        if (curves.length + points.length == n && curves.length >= 1 && n >= 2)
+        {
+            // the first curve the others' centre (a point: on its centre)
+            auto items = curves ~ points;
+            steps = toFirst("concentric", items);
+        }
+        else
+            fail("concentric: circles, arcs or ellipses, and points (round the centre of the first)");
+        break;
+    case "tangent":
+        if (curves.length == 1 && lines.length >= 1 && n == 1 + lines.length)
+            foreach (l; lines)
+                steps ~= step("s.tangent(%s, %s)", l, curves[0]);
+        else if (only(rounds, 2) && n == 2)
+            steps ~= step("s.tangent(%s, %s)", rounds[0], rounds[1]);
+        else
+            fail("tangent: a circle, arc or ellipse and lines (each touching it), or two circles or arcs");
+        break;
+    case "coincident":
+        if (only(points, 2))
+            steps = toFirst("coincident", points);
+        else if (points.length >= 1 && n == points.length + 1)
+            goto case "on";
+        else
+            fail("coincident: points (all on the first), or points and one line or curve (on it)");
+        break;
+    case "on":
+        if (points.length >= 1 && n == points.length + 1 && points.length != n)
+        {
+            immutable curve = sel[sel.countUntil!(e => v.entities[e].kind != "point")];
+            if (v.entities[curve].kind == "spline")
+                fail("on: a point on a spline is not a constraint yet: put the spline through the point");
+            else
+                foreach (p; points)
+                    steps ~= step("s.on(%s, %s)", p, curve);
+        }
+        else
+            fail("on: points and one line, circle, arc or ellipse (each point on it)");
+        break;
+    case "midpoint":
+        if (points.length == 1 && lines.length == 1 && n == 2)
+            steps ~= step("s.midpoint(%s, %s)", points[0], lines[0]);
+        else
+            fail("midpoint: a point and a line (the point in its middle)");
+        break;
+    case "symmetric":
+        if (points.length == 2 && lines.length == 1 && n == 3)
+            steps ~= step("s.symmetric(%s, %s, %s)", points[0], points[1], lines[0]);
+        else
+            fail("symmetric: two points and a line (the points mirrored across it)");
+        break;
+    case "fix":
+        if (only(points))
+            foreach (p; points)
+                steps ~= step("s.fix(%s)", p);
+        else
+            fail("fix: points (each pinned where it is)");
+        break;
+    case "length":
+        if (only(lines))
+        {
+            // one dimension, the others as long
+            steps ~= step("s.length(%s, " ~ value ~ ")", lines[0]);
+            steps ~= toFirst("equal", lines);
+        }
+        else if (only(points, 2) && n == 2)
+            steps ~= step("s.distance(%s, %s, " ~ value ~ ")", points[0], points[1]);
+        else
+            fail("length: lines (the first that long, the others as long), or two points (that far apart)");
+        break;
+    case "distance":
+        if (only(points, 2) && n == 2)
+            steps ~= step("s.distance(%s, %s, " ~ value ~ ")", points[0], points[1]);
+        else if (points.length == 1 && lines.length == 1 && n == 2)
+            steps ~= step("s.distance(%s, %s, " ~ value ~ ")", points[0], lines[0]);
+        else if (only(lines, 2) && n == 2)
+            // parallel lines that far apart: from the first's start to the second
+            steps ~= step("s.distance(%s.start, %s, " ~ value ~ ")", lines[0], lines[1]);
+        else
+            fail("distance: two points, a point and a line, or two lines (from the first's start to the second)");
+        break;
+    case "angle":
+        if (only(lines, 2) && n == 2)
+            steps ~= step("s.angle(%s, %s, " ~ value ~ ")", lines[0], lines[1]);
+        else if (only(lines) && n == 1)
+            steps ~= step("s.angle(%s, " ~ value ~ ")", lines[0]);
+        else if (only(ellipses) && n == 1)
+            steps ~= step("s.angle(%s, " ~ value ~ ")", ellipses[0]);
+        else
+            fail("angle: two lines (the angle between them), or one line or ellipse (from X)");
+        break;
+    case "radius", "diameter":
+        if (only(rounds))
+        {
+            steps ~= step("s." ~ tool ~ "(%s, " ~ value ~ ")", rounds[0]);
+            steps ~= toFirst("equal", rounds);
+        }
+        else
+            fail(tool ~ ": circles or arcs (the first that size, the others as big)");
+        break;
+    default:
+        fail("no such tool: " ~ tool);
+    }
+    if (n == 0)
+    {
+        why = "select what to constrain first: points, lines, circles";
+        return null;
+    }
+    return steps;
+}
+
+/// `f` with each %s in turn replaced by the next of `names`.
+string fill(string f, const(string)[] names)
+{
+    import std.array : replaceFirst;
+    foreach (name; names)
+        f = f.replaceFirst("%s", name);
+    return f;
+}
+
+/// Writes the steps of a sketch tool into the source (see planConstraint):
+/// the new source; the last value written is what to select.
+string writeSteps(string source, string file, const ref SketchView v, SketchStep[] steps)
+{
+    auto w = SketchWriter(source, file, v);
+    foreach (st; steps)
+    {
+        string[] names;
+        foreach (id; st.ids)
+            names ~= w.name(id);
+        // the format's "s." is the sketch's own variable
+        auto f = st.format.length > 2 && st.format[0 .. 2] == "s." ? w.var ~ st.format[1 .. $] : st.format;
+        w.add(fill(f, names));
+    }
+    return w.result();
+}
+
+unittest
+{
+    // which statements each tool writes for a selection, and what it says when the selection does not fit
+    SketchView v;
+    foreach (kind; ["point", "point", "point", "line", "line", "line", "circle", "arc", "ellipse"])
+        v.entities ~= SketchView.Entity(kind);
+    string plan(string tool, size_t[] sel, string value = "20.mm")
+    {
+        string why;
+        auto steps = planConstraint(v, sel, tool, value, why);
+        if (steps.length == 0)
+            return "! " ~ why;
+        string[] r;
+        foreach (st; steps)
+        {
+            string[] names;
+            foreach (id; st.ids)
+                names ~= format("e%d", id);
+            r ~= fill(st.format, names);
+        }
+        import std.array : join;
+        return r.join("; ");
+    }
+    assert(plan("horizontal", [3, 4]) == "s.horizontal(e3); s.horizontal(e4)", plan("horizontal", [3, 4]));
+    assert(plan("vertical", [0, 1]) == "s.vertical(e0, e1)");
+    assert(plan("parallel", [5, 3, 4]) == "s.parallel(e5, e3); s.parallel(e5, e4)");
+    assert(plan("parallel", [3])[0] == '!');
+    assert(plan("perpendicular", [3, 4]) == "s.perpendicular(e3, e4)");
+    assert(plan("equal", [6, 7]) == "s.equal(e6, e7)");
+    assert(plan("equal", [3, 6])[0] == '!');
+    assert(plan("tangent", [3, 6, 4]) == "s.tangent(e3, e6); s.tangent(e4, e6)");
+    assert(plan("tangent", [6, 7]) == "s.tangent(e6, e7)");
+    assert(plan("coincident", [0, 1, 2]) == "s.coincident(e0, e1); s.coincident(e0, e2)");
+    assert(plan("coincident", [0, 6]) == "s.on(e0, e6)");
+    assert(plan("on", [0, 1, 3]) == "s.on(e0, e3); s.on(e1, e3)");
+    assert(plan("concentric", [6, 7, 0]) == "s.concentric(e6, e7); s.concentric(e6, e0)");
+    assert(plan("midpoint", [0, 3]) == "s.midpoint(e0, e3)");
+    assert(plan("symmetric", [0, 1, 5]) == "s.symmetric(e0, e1, e5)");
+    assert(plan("fix", [0, 2]) == "s.fix(e0); s.fix(e2)");
+    // a value on several: one dimension, the others equal to it
+    assert(plan("length", [3, 4, 5]) == "s.length(e3, 20.mm); s.equal(e3, e4); s.equal(e3, e5)");
+    assert(plan("length", [0, 1]) == "s.distance(e0, e1, 20.mm)");
+    assert(plan("distance", [0, 3]) == "s.distance(e0, e3, 20.mm)");
+    assert(plan("distance", [3, 4]) == "s.distance(e3.start, e4, 20.mm)");
+    assert(plan("angle", [3, 4], "30.deg") == "s.angle(e3, e4, 30.deg)");
+    assert(plan("angle", [3], "30.deg") == "s.angle(e3, 30.deg)");
+    assert(plan("radius", [6, 7], "5.mm") == "s.radius(e6, 5.mm); s.equal(e6, e7)");
+    assert(plan("diameter", [3])[0] == '!');
+    assert(plan("horizontal", []) == "! select what to constrain first: points, lines, circles");
+}
