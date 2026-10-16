@@ -77,7 +77,11 @@ dimensions and pictures, compare them with the request, fix, then export.
   points, closed: true a loop of its own) and shapes (s.rect, s.polygon(c,
   6, d:, fit: "sides"), s.slot, s.teardrop), then constraints (horizontal, vertical, length,
   distance, angle, tangent, on, equal, concentric…) and s.profile, to
-  extrude or revolve.
+  extrude or revolve. construction: true on any of them makes a guide to
+  constrain to, never part of the profile. The profile fills what lies
+  inside an odd number of loops: a loop in a loop is a hole, and where two
+  loops overlap so is the overlap; s.fill(at) makes the area holding at
+  full, s.fill(at, full: false) empty.
   Prefer a sketch over unions and differences of boxes and cylinders for
   the outline of a prismatic part (built from flat outlines, extruded,
   revolved and cut: a bracket, a plate, a case, a holder, a knob, a cam, a

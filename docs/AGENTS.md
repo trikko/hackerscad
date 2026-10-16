@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-dec6d4b1`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-c39636b6`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-dec6d4b1`:** this text is up to date.
+- **It prints `0.3.1-c39636b6`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -207,7 +207,11 @@ format stamp):
   points, closed: true a loop of its own) and shapes (s.rect, s.polygon(c,
   6, d:, fit: "sides"), s.slot, s.teardrop), then constraints (horizontal, vertical, length,
   distance, angle, tangent, on, equal, concentric…) and s.profile, to
-  extrude or revolve.
+  extrude or revolve. construction: true on any of them makes a guide to
+  constrain to, never part of the profile. The profile fills what lies
+  inside an odd number of loops: a loop in a loop is a hole, and where two
+  loops overlap so is the overlap; s.fill(at) makes the area holding at
+  full, s.fill(at, full: false) empty.
   Prefer a sketch over unions and differences of boxes and cylinders for
   the outline of a prismatic part (built from flat outlines, extruded,
   revolved and cut: a bracket, a plate, a case, a holder, a knob, a cam, a

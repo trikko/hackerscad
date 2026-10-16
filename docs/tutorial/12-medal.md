@@ -105,6 +105,14 @@ comes back; Esc does it too.
 
 ![The H, every point free](img/12-medal-free.png)
 
+The H is typed here, but it could as well be drawn: with the sketch shown,
+a bar of tools runs down the left of the view ([page 15](15-going-further.md)
+shows it whole). Its ╱ draws lines where you click,
+roughly, as here, and writes them into the code; and every rule on this
+page has a button there too: select the lines with a click, press the
+button, and the same line of code is written. Typing and clicking mix: use
+whichever is quicker.
+
 ## The rim
 
 The rings first. Write this above the `writeln` line:
@@ -141,7 +149,8 @@ The sides of an H are level or upright, in turn: `h[0]` along the bottom,
     }
 ```
 
-`horizontal(line)` keeps a line level, `vertical(line)` upright. The H
+`horizontal(line)` keeps a line level, `vertical(line)` upright (in the
+sketch's bar: select lines, then ― or |, one line of code each). The H
 straightens, each point moving as little as it can, and the console says 12:
 each line kept straight takes one freedom away. The letter is still uneven:
 its legs of any width, the bar anywhere.
@@ -164,7 +173,8 @@ Then the sizes, under the loop:
 ```
 
 - `length(line, v)` gives a line its length: the bottom of the left leg is
-  5 mm, the left side 22.
+  5 mm, the left side 22. In the bar, ↔ asks for the length of the lines
+  selected: several at once make one length and the others equal to it.
 - `equal(a, b)` makes two lines as long: the other feet and tops are as wide
   as the first, the right side as tall as the left.
 - `distance(p, q, v, along: Y)` sets how far two points are apart up and
