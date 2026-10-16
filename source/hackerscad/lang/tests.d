@@ -3856,3 +3856,11 @@ unittest
             abs(s.volume.to!double - s.move(y: 50.mm).volume.to!double) < 1e-6);`,
         "true true true true true");
 }
+
+unittest
+{
+    // shear: an oblique prism, as much material as a straight one, its top moved sideways
+    expectOut(`auto s = rect(10.mm, 10.mm).extrude(4.mm, shear: vec(3.mm, 1.mm));
+        writeln(s.volume, " ", s.bbox.size, " ", s.isValid);`, "400 mm^3 [13 mm, 11 mm, 4 mm] true");
+    expectErr(`rect(10.mm, 10.mm).extrude(4.mm, shear: vec(1.mm, 0.mm), taper: 2.deg);`, "E0202");
+}

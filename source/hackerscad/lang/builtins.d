@@ -993,12 +993,26 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // body.extrude(profile, on: frame, depth: 5.mm) to add material on a face
         if (a.positional.length && a.positional[0].kind == Kind.solid && !a.positional[0].solid.flat)
             return pushesFace(a) ? pushFace(it, a, false) : onFace(it, a, false);
-        auto x = Args(it, a, "extrude", ["profile", "height", "taper", "symmetric", "twist", "along"]);
+        auto x = Args(it, a, "extrude", ["profile", "height", "taper", "symmetric", "twist", "along", "shear"]);
         auto p = profileArg(x, "profile");
         immutable h = x.len("height"), taper = x.angleOr("taper", 0), twist = x.angleOr("twist", 0);
         immutable sym = x.flag("symmetric", false);
         if (twist != 0 && taper != 0)
             throw new HcadError(Code.type, "an extrusion is either twisted or tapered, not both", x.spanOf("twist"));
+        // shear: vec(dx, dy), the top moved that much from the bottom, in the profile's own x and y: an oblique prism
+        double sx = 0, sy = 0;
+        if (x.has("shear"))
+        {
+            auto v = x.vecLen("shear");
+            if (abs(v.z) > 1e-12)
+                throw new HcadError(Code.type, "shear: is how far the top moves sideways, vec(dx, dy): the height "
+                    ~ "is the extrusion's", x.spanOf("shear"));
+            if (taper != 0 || twist != 0)
+                throw new HcadError(Code.type, "an extrusion is sheared, tapered or twisted: one of them",
+                    x.spanOf("shear"));
+            sx = v.x;
+            sy = v.y;
+        }
         // along: X or Y, the profile stood up across that axis and pushed along it
         int along = 2;
         if (x.has("along"))
@@ -1025,11 +1039,12 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             base = fromPlace(k, tilt, base);
         // twisted: a sweep up a straight line, the profile turning around Z as it rises
         auto sv = derived(it, twist != 0 ? k.sweep(base, k.polyline([Vec3(0, 0, 0), Vec3(0, 0, h)], false),
-            false, h < 0 ? -twist : twist) : k.extrude(base, h, taper), [p], "extrude", a.span);
+            false, h < 0 ? -twist : twist) : sx != 0 || sy != 0 ? k.extrudeShear(base, h, sx, sy)
+            : k.extrude(base, h, taper), [p], "extrude", a.span);
         sv.flat = false;
         sv.placed = false;
         if (sym)
-            sv = transformed(it, a.span, sv, b => k.translate(b, Vec3(0, 0, -h / 2))).solid;
+            sv = transformed(it, a.span, sv, b => k.translate(b, Vec3(-sx / 2, -sy / 2, -h / 2))).solid;
         // along X: the profile's x along Y and its y up Z, pushed towards +X (a turn of
         // 120° about the diagonal); along Y: its x along X and y up Z, towards +Y (Y and Z
         // swapped: a mirror)

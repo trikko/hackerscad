@@ -53,6 +53,8 @@ final class OcctKernel : BrepKernel
     Brep profileRound(Brep s, double r) => wrap(hc_profile_round(h(s), r), "round");
     Brep profileOffset(Brep s, double d) => wrap(hc_profile_offset(h(s), d), "offset");
     Brep extrude(Brep p, double height, double taper) => wrap(hc_extrude(h(p), height, taper), "extrude");
+    Brep extrudeShear(Brep p, double height, double dx, double dy) =>
+        wrap(hc_extrude_shear(h(p), height, dx, dy), "oblique extrusion");
     Brep revolve(Brep p, Vec3 o, Vec3 d, double angle) =>
         wrap(hc_revolve(h(p), o.x, o.y, o.z, d.x, d.y, d.z, angle), "revolve");
 

@@ -139,6 +139,8 @@ interface BrepKernel
     /// Profile → solid along +Z (−Z if negative), `height` along the axis;
     /// a positive taper leans the sides in (holes widen), a negative one out.
     Brep extrude(Brep profile, double height, double taper);
+    /// Profile → oblique prism: its top moved by (dx, dy) from its bottom, `height` up.
+    Brep extrudeShear(Brep profile, double height, double dx, double dy);
     /// Profile → solid of revolution around an axis in its plane.
     Brep revolve(Brep profile, Vec3 origin, Vec3 direction, double angle);
     /// Outline segments: see OutlineSeg. Nested loops are holes, where loops

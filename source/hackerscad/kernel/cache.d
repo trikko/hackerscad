@@ -68,6 +68,8 @@ final class CachingKernel : BrepKernel
     Brep profileRound(Brep s, double r) => op(key("round", s, r), inner.profileRound(s, r));
     Brep profileOffset(Brep s, double d) => op(key("offset", s, d), inner.profileOffset(s, d));
     Brep extrude(Brep p, double h, double taper) => op(key("extrude", p, h, taper), inner.extrude(p, h, taper));
+    Brep extrudeShear(Brep p, double h, double dx, double dy) =>
+        op(key("extrudeShear", p, h, dx, dy), inner.extrudeShear(p, h, dx, dy));
     Brep revolve(Brep p, Vec3 o, Vec3 d, double angle) => op(key("revolve", p, o, d, angle), inner.revolve(p, o, d, angle));
 
     Brep outlineRegions(const(OutlineSeg)[] segs, out int full) => inner.outlineRegions(segs, full);

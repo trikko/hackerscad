@@ -98,6 +98,7 @@ int hc_path_sample(const(hc_shape)* path, int n, double* out_);
 hc_shape* hc_grid_solid(const(double)* xyz, int rings, int per);
 hc_shape* hc_grid_hollow(const(double)* outer, int outerRings, const(double)* inner, int innerRings, int per);
 hc_shape* hc_outline(const(double)* data, int n);
+hc_shape* hc_extrude_shear(const(hc_shape)* s, double height, double dx, double dy);
 hc_shape* hc_outline_regions(const(double)* data, int n, int* fullCount);
 hc_shape* hc_sweep(const(hc_shape)* profile, const(hc_shape)* path, int frenet);
 hc_shape* hc_sweep_twisted(const(hc_shape)* profile, const(hc_shape)* path, int frenet, double twist);

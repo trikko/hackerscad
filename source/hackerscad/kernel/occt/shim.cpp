@@ -1242,6 +1242,14 @@ static TopoDS_Shape capped(const TopoDS_Face &face, const TopoDS_Shape &low, dou
     return r;
 }
 
+hc_shape *hc_extrude_shear(const hc_shape *s, double height, double dx, double dy)
+{
+    // an oblique prism: the profile pushed along (dx, dy, height), staying parallel to itself
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        return primitive(BRepPrimAPI_MakePrism(s->shape, gp_Vec(dx, dy, height)).Shape());
+    });
+}
+
 hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
