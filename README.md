@@ -7,7 +7,7 @@
 "Hole at point", and hackerscad writes the code for you. The file stays the
 only source of truth, so it diffs, versions and reviews like any other code.
 
-**Documentation:** [tutorial](docs/TUTORIAL.md) ·
+**Documentation:** [tutorial](docs/TUTORIAL.md) · [guides by topic](docs/GUIDES.md) ·
 [language reference](docs/LANGUAGE.md) · [cheatsheet](docs/CHEATSHEET.md) · [examples](examples) ·
 [for AI agents](#using-hackerscad-with-an-ai-agent)
 

@@ -9,6 +9,8 @@ drawn with sketches: outlines told by their rules instead of their
 numbers. Last, a tour of what else there is: the examples, libraries,
 drawings, the command line.
 
+After it, the [guides by topic](GUIDES.md) go deeper into each subject: sketches, sweeps, surfaces, threads, holes, fits, gears and the rest.
+
 <p align="center"><img alt="The planter" src="tutorial/img/planter.png" width="380">
 <img alt="Its two pieces" src="tutorial/img/planter-apart.png" width="380"></p>
 

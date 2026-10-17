@@ -329,6 +329,8 @@ New to it? The [tour of the language](#a-tour-of-the-language) at the end is one
 basic construct once, with comments saying what each makes appear; in the application it is under
 **Examples › Language tour** (and ☰ › Language Tour).
 
+This page lists everything in brief; the [guides by topic](GUIDES.md) explain each subject at length, with pictures.
+
 ## What stays the same as D
 - **Lexical:** identifiers; numbers (`42`, `1_000`, `2.5`, `0xFF`, `2.5e3`); strings `"…"`, `` `…` ``, `r"…"` (the last two WYSIWYG as in D); comments `//`, `/* */` and nested `/+ +/`.
 - **Declarations:** `immutable`, `const`, `auto`, typed variables, `struct` (fields, defaults, methods), functions (with `{ … }` or `=> expr;` bodies), `import`, `unittest`, UDAs.
