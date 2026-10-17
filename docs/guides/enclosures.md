@@ -80,7 +80,7 @@ What the numbers mean once it is closed:
 
 - the case is `inner.z + 2 * wall` tall, the lid's plate resting on the rim of the walls;
 - the lip takes the top `lidHeight` of the inside along the walls, `wall` thick: anything taller than `inner.z - lidHeight` must stay `wall + clearance` away from the walls;
-- the posts stop `lidHeight + clearance` under the rim, so the screw crosses the plate and that gap before it bites: with the defaults an M3 × 12 goes about 6 mm into the post;
+- the posts reach the rim, where the lid rests, the lip notched round them: the screw bites as soon as it is through the lid, so with the defaults an M3 × 8 goes 6 mm into the post;
 - the screw heads stand on the lid; for heads flush with it, cut a counterbore over each hole (`hole(M3, …, "counterbore")`, see the guide on holes).
 
 To see it closed, turn the lid over onto the base:
