@@ -494,7 +494,7 @@ public Brep projectionOf(BrepKernel k, Brep b, Span span)
             }
             if (abs(area) < 1e-12)
                 continue;
-            (area > 0 ? outer : holes) ~= k.polygon(xy);
+            (area > 0 ? outer : holes) ~= fittedLoop(k, xy);
         }
         if (outer.length == 0)
             continue;
@@ -506,6 +506,41 @@ public Brep projectionOf(BrepKernel k, Brep b, Span span)
     if (regions.length == 0)
         throw new HcadError(Code.type, "the solid casts no shadow seen from above", span);
     return unionOfProfiles(k, regions);
+}
+
+/// A loop of a shadow (x y of its points) as a face: its points as lines
+/// and arcs within 0.02 mm of them, as a section's outline is read, not as
+/// hundreds of tiny segments (a sweep of those would crawl); the polygon if
+/// that fails.
+private Brep fittedLoop(BrepKernel k, double[] xy)
+{
+    import std.math : atan2, cos, sin;
+    import hackerscad.geom.outlinefit : fit, P2, withoutSlivers;
+    P2[] pts;
+    for (size_t i = 0; i + 1 < xy.length; i += 2)
+        pts ~= [xy[i], xy[i + 1]];
+    auto els = withoutSlivers(fit(pts, 0.02));
+    if (els.length == 0)
+        return k.polygon(xy);
+    OutlineSeg[] segs;
+    foreach (e; els)
+    {
+        if (e.circle)
+            segs ~= OutlineSeg(OutlineSeg.Kind.ellipse, e.center[0], e.center[1], e.radius, e.radius, 0);
+        else if (e.arc)
+        {
+            immutable a = atan2(e.from[1] - e.center[1], e.from[0] - e.center[0]) + e.sweep / 2;
+            segs ~= OutlineSeg(OutlineSeg.Kind.arc, e.from[0], e.from[1], e.to[0], e.to[1],
+                e.center[0] + e.radius * cos(a), e.center[1] + e.radius * sin(a));
+        }
+        else
+            segs ~= OutlineSeg(OutlineSeg.Kind.line, e.from[0], e.from[1], e.to[0], e.to[1]);
+    }
+    segs ~= OutlineSeg(OutlineSeg.Kind.end);
+    try
+        return k.outline(segs);
+    catch (KernelException)
+        return k.polygon(xy);
 }
 
 /// The shadow of `b` on a plane, cast along its normal: a profile lying

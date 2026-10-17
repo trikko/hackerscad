@@ -3977,3 +3977,17 @@ unittest
     assert(error(`@part Solid p() { auto s = path([vec(0, 0, 0), vec(1, 0, 0), vec(1, 1, 0), vec(0, 1, 0)]).sweep(path([vec(0, 0, 0), vec(0, 0, 5)]));
         return sew([s]); }`).message.canFind("open"));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // a projection's outline is lines and arcs, not the mesh's tiny segments: a circle stays one, and a
+    // sweep of a shadow along a guide does not crawl
+    expectOut(`auto disc = (cylinder(d: 20.mm, h: 5.mm) - cylinder(d: 8.mm, h: 20.mm).move(z: -5.mm)).projection;
+        writeln(format("%.3f", disc.extrude(1.mm).volume / 1.mm ^^ 3 / (PI * (100 - 16))));
+        Vec3[] pts;
+        foreach (i; 0 .. 31)
+            pts ~= vec(i * 3.mm, 12.mm * cos(i * 12.deg), 12.mm * sin(i * 12.deg));
+        writeln(format("%.3f", disc.sweep(path([vec(0, 0, 0), vec(90.mm, 0, 0)]), guide: spline(pts)).volume
+            / 1.mm ^^ 3 / (90 * PI * (100 - 16))));`, "1.000\n1.000", "import std.math;");
+}
