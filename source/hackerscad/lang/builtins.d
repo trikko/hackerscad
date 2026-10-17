@@ -1396,6 +1396,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 throw new HcadError(Code.kernel, e.msg, a.span);
             auto sv = primitive(it, b, "loft", a.span);
             sv.surface = true;
+            sv.loftPaths = bs;
+            sv.loftRuled = x.flag("ruled", false);
             return Value.of(sv);
         }
         foreach (p; v.arr)
@@ -1944,7 +1946,15 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         try
             b = k.thicken(nonEmpty(s, a.span), t);
         catch (KernelException e)
-            throw new HcadError(Code.kernel, e.msg, a.span);
+        {
+            // a loft through closed paths, where sharp and smooth edges meet: built from the paths
+            if (s.loftPaths.length < 2)
+                throw new HcadError(Code.kernel, e.msg, a.span);
+            try
+                b = k.thickenLoft(s.loftPaths, s.loftRuled, t);
+            catch (KernelException e2)
+                throw new HcadError(Code.kernel, e.msg ~ "; nor from its paths: " ~ e2.msg, a.span);
+        }
         auto sv = derived(it, b, [s], "thicken", a.span);
         sv.surface = false;
         return Value.of(sv);

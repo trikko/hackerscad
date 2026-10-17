@@ -160,6 +160,14 @@ final class OcctKernel : BrepKernel
             ps ~= h(p);
         return wrap(hc_loft_open(ps.ptr, cast(int) ps.length, ruled), "surface through paths");
     }
+
+    Brep thickenLoft(Brep[] paths, bool ruled, double t)
+    {
+        const(hc_shape)*[] ps;
+        foreach (p; paths)
+            ps ~= h(p);
+        return wrap(hc_thicken_loft(ps.ptr, cast(int) ps.length, ruled, t), "thicken");
+    }
     Brep splitBy(Brep s, Brep tool) => wrap(hc_split_by(h(s), h(tool)), "split");
     Brep thicken(Brep s, double t) => wrap(hc_thicken(h(s), t), "thicken");
     bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal)

@@ -111,6 +111,7 @@
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <ShapeFix_Solid.hxx>
+#include <ShapeFix_Face.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <ShapeUpgrade_FaceDivideArea.hxx>
 #include <BRepOffset_MakeOffset.hxx>
@@ -4596,6 +4597,100 @@ hc_shape *hc_loft_open(const hc_shape *const *paths, int n, int ruled)
         if (!ts.IsDone())
             throw Standard_Failure("the surface through these paths failed (do they run the same way?)");
         return primitive(ts.Shape());
+    });
+}
+
+// A surface lofted through closed flat paths, made a wall `t` thick another way
+// than thicken's: each path offset in its own plane (outwards for t > 0), the
+// solid lofts through the two sets of paths, one less the other. The wall is
+// t thick across the paths' planes (thinner where it leans). For sheets
+// thicken cannot offset cleanly (sharp edges meeting smooth ones).
+hc_shape *hc_thicken_loft(const hc_shape *const *paths, int n, int ruled, double t)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<TopoDS_Wire> given, moved;
+        for (int i = 0; i < n; i++) {
+            const TopoDS_Wire w = single_wire(paths[i]->shape);
+            if (!BRep_Tool::IsClosed(w))
+                throw Standard_Failure("the paths are not all closed");
+            BRepBuilderAPI_MakeFace mf(w, Standard_True);
+            if (!mf.IsDone())
+                throw Standard_Failure("a path does not lie in one plane");
+            const TopoDS_Face f = mf.Face();
+            BRepOffsetAPI_MakeOffset off(f, GeomAbs_Intersection);
+            off.Perform(t);
+            if (!off.IsDone())
+                throw Standard_Failure("a path could not be offset by the thickness");
+            TopoDS_Wire ow;
+            for (TopExp_Explorer ex(off.Shape(), TopAbs_WIRE); ex.More(); ex.Next()) {
+                ow = TopoDS::Wire(ex.Current());
+                break;
+            }
+            if (ow.IsNull())
+                throw Standard_Failure("a path offset by the thickness vanished");
+            // outwards for t > 0: the offset face must be larger
+            GProp_GProps a0, a1;
+            BRepGProp::SurfaceProperties(f, a0);
+            BRepGProp::SurfaceProperties(BRepBuilderAPI_MakeFace(ow, Standard_True).Face(), a1);
+            if ((a1.Mass() > a0.Mass()) != (t > 0)) {
+                BRepOffsetAPI_MakeOffset back(f, GeomAbs_Intersection);
+                back.Perform(-t);
+                ow = TopoDS_Wire();
+                for (TopExp_Explorer ex(back.Shape(), TopAbs_WIRE); ex.More(); ex.Next()) {
+                    ow = TopoDS::Wire(ex.Current());
+                    break;
+                }
+                if (ow.IsNull())
+                    throw Standard_Failure("a path offset by the thickness vanished");
+            }
+            given.push_back(w);
+            moved.push_back(ow);
+        }
+        // the two walls as open lofts, and a flat ring at each end between them, sewn into a
+        // solid: no boolean between two lofts that share their end planes (OpenCascade gets those
+        // wrong)
+        auto open = [&](std::vector<TopoDS_Wire> ws) {
+            ws = align_seams(same_edge_count(align_starts(ws)));
+            BRepOffsetAPI_ThruSections ts(Standard_False, ruled ? Standard_True : Standard_False);
+            for (auto &w : ws)
+                ts.AddWire(w);
+            ts.CheckCompatibility(Standard_True);
+            ts.Build();
+            if (!ts.IsDone())
+                throw Standard_Failure("the wall from the paths could not be lofted");
+            return std::make_pair(ts.Shape(), ws);
+        };
+        auto in = open(given), out = open(moved);
+        BRepBuilderAPI_Sewing sew(1e-4);
+        sew.Add(in.first);
+        sew.Add(out.first);
+        for (size_t end : {size_t(0), given.size() - 1}) {
+            BRepBuilderAPI_MakeFace ring(t > 0 ? out.second[end] : in.second[end], Standard_True);
+            const TopoDS_Wire hole = t > 0 ? in.second[end] : out.second[end];
+            ring.Add(TopoDS::Wire(hole.Reversed()));
+            if (!ring.IsDone())
+                throw Standard_Failure("the wall's ends could not be closed");
+            ShapeFix_Face fix(ring.Face());
+            fix.FixOrientation();
+            fix.Perform();
+            sew.Add(fix.Face());
+        }
+        sew.Perform();
+        if (sew.NbFreeEdges() > 0)
+            throw Standard_Failure("the wall from the paths does not close");
+        BRepBuilderAPI_MakeSolid ms;
+        for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next())
+            ms.Add(TopoDS::Shell(ex.Current()));
+        ShapeFix_Solid fs(ms.Solid());
+        fs.Perform();
+        TopoDS_Shape r = fs.Solid();
+        GProp_GProps g;
+        BRepGProp::VolumeProperties(r, g);
+        if (g.Mass() < 0)
+            r.Reverse();
+        if (!BRepCheck_Analyzer(r).IsValid() || solid_volume(r) < 1e-9)
+            throw Standard_Failure("the wall from the paths came out wrong");
+        return primitive(r);
     });
 }
 

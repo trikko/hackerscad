@@ -113,6 +113,14 @@ final class CachingKernel : BrepKernel
             ks ~= keyOf(p);
         return op(key("loftOpen", cast(const(double)[]) ks.map!(x => cast(double) x).array, ruled), inner.loftOpen(paths, ruled));
     }
+    Brep thickenLoft(Brep[] paths, bool ruled, double t)
+    {
+        ulong[] ks;
+        foreach (p; paths)
+            ks ~= keyOf(p);
+        return op(key("thickenLoft", cast(const(double)[]) ks.map!(x => cast(double) x).array, ruled, t),
+            inner.thickenLoft(paths, ruled, t));
+    }
     Brep splitBy(Brep s, Brep tool) => op(key("splitBy", s, tool), inner.splitBy(s, tool));
     Brep thicken(Brep s, double t) => op(key("thicken", s, t), inner.thicken(s, t));
     bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal) => inner.normalAt(s, p, point, normal);

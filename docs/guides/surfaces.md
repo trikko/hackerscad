@@ -190,7 +190,8 @@ Sew when you have every side anyway (they were lofted between curves you were gi
 
 - A surface is not a part: a `@part` returning one is an error. Thicken it, sew it, or split a solid with it.
 - Surfaces do not combine with `+ - &`, and paths and profiles do not mix in one loft.
-- A split needs a surface that reaches across the solid on every side: make it generously larger than the part.
+- A split needs a surface that reaches across the solid on every side: make it generously larger than the part. One that misses the solid, or ends inside it, is an error (*it must reach across it, from one side out to the other*).
+- A surface lofted through closed paths whose sharp corners meet smooth curves (a square to a circle) is thickened from its paths: each offset in its own plane, outwards for a positive thickness, so the wall is that thick across the paths' planes, a little thinner where it leans.
 - Only one surface per split: to cut with two, split, then split the pieces.
 - In the window, **Split…** cuts with a plane only: a surface split is written in the code.
 
@@ -202,6 +203,7 @@ Sew when you have every side anyway (they were lofted between curves you were gi
 | *cannot combine a Surface with '+': split a solid with it (s.split(surface)), or thicken it into a solid first* | use `split` or `thicken`, not `+ - &` |
 | *sew failed: the surfaces do not close: 4 edges are open on one side* | a side is missing, or two sides do not meet exactly: build neighbouring sides from the same paths |
 | *thicken by 0 leaves no solid* | give a thickness |
+| *could not thicken the surface cleanly where its sharp edges meet smooth ones…* | a sheet other than a loft through closed paths, with sharp and smooth edges meeting: round its corners, or build the solid and `shell` it |
 | *a surface through paths takes paths only, not Profile* | loft profiles (a solid) or paths (a surface), not both |
 | *loft needs an array of at least 2 profiles* | a loft goes through two paths at least |
 

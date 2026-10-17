@@ -573,6 +573,9 @@ final class SolidVal
     bool hasColor;
     Span origin;
     uint[] creators;   /// per face: the feature that created it (Interp.features), 0 if unknown
+    /// a surface lofted through closed paths: the paths and ruled, for thicken to fall back on
+    Brep[] loftPaths;
+    bool loftRuled;
     bool flat;         /// a 2D profile (planar faces) rather than a solid
     bool path;         /// a curve (wire) to sweep along
     Vec3 pathNormal;   /// a path drawn in a sketch: the normal of the sketch's plane (zero: not known)

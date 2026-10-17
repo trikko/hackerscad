@@ -4190,8 +4190,13 @@ unittest
         }
         immutable funnel = loft([sq, ring()]);
         @part Solid prism() => loft([sq, sq.scale(1.5).move(z: 30.mm)]).thicken(1.mm);
+        // sharp corners meeting a circle: made from the paths, either way
+        @part Solid outwards() => funnel.thicken(1.mm);
+        @part Solid inwards() => funnel.thicken(-1.mm).move(x: 50);
         unittest
         {
+            assert(outwards.isValid && abs(outwards.bbox.size.x - 32.mm) < 0.01.mm, "outwards");
+            assert(inwards.isValid && abs(inwards.bbox.size.x - 30.mm) < 0.01.mm, "inwards");
             assert(abs(funnel.bbox.min.y + 15.mm) < 0.1.mm && abs(funnel.bbox.max.y - 15.mm) < 0.1.mm, "whole");
             assert(prism.isValid && prism.volume > 3000 * 1.mm ^^ 3, "joined");
         }
