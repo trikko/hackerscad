@@ -230,6 +230,10 @@ interface BrepKernel
     /// A right-handed ISO metric thread of major diameter d standing on z = 0, `length` tall, its
     /// ends chamfered by `chamfer` (0: square).
     Brep isoThread(double d, double pitch, double length, double chamfer);
+    /// A right-handed thread band from its profile's corners (r z each, r at z = 0, over one
+    /// lead), its helices on cones widening `slope` a unit up; from about two leads under z = 0
+    /// to two over `length`: cut it to length.
+    Brep threadBand(const(double)[] rz, double lead, double length, double slope);
     /// Point and tangent at the start (or end) of a path.
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent);
     /// A solid through `rings` rings of `per` points each (ring after ring),

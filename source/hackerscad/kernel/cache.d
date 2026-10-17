@@ -91,6 +91,8 @@ final class CachingKernel : BrepKernel
         op(key("projectedCurve", a, b, na, nb), inner.projectedCurve(a, b, na, nb));
     Brep helix(double r, double pitch, double height, bool left, double taper = 0) =>
         op(key("helix", r, pitch, height, left, taper), inner.helix(r, pitch, height, left, taper));
+    Brep threadBand(const(double)[] rz, double lead, double length, double slope) =>
+        op(key("threadBand", rz, lead, length, slope), inner.threadBand(rz, lead, length, slope));
     Brep isoThread(double d, double pitch, double length, double chamfer) =>
         op(key("isoThread", d, pitch, length, chamfer), inner.isoThread(d, pitch, length, chamfer));
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent) => inner.pathFrame(path, atEnd, point, tangent);

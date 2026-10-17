@@ -137,6 +137,8 @@ hc_shape *hc_helix(double r, double pitch, double height, int left);
 hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, double taper);
 /* a right-handed ISO metric thread on z = 0 .. length, built from its boundary; ends chamfered by `chamfer` */
 hc_shape *hc_iso_thread(double d, double pitch, double length, double chamfer);
+/* a right-handed thread band from its profile's corners (r z each, over one lead), z about -2 leads .. length + 2 leads */
+hc_shape *hc_thread_band(const double *rz, int n, double lead, double length, double slope);
 /* Start (at_end = 0) or end point and tangent of a path; out: xyz, txyz. */
 int hc_path_frame(const hc_shape *path, int at_end, double out[6]);
 

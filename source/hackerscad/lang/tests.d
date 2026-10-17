@@ -4073,3 +4073,14 @@ unittest
         writeln((nut & threadedRod(8.mm, p, 6.mm, chamfer: false, left: true)).volume > 10 * 1.mm ^^ 3);`,
         "1.0000\n0.000\ntrue", "import std.math;\nimport threads;");
 }
+
+unittest
+{
+    mixin(slowTest);
+    // threads on faces are built from their helices too: a two-start M8 (its fuse of two swept ridges
+    // failed) has the volume of a one-start one, the same profile as dense along the shaft
+    expectOut(`Solid shaft() => cylinder(d: 8.mm, h: 25.mm) + cylinder(d: 14.mm, h: 5.mm).move(z: -5.mm);
+        auto side = faces.filter(f => f.area > 600 * 1.mm ^^ 2);
+        immutable one = shaft().thread(side, "M8").volume, two = shaft().thread(side, "M8", starts: 2).volume;
+        writeln(abs(two / one - 1) < 1e-3, " ", one < shaft().volume);`, "true true", "import std.math;");
+}

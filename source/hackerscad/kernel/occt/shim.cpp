@@ -3263,74 +3263,106 @@ hc_shape *hc_helix(double r, double pitch, double height, int left)
 
 // The same on a cone: `taper` is the angle (radians) its side leans from
 // the axis, outwards as it rises when positive; r is the radius at z = 0.
-// One turn, the k-th, of the helix of radius r rising p a turn from height z0 at angle 0.
-static TopoDS_Edge helix_turn(double r, double z0, double p, int k)
+// One turn, the k-th, of the helix through (r, 0, z0) rising `lead` a turn,
+// on a cylinder, or on a cone widening `slope` in radius a unit up.
+static TopoDS_Edge helix_turn(double r, double z0, double lead, int k, double slope)
 {
-    Handle(Geom_CylindricalSurface) cyl = new Geom_CylindricalSurface(gp_Ax3(gp_Pnt(0, 0, z0), gp_Dir(0, 0, 1)), r);
-    Handle(Geom2d_Line) line = new Geom2d_Line(gp_Pnt2d(2 * M_PI * k, p * k), gp_Dir2d(2 * M_PI, p));
-    TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, cyl, 0, std::sqrt(4 * M_PI * M_PI + p * p)).Edge();
+    Handle(Geom_Surface) surf;
+    double vPerTurn = lead;
+    if (std::abs(slope) < 1e-12)
+        surf = new Geom_CylindricalSurface(gp_Ax3(gp_Pnt(0, 0, z0), gp_Dir(0, 0, 1)), r);
+    else {
+        const double a = std::atan(slope);
+        surf = new Geom_ConicalSurface(gp_Ax3(gp_Pnt(0, 0, z0), gp_Dir(0, 0, 1)), a, r);
+        vPerTurn = lead / std::cos(a);
+    }
+    Handle(Geom2d_Line) line = new Geom2d_Line(gp_Pnt2d(2 * M_PI * k, vPerTurn * k), gp_Dir2d(2 * M_PI, vPerTurn));
+    TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, surf, 0, std::sqrt(4 * M_PI * M_PI + vPerTurn * vPerTurn)).Edge();
     BRepLib::BuildCurves3d(e, 1e-7, GeomAbs_C2, 9, 8);
     return e;
+}
+
+// A right-handed thread band, built from its boundary: `rz` the corners of
+// the profile over one lead (r at z = 0, z rising, the last one followed by
+// the first one a lead higher), each running along its own helix; between
+// two corners' helices a ruled face, one a turn; a helicoid from the axis
+// closing the bottom and the top, the profile's slice where it starts and
+// ends. It runs from about two leads under z = 0 to two over `length`: cut it
+// to length. A thread of several starts has its profile `starts` times in a
+// lead; a tapered one, `slope` (radius per unit up), its helices on cones.
+static TopoDS_Shape thread_band(const std::vector<std::pair<double, double>> &rz, double lead, double length,
+                                double slope)
+{
+    const int n = (int)rz.size();
+    if (n < 3)
+        throw Standard_Failure("a thread profile needs 3 corners at least");
+    const double z = -2 * lead;
+    const int turns = (int)std::ceil(length / lead) + 4;
+    auto radius = [&](int i, double zz) { return rz[i].first + slope * zz; };
+    std::vector<std::vector<TopoDS_Edge>> e(n);
+    for (int i = 0; i < n; i++) {
+        const double z0 = z + rz[i].second;
+        for (int k = 0; k <= turns; k++)
+            e[i].push_back(helix_turn(radius(i, z0), z0, lead, k, slope));
+    }
+    BRepBuilderAPI_Sewing sew(1e-6);
+    for (int k = 0; k < turns; k++)
+        for (int i = 0; i < n; i++)
+            sew.Add(i + 1 < n ? BRepFill::Face(e[i][k], e[i + 1][k]) : BRepFill::Face(e[i][k], e[0][k + 1]));
+    const double z0 = z + rz[0].second;
+    auto axis = [&](double from) { return BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, from), gp_Pnt(0, 0, from + lead)).Edge(); };
+    sew.Add(BRepFill::Face(axis(z0), e[0][0]));
+    sew.Add(BRepFill::Face(axis(z0 + lead * turns), e[0][turns]));
+    for (int k : {0, turns}) {
+        BRepBuilderAPI_MakePolygon poly;
+        poly.Add(gp_Pnt(0, 0, z0 + lead * k));
+        for (int i = 0; i < n; i++) {
+            const double zz = z + rz[i].second + lead * k;
+            poly.Add(gp_Pnt(radius(i, zz), 0, zz));
+        }
+        poly.Add(gp_Pnt(radius(0, z0 + lead * (k + 1)), 0, z0 + lead * (k + 1)));
+        poly.Add(gp_Pnt(0, 0, z0 + lead * (k + 1)));
+        poly.Close();
+        sew.Add(BRepBuilderAPI_MakeFace(poly.Wire()).Face());
+    }
+    sew.Perform();
+    if (sew.NbFreeEdges() > 0)
+        throw Standard_Failure("the thread's faces do not close");
+    BRepBuilderAPI_MakeSolid ms;
+    for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next())
+        ms.Add(TopoDS::Shell(ex.Current()));
+    ShapeFix_Solid fix(ms.Solid());
+    fix.Perform();
+    TopoDS_Shape band = fix.Solid();
+    GProp_GProps g;
+    BRepGProp::VolumeProperties(band, g, 1e-4);
+    if (g.Mass() < 0)
+        band.Reverse();
+    return band;
+}
+
+// The band of a thread (see thread_band): `rz` holds n corners, r z each.
+hc_shape *hc_thread_band(const double *rz, int n, double lead, double length, double slope)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<std::pair<double, double>> corners;
+        for (int i = 0; i < n; i++)
+            corners.push_back({rz[2 * i], rz[2 * i + 1]});
+        return primitive(thread_band(corners, lead, length, slope));
+    });
 }
 
 // A right-handed ISO metric thread (basic profile: a flat crest p/8 wide on
 // the major diameter d, a flat root p/4 wide on the minor one, flanks at
 // 30°) standing on z = 0, `length` tall, the ends cut flat or chamfered by
-// `chamfer`. Built from its boundary, not swept: each corner of the profile
-// runs along its own helix, and between two corners' helices lies a ruled
-// face (crest, flank, root, flank), one a turn; a helicoid from the axis
-// closes the bottom and the top, the profile's slice where it starts and
-// ends. No core to fuse: the one boolean is the cut to length (4-5 times
-// quicker than sweeping the tooth and fusing it to a core, and exact).
+// `chamfer`: its band (see thread_band) cut to length, the one boolean
+// (4-5 times quicker than sweeping the tooth and fusing it to a core, and
+// exact).
 hc_shape *hc_iso_thread(double d, double p, double length, double chamfer)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         const double h = 0.5413 * p, R = d / 2, r = R - h;
-        // a turn under z = 0 and one over the top, cut off: the band's own ends are helical
-        const double z = -2 * p;
-        struct Corner {
-            double r, z;
-        } c[4] = {{R, z - p / 16}, {R, z + p / 16}, {r, z + 3 * p / 8}, {r, z + 5 * p / 8}};
-        const int turns = (int)std::ceil(length / p) + 4;
-        std::vector<std::vector<TopoDS_Edge>> e(4);
-        for (int i = 0; i < 4; i++)
-            for (int k = 0; k <= turns; k++)
-                e[i].push_back(helix_turn(c[i].r, c[i].z, p, k));
-        BRepBuilderAPI_Sewing sew(1e-6);
-        for (int k = 0; k < turns; k++) {
-            sew.Add(BRepFill::Face(e[0][k], e[1][k]));
-            sew.Add(BRepFill::Face(e[1][k], e[2][k]));
-            sew.Add(BRepFill::Face(e[2][k], e[3][k]));
-            sew.Add(BRepFill::Face(e[3][k], e[0][k + 1]));
-        }
-        auto axis = [&](double z0) { return BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, z0), gp_Pnt(0, 0, z0 + p)).Edge(); };
-        sew.Add(BRepFill::Face(axis(c[0].z), e[0][0]));
-        sew.Add(BRepFill::Face(axis(c[0].z + p * turns), e[0][turns]));
-        for (int k : {0, turns}) {
-            BRepBuilderAPI_MakePolygon poly;
-            poly.Add(gp_Pnt(0, 0, c[0].z + p * k));
-            for (int i = 0; i < 4; i++)
-                poly.Add(gp_Pnt(c[i].r, 0, c[i].z + p * k));
-            poly.Add(gp_Pnt(c[0].r, 0, c[0].z + p * (k + 1)));
-            poly.Add(gp_Pnt(0, 0, c[0].z + p * (k + 1)));
-            poly.Close();
-            sew.Add(BRepBuilderAPI_MakeFace(poly.Wire()).Face());
-        }
-        sew.Perform();
-        if (sew.NbFreeEdges() > 0)
-            throw Standard_Failure("the thread's faces do not close");
-        BRepBuilderAPI_MakeSolid ms;
-        for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next())
-            ms.Add(TopoDS::Shell(ex.Current()));
-        ShapeFix_Solid fix(ms.Solid());
-        fix.Perform();
-        TopoDS_Shape band = fix.Solid();
-        {
-            GProp_GProps g;
-            BRepGProp::VolumeProperties(band, g, 1e-4);
-            if (g.Mass() < 0)
-                band.Reverse();
-        }
+        TopoDS_Shape band = thread_band({{R, -p / 16}, {R, p / 16}, {r, 3 * p / 8}, {r, 5 * p / 8}}, p, length, 0);
         // the envelope: from the axis out past the crests, z 0 .. length, its ends chamfered at 45°
         const double out = R + 0.05, ch = std::max(0.0, std::min(chamfer, std::min(R / 2, length / 3)));
         BRepBuilderAPI_MakePolygon side;

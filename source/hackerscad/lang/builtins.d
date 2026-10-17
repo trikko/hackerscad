@@ -3722,23 +3722,18 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
 /// millimetre up: tapered threads.
 Brep threadedCore(BrepKernel k, const ThreadSpec t, double major, double slope, double len, int starts, bool left)
 {
-    immutable pitch = t.pitch, h = t.depth, lead = pitch * starts;
-    immutable r0 = major / 2 - h;   // the minor radius at z = 0
-    // swept with frenet along a helix at the minor radius, a lead below z = 0; right-handed: along a
-    // left-handed helix the sweep's frame turns the tooth inwards, and the mirror image of a
-    // right-handed thread is the left-handed one
-    auto tooth = k.polygon(t.tooth(0.1 * pitch));
-    auto ridge = k.translate(k.sweep(tooth, k.helix(r0 - slope * lead, lead, len + 2 * lead, false, atan(slope)), true),
-        Vec3(0, 0, -lead));
-    // the core, a little wider than the minor diameter so that the teeth sink into it
-    immutable zc = -2 * lead, hc = len + 4 * lead;
-    auto core = slope == 0 ? k.cylinder(r0 + 0.01, hc)
-        : k.cone(r0 + 0.01 + slope * zc, r0 + 0.01 + slope * (zc + hc), hc);
-    Brep[] all = [k.translate(core, Vec3(0, 0, zc)), ridge];
-    // more starts: the same ridge turned, which along a helix is the same as moved a pitch up
-    foreach (s; 1 .. starts)
-        all ~= k.rotate(ridge, Vec3(0, 0, 1), 2 * PI * s / starts);
-    auto rod = k.fuseAll(all);
+    // built from its boundary: each corner of the tooth's profile on its own helix, a ruled face
+    // between two of them (see threadBand); the profile `starts` times in a lead for more starts.
+    // Right-handed: the mirror image of a right-handed thread is the left-handed one
+    immutable pitch = t.pitch, lead = pitch * starts;
+    immutable r0 = major / 2 - t.depth;   // the minor radius at z = 0
+    // the tooth: x towards the axis (0 on the minor radius), y along it
+    auto xy = t.tooth(0);
+    double[] rz;
+    foreach (s; 0 .. starts)
+        for (size_t i = 0; i + 1 < xy.length; i += 2)
+            rz ~= [r0 - xy[i], xy[i + 1] + pitch * s];
+    auto rod = k.threadBand(rz, lead, len, slope);
     return left ? k.mirror(rod, Vec3(0, 1, 0)) : rod;
 }
 
