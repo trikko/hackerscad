@@ -127,8 +127,10 @@
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_HSequenceOfShape.hxx>
 #include <ShapeAnalysis_FreeBounds.hxx>
+#include <ShapeAnalysis_Surface.hxx>
 #include <BRepBuilderAPI_FindPlane.hxx>
 #include <BRepAlgoAPI_Section.hxx>
+#include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 
 struct hc_shape {
@@ -4272,7 +4274,13 @@ hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet,
         gp_Trsf place;
         place.SetTransformation(gp_Ax3(p, tz, x), gp_Ax3(gp::XOY()));
         TopoDS_Shape moved = BRepBuilderAPI_Transform(profile->shape, place, true).Shape();
-        ProfileLoops loops = loops_of(moved);
+        // a curve, not an area: swept, it makes a surface
+        const bool open = faces_of(moved).empty();
+        ProfileLoops loops;
+        if (open)
+            loops.outer = single_wire(moved);
+        else
+            loops = loops_of(moved);
         // the roll: given, or towards up or the guide, made by a guide winding round the path
         std::vector<double> rolls(angles, angles + nAngles);
         if (upMode || guide_ != nullptr) {
@@ -4307,6 +4315,8 @@ hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet,
             mk.Build();
             if (!mk.IsDone())
                 throw Standard_Failure("sweep failed (does the path bend tighter than the profile?)");
+            if (open)
+                return mk.Shape();
             mk.MakeSolid();
             TopoDS_Shape r = mk.Shape();
             GProp_GProps g;
@@ -4346,6 +4356,135 @@ hc_shape *hc_loft(const hc_shape *const *profiles, int n, int ruled)
             result = BRepAlgoAPI_Cut(result, solid_through(sec, ruled)).Shape();
         }
         return primitive(result);
+    });
+}
+
+// A surface through open paths (or closed ones, not filled), in order.
+hc_shape *hc_loft_open(const hc_shape *const *paths, int n, int ruled)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        BRepOffsetAPI_ThruSections ts(Standard_False, ruled ? Standard_True : Standard_False);
+        for (int i = 0; i < n; i++)
+            ts.AddWire(single_wire(paths[i]->shape));
+        ts.CheckCompatibility(Standard_False);
+        ts.Build();
+        if (!ts.IsDone())
+            throw Standard_Failure("the surface through these paths failed (do they run the same way?)");
+        return primitive(ts.Shape());
+    });
+}
+
+// The solids of `s` cut by the surface (or solid) `tool`: every piece.
+hc_shape *hc_split_by(const hc_shape *s, const hc_shape *tool)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        BRepAlgoAPI_Splitter sp;
+        TopTools_ListOfShape args, tools;
+        args.Append(s->shape);
+        tools.Append(tool->shape);
+        sp.SetArguments(args);
+        sp.SetTools(tools);
+        sp.Build();
+        if (!sp.IsDone())
+            throw Standard_Failure("the cut by the surface failed");
+        BRep_Builder b;
+        TopoDS_Compound c;
+        b.MakeCompound(c);
+        int count = 0;
+        for (TopExp_Explorer ex(sp.Shape(), TopAbs_SOLID); ex.More(); ex.Next(), count++)
+            b.Add(c, ex.Current());
+        if (count == 0)
+            throw Standard_Failure("the cut left no solid");
+        return primitive(c);
+    });
+}
+
+// The point of `s` nearest to p and the normal of the face there (as the
+// face is oriented); 0 when there is no face.
+int hc_normal_at(const hc_shape *s, const double p[3], double out[6])
+{
+    return guarded<>(0, [&]() -> int {
+        // the nearest face (the nearest point may be on an edge: a face's side)
+        const TopoDS_Vertex at = BRepBuilderAPI_MakeVertex(gp_Pnt(p[0], p[1], p[2])).Vertex();
+        TopoDS_Face best;
+        gp_Pnt near;
+        double dist = Precision::Infinite();
+        for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            BRepExtrema_DistShapeShape d(at, ex.Current());
+            if (d.IsDone() && d.NbSolution() > 0 && d.Value() < dist) {
+                dist = d.Value();
+                best = TopoDS::Face(ex.Current());
+                near = d.PointOnShape2(1);
+            }
+        }
+        if (best.IsNull())
+            return 0;
+        Handle(Geom_Surface) surf = BRep_Tool::Surface(best);
+        ShapeAnalysis_Surface sas(surf);
+        const gp_Pnt2d uv = sas.ValueOfUV(near, 1e-7);
+        gp_Pnt q;
+        gp_Vec du, dv;
+        surf->D1(uv.X(), uv.Y(), q, du, dv);
+        gp_Vec n = du.Crossed(dv);
+        if (n.Magnitude() < 1e-12)
+            return 0;
+        n.Normalize();
+        if (best.Orientation() == TopAbs_REVERSED)
+            n.Reverse();
+        const double r[6] = {near.X(), near.Y(), near.Z(), n.X(), n.Y(), n.Z()};
+        std::copy(r, r + 6, out);
+        return 1;
+    });
+}
+
+// A surface made a solid `t` thick, on the side its faces' normals point
+// (t < 0: the other side).
+hc_shape *hc_thicken(const hc_shape *s, double t)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        BRepOffsetAPI_MakeThickSolid mk;
+        mk.MakeThickSolidBySimple(s->shape, t);
+        mk.Build();
+        if (!mk.IsDone())
+            throw Standard_Failure("could not thicken the surface (thinner than its tightest bend?)");
+        // it may come out inside out
+        TopoDS_Shape r = mk.Shape();
+        GProp_GProps g;
+        BRepGProp::VolumeProperties(r, g);
+        if (g.Mass() < 0)
+            r.Reverse();
+        return primitive(r);
+    });
+}
+
+// Surfaces sewn along their shared edges into one solid; an error when they
+// leave a gap (free_edges: how many edges have a side open).
+hc_shape *hc_sew(const hc_shape *const *parts, int n, double tolerance, int *free_edges)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        BRepBuilderAPI_Sewing sew(tolerance);
+        for (int i = 0; i < n; i++)
+            sew.Add(parts[i]->shape);
+        sew.Perform();
+        TopoDS_Shape sewn = sew.SewedShape();
+        *free_edges = sew.NbFreeEdges();
+        if (sew.NbFreeEdges() > 0)
+            throw Standard_Failure(("the surfaces do not close: " + std::to_string(sew.NbFreeEdges()) +
+                                    " edges are open on one side").c_str());
+        BRepBuilderAPI_MakeSolid ms;
+        int shells = 0;
+        for (TopExp_Explorer ex(sewn, TopAbs_SHELL); ex.More(); ex.Next(), shells++)
+            ms.Add(TopoDS::Shell(ex.Current()));
+        if (shells == 0)
+            throw Standard_Failure("the surfaces sew into nothing");
+        ShapeFix_Solid fix(ms.Solid());
+        fix.Perform();
+        TopoDS_Shape r = fix.Solid();
+        GProp_GProps g;
+        BRepGProp::VolumeProperties(r, g);
+        if (g.Mass() < 0)
+            r.Reverse();
+        return primitive(r);
     });
 }
 

@@ -102,6 +102,23 @@ final class CachingKernel : BrepKernel
     Brep sweepRoll(Brep profile, Brep path, const(double)[] angles, Vec3 up, Brep guide) =>
         guide is null ? op(key("sweepRoll", profile, path, angles, up), inner.sweepRoll(profile, path, angles, up, null))
             : op(key("sweepRoll", profile, path, angles, up, guide), inner.sweepRoll(profile, path, angles, up, guide));
+    Brep loftOpen(Brep[] paths, bool ruled)
+    {
+        ulong[] ks;
+        foreach (p; paths)
+            ks ~= keyOf(p);
+        return op(key("loftOpen", cast(const(double)[]) ks.map!(x => cast(double) x).array, ruled), inner.loftOpen(paths, ruled));
+    }
+    Brep splitBy(Brep s, Brep tool) => op(key("splitBy", s, tool), inner.splitBy(s, tool));
+    Brep thicken(Brep s, double t) => op(key("thicken", s, t), inner.thicken(s, t));
+    bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal) => inner.normalAt(s, p, point, normal);
+    Brep sew(Brep[] parts, double tolerance)
+    {
+        ulong[] ks;
+        foreach (p; parts)
+            ks ~= keyOf(p);
+        return op(key("sew", cast(const(double)[]) ks.map!(x => cast(double) x).array, tolerance), inner.sew(parts, tolerance));
+    }
     Brep loft(Brep[] profiles, bool ruled)
     {
         ulong[] ks;

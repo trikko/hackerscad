@@ -3951,3 +3951,29 @@ unittest
     // in the order they are made: mid when the part first uses it
     assert(it.planes.map!(p => p.name).array == ["side", "mid"], it.planes.map!(p => p.name).join(" "));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // surfaces: a curve swept, a loft through paths; split, push, thicken, sew
+    expectOut(`auto route = path([vec(0, 0, 0), vec(0, 0, 40.mm), vec(50.mm, 0, 40.mm)], bend: 15.mm);
+        auto ribbon = path([vec(-8.mm, 0), vec(8.mm, 0)]).sweep(route);
+        auto tube = (circle(d: 12.mm) - circle(d: 9.mm)).sweep(route);
+        auto halves = tube.split(ribbon);
+        auto apart = halves.push(from: ribbon, by: 5.mm);
+        writeln(halves.length, " ", abs(halves[0].volume / tube.volume - 0.5) < 1e-6, " ",
+            (apart[0].bbox.center - halves[0].bbox.center).dot(apart[1].bbox.center - halves[1].bbox.center) < 0);
+        Vec3[] sq(Length z) => [vec(0, 0, z), vec(10.mm, 0, z), vec(10.mm, 10.mm, z), vec(0, 10.mm, z)];
+        auto sides = loft([path(sq(0.mm), closed: true), path(sq(10.mm), closed: true)], ruled: true);
+        auto bottom = rect(10.mm, 10.mm).move(x: 5.mm, y: 5.mm);
+        writeln(format("%.3f", sew([sides, bottom, bottom.move(z: 10.mm)]).volume / 1.mm ^^ 3), " ",
+            format("%.3f", loft([path([vec(0, 0, 0), vec(20.mm, 0, 0)]), path([vec(0, 0, 20.mm), vec(20.mm, 0, 20.mm)])])
+                .thicken(2.mm).volume / 1.mm ^^ 3));`,
+        "2 true true\n1000.000 800.000", "import std.math;");
+    assert(error(`@part Solid p() => path([vec(-1, 0), vec(1, 0)]).sweep(path([vec(0, 0, 0), vec(0, 0, 5)]));`)
+        .message.canFind("no inside"));
+    assert(error(`@part Solid p() { auto s = path([vec(-1, 0), vec(1, 0)]).sweep(path([vec(0, 0, 0), vec(0, 0, 5)]));
+        return box(2, 2, 2) + s; }`).message.canFind("cannot combine a Surface"));
+    assert(error(`@part Solid p() { auto s = path([vec(0, 0, 0), vec(1, 0, 0), vec(1, 1, 0), vec(0, 1, 0)]).sweep(path([vec(0, 0, 0), vec(0, 0, 5)]));
+        return sew([s]); }`).message.canFind("open"));
+}

@@ -268,7 +268,7 @@ struct Value
         case Kind.func: case Kind.builtin: case Kind.bound: return "function";
         case Kind.type: return "type";
         case Kind.module_: return "module";
-        case Kind.solid: return solid.path ? "Path" : solid.flat ? "Profile" : "Solid";
+        case Kind.solid: return solid.path ? "Path" : solid.surface ? "Surface" : solid.flat ? "Profile" : "Solid";
         case Kind.selector: return sel.faces ? "FaceSelector" : "EdgeSelector";
         case Kind.edge: return "Edge";
         case Kind.face: return "Face";
@@ -361,7 +361,7 @@ struct Value
         case Kind.bound: return "function";
         case Kind.type: return type.name;
         case Kind.module_: return "module " ~ mod.name;
-        case Kind.solid: return solid.brep is null ? "Solid(empty)" : solid.path ? "Path" : solid.flat ? "Profile" : "Solid";
+        case Kind.solid: return solid.brep is null ? "Solid(empty)" : solid.path ? "Path" : solid.surface ? "Surface" : solid.flat ? "Profile" : "Solid";
         case Kind.selector: return sel.faces ? "faces" : "edges";
         case Kind.edge: return "Edge";
         case Kind.face: return "Face";
@@ -576,6 +576,7 @@ final class SolidVal
     bool flat;         /// a 2D profile (planar faces) rather than a solid
     bool path;         /// a curve (wire) to sweep along
     Vec3 pathNormal;   /// a path drawn in a sketch: the normal of the sketch's plane (zero: not known)
+    bool surface;      /// a surface (faces with an edge open): to split solids with, thicken or sew
     bool placed;       /// a profile drawn on a face or plane (a sketch's): where it lies, below
     Vec3[4] place;     /// its frame: origin, x, y, z; the brep stays on XY, in the frame's coordinates
 

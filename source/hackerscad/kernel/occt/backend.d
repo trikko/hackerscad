@@ -149,6 +149,34 @@ final class OcctKernel : BrepKernel
         return wrap(hc_loft(ps.ptr, cast(int) ps.length, ruled), "loft");
     }
 
+    Brep loftOpen(Brep[] paths, bool ruled)
+    {
+        const(hc_shape)*[] ps;
+        foreach (p; paths)
+            ps ~= h(p);
+        return wrap(hc_loft_open(ps.ptr, cast(int) ps.length, ruled), "surface through paths");
+    }
+    Brep splitBy(Brep s, Brep tool) => wrap(hc_split_by(h(s), h(tool)), "split");
+    Brep thicken(Brep s, double t) => wrap(hc_thicken(h(s), t), "thicken");
+    bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal)
+    {
+        double[3] q = [p.x, p.y, p.z];
+        double[6] r;
+        if (hc_normal_at(h(s), q, r) != 1)
+            return false;
+        point = Vec3(r[0], r[1], r[2]);
+        normal = Vec3(r[3], r[4], r[5]);
+        return true;
+    }
+    Brep sew(Brep[] parts, double tolerance)
+    {
+        const(hc_shape)*[] ps;
+        foreach (p; parts)
+            ps ~= h(p);
+        int open;
+        return wrap(hc_sew(ps.ptr, cast(int) ps.length, tolerance, &open), "sew");
+    }
+
     Brep offset(Brep s, double d) => wrap(hc_offset_solid(h(s), d), "offset");
     int touching(Brep s) => hc_touching_count(h(s));
     Brep bridgeTouching(Brep s, double r) => wrap(hc_bridge_touching(h(s), r), "joining");

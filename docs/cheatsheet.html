@@ -40,6 +40,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>Solid</dt><dd>A 3D body: boxes, cylinders, booleans, features. Every operation gives a new one.</dd>
 <dt>Profile</dt><dd>A flat 2D outline on XY (rect, circle, text, sketch.profile; a shape's profile is a one-shape sketch with everything given): combine with + - &amp;, extrude or revolve it into a Solid.</dd>
 <dt>Path</dt><dd>A curve in space (path, spline, helix) to sweep a profile along.</dd>
+<dt>Surface</dt><dd>Faces with an edge open, no inside (a curve swept, a loft through paths): split a solid with it, thicken it, sew surfaces into a solid.</dd>
 <dt>Vec</dt><dd>A 2D or 3D vector or point: vec(10.mm, 5.mm, 0.mm); .x .y .z .length.</dd>
 <dt>Vec2</dt><dd>A 2D vector.</dd>
 <dt>Vec3</dt><dd>A 3D vector.</dd>
@@ -163,7 +164,9 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.linearPattern(n: int, step: Vec) → Solid</dt><dd>n copies, step apart, as one solid.</dd>
 <dt>s.circularPattern(n: int, axis: Axis, angle: Angle) → Solid</dt><dd>n copies around an axis, as one solid.</dd>
 <dt>s.placeOn(frame: Frame, from: Faces, at: Vec) → Solid</dt><dd>A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin).</dd>
-<dt>s.split(plane: Plane) → Solid[]</dt><dd>Cuts with a plane into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…</dd>
+<dt>s.split(plane: Plane | Surface | Solid) → Solid[]</dt><dd>Cuts with a plane (or a surface, or another solid's skin) into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…</dd>
+<dt>x.thicken(thickness: Length) → Solid</dt><dd>The surface made a solid that thick, on the side its normals point (negative: the other side).</dd>
+<dt>sew(surfaces: Surface[]) → Solid</dt><dd>Surfaces (and flat profiles, to close their ends) that close round a space, joined along their edges into one solid; an error says how many edges stay open.</dd>
 <dt>s.halves(plane: Plane) → Halves</dt><dd>Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.</dd>
 </dl></section>
 <section><h2>Profiles (2D)</h2><dl>
@@ -180,8 +183,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.offset(distance: Length) → Solid</dt><dd>Grows (d &gt; 0) or shrinks the solid, round where it turns (its walls thickened).</dd>
 <dt>p.extrude(height: Length, taper: Angle, symmetric: bool, twist: Angle, along: X | Y, shear: Vec) → Solid</dt><dd>A solid along +Z from the profile (a negative height: down, towards -Z); taper: 3.deg leans its sides in going away from the profile, whichever way the solid goes (the outline narrows, holes widen; a negative taper widens); twist: 90.deg turns it around Z as it rises, evenly; shear: vec(dx, dy) moves its top that much sideways (in the profile's own x and y) from its bottom, the sides leaning straight: an oblique prism (a blade's bevel, a leaning slot). along: X stands the profile up across X (its x along Y, its y up Z) and pushes it towards +X, along: Y (its x along X) towards +Y; a negative height towards -X or -Y. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is.</dd>
 <dt>p.revolve(axis: Axis, angle: Angle) → Solid</dt><dd>Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z.</dd>
-<dt>p.sweep(path: Path, frenet: bool, twist: Angle | (t) =&gt; Angle, up: Direction, guide: Path) → Solid</dt><dd>Moves the profile along a path, across it; how it turns about the path: as little as it can, or one of frenet: true (with the curvature: helices), twist: 360.deg (once, evenly; t =&gt; angle: by that much at t, 0 at the start to 1 at the end), up: Z (its +Y towards that way all along; an error where the path runs that way), guide: rail (its +Y towards the point as far along that path).</dd>
-<dt>loft(profiles: Profile[], ruled: bool, inside: Vec3[][]) → Solid</dt><dd>A solid through profiles placed in space; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane).</dd>
+<dt>p.sweep(path: Path, frenet: bool, twist: Angle | (t) =&gt; Angle, up: Direction, guide: Path) → Solid</dt><dd>Moves the profile along a path, across it (a curve, a Path on XY, instead: a Surface); how it turns about the path: as little as it can, or one of frenet: true (with the curvature: helices), twist: 360.deg (once, evenly; t =&gt; angle: by that much at t, 0 at the start to 1 at the end), up: Z (its +Y towards that way all along; an error where the path runs that way), guide: rail (its +Y towards the point as far along that path).</dd>
+<dt>loft(profiles: Profile[], ruled: bool, inside: Vec3[][]) → Solid</dt><dd>A solid through profiles placed in space; through paths (Path[]), a Surface; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane).</dd>
 <dt>hull(shapes…) → Solid</dt><dd>The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.</dd>
 <dt>minkowski(a, b) → Solid</dt><dd>a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.</dd>
 <dt>s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid</dt><dd>Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).</dd>
@@ -224,7 +227,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>x.frames(n: int) → Frame[]</dt><dd>n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft.</dd>
 <dt>p.outline(n: int, round: Length) → OutlinePoint[]</dt><dd>n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1).</dd>
 <dt>xs.above(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p).</dd>
-<dt>s.push(from: Vec3 | Plane | Axis, by: Length) → Solid</dt><dd>Moved away from a point, a plane or an axis, along the line from it to the centre of mass; on a list of solids each goes its own way (an exploded view).</dd>
+<dt>s.push(from: Vec3 | Plane | Axis | Surface, by: Length) → Solid</dt><dd>Moved away from a point, a plane or an axis, along the line from it to the centre of mass; from a surface, across it where it is nearest, to the side the solid lies on; on a list of solids each goes its own way (an exploded view).</dd>
 <dt>s.pull(to: Vec3 | Plane | Axis, by: Length) → Solid</dt><dd>Moved towards a point, a plane or an axis: the opposite of push.</dd>
 <dt>xs.below(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those on the other side of the plane.</dd>
 <dt>xs.crossing(plane: Plane) → Solid[]</dt><dd>Of a list of solids, those the plane cuts through.</dd>

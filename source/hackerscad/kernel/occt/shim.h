@@ -164,6 +164,14 @@ hc_shape *hc_sweep_twisted(const hc_shape *profile, const hc_shape *path, int fr
 /* the same, the roll decided by frenet, n angles evenly along the path, a fixed up (zero: none) or a guide (null: none) */
 hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet, const double *angles, int n,
                       const double up[3], const hc_shape *guide);
+/* Surfaces: through paths in order; the pieces of a solid cut by a surface; a
+ * surface made t thick; surfaces sewn into a closed solid. */
+hc_shape *hc_loft_open(const hc_shape *const *paths, int n, int ruled);
+hc_shape *hc_split_by(const hc_shape *s, const hc_shape *tool);
+hc_shape *hc_thicken(const hc_shape *s, double t);
+/* the point of s nearest to p and its face's normal there: x y z nx ny nz; 0 off its faces */
+int hc_normal_at(const hc_shape *s, const double p[3], double out[6]);
+hc_shape *hc_sew(const hc_shape *const *parts, int n, double tolerance, int *free_edges);
 /* A solid through profiles already placed in space (ruled: flat sides). */
 hc_shape *hc_loft(const hc_shape *const *profiles, int n, int ruled);
 

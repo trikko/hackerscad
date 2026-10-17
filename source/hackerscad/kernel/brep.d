@@ -245,6 +245,15 @@ interface BrepKernel
     /// towards `up` (non-zero), or towards the curve `guide` (non-null).
     Brep sweepRoll(Brep profile, Brep path, const(double)[] angles, Vec3 up, Brep guide);
     Brep loft(Brep[] profiles, bool ruled);
+    /// Surfaces: through paths in order (not filled); the solids of `s` cut by
+    /// a surface; a surface made `t` thick (on its normals' side; t < 0 the
+    /// other); surfaces sewn along their edges into one closed solid.
+    Brep loftOpen(Brep[] paths, bool ruled);
+    Brep splitBy(Brep s, Brep tool);
+    Brep thicken(Brep s, double t);
+    /// The point of `s` nearest to `p`, and its face's normal there; false off its faces.
+    bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal);
+    Brep sew(Brep[] parts, double tolerance);
     /// Hidden-line projection: `dir` points from the model to the viewer.
     ViewSegment[] hiddenLines(Brep s, Vec3 dir, Vec3 up, double deflection);
     /// Boundary loops of a face as 3D polylines (outer and holes).

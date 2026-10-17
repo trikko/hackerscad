@@ -112,6 +112,7 @@ immutable Ref[] reference =
     T("Solid", "A 3D body: boxes, cylinders, booleans, features. Every operation gives a new one."),
     T("Profile", "A flat 2D outline on XY (rect, circle, text, sketch.profile; a shape's profile is a one-shape sketch with everything given): combine with + - &, extrude or revolve it into a Solid."),
     T("Path", "A curve in space (path, spline, helix) to sweep a profile along."),
+    T("Surface", "Faces with an edge open, no inside (a curve swept, a loft through paths): split a solid with it, thicken it, sew surfaces into a solid."),
     T("Vec", "A 2D or 3D vector or point: vec(10.mm, 5.mm, 0.mm); .x .y .z .length."),
     T("Vec2", "A 2D vector."),
     T("Vec3", "A 3D vector."),
@@ -268,7 +269,11 @@ immutable Ref[] reference =
     F("circularPattern", "Solid", ["n: int", "axis: Axis", "angle: Angle"], "Solid", "n copies around an axis, as one solid."),
     F("placeOn", "Solid", ["frame: Frame", "from: Faces", "at: Vec"], "Solid",
         "A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin)."),
-    F("split", "Solid", ["plane: Plane"], "Solid[]", "Cuts with a plane into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…"),
+    withForms(F("split", "Solid", ["plane: Plane | Surface | Solid"], "Solid[]", "Cuts with a plane (or a surface, or another solid's skin) into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…"), [
+        "body.split(XZ)                         // with a plane",
+        "tube.split(ribbon)                     // with a surface, along a bent tube"]),
+    F("thicken", "Surface", ["thickness: Length"], "Solid", "The surface made a solid that thick, on the side its normals point (negative: the other side)."),
+    F("sew", "", ["surfaces: Surface[]"], "Solid", "Surfaces (and flat profiles, to close their ends) that close round a space, joined along their edges into one solid; an error says how many edges stay open."),
     F("halves", "Solid", ["plane: Plane"], "Halves", "Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid."),
     ]) ~
     group("Profiles (2D)", [
@@ -320,12 +325,12 @@ immutable Ref[] reference =
     F("revolve", "Profile", ["axis: Axis", "angle: Angle"], "Solid",
         "Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z."),
     withForms(F("sweep", "Profile", ["path: Path", "frenet: bool", "twist: Angle | (t) => Angle", "up: Direction", "guide: Path"], "Solid",
-        "Moves the profile along a path, across it; how it turns about the path: as little as it can, or one of frenet: true (with the curvature: helices), twist: 360.deg (once, evenly; t => angle: by that much at t, 0 at the start to 1 at the end), up: Z (its +Y towards that way all along; an error where the path runs that way), guide: rail (its +Y towards the point as far along that path)."), [
+        "Moves the profile along a path, across it (a curve, a Path on XY, instead: a Surface); how it turns about the path: as little as it can, or one of frenet: true (with the curvature: helices), twist: 360.deg (once, evenly; t => angle: by that much at t, 0 at the start to 1 at the end), up: Z (its +Y towards that way all along; an error where the path runs that way), guide: rail (its +Y towards the point as far along that path)."), [
         "circle(d: 4.mm).sweep(p)                                // turning as little as it can",
         "rect(10.mm, 2.mm).sweep(p, up: Z)                       // a road that does not bank",
         "rect(10.mm, 2.mm).sweep(p, guide: rail)                 // its +Y towards the rail",
         "rect(10.mm, 2.mm).sweep(p, twist: t => 60.deg * sin(t * 720.deg)) // swinging"]),
-    F("loft", "", ["profiles: Profile[]", "ruled: bool", "inside: Vec3[][]"], "Solid", "A solid through profiles placed in space; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane)."),
+    F("loft", "", ["profiles: Profile[]", "ruled: bool", "inside: Vec3[][]"], "Solid", "A solid through profiles placed in space; through paths (Path[]), a Surface; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane)."),
     F("hull", "", ["shapes…"], "Solid",
         "The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile."),
     F("minkowski", "", ["a", "b"], "Solid",
@@ -398,8 +403,8 @@ immutable Ref[] reference =
     F("frames", "Path", ["n: int"], "Frame[]", "n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft."),
     F("outline", "Profile", ["n: int", "round: Length"], "OutlinePoint[]", "n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1)."),
     F("above", "list", ["plane: Plane"], "Solid[]", "Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p)."),
-    withForms(F("push", "Solid", ["from: Vec3 | Plane | Axis", "by: Length"], "Solid",
-        "Moved away from a point, a plane or an axis, along the line from it to the centre of mass; on a list of solids each goes its own way (an exploded view)."), [
+    withForms(F("push", "Solid", ["from: Vec3 | Plane | Axis | Surface", "by: Length"], "Solid",
+        "Moved away from a point, a plane or an axis, along the line from it to the centre of mass; from a surface, across it where it is nearest, to the side the solid lies on; on a list of solids each goes its own way (an exploded view)."), [
         "carlo().split(cutPlane).push(from: cutPlane, by: 4.mm)   // the pieces of a cut apart",
         "parts.push(from: vec(0, 0, 0), by: 10.mm)                // away from a point",
         "slices.push(from: axis(origin: vec(0, 0, 0), direction: Z), by: 5.mm)"]),

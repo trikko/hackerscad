@@ -1188,8 +1188,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // how it turns about the path on the way: as little as it can, or frenet: true (the
         // curvature), twist: 360.deg (once, evenly; or t => angle, 0 to 1 along it), up: Z
         // (its +Y towards Z all along), guide: rail (its +Y towards that path)
+        // a curve (a Path on XY) instead of a profile: swept, a Surface
         auto x = Args(it, a, "sweep", ["profile", "path", "frenet", "twist", "up", "guide"]);
-        auto p = profileArg(x, "profile");
+        immutable open = x.get("profile").kind == Kind.solid && x.get("profile").solid.path;
+        SolidVal p;
+        if (open)
+        {
+            p = x.get("profile").solid;
+            auto bb = k.bbox(nonEmpty(p, a.span));
+            if (abs(bb.min.z) > 1e-6 || abs(bb.max.z) > 1e-6)
+                throw new HcadError(Code.type, "a curve swept into a surface is drawn on XY around the origin, as a "
+                    ~ "profile is (path([vec(-5, 0), vec(5, 0)]))", x.spanOf("profile"));
+        }
+        else
+            p = profileArg(x, "profile");
         SolidVal pathOf(string n)
         {
             auto pv = x.get(n);
@@ -1238,6 +1250,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto sv = derived(it, made, [p], "sweep", a.span);
         sv.flat = false;
         sv.placed = false;
+        sv.path = false;
+        sv.surface = open;
         return Value.of(sv);
     });
     def("loft", (ref CallArgs a) {
@@ -1296,6 +1310,25 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         }
         Brep[] bs;
         SolidVal[] ins;
+        // paths, not profiles: a Surface through them
+        if (v.arr.length && v.arr[0].kind == Kind.solid && v.arr[0].solid.path)
+        {
+            foreach (p; v.arr)
+            {
+                if (p.kind != Kind.solid || !p.solid.path)
+                    throw new HcadError(Code.type, format("a surface through paths takes paths only, not %s", p.typeName),
+                        x.spanOf("profiles"));
+                bs ~= nonEmpty(p.solid, a.span);
+            }
+            Brep b;
+            try
+                b = k.loftOpen(bs, x.flag("ruled", false));
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, e.msg, a.span);
+            auto sv = primitive(it, b, "loft", a.span);
+            sv.surface = true;
+            return Value.of(sv);
+        }
         foreach (p; v.arr)
         {
             if (p.kind != Kind.solid || !p.solid.flat || p.solid.path)
@@ -1817,6 +1850,52 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto half = halfSpace(it, nonEmpty(s, a.span), o, n, a.span);
         return [solidBoolean(it, s, half, BoolOp.common, a.span), solidBoolean(it, s, half, BoolOp.cut, a.span)];
     }
+    // surface.thicken(2.mm): made a solid that thick, on the side its normals point (negative: the other side)
+    def("thicken", (ref CallArgs a) {
+        auto x = Args(it, a, "thicken", ["surface", "thickness"]);
+        auto s = x.solid("surface");
+        if (!s.surface)
+            throw new HcadError(Code.type, format("thicken makes a Surface a solid, not a %s: a solid grows with offset",
+                x.get("surface").typeName), x.spanOf("surface"));
+        immutable t = x.len("thickness");
+        if (t == 0)
+            throw new HcadError(Code.type, "thicken by 0 leaves no solid", x.spanOf("thickness"));
+        Brep b;
+        try
+            b = k.thicken(nonEmpty(s, a.span), t);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span);
+        auto sv = derived(it, b, [s], "thicken", a.span);
+        sv.surface = false;
+        return Value.of(sv);
+    });
+    // sew([a, b, c]): surfaces that close round a space, joined along their edges into one solid
+    def("sew", (ref CallArgs a) {
+        auto x = Args(it, a, "sew", ["surfaces"]);
+        auto v = x.get("surfaces");
+        if (v.kind != Kind.array || v.arr.length == 0)
+            throw new HcadError(Code.type, "sew takes an array of surfaces: sew([a, b, c])", x.spanOf("surfaces"));
+        Brep[] bs;
+        SolidVal[] ins;
+        foreach (q; v.arr)
+        {
+            if (q.kind != Kind.solid || q.solid.path || !q.solid.flat && !q.solid.surface)
+                throw new HcadError(Code.type, format("sew joins surfaces and flat profiles (to close their ends), not %s",
+                    q.typeName), x.spanOf("surfaces"));
+            bs ~= q.solid.placed ? toPlace(k, q.solid.place, nonEmpty(q.solid, a.span)) : nonEmpty(q.solid, a.span);
+            ins ~= q.solid;
+        }
+        Brep b;
+        try
+            b = k.sew(bs, 1e-4);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span, "the surfaces must meet edge to edge all round");
+        auto sv = derived(it, b, ins, "sew", a.span);
+        sv.surface = false;
+        sv.flat = false;
+        sv.placed = false;
+        return Value.of(sv);
+    });
     def("halves", (ref CallArgs a) {
         auto sides = cutSides(a, "halves");
         // a copy: sides lives on this call's stack
@@ -1824,6 +1903,29 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
     // s.split(plane): the pieces the cut leaves, both sides, along X, then Y, then Z
     def("split", (ref CallArgs a) {
+        // s.split(surface): the pieces a surface (or a solid) cuts it into
+        if (a.positional.length > 1 && a.positional[1].kind == Kind.solid)
+        {
+            auto x = Args(it, a, "split", ["solid", "by"]);
+            auto s = x.solid("solid");
+            auto tool = x.get("by").solid;
+            if (tool.path || tool.flat)
+                throw new HcadError(Code.type, format("split cuts with a Plane, a Surface or a Solid, not a %s",
+                    x.get("by").typeName), x.spanOf("by"));
+            Brep cut;
+            try
+                cut = k.splitBy(nonEmpty(s, a.span), nonEmpty(tool, a.span));
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, e.msg, a.span);
+            auto all = piecesOf(it, derived(it, cut, [s, tool], "split", a.span), a.span);
+            foreach (q; all)
+                q.surface = false;
+            sortPieces(it, all);
+            Value[] r;
+            foreach (q; all)
+                r ~= Value.of(q);
+            return Value.of(r);
+        }
         auto sides = cutSides(a, "split");
         SolidVal[] all;
         foreach (side; sides)
@@ -2200,8 +2302,29 @@ Vec3 pushOffset(Interp it, ref Args x, string name, SolidVal s, double by, Span 
     }
     else if (v.kind == Kind.vec || v.kind == Kind.array)
         dir = c - x.vecLen(name);
+    else if (v.kind == Kind.solid && v.solid.surface && v.solid.brep !is null)
+    {
+        // across the surface where it is nearest, towards the side the solid lies on there (its centre of
+        // mass may lie beyond the surface: half a bent tube)
+        Vec3 on, n;
+        if (!it.kernel.normalAt(v.solid.brep, c, on, n))
+            throw new HcadError(Code.type, format("'%s': the surface has no face near the solid", name), x.spanOf(name));
+        immutable size = it.kernel.bbox(s.brep).size.length;
+        foreach (step; [1e-3, 1e-2, 5e-2])
+        {
+            immutable e = max(1e-3, size * step);
+            immutable plus = it.kernel.inside(s.brep, on + n * e), minus = it.kernel.inside(s.brep, on - n * e);
+            if (plus != minus)
+            {
+                dir = plus ? n : -n;
+                break;
+            }
+        }
+        if (dir.length < 1e-9)
+            dir = c - on;   // not touching the surface there: away from it
+    }
     else
-        throw new HcadError(Code.type, format("'%s' is a point, a Plane or an Axis, not %s", name, v.typeName),
+        throw new HcadError(Code.type, format("'%s' is a point, a Plane, an Axis or a Surface, not %s", name, v.typeName),
             x.spanOf(name));
     if (dir.length < 1e-9)
     {
@@ -3361,8 +3484,9 @@ SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span)
         r.rgb = inputs[0].rgb;
         r.hasColor = inputs[0].hasColor;
         r.flat = inputs[0].flat || (inputs[0].brep is null && inputs.length > 1 && inputs[1].flat);
-        // a path moved, turned or mirrored is still a path
+        // a path moved, turned or mirrored is still a path; a surface, a surface
         r.path = inputs.length == 1 && inputs[0].path;
+        r.surface = inputs.length == 1 && inputs[0].surface;
         // a profile drawn on a face stays there: moved, combined, offset in its plane
         foreach (input; inputs)
             if (r.flat && input !is null && input.flat && input.placed && !r.placed)

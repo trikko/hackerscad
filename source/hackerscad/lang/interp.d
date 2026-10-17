@@ -313,6 +313,9 @@ final class Interp
                     throw new HcadError(Code.kernel, format("%s '%s' is empty (did a boolean remove everything?)", at, f.name), f.nameSpan);
                 if (v.solid.path)
                     throw new HcadError(Code.type, format("%s '%s' returns a Path: sweep a profile along it", at, f.name), f.nameSpan);
+                if (v.solid.surface)
+                    throw new HcadError(Code.type, format("%s '%s' returns a Surface, which has no inside: thicken it, sew "
+                        ~ "surfaces into a solid, or split a solid with it", at, f.name), f.nameSpan);
                 if (v.solid.flat)
                     throw new HcadError(Code.type, format("%s '%s' returns a 2D profile: extrude or revolve it", at, f.name), f.nameSpan);
                 import hackerscad.lang.builtins : piecesOf;
@@ -1610,6 +1613,9 @@ final class Interp
                 throw new HcadError(Code.type, format("cannot combine %s and %s with '%s'", l.typeName, r.typeName, opText(op)), span);
             if (l.solid.path || r.solid.path)
                 throw new HcadError(Code.type, format("cannot combine a Path with '%s': sweep a profile along it first", opText(op)), span);
+            if (l.solid.surface || r.solid.surface)
+                throw new HcadError(Code.type, format("cannot combine a Surface with '%s': split a solid with it "
+                    ~ "(s.split(surface)), or thicken it into a solid first", opText(op)), span);
             if (l.solid.flat != r.solid.flat && l.solid.brep !is null && r.solid.brep !is null)
                 throw new HcadError(Code.type, format("cannot combine a %s and a %s: extrude the profile first", l.typeName, r.typeName), span);
             Value v;
@@ -2128,7 +2134,7 @@ final class Interp
             s = site in traceSites;
         }
         s.calls++;
-        TraceEntry entry(SolidVal sv) => TraceEntry(site, decl, fn, sv.path ? "Path" : sv.flat ? "Profile" : "Solid", sv, 0,
+        TraceEntry entry(SolidVal sv) => TraceEntry(site, decl, fn, sv.path ? "Path" : sv.surface ? "Surface" : sv.flat ? "Profile" : "Solid", sv, 0,
             cast(uint) features.length, ++traceSeq);
         if (s.calls > maxTraceCalls)
         {
@@ -2325,7 +2331,13 @@ final class Interp
         case "Path":
             if (v.kind != Kind.solid || !v.solid.path) fail();
             return v;
+        case "Surface":
+            if (v.kind != Kind.solid || !v.solid.surface) fail();
+            return v;
         case "Solid":
+            if (v.kind == Kind.solid && v.solid.surface)
+                throw new HcadError(Code.type, format("%s must be a Solid, but this is a Surface, which has no inside: "
+                    ~ "thicken it, sew surfaces into a solid, or split a solid with it", what), span);
             if (v.kind == Kind.solid && v.solid.path) fail();
             if (v.kind == Kind.solid && v.solid.flat)
                 throw new HcadError(Code.type, format("%s must be a Solid, but this is a 2D profile: extrude it first", what), span);

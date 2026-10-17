@@ -112,6 +112,11 @@ hc_shape* hc_sweep_ex(const(hc_shape)* profile, const(hc_shape)* path, int frene
     ref const double[3] up, const(hc_shape)* guide);
 hc_shape* hc_sweep_twisted(const(hc_shape)* profile, const(hc_shape)* path, int frenet, double twist);
 hc_shape* hc_loft(const(hc_shape*)* profiles, int n, int ruled);
+hc_shape* hc_loft_open(const(hc_shape*)* paths, int n, int ruled);
+hc_shape* hc_split_by(const(hc_shape)* s, const(hc_shape)* tool);
+hc_shape* hc_thicken(const(hc_shape)* s, double t);
+int hc_normal_at(const(hc_shape)* s, ref const double[3] p, ref double[6] output);
+hc_shape* hc_sew(const(hc_shape*)* parts, int n, double tolerance, int* free_edges);
 int hc_hlr(const(hc_shape)* s, double dx, double dy, double dz, double ux, double uy, double uz, double deflection,
     double** out_);
 int hc_face_loops(const(hc_shape)* s, int face, double deflection, double** out_);
