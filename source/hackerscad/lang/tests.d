@@ -4460,3 +4460,18 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    mixin(slowTest);
+    // the faces a surface cuts keep where they came from: faces.from(the surface) finds them
+    auto r = runModel(q{
+        immutable wave = spline([vec(-25.mm, 0.mm), vec(-10.mm, 3.mm), vec(5.mm, -3.mm), vec(25.mm, 2.mm)])
+            .sweep(path([vec(0.mm, -20.mm, 12.mm), vec(0.mm, 20.mm, 12.mm)]));
+        immutable block = box(40.mm, 30.mm, 20.mm).split(wave)[0];
+        @part Solid p() => block.fillet(edges.of(faces.from(wave)), r: 1.mm);
+        unittest { assert(p.volume < block.volume, "rounded"); }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

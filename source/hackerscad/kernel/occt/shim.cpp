@@ -3835,8 +3835,10 @@ hc_shape *hc_fill(const hc_shape *path, const hc_shape *s, const int *idx, int n
             }
             auto wires = joined_wires(edges, 1e-6);
             if (wires.size() != 1 || !BRep_Tool::IsClosed(wires[0]))
-                throw Standard_Failure("the edges do not make one closed loop: fill closes a loop (edges.loop(face) "
-                                       "gives a face's rim)");
+                throw Standard_Failure(wires.size() > 1
+                    ? ("the edges make " + std::to_string(wires.size()) + " separate loops (an island in the opening?): "
+                       "fill closes one; select the edges of that one").c_str()
+                    : "the edges do not make a closed loop: fill closes a loop (edges.loop(face) gives a face's rim)");
             for (const TopoDS_Edge &e : edges) {
                 TopoDS_Face along;
                 if (owners.Contains(e))
@@ -4803,7 +4805,9 @@ hc_shape *hc_split_by(const hc_shape *s, const hc_shape *tool)
         if (count <= before)
             throw Standard_Failure("the surface does not cut the solid apart: it misses it, or ends inside it; "
                                    "it must reach across it, from one side out to the other");
-        return primitive(c);
+        // each face from the one it was cut from: the solid's, or the surface's (faces.from(surface))
+        history_record(sp, {&s->shape, &tool->shape}, c);
+        return wrap(c);
     });
 }
 
