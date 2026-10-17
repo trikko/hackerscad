@@ -2,7 +2,7 @@
 
 Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`, `enclosure(…).base` and `.lid`) and every option of it, boxes hollowed with `shell()` or cut in two, screw bosses, ventilation slots and holes, and a worked example of a case for a circuit board.
 
-![A case for a circuit board, and its lid](img/enclosures-pcb.png)
+![Three boxes with vents: slots, round holes and a hexagon grille](img/enclosures-vents.png)
 
 ## The enclosures library
 

@@ -70,7 +70,7 @@ Spur gears and racks from the `gears` library: module, number of teeth and press
 
 ### [Enclosures and boxes](guides/enclosures.md)
 
-[<img src="guides/img/enclosures-pcb.png" width="420" alt="Enclosures and boxes">](guides/enclosures.md)
+[<img src="guides/img/enclosures-vents.png" width="420" alt="Enclosures and boxes">](guides/enclosures.md)
 
 Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`, `enclosure(…).base` and `.lid`) and every option of it, boxes hollowed with `shell()` or cut in two, screw bosses, ventilation slots and holes, and a worked example of a case for a circuit board.
 
