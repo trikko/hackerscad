@@ -482,11 +482,11 @@ immutable Ref[] reference =
     withForms(F("project", "Sketch", ["edges: Edges"], "Entity[]", "Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them."), [
         "s.concentric(c, s.project(edges.filter(e => e.isCircle && e.center.z < 5.mm))[0])   // over a hole below"]),
     F("point", "Sketch", ["x: Length", "y: Length", "fixed: bool", "construction: bool"], "Point", "A point where it starts; constraints move it."),
-    withForms(F("line", "Sketch", ["p: Point", "q: Point", "construction: bool"], "Line", "A line between two points; "
+    withForms(F("line", "Sketch", ["p: Point | Vec2", "q: Point | Vec2", "construction: bool"], "Line", "A line between two points (a vector makes a new point); "
         ~ "construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never "
         ~ "part of the profile."), [
         "s.line(p, q, construction: true)   // a centre line, say"]),
-    F("arc", "Sketch", ["center: Point", "start: Point", "end: Point", "construction: bool"], "Arc", "An arc, counter-clockwise."),
+    F("arc", "Sketch", ["center: Point | Vec2", "start: Point | Vec2", "end: Point | Vec2", "construction: bool"], "Arc", "An arc, counter-clockwise (a vector makes a new point)."),
     F("polyline", "Sketch", ["points", "closed: bool", "construction: bool"], "Line[]", "Lines through points (vectors become new points)."),
     F("spline", "Sketch", ["points", "closed: bool"], "SketchSpline", "A smooth curve through points (vectors become "
         ~ "new points): open, its ends join lines and arcs as theirs do; closed: true, a loop of its own. Its points "

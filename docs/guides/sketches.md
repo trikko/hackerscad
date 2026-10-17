@@ -68,7 +68,7 @@ The steps are always the same: `sketch()`, the geometry, the constraints, `s.pro
 | Call | Draws | Notes |
 |---|---|---|
 | `s.point(x, y)` | a point | where the solver starts from; `fixed: true` pins it |
-| `s.line(p, q)` | a line between two points | points, not vectors |
+| `s.line(p, q)` | a line between two points | points, or vectors that become new points (to join, pass the previous line's `.end`) |
 | `s.polyline([p, q, vec(…)], closed: true)` | joined lines, returned as an array | vectors become new points; closes unless `closed: false` |
 | `s.arc(center, start, end)` | an arc, counter-clockwise | |
 | `s.circle(center, r: \| d:)` | a circle | without `r`/`d` the radius is left to the constraints |
@@ -324,7 +324,7 @@ Solid block()
 | *the sketch constraints conflict: check the constraints at lines …* | two of them ask the impossible (a line both horizontal and vertical, a size given twice): remove one |
 | *a distance is not negative: the side comes from where the points are drawn* | give the size positive, and draw the point on the side it belongs |
 | *open: what line N draws has a free end, and stays out of the profile* | join its ends to the rest, or make it `construction: true` if it is a guide |
-| *expected a sketch point, line, arc, circle or ellipse, not Vec2* | `s.line` takes points: `s.line(p, s.point(30, 20))`; `s.polyline` takes vectors too |
+| *expected a sketch point, line, arc, circle or ellipse, not Vec2* | a constraint takes the sketch's points and lines, not vectors: `s.distance(a.end, b.start, 10.mm)` |
 
 ## In the application
 

@@ -263,15 +263,18 @@ final class SketchVal : ObjectVal
             };
         case "line":
             return (ref CallArgs a) {
+                // the ends: sketch points, or vectors that become new points (as in s.polyline)
                 auto x = Args(it, a, "line", ["sketch", "start", "end", "construction"]);
-                return made(a.span, () => sk.line(pointArg(x, "start"), pointArg(x, "end"), x.flag("construction", false)));
+                immutable p = pointOrNew(x, "start", a.span), q = pointOrNew(x, "end", a.span);
+                return made(a.span, () => sk.line(p, q, x.flag("construction", false)));
             };
         case "arc":
             return (ref CallArgs a) {
                 // counter-clockwise from start to end around center
                 auto x = Args(it, a, "arc", ["sketch", "center", "start", "end", "construction"]);
-                return made(a.span, () => sk.arc(pointArg(x, "center"), pointArg(x, "start"), pointArg(x, "end"),
-                    x.flag("construction", false)));
+                immutable c = pointOrNew(x, "center", a.span), p = pointOrNew(x, "start", a.span),
+                    q = pointOrNew(x, "end", a.span);
+                return made(a.span, () => sk.arc(c, p, q, x.flag("construction", false)));
             };
         case "polyline":
             return (ref CallArgs a) {

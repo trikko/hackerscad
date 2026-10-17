@@ -4242,3 +4242,23 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    // s.line and s.arc take vectors as s.polyline does: new points there
+    auto r = runModel(q{
+        Profile p()
+        {
+            auto s = sketch();
+            auto a = s.line(vec(0, 0), vec(30, 0));
+            auto b = s.arc(vec(30, 10), a.end, vec(30, 20));
+            auto c = s.line(b.end, vec(0, 20));
+            s.line(c.end, a.start);
+            return s.profile;
+        }
+        @part Solid x() => p().extrude(2.mm);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(partVolume(r, "x") > 1400);
+}
