@@ -26,9 +26,10 @@ usage:
       --opaque draws see-through parts solid
   hcad check FILE.hcad [--json] [-D name=value…] [--preset NAME]
       evaluates the model and reports parts, parameters, output and problems
-  hcad docs [TOPIC | --cheatsheet | --agents | --skill | --summary | --stamp]
+  hcad docs [TOPIC | --guide [NAME] | --cheatsheet | --agents | --skill | --summary | --stamp]
       language reference and agent guide (without a topic: the full text,
-      llms-full.txt); --cheatsheet every function in one line each (also
+      llms-full.txt); --guide NAME a topic guide in full (threads, sweeps,
+      sketches…; without a name, the list); --cheatsheet every function in one line each (also
       --cheatsheet-html), --agents AGENTS.md, --skill SKILL.md, --summary
       llms.txt; --stamp which docs this build has: an installed skill that
       shows another is out of date
@@ -186,6 +187,28 @@ int main(string[] args)
                 auto logo = exists("data/logo/it.andreafontana.hackerscad.gui.svg")
                     ? readText("data/logo/it.andreafontana.hackerscad.gui.svg") : null;
                 write(cheatsheetHtml(logo));
+                return 0;
+            }
+            if (topic == "--guide" || topic == "--guide-index")
+            {
+                import hackerscad.tool.docs : guideIndex, guideList, guideText;
+                if (topic == "--guide-index")
+                {
+                    write(guideIndex());
+                    return 0;
+                }
+                if (args.length < 3)
+                {
+                    write(guideList());
+                    return 0;
+                }
+                auto g = guideText(args[2]);
+                if (g is null)
+                {
+                    stderr.writeln("no guide named '", args[2], "'\n", guideList());
+                    return 1;
+                }
+                write(g);
                 return 0;
             }
             if (topic == "--stamp")

@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-55bbc5ed`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-73a6a5d5`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-55bbc5ed`:** this text is up to date.
+- **It prints `0.3.1-73a6a5d5`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -45,8 +45,10 @@ format stamp):
   are missing, use the command line below and suggest adding the server once:
   `claude mcp add -s user hcad -- hcad mcp` (Codex: `codex mcp add hcad --
   hcad mcp`), then restarting the agent. Tools:
-  hcad_docs (the reference, one topic, or format: cheatsheet for every
-  function in one line), hcad_check (errors with line,
+  hcad_docs (the reference, one topic, format: cheatsheet for every
+  function in one line, or format: guide, a topic guide in full: read
+  the one for what you are about to use, threads, sweeps, sketches…;
+  without a topic, the list), hcad_check (errors with line,
   column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
   views: look at them), hcad_measure, hcad_export (.3mf, .stl for one part,
   .zip for one STL per part, .step, .png; 'parts' picks some),
@@ -132,7 +134,7 @@ format stamp):
   change later.
 - Threads: when a part screws onto something that exists (a tap, a hose, a
   bottle, a camera, a pipe fitting), never guess the thread: ask which it
-  is, or say how to find it out (hcad_docs topic threads: the outer
+  is, or say how to find it out (hcad_docs format guide, topic threads: the outer
   diameter over the crests, the pitch, a taper, how it seals). When the
   design chooses, suggest one and say why: ISO metric coarse to hold parts
   together, G where water or air flows, Tr or ACME to move a load, a

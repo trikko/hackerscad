@@ -1291,6 +1291,7 @@ final class MainWindow
         action(app, "cheatsheet", ["F1"], &showCheatsheet);
         action(app, "tutorial", [], () => openUri(appWebsite ~ "/blob/main/docs/TUTORIAL.md"));
         action(app, "reference", [], () => openUri(appWebsite ~ "/blob/main/docs/LANGUAGE.md"));
+        action(app, "guides", [], () => openUri(appWebsite ~ "/blob/main/docs/GUIDES.md"));
 
         evaluator = new Evaluator;
         evaluator.onResult = &showOutcome;
@@ -1518,6 +1519,7 @@ private:
         help.append("Cheatsheet", "win.cheatsheet");
         help.append("Tutorial", "win.tutorial");
         help.append("Language Tour", "win.example-language");
+        help.append("Guides", "win.guides");
         help.append("Language Reference", "win.reference");
         auto style = new Menu;
         style.append("Follow the system", "win.theme::system");

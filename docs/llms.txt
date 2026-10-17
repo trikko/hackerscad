@@ -42,4 +42,5 @@ format stamp):
 
 - AGENTS.md / SKILL.md: how to work with hackerscad and the rules that avoid most mistakes
 - llms-full.txt: the whole reference (language, libraries, examples), also `hcad docs`
+- docs/GUIDES.md: a guide for each topic (threads, sweeps, sketches…), also `hcad docs --guide NAME`
 - docs/TUTORIAL.md: a tutorial for people

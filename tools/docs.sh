@@ -57,6 +57,28 @@ for f in docs/tutorial/12-medal.hcad docs/tutorial/12-medal-cube.hcad docs/tutor
     docs/tutorial/14-pillow-block.hcad; do
     bin/hcad check "$f" >/dev/null
 done
+# the topic guides: their index, and the pictures of their models: a model
+# (a ```d block) under a line "<!-- render: NAME [render options] -->" is
+# drawn to docs/guides/img/NAME.png (the models must all check: a unittest
+# of lang/tests.d evaluates every block with a @part)
+bin/hcad docs --guide-index > docs/GUIDES.md
+mkdir -p docs/guides/img build/guides
+for g in docs/guides/*.md; do
+    awk -v dir=build/guides '
+        /^<!-- render: / { sub(/^<!-- render: /, ""); sub(/ -->$/, ""); want = $0; next }
+        /^```d$/ && want != "" { split(want, w, " "); f = dir "/" w[1] ".hcad"; print want > (dir "/" w[1] ".args"); want = ""; next }
+        /^```$/ && f != "" { close(f); f = ""; next }
+        f != "" { print > f }
+        /^[^<]/ && f == "" { want = want }' "$g"
+done
+for a in build/guides/*.args; do
+    [ -e "$a" ] || break
+    name=$(basename "$a" .args)
+    opts=$(cut -d' ' -f2- -s "$a")
+    # shellcheck disable=SC2086
+    bin/hcad render "build/guides/$name.hcad" -o "docs/guides/img/$name.png" $opts >/dev/null
+done
+rm -f build/guides/*.args build/guides/*.hcad
 bin/hcad render docs/tutorial/planter-09.hcad -o docs/tutorial/img/planter.png >/dev/null
 sed 's/^    return p;$/    return p.move(z: 72.mm);/' docs/tutorial/planter-09.hcad > build/planter-apart.hcad
 bin/hcad render build/planter-apart.hcad -o docs/tutorial/img/planter-apart.png >/dev/null

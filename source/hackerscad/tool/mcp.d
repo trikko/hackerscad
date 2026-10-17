@@ -19,7 +19,7 @@ import std.string : strip;
 import core.atomic : atomicLoad, atomicOp, atomicStore;
 
 import hackerscad.render.raster : View, Shot;
-import hackerscad.tool.docs : agentsText, docsStamp, reference, skillText, summaryText;
+import hackerscad.tool.docs : agentsText, docsStamp, guideList, guideText, reference, skillText, summaryText;
 import hackerscad.tool.runner;
 import hackerscad.tool.guiclient;
 import hackerscad.kernel.cache : CachingKernel;
@@ -658,12 +658,13 @@ JValue toolList()
         tool("hcad_docs", "Reference of the .hcad language, the geometry API, conventions and examples. "
             ~ "Call it before writing a model; pass a topic (e.g. 'fillet', 'hardware', 'remodel') for a short excerpt "
             ~ "(a topic a heading names gives that whole section; a topic also finds the words the text uses for it: "
-            ~ "rotated → angle:, bevel → chamfer, bore → hole). format: "
+            ~ "rotated → angle:, bevel → chamfer, bore → hole). format: guide a topic guide in full (topic: threads, sweeps, "
+            ~ "sketches…; without one, the list): read it before using that feature; "
             ~ "agents the rules for agents (read them before the first model), cheatsheet every function in one line "
             ~ "each (the functions only, not the rules), summary the short index (llms.txt), skill the agent guide "
             ~ "as a skill, stamp which docs the server has (an installed skill showing another is out "
             ~ "of date: refresh it with format skill).",
-            `"topic": {"type": "string"}, "format": {"type": "string", "enum": ["reference", "cheatsheet", "summary", "agents", "skill", "stamp"]}`),
+            `"topic": {"type": "string"}, "format": {"type": "string", "enum": ["reference", "guide", "cheatsheet", "summary", "agents", "skill", "stamp"]}`),
         tool("hcad_check", "Evaluate a model: parts with bounding boxes and volumes, parameters, presets, "
             ~ "writeln output, errors with line/column/suggestion and failed unittest checks.", modelProps),
         tool("hcad_render", "Evaluate a model and return the same report as hcad_check plus a PNG of the parts "
@@ -1283,13 +1284,21 @@ JValue callTool(string name, JValue args)
                 text(skillText());
                 break;
             case "stamp": text(docsStamp()); break;
+            case "guide":
+                {
+                    auto g = guideText(arg("topic"));
+                    if (g is null && arg("topic").length)
+                        throw new Exception("no guide named '" ~ arg("topic") ~ "'\n" ~ guideList());
+                    text(g is null ? guideList() : g);
+                    break;
+                }
             case null, "reference":
                 // the whole reference starts with the rules; a topic is an excerpt
                 if (arg("topic").length == 0)
                     atomicStore(rulesRead, true);
                 text(reference(arg("topic")));
                 break;
-            default: throw new Exception("format must be reference, cheatsheet, summary, agents, skill or stamp");
+            default: throw new Exception("format must be reference, guide, cheatsheet, summary, agents, skill or stamp");
             }
             break;
         }

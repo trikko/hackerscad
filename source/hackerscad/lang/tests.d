@@ -663,6 +663,7 @@ unittest
     import std.file : thisExePath, readText;
     import std.path : dirName;
     import std.string : indexOf;
+    import std.algorithm : startsWith;
     auto root = dirName(dirName(dirName(thisExePath)));
     auto tutorial = readText(buildPath(root, "docs", "tutorial", "13-carlo.hcad"));
     auto sketchCode = tutorial[tutorial.indexOf("    auto s = sketch();") .. tutorial.indexOf("    writeln(")];
@@ -1937,6 +1938,8 @@ unittest
     };
     auto r = runModel(src);
     import std.array : split;
+    import std.string : indexOf;
+    import std.algorithm : startsWith;
     import std.conv : to;
     immutable want = r.log[0].text.split(" ")[0].to!double;
     assert(abs(partVolume(r, "a") - want) < 0.005 * want, format("%s for %s", partVolume(r, "a"), want));
@@ -2809,6 +2812,7 @@ unittest
     import hackerscad.tool.features : sectionReport;
     import std.file : write, mkdirRecurse, rmdirRecurse;
     import std.string : indexOf;
+    import std.algorithm : startsWith;
     auto dir = buildPath(tempDir, "hcad-section-test");
     mkdirRecurse(dir);
     scope (exit)
@@ -3862,6 +3866,8 @@ unittest
     double area(string code)
     {
         import std.array : split;
+    import std.string : indexOf;
+    import std.algorithm : startsWith;
         return output(code ~ "writeln(s.profile.extrude(1.mm).volume);").split(" ")[0].to!double;   // "… mm³"
     }
     immutable lens = 200 * acos(0.6) - 6 * sqrt(400.0 - 144);   // what the two circles share
@@ -4131,4 +4137,28 @@ unittest
         ~ "\"28-400\": 27.3812.mm, \"PCO 1881\": 27.43.mm, \"3/4 GHT\": 26.9875.mm][s];\n"
         ~ "Length depthOf(string s) => [\"1/2-10 ACME\": 1.27.mm, \"S20x4\": 3.471.mm, \"E27\": 1.095.mm, \"E14\": 0.8.mm, "
         ~ "\"28-400\": 1.1938.mm, \"PCO 1881\": 1.245.mm, \"3/4 GHT\": 1.2.mm][s];");
+}
+
+unittest
+{
+    mixin(slowTest);
+    // the topic guides: every model in them (a code block with a @part) evaluates, its unittests pass
+    import hackerscad.tool.docs : guides;
+    import std.array : split;
+    import std.string : indexOf;
+    import std.algorithm : startsWith;
+    foreach (g; guides)
+    {
+        assert(g.text.startsWith("# " ~ g.title ~ "\n"), "the guide " ~ g.slug ~ " starts with its title");
+        foreach (n, block; g.text.split("```d\n")[1 .. $])
+        {
+            immutable code = block[0 .. block.indexOf("\n```")];
+            if (!code.canFind("@part"))
+                continue;
+            auto r = runModel(code);
+            foreach (d; r.diagnostics)
+                assert(d.severity != Severity.error, format("guide %s, model %d: %s (line %d)\n%s", g.slug, n + 1,
+                    d.message, d.span.line, code));
+        }
+    }
 }

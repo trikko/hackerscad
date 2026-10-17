@@ -381,8 +381,10 @@ format stamp):
   are missing, use the command line below and suggest adding the server once:
   `claude mcp add -s user hcad -- hcad mcp` (Codex: `codex mcp add hcad --
   hcad mcp`), then restarting the agent. Tools:
-  hcad_docs (the reference, one topic, or format: cheatsheet for every
-  function in one line), hcad_check (errors with line,
+  hcad_docs (the reference, one topic, format: cheatsheet for every
+  function in one line, or format: guide, a topic guide in full: read
+  the one for what you are about to use, threads, sweeps, sketches…;
+  without a topic, the list), hcad_check (errors with line,
   column and suggestion; parts, sizes, volumes), hcad_render (pictures of the
   views: look at them), hcad_measure, hcad_export (.3mf, .stl for one part,
   .zip for one STL per part, .step, .png; 'parts' picks some),
@@ -468,7 +470,7 @@ format stamp):
   change later.
 - Threads: when a part screws onto something that exists (a tap, a hose, a
   bottle, a camera, a pipe fitting), never guess the thread: ask which it
-  is, or say how to find it out (hcad_docs topic threads: the outer
+  is, or say how to find it out (hcad_docs format guide, topic threads: the outer
   diameter over the crests, the pitch, a taper, how it seals). When the
   design chooses, suggest one and say why: ISO metric coarse to hold parts
   together, G where water or air flows, Tr or ACME to move a load, a
@@ -503,7 +505,10 @@ string docsStamp()
     import std.digest.crc : crc32Of;
     import std.digest : toHexString;
     import std.format : format;
-    auto sum = crc32Of(agentsBody ~ reference());
+    string all = agentsBody ~ reference();
+    foreach (g; guides)
+        all ~= g.text;
+    auto sum = crc32Of(all);
     return format("%s-%s", appVersion, toHexString(sum)).toLower;
 }
 
@@ -528,7 +533,59 @@ string summaryText()
         ~ "## Documentation\n\n"
         ~ "- AGENTS.md / SKILL.md: how to work with hackerscad and the rules that avoid most mistakes\n"
         ~ "- llms-full.txt: the whole reference (language, libraries, examples), also `hcad docs`\n"
+        ~ "- docs/GUIDES.md: a guide for each topic (threads, sweeps, sketches…), also `hcad docs --guide NAME`\n"
         ~ "- docs/TUTORIAL.md: a tutorial for people\n";
+}
+
+/// A topic guide (docs/guides): what a feature is for, its variants and
+/// parameters, its mistakes, the GUI and what an agent asks.
+struct Guide
+{
+    string slug;    /// its name for `hcad docs --guide` and hcad_docs
+    string title;
+    string text;
+}
+
+/// The guides, in the order of docs/GUIDES.md.
+static immutable Guide[] guides = [
+    Guide("threads", "Threads", import("guides/threads.md")),
+];
+
+/// The guide named `slug`, or null.
+string guideText(string slug)
+{
+    foreach (g; guides)
+        if (g.slug == slug)
+            return g.text;
+    return null;
+}
+
+/// The list of the guides, for an agent (`hcad docs --guide` without a name).
+string guideList()
+{
+    string r = "Topic guides: hcad_docs format: guide with one of these topics (`hcad docs --guide NAME`).\n\n";
+    foreach (g; guides)
+        r ~= "- " ~ g.slug ~ ": " ~ g.title ~ "\n";
+    return r;
+}
+
+/// docs/GUIDES.md: the index of the guides, with links.
+string guideIndex()
+{
+    import std.string : indexOf, strip;
+    string r = "# Guides\n\nOne page for each topic: what it is for and when to choose it, its variants side by side, "
+        ~ "every parameter, the usual mistakes, where it is in the application and what an AI agent asks and checks. "
+        ~ "The [tutorial](TUTORIAL.md) goes step by step through a first model; the [language reference]"
+        ~ "(LANGUAGE.md) lists everything in brief. An agent reads the same pages with `hcad_docs` "
+        ~ "(format: guide), or `hcad docs --guide NAME`.\n\n";
+    foreach (g; guides)
+    {
+        // the first paragraph after the title: what the guide is about
+        auto body = g.text[g.text.indexOf("\n") + 1 .. $].strip;
+        immutable end = body.indexOf("\n\n");
+        r ~= "- **[" ~ g.title ~ "](guides/" ~ g.slug ~ ".md)**: " ~ (end < 0 ? body : body[0 .. end]) ~ "\n";
+    }
+    return r;
 }
 
 /// Sources of the built-in libraries, in a stable order.
