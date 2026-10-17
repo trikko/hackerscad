@@ -975,7 +975,7 @@ JValue toolList()
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face), "
-            ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep), pocket (a rectangle cut "
+            ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep; clearance and tap a plain round hole, insert, counterbore and countersink hole() of the hardware library, imported), pocket (a rectangle cut "
             ~ "in), boss (a cylinder standing on the face), sketch (Sketch on face…: the part's function keeps its "
             ~ "solid in a variable and starts an empty sketch on that flat face, its edges as references; add its "
             ~ "geometry and then cut or extrude its profile with hcad_gui_edit; with plane instead of a point, Sketch on "
@@ -986,7 +986,7 @@ JValue toolList()
             ~ `"action": {"type": "string", "enum": ["fillet-edge", "chamfer-edge", "fillet-face", "chamfer-face", `
             ~ `"shell", "draft", "extrude-face", "cut-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
             ~ `"radius, distance, thickness, angle or depth, e.g. 2.mm or -4.deg"}, `
-            ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert"]}, `
+            ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert", "counterbore", "countersink"]}, `
             ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6 or M8 for holes; any that fits the cylinder for thread (M10, M12…)"}, `
             ~ `"use_selection": {"type": "boolean"}, `
             ~ `"plane": {"type": "string", "description": "action sketch on a plane instead of a face: XY, XZ, YZ, or a plane the code keeps in a variable, by its name"}`, `["action"]`),

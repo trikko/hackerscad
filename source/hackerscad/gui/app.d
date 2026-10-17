@@ -4763,7 +4763,8 @@ private:
         {
             entries ~= S();
             MenuEntry[] holes;
-            foreach (kind; [["Clearance", "clearance"], ["Tapping", "tap"], ["Heat-set insert", "insert"]])
+            foreach (kind; [["Clearance", "clearance"], ["Tapping", "tap"], ["Heat-set insert", "insert"],
+                    ["Counterbore", "counterbore"], ["Countersink", "countersink"]])
             {
                 MenuEntry[] sizes;
                 foreach (size; ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"])
@@ -5278,12 +5279,18 @@ private:
         case "cut-face": return faces ? format(".cut(%s, depth: %s)", facesCode(), or("2.mm")) : null;
         case "hole":
             {
-                if (!onFace || !["clearance", "tap", "insert"].canFind(kind)
-                    || !["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"].canFind(size))
+                import std.string : tr;
+                // writeFeature imports hole() and the size from the hardware library when used
+                if (!onFace || !holeKinds.canFind(kind) || !["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"].canFind(size))
                     return null;
-                return format("// %s %s hole (through: true goes all the way)\n"
-                    ~ ".cut(circle(d: %g.mm), on: %s, at: %s, depth: %s)", size, kind, holeDiameter(kind, size),
-                    ctxSelector(false), ctxAt(), or("5.mm"));
+                // a plain round hole for clearance and tapping, any size typed over it afterwards; the
+                // shaped ones (an insert's pocket over its pilot, a counterbore, a countersink) from hole()
+                if (kind == "clearance" || kind == "tap")
+                    return format("// %s %s hole (through: true goes all the way)\n"
+                        ~ ".cut(circle(d: %g.mm), on: %s, at: %s, depth: %s)", size, kind, holeDiameter(kind, size),
+                        ctxSelector(false), ctxAt(), or("5.mm"));
+                return format(".cut(hole(%s, %s, \"%s\"), on: %s, at: %s)", size.tr(".", "_"), or("5.mm"), kind,
+                    ctxSelector(false), ctxAt());
             }
         case "thread":
             {
@@ -5326,6 +5333,8 @@ private:
 
     /// `code` with %s for the face selector and %s for the clicked point.
 
+    static immutable holeKinds = ["clearance", "tap", "insert", "counterbore", "countersink"];
+
     static double holeDiameter(string kind, string size)
     {
         import std.algorithm : countUntil;
@@ -5333,7 +5342,7 @@ private:
         immutable double[] cl = [2.4, 2.9, 3.4, 4.5, 5.5, 6.6, 9], tp = [1.6, 2.05, 2.5, 3.3, 4.2, 5, 6.8],
             ins = [3.2, 3.6, 4.2, 5.6, 6.4, 8, 9.7];
         auto i = sizes.countUntil(size);
-        return kind == "clearance" ? cl[i] : kind == "tap" ? tp[i] : ins[i];
+        return kind == "tap" ? tp[i] : kind == "insert" ? ins[i] : cl[i];
     }
 
     bool threadOutside;   /// what threadSizes found: a shaft (true) or a hole
@@ -5578,8 +5587,14 @@ private:
             // on a piece of @parts, that piece alone
             import std.algorithm : countUntil;
             immutable at = last.parts.countUntil!(q => q.name == part.name);
-            applyEdit(at >= 0 && isPiece(at) ? appendToPiece(text(), path, part.fn, part.piece, part.fromSolid, call, placeholder)
-                : appendToPart(text(), path, part.fn, call, placeholder));
+            auto edit = at >= 0 && isPiece(at) ? appendToPiece(text(), path, part.fn, part.piece, part.fromSolid, call, placeholder)
+                : appendToPart(text(), path, part.fn, call, placeholder);
+            // a hole() of the hardware library: imported with its size, when the model does not yet
+            import std.regex : matchFirst, regex;
+            auto h = matchFirst(call, regex(`\bhole\((M[0-9_]+),`));
+            if (!h.empty)
+                edit = withImport(text(), edit, "hardware", ["hole", h[1]]);
+            applyEdit(edit);
             // the feature changes the faces and edges: the selection would
             // point at others
             viewport.setSelection(null);

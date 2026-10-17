@@ -335,7 +335,7 @@ immutable Ref[] reference =
         "The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile."),
     F("minkowski", "", ["a", "b"], "Solid",
         "a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex."),
-    F("cut", "Solid", ["profile: Profile", "on: Frame | Faces | Plane", "at: Vec3", "depth: Length", "through: bool", "taper: Angle"], "Solid",
+    F("cut", "Solid", ["profile: Profile | Solid", "on: Frame | Faces | Plane", "at: Vec3", "depth: Length", "through: bool", "taper: Angle"], "Solid",
         "Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm)."),
     F("thread", "Solid", ["face: Faces", "size: string", "pitch: Length", "length: Length", "turns: number", "starts: int",
         "left: bool", "clearance: Length", "chamfer: bool", "flip: bool", "taper: Angle"], "Solid",

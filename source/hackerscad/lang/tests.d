@@ -4262,3 +4262,24 @@ unittest
         assert(d.severity != Severity.error, d.message);
     assert(partVolume(r, "x") > 1400);
 }
+
+unittest
+{
+    // a solid tool cut on a face: placed with its z = 0 on the face and +Z out of it
+    auto r = runModel(q{
+        import hardware : hole, M3;
+        @part Solid p() => box(30, 20, 10)
+            .cut(hole(M3, 6.mm, "counterbore"), on: faces.top, at: vec(5.mm, 3.mm, 0.mm))
+            .cut(hole(M3, 6.mm, "countersink"), on: faces.farthest(X), at: vec(15.mm, 0.mm, 5.mm));
+        unittest
+        {
+            // the top's hole, near its point, and the side's
+            assert(!p.contains(vec(5.mm, 3.mm, 9.mm)) && !p.contains(vec(14.mm, 0.mm, 5.mm)), "cut");
+            assert(p.contains(vec(5.mm, 3.mm, 1.mm)), "6 mm deep only");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error(`import hardware : hole, M3; @part Solid p() => box(30, 20, 10).cut(hole(M3, 6.mm), on: faces.top, depth: 2.mm);`)
+        .message.canFind("a solid tool is cut as it is"));
+}

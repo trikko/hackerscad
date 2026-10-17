@@ -2098,3 +2098,82 @@ unittest
     auto a = transformPart(src, "m.hcad", "p", "rotate", Vec3(0, 0, 400)).apply(src);
     assert(a.canFind(".rotate(z: 40);"), a);
 }
+
+/// Edit `e` of `source` made together with an import of `names` from `mod`
+/// (`import hardware : hole, M3;`), when the model does not import them yet:
+/// one edit, from the import to `e`'s end, its selection kept on `e`'s.
+Edit withImport(string source, Edit e, string mod, string[] names)
+{
+    import std.regex : regex, matchFirst;
+    import std.string : indexOf, strip;
+    import std.array : split;
+    // already there: the whole module, or a selective import with them all
+    auto whole = matchFirst(source, regex(`(?m)^\s*import\s+(std\.)?` ~ mod ~ `\s*;`));
+    if (!whole.empty)
+        return e;
+    auto sel = matchFirst(source, regex(`(?m)^\s*import\s+(std\.)?` ~ mod ~ `\s*:([^;]*);`));
+    size_t at;
+    string add;
+    if (!sel.empty)
+    {
+        string[] have;
+        foreach (n; sel[2].split(","))
+            have ~= n.strip;
+        string[] missing;
+        foreach (n; names)
+            if (!have.canFind(n))
+                missing ~= n;
+        if (!missing.length)
+            return e;
+        // before the ';' of that import
+        at = source.length - sel.post.length - 1;
+        add = ", " ~ missing.join(", ");
+    }
+    else
+    {
+        // after the module line and the imports at the top, else at the very top
+        size_t line = 0, after = 0;
+        foreach (l; source.split("\n"))
+        {
+            immutable t = l.strip;
+            immutable end = line + l.length + 1;
+            if (t.length >= 7 && (t[0 .. 7] == "module " || t[0 .. 7] == "import "))
+                after = end;
+            else if (t.length && t[0 .. 2] != "//")
+                break;
+            line = end;
+        }
+        at = after > source.length ? source.length : after;
+        add = "import " ~ mod ~ " : " ~ names.join(", ") ~ ";\n";
+    }
+    if (at > e.offset)
+        throw new CodegenException("the import goes after the edit");
+    auto withIt = source[0 .. at] ~ add ~ source[at .. $];
+    auto moved = e;
+    moved.offset += add.length;
+    moved.selectOffset += add.length;
+    auto result = moved.apply(withIt);
+    immutable tail = source.length - (e.offset + e.length);
+    Edit r;
+    r.offset = at;
+    r.length = e.offset + e.length - at;
+    r.text = result[at .. result.length - tail];
+    r.selectOffset = moved.selectOffset;
+    r.selectLength = moved.selectLength;
+    return r;
+}
+
+unittest
+{
+    auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto e = appendToPart(src, "m.hcad", "p", ".cut(hole(M3, 5.mm, \"insert\"), on: faces.top)");
+    auto out1 = withImport(src, e, "hardware", ["hole", "M3"]).apply(src);
+    assert(out1.canFind("module m;\nimport hardware : hole, M3;\n") && out1.canFind("hole(M3"), out1);
+    // a selective import gets what it lacks; a whole import nothing
+    auto src2 = "module m;\nimport hardware : M3;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto out2 = withImport(src2, appendToPart(src2, "m.hcad", "p", ".x()"), "hardware", ["hole", "M3"]).apply(src2);
+    assert(out2.canFind("import hardware : M3, hole;"), out2);
+    auto src3 = "import hardware;\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto e3 = appendToPart(src3, "m.hcad", "p", ".x()");
+    assert(withImport(src3, e3, "hardware", ["hole"]) == e3);
+}

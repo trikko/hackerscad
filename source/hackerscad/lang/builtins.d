@@ -3593,8 +3593,21 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
     immutable fn = remove ? "cut" : "extrude";
     auto x = Args(it, a, fn, ["solid", "profile", "on", "at", "depth", "through", "taper"]);
     auto body = x.solid("solid");
-    auto p = profileArg(x, "profile");
-    requireXY(it, p, a.span);
+    // a solid as the tool: built on XY, its z = 0 brought onto the face and +Z out of it (a hole()
+    // from the hardware library, which goes down from z = 0, cuts into the material)
+    auto given = x.get("profile");
+    immutable solidTool = given.kind == Kind.solid && !given.solid.flat && !given.solid.path && !given.solid.surface;
+    if (solidTool && !x.has("on"))
+        throw new HcadError(Code.type, format("%s with a solid needs on: the face or frame to place it on", fn),
+            x.spanOf("profile"));
+    if (solidTool)
+        foreach (n; ["depth", "through", "taper"])
+            if (x.has(n))
+                throw new HcadError(Code.type, format("'%s' is for a profile: a solid tool is cut as it is", n),
+                    x.spanOf(n));
+    auto p = solidTool ? given.solid : profileArg(x, "profile");
+    if (!solidTool)
+        requireXY(it, p, a.span);
     Vec3 o, ax, ay, az;
     if (p.placed && x.has("on"))
         throw new HcadError(Code.type, "this profile was drawn on a face (its sketch's): it is already where it goes, "
@@ -3645,6 +3658,17 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
         // a point projected onto the face or plane becomes the origin
         auto q = x.vecLen("at");
         o = q - az * (q - o).dot(az);
+    }
+    if (solidTool)
+    {
+        Vec3 turnAxis;
+        immutable turn = axisAngle(ax, ay, az, turnAxis);
+        auto moved = transformed(it, a.span, p, (Brep b) {
+            if (turn > 1e-12)
+                b = k.rotate(b, turnAxis, turn);
+            return k.translate(b, o);
+        });
+        return solidBoolean(it, body, moved.solid, remove ? BoolOp.cut : BoolOp.fuse, a.span);
     }
     double depth;
     if (x.flag("through", false))

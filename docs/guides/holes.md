@@ -248,7 +248,7 @@ Each post is 7 mm across for a 3.6 mm insert: leave at least 1.5 mm of wall roun
 
 ## In the application
 
-Right-click a face in the 3D view: **Hole at point** opens three groups, **Clearance**, **Tapping** and **Heat-set insert**, each with the sizes M2 to M8 and the hole's diameter beside them. Choosing one writes a plain round hole 5 mm deep at the point clicked, with a comment naming it:
+Right-click a face in the 3D view: **Hole at point** opens five groups, **Clearance**, **Tapping**, **Heat-set insert**, **Counterbore** and **Countersink**, each with the sizes M2 to M8 and the hole's diameter beside them. Clearance and tapping write a plain round hole 5 mm deep at the point clicked, with a comment naming it (any size can be typed over it):
 
 ```d
 // M3 clearance hole (through: true goes all the way)
@@ -256,7 +256,14 @@ Right-click a face in the 3D view: **Hole at point** opens three groups, **Clear
     at: vec(-6.mm, 0.mm, 15.mm), depth: 5.mm)
 ```
 
-Change the depth there, or write `through: true` in its place. The menu writes the diameter, not `hole()`: for a counterbore, a countersink, or an insert with a pilot hole below it, replace the line with `hole()`. **Pocket at point…** and **Boss at point…** beside it cut a rectangle and raise a cylinder the same way. On a cylindrical hole, **Thread (in the hole)** lists the threads it is the tap drill of ([the guide on threads](threads.md)).
+The other three write a `hole()` of the hardware library, placed on the face, and add `import hardware : hole, M3;` at the top when the model lacks it:
+
+```d
+.cut(hole(M3, 5.mm, "counterbore"), on: faces.top,
+    at: vec(-6.mm, 0.mm, 15.mm))
+```
+
+Change the depth there, or write `through: true` in its place. **Pocket at point…** and **Boss at point…** beside it cut a rectangle and raise a cylinder the same way. On a cylindrical hole, **Thread (in the hole)** lists the threads it is the tap drill of ([the guide on threads](threads.md)).
 
 In the sketch view the shape bar has a **Teardrop** tool: its centre, then a point on its circle. The **Printability** check box of the display menu marks the overhangs a round hole across a wall leaves.
 
@@ -267,5 +274,5 @@ An agent reads this guide with `hcad_docs` (format `guide`, topic `holes`), or `
 - It uses `hole()`, `nutTrap()`, `screw()` and the `Screw` sizes rather than writing diameters by hand, and `teardrop()` for holes across a wall that prints standing.
 - It asks, when they are not said: which screw (size, and head: socket, flat, button), what holds it (insert, self-tapping, nut, printed thread), and how the part prints (which face down), since the last decides between round holes and teardrops. With an insert bought already, it asks for the insert's hole size from its maker.
 - Under M5 it proposes an insert or a self-tapping screw, never a printed thread.
-- In the application it uses `hcad_gui_feature` with action `hole`, a `kind` (`clearance`, `tap`, `insert`) and a `size` (`M2` to `M8`), or `hcad_gui_menu` with `["Hole at point", "Clearance", "M3"]`: both do what the right-click menu does.
+- In the application it uses `hcad_gui_feature` with action `hole`, a `kind` (`clearance`, `tap`, `insert`, `counterbore`, `countersink`) and a `size` (`M2` to `M8`), or `hcad_gui_menu` with `["Hole at point", "Clearance", "M3"]`: both do what the right-click menu does.
 - It checks the result: the model must check with no warnings; screws and nuts shown as reference parts (`export: false`) show the screw's length against the parts; `--printability` (or `hcad_gui_view` with `printability: true`) shows the overhangs of sideways holes; a `unittest` keeps the relations (an insert shorter than its post, a screw long enough for the nut).
