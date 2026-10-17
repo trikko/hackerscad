@@ -273,6 +273,10 @@ immutable Ref[] reference =
         "body.split(XZ)                         // with a plane",
         "tube.split(ribbon)                     // with a surface, along a bent tube"]),
     F("thicken", "Surface", ["thickness: Length"], "Solid", "The surface made a solid that thick, on the side its normals point (negative: the other side)."),
+    withForms(F("fill", "", ["path: Path", "through: Vec[]"], "Surface", "A smooth face closing a loop: a closed path, or on a solid body.fill(edges, tangent: faces) a loop of its edges (meeting the faces given smoothly, the others with an edge); through: points it passes through too."), [
+        "fill(rim)                                    // a closed path, filled",
+        "fill(rim, through: [vec(0.mm, 0.mm, 10.mm)]) // a dome",
+        "body.fill(edges.between(faces.from(pocket), faces.top), tangent: faces.top) // an opening closed"]),
     F("sew", "", ["surfaces: Surface[]"], "Solid", "Surfaces (and flat profiles, to close their ends) that close round a space, joined along their edges into one solid; an error says how many edges stay open."),
     F("halves", "Solid", ["plane: Plane"], "Halves", "Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid."),
     ]) ~

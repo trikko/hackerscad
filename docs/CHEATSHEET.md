@@ -142,6 +142,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.placeOn(frame: Frame, from: Faces, at: Vec) → Solid` — A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin).
 - `s.split(plane: Plane | Surface | Solid) → Solid[]` — Cuts with a plane (or a surface, or another solid's skin) into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…
 - `x.thicken(thickness: Length) → Solid` — The surface made a solid that thick, on the side its normals point (negative: the other side).
+- `fill(path: Path, through: Vec[]) → Surface` — A smooth face closing a loop: a closed path, or on a solid body.fill(edges, tangent: faces) a loop of its edges (meeting the faces given smoothly, the others with an edge); through: points it passes through too.
 - `sew(surfaces: Surface[]) → Solid` — Surfaces (and flat profiles, to close their ends) that close round a space, joined along their edges into one solid; an error says how many edges stay open.
 - `s.halves(plane: Plane) → Halves` — Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.
 

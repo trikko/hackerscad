@@ -4405,3 +4405,37 @@ unittest
     assert(error("import hardware; @part Solid p() => box(10, 10, 10) - hole(ST2_9, 5.mm, \"insert\");")
         .message.canFind("no heat-set insert"));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // fill: a wavy rim closed by a smooth face, a dome through a point, an opening of a solid closed
+    auto r = runModel(q{
+        import std.math;
+        Path rim()
+        {
+            Vec3[] pts;
+            foreach (i; 0 .. 24)
+            {
+                immutable t = i * 360.deg / 24;
+                pts ~= vec(20.mm * cos(t), 14.mm * sin(t), 4.mm * sin(2 * t));
+            }
+            return spline(pts, closed: true);
+        }
+        @part Solid cap() => fill(rim()).thicken(1.mm);
+        @part Solid dome() => fill(rim(), through: [vec(0.mm, 0.mm, 10.mm)]).thicken(1.mm).move(x: 50.mm);
+        immutable bore = cylinder(d: 8, h: 20).move(z: 4);
+        immutable body = box(30, 20, 10) - bore;
+        @part Solid lid() => body.fill(edges.between(faces.top, faces.from(bore)), tangent: faces.top)
+            .thicken(1.mm).move(x: 100);
+        unittest
+        {
+            assert(cap.isValid && cap.volume > 600 * 1.mm ^^ 3 && cap.volume < 1200 * 1.mm ^^ 3, "the cap follows the rim");
+            assert(dome.bbox.max.z > 9.5.mm, "the dome reaches its point");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error(`@part Solid p() => fill(path([vec(0, 0, 0), vec(10, 0, 0), vec(10, 10, 0)])).thicken(1.mm);`)
+        .message.canFind("closed"));
+}

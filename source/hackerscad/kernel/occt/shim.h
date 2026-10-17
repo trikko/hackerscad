@@ -171,6 +171,8 @@ hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet,
 /* Surfaces: through paths in order; the pieces of a solid cut by a surface; a
  * surface made t thick; surfaces sewn into a closed solid. */
 hc_shape *hc_loft_open(const hc_shape *const *paths, int n, int ruled);
+hc_shape *hc_fill(const hc_shape *path, const hc_shape *s, const int *idx, int n, const int *tangent, int nt,
+                  const double *xyz, int np);
 hc_shape *hc_thicken_loft(const hc_shape *const *paths, int n, int ruled, double t);
 hc_shape *hc_split_by(const hc_shape *s, const hc_shape *tool);
 hc_shape *hc_thicken(const hc_shape *s, double t);

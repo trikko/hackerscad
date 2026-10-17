@@ -1933,6 +1933,64 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return [solidBoolean(it, s, half, BoolOp.common, a.span), solidBoolean(it, s, half, BoolOp.cut, a.span)];
     }
     // surface.thicken(2.mm): made a solid that thick, on the side its normals point (negative: the other side)
+    // fill(path, through: […]): a smooth face closing a closed path, a Surface; body.fill(edges…,
+    // tangent: faces…) the same on a loop of a solid's edges, meeting the faces given smoothly
+    def("fill", (ref CallArgs a) {
+        immutable onBody = a.positional.length && a.positional[0].kind == Kind.solid && !a.positional[0].solid.path
+            && !a.positional[0].solid.flat;
+        auto x = onBody ? Args(it, a, "fill", ["solid", "edges", "through", "tangent"])
+            : Args(it, a, "fill", ["path", "through"]);
+        Vec3[] pts;
+        if (x.has("through"))
+        {
+            auto v = x.get("through");
+            if (v.kind != Kind.array)
+                throw new HcadError(Code.type, "through: is a list of points: [vec(0.mm, 0.mm, 12.mm)]", x.spanOf("through"));
+            foreach (p; v.arr)
+            {
+                auto q = p.kind == Kind.array ? arrayToVec(it, p.arr, a.caller, x.spanOf("through")) : p;
+                if (q.kind != Kind.vec || (q.v.dim != Dim.none && q.v.dim != Dim.length))
+                    throw new HcadError(Code.type, format("through: takes points (vectors of lengths), not %s", q.typeName),
+                        x.spanOf("through"));
+                pts ~= q.v.v * (q.v.dim == Dim.none ? x.unitFactor : 1);
+            }
+        }
+        Brep b;
+        SolidVal[] from;
+        try
+        {
+            if (onBody)
+            {
+                auto body = x.solid("solid");
+                auto bb = nonEmpty(body, a.span);
+                auto es = resolveSelector(it, x.selector("edges", false), body, x.spanOf("edges"));
+                if (es.length == 0)
+                    throw new HcadError(Code.type, "the selector matched no edges", x.spanOf("edges"));
+                int[] fs;
+                if (x.has("tangent"))
+                    fs = resolveSelector(it, x.selector("tangent", true), body, x.spanOf("tangent"));
+                b = k.fill(null, bb, es.map!(e => cast(int) e).array, fs, pts);
+                from = [body];
+            }
+            else
+            {
+                auto v = x.get("path");
+                if (v.kind != Kind.solid || !v.solid.path)
+                    throw new HcadError(Code.type, format("fill closes a closed Path (or a loop of a solid's edges: "
+                        ~ "body.fill(edges.loop(…))), not %s", v.typeName), x.spanOf("path"));
+                b = k.fill(nonEmpty(v.solid, a.span), null, null, null, pts);
+                from = [v.solid];
+            }
+        }
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span);
+        auto sv = derived(it, b, from, "fill", a.span);
+        sv.flat = false;
+        sv.path = false;
+        sv.placed = false;
+        sv.surface = true;
+        return Value.of(sv);
+    });
     def("thicken", (ref CallArgs a) {
         auto x = Args(it, a, "thicken", ["surface", "thickness"]);
         auto s = x.solid("surface");

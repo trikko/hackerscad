@@ -115,6 +115,7 @@
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <ShapeUpgrade_FaceDivideArea.hxx>
 #include <BRepOffset_MakeOffset.hxx>
+#include <BRepOffsetAPI_MakeFilling.hxx>
 #include <ShapeBuild_ReShape.hxx>
 #include <BRepTools_History.hxx>
 #include <memory>
@@ -3802,6 +3803,62 @@ hc_shape *hc_edges_path(const hc_shape *s, const int *idx, int n)
             return nullptr;
         }
         return primitive(wires[0]);
+    });
+}
+
+// A smooth face closing a boundary (BRepOffsetAPI_MakeFilling, a "plate"):
+// the edges of `path` (a closed path), or the edges `idx` of solid `s`; it
+// passes through the n points `xyz` too. With `s`, the edges that lie on one
+// of its faces `tangent` (indices) meet that face smoothly (G1), the others
+// only touch it (G0).
+hc_shape *hc_fill(const hc_shape *path, const hc_shape *s, const int *idx, int n, const int *tangent, int nt,
+                  const double *xyz, int np)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        BRepOffsetAPI_MakeFilling fill;
+        std::vector<TopoDS_Edge> edges;
+        if (path != nullptr) {
+            const TopoDS_Wire w = single_wire(path->shape);
+            if (!BRep_Tool::IsClosed(w))
+                throw Standard_Failure("fill closes a loop: the path must end where it starts (closed: true)");
+            for (TopExp_Explorer ex(w, TopAbs_EDGE); ex.More(); ex.Next())
+                fill.Add(TopoDS::Edge(ex.Current()), GeomAbs_C0);
+        } else {
+            const auto &em = map_of(s, TopAbs_EDGE);
+            const auto &fm = map_of(s, TopAbs_FACE);
+            TopTools_IndexedDataMapOfShapeListOfShape owners;
+            TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, owners);
+            for (int i = 0; i < n; i++) {
+                if (idx[i] < 0 || idx[i] >= em.Extent())
+                    throw Standard_Failure("edge index out of range");
+                edges.push_back(TopoDS::Edge(em(idx[i] + 1)));
+            }
+            auto wires = joined_wires(edges, 1e-6);
+            if (wires.size() != 1 || !BRep_Tool::IsClosed(wires[0]))
+                throw Standard_Failure("the edges do not make one closed loop: fill closes a loop (edges.loop(face) "
+                                       "gives a face's rim)");
+            for (const TopoDS_Edge &e : edges) {
+                TopoDS_Face along;
+                if (owners.Contains(e))
+                    for (const TopoDS_Shape &f : owners.FindFromKey(e))
+                        for (int k = 0; k < nt; k++)
+                            if (tangent[k] >= 0 && tangent[k] < fm.Extent() && f.IsSame(fm(tangent[k] + 1)))
+                                along = TopoDS::Face(f);
+                if (along.IsNull())
+                    fill.Add(e, GeomAbs_C0);
+                else
+                    fill.Add(e, along, GeomAbs_G1);
+            }
+        }
+        for (int i = 0; i < np; i++)
+            fill.Add(gp_Pnt(xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]));
+        fill.Build();
+        if (!fill.IsDone())
+            throw Standard_Failure("the boundary could not be filled (is it one loop, not folded on itself?)");
+        TopoDS_Shape r = fill.Shape();
+        if (r.IsNull() || !TopExp_Explorer(r, TopAbs_FACE).More())
+            throw Standard_Failure("the boundary could not be filled");
+        return primitive(r);
     });
 }
 

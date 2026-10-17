@@ -113,6 +113,17 @@ final class CachingKernel : BrepKernel
             ks ~= keyOf(p);
         return op(key("loftOpen", cast(const(double)[]) ks.map!(x => cast(double) x).array, ruled), inner.loftOpen(paths, ruled));
     }
+    Brep fill(Brep path, Brep s, const(int)[] edges, const(int)[] tangent, const(Vec3)[] points)
+    {
+        double[] pts;
+        foreach (p; points)
+            pts ~= [p.x, p.y, p.z];
+        return path !is null
+            ? op(key("fill", path, pts), inner.fill(path, null, null, null, points))
+            : op(key("fillOn", s, cast(const(double)[]) edges.map!(x => cast(double) x).array,
+                cast(const(double)[]) tangent.map!(x => cast(double) x).array, pts), inner.fill(null, s, edges, tangent, points));
+    }
+
     Brep thickenLoft(Brep[] paths, bool ruled, double t)
     {
         ulong[] ks;

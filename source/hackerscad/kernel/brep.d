@@ -256,6 +256,9 @@ interface BrepKernel
     /// a surface; a surface made `t` thick (on its normals' side; t < 0 the
     /// other); surfaces sewn along their edges into one closed solid.
     Brep loftOpen(Brep[] paths, bool ruled);
+    /// A smooth face closing a loop: the closed `path`, or the edges `edges` of solid `s` (tangent to its
+    /// faces `tangent` where they lie on one), through `points` too.
+    Brep fill(Brep path, Brep s, const(int)[] edges, const(int)[] tangent, const(Vec3)[] points);
     /// A surface lofted through closed flat paths as a wall t thick: the paths offset in their planes
     /// (outwards for t > 0), the solid lofts through both sets, one less the other.
     Brep thickenLoft(Brep[] paths, bool ruled, double t);

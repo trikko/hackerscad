@@ -161,6 +161,15 @@ final class OcctKernel : BrepKernel
         return wrap(hc_loft_open(ps.ptr, cast(int) ps.length, ruled), "surface through paths");
     }
 
+    Brep fill(Brep path, Brep s, const(int)[] edges, const(int)[] tangent, const(Vec3)[] points)
+    {
+        double[] xyz;
+        foreach (p; points)
+            xyz ~= [p.x, p.y, p.z];
+        return wrap(hc_fill(path is null ? null : h(path), s is null ? null : h(s), edges.ptr, cast(int) edges.length,
+            tangent.ptr, cast(int) tangent.length, xyz.ptr, cast(int) points.length), "fill");
+    }
+
     Brep thickenLoft(Brep[] paths, bool ruled, double t)
     {
         const(hc_shape)*[] ps;

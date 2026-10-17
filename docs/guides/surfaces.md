@@ -173,6 +173,74 @@ Solid cut() => box(60.mm, 40.mm, 20.mm)
 
 Sew when you have every side anyway (they were lofted between curves you were given); split when one surface is the only special thing about the shape.
 
+## Filling a loop
+
+`fill(rim)` makes a smooth face that closes a loop: a closed path, which may rise and fall. `through:` gives points it must pass through too, to make it a dome. The result is a surface, so it is thickened, sewn or used to split like the others.
+
+<!-- render: surfaces-fill --from 1,-1.2,0.7 -->
+```d
+import std.math;
+
+// a closed rim that rises and falls, filled with a
+// smooth face, then made into a dome through a point
+Path rim()
+{
+    Vec3[] pts;
+    foreach (i; 0 .. 24)
+    {
+        immutable t = i * 360.deg / 24;
+        pts ~= vec(20.mm * cos(t), 14.mm * sin(t),
+            4.mm * sin(2 * t));
+    }
+    return spline(pts, closed: true);
+}
+
+@part("Sky Pop")
+Solid cap() => fill(rim()).thicken(1.mm);
+
+@part("Pink Pop")
+Solid dome() => fill(rim(), through: [vec(0.mm, 0.mm, 10.mm)])
+    .thicken(1.mm)
+    .move(x: 50.mm);
+```
+
+![A wavy rim filled, and the same rim filled as a dome](img/surfaces-fill.png)
+
+On a solid, `body.fill(edges, tangent: faces)` closes a loop of its own edges: the rim of an opening, of an irregular cavity. Where the rim lies on one of the faces given as `tangent:`, the new face carries on smoothly from it; elsewhere it only meets it. Thickened, it makes a lid that follows the opening exactly.
+
+<!-- render: surfaces-fill-opening --from 1,-1.2,1 -->
+```d
+import carlo;
+
+// a block with a wavy top, and an opening shaped like
+// Carlo cut down into it
+immutable wave = spline([vec(-25.mm, 0.mm), vec(-10.mm, 3.mm),
+        vec(5.mm, -3.mm), vec(25.mm, 2.mm)])
+    .sweep(path([vec(0.mm, -20.mm, 12.mm),
+        vec(0.mm, 20.mm, 12.mm)]));
+
+immutable block = box(40.mm, 30.mm, 20.mm).split(wave)[0];
+
+immutable pocket = carlo().projection.scale(0.5)
+    .centered.extrude(30.mm).move(z: 6.mm);
+
+immutable body = block - pocket;
+
+@part("Sky Pop")
+Solid part() => body;
+
+// the opening closed by a face that carries on the
+// wave, lifted to show it
+@part("Pink Pop")
+Solid cap() => body
+    .fill(edges.between(faces.from(pocket), faces.farthest(Z)),
+        tangent: faces.farthest(Z))
+    .thicken(0.6.mm)
+    .move(z: 8.mm);
+```
+
+![An opening in a wavy top, and the face that closes it](img/surfaces-fill-opening.png)
+
 ## Workflows
 
 - **A curved cut**, to split a part in two along a curve (a lid that follows a wave, two halves that interlock): draw the curve, sweep it along a straight route longer than the part, `split`, take the pieces as `@parts`.
@@ -190,6 +258,8 @@ Sew when you have every side anyway (they were lofted between curves you were gi
 | `pieces.push(from: surface, by:)` | `by:` | how far each piece moves away from the surface | — |
 | `surface.thicken(t)` | `t` | the thickness; negative: the other side | — |
 | `sew(list)` | surfaces and flat profiles | joined into one closed solid | — |
+| `fill(rim, through:)` | `through:` | points the face passes through too | none |
+| `body.fill(edges, tangent:)` | `tangent:` | faces the new face carries on from smoothly | none: it only meets them |
 
 ## Limits
 
