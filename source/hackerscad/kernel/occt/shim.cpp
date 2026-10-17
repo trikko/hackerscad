@@ -46,6 +46,7 @@
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <GCPnts_QuasiUniformDeflection.hxx>
 #include <BRepCheck_Shell.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepLProp_SLProps.hxx>
@@ -269,12 +270,12 @@ extern "C" {
 const char *hc_last_error(void) { return g_error.c_str(); }
 
 // the WORKAROUNDs below that a test can turn off (hc_workaround)
-static std::atomic<bool> g_workarounds[5] = {{true}, {true}, {true}, {true}, {true}};
+static std::atomic<bool> g_workarounds[6] = {{true}, {true}, {true}, {true}, {true}, {true}};
 static bool workaround(int which) { return g_workarounds[which].load(); }
 
 void hc_workaround(int which, int on)
 {
-    if (which >= 0 && which < 5)
+    if (which >= 0 && which < 6)
         g_workarounds[which] = on != 0;
 }
 
@@ -2495,7 +2496,18 @@ int hc_bbox(const hc_shape *s, double out[6])
         for (TopExp_Explorer f(s->shape, TopAbs_FACE); f.More(); f.Next())
         {
             const TopoDS_Face &face = TopoDS::Face(f.Current());
-            if (BRepAdaptor_Surface(face, false).GetType() == GeomAbs_Torus)
+            const GeomAbs_SurfaceType type = BRepAdaptor_Surface(face, false).GetType();
+            // a B-spline (or a surface offset from one) trimmed by a boundary that is not its four sides
+            // (fill's plates, thickened): its
+            // box from the rectangle of parameters round the boundary takes in surface beyond it
+            bool trimmed = false;
+            if (type == GeomAbs_BSplineSurface || type == GeomAbs_BezierSurface || type == GeomAbs_OffsetSurface) {
+                int edges = 0;
+                for (TopExp_Explorer e(BRepTools::OuterWire(face), TopAbs_EDGE); e.More(); e.Next())
+                    edges++;
+                trimmed = edges != 4;
+            }
+            if (type == GeomAbs_Torus || trimmed)
                 slow.push_back(face);
             else
                 BRepBndLib::AddOptimal(face, b, false, false);
@@ -3816,13 +3828,33 @@ hc_shape *hc_fill(const hc_shape *path, const hc_shape *s, const int *idx, int n
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         BRepOffsetAPI_MakeFilling fill;
+        // WORKAROUND (OpenCascade 7.9.3, BRepOffsetAPI_MakeFilling): along curved edges the plate
+        // strays far from its boundary (a saddle rim 4 mm deep filled by a bowl 8 mm deep, whatever
+        // its degree, points and iterations), and follows straight ones exactly: the edges that
+        // need no tangency are added as chords, short enough to stay within 0.005 mm of the curve.
+        // The "known bugs" unittest in lang/tests.d turns this off (HC_WORKAROUND_FILL_CHORDS)
+        auto addPieces = [&](const TopoDS_Edge &e) {
+            BRepAdaptor_Curve c(e);
+            if (!workaround(HC_WORKAROUND_FILL_CHORDS) || c.GetType() == GeomAbs_Line) {
+                fill.Add(e, GeomAbs_C0);
+                return;
+            }
+            GCPnts_QuasiUniformDeflection pts(c, 0.005);
+            if (!pts.IsDone() || pts.NbPoints() < 2) {
+                fill.Add(e, GeomAbs_C0);
+                return;
+            }
+            for (int k = 1; k < pts.NbPoints(); k++)
+                if (pts.Value(k).Distance(pts.Value(k + 1)) > 1e-7)
+                    fill.Add(BRepBuilderAPI_MakeEdge(pts.Value(k), pts.Value(k + 1)).Edge(), GeomAbs_C0);
+        };
         std::vector<TopoDS_Edge> edges;
         if (path != nullptr) {
             const TopoDS_Wire w = single_wire(path->shape);
             if (!BRep_Tool::IsClosed(w))
                 throw Standard_Failure("fill closes a loop: the path must end where it starts (closed: true)");
             for (TopExp_Explorer ex(w, TopAbs_EDGE); ex.More(); ex.Next())
-                fill.Add(TopoDS::Edge(ex.Current()), GeomAbs_C0);
+                addPieces(TopoDS::Edge(ex.Current()));
         } else {
             const auto &em = map_of(s, TopAbs_EDGE);
             const auto &fm = map_of(s, TopAbs_FACE);
@@ -3847,7 +3879,7 @@ hc_shape *hc_fill(const hc_shape *path, const hc_shape *s, const int *idx, int n
                             if (tangent[k] >= 0 && tangent[k] < fm.Extent() && f.IsSame(fm(tangent[k] + 1)))
                                 along = TopoDS::Face(f);
                 if (along.IsNull())
-                    fill.Add(e, GeomAbs_C0);
+                    addPieces(e);
                 else
                     fill.Add(e, along, GeomAbs_G1);
             }

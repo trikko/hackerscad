@@ -4430,7 +4430,7 @@ unittest
             .thicken(1.mm).move(x: 100);
         unittest
         {
-            assert(cap.isValid && cap.volume > 600 * 1.mm ^^ 3 && cap.volume < 1200 * 1.mm ^^ 3, "the cap follows the rim");
+            assert(cap.isValid && cap.bbox.size.z > 8.mm && cap.bbox.size.z < 9.5.mm, "the cap follows the rim");
             assert(dome.bbox.max.z > 9.5.mm, "the dome reaches its point");
         }
     });
@@ -4474,4 +4474,33 @@ unittest
     });
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
+}
+
+unittest
+{
+    // fill follows a curved rim only through chords: without them the plate sags far below it
+    import hackerscad.kernel.occt.c;
+    import std.array : replace;
+    immutable src = `import std.math;
+        Path rim()
+        {
+            Vec3[] pts;
+            foreach (i; 0 .. 24)
+                pts ~= vec(20.mm * cos(i * 15.deg), 14.mm * sin(i * 15.deg), 4.mm * sin(i * 30.deg));
+            return spline(pts, closed: true);
+        }
+        @part Solid p() => box(1, 1, 1);
+        unittest { writeln(fill(rim()).bbox.min.z); }`;
+    double lowest(string code)
+    {
+        import std.conv : to;
+        import std.array : split;
+        return runModel(code).log[0].text.split(" ")[0].to!double;
+    }
+    assert(lowest(src) > -4.1, "the fill follows its rim");
+    hc_workaround(HC_WORKAROUND_FILL_CHORDS, 0);
+    scope (exit)
+        hc_workaround(HC_WORKAROUND_FILL_CHORDS, 1);
+    stillBroken(lowest(src.replace("24)", "25)").replace("i * 15.deg", "i * 14.4.deg").replace("i * 30.deg", "i * 28.8.deg")) < -5,
+        "MakeFilling sagging along curved edges (shim.cpp, hc_fill)");
 }
