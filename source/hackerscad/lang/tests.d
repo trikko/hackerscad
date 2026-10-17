@@ -4162,3 +4162,36 @@ unittest
         }
     }
 }
+
+unittest
+{
+    mixin(slowTest);
+    // a surface that misses a solid, or ends inside it, is refused, not a piece silently lost
+    assert(error(`import carlo;
+        immutable sheet = spline([vec(-12, 0), vec(0, 3), vec(12, -3), vec(24, 3), vec(36, 0)])
+            .sweep(path([vec(0, -15, 7.5), vec(0, 20, 7.5)]));
+        @part Solid p() => carlo().split(sheet)[0];`).message.canFind("reach across it"));
+    assert(error(`immutable sheet = spline([vec(-12, 0), vec(0, 3), vec(12, -3)])
+            .sweep(path([vec(0, -15, 50), vec(0, 20, 50)]));
+        @part Solid p() => box(10, 10, 10).split(sheet)[0];`).message.canFind("reach across it"));
+    // a surface through a square and a circle: whole and straight, not twisted; sharp-edged
+    // sheets thicken joined at their edges
+    auto r = runModel(q{
+        immutable sq = path([vec(-10, -10, 0), vec(10, -10, 0), vec(10, 10, 0), vec(-10, 10, 0)], closed: true);
+        Path ring()
+        {
+            auto s = sketch();
+            s.circle(vec(0, 0), d: 30.mm);
+            return s.path.move(z: 30.mm);
+        }
+        immutable funnel = loft([sq, ring()]);
+        @part Solid prism() => loft([sq, sq.scale(1.5).move(z: 30.mm)]).thicken(1.mm);
+        unittest
+        {
+            assert(abs(funnel.bbox.min.y + 15.mm) < 0.1.mm && abs(funnel.bbox.max.y - 15.mm) < 0.1.mm, "whole");
+            assert(prism.isValid && prism.volume > 3000 * 1.mm ^^ 3, "joined");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

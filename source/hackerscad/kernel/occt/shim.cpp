@@ -113,6 +113,7 @@
 #include <ShapeFix_Solid.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <ShapeUpgrade_FaceDivideArea.hxx>
+#include <BRepOffset_MakeOffset.hxx>
 #include <ShapeBuild_ReShape.hxx>
 #include <BRepTools_History.hxx>
 #include <memory>
@@ -4563,10 +4564,22 @@ hc_shape *hc_loft(const hc_shape *const *profiles, int n, int ruled)
 hc_shape *hc_loft_open(const hc_shape *const *paths, int n, int ruled)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<TopoDS_Wire> wires;
+        int closed = 0;
+        for (int i = 0; i < n; i++) {
+            wires.push_back(single_wire(paths[i]->shape));
+            closed += BRep_Tool::IsClosed(wires.back()) ? 1 : 0;
+        }
+        if (closed != 0 && closed != n)
+            throw Standard_Failure("a surface goes through open paths or through closed ones, not both");
+        // closed paths matched as the profiles of a loft are (the same number of edges, starts and
+        // seams lined up): a square and a circle otherwise give a twisted, partial surface
+        if (closed)
+            wires = align_seams(same_edge_count(align_starts(wires)));
         BRepOffsetAPI_ThruSections ts(Standard_False, ruled ? Standard_True : Standard_False);
-        for (int i = 0; i < n; i++)
-            ts.AddWire(single_wire(paths[i]->shape));
-        ts.CheckCompatibility(Standard_False);
+        for (auto &w : wires)
+            ts.AddWire(w);
+        ts.CheckCompatibility(closed ? Standard_True : Standard_False);
         ts.Build();
         if (!ts.IsDone())
             throw Standard_Failure("the surface through these paths failed (do they run the same way?)");
@@ -4591,10 +4604,25 @@ hc_shape *hc_split_by(const hc_shape *s, const hc_shape *tool)
         TopoDS_Compound c;
         b.MakeCompound(c);
         int count = 0;
-        for (TopExp_Explorer ex(sp.Shape(), TopAbs_SOLID); ex.More(); ex.Next(), count++)
+        double pieces = 0;
+        for (TopExp_Explorer ex(sp.Shape(), TopAbs_SOLID); ex.More(); ex.Next(), count++) {
             b.Add(c, ex.Current());
+            pieces += solid_volume(ex.Current());
+        }
         if (count == 0)
             throw Standard_Failure("the cut left no solid");
+        // a tool that misses the solid, or ends inside it, leaves it whole: or, worse, drops the
+        // part it half cut (OpenCascade gives no error for either)
+        const double whole = solid_volume(s->shape);
+        if (std::abs(pieces - whole) > 1e-6 * whole + 1e-9)
+            throw Standard_Failure("the cut lost material: the surface ends inside the solid; it must reach across it, "
+                                   "from one side out to the other");
+        int before = 0;
+        for (TopExp_Explorer ex(s->shape, TopAbs_SOLID); ex.More(); ex.Next())
+            before++;
+        if (count <= before)
+            throw Standard_Failure("the surface does not cut the solid apart: it misses it, or ends inside it; "
+                                   "it must reach across it, from one side out to the other");
         return primitive(c);
     });
 }
@@ -4642,13 +4670,43 @@ int hc_normal_at(const hc_shape *s, const double p[3], double out[6])
 hc_shape *hc_thicken(const hc_shape *s, double t)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
-        BRepOffsetAPI_MakeThickSolid mk;
-        mk.MakeThickSolidBySimple(s->shape, t);
-        mk.Build();
-        if (!mk.IsDone())
-            throw Standard_Failure("could not thicken the surface (thinner than its tightest bend?)");
+        // faces meeting at a sharp edge (a square's sides) want their offsets joined by
+        // intersecting them: the simple way offsets each on its own and leaves a broken solid
+        // there, which then crashes the mesher; smooth sheets take the simple way, quicker
+        TopoDS_Shape r;
+        for (GeomAbs_JoinType join : {GeomAbs_Intersection, GeomAbs_Arc}) {
+            try {
+                BRepOffset_MakeOffset mo;
+                mo.Initialize(s->shape, t, 1e-6, BRepOffset_Skin, Standard_False, Standard_False, join, Standard_True);
+                mo.MakeOffsetShape();
+                if (mo.IsDone() && BRepCheck_Analyzer(mo.Shape()).IsValid() && solid_volume(mo.Shape()) > 0) {
+                    r = mo.Shape();
+                    break;
+                }
+            } catch (const Standard_Failure &) {
+            }
+        }
+        if (r.IsNull()) {
+            BRepOffsetAPI_MakeThickSolid mk;
+            mk.MakeThickSolidBySimple(s->shape, t);
+            mk.Build();
+            if (!mk.IsDone() || !BRepCheck_Analyzer(mk.Shape()).IsValid())
+                throw Standard_Failure("could not thicken the surface (thicker than its tightest bend, or folding "
+                                       "over a sharp edge?)");
+            r = mk.Shape();
+            // where the joined ways failed (sharp edges meeting smooth ones), offset face by face
+            // the sheet leaves faces OpenCascade calls valid but meshes wrong, and its mesh
+            // workaround can crash or hang on them: refused here
+            Bnd_Box box;
+            BRepBndLib::Add(r, box);
+            BRepMesh_IncrementalMesh(r, 1e-3 * std::sqrt(box.SquareExtent()), false, 0.3, true);
+            for (TopExp_Explorer ex(r, TopAbs_FACE); ex.More(); ex.Next())
+                if (meshed_badly(TopoDS::Face(ex.Current())))
+                    throw Standard_Failure("could not thicken the surface cleanly where its sharp edges meet smooth "
+                                           "ones: loft or sweep through smoother paths (rounded corners), or "
+                                           "make the solid first and shell it");
+        }
         // it may come out inside out
-        TopoDS_Shape r = mk.Shape();
         GProp_GProps g;
         BRepGProp::VolumeProperties(r, g);
         if (g.Mass() < 0)
