@@ -3196,7 +3196,7 @@ static TopoDS_Shape solid_through(const std::vector<TopoDS_Wire> &given, bool ru
     for (auto &w : sections)
         bb.Add(all, w);
     const double span = diagonal(all);
-    bool twisted = false;
+    bool twisted = false, flat = false;
     // WORKAROUND (OpenCascade 7.9.3, BRepOffsetAPI_ThruSections): matching
     // the vertices of the sections first gives better results, but the
     // matching itself sometimes fails: then they are lofted as they are. No
@@ -3210,6 +3210,11 @@ static TopoDS_Shape solid_through(const std::vector<TopoDS_Wire> &given, bool ru
                 mk.AddWire(w);
             mk.Build();
             if (mk.IsDone() && BRepCheck_Analyzer(mk.Shape()).IsValid()) {
+                // profiles in one plane give a loft of no volume, which nothing after it can use
+                if (solid_volume(mk.Shape()) < 1e-9 * span * span * span + 1e-12) {
+                    flat = true;
+                    continue;
+                }
                 if (diagonal(mk.Shape()) <= 1.5 * span + 1e-6)
                     return mk.Shape();
                 twisted = true;
@@ -3217,6 +3222,9 @@ static TopoDS_Shape solid_through(const std::vector<TopoDS_Wire> &given, bool ru
         } catch (const Standard_Failure &) {
         }
     }
+    if (flat)
+        throw Standard_Failure("the profiles of the loft lie in one plane: move them apart (.move(z: 20.mm)) or "
+                               "stand them up (across(X))");
     if (twisted)
         throw Standard_Failure("loft twisted through itself: its profiles do not match (different shapes, "
                                "or outlines that start in different places)");
@@ -4468,7 +4476,11 @@ hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet,
             up = towards(0, p, gp_Vec(tz));
             if ((up - gp_Vec(tz) * up.Dot(gp_Vec(tz))).Magnitude() < 1e-9)
                 throw Standard_Failure(upMode ? "the path starts along up: there the profile's +Y cannot point up"
-                                              : "the guide starts straight ahead of the path: it must run beside it");
+                                              : up.Magnitude() < 1e-9
+                                                  ? "the guide starts on the path itself: it must run beside it, a "
+                                                    "little away from it, where the profile's +Y should point"
+                                                  : "the guide starts straight ahead of the path (or behind it): it "
+                                                    "must run beside it, where the profile's +Y should point");
         }
         gp_Dir y(up - gp_Vec(tz) * up.Dot(gp_Vec(tz)));
         gp_Dir x = y.Crossed(tz);

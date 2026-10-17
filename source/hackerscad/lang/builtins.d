@@ -1153,6 +1153,30 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             if (pa.pathNormal.length > 0 && pb.pathNormal.length > 0 && abs(pa.pathNormal.dot(pb.pathNormal)) > 1 - 1e-9)
                 throw new HcadError(Code.type, "the two paths are drawn in parallel planes: they are the same view; "
                     ~ "draw them in two planes at an angle (XY and XZ)", a.span);
+            // both views must cover the same stretch of the line they share (the X of a top view and of a
+            // front one): else the curve is quietly only where they overlap
+            if (pa.pathNormal.length > 0 && pb.pathNormal.length > 0)
+            {
+                immutable shared_ = pa.pathNormal.cross(pb.pathNormal).normalized;
+                double[2] along(SolidVal v)
+                {
+                    auto bb = k.bbox(v.brep);
+                    double lo = double.infinity, hi = -double.infinity;
+                    foreach (i; 0 .. 8)
+                    {
+                        immutable c = Vec3(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z);
+                        lo = min(lo, c.dot(shared_));
+                        hi = max(hi, c.dot(shared_));
+                    }
+                    return [lo, hi];
+                }
+                immutable ra = along(pa), rb = along(pb);
+                immutable tol = 0.02 * max(ra[1] - ra[0], rb[1] - rb[0]) + 1e-3;
+                if (abs(ra[0] - rb[0]) > tol || abs(ra[1] - rb[1]) > tol)
+                    throw new HcadError(Code.type, format("the two views cover different stretches of the line they "
+                        ~ "share: %.4g to %.4g mm and %.4g to %.4g mm; draw both over the same one", ra[0], ra[1], rb[0],
+                        rb[1]), a.span);
+            }
             try
                 return pathValue(k.projectedCurve(pa.brep, pb.brep, pa.pathNormal, pb.pathNormal), "path", a.span);
             catch (KernelException e)
@@ -1263,6 +1287,35 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         }
         catch (KernelException e)
             throw new HcadError(Code.kernel, e.msg, a.span);
+        // a profile reaching further from the path than its tightest bend folds through itself there:
+        // OpenCascade may still call the solid valid
+        if (!open)
+        {
+            // how far the outline gets from the origin: line ends, circles whole (arcs counted whole too)
+            double reach = 0;
+            foreach (e; k.edges(p.brep))
+            {
+                double far(Vec3 q) => sqrt(q.x * q.x + q.y * q.y);
+                if (e.kind == EdgeKind.circle)
+                    reach = max(reach, far(e.center) + e.radius);
+                else
+                    reach = max(reach, max(far(e.start), far(e.end), far(e.mid)));
+            }
+            Vec3[] pts, tans;
+            k.pathSample(route.brep, 400, pts, tans);
+            double tightest = double.infinity;
+            foreach (i; 1 .. pts.length)
+            {
+                immutable turn = acos(min(1.0, max(-1.0, tans[i - 1].dot(tans[i]))));
+                // a sharp corner (mitred) is not a bend
+                if (turn > 1e-9 && turn < PI / 9)
+                    tightest = min(tightest, (pts[i] - pts[i - 1]).length / turn);
+            }
+            if (reach > tightest * 1.001)
+                it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("the profile reaches %.3g mm from "
+                    ~ "the path, more than its tightest bend's radius (%.3g mm): the sweep folds through itself there; "
+                    ~ "a smaller profile or a wider bend", reach, tightest), a.span);
+        }
         auto sv = derived(it, made, [p], "sweep", a.span);
         sv.flat = false;
         sv.placed = false;

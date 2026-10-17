@@ -434,6 +434,21 @@ int main(string[] args)
         _putenv_s("XDG_DATA_DIRS", toStringz(dirs.length ? share ~ ";" ~ dirs : share));
         _putenv_s("GSETTINGS_SCHEMA_DIR", toStringz(buildPath(share, "glib-2.0", "schemas")));
     }
+    // --help, -h: the options, without opening a window
+    foreach (a; args[1 .. $])
+        if (a == "--help" || a == "-h")
+        {
+            import std.stdio : writeln;
+            writeln("hackerscad: the parametric CAD's window\n\nusage: hackerscad [MODEL.hcad] [options]\n\n"
+                ~ "  --name=NAME          the window's name (agents and scripts know it before it opens)\n"
+                ~ "  --copy=FILE          that file's text in a model of no file: Save asks for a name\n"
+                ~ "  --theme=light|dark|system   for this run only\n"
+                ~ "  --size=WIDTHxHEIGHT  the window that big\n"
+                ~ "  --screenshot=FILE.png  save the window after the first evaluation, then quit\n"
+                ~ "  -h, --help           this text\n\n"
+                ~ "The command line tool is hcad (hcad --help); the guides: hcad docs --guide.");
+            return 0;
+        }
     version (linux)
         installDesktopEntry();
     // --screenshot=FILE.png saves the window after the first evaluation and quits;

@@ -84,7 +84,7 @@ The sizes of a gear of `z` teeth follow from the module:
 |---|---|
 | `spurGear(m, teeth, thickness, bore:, pressure:, backlash:)` | a spur gear standing on z = 0, centred on the origin, a tooth on +X |
 | `gearProfile(m, teeth, pressure:, backlash:, steps:)` | its outline, a profile on XY, the same way round |
-| `rack(m, teeth, thickness, base:, pressure:)` | a straight rack along +X from x = 0, teeth up, its pitch line on y = 0 |
+| `rack(m, teeth, thickness, base:, pressure:, backlash:)` | a straight rack along +X from x = 0, teeth up, its pitch line on y = 0 |
 
 Their parameters:
 
@@ -95,11 +95,11 @@ Their parameters:
 | `thickness` | how thick the gear or rack is, along Z | — |
 | `bore:` | a round hole through the centre, that diameter; `0.mm` none | `0.mm` |
 | `pressure:` | the pressure angle | `20.deg` |
-| `backlash:` | thins each tooth by that much on the pitch circle, so printed gears do not bind | `0.1.mm` |
-| `steps:` | points on each flank of the outline (`gearProfile` only) | `6` |
+| `backlash:` | thins each tooth by that much on the pitch circle (a rack's on its pitch line), so printed gears do not bind | `0.1.mm` |
+| `steps:` | points on each flank of the outline (`gearProfile` and `spurGear`) | `6` |
 | `base:` | the height of the rack's solid strip under the teeth' roots | `2 · m` |
 
-The rack has no `backlash:`: the play comes from the gear's.
+The rack's teeth are thinned by its own `backlash:` too: with the gear's, the play is the two added.
 
 ## Meshing two gears
 

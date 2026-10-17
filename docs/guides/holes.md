@@ -77,7 +77,7 @@ Solid block()
 | `"tap"` | the pilot hole for a thread, `tap` wide: a self-tapping screw, or a real tap | |
 | `"insert"` | the insert's hole, `insert` wide and `insertDepth` deep, and below it a `tap` hole down to `depth` for the screw's tip | |
 | `"counterbore"` | room for the head (`head` + 0.6 mm wide, `headHeight` + 0.2 mm deep), then the clearance hole down to `depth` | |
-| `"countersink"` | a cone from `clearance` to twice `d` across, `d` / 2 deep, then the clearance hole; an ISO 10642 flat head (6.72 mm for M3) is a little wider and stays a few tenths proud | |
+| `"countersink"` | a 90° cone from `clearance` to 2.24 `d` + 0.3 mm across (an ISO 10642 flat head, 6.72 mm for M3, sits just below the face), then the clearance hole | |
 
 Any other kind is an error. The depth is always the whole depth from z = 0: a counterbore of `depth` 10 mm is 10 mm deep, the head's seat included. For a hole all the way through, give the thickness of the wall; `hole()` already reaches 0.01 mm past the top, so the cut is clean.
 

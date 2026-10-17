@@ -88,7 +88,9 @@ Solid hole(Screw s, Length depth, string kind = "clearance")
         return cylinder(d: s.head + 0.6.mm, h: s.headHeight + 0.2.mm).move(z: -s.headHeight - 0.2.mm)
             + cylinder(d: s.clearance, h: depth).move(z: -depth);
     case "countersink":
-        return cone(d1: s.clearance, d2: s.d * 2, h: s.d / 2).move(z: -s.d / 2)
+        // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
+        return cone(d1: s.clearance, d2: 2.24 * s.d + 0.3.mm, h: (2.24 * s.d + 0.3.mm - s.clearance) / 2)
+            .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
             + cylinder(d: s.clearance, h: depth).move(z: -depth);
     default:
         assert(false, "hole kind must be clearance, tap, insert, counterbore or countersink, not " ~ kind);

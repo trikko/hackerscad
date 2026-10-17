@@ -7,7 +7,7 @@ import std.algorithm : min, max, maxElement, minElement, sort, canFind;
 import std.range : walkLength;
 import std.array : array;
 import std.format : format;
-import std.math : abs, sqrt, floor, PI, isNaN, cos, sin;
+import std.math : abs, atan2, sqrt, floor, PI, isNaN, cos, sin;
 
 import hackerscad.drawing.sheet;
 import hackerscad.geom.vec;
@@ -355,12 +355,42 @@ void holeCallouts(ref Sheet sh, ref View v, BrepKernel k)
     }
 
     immutable dir = v.direction.dir;
-    Hole[] holes;
+    // the circles seen end-on, whole: a full circle edge, or arcs of one circle that go all round
+    // together (a boolean often splits a rim in two)
+    struct Arc
+    {
+        Vec3 center;
+        double radius, span;
+    }
+    Arc[] arcs;
     foreach (e; k.edges(v.solid))
     {
         if (e.kind != EdgeKind.circle || abs(abs(e.axis.dot(dir)) - 1) > 1e-6)
             continue;
+        double span = 2 * PI;
         if ((e.end - e.start).length > 1e-6)
+        {
+            // the angle from start to end the way through mid
+            auto a = (e.start - e.center).normalized, b = (e.end - e.center).normalized, m = (e.mid - e.center).normalized;
+            immutable n = e.axis.normalized;
+            double ang(Vec3 u) { immutable t = atan2(a.cross(u).dot(n), a.dot(u)); return t < 0 ? t + 2 * PI : t; }
+            span = ang(m) < ang(b) ? ang(b) : 2 * PI - ang(b);
+        }
+        bool joined;
+        foreach (ref c; arcs)
+            if (abs(c.radius - e.radius) < 1e-6 && (c.center - e.center).length < 1e-6)
+            {
+                c.span += span;
+                joined = true;
+                break;
+            }
+        if (!joined)
+            arcs ~= Arc(e.center, e.radius, span);
+    }
+    Hole[] holes;
+    foreach (e; arcs)
+    {
+        if (e.span < 2 * PI - 1e-6)
             continue;   // only full circles
         bool placed;
         foreach (ref h; holes)
@@ -381,7 +411,8 @@ void holeCallouts(ref Sheet sh, ref View v, BrepKernel k)
     auto side = dir.cross(abs(dir.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).normalized;
     bool aroundVoid(Circle c)
     {
-        immutable inward = c.radius - min(0.01, c.radius / 4), along = 0.01;
+        // in from the rim more than along the axis: a 45° countersink's cone passes through (r - a, a)
+        immutable inward = c.radius - min(0.05, c.radius / 4), along = 0.01;
         auto p = c.center + side * inward;
         return !k.inside(v.solid, p + dir * along) && !k.inside(v.solid, p - dir * along);
     }
