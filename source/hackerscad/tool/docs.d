@@ -58,9 +58,14 @@ dimensions and pictures, compare them with the request, fix, then export.
   added, that top, no longer the foot's); faces.normal(Z) also takes
   curved faces whose normal at their centre points up; faces.from(foot)
   has neither problem, and a frame can be taken on the solid before
-  (foot.frame(faces.top)).
-- Cut with planes: body.split(body.plane(faces.top).offset(-10.mm)) gives
-  .above and .below; s.pieces lists separate bodies, ordered along X, Y, Z.
+  (foot.frame(faces.top)). edges.chain(edges.…) takes a curved outline
+  made of many pieces whole (the edges running on without a corner),
+  edges.loop(faces.top) a face's rim without its holes; a profile's
+  p.outer, p.holes and p.pieces give its outline, its holes and its
+  regions.
+- Cut with planes: body.halves(body.plane(faces.top).offset(-10.mm)) gives
+  .above and .below; body.split(plane) the pieces on both sides; s.pieces
+  lists separate bodies, ordered along X, Y, Z.
 - Profiles: rect, circle, ellipse, polygon, slot, teardrop (the shapes of a
   sketch, same names and arguments, centred on the origin unless given a
   point: rect(40.mm, 20.mm, corner: 3.mm), rect(p, q), circle(c, d: 5.mm),
@@ -73,7 +78,10 @@ dimensions and pictures, compare them with the request, fix, then export.
   profile's x along X, its y up Z, towards +Y; along: X its x along Y,
   towards +X; a negative h the other way); taper: 3.deg narrows the solid
   and widens its holes going away from the profile, whichever way it goes
-  (a negative taper widens it and narrows the holes). A profile in another
+  (a negative taper widens it and narrows the holes). shear: vec(dx, dy)
+  moves the top sideways from the bottom, the sides leaning straight: an
+  oblique prism (a blade's bevel; a section's outline that moves the same
+  way at every level). A profile in another
   plane (a section, one turned or moved, one drawn on a face) extrudes
   across its own plane, from where it lies. On a face:
   body.extrude(profile, on: frame, depth:) adds, body.cut(profile, on:
@@ -84,12 +92,29 @@ dimensions and pictures, compare them with the request, fix, then export.
 - Sweeps and lofts: circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(0, 0, 30),
   vec(30, 0, 30)])), circle(d: 1.mm).sweep(helix(r: 5.mm, pitch: 2.mm,
   height: 20.mm), frenet: true), loft([circle(r: 20), rect(25).move(z: 40)]).
+  A path to sweep along: drawn in a sketch (s.path; the sketch's
+  constraints hold it), along a solid's edges
+  (body.path(edges.loop(faces.top))), with bent corners (path(points,
+  bend: 5.mm) for tubes and wires), or from two views (path(top.path,
+  front.path): a handle drawn from above on XY and from the front on XZ).
+  How the profile turns about the path: up: Z for a road that does not
+  bank, guide: rail where up fails (a path going vertical), twist: t =>
+  angle for a roll that varies; never two of them.
+- Surfaces: a curve swept (path([vec(-8.mm, 0), vec(8.mm, 0)])
+  .sweep(route)) or paths lofted make a Surface: body.split(surface) cuts
+  a solid along it (a tube split lengthwise by a ribbon swept along its
+  own path), pieces.push(from: surface, by:) opens them, surface.thicken(t)
+  and sew([surfaces, caps]) make solids. A part cannot be a surface.
 - Exact 2D outlines with dimensions: auto s = sketch(); points, lines, arcs,
   circles, ellipses, splines (s.spline([p, q, r]): a smooth curve through
   points, closed: true a loop of its own) and shapes (s.rect, s.polygon(c,
   6, d:, fit: "sides"), s.slot, s.teardrop), then constraints (horizontal, vertical, length,
   distance, angle, tangent, on, equal, concentric…) and s.profile, to
-  extrude or revolve.
+  extrude or revolve. construction: true on any of them makes a guide to
+  constrain to, never part of the profile. The profile fills what lies
+  inside an odd number of loops: a loop in a loop is a hole, and where
+  two loops overlap so is the overlap; s.fill(at) makes the area holding
+  at full, s.fill(at, full: false) empty.
   Prefer a sketch over unions and differences of boxes and cylinders for
   the outline of a prismatic part (built from flat outlines, extruded,
   revolved and cut: a bracket, a plate, a case, a holder, a knob, a cam, a
@@ -118,7 +143,11 @@ dimensions and pictures, compare them with the request, fix, then export.
   In the window: hcad_gui_feature with action sketch on a flat face.
 - Axes and planes anywhere: rotate(90.deg, axis: body.axis(edges.filter(e =>
   e.isCircle && e.radius == 3.mm))), s.mirror(plane(origin: vec(10, 0, 0),
-  normal: X)), plane(p1, p2, p3), plane(axis, point).
+  normal: X)), plane(p1, p2, p3), plane(axis, point). XY, XZ and YZ face
+  the Top, Front and Right views (XZ's normal is -Y): a sketch on XZ reads
+  as the Front view shows it. A plane kept in a variable shows in the
+  window's planes, named after it; body.plane(faces.top, faces.bottom) is
+  halfway between two parallel faces.
 - Existing parts: load("part.stl"/".obj"/".3mf"/".step", scale: 1) gives a solid to
   modify; text("LABEL", size: 4.mm).centered centres a profile for engraving.
 - When asked to copy lettering from a photo, a drawing or a model: if the
