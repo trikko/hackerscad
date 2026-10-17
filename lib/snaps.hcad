@@ -17,8 +17,10 @@ Solid snapHook(Length length = 10.mm, Length thickness = 1.5.mm, Length width = 
 }
 
 /// The slot a hook clicks into, to subtract from the mating wall: a window
-/// `clearance` larger than the barb.
+/// round the beam, `clearance` larger, with room on the -X side for the beam
+/// to bend aside while the barb goes through; then the barb rests on the
+/// wall beyond the window's +X edge.
 Solid snapSlot(Length thickness = 1.5.mm, Length width = 5.mm, Length overhang = 1.mm, Length wall = 2.mm,
     Length clearance = 0.3.mm) =>
     box(thickness + overhang + 2 * clearance, width + 2 * clearance, wall + 1.mm)
-        .move(x: (thickness + overhang) / 2, z: -0.5.mm);
+        .move(x: (thickness - overhang) / 2, z: -0.5.mm);

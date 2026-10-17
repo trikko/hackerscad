@@ -154,7 +154,7 @@ import snaps;
 | `wall` (slot) | the thickness of the wall the window goes through | `2.mm` |
 | `clearance` (slot) | play round the hook in the window | `0.3.mm` |
 
-The window has to lie on the side the beam bends to, so that the barb rests on its edge: `snapSlot` is placed round the barb, and needs moving back by the barb's `overhang` (`.move(x: -barb)` below). The `unittest` proves it: lifted 0.5 mm, the barb meets the lid.
+`snapSlot` is a window round the beam with room on the side it bends to, so that the barb goes through and then rests on the window's far edge: subtract it where the hook stands, with the same `thickness`, `width` and `overhang`. The `unittest` proves it: lifted 0.5 mm, the barb meets the lid.
 
 <!-- render: fits-snap --from front --look-at 0,6,5 --size 18 --cut -->
 ```d
@@ -181,8 +181,7 @@ Solid base() => box(24.mm, 12.mm, 2.mm).move(z: -2.mm)
 @part("Pink Pop")
 Solid lid() => (box(24.mm, 12.mm, wall)
         - snapSlot(overhang: barb, wall: wall,
-                clearance: play)
-            .move(x: -barb))
+            clearance: play))
     .move(z: beam - wall - play);
 
 unittest
