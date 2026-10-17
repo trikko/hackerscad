@@ -2,20 +2,7 @@
 
 What becomes a separate object when a model is exported: `@part` and its options (colour, see-through, reference parts, names), `@parts` for the pieces of a cut, colours, the export formats (3MF, STL, zip, STEP, PNG) and what each holds, technical drawings with `@drawing`, and the Export menu of the application.
 
-<!-- render: parts-cover -->
-```d
-import carlo;
-
-// two parts, each its own object and colour
-@part("Sky Pop")
-Solid clip() => carlo();
-
-@part("Pink Pop")
-Solid base() => box(50.mm, 35.mm, 3.mm)
-    .move(x: 12.mm, y: 2.mm, z: -3.mm);
-```
-
-![Carlo and a base: two parts, two colours](img/parts-cover.png)
+![Carlo cut in pieces, each a part of its own colour](img/parts-pieces.png)
 
 ## Parts in brief
 

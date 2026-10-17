@@ -2,17 +2,7 @@
 
 Holes for metric screws from M2 to M8, from the `hardware` library: clearance, tapping, heat-set insert, counterbore and countersink holes with `hole()`, nut traps, the screws, nuts and washers themselves, teardrop holes that print sideways, and the Hole entry of the 3D view's right-click menu.
 
-<!-- render: holes-cover -->
-```d
-import hardware : M4, hole;
-
-// a plate with a countersunk hole for an M4 screw
-@part("Sky Pop")
-Solid plate() => box(30.mm, 20.mm, 6.mm)
-    - hole(M4, 6.mm, "countersink").move(z: 6.mm);
-```
-
-![A plate with a countersunk hole for an M4 screw](img/holes-cover.png)
+![The five kinds of hole, cut in half](img/holes-kinds.png)
 
 A printed part held by a screw needs a hole on each side of the joint: one the screw passes through, one it grips. The `hardware` library makes both, sized for each screw.
 

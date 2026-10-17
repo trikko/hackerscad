@@ -2,17 +2,7 @@
 
 The sizes you may want to change, made parameters with `@param` (limits, steps, a list of choices) and grouped into named presets with `@preset`; units and the mistakes they catch, and the few they do not; design checks in `unittest` blocks with `assert`; measuring a model (its size, volume, weight, distances) and printing values with `writeln`; and changing parameters from the Parameters panel and the command line (`-D`, `--preset`).
 
-<!-- render: parameters-cover -->
-```d
-// a size given a name and limits: a slider to change it
-@param("Width", min: 20.mm, max: 80.mm)
-immutable width = 40.mm;
-
-@part("Sky Pop")
-Solid block() => box(width, 20.mm, 10.mm);
-```
-
-![A block whose width is a parameter](img/parameters-cover.png)
+![Carlo with its coffee preset](img/parameters-carlo.png)
 
 ## What makes a good parameter
 

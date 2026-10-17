@@ -2,16 +2,7 @@
 
 Shapes that follow a curve or change along their length: paths (straight, bent, splines, helices, from a sketch, from a solid's edges, from two views), sweeping a profile along a path and deciding how it rolls on the way (`up:`, `guide:`, `twist:`, `frenet:`), and lofting between profiles.
 
-<!-- render: sweeps-cover -->
-```d
-// a circle carried along a bent path: a tube
-@part("Sky Pop")
-Solid tube() => circle(d: 4.mm)
-    .sweep(path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 20.mm),
-        vec(20.mm, 0.mm, 20.mm)], bend: 6.mm));
-```
-
-![A circle carried along a bent path: a tube](img/sweeps-cover.png)
+![Tubes along mitred, bent and spline paths, and a spring](img/sweeps-paths.png)
 
 A *profile* is a flat outline, such as a circle or a rectangle. A *sweep* moves a profile along a curve and keeps the solid it passes through: a wire, a tube, a handle. A *loft* joins several profiles placed one after the other with a smooth skin: a vase that starts round and ends square.
 

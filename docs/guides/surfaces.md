@@ -2,18 +2,7 @@
 
 Open sheets with no inside: how to make one (an open curve swept along a path, a loft through paths), and what to do with it: split a solid along a curved cut, thicken it into a shell, sew several into a closed solid, push the pieces apart. Typical workflows, the limits, and the errors.
 
-<!-- render: surfaces-cover -->
-```d
-// a wavy curve swept along a line: a thin sheet,
-// made 1 mm thick
-@part("Sky Pop")
-Solid sheet() => spline([vec(-15.mm, 0.mm), vec(-5.mm, 4.mm),
-        vec(5.mm, -4.mm), vec(15.mm, 0.mm)])
-    .sweep(path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 25.mm, 0.mm)]))
-    .thicken(1.mm);
-```
-
-![A wavy sheet, made 1 mm thick](img/surfaces-cover.png)
+![A bent tube split lengthwise by a surface, its halves pushed apart](img/surfaces-tube-halves.png)
 
 ## What a surface is
 

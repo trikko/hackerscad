@@ -2,19 +2,7 @@
 
 How much play to leave between parts that slide, press or turn together, printed or machined; how to test a fit in a `unittest` before printing; snap hooks and print-in-place hinges from the `snaps` and `hinges` libraries; and how to make a part print well: overhangs, thin walls, which way up it lies.
 
-<!-- render: fits-cover -->
-```d
-// a pin and the hole it slides in: 0.2 mm of play
-// each side
-@part("Sky Pop")
-Solid block() => box(24.mm, 24.mm, 10.mm)
-    - cylinder(d: 8.4.mm, h: 12.mm).move(z: -1.mm);
-
-@part("Pink Pop")
-Solid pin() => cylinder(d: 8.mm, h: 16.mm).move(x: 25.mm);
-```
-
-![A pin and the hole it slides in](img/fits-cover.png)
+![A snap hook through a lid, cut in half](img/fits-snap.png)
 
 ## Play, clearance, interference
 

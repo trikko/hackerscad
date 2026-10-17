@@ -2,16 +2,7 @@
 
 Spur gears and racks from the `gears` library: module, number of teeth and pressure angle, placing two gears so that they mesh, checking the mesh in the model, and printing gears that turn (backlash, the module for a printer, hubs, bores and set screws).
 
-<!-- render: gears-cover -->
-```d
-import gears;
-
-// a spur gear: 24 teeth of module 1, a 5 mm bore
-@part("Sky Pop")
-Solid gear() => spurGear(1.mm, 24, 5.mm, bore: 5.mm);
-```
-
-![A spur gear with 24 teeth](img/gears-cover.png)
+![A gear with a hub, its bore and set screw](img/gears-hub.png)
 
 ## Module, teeth, pressure angle
 

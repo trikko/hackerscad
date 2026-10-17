@@ -2,16 +2,7 @@
 
 A profile is a flat outline; a solid is made from it by extruding it (pushing it up into a block of the same outline), revolving it (turning it round an axis, as on a lathe) or adding and cutting it on a face of another solid. This guide covers the profile shapes (rectangles, circles, polygons, slots, teardrops, text, SVG and DXF drawings), how they combine (`+ - &`, offset, round), extruding them (taper, twist, shear, along X or Y, symmetric), revolving them, standing them up with `across`, adding or cutting them on a face of a solid, and pushing or sinking the faces themselves.
 
-<!-- render: profiles-cover -->
-```d
-// a flat outline, a rectangle less a circle, pushed
-// up into a solid
-@part("Sky Pop")
-Solid plate() => (rect(30.mm, 20.mm) - circle(d: 8.mm))
-    .extrude(5.mm);
-```
-
-![A rectangle less a circle, pushed up into a plate](img/profiles-cover.png)
+![A cross extruded straight, tapered, twisted, sheared and both ways](img/profiles-extrude.png)
 
 ## The profile shapes
 

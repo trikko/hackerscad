@@ -2,17 +2,7 @@
 
 Where things go. A plane is a flat surface without end, given by a point and the direction it faces; a frame is a place to build from, a point with its own three axes. This guide covers the three main planes XY, XZ and YZ (and which way each faces), planes of every other kind (through points, on a face, halfway between two faces, moved off another), frames to build on a face, placing parts on faces and next to each other, axes, sketching on a plane, and the planes shown in the 3D view with the menus that write them.
 
-<!-- render: planes-cover -->
-```d
-// a peg built on XY, then placed on the block's top
-immutable block = box(30.mm, 20.mm, 8.mm);
-
-@part("Sky Pop")
-Solid part() => block + cylinder(d: 6.mm, h: 10.mm)
-    .placeOn(block.frame(faces.top));
-```
-
-![A peg placed on a block's top](img/planes-cover.png)
+![Carlo placed on a slope, square to it](img/planes-place-on.png)
 
 ## The main planes
 

@@ -2,16 +2,7 @@
 
 Many copies of one thing: a row, a ring, a grid, a mirror image; layouts the plain patterns cannot make, written as loops; surfaces with a texture, ribbed or bumpy, from `noise`, `loopNoise` and `loft` through rings of points; how to keep them quick to evaluate, and when a pattern belongs in a library.
 
-<!-- render: patterns-cover -->
-```d
-// one peg, copied eight times round a disc
-@part("Sky Pop")
-Solid wheel() => cylinder(d: 40.mm, h: 3.mm)
-    + cylinder(d: 5.mm, h: 6.mm).move(x: 15.mm)
-        .circularPattern(8, axis: Z);
-```
-
-![One peg copied eight times round a disc](img/patterns-cover.png)
+![A row, a ring, a grid and a mirror](img/patterns-four.png)
 
 A *pattern* is one shape repeated: `linearPattern` copies it along a straight line at an even step, `circularPattern` round an axis at even angles, `mirror` reflects it across a plane. A grid is two `linearPattern`s, one along each side. Copies that change from one to the next, or skip some places, are a loop (below).
 
