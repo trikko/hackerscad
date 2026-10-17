@@ -3744,7 +3744,7 @@ Value threadFace(Interp it, ref CallArgs a)
     import hackerscad.lang.threading;
     auto k = it.kernel;
     auto x = Args(it, a, "thread", ["solid", "face", "size", "pitch", "length", "turns", "starts", "left", "clearance",
-        "chamfer", "flip"]);
+        "chamfer", "flip", "taper"]);
     auto body = x.solid("solid");
     if (body.flat || body.path)
         throw new HcadError(Code.type, "thread() goes on a cylindrical face of a solid", a.span);
@@ -3813,6 +3813,15 @@ Value threadFace(Interp it, ref CallArgs a)
     if (t.pitch == 0)
         throw new HcadError(Code.type, "say which thread: thread(face, \"M8\"), or pitch: 1.25.mm on the cylinder's diameter",
             a.span);
+    // taper: any thread made conical, the angle each side leans from the axis (R and NPT have theirs)
+    if (x.has("taper"))
+    {
+        immutable ta = x.angle("taper");
+        if (!(ta >= 0) || ta >= PI / 6)
+            throw new HcadError(Code.type, "the taper is the angle each side leans from the axis: from 0 (parallel) to "
+                ~ "under 30° (R and NPT lean 1.79°)", x.spanOf("taper"));
+        t.taper = ta;
+    }
     immutable pitch = t.pitch, h = t.depth;
     // the cylinder must suit the thread: a shaft about its major diameter, a hole about its minor
     if (!fits(t, 2 * c.radius, outside))
@@ -3866,6 +3875,10 @@ Value threadFace(Interp it, ref CallArgs a)
     if (len / pitch > 500)
         throw new HcadError(Code.limit, format("%g turns: a thread has at most 500 (is the pitch, %g mm, right?)",
             len / pitch, pitch), x.spanOf(x.has("pitch") ? "pitch" : "size"));
+    // narrowing along its length, the thread must keep a core at its narrow end
+    if (t.taper > 0 && (t.major / 2 + clearance * (outside ? -1 : 1)) - h - tan(t.taper) * len < 0.2 * t.major / 2)
+        throw new HcadError(Code.type, format("a taper of %g° over %g mm narrows the ⌀%g mm thread to nothing: a smaller "
+            ~ "angle or a shorter length", t.taper * 180 / PI, len, t.major), x.spanOf(x.has("taper") ? "taper" : "size"));
     immutable chamfer = x.flag("chamfer", true);
     // where the thread stops short of the face, or the face ends against more material (a
     // bolt's head), the threaded length reaches a fifth of a pitch into it: overlapping, the

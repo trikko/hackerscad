@@ -2757,6 +2757,35 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
+    // taper: any thread made conical; NPT's own taper turned off; too much of it refused
+    auto r = runModel(q{
+        Solid shaft(Length d, Length h) => cylinder(d: d * 1.6, h: 5) + cylinder(d: d, h: h).move(z: 5);
+        @part Solid m20() => shaft(20.mm, 20.mm).thread(faces.largest, "M20", taper: 1.79.deg);
+        @part Solid plain() => shaft(20.mm, 20.mm).thread(faces.largest, "M20");
+        @part Solid npt() => shaft(21.336.mm, 20.mm).thread(faces.largest, "1/2 NPT", taper: 0.deg);
+        @part Solid socket() => (box(40, 40, 20) - cylinder(d: 17.6, h: 50, center: true))
+            .thread(faces.filter(f => f.area > 1000 * 1.mm ^^ 2 && f.area < 1200 * 1.mm ^^ 2), "M20", taper: 1.79.deg);
+        unittest
+        {
+            assert(m20.isValid && npt.isValid && socket.isValid, "valid");
+            immutable top = m20.section(XY.offset(23.mm)).bbox.size.x, bottom = m20.section(XY.offset(7.mm)).bbox.size.x;
+            assert(bottom - top > 0.8.mm && bottom - top < 1.3.mm, "taper");
+            assert(m20.volume < plain.volume, "narrower");
+            immutable nt = npt.section(XY.offset(23.mm)).bbox.size.x, nb = npt.section(XY.offset(7.mm)).bbox.size.x;
+            assert(abs(nb - nt) < 0.1.mm, "parallel");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error(`@part Solid p() => cylinder(d: 8, h: 20).thread(faces.largest, "M8", taper: 10.deg);`)
+        .message.canFind("narrows the"));
+    assert(error(`@part Solid p() => cylinder(d: 8, h: 20).thread(faces.largest, "M8", taper: -1.deg);`)
+        .message.canFind("leans from the axis"));
+}
+
+unittest
+{
     // what a solid is made of: a plate with a circle of holes, read back from its triangles
     auto r = runModel(q{
         immutable plate = box(40, 40, 5)

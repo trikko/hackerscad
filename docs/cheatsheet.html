@@ -188,7 +188,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>hull(shapes…) → Solid</dt><dd>The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.</dd>
 <dt>minkowski(a, b) → Solid</dt><dd>a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.</dd>
 <dt>s.cut(profile: Profile, on: Frame, depth: Length, through: bool, taper: Angle) → Solid</dt><dd>Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).</dd>
-<dt>s.thread(face: Faces, size: string, pitch: Length, length: Length, turns: number, starts: int, left: bool, clearance: Length, chamfer: bool, flip: bool) → Solid</dt><dd>A thread on a cylindrical face, outside a shaft or inside a hole (made at the tap drill size): "M8", "M8x1", "1/4-20 UNC", "#10-32 UNF", "Tr12x3", "G1/2", tapered "R1/2" and "1/2 NPT".</dd>
+<dt>s.thread(face: Faces, size: string, pitch: Length, length: Length, turns: number, starts: int, left: bool, clearance: Length, chamfer: bool, flip: bool, taper: Angle) → Solid</dt><dd>A thread on a cylindrical face, outside a shaft or inside a hole (made at the tap drill size): "M8", "M8x1", "1/4-20 UNC", "#10-32 UNF", "Tr12x3", "G1/2", tapered "R1/2" and "1/2 NPT"; taper: 1.79.deg makes any thread conical (each side's lean, narrowing to the free end).</dd>
 <dt>s.extrude(faces: Selector, depth: Length, along: Vec3) → Solid</dt><dd>Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in.</dd>
 </dl></section>
 <section><h2>Paths, sweeps and lofts</h2><dl>
