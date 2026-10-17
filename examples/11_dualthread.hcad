@@ -1,0 +1,94 @@
+// Dual-thread bolt: two threads, two nuts, turned opposite ways
+// A big bolt carrying two threads at once on the same shank: an
+// ISO M24 right-handed and a trapezoidal Tr24x5 left-handed. The
+// shank is what both threads leave (the one bolt cut by both), so
+// each nut runs on its own thread through the other's grooves.
+// Tightened against each other, the two nuts turn opposite ways:
+// a vibration that would loosen one tightens the other, and the
+// pair cannot work loose (the idea of lock-nut dual-thread bolts).
+// Move "Turn the nuts" to screw them along: the ISO nut clockwise
+// seen from above, the trapezoidal one counter-clockwise, both
+// going down.
+module dualthread;
+
+@param("Turn the nuts (degrees)", min: 0, max: 720, step: 15)
+immutable turn = 0;
+
+@param("Play of the nuts' threads", min: 0.1.mm, max: 0.5.mm)
+immutable play = 0.25.mm;
+
+immutable d = 24.mm;
+immutable shank = 70.mm;
+immutable nutHeight = 14.mm;
+
+// the two threads: an ISO coarse M24 and a lead screw's Tr24x5
+immutable iso = "M24";
+immutable isoPitch = 3.mm;
+immutable trap = "Tr24x5";
+immutable trapPitch = 5.mm;
+
+// where the nuts start, from the top of the shank
+immutable isoAt = 46.mm;
+immutable trapAt = 26.mm;
+
+// the shank threaded with one of the two, from its tip
+Solid threaded(string size, bool left) => cylinder(d: d, h: shank)
+    .thread(faces.largest, size, left: left);
+
+@part("Sky Pop")
+Solid bolt()
+{
+    auto head = polygon(6, d: 36.mm, fit: "sides")
+        .extrude(15.mm)
+        .chamfer(edges.of(faces.bottom), d: 1.5.mm)
+        .move(z: -15.mm);
+
+    // material only where both threads leave it
+    return head + (threaded(iso, false) & threaded(trap, true));
+}
+
+// a nut's thread as a long tube over the whole shank, cut from the
+// same free end as the bolt's (so the two are in step), then a nut
+// taken out of it at `at` from the top
+Solid nut(string size, bool left, Length hole, Length at)
+{
+    auto tube = cylinder(d: 40.mm, h: shank)
+        - cylinder(d: hole, h: shank + 2.mm).move(z: -1.mm);
+    tube = tube.thread(faces.filter(f => f.area > 3000 * 1.mm ^^ 2
+        && f.area < 6000 * 1.mm ^^ 2),
+        size, left: left, clearance: play);
+    auto hex = polygon(6, d: 36.mm, fit: "sides")
+        .extrude(nutHeight)
+        .chamfer(edges.of(faces.top) + edges.of(faces.bottom),
+            d: 1.5.mm)
+        .move(z: shank - at - nutHeight);
+    return tube & hex;
+}
+
+// turned along its thread: a right-handed nut turned clockwise seen
+// from above goes down, a left-handed one counter-clockwise
+Solid screwed(Solid n, Length pitch, bool left)
+{
+    immutable sense = left ? 1 : -1;
+    return n.rotate(z: sense * turn)
+        .move(z: -pitch * turn / 360.0);
+}
+
+@part("Pink Pop")
+Solid isoNut() => screwed(nut(iso, false, 21.mm, isoAt),
+    isoPitch, false);
+
+@part("gold")
+Solid trapNut() => screwed(nut(trap, true, 19.mm, trapAt),
+    trapPitch, true);
+
+unittest
+{
+    // each nut runs free on the bolt, and they do not touch
+    assert((bolt & isoNut).volume < 0.01 * 1.mm ^^ 3,
+        "the ISO nut binds");
+    assert((bolt & trapNut).volume < 0.01 * 1.mm ^^ 3,
+        "the trapezoidal nut binds");
+    assert((isoNut & trapNut).volume == 0.mm ^^ 3,
+        "the nuts overlap");
+}

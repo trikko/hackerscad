@@ -4283,3 +4283,37 @@ unittest
     assert(error(`import hardware : hole, M3; @part Solid p() => box(30, 20, 10).cut(hole(M3, 6.mm), on: faces.top, depth: 2.mm);`)
         .message.canFind("a solid tool is cut as it is"));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // a female thread cut from the same free end as a male one is in step with it, whatever the
+    // lengths: a nut cut over a bolt's tip runs on it, for either hand
+    auto r = runModel(q{
+        Solid rod(bool left) => cylinder(d: 8, h: 30).thread(faces.largest, "M8", left: left);
+        Solid nut(bool left) => ((cylinder(d: 16, h: 30) - cylinder(d: 6.9, h: 32).move(z: -1))
+            .thread(faces.filter(f => f.area > 500 * 1.mm ^^ 2 && f.area < 800 * 1.mm ^^ 2), "M8", left: left)
+            & cylinder(d: 16, h: 6).move(z: 18));
+        @part Solid p() => rod(false);
+        unittest
+        {
+            assert((rod(false) & nut(false)).volume < 0.01 * 1.mm ^^ 3, "right");
+            assert((rod(true) & nut(true)).volume < 0.01 * 1.mm ^^ 3, "left");
+            assert((rod(false) & nut(true)).volume > 1 * 1.mm ^^ 3, "the wrong hand binds");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
+
+unittest
+{
+    mixin(slowTest);
+    // the dual-thread bolt: both nuts run free on the bolt cut by both threads
+    import std.file : thisExePath;
+    import std.path : dirName;
+    auto it = make();
+    auto r = it.run(buildPath(dirName(dirName(dirName(thisExePath))), "examples", "11_dualthread.hcad"));
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error && d.severity != Severity.warning, d.message);
+}

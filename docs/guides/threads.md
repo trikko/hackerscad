@@ -184,6 +184,10 @@ Solid steep() => shaft().thread(faces.largest, "M20", taper: 5.deg)
 
 ![Parallel, 1.79° and 5° tapers](img/threads-taper.png)
 
+## Two threads on one bolt
+
+Every thread is at the same angle at its free end, so a shaft and a hole threaded from the same free end mesh, whatever their lengths. That is how to make a nut that runs on a bolt: thread a tube over the bolt's whole length, from the same tip, and take the nut out of it where it should be. The Examples menu's **Dual-thread bolt** (`examples/11_dualthread.hcad`) goes further: its shank carries an M24 right-handed and a Tr24x5 left-handed thread at once (the shank cut by both, `threaded("M24", false) & threaded("Tr24x5", true)`), and two nuts, one on each thread, screw down it turning opposite ways. Tightened against each other they lock: what would loosen one tightens the other. Its `unittest` checks that both nuts run free, at any turn of the "Turn the nuts" parameter.
+
 ## Loose threads: the threads library
 
 `thread()` cuts a face that is already there. The `threads` library makes a loose threaded rod, or a tool to subtract:

@@ -4027,6 +4027,19 @@ Value threadFace(Interp it, ref CallArgs a)
     }
     catch (KernelException e)
         throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
+    // the helices start at the bottom of what was built (sink or below it); turned so that each is at
+    // angle 0 at the free end instead, a male thread and a female one cut from the same free end are
+    // in step, whatever their lengths (a nut cut over a bolt's tip fits it)
+    {
+        immutable shift = outside ? sink : (sink > 0 ? 0 : 0.2 * pitch);
+        immutable turn = 2 * PI * (len + shift) / lead * (left ? 1 : -1);
+        immutable phase = turn - 2 * PI * floor(turn / (2 * PI));
+        if (phase > 1e-12)
+            try
+                tool = k.rotate(tool, Vec3(0, 0, 1), phase);
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
+    }
     // +Z onto the axis, pointing to the free end; z = 0 at len before it
     immutable dir = freeAtTo ? c.axis : -c.axis;
     immutable start = c.origin + c.axis * (freeAtTo ? to - len : from + len);
