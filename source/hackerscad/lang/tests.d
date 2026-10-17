@@ -2932,6 +2932,9 @@ unittest
             immutable size = s.bbox.size;
             assert(abs(size.x / 1.mm - 40) < 1e-3 && abs(size.y / 1.mm - 20) < 1e-3 && abs(size.z / 1.mm - 10) < 1e-3, "size");
             assert(abs(s.bbox.min.z / 1.mm) < 1e-3 && abs(s.bbox.center.x / 1.mm) < 1e-3, "placed");
+            // a part whose area is not spread along its sides (an L with a hole off centre): squared all the same
+            immutable l = (box(60, 30, 4) + box(8, 30, 14) - cylinder(d: 8, h: 20).move(x: 20, y: 7)).aligned;
+            assert(abs(l.bbox.size.x / 1.mm - 60) < 1e-6 && abs(l.bbox.size.y / 1.mm - 30) < 1e-6, "squared");
         }
     });
     foreach (d; r.diagnostics)

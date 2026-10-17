@@ -1497,6 +1497,17 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             if (abs(theta) > 1e-9)
                 b = k.rotate(b, Vec3(0, 0, 1), -theta);
         }
+        // the spread of the area is seldom exactly along the part's sides (a bracket, a hole off
+        // centre): its largest upright flat face, when it has one, is squared to X or Y
+        foreach (f; analyse(k.tessellate(b, 0.05, 0.3)).features)
+            if (f.kind == Surface.plane && abs(f.normal.z) < 1e-6)
+            {
+                immutable phi = atan2(f.normal.y, f.normal.x);
+                immutable off = phi - PI / 2 * round(phi / (PI / 2));
+                if (abs(off) > 1e-12 && abs(off) < PI / 18)
+                    b = k.rotate(b, Vec3(0, 0, 1), -off);
+                break;
+            }
         auto bb = k.bbox(b);
         b = k.translate(b, Vec3(-bb.center.x, -bb.center.y, -bb.min.z));
         return Value.of(derived(it, b, [s], "aligned", a.span));
