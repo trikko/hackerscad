@@ -7,7 +7,7 @@ import markdown, re, os, html
 base=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 root=os.path.join(base,'docs')
 idx=open(f'{root}/GUIDES.md').read()
-entries=re.findall(r'\*\*\[(.+?)\]\(guides/(\w+)\.md\)\*\*<br>(.*?) \|$', idx, re.M)
+entries=re.findall(r'^### \[(.+?)\]\(guides/(\w+)\.md\)\n\n(?:\[<img[^\n]*\n\n)?(.+)$', idx, re.M)
 try:
     import pygments; ext=['tables','fenced_code','codehilite','toc']
 except ImportError: ext=['tables','fenced_code','toc']

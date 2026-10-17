@@ -622,22 +622,21 @@ string guideIndex()
         ~ "The [tutorial](TUTORIAL.md) goes step by step through a first model; the [language reference]"
         ~ "(LANGUAGE.md) lists everything in brief. An agent reads the same pages with `hcad_docs` "
         ~ "(format: guide), or `hcad docs --guide NAME`.\n\n";
-    // a table: the guide's first picture, then its title and what it is about
-    r ~= "| | Guide |\n|---|---|\n";
+    // each guide: its title, its first picture (wide enough on a phone too), what it is about
     foreach (g; guides)
     {
         // the first paragraph after the title: what the guide is about
         auto body = g.text[g.text.indexOf("\n") + 1 .. $].strip;
         immutable end = body.indexOf("\n\n");
         immutable link = "guides/" ~ g.slug ~ ".md";
-        string picture;
+        r ~= "### [" ~ g.title ~ "](" ~ link ~ ")\n\n";
         immutable at = g.text.indexOf("](img/");
         if (at >= 0)
         {
             immutable from = at + 2, to = g.text.indexOf(")", from);
-            picture = "[<img src=\"guides/" ~ g.text[from .. to] ~ "\" width=\"220\" alt=\"" ~ g.title ~ "\">](" ~ link ~ ")";
+            r ~= "[<img src=\"guides/" ~ g.text[from .. to] ~ "\" width=\"420\" alt=\"" ~ g.title ~ "\">](" ~ link ~ ")\n\n";
         }
-        r ~= "| " ~ picture ~ " | **[" ~ g.title ~ "](" ~ link ~ ")**<br>" ~ (end < 0 ? body : body[0 .. end]) ~ " |\n";
+        r ~= (end < 0 ? body : body[0 .. end]) ~ "\n\n";
     }
     return r;
 }
