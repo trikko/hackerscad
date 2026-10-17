@@ -215,7 +215,7 @@ hcad render bracket.hcad -o bracket.pdf
 - Right-click a part › **Export *name*** › **3MF…**, **STL…**, **STEP…** exports that part alone.
 - Right-click a part › **Colour** writes the colour into the code (the Pop colours, or **Other…** for any); **Hide *name***, **Show only *name***, **Show all parts** change only what the view shows.
 - Exports use the parameters and preset set in the side panel, and run the `unittest`s first.
-- Drawings are not shown or exported by the application: export them from the command line, or ask an agent.
+- The same menu's last section is the model's `@drawing`: **Show the drawing** opens it in a window of its own, as it prints (a list at the top when there are several; it follows the code as you change it), with **PDF…**, **SVG…** and **DXF…** to export it; **Drawing as PDF / SVG / DXF** export it at once.
 
 ## With an AI agent
 
@@ -223,5 +223,5 @@ An agent reads this guide with `hcad_docs` (format `guide`, topic `parts`), or `
 
 - Every body is a `@part` with no arguments; the object a part is for (a phone, a shaft, a board) is a reference part with `export: false`, its fit checked in a `unittest` or with `hcad_measure`.
 - It asks which format you need only when it matters (a service that wants STL, a print in two colours); otherwise 3MF for printing and STEP for other CAD programs.
-- It exports with `hcad_export` (`output` one path or several, `parts`, `one_object`, `drawing`), checks a drawing first with `hcad_drawing` (the sheet as SVG), and in your window uses `hcad_gui_export` (what the window shows, with its parameters) and `hcad_gui_colour`.
+- It exports with `hcad_export` (`output` one path or several, `parts`, `one_object`, `drawing`), checks a drawing first with `hcad_drawing` (the sheet as SVG), and in your window uses `hcad_gui_export` (what the window shows, with its parameters; `.pdf`, `.svg` or `.dxf` a drawing), `hcad_gui_screenshot` with target `drawing` to look at the drawing window, and `hcad_gui_colour`.
 - Before saying it is done it looks at the parts it exports: `hcad_check` lists them with their sizes, and which are references.

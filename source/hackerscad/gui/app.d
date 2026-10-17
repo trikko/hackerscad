@@ -1271,6 +1271,9 @@ final class MainWindow
         foreach (f; exportFormats)
             exportAction(app, f.ext);
         action(app, "export-3mf-one", [], () => exportFile("3mf", null, true));
+        action(app, "drawing-show", [], () => showDrawing());
+        foreach (ext; ["pdf", "svg", "dxf"])
+            drawingAction(app, ext);
         foreach (e; examples)
             action(app, "example-" ~ e.name, [], exampleAction(e.name));
         action(app, "fit", ["F6"], () => viewport.fit());
@@ -1659,6 +1662,94 @@ private:
     import hackerscad.gui.aboutwindow : AboutWindow;
     AboutWindow aboutDialog;
 
+    /// The window of the model's @drawing sheets while it is open.
+    import hackerscad.gui.drawingwindow : DrawingWindow;
+    DrawingWindow drawingWin;
+
+    /// Opens (or brings forward) the drawing window, on `name` if given.
+    void showDrawing(string name = null)
+    {
+        if (drawingWin is null)
+        {
+            drawingWin = new DrawingWindow(window);
+            drawingWin.onClosed = () { drawingWin = null; };
+            drawingWin.onExport = (string ext, string which) => exportDrawing(ext, which);
+        }
+        drawingWin.setSheets(last.drawings);
+        if (name.length)
+            drawingWin.show(name);
+        drawingWin.present();
+    }
+
+    /// The sheet of the @drawing `name` (the first when null), or an exception saying why not.
+    imported!"hackerscad.drawing.sheet".Sheet drawingSheet(string name = null)
+    {
+        if (last.drawings.length == 0)
+            throw new Exception("the model has no @drawing: add a function marked @drawing returning drawing(…)");
+        foreach (d; last.drawings)
+            if (name.length == 0 || d.name == name)
+            {
+                if (d.error.length)
+                    throw new Exception("the drawing " ~ d.name ~ " could not be made: " ~ d.error);
+                return d.sheet;
+            }
+        throw new Exception(format("no @drawing named '%s'", name));
+    }
+
+    /// The save dialog for a drawing as "pdf", "svg" or "dxf".
+    void exportDrawing(string ext, string name = null)
+    {
+        import gtk.file_filter : FileFilter;
+        import gio.list_store : ListStore;
+        try
+            drawingSheet(name);
+        catch (Exception e)
+            return note(e.msg);
+        auto d = new FileDialog;
+        d.setTitle("Export the drawing as " ~ ext.toUpper);
+        auto filters = new ListStore(FileFilter._getGType());
+        auto filter = new FileFilter;
+        filter.setName(ext.toUpper ~ " (*." ~ ext ~ ")");
+        filter.addSuffix(ext);
+        filters.append(filter);
+        d.setFilters(filters);
+        d.setDefaultFilter(filter);
+        immutable base = baseName(path).endsWith(".hcad") ? baseName(path)[0 .. $ - 5] : "model";
+        d.setInitialName(base ~ (name.length ? "-" ~ name : "") ~ "." ~ ext);
+        d.save(window, null, (ObjectWrap src, AsyncResult res) {
+            try
+            {
+                auto f = d.saveFinish(res);
+                if (f is null)
+                    return;
+                auto out_ = f.getPath();
+                if (extension(out_).toLower != "." ~ ext)
+                    out_ ~= "." ~ ext;
+                writeDrawingSheet(out_, name);
+                note("exported " ~ out_);
+            }
+            catch (ErrorWrap)
+            {
+            }
+            catch (Exception e)
+                note("export failed: " ~ e.msg);
+        });
+    }
+
+    /// Writes the @drawing `name` (the first when null) to `out_`, as its extension says.
+    void writeDrawingSheet(string out_, string name = null)
+    {
+        import hackerscad.drawing.sheet : toDxf, toPdf, toSvg;
+        auto sheet = drawingSheet(name);
+        switch (extension(out_).toLower)
+        {
+        case ".pdf": write(out_, toPdf(sheet)); break;
+        case ".svg": write(out_, toSvg(sheet)); break;
+        case ".dxf": write(out_, toDxf(sheet)); break;
+        default: throw new Exception("a drawing is written as .pdf, .svg or .dxf");
+        }
+    }
+
     void showAbout()
     {
         if (aboutDialog !is null)
@@ -1807,6 +1898,8 @@ private:
         auto partsBefore = last.parts;
         last = o;
         hadResult = true;
+        if (drawingWin !is null && o.ok)
+            drawingWin.setSheets(o.drawings);
         // the sketches made, or the last good ones while the code has an error
         holdSketches(o);
         params.update(o.params, o.presets);
@@ -6631,6 +6724,11 @@ private:
         action(app, "export-" ~ ext, [], () => exportFile(ext));
     }
 
+    void drawingAction(AdwApplication app, string ext)
+    {
+        action(app, "export-drawing-" ~ ext, [], () => exportDrawing(ext));
+    }
+
     import gio.menu : GMenu = Menu;
     GMenu exportModel()
     {
@@ -6642,6 +6740,13 @@ private:
                 m.append("3MF, one object — the parts as its pieces: for prints in several colours",
                     "win.export-3mf-one");
         }
+        // the model's @drawing: shown in a window of its own, or written
+        auto drawings = new GMenu;
+        drawings.append("Show the drawing — the model's @drawing, as it prints", "win.drawing-show");
+        drawings.append("Drawing as PDF — to print", "win.export-drawing-pdf");
+        drawings.append("Drawing as SVG — to edit in a vector editor", "win.export-drawing-svg");
+        drawings.append("Drawing as DXF — for CAD and laser cutters", "win.export-drawing-dxf");
+        m.appendSection(null, drawings);
         return m;
     }
 
@@ -6783,6 +6888,12 @@ private:
         import std.algorithm : countUntil, filter, map;
         import std.array : array, join;
         import hackerscad.tool.exporter : ExportPart, exportParts;
+        // a @drawing: the one named in `only`, else the first
+        if ([".pdf", ".svg", ".dxf"].canFind(extension(out_).toLower))
+        {
+            writeDrawingSheet(out_, only.length ? only[0] : null);
+            return null;
+        }
         if (last.parts.length == 0)
             throw new Exception("nothing to export: the model has no parts yet");
         if (extension(out_).length == 0)

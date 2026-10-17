@@ -1103,8 +1103,8 @@ JValue toolList()
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "function": {"type": "string"}`, `[]`),
         gui("hcad_gui_export", "Export the model open in the user's window, with the parameters and preset set "
             ~ "there, to 'path': .3mf (one object per part, colours), .stl (one part), .zip (one STL per part), "
-            ~ ".step (one named body per part) or .png (the 3D view as shown; with 'parts', those alone). Drawings "
-            ~ "(.svg, .pdf, .dxf) are made by hcad_export on the file.",
+            ~ ".step (one named body per part) or .png (the 3D view as shown; with 'parts', those alone), or a "
+            ~ "@drawing as .pdf, .svg or .dxf (the first; parts: [name] another).",
             `"path": {"type": "string"}, ` ~ partsProp ~ `, ` ~ oneObjectProp, `["path"]`),
         gui("hcad_gui_complete", "What the editor's completion offers in the user's window: at the cursor, or at "
             ~ "line and col (1-based). Gives the proposals with their signature and documentation, and inside a call "
@@ -1173,8 +1173,10 @@ JValue toolList()
             `"close": {"type": "boolean"}, "debug": {"type": "boolean"}`),
         gui("hcad_gui_screenshot", "Picture of the user's hackerscad window, after the current evaluation finishes; "
             ~ "target cheatsheet pictures the cheatsheet window instead (open it with hcad_gui_cheatsheet), colour "
-            ~ "the colour wheel (open it with hcad_gui_colour, wheel: true), about the About window (hcad_gui_about).",
-            `"target": {"type": "string", "enum": ["window", "cheatsheet", "colour", "about"]}`, `[]`),
+            ~ "the colour wheel (open it with hcad_gui_colour, wheel: true), about the About window (hcad_gui_about), "
+            ~ "drawing the model's @drawing in its window (Export › Show the drawing; opened if it is not, on "
+            ~ "'drawing' by name).",
+            `"target": {"type": "string", "enum": ["window", "cheatsheet", "colour", "about", "drawing"]}, "drawing": {"type": "string"}`, `[]`),
         gui("hcad_gui_state", "State of the user's window: file, parameters, parts, camera, problems, version; "
             ~ "annotations lists the marks drawn on the locked 3D view, the user's (by: user) and yours, each with "
             ~ "its colour's name and what lies under its key points (part, face, point in mm, selector; on the "

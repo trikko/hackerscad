@@ -1641,8 +1641,16 @@ mixin template ControlMethods()
                 // the About window, when open
                 if (arg("target") == "about" && aboutDialog is null)
                     return reply(JValue.init, "the About window is not open: open it with the about method first");
+                // the drawing window: opened (on `drawing`, if given) when it is not
+                if (arg("target") == "drawing")
+                {
+                    if (last.drawings.length == 0)
+                        return reply(JValue.init, "the model has no @drawing: add a function marked @drawing returning drawing(…)");
+                    showDrawing(arg("drawing"));
+                }
                 imported!"gtk.window".Window other = arg("target") == "cheatsheet" ? cheatsheet.widget
-                    : arg("target") == "colour" ? colourWheel.win : arg("target") == "about" ? aboutDialog.window : null;
+                    : arg("target") == "colour" ? colourWheel.win : arg("target") == "about" ? aboutDialog.window
+                    : arg("target") == "drawing" ? drawingWin.window : null;
                 // after a change GTK draws the window at its next frame, which
                 // the compositor holds back while the window is hidden or
                 // covered: wait for it a while, then fall back on the 3D view

@@ -67,6 +67,15 @@ struct PartMesh
     bool path;              /// a curve: only edgeInfo and bbox are set
 }
 
+/// A @drawing of the model, laid out on its sheet (made on the worker: it projects the solids).
+struct DrawingSheet
+{
+    import hackerscad.drawing.sheet : Sheet;
+    string name;
+    Sheet sheet;
+    string error;   /// when it could not be laid out
+}
+
 struct Outcome
 {
     ulong generation;
@@ -83,6 +92,7 @@ struct Outcome
     PartMesh[] sketchBodies;  /// by sketch: the solid a sketch on a face is drawn on (empty for the others)
     LogLine[] log;
     Diagnostic[] diagnostics;
+    DrawingSheet[] drawings;  /// the @drawing sheets, laid out (or why one could not be)
     string[string] sources;   /// module path → source, to render diagnostics
     long milliseconds;
     size_t cacheHits, cacheMisses;
@@ -311,6 +321,20 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
         o.trace = r.trace;
         o.log = r.log;
         o.diagnostics = r.diagnostics;
+        // the drawings' sheets: their views projected here, on the worker, with its kernel
+        foreach (d; r.drawings)
+        {
+            import hackerscad.lang.drawingval : DrawingVal;
+            if (stage !is null)
+                stage("drawing " ~ d.name);
+            DrawingSheet ds;
+            ds.name = d.name;
+            try
+                ds.sheet = (cast(DrawingVal) d.drawing).render();
+            catch (Exception e)
+                ds.error = e.msg;
+            o.drawings ~= ds;
+        }
         o.ok = true;
     }
     catch (HcadError e)
