@@ -87,7 +87,7 @@ Two parts cannot share one exported name. On the command line, `--part` takes ei
 
 ### Reference parts
 
-The shaft a knob fits on, the board a case holds, the phone a stand carries, the mesh being remodelled: model it (or `load()` it), mark it `export: false`, and check the fit against it in a `unittest`, as above, or with `distance(a, b)`. It stays out of every export unless asked for by name (`--part carloInside`). [The guide on remodelling](remodel.md) loads a mesh this way.
+The shaft a knob fits on, the board a case holds, the phone a stand carries, the mesh being remodelled: model it (or `load()` it), mark it `export: false`, and check the fit against it in a `unittest`, as above, or with `distance(a, b)`. It stays out of every export unless asked for by name (`--part carloInside`).
 
 ## Colours
 

@@ -80,12 +80,6 @@ Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`
 
 The sizes you may want to change, made parameters with `@param` (limits, steps, a list of choices) and grouped into named presets with `@preset`; units and the mistakes they catch, and the few they do not; design checks in `unittest` blocks with `assert`; measuring a model (its size, volume, weight, distances) and printing values with `writeln`; and changing parameters from the Parameters panel and the command line (`-D`, `--preset`).
 
-### [Remodelling a mesh or STEP](guides/remodel.md)
-
-[<img src="guides/img/remodel-original.png" width="420" alt="Remodelling a mesh or STEP">](guides/remodel.md)
-
-Turning an STL, OBJ, 3MF or STEP file into a hackerscad model that matches it and whose sizes you can change: loading it as a see-through reference, reading its features, sections and holes, building the copy from the largest shape to the smallest, then the review round that says what still differs, the pictures that show it, and when the copy is done.
-
 ### [Parts, export and drawings](guides/parts.md)
 
 [<img src="guides/img/parts-box.png" width="420" alt="Parts, export and drawings">](guides/parts.md)
@@ -94,7 +88,7 @@ What becomes a separate object when a model is exported: `@part` and its options
 
 ### [Working with an AI agent](guides/agents.md)
 
-[<img src="guides/img/agents-views.png" width="420" alt="Working with an AI agent">](guides/agents.md)
+[<img src="guides/img/agents-annotations.png" width="420" alt="Working with an AI agent">](guides/agents.md)
 
 How to design with Claude Code, Codex or another agent and hackerscad together: installing the skill and the MCP server, what the agent asks before it starts and why, how it works in your windows without overwriting your files, pointing at things with annotations both ways, the loop it follows to check its work, the command line when there is no server, and the guides it reads.
 

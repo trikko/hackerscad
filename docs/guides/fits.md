@@ -145,7 +145,7 @@ With `-D play=-0.05.mm` the console says `interference: 24.1353 mm^3`: the plast
 
 In the application, select two faces of a part and right-click: **Measure** gives their **Distance** and, for two parallel faces, the **Gap between planes**; **Part volume** and **Part size** are there too.
 
-`hcad fit` is not about fits: it tunes the sizes of a copy to its original, see the [guide on remodelling](remodel.md).
+`hcad fit` is not about fits: it tunes the sizes of a copy to its original.
 
 ## Snap hooks: the snaps library
 

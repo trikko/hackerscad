@@ -590,7 +590,6 @@ static immutable Guide[] guides = [
     Guide("gears", "Gears", import("guides/gears.md")),
     Guide("enclosures", "Enclosures and boxes", import("guides/enclosures.md")),
     Guide("parameters", "Parameters, presets and checks", import("guides/parameters.md")),
-    Guide("remodel", "Remodelling a mesh or STEP", import("guides/remodel.md")),
     Guide("parts", "Parts, export and drawings", import("guides/parts.md")),
     Guide("agents", "Working with an AI agent", import("guides/agents.md")),
 ];

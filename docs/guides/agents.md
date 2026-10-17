@@ -2,6 +2,8 @@
 
 How to design with Claude Code, Codex or another agent and hackerscad together: installing the skill and the MCP server, what the agent asks before it starts and why, how it works in your windows without overwriting your files, pointing at things with annotations both ways, the loop it follows to check its work, the command line when there is no server, and the guides it reads.
 
+![An agent asks in the window where a magnet should go on Carlo, marking the places to choose from](img/agents-annotations.png)
+
 ## What you need
 
 An agent does not know hackerscad from its training: left alone it writes OpenSCAD or CadQuery. Give it two things:
@@ -61,7 +63,7 @@ A good agent asks first, in one message, the few questions that change the resul
 | your window | which one, when several are open | it never assumes the most recent |
 | a file to save | before overwriting it | your work |
 
-From a photo or a real object its first reply is the questions, even when you said "make it". Say *"just estimate"* to skip them. To remodel a mesh or a STEP file it asks nothing: the sizes are in the file (see [the guide on remodelling](remodel.md)).
+From a photo or a real object its first reply is the questions, even when you said "make it". Say *"just estimate"* to skip them. To remodel a mesh or a STEP file it asks nothing: the sizes are in the file.
 
 ## Windows
 
@@ -153,7 +155,7 @@ What the command line cannot do is your window: no editing, no annotations, no v
 
 ## The guides
 
-These pages are written for you and for the agent alike. The agent reads one in full before using a feature: `hcad_docs` with format `guide` and a topic (`threads`, `sketches`, `remodel`, `parts`…), or without a topic for the list; on the command line `hcad docs --guide NAME`. In the application, **☰ › Guides** opens them on the website. The rules the agent follows, in brief, are in [AGENTS.md](../AGENTS.md) (`hcad_docs` format `agents`): read them to know what to expect of it, and say so when it does not.
+These pages are written for you and for the agent alike. The agent reads one in full before using a feature: `hcad_docs` with format `guide` and a topic (`threads`, `sketches`, `parts`…), or without a topic for the list; on the command line `hcad docs --guide NAME`. In the application, **☰ › Guides** opens them on the website. The rules the agent follows, in brief, are in [AGENTS.md](../AGENTS.md) (`hcad_docs` format `agents`): read them to know what to expect of it, and say so when it does not.
 
 ## Common problems
 
