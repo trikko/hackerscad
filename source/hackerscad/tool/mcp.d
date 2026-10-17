@@ -987,7 +987,7 @@ JValue toolList()
             ~ `"shell", "draft", "extrude-face", "cut-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
             ~ `"radius, distance, thickness, angle or depth, e.g. 2.mm or -4.deg"}, `
             ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert", "counterbore", "countersink"]}, `
-            ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6 or M8 for holes; any that fits the cylinder for thread (M10, M12…)"}, `
+            ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6, M8, M10 or M12 for holes; any that fits the cylinder for thread (M10, M12…)"}, `
             ~ `"use_selection": {"type": "boolean"}, `
             ~ `"plane": {"type": "string", "description": "action sketch on a plane instead of a face: XY, XZ, YZ, or a plane the code keeps in a variable, by its name"}`, `["action"]`),
         gui("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) or at a model point and "

@@ -4875,7 +4875,7 @@ private:
                     ["Counterbore", "counterbore"], ["Countersink", "countersink"]])
             {
                 MenuEntry[] sizes;
-                foreach (size; ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"])
+                foreach (size; ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"])
                     sizes ~= I(size, holeAction(kind[1], size), format("⌀ %g", holeDiameter(kind[1], size)));
                 holes ~= G(kind[0], sizes);
             }
@@ -5389,7 +5389,7 @@ private:
             {
                 import std.string : tr;
                 // writeFeature imports hole() and the size from the hardware library when used
-                if (!onFace || !holeKinds.canFind(kind) || !["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"].canFind(size))
+                if (!onFace || !holeKinds.canFind(kind) || !["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"].canFind(size))
                     return null;
                 // a plain round hole for clearance and tapping, any size typed over it afterwards; the
                 // shaped ones (an insert's pocket over its pilot, a counterbore, a countersink) from hole()
@@ -5446,9 +5446,9 @@ private:
     static double holeDiameter(string kind, string size)
     {
         import std.algorithm : countUntil;
-        immutable sizes = ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8"];
-        immutable double[] cl = [2.4, 2.9, 3.4, 4.5, 5.5, 6.6, 9], tp = [1.6, 2.05, 2.5, 3.3, 4.2, 5, 6.8],
-            ins = [3.2, 3.6, 4.2, 5.6, 6.4, 8, 9.7];
+        immutable sizes = ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"];
+        immutable double[] cl = [2.4, 2.9, 3.4, 4.5, 5.5, 6.6, 9, 11, 13.5], tp = [1.6, 2.05, 2.5, 3.3, 4.2, 5, 6.8, 8.5, 10.2],
+            ins = [3.2, 3.6, 4.2, 5.6, 6.4, 8, 9.7, 12, 14.4];
         auto i = sizes.countUntil(size);
         return kind == "tap" ? tp[i] : kind == "insert" ? ins[i] : cl[i];
     }
