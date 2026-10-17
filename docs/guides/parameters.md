@@ -221,7 +221,7 @@ It prints *size: [41.5497 mm, 28.6709 mm, 15 mm]*, *volume: 9.0432 cm³* and *in
 
 A fit is best measured against the object it fits: model that object as a reference part, drawn see-through and never exported, and measure the gap in a unittest. Here a knob goes on a motor's shaft; its top edge is rounded (`fillet`). Seen from the front, cut through the axis:
 
-<!-- render: parameters-fit --from front --cut --look-at 0,15,12 --size 30 -->
+<!-- render: parameters-fit --from 0.25,-1,0.2 --cut --look-at 0,0,11 --size 26 -->
 ```d
 // a knob on a 6 mm shaft, measured against the shaft
 

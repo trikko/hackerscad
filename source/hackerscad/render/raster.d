@@ -257,6 +257,7 @@ private Image render(const Shaded[] items, const Prepared[] prepared, Shot shot,
 
     // opaque parts first, then the see-through ones blended over them
     immutable edgeTolerance = 0.004 * max(depthRange, 1e-6);
+    c.seeThroughBias = cast(float)(0.001 * max(depthRange, 1e-6));
     Edges[] opaqueEdges;
     foreach (see; [false, true])
     {
@@ -544,6 +545,9 @@ public struct Canvas
     float[] mask;  // edge coverage, before it is laid over the colours
     /// a close-up cut: what lies nearer the viewer than this is left out
     float nearest = float.infinity;
+    /// how far behind what is drawn a see-through face still shows: one lying on an opaque face
+    /// (a reference part resting on the floor of another) would otherwise show in stripes
+    float seeThroughBias = 0;
 
     this(uint w, uint h)
     {
@@ -586,7 +590,7 @@ public struct Canvas
                     continue;
                 immutable z = w0 * a.z + w1 * b.z + w2 * c.z;
                 immutable i = y * w + x;
-                if (z <= depth[i] || z > nearest)
+                if (z <= depth[i] - (alpha < 1 ? seeThroughBias : 0) || z > nearest)
                     continue;
                 auto colour = shade((na * w0 + nb * w1 + nc * w2).normalized);
                 if (pattern)
@@ -622,7 +626,7 @@ public struct Canvas
                     continue;
                 immutable z = w0 * a.z + w1 * b.z + w2 * c.z;
                 immutable i = y * w + x;
-                if (z <= depth[i] || z > nearest)
+                if (z <= depth[i] - (alpha < 1 ? seeThroughBias : 0) || z > nearest)
                     continue;
                 put(i, rgb, alpha);
                 if (alpha >= 1)

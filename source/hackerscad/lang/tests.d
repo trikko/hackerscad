@@ -4356,3 +4356,16 @@ unittest
         assert(d.severity != Severity.error, d.message);
     assert(isClose(partVolume(r, "x"), 600 - 4 * PI * 1.5 * 1.5 * 2, 1e-3));
 }
+
+unittest
+{
+    // Carlo grown by 0.3 mm (faces meeting tangentially): the offset works, and without its workaround fails
+    import hackerscad.kernel.occt.c;
+    immutable src = "import carlo;\n@part Solid x() => carlo().offset(0.3.mm);";
+    assert(!fails(src), "Carlo grows by 0.3 mm");
+    hc_workaround(HC_WORKAROUND_OFFSET_TOLERANCE, 0);
+    scope (exit)
+        hc_workaround(HC_WORKAROUND_OFFSET_TOLERANCE, 1);
+    stillBroken(fails("import carlo;\n@part Solid x() => carlo().offset(0.31.mm);"),
+        "MakeOffsetShape at 1e-6 on tangent faces (shim.cpp, hc_offset_solid)");
+}

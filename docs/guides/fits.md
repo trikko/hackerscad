@@ -169,7 +169,7 @@ import snaps;
 
 `snapSlot` is a window round the beam with room on the side it bends to, so that the barb goes through and then rests on the window's far edge: subtract it where the hook stands, with the same `thickness`, `width` and `overhang`. The `unittest` proves it: lifted 0.5 mm, the barb meets the lid.
 
-<!-- render: fits-snap --from front --look-at 0,6,5 --size 18 --cut -->
+<!-- render: fits-snap --from 0.25,-1,0.2 --look-at 1,0,6 --size 15 --cut -->
 ```d
 import snaps;
 

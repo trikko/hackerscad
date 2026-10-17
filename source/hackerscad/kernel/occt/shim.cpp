@@ -268,12 +268,12 @@ extern "C" {
 const char *hc_last_error(void) { return g_error.c_str(); }
 
 // the WORKAROUNDs below that a test can turn off (hc_workaround)
-static std::atomic<bool> g_workarounds[4] = {{true}, {true}, {true}, {true}};
+static std::atomic<bool> g_workarounds[5] = {{true}, {true}, {true}, {true}, {true}};
 static bool workaround(int which) { return g_workarounds[which].load(); }
 
 void hc_workaround(int which, int on)
 {
-    if (which >= 0 && which < 4)
+    if (which >= 0 && which < 5)
         g_workarounds[which] = on != 0;
 }
 
@@ -695,27 +695,43 @@ hc_shape *hc_offset_solid(const hc_shape *s, double d)
         // merged first: an edge between them confuses the offset
         ShapeUpgrade_UnifySameDomain unify(s->shape, Standard_True, Standard_True, Standard_False);
         unify.Build();
-        BRepOffsetAPI_MakeOffsetShape off;
-        off.PerformByJoin(unify.Shape(), d, 1e-6, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Arc);
-        if (!off.IsDone()) {
-            set_error(d < 0 ? "the solid cannot shrink that much (would it vanish?)"
-                            : "the kernel could not grow the solid by that much");
-            return nullptr;
+        // WORKAROUND (OpenCascade 7.9.3, BRepOffsetAPI_MakeOffsetShape): on
+        // solids whose faces meet tangentially (Carlo's outline of tangent
+        // arcs) it can fail, throw or return a broken solid at a tolerance of
+        // 1e-6 and succeed at 1e-5: tried in turn, the first valid result kept.
+        // The "known bugs" unittest in lang/tests.d turns this off
+        // (HC_WORKAROUND_OFFSET_TOLERANCE: 1e-6 only) and fails once it works
+        TopoDS_Shape r;
+        bool done = false;
+        const std::vector<double> tols = workaround(HC_WORKAROUND_OFFSET_TOLERANCE)
+            ? std::vector<double>{1e-6, 1e-5, 1e-4} : std::vector<double>{1e-6};
+        for (double tol : tols) {
+            try {
+                BRepOffsetAPI_MakeOffsetShape off;
+                off.PerformByJoin(unify.Shape(), d, tol, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Arc);
+                if (!off.IsDone())
+                    continue;
+                done = true;
+                TopoDS_Shape t = off.Shape();
+                if (!TopExp_Explorer(t, TopAbs_SOLID).More()) {
+                    BRepBuilderAPI_MakeSolid ms;
+                    for (TopExp_Explorer e(t, TopAbs_SHELL); e.More(); e.Next())
+                        ms.Add(TopoDS::Shell(e.Current()));
+                    t = ms.Solid();
+                }
+                GProp_GProps p;
+                BRepGProp::VolumeProperties(t, p);
+                if (!t.IsNull() && p.Mass() > 0 && BRepCheck_Analyzer(t).IsValid()) {
+                    r = t;
+                    break;
+                }
+            } catch (const Standard_Failure &) {
+            }
         }
-        TopoDS_Shape r = off.Shape();
-        if (!TopExp_Explorer(r, TopAbs_SOLID).More()) {
-            BRepBuilderAPI_MakeSolid ms;
-            for (TopExp_Explorer e(r, TopAbs_SHELL); e.More(); e.Next())
-                ms.Add(TopoDS::Shell(e.Current()));
-            r = ms.Solid();
-        }
-        GProp_GProps p;
-        BRepGProp::VolumeProperties(r, p);
-        // WORKAROUND (OpenCascade 7.9.3, BRepOffsetAPI_MakeOffsetShape): it
-        // can return a broken solid instead of failing. No case known today
-        // (no test or example reaches it): it stays as a guard
-        if (r.IsNull() || p.Mass() <= 0 || !BRepCheck_Analyzer(r).IsValid()) {
-            set_error("offset gave a broken solid: try a smaller distance");
+        if (r.IsNull()) {
+            set_error(!done ? (d < 0 ? "the solid cannot shrink that much (would it vanish?)"
+                                     : "the kernel could not grow the solid by that much")
+                            : "offset gave a broken solid: try a smaller distance");
             return nullptr;
         }
         history_new(r);
