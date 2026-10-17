@@ -22,7 +22,8 @@ usage:
       and so on for front, back, bottom, left, right), or .svg, .pdf, .dxf for a
       @drawing (the first one, or --drawing NAME); a .png from anywhere:
       --from VIEW|X,Y,Z [--look-at X,Y,Z --size MM [--cut]] (framed on the
-      cube of that side round that point, what lies in front cut away);
+      cube of that side round that point; --cut cuts the parts across the
+      view through that point, the cut faces closed);
       --opaque draws see-through parts solid
   hcad check FILE.hcad [--json] [-D name=value…] [--preset NAME]
       evaluates the model and reports parts, parameters, output and problems

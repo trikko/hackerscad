@@ -1787,7 +1787,9 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
     else
         inset = max(inset, r - wall - (r - keep) / sqrt(2.0));
     immutable px = inner.x / 2 - inset, py = inner.y / 2 - inset;
-    immutable postH = inner.z + wall - lidHeight - clearance;
+    // up to the rim, where the lid rests: the screw bites from the lid on (the lip is notched round
+    // each post, below); a short screw holds, one lid's thickness and a few mm into the post
+    immutable postH = inner.z + wall;
     // from the axis to the middle of the walls: the post is one piece with
     // the corner it stands in, with no gap behind it
     immutable reach = inset + wall / 2;

@@ -242,13 +242,47 @@ final class Run
     ubyte[] png(const View[] views, uint cell = 450, const size_t[] only = null, const(Shot)* free = null,
         bool opaque = false)
     {
-        import std.algorithm : canFind;
+        import std.algorithm : canFind, max;
+        // cut: the parts cut through the point looked at, across the view, the cut faces closed (exact
+        // solids cut, not meshes clipped)
+        Mesh[] cutMeshes, cutFaces;
+        Shot cutShot;
+        if (free !is null && free.cut && free.framed)
+        {
+            immutable c = (free.lo + free.hi) / 2, e = free.eye.normalized;
+            immutable big = 10 * ((free.hi - free.lo).length + 1);
+            double span = 1;
+            foreach (p; result.parts)
+                if (p.solid.brep !is null)
+                    span = max(span, kernel.bbox(p.solid.brep).size.length);
+            immutable s = 4 * span + big;
+            // a block on the viewer's side of the plane through c: z from 0 to s, turned to the eye
+            auto block = kernel.translate(kernel.box(s, s, s), Vec3(-s / 2, -s / 2, 0));
+            import hackerscad.lang.convex : turnFromZ;
+            Vec3 ax;
+            double angle;
+            turnFromZ(e, ax, angle);
+            if (angle > 1e-12)
+                block = kernel.rotate(block, ax, angle);
+            block = kernel.translate(block, c);
+            foreach (p; result.parts)
+            {
+                auto kept = p.solid.brep is null ? null : kernel.boolean(p.solid.brep, block, BoolOp.cut);
+                auto m = kept is null ? Mesh.init : kernel.tessellate(kept, tolerance, 0.2);
+                cutFaces ~= m;
+                cutMeshes ~= m.welded;
+            }
+            cutShot = *free;
+            cutShot.cut = false;
+            free = &cutShot;
+        }
         Shaded[] shaded;
         foreach (i, p; result.parts)
             if (only.length == 0 || only.canFind(i))
             {
-                shaded ~= Shaded(partMeshes()[i], opaque ? p.rgb & 0xFFFFFF : p.rgb, faceMeshes[i]);
-                if (printability)
+                shaded ~= cutMeshes.length ? Shaded(cutMeshes[i], opaque ? p.rgb & 0xFFFFFF : p.rgb, cutFaces[i])
+                    : Shaded(partMeshes()[i], opaque ? p.rgb & 0xFFFFFF : p.rgb, faceMeshes[i]);
+                if (printability && !cutMeshes.length)
                 {
                     // overhangs striped red, thin walls cross-hatched violet, as in the window
                     auto pc = printChecks()[i];
