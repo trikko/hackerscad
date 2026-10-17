@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-9e53d889`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-96ddb38f`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-9e53d889`:** this text is up to date.
+- **It prints `0.3.1-96ddb38f`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -130,6 +130,14 @@ format stamp):
   leave the rest. Always say plainly that the user answers the ones they
   can, the more the better, and you estimate the others, made @params to
   change later.
+- Threads: when a part screws onto something that exists (a tap, a hose, a
+  bottle, a camera, a pipe fitting), never guess the thread: ask which it
+  is, or say how to find it out (hcad_docs topic threads: the outer
+  diameter over the crests, the pitch, a taper, how it seals). When the
+  design chooses, suggest one and say why: ISO metric coarse to hold parts
+  together, G where water or air flows, Tr or ACME to move a load, a
+  coarse multi-start one for a printed lid that opens often; under M5 a
+  heat-set insert instead of a printed thread.
 - The loop: write the model, check it, render and look, compare sizes and
   pictures with the request, fix, then export. Put the request's
   requirements in unittest blocks so the checks repeat them.

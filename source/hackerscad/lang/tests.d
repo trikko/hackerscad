@@ -4084,3 +4084,22 @@ unittest
         immutable one = shaft().thread(side, "M8").volume, two = shaft().thread(side, "M8", starts: 2).volume;
         writeln(abs(two / one - 1) < 1e-3, " ", one < shaft().volume);`, "true true", "import std.math;");
 }
+
+unittest
+{
+    mixin(slowTest);
+    // the standards added on 2026-10-18 thread a shaft of their size: each takes some of it away, and
+    // less than its teeth's depth would all round
+    expectOut(`foreach (size; ["1/2-10 ACME", "S20x4", "E27", "E14", "28-400", "PCO 1881", "3/4 GHT"])
+        {
+            auto shaft = cylinder(d: major(size), h: 15.mm);
+            auto done = shaft.thread(faces.filter(f => f.area > PI * major(size) * 15.mm * 0.9), size);
+            immutable core = PI / 4 * (major(size) - 2 * depthOf(size)) ^^ 2 * 15.mm;
+            writeln(size, " ", done.volume < shaft.volume && done.volume > core);
+        }`,
+        "1/2-10 ACME true\nS20x4 true\nE27 true\nE14 true\n28-400 true\nPCO 1881 true\n3/4 GHT true",
+        "import std.math;\nLength major(string s) => [\"1/2-10 ACME\": 12.7.mm, \"S20x4\": 20.mm, \"E27\": 26.45.mm, \"E14\": 13.89.mm, "
+        ~ "\"28-400\": 27.3812.mm, \"PCO 1881\": 27.43.mm, \"3/4 GHT\": 26.9875.mm][s];\n"
+        ~ "Length depthOf(string s) => [\"1/2-10 ACME\": 1.27.mm, \"S20x4\": 3.471.mm, \"E27\": 1.095.mm, \"E14\": 0.8.mm, "
+        ~ "\"28-400\": 1.1938.mm, \"PCO 1881\": 1.245.mm, \"3/4 GHT\": 1.2.mm][s];");
+}

@@ -1,15 +1,20 @@
 /// Screw thread standards: their names ("M8", "1/4-20 UNC", "Tr12x3",
-/// "G1/2", "1/2 NPT"), sizes and the shape of their teeth. The tables are
-/// the published nominal sizes of ISO 261 (metric), ASME B1.1 (unified
-/// inch), ISO 2904 (trapezoidal), ISO 228-1 and ISO 7-1 (BSP parallel and
-/// tapered) and ASME B1.20.1 (NPT).
+/// "G1/2", "1/2 NPT", "1/2-10 ACME", "S20x4", "E27", "28-400", "PCO 1881",
+/// "3/4 GHT"), sizes and the shape of their teeth. The tables are the
+/// published nominal sizes of ISO 261 (metric), ASME B1.1 (unified inch),
+/// ISO 2904 (trapezoidal), ISO 228-1 and ISO 7-1 (BSP parallel and
+/// tapered), ASME B1.20.1 (NPT), ASME B1.5 (ACME), DIN 513 (buttress),
+/// IEC 60061 / DIN 40400 / GOST 6042 (Edison lamp bases), the SPI/GPI
+/// neck finishes of bottles and jars, ISBT's PCO 1881 and 1810 for PET
+/// bottles, and ASME B1.20.7 (garden hose).
 module hackerscad.lang.threading;
 
 import std.algorithm : canFind, endsWith, startsWith;
 import std.array : replace;
 import std.conv : to, ConvException;
 import std.format : format;
-import std.math : abs, atan, cos, PI, sin, tan;
+import std.algorithm : max;
+import std.math : abs, atan, atan2, cos, PI, sin, sqrt, tan;
 import std.string : indexOf, strip, toUpper;
 
 /// The shape of the teeth.
@@ -19,6 +24,11 @@ enum ThreadForm
     trapezoid,   /// 30°, wide flat crests: lead screws
     whitworth,   /// 55°, round crests: BSP pipe threads
     npt,         /// 60°, nearly sharp: NPT pipe threads
+    acme,        /// 29°, flat crests: inch lead screws
+    buttress,    /// 3° and 30° flanks: DIN 513, a screw that pushes one way (vices, presses)
+    edison,      /// round: two tangent arcs, lamp bases
+    container,   /// 60°, flat crests, shallow: bottle and jar necks (SPI/GPI 400, 410, 415)
+    bottle,      /// 30°, flat crests: PET bottle necks (PCO 1881, 1810)
 }
 
 /// A thread: its name, form, largest diameter and pitch (mm), and for a
@@ -29,16 +39,22 @@ struct ThreadSpec
     ThreadForm form;
     double major = 0, pitch = 0;
     double taper = 0;   /// radians; 0 parallel
+    double toothDepth = 0;   /// the standard's own depth, where its table gives it (Edison, necks)
 
     /// How deep the teeth are, from the root to the crest.
     double depth() const
     {
+        if (toothDepth > 0)
+            return toothDepth;
         final switch (form)
         {
         case ThreadForm.iso60: return 0.5413 * pitch;
         case ThreadForm.trapezoid: return 0.5 * pitch;
         case ThreadForm.whitworth: return 0.6403 * pitch;
         case ThreadForm.npt: return 0.8 * pitch;
+        case ThreadForm.acme: return 0.5 * pitch;
+        case ThreadForm.buttress: return 0.86777 * pitch;
+        case ThreadForm.edison, ThreadForm.container, ThreadForm.bottle: return 0.3 * pitch;   // their tables give it
         }
     }
 
@@ -57,6 +73,18 @@ struct ThreadSpec
             return "BSP tapered (R)";
         if (name.endsWith("NPT"))
             return "NPT tapered";
+        if (name.endsWith("ACME"))
+            return "ACME";
+        if (name.startsWith("S"))
+            return "Buttress (DIN 513)";
+        if (name.startsWith("E"))
+            return "Edison (lamps)";
+        if (name.startsWith("PCO"))
+            return "PET bottles";
+        if (name.endsWith("GHT"))
+            return "Garden hose (GHT)";
+        if (form == ThreadForm.container)
+            return "Bottle and jar necks";
         return "Unified inch";
     }
 
@@ -72,6 +100,12 @@ struct ThreadSpec
             immutable w = halfRoot + overlap * tan(flankAngle);
             xy = [overlap, -w, -h, -halfCrest, -h, halfCrest, overlap, w];
         }
+        // a flat crest `crest` wide, its flanks leaning `lower` (towards -y) and `upper` from square to the axis
+        void leaning(double crest, double lower, double upper)
+        {
+            xy = [overlap, -crest / 2 - (h + overlap) * tan(lower), -h, -crest / 2, -h, crest / 2,
+                overlap, crest / 2 + (h + overlap) * tan(upper)];
+        }
         final switch (form)
         {
         case ThreadForm.iso60:
@@ -83,6 +117,40 @@ struct ThreadSpec
         case ThreadForm.npt:
             flat(0.481 * p, 0.019 * p, PI / 6);
             break;
+        case ThreadForm.acme:
+            flat(0.5 * p - 0.1853 * p, 0.1853 * p, 14.5 * PI / 180);
+            break;
+        case ThreadForm.buttress:
+            // DIN 513: the load flank 3° from square, the other 30°; the crest 0.264 p wide
+            leaning(0.2638 * p, 30 * PI / 180, 3 * PI / 180);
+            break;
+        case ThreadForm.container:
+            // flanks of 30°, the tooth half the pitch wide at its root (the tables give T, E and the pitch)
+            leaning(max(0.05 * p, 0.5 * p - 2 * h * tan(PI / 6)), PI / 6, PI / 6);
+            break;
+        case ThreadForm.bottle:
+            leaning(max(0.05 * p, 0.5 * p - 2 * h * tan(PI / 12)), PI / 12, PI / 12);
+            break;
+        case ThreadForm.edison:
+            {
+                // two tangent arcs of radius r: the crest's, centred h - r out from the root, and the
+                // root's, centred r out, half a pitch along: r = ((p/2)² + h²) / 4h; from the middle
+                // of a root (y = -p/2) round the crest to just before the next root's middle
+                immutable r = (p * p / 4 + h * h) / (4 * h);
+                enum steps = 12;
+                // the tangent point: half way between the two centres, a quarter pitch along
+                immutable yt = p / 4;
+                xy = [];
+                // sample the profile: the crest arc where |y| <= p/4, the root arcs beyond
+                foreach (i; 0 .. 4 * steps)
+                {
+                    immutable y = -p / 2 + p * i / (4 * steps);
+                    immutable rho = abs(y) <= yt ? (h - r) + sqrt(r * r - y * y)
+                        : r - sqrt(max(0.0, r * r - (p / 2 - abs(y)) ^^ 2));
+                    xy ~= [-rho, y];
+                }
+                break;
+            }
         case ThreadForm.whitworth:
             {
                 // 55° flanks, the crest an arc of radius 0.1373 p tangent to both
@@ -154,6 +222,53 @@ private immutable Pipe[] npt = [
     Pipe("2", 2.375 * 25.4, 11.5),
 ];
 
+/// ACME general-purpose threads (ASME B1.5): size, diameter (in), threads per inch.
+private immutable Inch[] acmeTable = [
+    Inch("1/4", 0.25, 16), Inch("5/16", 0.3125, 14), Inch("3/8", 0.375, 12), Inch("7/16", 0.4375, 12),
+    Inch("1/2", 0.5, 10), Inch("5/8", 0.625, 8), Inch("3/4", 0.75, 6), Inch("7/8", 0.875, 6), Inch("1", 1, 5),
+    Inch("1-1/8", 1.125, 5), Inch("1-1/4", 1.25, 5), Inch("1-3/8", 1.375, 4), Inch("1-1/2", 1.5, 4),
+    Inch("1-3/4", 1.75, 4), Inch("2", 2, 4),
+];
+
+/// Edison lamp bases (GOST 6042, as IEC 60061 / DIN 40400): name, the largest outer and inner
+/// diameters (mm) and the pitch.
+private struct Edison
+{
+    string name;
+    double outer, inner, pitch;
+}
+
+private immutable Edison[] edisonTable = [
+    Edison("E5", 5.83, 4.77, 1.0), Edison("E10", 9.53, 8.51, 1.814), Edison("E14", 13.89, 12.29, 2.822),
+    Edison("E16", 15.97, 14.47, 2.5), Edison("E18", 18.5, 16.8, 3.0), Edison("E21", 20.95, 19.45, 2.0),
+    Edison("E27", 26.45, 24.26, 3.629), Edison("E33", 33.05, 30.45, 4.233), Edison("E40", 39.5, 35.9, 6.35),
+];
+
+/// SPI/GPI neck finishes of bottles and jars: size (mm), the thread's outer diameter T and the
+/// diameter under it E (in, the middle of the tolerance), threads per inch; 400 is about one turn of
+/// thread, 410 one and a half, 415 two.
+private struct Neck
+{
+    int size;
+    double t, e, tpi;
+}
+
+private immutable Neck[] necks = [
+    Neck(13, 0.508, 0.448, 12), Neck(15, 0.575, 0.515, 12), Neck(18, 0.696, 0.612, 8), Neck(20, 0.775, 0.691, 8),
+    Neck(22, 0.854, 0.770, 8), Neck(24, 0.932, 0.848, 8), Neck(28, 1.078, 0.984, 6), Neck(30, 1.117, 1.023, 6),
+    Neck(33, 1.253, 1.159, 6), Neck(35, 1.352, 1.258, 6), Neck(38, 1.464, 1.370, 6), Neck(40, 1.565, 1.471, 6),
+    Neck(43, 1.639, 1.545, 6), Neck(45, 1.725, 1.631, 6), Neck(48, 1.855, 1.761, 6), Neck(51, 1.9505, 1.8565, 6),
+    Neck(53, 2.0495, 1.9555, 6), Neck(58, 2.2065, 2.1125, 6), Neck(60, 2.3245, 2.2305, 6), Neck(63, 2.4435, 2.3495, 6),
+    Neck(66, 2.5615, 2.4675, 6), Neck(70, 2.7185, 2.6245, 6), Neck(75, 2.8955, 2.8015, 6), Neck(77, 3.0175, 2.9235, 6),
+    Neck(83, 3.2505, 3.1305, 5), Neck(89, 3.4935, 3.3735, 5), Neck(100, 3.9195, 3.7995, 5), Neck(110, 4.3135, 4.1935, 5),
+    Neck(120, 4.7065, 4.5865, 5),
+];
+
+/// PET bottle necks (ISBT): PCO 1881 (today's soft drinks and water) and PCO 1810 (older ones):
+/// the thread's outer diameter 27.43 mm, 24.94 under it, one start.
+private ThreadSpec pco(int which) => ThreadSpec(format("PCO %d", which), ThreadForm.bottle, 27.43,
+    which == 1881 ? 2.7 : 3.18, 0, (27.43 - 24.94) / 2);
+
 /// Reads a thread's name: "M8", "M8x1", "Tr12x3", "Tr12", "1/4-20 UNC",
 /// "1/4 UNF", "#10-32", "G1/2", "R1/2", "1/2 NPT". False when it is none of them.
 bool parseThread(string text, out ThreadSpec spec)
@@ -162,6 +277,86 @@ bool parseThread(string text, out ThreadSpec spec)
     double num(string t) => t.to!double;
     try
     {
+        // bottle and jar necks: "28-400", "SPI 28-410", "GPI 38-400"
+        {
+            auto t = s;
+            foreach (prefix; ["SPI", "GPI"])
+                if (t.startsWith(prefix))
+                    t = t[prefix.length .. $];
+            auto dash = t.indexOf('-');
+            if (dash < 0)
+                dash = t.indexOf('/');
+            if (dash > 0 && ["400", "410", "415"].canFind(t[dash + 1 .. $]))
+            {
+                immutable size = t[0 .. dash].to!int;
+                foreach (n; necks)
+                    if (n.size == size)
+                    {
+                        spec = ThreadSpec(format("%d-%s", size, t[dash + 1 .. $]), ThreadForm.container, n.t * 25.4,
+                            25.4 / n.tpi, 0, (n.t - n.e) / 2 * 25.4);
+                        return true;
+                    }
+                return false;
+            }
+        }
+        // PET bottles
+        if (s == "PCO1881" || s == "PCO1810")
+        {
+            spec = pco(s[3 .. $].to!int);
+            return true;
+        }
+        // Edison lamp bases
+        foreach (e; edisonTable)
+            if (s == e.name)
+            {
+                spec = ThreadSpec(e.name, ThreadForm.edison, e.outer, e.pitch, 0, (e.outer - e.inner) / 2);
+                return true;
+            }
+        // garden hose (ASME B1.20.7): 3/4-11.5 NH, a 60° thread 1.0625 inch across
+        if (s.endsWith("GHT") || s.endsWith("NH"))
+        {
+            spec = ThreadSpec("3/4 GHT", ThreadForm.iso60, 1.0625 * 25.4, 25.4 / 11.5);
+            return s.startsWith("3/4");
+        }
+        // ACME: "1/2-10 ACME", "1/2 ACME"
+        if (s.endsWith("ACME"))
+        {
+            auto t = s[0 .. $ - 4];
+            auto d2 = t.lastIndexOf2('-');
+            double tpi = 0;
+            if (d2 > 0 && !t[d2 + 1 .. $].canFind('/'))
+            {
+                tpi = num(t[d2 + 1 .. $]);
+                t = t[0 .. d2];
+            }
+            foreach (row; acmeTable)
+                if (row.size == t)
+                {
+                    if (tpi == 0)
+                        tpi = row.coarse;
+                    spec = ThreadSpec(format("%s-%g ACME", row.size, tpi), ThreadForm.acme, row.inches * 25.4, 25.4 / tpi);
+                    return true;
+                }
+            return false;
+        }
+        // buttress (DIN 513): "S20x4", or "S20" with the preferred pitch
+        if (s.startsWith("S") && s.length > 1 && s[1] >= '0' && s[1] <= '9')
+        {
+            auto t = s[1 .. $];
+            auto x = t.indexOf('X');
+            immutable d = num(x < 0 ? t : t[0 .. x]);
+            double p = 0;
+            if (x >= 0)
+                p = num(t[x + 1 .. $]);
+            else
+                foreach (row; trapezoidal)
+                    if (abs(row[0] - d) < 1e-9)
+                        p = row[1];
+            if (!(d > 0 && p > 0))
+                return false;
+            spec = ThreadSpec(format("S%gx%g", d, p), ThreadForm.buttress, d, p);
+            return true;
+        }
         // trapezoidal
         if (s.startsWith("TR"))
         {
@@ -290,6 +485,16 @@ ThreadSpec[] allThreads()
     }
     foreach (row; npt)
         r ~= ThreadSpec(row.size ~ " NPT", ThreadForm.npt, row.major, 25.4 / row.tpi, pipeTaper);
+    foreach (row; acmeTable)
+        r ~= ThreadSpec(format("%s-%g ACME", row.size, row.coarse), ThreadForm.acme, row.inches * 25.4, 25.4 / row.coarse);
+    foreach (row; trapezoidal)
+        r ~= ThreadSpec(format("S%gx%g", row[0], row[1]), ThreadForm.buttress, row[0], row[1]);
+    foreach (e; edisonTable)
+        r ~= ThreadSpec(e.name, ThreadForm.edison, e.outer, e.pitch, 0, (e.outer - e.inner) / 2);
+    foreach (n; necks)
+        r ~= ThreadSpec(format("%d-400", n.size), ThreadForm.container, n.t * 25.4, 25.4 / n.tpi, 0, (n.t - n.e) / 2 * 25.4);
+    r ~= [pco(1881), pco(1810)];
+    r ~= ThreadSpec("3/4 GHT", ThreadForm.iso60, 1.0625 * 25.4, 25.4 / 11.5);
     return r;
 }
 
@@ -318,6 +523,26 @@ unittest
     assert(parseThread("1/2 NPT", t) && abs(t.major - 21.336) < 1e-9 && t.taper > 0);
     assert(parseThread("1/2-14 NPT", t) && t.name == "1/2 NPT");
     assert(!parseThread("X12", t) && !parseThread("M", t) && !parseThread("G9/9", t));
+    assert(parseThread("1/2-10 ACME", t) && t.form == ThreadForm.acme && abs(t.pitch - 2.54) < 1e-9 && abs(t.major - 12.7) < 1e-9);
+    assert(parseThread("1/2 acme", t) && t.name == "1/2-10 ACME");
+    assert(parseThread("S20x4", t) && t.form == ThreadForm.buttress && abs(t.depth - 0.86777 * 4) < 1e-9);
+    assert(parseThread("S20", t) && t.pitch == 4);
+    assert(parseThread("E27", t) && t.form == ThreadForm.edison && abs(t.pitch - 3.629) < 1e-9
+        && abs(t.depth - (26.45 - 24.26) / 2) < 1e-9);
+    assert(parseThread("28-400", t) && t.form == ThreadForm.container && abs(t.major - 1.078 * 25.4) < 1e-9
+        && abs(t.pitch - 25.4 / 6) < 1e-9);
+    assert(parseThread("SPI 38-410", t) && t.name == "38-410" && parseThread("GPI 24/415", t));
+    assert(!parseThread("27-400", t));
+    assert(parseThread("PCO 1881", t) && t.pitch == 2.7 && abs(t.major - 27.43) < 1e-9);
+    assert(parseThread("pco1810", t) && t.pitch == 3.18);
+    assert(parseThread("3/4 GHT", t) && abs(t.pitch - 25.4 / 11.5) < 1e-9);
+    // the Edison profile: two tangent arcs, the radius of GOST 6042's table (E14 0.822, E27 1.025)
+    foreach (pair; [["E14", "0.822"], ["E27", "1.025"]])
+    {
+        assert(parseThread(pair[0], t));
+        immutable h = t.depth, r = (t.pitch ^^ 2 / 4 + h * h) / (4 * h);
+        assert(abs(r - pair[1].to!double) < 0.002, pair[0]);
+    }
     // every tooth is a closed outline between the root and the crest
     foreach (s; allThreads())
     {

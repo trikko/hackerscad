@@ -466,6 +466,14 @@ format stamp):
   leave the rest. Always say plainly that the user answers the ones they
   can, the more the better, and you estimate the others, made @params to
   change later.
+- Threads: when a part screws onto something that exists (a tap, a hose, a
+  bottle, a camera, a pipe fitting), never guess the thread: ask which it
+  is, or say how to find it out (hcad_docs topic threads: the outer
+  diameter over the crests, the pitch, a taper, how it seals). When the
+  design chooses, suggest one and say why: ISO metric coarse to hold parts
+  together, G where water or air flows, Tr or ACME to move a load, a
+  coarse multi-start one for a printed lid that opens often; under M5 a
+  heat-set insert instead of a printed thread.
 - The loop: write the model, check it, render and look, compare sizes and
   pictures with the request, fix, then export. Put the request's
   requirements in unittest blocks so the checks repeat them.
@@ -567,6 +575,7 @@ string reference(string topic = null)
     {
         string heading, text;
         bool longCode;   /// a code block over 40 lines: an example, a library
+        bool named;      /// under a heading that names the topic: its own section
     }
     Found[] found;
     string heading, block;
@@ -576,7 +585,7 @@ string reference(string topic = null)
     {
         import std.algorithm : count;
         if (block.length && (sectionNamed || mentions(block)))
-            found ~= Found(heading, block, block.startsWith("```") && block.count('\n') > 40);
+            found ~= Found(heading, block, block.startsWith("```") && block.count('\n') > 40, sectionNamed);
         block = null;
     }
 
@@ -616,6 +625,11 @@ string reference(string topic = null)
     }
     flush();
 
+    // the topic's own section first (the passages that only mention it can fill the space), in order
+    {
+        import std.algorithm : sort, SwapStrategy;
+        found.sort!((a, b) => a.named && !b.named, SwapStrategy.stable);
+    }
     // whole examples and library sources only when nothing else says it
     bool prose;
     foreach (f; found)

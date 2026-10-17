@@ -99,7 +99,7 @@ basic construct once, with comments saying what each makes appear; in the applic
   - `.extrude(h)` makes a solid along +Z (negative h goes down); options `shear: vec(dx, dy)` (the top moved that much sideways from the bottom, the sides leaning straight: an oblique prism), `taper: 3.deg` (the sides lean in going away from the profile, whichever way the solid goes: up, down with a negative height, along X or Y; staying flat and meeting at sharp edges: the outline narrows and the holes widen; a negative taper the other way; `h` is still the height along the axis, and an edge or hole of the profile that would close up before the top is an error), `symmetric: true`, `twist: 90.deg` (the profile turns around Z as it rises, evenly: twisted vases, spiral columns; `twist: 2 * 360.deg` two turns; not with `taper`). `along: Y` stands the profile up across Y (its x along X, its y up Z) and pushes it towards +Y, `along: X` across X (its x along Y, its y up Z) towards +X; a negative height goes the other way: a prism along X or Y without turning anything. A profile lying in another plane, a section (`body.section(XZ.offset(10.mm)).extrude(2.mm)`), one turned or moved whole, or one drawn on a face, is extruded across its own plane, along its normal, from where it lies.
   - `.revolve()`: turned around the axis, standing up: the profile's x is the radius and its y the height along Z (pots, bottles, knobs). `.revolve(axis: X, angle: 180.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`), without standing up; `angle:` turns less than all the way.
   - On a face or plane, add or remove material in one step: `carlo().extrude(circle(d: 6.mm), on: frame, depth: 5.mm)` grows outwards along the frame's Z; `carlo().cut(circle(d: 6.mm), on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. Both accept `taper:`.
-  - Threads: `body.thread(face, "M8")` cuts a thread on a cylindrical face: on the outside of a shaft (made at the thread's nominal diameter, ⌀8) the grooves, on the wall of a hole (made at the tap drill, about ⌀6.8 for M8) the thread a screw fits. The size names the standard: ISO metric `"M8"` (coarse) or `"M8x1"` (fine), unified inch `"1/4-20 UNC"`, `"1/4 UNF"`, `"#10-32"`, trapezoidal for lead screws `"Tr12x3"`, BSP pipe threads `"G1/2"` (parallel) and `"R1/2"` (tapered), and `"1/2 NPT"` (tapered; the shaft is the pipe's outside diameter). Tapered threads have their nominal size at the fixed end and narrow by 1 in 16 on the diameter towards the tip of a shaft, or into a hole. `pitch: 1.mm` alone puts a 60° thread of that pitch on the cylinder's own diameter. The thread covers the whole face, or `length: 10.mm` or `turns: 8` from the free end (the tip of a shaft, the opening of a hole; `flip: true` the other end). `starts: 2` for multi-start threads, `left: true` left-handed, `clearance: 0.2.mm` the play for printed parts (0.15 mm by default in holes, none on shafts), `chamfer: false` without the 45° bevel at the free end. In the 3D view, right-click a cylinder: **Thread** lists the sizes that fit it. Every thread is built exactly from its boundary (each corner of the profile on its own helix, on a cone for tapered ones, a ruled face between two of them; the profile repeated in a lead for more starts) and cut to the face: a second or less for an M8 × 25. The `threads` library (`threadedRod`, `tappedHole`) makes loose rods and tools to cut.
+  - Threads: `body.thread(face, "M8")` cuts a thread on a cylindrical face: on the outside of a shaft (made at the thread's nominal diameter, ⌀8) the grooves, on the wall of a hole (made at the tap drill, about ⌀6.8 for M8) the thread a screw fits. The size names the standard: ISO metric `"M8"` (coarse) or `"M8x1"` (fine), unified inch `"1/4-20 UNC"`, `"1/4 UNF"`, `"#10-32"`, trapezoidal for lead screws `"Tr12x3"`, ACME `"1/2-10 ACME"`, buttress `"S20x4"` (DIN 513), BSP pipe threads `"G1/2"` (parallel) and `"R1/2"` (tapered), `"1/2 NPT"` (tapered; the shaft is the pipe's outside diameter), Edison lamp bases `"E27"`, `"E14"`, bottle and jar necks `"28-400"` (SPI/GPI 400, 410, 415 from 13 to 120 mm), PET bottles `"PCO 1881"`, `"PCO 1810"`, and the garden hose `"3/4 GHT"`; which to use, and how to recognise one, under Threads: choosing one, recognising one. Tapered threads have their nominal size at the fixed end and narrow by 1 in 16 on the diameter towards the tip of a shaft, or into a hole. `pitch: 1.mm` alone puts a 60° thread of that pitch on the cylinder's own diameter. The thread covers the whole face, or `length: 10.mm` or `turns: 8` from the free end (the tip of a shaft, the opening of a hole; `flip: true` the other end). `starts: 2` for multi-start threads, `left: true` left-handed, `clearance: 0.2.mm` the play for printed parts (0.15 mm by default in holes, none on shafts), `chamfer: false` without the 45° bevel at the free end. In the 3D view, right-click a cylinder: **Thread** lists the sizes that fit it. Every thread is built exactly from its boundary (each corner of the profile on its own helix, on a cone for tapered ones, a ruled face between two of them; the profile repeated in a lead for more starts) and cut to the face: a second or less for an M8 × 25. The `threads` library (`threadedRod`, `tappedHole`) makes loose rods and tools to cut.
 - Extrude and cut faces: `carlo().extrude(faces.top, depth: 5.mm)` sweeps flat faces of the body outwards along their normals and adds the material, `carlo().cut(faces.top, depth: 2.mm)` sinks them (a negative depth to extrude does the same). `along: vec(1, 0, 1)` sweeps them in another direction, slanted sides: material is added when the direction leaves the face, removed when it enters. In the 3D view: right-click a face, Extrude face… or Cut face….
 - **Paths, sweeps and lofts:**
   - Paths (type `Path`): `path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)])` (straight segments, mitred corners; `closed: true`), `spline([…])` (a smooth curve through the points), `helix(r | d, pitch:, height:, left: false)` (around +Z, starting at (r, 0, 0)). Paths move, rotate and mirror like solids.
@@ -186,6 +186,51 @@ basic construct once, with comments saying what each makes appear; in the applic
   - `d.dimension(view, from: vec(…), to: vec(…), offset: 8.mm, text:)` between two model points, on a view returned by `view`/`standardViews`; `d.note("text", at: vec(x, y), size: 3.5.mm)`.
   - `hcad render model.hcad -o sheet.pdf` exports the first drawing, `--drawing name` another one.
 - **Standard algorithms** (eager, Phobos names, functions as normal arguments): `map`, `filter`, `fold`, `sum`, `any`, `all`, `count`, `canFind`, `sort`, `reverse`, `iota`, `cartesianProduct`, `zip`, `enumerate`, `join`, `min`, `max`, `minElement`, `maxElement`, `clamp`, `to!T`, `format`.
+
+## Threads: choosing one, recognising one
+
+Which thread, by what it does:
+
+| Thread | Use it for | Found on |
+|---|---|---|
+| ISO metric coarse `M8` | holding parts together: the default | most things in Europe: machines, furniture, electronics |
+| ISO metric fine `M8x1` | fine adjustment, thin walls, vibration | lens rings, hydraulics, bicycles |
+| Unified inch `1/4-20 UNC`, `1/4 UNF` | meeting American things | cameras and tripods (1/4-20, 3/8-16 UNC), US hardware |
+| Trapezoidal `Tr12x3`, ACME `1/2-10 ACME` | a screw that moves a load | vices, lathes, 3D printers' Z (Tr8x8: 4 starts) |
+| Buttress `S20x4` | a load one way only | presses, vice spindles, big caps |
+| BSP parallel `G1/2` | pipes sealed by a gasket or O-ring on a face | taps, hoses, showers, filters, pumps |
+| BSP tapered `R1/2`, `1/2 NPT` | pipes sealed by the thread (PTFE tape) | plumbing, gas, compressed air (NPT in the USA) |
+| Edison `E27`, `E14` | lamp bases and sockets | bulbs |
+| Necks `28-400`, `PCO 1881` | caps for bottles and jars | cosmetics and lab bottles (SPI/GPI), soft drinks and water (PCO 1881) |
+| Garden hose `3/4 GHT` | American hoses | US taps (Europe: G3/4) |
+
+A rule of thumb: water or air goes through it, a pipe thread (G, R, NPT); it holds parts together, ISO metric. G1/2 (20.96 mm) and M20 look alike and do not mix.
+
+Recognising a thread on a real object, to screw something onto it:
+
+1. The outer diameter of the male thread, over the crests, with calipers (from a female one: its inner diameter, plus about twice the tooth's depth, or try a known screw).
+2. The pitch: count the threads over 10 mm (pitch = 10 / count), or over an inch, 25.4 mm (threads per inch); a thread gauge gives it at once.
+3. A taper: the diameter different near the tip and near the base means R or NPT.
+4. How it seals: a gasket or an O-ring on a flat face, G; PTFE tape on the threads, tapered.
+5. Match the table: outer diameter and pitch.
+
+| Outer diameter | Pitch | Thread |
+|---|---|---|
+| 6.35 mm | 1.27 mm (20/inch) | 1/4-20 UNC (cameras) |
+| 9.53 mm | 1.59 mm (16/inch) | 3/8-16 UNC (tripod heads) |
+| 13.16 mm | 1.34 mm (19/inch) | G1/4, R1/4 |
+| 16.66 mm | 1.34 mm (19/inch) | G3/8, R3/8 |
+| 20.96 mm | 1.81 mm (14/inch) | G1/2, R1/2 (taps, showers) |
+| 21.34 mm | 1.81 mm (14/inch) | 1/2 NPT |
+| 26.44 mm | 1.81 mm (14/inch) | G3/4 (garden taps, washing machines) |
+| 26.45 mm | 3.63 mm, round | E27 (bulbs) |
+| 26.99 mm | 2.21 mm (11.5/inch) | 3/4 GHT (US hoses) |
+| 27.43 mm | 2.7 mm | PCO 1881 (PET bottles) |
+| 27.38 mm | 4.23 mm (6/inch) | 28-400 (bottles) |
+| 33.25 mm | 2.31 mm (11/inch) | G1, R1 |
+| M sizes | 0.5 (M3), 0.7 (M4), 0.8 (M5), 1 (M6), 1.25 (M8), 1.5 (M10), 1.75 (M12), 2 (M16) mm | ISO metric coarse |
+
+Printing threads: under M5 they print badly (a heat-set insert or a self-tapping screw instead); M6 to M12 print well standing, with 0.15 to 0.3 mm of play (clearance:, 0.15 mm by default in holes); a printed lid that opens often wants a coarse pitch (2 to 4 mm), and more starts for less turning; caps for bottles 0.3 to 0.5 mm of play, in PETG (it flexes onto the neck's seal where PLA cracks). Necks: 400 has about one turn of thread, 410 one and a half, 415 two (turns: on the thread); the tables give the thread's outer diameter, the diameter under it and the pitch, the tooth's flanks are the usual 30° (necks) or 15° (PCO) of such threads: print a test ring first.
 
 ## Style
 
