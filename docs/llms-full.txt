@@ -494,7 +494,7 @@ basic construct once, with comments saying what each makes appear; in the applic
   - face properties: `center`, `normal`, `area`.
 - **Built-in libraries** (`import gears;` or `import std.gears;`, selective imports work too):
   - `hardware`: `Screw` sizes `M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8` with `d`, `pitch`, `tap`, `clearance`, `head`, `headHeight`, `key`, `nut`, `nutHeight`, `washer`, `insert`, `insertDepth`; `screw(M3, 20.mm, threaded: false)` (socket head cap screw, underside of the head on z = 0), `nut(M3, threaded: false)`, `washer(M3)`, `hexPrism(acrossFlats, h)`; tools to subtract, top on z = 0 going down: `hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" | "countersink")`, `nutTrap(M3, depth)`.
-  - `threads`: `threadedRod(d, pitch, length, chamfer: true, left: false)` (ISO metric profile, real geometry), `tappedHole(d, pitch, depth, clearance: 0.15.mm)` (a tool to subtract for an internal thread), `toothHeight(pitch)`. Threads take a second or two to compute.
+  - `threads`: `threadedRod(d, pitch, length, chamfer: true, left: false)` (ISO metric profile, real geometry), `tappedHole(d, pitch, depth, clearance: 0.15.mm)` (a tool to subtract for an internal thread), `toothHeight(pitch)`. They are made with `isoThread(d:, pitch:, length:, chamfer:)`, a thread built exactly from its boundary (each corner of the profile on its own helix, a ruled face between two of them, one a turn) and cut to length: no sweep, no core to fuse; an M8 × 60 rod in about a second.
   - `gears`: `spurGear(m, teeth, thickness, bore: 0.mm, pressure: 20.deg, backlash: 0.1.mm)` (involute, centred, a tooth on +X), `gearProfile(m, teeth, …)`, `rack(m, teeth, thickness)`, `pitchDiameter`, `outsideDiameter`, `rootDiameter`, `centerDistance(m, z1, z2)` (where to put two meshing gears; turn the second by half a tooth: `rotate(z: 180.deg / z2)`).
   - `hinges`: `hinge(length:, width:, thickness:, knuckles: 5, clearance: 0.4.mm)` returns `.fixed` and `.moving`, two leaves printed in place around an axis along X at z = thickness.
   - `snaps`: `snapHook(length:, thickness:, width:, overhang:, lead: 30.deg)` (a cantilever hook standing on z = 0, barb towards +X) and `snapSlot(…)` (the window to subtract from the mating wall).
@@ -1454,24 +1454,10 @@ Length toothHeight(Length pitch) => 0.5413 * pitch;
 /// chamfered (chamfer: false leaves them square).
 Solid threadedRod(Length d, Length pitch, Length length, bool chamfer = true, bool left = false)
 {
-    immutable h = toothHeight(pitch);
-    immutable minor = d - 2 * h;
-    immutable overlap = 0.1 * pitch;   // the tooth sinks into the core so that they fuse
-    // swept along the helix: the profile's +x points to the axis, +y along it
-    // the ISO basic profile: 3/8 of the pitch each side at the root, 1/16 at the crest; the
-    // flanks carry on at 30° into the core
-    immutable foot = 0.375 * pitch + overlap * 0.5774;
-    auto tooth = polygon([vec(overlap, -foot), vec(-h, -pitch / 16), vec(-h, pitch / 16), vec(overlap, foot)]);
-    // right-handed, mirrored for a left-handed thread: along a left-handed helix the sweep
-    // would turn the tooth inwards
-    auto ridge = tooth.sweep(helix(d: minor, pitch: pitch, height: length + 2 * pitch), frenet: true)
-        .move(z: -pitch);
-    // the core is longer than the ridge: the ends are trimmed afterwards
-    auto core = cylinder(d: minor + 0.02.mm, h: length + 4 * pitch).move(z: -2 * pitch);
-    auto envelope = cylinder(d: d + 0.02.mm, h: length);
-    if (chamfer)
-        envelope = envelope.chamfer(edges.circles, d: h);
-    auto rod = (core + ridge) & envelope;
+    // built from its boundary (each corner of the profile on its own helix, ruled faces between
+    // them), cut to length: see isoThread
+    auto rod = isoThread(d: d, pitch: pitch, length: length, chamfer: chamfer ? toothHeight(pitch) : 0.mm);
+    // left-handed: the right-handed one mirrored
     return left ? rod.mirror(XZ) : rod;
 }
 

@@ -227,6 +227,9 @@ interface BrepKernel
     /// `taper`: the angle (radians) the helix's cone leans from the axis,
     /// widening as it rises when positive; 0, a cylinder of radius r.
     Brep helix(double r, double pitch, double height, bool left, double taper = 0);
+    /// A right-handed ISO metric thread of major diameter d standing on z = 0, `length` tall, its
+    /// ends chamfered by `chamfer` (0: square).
+    Brep isoThread(double d, double pitch, double length, double chamfer);
     /// Point and tangent at the start (or end) of a path.
     void pathFrame(Brep path, bool atEnd, out Vec3 point, out Vec3 tangent);
     /// A solid through `rings` rings of `per` points each (ring after ring),

@@ -111,6 +111,8 @@ final class OcctKernel : BrepKernel
     }
     Brep helix(double r, double pitch, double height, bool left, double taper = 0) =>
         wrap(hc_helix_tapered(r, pitch, height, left, taper), "helix");
+    Brep isoThread(double d, double pitch, double length, double chamfer) =>
+        wrap(hc_iso_thread(d, pitch, length, chamfer), "thread");
     Brep gridSolid(const(Vec3)[] pts, int rings, int per) =>
         wrap(hc_grid_solid(cast(const(double)*) pts.ptr, rings, per), "solid through rings");
     Brep gridHollow(const(Vec3)[] outer, int outerRings, const(Vec3)[] inner, int innerRings, int per) =>

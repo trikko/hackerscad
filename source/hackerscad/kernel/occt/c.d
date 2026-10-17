@@ -100,6 +100,7 @@ hc_shape* hc_edges_path(const(hc_shape)* s, const(int)* idx, int n);
 hc_shape* hc_projected_curve(const(hc_shape)* a, const(hc_shape)* b, ref const double[3] na, ref const double[3] nb);
 hc_shape* hc_helix(double r, double pitch, double height, int left);
 hc_shape* hc_helix_tapered(double r, double pitch, double height, int left, double taper);
+hc_shape* hc_iso_thread(double d, double pitch, double length, double chamfer);
 int hc_path_frame(const(hc_shape)* path, int at_end, ref double[6] out_);
 int hc_path_sample(const(hc_shape)* path, int n, double* out_);
 hc_shape* hc_grid_solid(const(double)* xyz, int rings, int per);

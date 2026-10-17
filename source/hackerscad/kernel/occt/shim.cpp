@@ -133,6 +133,7 @@
 #include <BRepBuilderAPI_FindPlane.hxx>
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
+#include <BRepFill.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 
 struct hc_shape {
@@ -3262,6 +3263,92 @@ hc_shape *hc_helix(double r, double pitch, double height, int left)
 
 // The same on a cone: `taper` is the angle (radians) its side leans from
 // the axis, outwards as it rises when positive; r is the radius at z = 0.
+// One turn, the k-th, of the helix of radius r rising p a turn from height z0 at angle 0.
+static TopoDS_Edge helix_turn(double r, double z0, double p, int k)
+{
+    Handle(Geom_CylindricalSurface) cyl = new Geom_CylindricalSurface(gp_Ax3(gp_Pnt(0, 0, z0), gp_Dir(0, 0, 1)), r);
+    Handle(Geom2d_Line) line = new Geom2d_Line(gp_Pnt2d(2 * M_PI * k, p * k), gp_Dir2d(2 * M_PI, p));
+    TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, cyl, 0, std::sqrt(4 * M_PI * M_PI + p * p)).Edge();
+    BRepLib::BuildCurves3d(e, 1e-7, GeomAbs_C2, 9, 8);
+    return e;
+}
+
+// A right-handed ISO metric thread (basic profile: a flat crest p/8 wide on
+// the major diameter d, a flat root p/4 wide on the minor one, flanks at
+// 30°) standing on z = 0, `length` tall, the ends cut flat or chamfered by
+// `chamfer`. Built from its boundary, not swept: each corner of the profile
+// runs along its own helix, and between two corners' helices lies a ruled
+// face (crest, flank, root, flank), one a turn; a helicoid from the axis
+// closes the bottom and the top, the profile's slice where it starts and
+// ends. No core to fuse: the one boolean is the cut to length (4-5 times
+// quicker than sweeping the tooth and fusing it to a core, and exact).
+hc_shape *hc_iso_thread(double d, double p, double length, double chamfer)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const double h = 0.5413 * p, R = d / 2, r = R - h;
+        // a turn under z = 0 and one over the top, cut off: the band's own ends are helical
+        const double z = -2 * p;
+        struct Corner {
+            double r, z;
+        } c[4] = {{R, z - p / 16}, {R, z + p / 16}, {r, z + 3 * p / 8}, {r, z + 5 * p / 8}};
+        const int turns = (int)std::ceil(length / p) + 4;
+        std::vector<std::vector<TopoDS_Edge>> e(4);
+        for (int i = 0; i < 4; i++)
+            for (int k = 0; k <= turns; k++)
+                e[i].push_back(helix_turn(c[i].r, c[i].z, p, k));
+        BRepBuilderAPI_Sewing sew(1e-6);
+        for (int k = 0; k < turns; k++) {
+            sew.Add(BRepFill::Face(e[0][k], e[1][k]));
+            sew.Add(BRepFill::Face(e[1][k], e[2][k]));
+            sew.Add(BRepFill::Face(e[2][k], e[3][k]));
+            sew.Add(BRepFill::Face(e[3][k], e[0][k + 1]));
+        }
+        auto axis = [&](double z0) { return BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, z0), gp_Pnt(0, 0, z0 + p)).Edge(); };
+        sew.Add(BRepFill::Face(axis(c[0].z), e[0][0]));
+        sew.Add(BRepFill::Face(axis(c[0].z + p * turns), e[0][turns]));
+        for (int k : {0, turns}) {
+            BRepBuilderAPI_MakePolygon poly;
+            poly.Add(gp_Pnt(0, 0, c[0].z + p * k));
+            for (int i = 0; i < 4; i++)
+                poly.Add(gp_Pnt(c[i].r, 0, c[i].z + p * k));
+            poly.Add(gp_Pnt(c[0].r, 0, c[0].z + p * (k + 1)));
+            poly.Add(gp_Pnt(0, 0, c[0].z + p * (k + 1)));
+            poly.Close();
+            sew.Add(BRepBuilderAPI_MakeFace(poly.Wire()).Face());
+        }
+        sew.Perform();
+        if (sew.NbFreeEdges() > 0)
+            throw Standard_Failure("the thread's faces do not close");
+        BRepBuilderAPI_MakeSolid ms;
+        for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next())
+            ms.Add(TopoDS::Shell(ex.Current()));
+        ShapeFix_Solid fix(ms.Solid());
+        fix.Perform();
+        TopoDS_Shape band = fix.Solid();
+        {
+            GProp_GProps g;
+            BRepGProp::VolumeProperties(band, g, 1e-4);
+            if (g.Mass() < 0)
+                band.Reverse();
+        }
+        // the envelope: from the axis out past the crests, z 0 .. length, its ends chamfered at 45°
+        const double out = R + 0.05, ch = std::max(0.0, std::min(chamfer, std::min(R / 2, length / 3)));
+        BRepBuilderAPI_MakePolygon side;
+        side.Add(gp_Pnt(0, 0, 0));
+        side.Add(gp_Pnt(out - ch - 0.05, 0, 0));
+        side.Add(gp_Pnt(out, 0, ch + 0.05));
+        side.Add(gp_Pnt(out, 0, length - ch - 0.05));
+        side.Add(gp_Pnt(out - ch - 0.05, 0, length));
+        side.Add(gp_Pnt(0, 0, length));
+        side.Close();
+        TopoDS_Shape envelope = BRepPrimAPI_MakeRevol(BRepBuilderAPI_MakeFace(side.Wire()).Face(),
+                                                      gp_Ax1(gp::Origin(), gp::DZ())).Shape();
+        BRepAlgoAPI_Common cut(band, envelope);
+        check_boolean(cut, band, envelope, HC_COMMON);
+        return primitive(cut.Shape());
+    });
+}
+
 hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, double taper)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {

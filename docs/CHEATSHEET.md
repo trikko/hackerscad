@@ -172,6 +172,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 - `path(points: Vec[], closed: bool, bend: Length) → Path` — Straight segments through the points; bend: every corner rounded by an arc of that radius (a bent tube or wire). body.path(edges): edges of a solid joined end to end. path(a, b): the curve in space that looks like path a seen across a's plane and like b across b's (a handle drawn from above and from the front).
 - `spline(points: Vec[], closed: bool) → Path` — A smooth curve through the points.
+- `isoThread(d: Length, pitch: Length, length: Length, chamfer: Length) → Solid` — A right-handed ISO metric thread (basic profile) standing on z = 0, its ends chamfered by chamfer: (0, square), built exactly from its helices: what the threads library's threadedRod and tappedHole are made of (use those).
 - `helix(r: Length, d: Length, pitch: Length, height: Length, left: bool) → Path` — A helix around +Z.
 
 ## Planes, axes and frames

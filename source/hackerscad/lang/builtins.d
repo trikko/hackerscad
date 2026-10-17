@@ -1182,6 +1182,22 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         positive(a, [r, p, h], "helix sizes");
         return pathValue(k.helix(r, p, h, x.flag("left", false)), "helix", a.span);
     });
+    def("isoThread", (ref CallArgs a) {
+        // isoThread(d: 8.mm, pitch: 1.25.mm, length: 20.mm, chamfer: 0.68.mm): an ISO metric thread, right-handed,
+        // standing on z = 0 (the threads library's threadedRod and tappedHole are made of it)
+        auto x = Args(it, a, "isoThread", ["d", "pitch", "length", "chamfer"]);
+        immutable d = x.len("d"), p = x.len("pitch"), l = x.len("length"), c = x.lenOr("chamfer", 0);
+        positive(a, [d, p, l], "isoThread sizes");
+        if (p * 0.5413 * 2 >= d)
+            throw new HcadError(Code.type, "the pitch is too coarse for that diameter: the thread would reach the axis",
+                x.spanOf("pitch"));
+        Brep b;
+        try
+            b = k.isoThread(d, p, l, c);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span);
+        return Value.of(primitive(it, b, "thread", a.span));
+    });
     def("sweep", (ref CallArgs a) {
         // circle(d: 4.mm).sweep(path): the profile, drawn on XY around the origin, starts
         // at the beginning of the path and normal to it, its +Y kept towards world +Z;

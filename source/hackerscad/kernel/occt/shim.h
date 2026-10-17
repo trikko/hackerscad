@@ -135,6 +135,8 @@ hc_shape *hc_polyline(const double *xyz, int n, int closed);
 hc_shape *hc_spline(const double *xyz, int n, int closed);
 hc_shape *hc_helix(double r, double pitch, double height, int left);
 hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, double taper);
+/* a right-handed ISO metric thread on z = 0 .. length, built from its boundary; ends chamfered by `chamfer` */
+hc_shape *hc_iso_thread(double d, double pitch, double length, double chamfer);
 /* Start (at_end = 0) or end point and tangent of a path; out: xyz, txyz. */
 int hc_path_frame(const hc_shape *path, int at_end, double out[6]);
 

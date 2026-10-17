@@ -351,6 +351,8 @@ immutable Ref[] reference =
         "body.path(edges.loop(faces.top))                               // along a solid's edges",
         "path(top.path, front.path)                                     // from two views"]),
     F("spline", "", ["points: Vec[]", "closed: bool"], "Path", "A smooth curve through the points."),
+    F("isoThread", "", ["d: Length", "pitch: Length", "length: Length", "chamfer: Length"], "Solid",
+        "A right-handed ISO metric thread (basic profile) standing on z = 0, its ends chamfered by chamfer: (0, square), built exactly from its helices: what the threads library's threadedRod and tappedHole are made of (use those)."),
     withForms(F("helix", "", ["r: Length", "d: Length", "pitch: Length", "height: Length", "left: bool"], "Path", "A helix around +Z."), [
         "helix(r: 4.mm, pitch: 1.mm, height: 20.mm)            // radius",
         "helix(d: 8.mm, pitch: 1.mm, height: 20.mm)            // diameter",

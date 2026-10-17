@@ -1957,13 +1957,18 @@ unittest
     hc_workaround(HC_WORKAROUND_MESH_DIVIDE, 0);
     scope (exit)
         hc_workaround(HC_WORKAROUND_MESH_DIVIDE, 1);
+    // a thread as the threads library swept it before it was built from its helices: the tooth swept
+    // along a 22-turn helix, fused to its core; the long freeform faces that go wrong
     auto rod = runModel(q{
-        import std.threads : threadedRod;
-        @part Solid rod() => threadedRod(8.mm, 1.25.mm, 25.mm);
+        immutable p = 1.25.mm, h = 0.5413 * p, overlap = 0.1 * p, foot = 0.375 * p + overlap * 0.5774;
+        immutable tooth = polygon([vec(overlap, -foot), vec(-h, -p / 16), vec(-h, p / 16), vec(overlap, foot)]);
+        @part Solid rod() => (cylinder(d: 8.mm - 2 * h + 0.02.mm, h: 25.mm + 4 * p).move(z: -2 * p)
+            + tooth.sweep(helix(d: 8.mm - 2 * h, pitch: p, height: 25.mm + 2 * p), frenet: true).move(z: -p))
+            & cylinder(d: 8.02.mm, h: 25.mm);
     }).parts[0].solid.brep;
     immutable area = meshArea(kernel.tessellate(rod, 0.02, 0.25).welded);
     stillBroken(abs(area - kernel.area(rod)) > 0.02 * kernel.area(rod),
-        "BRepMesh covering more than the flanks of an M8 × 25 thread (shim.cpp, meshed_badly)");
+        "BRepMesh covering more than the flanks of an M8 × 25 thread swept along its helix (shim.cpp, meshed_badly)");
 }
 
 unittest
@@ -4051,4 +4056,20 @@ unittest
         immutable shared_ = thread() & head(0.5.mm);
         writeln(format("%.1f", (both.volume + shared_.volume - thread().volume - head(0.5.mm).volume) / 1.mm ^^ 3));`,
         "0.0", thread);
+}
+
+unittest
+{
+    mixin(slowTest);
+    // an ISO thread built from its helices is exact: its volume is the profile's mean cross-section
+    // times its length (a flat crest p/8 on the major radius, a flat root p/4 on the minor one, straight
+    // flanks between), and it is right-handed (a nut's thread, made the same way, fits it)
+    expectOut(`immutable p = 1.25.mm, R = 4.mm, r = R - 0.5413 * p;
+        immutable mean = PI * (R ^^ 2 / 8 + r ^^ 2 / 4 + 5.0 / 8 * (R ^^ 2 + R * r + r ^^ 2) / 3);
+        writeln(format("%.4f", isoThread(d: 8.mm, pitch: p, length: 20.mm).volume / (mean * 20.mm)));
+        // the nut's tool lowered by whole pitches: its thread in phase with the rod's
+        auto nut = cylinder(d: 14.mm, h: 6.mm) - tappedHole(8.mm, p, 7 * p, clearance: 0.1.mm).move(z: 6 * p);
+        writeln(format("%.3f", (nut & threadedRod(8.mm, p, 6.mm, chamfer: false)).volume / 1.mm ^^ 3));
+        writeln((nut & threadedRod(8.mm, p, 6.mm, chamfer: false, left: true)).volume > 10 * 1.mm ^^ 3);`,
+        "1.0000\n0.000\ntrue", "import std.math;\nimport threads;");
 }
