@@ -2,6 +2,17 @@
 
 Spur gears and racks from the `gears` library: module, number of teeth and pressure angle, placing two gears so that they mesh, checking the mesh in the model, and printing gears that turn (backlash, the module for a printer, hubs, bores and set screws).
 
+<!-- render: gears-cover -->
+```d
+import gears;
+
+// a spur gear: 24 teeth of module 1, a 5 mm bore
+@part("Sky Pop")
+Solid gear() => spurGear(1.mm, 24, 5.mm, bore: 5.mm);
+```
+
+![A spur gear with 24 teeth](img/gears-cover.png)
+
 ## Module, teeth, pressure angle
 
 A **spur gear** is a wheel with straight teeth round its edge, parallel to its axis. Two of them, meshing on parallel shafts, change a speed or a force: the small one turns faster, the large one with more force. A **rack** is a straight bar of teeth: with a gear on it, a rotation becomes a straight movement (a knob that moves a slide). The `gears` library makes both; it has no helical, bevel, worm or internal (ring) gears.

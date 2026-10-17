@@ -2,6 +2,16 @@
 
 Rounding, bevelling, hollowing and tapering a solid: `fillet`, `chamfer`, `shell` and `draft`, and the selectors that say which edges and faces they work on (`edges.parallel(Z)`, `faces.top`, `edges.between(…)`, `faces.from(tool)`). How to pick edges so that they stay the right ones when a parameter changes, in which order to apply the features, what their errors mean, and how to do the same with the mouse in the 3D view.
 
+<!-- render: features-cover -->
+```d
+// a block with its upright edges rounded
+@part("Sky Pop")
+Solid block() => box(30.mm, 20.mm, 10.mm)
+    .fillet(edges.parallel(Z), r: 4.mm);
+```
+
+![A block with its upright edges rounded](img/features-cover.png)
+
 ## The four features
 
 A feature changes a solid that is already there. A *fillet* is a rounded edge; a *chamfer* a bevelled one, cut flat at an angle; a *shell* hollows the solid out, leaving walls; a *draft* tilts the sides a little, so that a moulded part slides out of its mould. Each takes a *selector*, a description of which edges or faces to work on ("the top edges", "the edges along Z"), resolved against that solid at the moment the feature is applied:

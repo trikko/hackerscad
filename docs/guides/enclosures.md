@@ -2,6 +2,17 @@
 
 Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`, `enclosure(…).base` and `.lid`) and every option of it, boxes hollowed with `shell()` or cut in two, screw bosses, ventilation slots and holes, and a worked example of a case for a circuit board.
 
+<!-- render: enclosures-cover -->
+```d
+import enclosures;
+
+// a box with rounded corners, open on top
+@part("Sky Pop")
+Solid box() => tray(60.mm, 40.mm, 25.mm);
+```
+
+![A box with rounded corners, open on top](img/enclosures-cover.png)
+
 ## The enclosures library
 
 `import enclosures;` gives three functions, each built on the one before: a block with rounded vertical edges to start from, an open box (a tray, a drawer), and a closed case whose lid screws on. For a lid that snaps on or sits flush, **Examples › Box with lid** in the application is a ready start.

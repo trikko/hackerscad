@@ -2,6 +2,16 @@
 
 A real helical thread on a shaft or in a hole: ISO metric, inch, trapezoidal and ACME, buttress, pipe threads, lamp bases, bottle necks. How to recognise one on a real object, every parameter, and how to print it.
 
+<!-- render: threads-cover -->
+```d
+// a shaft with an M10 thread cut on its face
+@part("Sky Pop")
+Solid bolt() => cylinder(d: 10.mm, h: 20.mm)
+    .thread(faces.largest, "M10");
+```
+
+![A shaft with an M10 thread](img/threads-cover.png)
+
 A *thread* is the spiral ridge that lets a screw turn into a nut. Its *pitch* is the distance from one ridge to the next, measured along the axis; the *crests* are the tops of the ridges. A male thread is outside a shaft (a bolt), a female one inside a hole (a nut).
 
 ## Choosing a thread

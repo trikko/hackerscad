@@ -2,6 +2,26 @@
 
 A sketch is a flat outline drawn from points, lines, arcs, circles, ellipses, splines and ready-made shapes, held in place by constraints (rules such as "this line is level" or "these two points are 30 mm apart"), then extruded (pushed up into a solid), revolved (turned round an axis) or cut into a part. This guide covers `sketch()`, every constraint, construction geometry, degrees of freedom and their warning, reading the solved sketch back, sketches on the faces of a solid, where a sketch beats shapes added together, and the sketch bar of the application.
 
+<!-- render: sketches-cover -->
+```d
+// a square: four lines, their sizes and relations
+// given as constraints, then made a solid
+Profile square()
+{
+    auto s = sketch();
+    auto l = s.rect(vec(0.mm, 0.mm), vec(20.mm, 20.mm));
+    s.fix(l[0].start);
+    s.length(l[0], 20.mm);
+    s.equal(l[0], l[1]);
+    return s.profile;
+}
+
+@part("Sky Pop")
+Solid tile() => square().extrude(3.mm);
+```
+
+![A square drawn as a sketch, made 3 mm thick](img/sketches-cover.png)
+
 ## A first sketch
 
 A sketch is an outline told by its sizes and its relations: this side level, that arc touching this line, the hole 5 mm from that edge. hackerscad solves the constraints (it works out where every point must go) and gives the outline as a `Profile`, a flat outline that extrudes, revolves and cuts like any other. When a `@param` (a size that can be changed from outside the code) changes, the outline is solved again: arcs that touched a line still touch it, holes stay where they were measured from. For one plain shape, a rectangle with round corners or a circle, a profile in one line is shorter: `rect(40.mm, 20.mm, corner: 3.mm)` (see [the guide on profiles](profiles.md)).

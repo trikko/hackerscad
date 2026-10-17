@@ -2,6 +2,18 @@
 
 The sizes you may want to change, made parameters with `@param` (limits, steps, a list of choices) and grouped into named presets with `@preset`; units and the mistakes they catch, and the few they do not; design checks in `unittest` blocks with `assert`; measuring a model (its size, volume, weight, distances) and printing values with `writeln`; and changing parameters from the Parameters panel and the command line (`-D`, `--preset`).
 
+<!-- render: parameters-cover -->
+```d
+// a size given a name and limits: a slider to change it
+@param("Width", min: 20.mm, max: 80.mm)
+immutable width = 40.mm;
+
+@part("Sky Pop")
+Solid block() => box(width, 20.mm, 10.mm);
+```
+
+![A block whose width is a parameter](img/parameters-cover.png)
+
 ## What makes a good parameter
 
 A parameter is a named value in the model that you can change without touching the rest of the code: change it, and the part is rebuilt to fit. Make one of each size someone will change: the inside of a box, the diameter of the shaft a knob fits on, the play of a printed fit, how many holes. Not every number: a parameter for each fillet (a rounded edge) makes a panel nobody reads. Name the measures that decide whether the part works, give each a description that says what it is, and limits that keep the model valid.

@@ -2,6 +2,19 @@
 
 Open sheets with no inside: how to make one (an open curve swept along a path, a loft through paths), and what to do with it: split a solid along a curved cut, thicken it into a shell, sew several into a closed solid, push the pieces apart. Typical workflows, the limits, and the errors.
 
+<!-- render: surfaces-cover -->
+```d
+// a wavy curve swept along a line: a thin sheet,
+// made 1 mm thick
+@part("Sky Pop")
+Solid sheet() => spline([vec(-15.mm, 0.mm), vec(-5.mm, 4.mm),
+        vec(5.mm, -4.mm), vec(15.mm, 0.mm)])
+    .sweep(path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 25.mm, 0.mm)]))
+    .thicken(1.mm);
+```
+
+![A wavy sheet, made 1 mm thick](img/surfaces-cover.png)
+
 ## What a surface is
 
 A `Surface` is a sheet, as thin as paper and with no thickness at all: faces with an edge left open, so it has no inside. A solid is closed all round and has an inside that can be printed; a surface does not. It is a tool, never a part. You use it in one of four ways:
