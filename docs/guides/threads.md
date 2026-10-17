@@ -1,19 +1,12 @@
 # Threads
 
-A real helical thread on a shaft or in a hole: ISO metric, inch, trapezoidal and ACME, buttress, pipe threads, lamp bases, bottle necks. Which one to choose, how to recognise one on a real object, every parameter, and how to print it.
+A real helical thread on a shaft or in a hole: ISO metric, inch, trapezoidal and ACME, buttress, pipe threads, lamp bases, bottle necks. How to recognise one on a real object, every parameter, and how to print it.
 
-## When to use one
-
-A printed thread is right when the part must screw onto something that already has one (a tap, a hose, a bottle, a camera, a pipe), or when screwing is the point (a lid, a lead screw, a knob that tightens). To hold printed parts together with ordinary screws, a thread is often the wrong answer:
-
-| You want | Use |
-|---|---|
-| an M2–M4 screw into plastic | a hole for a heat-set insert or a self-tapping screw (`hole()`, see the guide *Holes and hardware*) |
-| an M5–M12 screw into plastic that is screwed in once | a printed thread works; an insert is stronger |
-| a lid, a cap, a knob that turns often | a printed thread, coarse, often with more starts |
-| a part that screws onto a real thing | the thread of that thing: never guess it, measure it (below) |
+A *thread* is the spiral ridge that lets a screw turn into a nut. Its *pitch* is the distance from one ridge to the next, measured along the axis; the *crests* are the tops of the ridges. A male thread is outside a shaft (a bolt), a female one inside a hole (a nut).
 
 ## Choosing a thread
+
+A printed thread is worth making when the part screws onto something that already has one (a tap, a hose, a bottle, a camera, a pipe), or when screwing is the point (a lid, a lead screw, a knob that tightens). To hold printed parts together with small screws, M2 to M5, a heat-set insert or a self-tapping screw holds better: see [the guide on holes](holes.md). For a part that screws onto a real thing, never guess its thread: measure it (next section).
 
 By what it does:
 
@@ -32,32 +25,38 @@ By what it does:
 
 The rule of thumb: water or air goes through it, a pipe thread (G, R, NPT); it holds parts together, ISO metric. G1/2 (⌀20.96) and M20 look alike and do not mix.
 
-The tooth profiles differ; side by side, the same 20 mm shaft cut with five of them:
+The teeth differ in shape (their *profile*: the outline of one tooth cut along the axis). Side by side, the same 20 mm shaft cut with five of them:
 
 <!-- render: threads-profiles --from front -->
 ```d
-// one shaft per family, each with the thread's own profile
+// one shaft per family, each with the thread's own
+// profile
 
 Solid shaft(Length d) => cylinder(d: d * 1.5, h: 4.mm)
     + cylinder(d: d, h: 20.mm).move(z: 4.mm);
 
 @part("Sky Pop")
-Solid iso() => shaft(20.mm).thread(faces.largest, "M20");
+Solid iso() => shaft(20.mm)
+    .thread(faces.largest, "M20");
 
 @part("Pink Pop")
-Solid trapezoid() => shaft(20.mm).thread(faces.largest, "Tr20x4")
+Solid trapezoid() => shaft(20.mm)
+    .thread(faces.largest, "Tr20x4")
     .move(x: 40.mm);
 
 @part("gold")
-Solid buttress() => shaft(20.mm).thread(faces.largest, "S20x4")
+Solid buttress() => shaft(20.mm)
+    .thread(faces.largest, "S20x4")
     .move(x: 80.mm);
 
 @part("mediumseagreen")
-Solid pipe() => shaft(20.955.mm).thread(faces.largest, "G1/2")
+Solid pipe() => shaft(20.955.mm)
+    .thread(faces.largest, "G1/2")
     .move(x: 120.mm);
 
 @part("tomato")
-Solid edison() => shaft(26.45.mm).thread(faces.largest, "E27")
+Solid edison() => shaft(26.45.mm)
+    .thread(faces.largest, "E27")
     .move(x: 165.mm);
 ```
 
@@ -67,9 +66,9 @@ Solid edison() => shaft(26.45.mm).thread(faces.largest, "E27")
 
 To screw something onto a real part, measure it:
 
-1. The outer diameter of the male thread, over the crests, with calipers. From a female one: its inner diameter plus about twice the tooth's depth, or try a known screw in it.
-2. The pitch: count the crests over 10 mm (pitch = 10 / count), or over an inch, 25.4 mm (threads per inch). A thread gauge gives it at once.
-3. A taper: a diameter different near the tip and near the base means R or NPT.
+1. The outer diameter of the male thread, over the crests, with calipers (a sliding gauge that measures to a tenth of a millimetre). From a female one: its inner diameter plus about twice the tooth's depth, or try a known screw in it.
+2. The pitch: count the crests over 10 mm (pitch = 10 / count), or over an inch, 25.4 mm (threads per inch). A thread gauge (a set of toothed blades, one per pitch) gives it at once.
+3. A taper (a thread that narrows, like a cone): a diameter different near the tip and near the base means R or NPT.
 4. How it seals: a gasket or an O-ring on a flat face, G; PTFE tape on the threads, tapered.
 5. Match the table:
 
@@ -90,10 +89,10 @@ The full list of the sizes known is under *Threads: choosing one, recognising on
 
 ## Cutting a thread on a face
 
-`body.thread(face, size)` threads a cylindrical face of a solid. Make the cylinder first, at the right size:
+`body.thread(face, size)` threads a cylindrical face of a solid: it cuts the spiral groove into the face already there. Make the cylinder first, at the right size:
 
-- **a shaft** at the thread's nominal (major) diameter: ⌀8 for M8;
-- **a hole** at the tap drill, about the nominal diameter less one pitch: ⌀6.8 for M8, ⌀17.5 for M20.
+- **a shaft** at the thread's nominal (major) diameter, the size it is named after, measured over the crests: ⌀8 for M8;
+- **a hole** at the tap drill, the hole drilled before a thread is cut in it: about the nominal diameter less one pitch, ⌀6.8 for M8, ⌀17.5 for M20.
 
 A cylinder far from the thread's size is an error that says what it wants. The thread starts from the **free end**: the tip of the shaft, the opening of the hole.
 
@@ -101,16 +100,20 @@ A cylinder far from the thread's size is an error that says what it wants. The t
 ```d
 // a printed M12 bolt and its nut
 
-@param("Play of the nut (each side)", min: 0.1.mm, max: 0.5.mm)
+@param("Play of the nut (each side)", min: 0.1.mm,
+    max: 0.5.mm)
 immutable play = 0.2.mm;
 
+// a hexagon 19 mm across the flats, the spanner size
+Profile hex() => polygon(6, d: 19.mm, fit: "sides");
+
 @part("Sky Pop")
-Solid bolt() => (polygon(6, d: 19.mm, fit: "sides").extrude(8.mm)
+Solid bolt() => (hex().extrude(8.mm)
         + cylinder(d: 12.mm, h: 30.mm).move(z: 8.mm))
     .thread(faces.largest, "M12");
 
 @part("Pink Pop")
-Solid nut() => (polygon(6, d: 19.mm, fit: "sides").extrude(10.mm)
+Solid nut() => (hex().extrude(10.mm)
         - cylinder(d: 10.3.mm, h: 30.mm, center: true))
     .thread(faces.largest, "M12", clearance: play)
     .move(x: 30.mm);
@@ -131,17 +134,18 @@ Picking the face: here the threaded cylinder is the largest face of each part; w
 | `flip:` | start from the other end | `false` |
 | `starts:` | multi-start: that many threads side by side, the lead `starts × pitch` | `1` |
 | `left:` | left-handed | `false` |
-| `clearance:` | play each side, for printed parts | `0.15.mm` in holes, `0` on shafts |
+| `clearance:` | play each side (a small gap so the parts turn freely), for printed parts | `0.15.mm` in holes, `0` on shafts |
 | `chamfer:` | the 45° bevel at the free end, to start the screw | `true` |
 | `taper:` | the angle each side leans from the axis: a conical thread | R and NPT 1.79°, others 0 |
 
 ### Starts
 
-A lead screw that moves fast, or a lid that closes in a quarter turn, has more threads side by side: with `starts: 2` each turn advances two pitches. The teeth stay the same size.
+A lead screw that moves fast, or a lid that closes in a quarter turn, has more threads side by side, wound together like the stripes of a barber's pole. With `starts: 2` each turn advances two pitches: the *lead*, how far one turn moves, is twice the pitch. The teeth stay the same size.
 
 <!-- render: threads-starts --from front -->
 ```d
-// one, two and four starts: the same tooth, the lead 1, 2 and 4 times the pitch
+// one, two and four starts: the same tooth, the lead
+// 1, 2 and 4 times the pitch
 
 Solid rod() => cylinder(d: 16.mm, h: 30.mm);
 
@@ -149,11 +153,13 @@ Solid rod() => cylinder(d: 16.mm, h: 30.mm);
 Solid one() => rod().thread(faces.largest, "Tr16x4");
 
 @part("Pink Pop")
-Solid two() => rod().thread(faces.largest, "Tr16x4", starts: 2)
+Solid two() => rod()
+    .thread(faces.largest, "Tr16x4", starts: 2)
     .move(x: 30.mm);
 
 @part("gold")
-Solid four() => rod().thread(faces.largest, "Tr16x4", starts: 4)
+Solid four() => rod()
+    .thread(faces.largest, "Tr16x4", starts: 4)
     .move(x: 60.mm);
 ```
 
@@ -165,20 +171,24 @@ R and NPT pipe threads narrow by 1 in 16 on the diameter (1.79° each side): scr
 
 <!-- render: threads-taper --from front -->
 ```d
-// an M20, parallel, tapered like a pipe thread, and steeply tapered
+// an M20, parallel, tapered like a pipe thread, and
+// steeply tapered
 
 Solid shaft() => cylinder(d: 32.mm, h: 5.mm)
     + cylinder(d: 20.mm, h: 30.mm).move(z: 5.mm);
 
 @part("Sky Pop")
-Solid parallel() => shaft().thread(faces.largest, "M20");
+Solid parallel() => shaft()
+    .thread(faces.largest, "M20");
 
 @part("Pink Pop")
-Solid pipeLike() => shaft().thread(faces.largest, "M20", taper: 1.79.deg)
+Solid pipeLike() => shaft()
+    .thread(faces.largest, "M20", taper: 1.79.deg)
     .move(x: 40.mm);
 
 @part("gold")
-Solid steep() => shaft().thread(faces.largest, "M20", taper: 5.deg)
+Solid steep() => shaft()
+    .thread(faces.largest, "M20", taper: 5.deg)
     .move(x: 80.mm);
 ```
 
@@ -192,23 +202,36 @@ Every thread is at the same angle at its free end, so a shaft and a hole threade
 
 `thread()` cuts a face that is already there. The `threads` library makes a loose threaded rod, or a tool to subtract:
 
+<!-- render: threads-ex1 -->
 ```d
+// an M8 rod 40 mm long, and an M8 thread cut 12 mm
+// into a block
+
 import threads;
 
-// an M8 rod 40 mm long, and an M8 thread cut 12 mm into a block
-@part Solid rod() => threadedRod(8.mm, 1.25.mm, 40.mm);
-@part Solid block() => box(20, 20, 15) - tappedHole(8.mm, 1.25.mm, 12.mm).move(x: 10.mm, y: 10.mm, z: 15.mm);
+@part("Sky Pop")
+Solid rod() => threadedRod(8.mm, 1.25.mm, 40.mm);
+
+// tappedHole goes down from z = 0: moved up to the
+// block's top face
+@part("Pink Pop")
+Solid block() => (box(20.mm, 20.mm, 15.mm)
+        - tappedHole(8.mm, 1.25.mm, 12.mm)
+            .move(z: 15.mm))
+    .move(x: 30.mm);
 ```
+
+![An M8 rod 40 mm long, and an M8 thread cut 12 mm into a block](img/threads-ex1.png)
 
 `isoThread(d:, pitch:, length:, chamfer:)` is the builtin underneath, an exact ISO thread. For anything that is not an ISO metric thread, or for starts and tapers, use `thread()` on a cylinder.
 
 ## Printing threads
 
-- Under M5 they print badly: use a heat-set insert or a self-tapping screw.
+- Under M5 they print badly: use a heat-set insert (a brass sleeve with a thread inside, melted into the plastic with a soldering iron) or a self-tapping screw (one that cuts its own thread).
 - M6 to M12 print well standing up, with 0.15 to 0.3 mm of play (`clearance:`). Print a short test piece first: printers differ.
 - A lid that opens often wants a coarse pitch (2 to 4 mm), and more starts for less turning.
 - Caps for bottles: 0.3 to 0.5 mm of play, in PETG (it flexes onto the neck's seal, where PLA cracks). A 400 neck has about one turn of thread, 410 one and a half, 415 two: `turns:`.
-- Lying on its side a thread comes out rough on its underside: print threaded parts standing whenever you can.
+- Lying on its side a thread comes out rough on its underside (the teeth hang over empty air while they print): print threaded parts standing whenever you can.
 
 ## Common errors
 
@@ -224,12 +247,3 @@ import threads;
 ## In the application
 
 Right-click a cylindrical face in the 3D view: **Thread (outside)** on a shaft, **Thread (in the hole)** in a hole, lists the sizes that fit that diameter. Choosing one writes the `.thread(…)` line in the code, where you add `starts:`, `clearance:` and the rest.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `threads`), or `hcad docs --guide threads` from the command line. It follows these rules:
-
-- When the part screws onto something that exists, it never guesses the thread: it asks which one it is, or tells you how to find out (outer diameter, pitch, taper, how it seals), as above.
-- When the design is free to choose, it proposes one and says why: ISO metric coarse to hold parts together, G where water or air flows, Tr or ACME to move a load, a coarse multi-start thread for a lid. Under M5 it proposes an insert.
-- In the application it uses `hcad_gui_feature` with action `thread` and a size, which does what the right-click menu does.
-- It checks the result: the model must check, and a bolt and nut can be tested by a `unittest` (their volumes, the play) before printing.

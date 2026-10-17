@@ -1,10 +1,10 @@
 # Parts, export and drawings
 
-What becomes a separate object when a model is exported: `@part` and its options (colour, see-through, reference parts, names), `@parts` for the pieces of a cut, colours, the export formats (3MF, STL, zip, STEP, PNG) and which to choose, technical drawings with `@drawing`, and the Export menu of the application.
+What becomes a separate object when a model is exported: `@part` and its options (colour, see-through, reference parts, names), `@parts` for the pieces of a cut, colours, the export formats (3MF, STL, zip, STEP, PNG) and what each holds, technical drawings with `@drawing`, and the Export menu of the application.
 
 ## Parts in brief
 
-A model shows and exports only what a function marked `@part` returns. Everything else is a helper.
+A part is one object of the model: one body you print, or send to another program. A model shows and exports only what a function marked `@part` returns. Everything else is a helper.
 
 | You want | Write |
 |---|---|
@@ -19,7 +19,7 @@ The annotation goes on its own line, above the function. A `@part` function take
 
 ## A model with several parts
 
-A tray, its lid, and Carlo inside as a reference part, to check that he fits:
+A tray, its lid, and Carlo, the mascot clip, inside as a reference part: an object drawn so that you can see the fit, but never exported. The check at the end makes sure he fits:
 
 <!-- render: parts-box -->
 ```d
@@ -95,7 +95,28 @@ The shaft a knob fits on, the board a case holds, the phone a stand carries, the
 - Any CSS name (`"steelblue"`, `"slategray"`), `"#RRGGBB"`, `"#RRGGBBAA"` (the last byte the opacity), `rgb(255, 128, 0)`, `rgb(255, 128, 0, alpha: 0.5)`.
 - Inside a function, `solid.color("orange", alpha: 0.5)` colours one solid: a piece of `@parts` coloured this way keeps its colour.
 
-3MF keeps the colours; STL and STEP do not. A slicer shows them, and with `--one-object` (below) prints them in several filaments.
+Three Carlos, each a part in its own colour:
+
+<!-- render: parts-colours --from top -->
+```d
+import carlo;
+
+// three Carlos side by side, a part each, each in its
+// own colour: a 3MF keeps the colours
+
+@part("Sky Pop")
+Solid sky() => carlo();
+
+@part("Pink Pop")
+Solid pink() => carlo().move(y: 35.mm);
+
+@part("Yellow Pop")
+Solid yellow() => carlo().move(y: 70.mm);
+```
+
+![Three Carlos seen from above, sky, pink and yellow](img/parts-colours.png)
+
+3MF keeps the colours; STL and STEP do not. A slicer (the program that turns a model into the layers a 3D printer prints) shows them, and with `--one-object` (below) prints them in several filaments.
 
 ## Several bodies: @parts
 
@@ -129,8 +150,8 @@ Solid[] pieces() => carlo()
 | `.3mf` with `--one-object` | the parts as pieces of one object | prints in several colours or materials |
 | `.stl` | one part | a slicer or a service that wants STL |
 | `.zip` | one STL per part, `Tray.stl`, `Lid.stl` | STL with several parts |
-| `.step` (`.stp`) | one named body per part, exact surfaces | other CAD programs, machining |
-| `.png` | `name.png` the iso view, `name-views.png` iso, front, top and right, `name-top.png` one view | a picture, a check |
+| `.step` (`.stp`) | one named body per part, exact surfaces (round holes stay round, not made of flat triangles) | other CAD programs, machining |
+| `.png` | `name.png` the iso view (seen from a corner, above), `name-views.png` iso, front, top and right, `name-top.png` one view | a picture, a check |
 | `.pdf`, `.svg`, `.dxf` | a `@drawing` | a sheet to print, to send, to cut |
 
 ```bash
@@ -144,8 +165,9 @@ Every export runs the model's `unittest`s first. `-D name=value` and `--preset n
 
 ## Technical drawings
 
-A function marked `@drawing` returns a sheet: `drawing(…)` filled with views, sections, dimensions and notes.
+A technical drawing is the part on paper: flat views from the front, the top and the side, each size written beside the edge it measures (a dimension), and sections, the part drawn cut open with the cut faces hatched (striped). A function marked `@drawing` returns a sheet: `drawing(…)` filled with views, sections, dimensions and notes.
 
+<!-- render: parts-ex1 -->
 ```d
 import hardware : M4, hole;
 
@@ -177,6 +199,8 @@ Drawing sheet()
     return d;
 }
 ```
+
+![A bracket and its drawing](img/parts-ex1.png)
 
 ```bash
 hcad render bracket.hcad -o bracket.pdf
@@ -216,12 +240,3 @@ hcad render bracket.hcad -o bracket.pdf
 - Right-click a part › **Colour** writes the colour into the code (the Pop colours, or **Other…** for any); **Hide *name***, **Show only *name***, **Show all parts** change only what the view shows.
 - Exports use the parameters and preset set in the side panel, and run the `unittest`s first.
 - The same menu's last section is the model's `@drawing`: **Show the drawing** opens it in a window of its own, as it prints (a list at the top when there are several; it follows the code as you change it), with **PDF…**, **SVG…** and **DXF…** to export it; **Drawing as PDF / SVG / DXF** export it at once.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `parts`), or `hcad docs --guide parts`. It follows these rules:
-
-- Every body is a `@part` with no arguments; the object a part is for (a phone, a shaft, a board) is a reference part with `export: false`, its fit checked in a `unittest` or with `hcad_measure`.
-- It asks which format you need only when it matters (a service that wants STL, a print in two colours); otherwise 3MF for printing and STEP for other CAD programs.
-- It exports with `hcad_export` (`output` one path or several, `parts`, `one_object`, `drawing`), checks a drawing first with `hcad_drawing` (the sheet as SVG), and in your window uses `hcad_gui_export` (what the window shows, with its parameters; `.pdf`, `.svg` or `.dxf` a drawing), `hcad_gui_screenshot` with target `drawing` to look at the drawing window, and `hcad_gui_colour`.
-- Before saying it is done it looks at the parts it exports: `hcad_check` lists them with their sizes, and which are references.

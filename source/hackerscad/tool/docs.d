@@ -617,11 +617,9 @@ string guideList()
 string guideIndex()
 {
     import std.string : indexOf, strip;
-    string r = "# Guides\n\nOne page for each topic: what it is for and when to choose it, its variants side by side, "
-        ~ "every parameter, the usual mistakes, where it is in the application and what an AI agent asks and checks. "
-        ~ "The [tutorial](TUTORIAL.md) goes step by step through a first model; the [language reference]"
-        ~ "(LANGUAGE.md) lists everything in brief. An agent reads the same pages with `hcad_docs` "
-        ~ "(format: guide), or `hcad docs --guide NAME`.\n\n";
+    string r = "# Guides\n\nOne page for each topic: what it does, shown on examples, every parameter, the usual "
+        ~ "mistakes and where it is in the application. The [tutorial](TUTORIAL.md) goes step by step through a "
+        ~ "first model; the [language reference](LANGUAGE.md) lists everything in brief.\n\n";
     // each guide: its title, its first picture (wide enough on a phone too), what it is about
     foreach (g; guides)
     {

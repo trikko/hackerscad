@@ -60,7 +60,7 @@ pre{{background:#f3f6fa;border:1px solid var(--line);border-left:4px solid var(-
 {css_code}
 </style></head><body>
 <nav><div class="brand">{logo}<span>hackerscad guides</span></div><ol>{''.join(nav)}</ol></nav>
-<main><header class="hero" id="index"><h1>Guides</h1><p>One page for each topic: what it is for and when to choose it, its variants side by side, every parameter, the usual mistakes, where it is in the application and what an AI agent asks and checks.</p></header>
+<main><header class="hero" id="index"><h1>Guides</h1><p>One page for each topic: what it does, shown on examples, every parameter, the usual mistakes and where it is in the application.</p></header>
 <div class="cards">{cards}</div>{''.join(secs)}</main></body></html>'''
 import shutil; os.makedirs(os.path.join(base,'build','guides-site'),exist_ok=True); shutil.copytree(os.path.join(root,'guides','img'),os.path.join(base,'build','guides-site','img'),dirs_exist_ok=True); open(os.path.join(base,'build','guides-site','index.html'),'w').write(page)
 print(len(page)//1024,'KB')

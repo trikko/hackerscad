@@ -1,22 +1,8 @@
 # Holes and hardware
 
-Holes for metric screws from M2 to M8, from the `hardware` library: clearance, tapping, heat-set insert, counterbore and countersink holes with `hole()`, nut traps, the screws, nuts and washers themselves, teardrop holes that print sideways, and the Hole entry of the 3D view's right-click menu. When to use an insert, a self-tapping screw or a printed thread, and how to place each hole.
+Holes for metric screws from M2 to M8, from the `hardware` library: clearance, tapping, heat-set insert, counterbore and countersink holes with `hole()`, nut traps, the screws, nuts and washers themselves, teardrop holes that print sideways, and the Hole entry of the 3D view's right-click menu.
 
-## When to use which
-
-A printed part held by a screw needs a hole on each side: one the screw passes through, one it grips. What grips it decides how strong the joint is and how often it can be undone:
-
-| You want | Use |
-|---|---|
-| the screw to pass freely | `hole(M3, depth)`: a clearance hole |
-| an M2–M5 screw driven into plastic, undone rarely | `hole(M3, depth, "tap")` and a self-tapping (or ordinary) screw cutting its own thread |
-| an M2–M5 screw undone often, or a strong joint | `hole(M3, depth, "insert")` and a brass heat-set insert, pressed in with a soldering iron |
-| a nut on the far side, no tools there | `nutTrap(M3, depth)`: a hexagonal pocket that holds the nut |
-| the head below the surface | `"counterbore"` for socket heads, `"countersink"` for flat heads |
-| an M6 or bigger screw into plastic, screwed once | a printed thread: see [the guide on threads](threads.md) |
-| a hole across a wall printed standing | `teardrop(d:)` instead of `circle(d:)` |
-
-Under M5 a printed thread comes out too fine to hold: an insert or a self-tapping screw is the answer. An insert takes the most torque and hundreds of turns; a self-tapping screw needs nothing but the screw, and wears the hole after a few dozen.
+A printed part held by a screw needs a hole on each side of the joint: one the screw passes through, one it grips. The `hardware` library makes both, sized for each screw.
 
 ## The library
 
@@ -40,16 +26,24 @@ All in millimetres; `nut` is across the flats (the spanner size). The other fiel
 
 ## hole(): the five kinds
 
-`hole(screw, depth, kind)` is a tool to subtract. Its top is at z = 0 and it goes down `depth`, so move it to the face it opens on:
+`hole(screw, depth, kind)` is a tool: a solid shaped like the hole, made to be subtracted from the part. Its top is at z = 0 and it goes down `depth`, so move it to the face it opens on:
 
+<!-- render: holes-plate -->
 ```d
+import hardware : M3, hole;
+
 // an M3 clearance hole through a plate 5 mm thick
-plate - hole(M3, 5.mm).move(x: 10.mm, z: 5.mm)
+@part("Sky Pop")
+Solid plate() => box(40.mm, 20.mm, 5.mm)
+    - hole(M3, 5.mm).move(x: 10.mm, z: 5.mm);
 ```
+
+![An M3 clearance hole through a plate 5 mm thick](img/holes-plate.png)
 
 <!-- render: holes-kinds --from front -->
 ```d
-// the five kinds of hole() for an M4, cut in half to show them
+// the five kinds of hole() for an M4, cut in half
+// to show them
 
 import hardware : M4, hole;
 
@@ -64,7 +58,8 @@ Solid block()
         b -= hole(M4, 10.mm, kind)
             .move(x: -28.mm + i * 14.mm, z: 12.mm);
 
-    // keep the back half: the front view shows the sections
+    // keep the back half: the front view shows the
+    // sections
     return b & box(70.mm, 7.mm, 12.mm).move(y: 3.5.mm);
 }
 ```
@@ -73,17 +68,46 @@ Solid block()
 
 | Kind | What it cuts | Default |
 |---|---|---|
-| `"clearance"` | a cylinder the screw passes through, `clearance` wide, `depth` deep | yes |
-| `"tap"` | the pilot hole for a thread, `tap` wide: a self-tapping screw, or a real tap | |
-| `"insert"` | the insert's hole, `insert` wide and `insertDepth` deep, and below it a `tap` hole down to `depth` for the screw's tip | |
-| `"counterbore"` | room for the head (`head` + 0.6 mm wide, `headHeight` + 0.2 mm deep), then the clearance hole down to `depth` | |
-| `"countersink"` | a 90° cone from `clearance` to 2.24 `d` + 0.3 mm across (an ISO 10642 flat head, 6.72 mm for M3, sits just below the face), then the clearance hole | |
+| `"clearance"` | a cylinder the screw passes through freely, `clearance` wide, `depth` deep | yes |
+| `"tap"` | the pilot hole for a thread, `tap` wide: a self-tapping screw (or an ordinary one) cuts its own thread in it, or a real tap does | |
+| `"insert"` | the hole of a heat-set insert (a brass sleeve threaded inside, pressed in with a soldering iron), `insert` wide and `insertDepth` deep, and below it a `tap` hole down to `depth` for the screw's tip | |
+| `"counterbore"` | a wider step at the top, room for a socket head to sit below the surface (`head` + 0.6 mm wide, `headHeight` + 0.2 mm deep), then the clearance hole down to `depth` | |
+| `"countersink"` | a cone at the top, for a flat (conical) head to sit flush: a 90° cone from `clearance` to 2.24 `d` + 0.3 mm across (an ISO 10642 flat head, 6.72 mm for M3, sits a little below the face), then the clearance hole | |
 
 Any other kind is an error. The depth is always the whole depth from z = 0: a counterbore of `depth` 10 mm is 10 mm deep, the head's seat included. For a hole all the way through, give the thickness of the wall; `hole()` already reaches 0.01 mm past the top, so the cut is clean.
 
+What grips the screw decides how strong the joint is and how often it can be undone. A self-tapping screw in a `tap` hole needs nothing but the screw, and wears the hole after a few dozen times in and out. A heat-set insert takes the most torque (twisting force) and hundreds of times. Under M5 a printed thread comes out too fine to hold; from M6 up, for a screw put in once, a printed thread works: see [the guide on threads](threads.md).
+
+Carlo, the mascot clip, with a wider lower jaw (`jaw: 10.mm`) and two countersunk M3 holes down through it, to screw it under a shelf with flat-head screws:
+
+<!-- render: holes-carlo -->
+```d
+// Carlo with a wider lower jaw and two countersunk
+// M3 holes down through it, to screw it to a shelf
+
+import carlo;
+import hardware : M3, hole;
+
+immutable height = 15.mm;
+
+@part("Sky Pop")
+Solid clip()
+{
+    auto c = carlo(height: height, jaw: 10.mm);
+    foreach (x; [8.mm, 24.mm])
+        c -= hole(M3, height, "countersink")
+            .move(x: x, y: -13.mm, z: height);
+    return c;
+}
+```
+
+![Carlo with two countersunk holes in its lower jaw](img/holes-carlo.png)
+
+The depth is Carlo's whole height, so the holes go all the way through.
+
 ## Nut traps
 
-`nutTrap(screw, depth, clearance: 0.2.mm)` is a hexagonal pocket, its top at z = 0 going down, flats parallel to X, `clearance` added on each side so a printed hexagon takes the nut. Cut it under the clearance hole, from the face the nut goes in by. To cut it from the bottom face, flip it with `.mirror(Z)` so it goes up:
+`nutTrap(screw, depth, clearance: 0.2.mm)` is a *nut trap*: a hexagonal pocket (a hollow cut into the part) that holds a nut so it cannot turn, its top at z = 0 going down, flats parallel to X, `clearance` added on each side so a printed hexagon takes the nut. Cut it under the clearance hole, from the face the nut goes in by. To cut it from the bottom face, flip it with `.mirror(Z)` so it goes up:
 
 <!-- render: holes-trap --from 0.5,-1,0.4 -->
 ```d
@@ -104,8 +128,9 @@ Solid bottom() => box(20.mm, 20.mm, plate)
     - nutTrap(M3, 3.mm).mirror(Z);
 
 // half of each, to see inside
-Solid half(Solid s) => s & box(30.mm, 15.mm, 40.mm, center: true)
-    .move(y: 7.5.mm);
+Solid half(Solid s) => s
+    & box(30.mm, 15.mm, 40.mm, center: true)
+        .move(y: 7.5.mm);
 
 @part("Sky Pop")
 Solid upper() => half(top()).move(z: plate);
@@ -138,18 +163,19 @@ Solid block() => box(16.mm, 16.mm, 10.mm)
     - hole(M3, 10.mm).move(z: 10.mm)
     - nutTrap(M3, slot).move(z: 4.mm + slot)
 
-    // the channel the nut slides along, out of the +X side
+    // the channel the nut slides along, out of the
+    // +X side
     - box(10.mm, M3.nut + 0.4.mm, slot)
         .move(x: 5.mm, z: 4.mm);
 ```
 
 ![A nut trap with a channel from the side](img/holes-side-trap.png)
 
-The roof of a trap is a bridge when the part prints. A trap closed on every side, with no channel, needs a pause in the print at the layer above its roof, to drop the nut in.
+The roof of a trap is a bridge when the part prints: a layer laid across empty space, held only at its ends. A trap closed on every side, with no channel, needs a pause in the print at the layer above its roof, to drop the nut in.
 
 ## Teardrops: holes printed sideways
 
-A round hole across a wall that prints standing has a flat-ish roof that sags: the top of the circle leans more than 45° from the vertical. `teardrop(d:)` is a circle with a 45° point towards +Y, which on a wall is up: it prints without supports. `flat: true` cuts the point at the circle's top, leaving a short bridge instead; `angle:` gives another point (3° to 90° from the vertical).
+A round hole across a wall that prints standing has a flat-ish roof that sags: the top of the circle leans more than 45° from the vertical, and a printer cannot lay plastic on so little underneath (an *overhang*). `teardrop(d:)` is a circle with a 45° point towards +Y, which on a wall is up: it prints without supports. `flat: true` cuts the point at the circle's top, leaving a short bridge instead; `angle:` gives another point (3° to 90° from the vertical).
 
 <!-- render: holes-teardrop --from front -->
 ```d
@@ -196,7 +222,8 @@ immutable post = 6.mm;
 @part("Sky Pop")
 Solid mount()
 {
-    auto s = rect(spanX + 30.mm, spanY + 12.mm, corner: 4.mm)
+    auto s = rect(spanX + 30.mm, spanY + 12.mm,
+            corner: 4.mm)
         .extrude(base);
     foreach (x; [-spanX / 2, spanX / 2])
         foreach (y; [-spanY / 2, spanY / 2])
@@ -205,7 +232,8 @@ Solid mount()
             s += cylinder(d: 7.mm, h: post)
                 .move(x: x, y: y, z: base);
 
-            // the insert, then a pilot hole for the screw's tip
+            // the insert, then a pilot hole for the
+            // screw's tip
             s -= hole(M2_5, post, "insert")
                 .move(x: x, y: y, z: top);
         }
@@ -230,7 +258,7 @@ Each post is 7 mm across for a 3.6 mm insert: leave at least 1.5 mm of wall roun
 
 ## Printing holes
 
-- Printed holes come out a little small, by 0.1 to 0.2 mm on an FDM printer: the clearance sizes (ISO medium, 3.4 mm for M3) leave room for it. For a pin or a shaft, see [the guide on fits](fits.md).
+- Printed holes come out a little small, by 0.1 to 0.2 mm on an FDM printer (one that lays down a thread of melted plastic): the clearance sizes (ISO medium, 3.4 mm for M3) leave room for it. For a pin or a shaft, see [the guide on fits](fits.md).
 - Self-tapping into a `tap` hole: three or more perimeters (walls) round the hole, so the thread has plastic to cut.
 - Heat-set inserts: a straight `insert` hole is right for most; push the insert in square, with the iron at the plastic's printing temperature, and stop when it is flush.
 - Vertical holes print round; horizontal ones want a teardrop; holes in a face that lies on the bed come out clean, those opening downwards in the air need a bridge or supports.
@@ -250,29 +278,36 @@ Each post is 7 mm across for a 3.6 mm insert: leave at least 1.5 mm of wall roun
 
 Right-click a face in the 3D view: **Hole at point** opens five groups, **Clearance**, **Tapping**, **Heat-set insert**, **Counterbore** and **Countersink**, each with the sizes M2 to M8 and the hole's diameter beside them. Clearance and tapping write a plain round hole 5 mm deep at the point clicked, with a comment naming it (any size can be typed over it):
 
+<!-- render: holes-menu-clearance --from 1,-1,1.4 -->
 ```d
-// M3 clearance hole (through: true goes all the way)
-.cut(circle(d: 3.4.mm), on: faces.top,
-    at: vec(-6.mm, 0.mm, 15.mm), depth: 5.mm)
+import carlo;
+
+// what the menu writes on Carlo's top
+@part("Sky Pop")
+Solid clip() => carlo()
+
+    // M3 clearance hole (through: true goes all the way)
+    .cut(circle(d: 3.4.mm), on: faces.top,
+        at: vec(-4.mm, 6.mm, 15.mm), depth: 5.mm);
 ```
+
+![An M3 clearance hole on Carlo's top, as the menu writes it](img/holes-menu-clearance.png)
 
 The other three write a `hole()` of the hardware library, placed on the face, and add `import hardware : hole, M3;` at the top when the model lacks it:
 
+<!-- render: holes-menu-counterbore --from 1,-1,1.4 -->
 ```d
-.cut(hole(M3, 5.mm, "counterbore"), on: faces.top,
-    at: vec(-6.mm, 0.mm, 15.mm))
+import hardware : hole, M3;
+
+// a counterbore on a block's top, as the menu writes it
+@part("Sky Pop")
+Solid block() => box(30.mm, 20.mm, 8.mm)
+    .cut(hole(M3, 5.mm, "counterbore"), on: faces.top,
+        at: vec(0.mm, 0.mm, 8.mm));
 ```
+
+![An M3 counterbore on a block's top, as the menu writes it](img/holes-menu-counterbore.png)
 
 Change the depth there, or write `through: true` in its place. **Pocket at point…** and **Boss at point…** beside it cut a rectangle and raise a cylinder the same way. On a cylindrical hole, **Thread (in the hole)** lists the threads it is the tap drill of ([the guide on threads](threads.md)).
 
 In the sketch view the shape bar has a **Teardrop** tool: its centre, then a point on its circle. The **Printability** check box of the display menu marks the overhangs a round hole across a wall leaves.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `holes`), or `hcad docs --guide holes` from the command line. It follows these rules:
-
-- It uses `hole()`, `nutTrap()`, `screw()` and the `Screw` sizes rather than writing diameters by hand, and `teardrop()` for holes across a wall that prints standing.
-- It asks, when they are not said: which screw (size, and head: socket, flat, button), what holds it (insert, self-tapping, nut, printed thread), and how the part prints (which face down), since the last decides between round holes and teardrops. With an insert bought already, it asks for the insert's hole size from its maker.
-- Under M5 it proposes an insert or a self-tapping screw, never a printed thread.
-- In the application it uses `hcad_gui_feature` with action `hole`, a `kind` (`clearance`, `tap`, `insert`, `counterbore`, `countersink`) and a `size` (`M2` to `M8`), or `hcad_gui_menu` with `["Hole at point", "Clearance", "M3"]`: both do what the right-click menu does.
-- It checks the result: the model must check with no warnings; screws and nuts shown as reference parts (`export: false`) show the screw's length against the parts; `--printability` (or `hcad_gui_view` with `printability: true`) shows the overhangs of sideways holes; a `unittest` keeps the relations (an insert shorter than its post, a screw long enough for the nut).

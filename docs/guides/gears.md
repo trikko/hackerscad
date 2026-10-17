@@ -1,25 +1,18 @@
 # Gears
 
-Involute spur gears and racks from the `gears` library: module, number of teeth and pressure angle, placing two gears so that they mesh, checking the mesh in the model, and printing gears that turn (backlash, the module for FDM, hubs, bores and set screws).
-
-## When to use one
-
-A pair of printed spur gears is right to change a speed or a torque between two parallel shafts, or to turn a rotation into a straight movement (a gear and a rack). The `gears` library makes involute spur gears and straight racks; it has no helical, bevel, worm or internal gears.
-
-| You want | Use |
-|---|---|
-| two parallel shafts, a ratio between them | two `spurGear`s, `centerDistance` apart |
-| a knob that moves a slide | a `spurGear` and a `rack` |
-| a gear of your own shape (spokes, windows, a cam on it) | `gearProfile`, the 2D outline, then extrude it |
-| shafts at an angle, a worm drive, a ring gear | not in the library |
+Spur gears and racks from the `gears` library: module, number of teeth and pressure angle, placing two gears so that they mesh, checking the mesh in the model, and printing gears that turn (backlash, the module for a printer, hubs, bores and set screws).
 
 ## Module, teeth, pressure angle
+
+A **spur gear** is a wheel with straight teeth round its edge, parallel to its axis. Two of them, meshing on parallel shafts, change a speed or a force: the small one turns faster, the large one with more force. A **rack** is a straight bar of teeth: with a gear on it, a rotation becomes a straight movement (a knob that moves a slide). The `gears` library makes both; it has no helical, bevel, worm or internal (ring) gears.
+
+The teeth have **involute** flanks: the curve traced by the end of a string unwound from a circle. With it, two teeth roll on each other instead of rubbing, and the gears turn evenly.
 
 Three numbers describe a spur gear:
 
 - **The module** `m` is the size of the teeth: the pitch diameter divided by the number of teeth. A module 2 gear of 20 teeth is 40 mm across at its pitch circle. Two gears mesh only when they have the same module.
 - **The number of teeth** sets the diameter (for a given module) and the ratio: a 30-tooth gear driving a 12-tooth one makes it turn 30 / 12 = 2.5 times faster, the other way.
-- **The pressure angle** is how steep the flanks of the teeth are. 20° is the standard and the default; 14.5° is found on old machinery, 25° gives stronger, more pointed teeth. Two gears mesh only when they have the same pressure angle too.
+- **The pressure angle** is how steep the flanks (the sides) of the teeth are. 20° is the standard and the default; 14.5° is found on old machinery, 25° gives stronger, more pointed teeth. Two gears mesh only when they have the same pressure angle too.
 
 The same pitch diameter, 30 mm, with modules 1, 1.5 and 3: more, smaller teeth, or fewer, larger ones.
 
@@ -69,7 +62,7 @@ The sizes of a gear of `z` teeth follow from the module:
 
 | Function | Gives | Formula |
 |---|---|---|
-| `pitchDiameter(m, z)` | the circle on which two gears roll on each other | `m · z` |
+| `pitchDiameter(m, z)` | the pitch circle: the circle on which two gears roll on each other | `m · z` |
 | `outsideDiameter(m, z)` | over the tips: the room the gear needs | `m · (z + 2)` |
 | `rootDiameter(m, z)` | at the bottom of the gaps: keep bores and windows inside it | `m · (z − 2.5)` |
 | `centerDistance(m, z1, z2)` | how far apart the centres of two meshing gears are | `m · (z1 + z2) / 2` |
@@ -83,7 +76,7 @@ The sizes of a gear of `z` teeth follow from the module:
 | Function | What it makes |
 |---|---|
 | `spurGear(m, teeth, thickness, bore:, pressure:, backlash:)` | a spur gear standing on z = 0, centred on the origin, a tooth on +X |
-| `gearProfile(m, teeth, pressure:, backlash:, steps:)` | its outline, a profile on XY, the same way round |
+| `gearProfile(m, teeth, pressure:, backlash:, steps:)` | its outline, a profile (a flat outline) on XY, the same way round |
 | `rack(m, teeth, thickness, base:, pressure:, backlash:)` | a straight rack along +X from x = 0, teeth up, its pitch line on y = 0 |
 
 Their parameters:
@@ -95,7 +88,7 @@ Their parameters:
 | `thickness` | how thick the gear or rack is, along Z | — |
 | `bore:` | a round hole through the centre, that diameter; `0.mm` none | `0.mm` |
 | `pressure:` | the pressure angle | `20.deg` |
-| `backlash:` | thins each tooth by that much on the pitch circle (a rack's on its pitch line), so printed gears do not bind | `0.1.mm` |
+| `backlash:` | the play between the teeth: thins each tooth by that much on the pitch circle (a rack's on its pitch line), so printed gears do not bind | `0.1.mm` |
 | `steps:` | points on each flank of the outline (`gearProfile` and `spurGear`) | `6` |
 | `base:` | the height of the rack's solid strip under the teeth' roots | `2 · m` |
 
@@ -103,7 +96,7 @@ The rack's teeth are thinned by its own `backlash:` too: with the gear's, the pl
 
 ## Meshing two gears
 
-Two gears mesh when they have the same module and pressure angle, their centres `centerDistance(m, z1, z2)` apart, and a tooth of one facing a gap of the other. `spurGear` has a tooth on +X; put the second gear on +X of the first and turn it by `180.deg - 180.deg / z2`, which puts a gap where the first gear's tooth is, whether `z2` is odd or even. For a rack, its gaps are centred at `x = k · π · m` from its start, its teeth halfway between; a gear over it sits with its centre `pitchDiameter / 2` above the pitch line.
+Two gears **mesh** when the teeth of one go into the gaps of the other. That needs the same module and pressure angle, the centres `centerDistance(m, z1, z2)` apart, and a tooth of one facing a gap of the other. `spurGear` has a tooth on +X; put the second gear on +X of the first and turn it by `180.deg - 180.deg / z2`, which puts a gap where the first gear's tooth is, whether `z2` is odd or even. For a rack, its gaps are centred at `x = k · π · m` from its start, its teeth halfway between; a gear over it sits with its centre `pitchDiameter / 2` above the pitch line.
 
 <!-- render: gears-pair --from top -->
 ```d
@@ -146,8 +139,9 @@ unittest
 
 The `unittest` above is the check: `(a & b).volume` is the material two parts share, and it must be zero. `distance(a, b)` says how close they come: about 0.1 mm for two gears with the default backlash, 0 when they touch or overlap. A mesh that looks right on the screen can still collide when the gears turn, so check a few positions through one tooth of turning: the second gear turns the other way, `z1 / z2` times as much.
 
+<!-- render: gears-ex1 -->
 ```d
-// check a pair through one tooth of turning, not just
+// check a pair through one tooth of turning, not only
 // where it was drawn
 
 import gears;
@@ -184,12 +178,15 @@ unittest
 }
 ```
 
+![Check a pair through one tooth of turning, not only where it was drawn](img/gears-ex1.png)
+
 Below 8 teeth the library's teeth are not undercut, and the tips of a large gear dig into the roots of the small one as they turn: this check finds it (a 6-tooth pinion against a 40-tooth wheel collides; 8 teeth or more do not).
 
 ## Your own shape: gearProfile
 
-`gearProfile` is the outline alone, to cut windows or spokes into before extruding, or to combine with a sketch:
+For a gear of your own shape (spokes, windows, a cam on it), start from `gearProfile`: the outline alone, to cut windows or spokes into before extruding it (pushing the flat outline up into a solid), or to combine with a sketch:
 
+<!-- render: gears-ex2 -->
 ```d
 // a big wheel made lighter by six windows
 
@@ -210,11 +207,13 @@ Solid wheel()
 }
 ```
 
+![A big wheel made lighter by six windows](img/gears-ex2.png)
+
 Keep what you cut inside `rootDiameter`, with a few millimetres of rim under the teeth.
 
 ## Hubs, bores and set screws
 
-`spurGear` has a round `bore:` only. A hub, a shaft with a flat (a D shaft) and a set screw are a few lines more, with the `hardware` library for the screw's hole:
+`spurGear` has a round `bore:` (the hole for the shaft) only. A **hub** (a collar that makes the gear longer on its shaft), a shaft with a flat (a D shaft) and a **set screw** (a screw through the hub that presses on the shaft) are a few lines more, with the `hardware` library for the screw's hole:
 
 <!-- render: gears-hub --from 1,-0.6,0.7 -->
 ```d
@@ -253,11 +252,11 @@ A round bore on a round shaft slips under load: press-fit it (see the guide on [
 
 ## Printing gears
 
-- **Module.** On an FDM printer with a 0.4 mm nozzle, module 1 is the smallest that prints cleanly; 1.5 to 2 is comfortable, and stronger. Under 1, print in resin.
+- **Module.** On an FDM printer (one that lays down melted plastic through a nozzle) with a 0.4 mm nozzle, module 1 is the smallest that prints cleanly; 1.5 to 2 is comfortable, and stronger. Under 1, print in resin.
 - **Backlash.** The default 0.1 mm on each gear suits a well tuned printer. Raise it to 0.15–0.25 mm if the gears bind; a wider play is noisier but never jams. Print two small test gears before a big train.
 - **Teeth.** 12 or more on the smallest gear turn smoothly; under 8 the teeth collide (see above). For a large ratio, use two stages rather than one tiny pinion.
 - **Thickness.** About 5 to 10 times the module. Wider teeth carry more, but need the shafts truly parallel.
-- **Orientation.** Print gears flat, the teeth standing: the teeth come out with their exact shape and their layers across the load. The first layer squashes out (elephant's foot) and can make the bottom of the teeth rub: compensate in the slicer.
+- **Orientation.** Print gears flat, the teeth standing: the teeth come out with their exact shape and their layers across the load. The first layer squashes out (elephant's foot) and can make the bottom of the teeth rub: compensate in the slicer, the program that turns the model into the printer's paths.
 - **Material.** PLA is fine for toys and models; PETG or nylon for gears that run for hours. A gear and a pinion of different materials wear less.
 - **Clearance on the shafts.** Shafts the gear turns on want a bore 0.2–0.3 mm larger; shafts that drive it want a tight bore, a flat or a set screw.
 
@@ -277,12 +276,3 @@ The first three messages point at the line of the library that checks them, not 
 ## In the application
 
 There is no gear menu: gears are written in the code. The cheatsheet (**Cheatsheet** in the main menu, or F1) lists every function of the `gears` library with its arguments, and the editor completes them after `import gears;`. Make the module and the numbers of teeth `@param`s to change them from the **Parameters** panel and see the gears follow; the `unittest` with `(a & b).volume` reports a collision in the console when the tests run (F5).
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `gears`), or `hcad docs --guide gears` from the command line. It follows these rules:
-
-- When the gears must mesh with existing ones, it asks for their module and pressure angle (or the number of teeth and the outside diameter, from which `m = outside / (teeth + 2)`), and the distance between the shafts; it never guesses them.
-- When the design is free, it asks the ratio, the shafts (diameter, round or with a flat) and the printer, and proposes a module (1.5–2 for FDM) and numbers of teeth whose `centerDistance` fits the space.
-- It places the gears with `centerDistance` and turns the second by `180.deg - 180.deg / z2`, and writes a `unittest` that `(a & b).volume` is zero, at a few positions through one tooth of turning, as above.
-- It works with `hcad_render` (dimensions, problems and pictures; a view from the top shows the mesh) and `hcad_check`, then `hcad_export`; in the user's window, `hcad_gui_edit` changes the code and `hcad_gui_test` runs the checks.

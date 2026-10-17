@@ -1,31 +1,20 @@
 # Paths, sweeps and lofts
 
-Shapes that follow a curve or change along their length: paths (straight, bent, splines, helices, from a sketch, from a solid's edges, from two views), sweeping a profile along a path and deciding how it rolls on the way (`up:`, `guide:`, `twist:`, `frenet:`), lofting between profiles, and when to sweep, loft, revolve or extrude.
+Shapes that follow a curve or change along their length: paths (straight, bent, splines, helices, from a sketch, from a solid's edges, from two views), sweeping a profile along a path and deciding how it rolls on the way (`up:`, `guide:`, `twist:`, `frenet:`), and lofting between profiles.
 
-## Which one to use
-
-| The shape | Use |
-|---|---|
-| the same outline all along a straight line | `extrude` (with `taper:`, `twist:` or `shear:` if it leans or turns) |
-| the same outline turned round an axis (a pot, a knob, a ring) | `revolve` |
-| the same outline along a curve: a tube, a wire, a handle, a rail, a spring, a groove round a rim | `profile.sweep(path)` |
-| an outline that changes on the way: a vase, a nozzle, a square duct ending round | `loft([...])` through profiles |
-| an outline that changes along a curve (a horn) | `loft` through profiles placed on `path.frames(n)` |
-| a thin sheet, open (a curved cut, a curved panel) | a `Surface`: see [the guide on surfaces](surfaces.md) |
-
-Extrude and revolve are faster and give simpler faces: prefer them whenever the shape allows. A sweep along a circle is a revolve; a sweep along a straight line without a twist is an extrude.
+A *profile* is a flat outline, such as a circle or a rectangle. A *sweep* moves a profile along a curve and keeps the solid it passes through: a wire, a tube, a handle. A *loft* joins several profiles placed one after the other with a smooth skin: a vase that starts round and ends square.
 
 ## Paths
 
-A `Path` is a curve in space. It is not a part: it has no inside and does not combine with `+ - &`; you sweep along it, loft through it, or take frames on it.
+A `Path` is a curve in space, the route a sweep follows. It is not a part: it has no inside and does not combine with `+ - &`; you sweep along it, loft through it, or take frames on it.
 
 | Path | What it makes |
 |---|---|
-| `path([p1, p2, p3])` | straight segments through the points, mitred corners |
+| `path([p1, p2, p3])` | straight segments through the points, mitred corners (cut at an angle and joined, like a picture frame) |
 | `path([...], closed: true)` | the same, back to the first point |
 | `path([...], bend: 5.mm)` | every corner rounded by an arc of that radius: a bent tube or wire |
-| `spline([...])` | a smooth curve through the points, curved all along (`closed: true` a loop) |
-| `helix(d: 16.mm, pitch: 5.mm, height: 30.mm)` | a helix round +Z, starting at (r, 0, 0); `left: true` left-handed |
+| `spline([...])` | a smooth curve through the points (a *spline*), curved all along (`closed: true` a loop) |
+| `helix(d: 16.mm, pitch: 5.mm, height: 30.mm)` | a helix (the curve of a spring) round +Z, the pitch how far it rises in one turn, starting at (r, 0, 0); `left: true` left-handed |
 | `s.path`, `s.paths` | what a sketch draws (below) |
 | `body.path(edges.…)` | edges of a solid joined end to end (below) |
 | `path(top, front)` | a curve in space from two views (below) |
@@ -66,7 +55,7 @@ A `bend:` path is straight stretches and arcs of a radius you know, as a tube be
 
 ### From a sketch
 
-`s.path` is what a sketch draws, its lines, arcs, splines and circles (not construction ones), as one path, where the sketch lies. It follows the sketch's constraints, so a route drawn with its dimensions stays right when a `@param` changes. Draw it on the plane it belongs to: `sketch(XZ)` for a curve seen from the front. Mind that `s.polyline` closes unless `closed: false`. A sketch drawing several separate chains gives them in `s.paths`, in the order they are drawn.
+A *sketch* is a flat drawing made of points, lines and arcs held in place by dimensions and relations (this line horizontal, that arc touching it). `s.path` is what a sketch draws, its lines, arcs, splines and circles (not construction ones), as one path, where the sketch lies. It follows the sketch's constraints, so a route drawn with its dimensions stays right when a `@param` changes. Draw it on the plane it belongs to: `sketch(XZ)` for a curve seen from the front. Mind that `s.polyline` closes unless `closed: false`. A sketch drawing several separate chains gives them in `s.paths`, in the order they are drawn.
 
 ### From a solid's edges
 
@@ -91,6 +80,7 @@ Solid grooved() => body()
 
 A handle or a bent rod is easy to draw from above and from the front, hard to write as points in space. `path(top, front)` is the curve that, seen across the first path's plane, is the first, and across the second's, the second. Both must cover the same stretch along the line they share (here X, from 0 to 60):
 
+<!-- render: sweeps-ex1 -->
 ```d
 // a handle drawn from above and from the front
 
@@ -113,10 +103,13 @@ Solid handle() => circle(d: 8.mm)
     .sweep(path(topView(), frontView()));
 ```
 
+![A handle drawn from above and from the front](img/sweeps-ex1.png)
+
 ## Sweeping
 
-`profile.sweep(path)` moves a profile along a path. Draw the profile on XY around the origin: the origin rides on the path, and the profile starts at the beginning of the path, across it. Its +Y is kept towards world +Z (towards +Y when the path starts vertically); looking back at it from further along the path, it reads as drawn, x to the right, y up. Holes in the profile give tubes:
+`profile.sweep(path)` moves a profile along a path. It is the way to make the same outline along a curve: a tube, a wire, a handle, a rail, a spring, a groove round a rim. Where the curve is a straight line, `extrude` does the same, faster and with simpler faces (to *extrude* is to push a flat outline straight up into a solid); where it is a circle, `revolve` does (it turns the outline round an axis: a pot, a knob, a ring). Draw the profile on XY around the origin: the origin rides on the path, and the profile starts at the beginning of the path, across it. Its +Y is kept towards world +Z (towards +Y when the path starts vertically); looking back at it from further along the path, it reads as drawn, x to the right, y up. Holes in the profile give tubes:
 
+<!-- render: sweeps-ex2 -->
 ```d
 // a bent tube, 16 mm outside, 1.5 mm wall
 
@@ -125,6 +118,8 @@ Solid pipe() => (circle(d: 16.mm) - circle(d: 13.mm))
     .sweep(path([vec(0, 0, 0), vec(0, 0, 40),
         vec(40, 0, 40)], bend: 15.mm));
 ```
+
+![A bent tube, 16 mm outside, 1.5 mm wall](img/sweeps-ex2.png)
 
 ### How the profile rolls along the path
 
@@ -203,7 +198,7 @@ Sweep a curve instead of a profile, `path([vec(-8.mm, 0), vec(8.mm, 0)]).sweep(r
 
 ## Lofting
 
-`loft([a, b, c])` makes a smooth solid through profiles placed in space, in order. `ruled: true` joins them with flat sides instead. Profiles with holes loft as tubes when every profile has the same number of holes. Stand a profile up with `across(X)` or `across(Y)` (as `extrude(along:)` stands it), not with `rotate`, to loft sideways:
+A loft is for an outline that changes on the way: a vase, a nozzle, a square duct ending round. `loft([a, b, c])` makes a smooth solid through profiles placed in space, in order. `ruled: true` joins them with flat sides instead. Profiles with holes loft as tubes when every profile has the same number of holes. Stand a profile up with `across(X)` or `across(Y)` (as `extrude(along:)` stands it), not with `rotate`, to loft sideways:
 
 <!-- render: sweeps-loft --from 1,-1.4,0.5 -->
 ```d
@@ -231,14 +226,32 @@ Solid lying() => loft([
 
 ![Smooth and ruled lofts through a circle, a hexagon and a circle; a loft along X](img/sweeps-loft.png)
 
+Any profile can be a section of a loft, a solid's outline too. `carlo().projection` is Carlo seen from above, as a flat outline (Carlo is hackerscad's mascot, a bag clip about 41 x 29 mm, lying flat): lofted up into a copy half its size, it rises into a tower with the slot and the keyring hole all the way up:
+
+<!-- render: sweeps-carlo-loft --from 1,-1,0.6 -->
+```d
+import carlo;
+
+// Carlo's outline seen from above, lofted up into a
+// smaller copy of itself
+Profile outline() => carlo().projection;
+
+@part("Sky Pop")
+Solid tower() => loft([outline(),
+    outline().scale(0.5).move(x: 5.mm, z: 30.mm)]);
+```
+
+![Carlo's outline lofted up into a copy half its size](img/sweeps-carlo-loft.png)
+
 Profiles drawn in sketches on different planes or faces loft from where they lie. For a hollow loft, loft the same sections shrunk with `.offset(-wall)` and subtract it (see `examples/dev/sweep.hcad`).
 
 Lofting through paths instead of profiles, `loft([path1, path2])`, gives a `Surface` (see [the guide on surfaces](surfaces.md)).
 
 ### Along a curve: frames
 
-A sweep keeps its profile the same size. For an outline that grows or changes along a curve, place profiles on `path.frames(n)`: n frames evenly along the path, from its start to its end, Z along it and turning as little as they can, so the profiles placed on them do not twist. Then loft:
+A sweep keeps its profile the same size. For an outline that grows or changes along a curve, place profiles on `path.frames(n)`. A *frame* is a place with its own directions, as a small set of X, Y and Z axes standing somewhere in space; a profile placed on one lies across its Z. `frames(n)` gives n frames evenly along the path, from its start to its end, Z along it and turning as little as they can, so the profiles placed on them do not twist. Then loft:
 
+<!-- render: sweeps-ex3 -->
 ```d
 // a horn: circles on frames along a curve, growing
 
@@ -254,6 +267,8 @@ Solid horn()
     return loft(rings);
 }
 ```
+
+![A horn](img/sweeps-ex3.png)
 
 For textured shapes with many rings, `loft` also takes rings of points (`Vec3[][]`), much faster: see *Textures and noise* in the [language reference](../LANGUAGE.md) and `examples/03_randomvase.hcad`.
 
@@ -299,13 +314,3 @@ There is no menu entry for a sweep or a loft: they are written in the code. The 
 - **Paths from a sketch:** in the sketch toolbar, the line tool and **Smooth curve** (∿) draw open chains; the code they write gives `s.path`. Right-click a flat face, **Sketch on face…**, to draw a route on it.
 - **Paths from edges:** click an edge, right-click, **Select the chain** to take every edge running on from it without a corner (on a face: **Select its outer edges**); then **Copy as code → Edge selector** gives the selector for `body.path(…)`.
 - **Seeing a path:** **Inspect** (Ctrl+I, Cmd+I on a Mac; or Ctrl+click a line of code) shows in orange what a line makes, paths included; in the **Steps** panel a function returning a path says *returns a path*.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `sweeps`), or `hcad docs --guide sweeps` from the command line. It follows these rules:
-
-- It prefers extrude and revolve when the shape allows, a sweep for a constant outline along a curve, a loft for one that changes; it says which and why.
-- For a part that follows a real object (a tube round a frame, a handle on a mug), it asks for the sizes it cannot know: the outline's size, the route's length and radii, where the ends are. It never guesses them.
-- When the profile is not round, it decides the roll on purpose (`up:` for things that must stay level, `guide:` where the path goes up and over, `frenet: true` on helices) and says so.
-- It draws a route with dimensions as a sketch (`s.path`), and a route seen from two sides as `path(top, front)`.
-- It checks with `hcad_render`: the pictures for a profile turned the wrong way, and the problems for a sweep that folds over itself (*not a valid closed solid*). In the user's window it writes with `hcad_gui_edit` and shows a path with `hcad_gui_inspect` on its line.

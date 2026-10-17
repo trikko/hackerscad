@@ -1,23 +1,10 @@
 # Enclosures and boxes
 
-Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`, `enclosure(…).base` and `.lid`) and every option of it, boxes hollowed by hand with `shell()` or cut in two, screw bosses, ventilation slots and holes, and a worked example of a case for a circuit board.
-
-## Choosing a way to make one
-
-| You want | Use |
-|---|---|
-| a block with rounded vertical edges, to start from | `roundedBox(x, y, z, r)` |
-| an open box, a drawer, a tray | `tray(x, y, z, wall:, r:)` |
-| a closed case with a lid that screws on | `enclosure(vec(x, y, z), …)`: `.base` and `.lid` |
-| a box of another shape (a sketch, a loft, edges rounded all round) | the solid first, then `.shell(open: faces.top, thickness:)` |
-| a closed soft shape opened later, base and lid from one solid | hollow it with `offset`, then cut it with `halves` |
-| a lid that snaps on, or sits flush | **Examples › Box with lid** in the application (a snap, a lip, screws or a flush lid to choose) |
-
-Whatever the way, the sizes that matter come from what goes inside: measure it first, then add the room round it.
+Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`, `enclosure(…).base` and `.lid`) and every option of it, boxes hollowed with `shell()` or cut in two, screw bosses, ventilation slots and holes, and a worked example of a case for a circuit board.
 
 ## The enclosures library
 
-`import enclosures;` gives three functions, each built on the one before.
+`import enclosures;` gives three functions, each built on the one before: a block with rounded vertical edges to start from, an open box (a tray, a drawer), and a closed case whose lid screws on. For a lid that snaps on or sits flush, **Examples › Box with lid** in the application is a ready start.
 
 <!-- render: enclosures-library -->
 ```d
@@ -58,12 +45,58 @@ Solid lid() => enclosure(vec(40.mm, 30.mm, 20.mm))
 
 The radius must be less than half the narrower side, and not equal to the wall: a wall thinner than `r` leaves round corners inside, a thicker one sharp ones.
 
+The sizes that matter come from what goes inside: measure it first, then add the room round it. Here the thing is Carlo, the mascot clip, and the tray takes its size from Carlo's own (`bbox`, the smallest box round a solid), with a millimetre of room all round. Carlo goes in as a **reference part** (`export: false`): shown, never exported, and a `unittest` (checks that run with the model) proves it fits:
+
+<!-- render: enclosures-carlo --from 1,-1.2,1.2 -->
+```d
+import carlo;
+import enclosures;
+
+// a tray for Carlo, sized from Carlo itself
+
+@param("Play round Carlo", min: 0.2.mm, max: 2.mm)
+immutable play = 1.mm;
+
+immutable wall = 2.mm;
+
+// the clip, centred on the origin
+Solid clip()
+{
+    auto c = carlo();
+    immutable mid = c.bbox.center;
+    return c.move(x: -mid.x, y: -mid.y);
+}
+
+@part("Sky Pop")
+Solid holder()
+{
+    immutable size = clip().bbox.size;
+    return tray(size.x + 2 * (play + wall),
+        size.y + 2 * (play + wall), size.z + wall,
+        wall: wall, r: 4.mm);
+}
+
+// Carlo inside, on the floor: shown, not exported
+@part("Pink Pop", export: false)
+Solid inside() => clip().move(z: wall);
+
+unittest
+{
+    assert((holder() & inside()).volume == 0.mm ^^ 3,
+        "Carlo does not fit");
+}
+```
+
+![A tray a little larger than Carlo, with Carlo lying in it](img/enclosures-carlo.png)
+
+`(holder() & inside()).volume` is the material the two share: zero when Carlo does not run into the tray.
+
 ### enclosure
 
 `enclosure(inner, …)` returns a struct with two solids, `.base` and `.lid`, both standing on z = 0 and laid out to print:
 
-- **the base** is a tray whose free space inside is `inner` (x, y, z), so its outside is `inner.x + 2 * wall` by `inner.y + 2 * wall`, and `inner.z + wall` tall. In each corner stands a post with a pilot hole for the screw (`screw.tap`, ⌀2.5 for M3: a self-tapping screw, or a tap) from the rim to the floor;
-- **the lid** is a plate as large as the base, `wall` thick, with a **lip** on it: a ring that goes `lidHeight` down inside the base with `clearance` all round, notched round the posts. It has a clearance hole (`screw.clearance`) over each post. It is made upside down, the plate on the ground, as it prints.
+- **the base** is a tray whose free space inside is `inner` (x, y, z), so its outside is `inner.x + 2 * wall` by `inner.y + 2 * wall`, and `inner.z + wall` tall. In each corner stands a post with a pilot hole for the screw (`screw.tap`, ⌀2.5 for M3: a hole smaller than the screw, for a self-tapping screw that cuts its own thread, or for a tap) from the rim to the floor;
+- **the lid** is a plate as large as the base, `wall` thick, with a **lip** on it: a ring that goes `lidHeight` down inside the base with `clearance` (play, a small gap) all round, notched round the posts, so that the lid cannot slide sideways. It has a clearance hole (`screw.clearance`) over each post. It is made upside down, the plate on the ground, as it prints.
 
 | Parameter | What it does | Default |
 |---|---|---|
@@ -81,10 +114,11 @@ What the numbers mean once it is closed:
 - the case is `inner.z + 2 * wall` tall, the lid's plate resting on the rim of the walls;
 - the lip takes the top `lidHeight` of the inside along the walls, `wall` thick: anything taller than `inner.z - lidHeight` must stay `wall + clearance` away from the walls;
 - the posts reach the rim, where the lid rests, the lip notched round them: the screw bites as soon as it is through the lid, so with the defaults an M3 × 8 goes 6 mm into the post;
-- the screw heads stand on the lid; for heads flush with it, cut a counterbore over each hole (`hole(M3, …, "counterbore")`, see the guide on holes).
+- the screw heads stand on the lid; for heads flush with it, cut a counterbore (a wider, shallow hole that sinks the head) over each hole (`hole(M3, …, "counterbore")`, see the guide on holes).
 
 To see it closed, turn the lid over onto the base:
 
+<!-- render: enclosures-ex1 -->
 ```d
 import enclosures;
 
@@ -108,12 +142,15 @@ unittest
 }
 ```
 
+![The lid turned over onto the base, as it closes](img/enclosures-ex1.png)
+
 The library is a file of hackerscad code (`lib/enclosures.hcad`): when a case needs something it does not do, copy the function into the model and change it.
 
 ## Shells: a box of any shape
 
-`solid.shell(open: faces, thickness:)` hollows a solid, leaving the faces in `open` open and making walls `thickness` thick inwards: the outside stays where it was. The faces are selected as for any feature: `faces.top`, two at once with `faces.top + faces.front`, or by a filter. Round the edges **before** shelling: the inside follows the rounds of the outside.
+For a box of another shape (from a sketch, a loft that blends one outline into another, or with its edges rounded all round), make the solid first, then hollow it. `solid.shell(open: faces, thickness:)` hollows a solid, leaving the faces in `open` open and making walls `thickness` thick inwards: the outside stays where it was. The faces are selected as for any feature: `faces.top`, two at once with `faces.top + faces.front`, or by a filter. Round the edges (fillet them) **before** shelling: the inside follows the rounds of the outside.
 
+<!-- render: enclosures-ex2 -->
 ```d
 // a box open on top, its edges rounded before the shell
 
@@ -123,7 +160,9 @@ Solid cup() => box(40.mm, 30.mm, 20.mm)
     .shell(open: faces.top, thickness: 2.mm);
 ```
 
-A shell always has an opening. For a closed shape cut in two, a base and a lid that meet anywhere, hollow it with `offset` instead (the solid less itself shrunk by the wall), cut it with a plane, and add a lip so the two halves locate:
+![A box open on top, its edges rounded before the shell](img/enclosures-ex2.png)
+
+A shell always has an opening. For a closed shape cut in two, a base and a lid that meet anywhere, hollow it with `offset` instead (the solid less a copy of itself shrunk by the wall), cut it with a plane into two halves (`halves`), and add a lip so the two halves sit in place:
 
 <!-- render: enclosures-soft --from 1,-1,0.5 -->
 ```d
@@ -167,7 +206,7 @@ The lid is drawn lifted to show the lip; to print it, turn it over (`.rotate(x: 
 
 ## Screw bosses
 
-A boss is a post that takes a screw. The kind of hole decides its size; the [guide on holes](holes.md) explains each one:
+A boss is a post that takes a screw, standing on the floor or a wall. The kind of hole decides its size; the [guide on holes](holes.md) explains each one:
 
 | Hole | In the boss | Boss diameter, about |
 |---|---|---|
@@ -177,6 +216,7 @@ A boss is a post that takes a screw. The kind of hole decides its size; the [gui
 
 `hole(screw, depth, kind)` from `hardware` is a tool to subtract, its top on z = 0 going down: make the boss, then cut the hole from its top. Four bosses on a floor, with `linearPattern` (see the [guide on patterns](patterns.md)):
 
+<!-- render: enclosures-ex3 -->
 ```d
 import enclosures;
 import hardware : M3, hole;
@@ -196,6 +236,8 @@ Solid holder() => tray(60.mm, 45.mm, 20.mm, wall: floor)
         .linearPattern(2, step: vec(40.mm, 0.mm, 0.mm))
         .linearPattern(2, step: vec(0.mm, 30.mm, 0.mm));
 ```
+
+![Four bosses for heat-set inserts, 40 × 30 mm apart](img/enclosures-ex3.png)
 
 A tall boss in the open is weak: tie it to the nearest wall with a rib, or stand it in a corner as `enclosure()` does.
 
@@ -390,7 +432,7 @@ How it is built, step by step:
 
 1. **The space inside** is the board plus `room` on every side, and as tall as the standoffs, the board and its tallest part: `inner()`. Everything else follows from it.
 2. **`enclosure()`** makes the base and the lid round that space, with M3 posts in the corners. The room round the board keeps its corners clear of the posts; the unittest checks it: with `room` at 2 mm, `hcad check` stops with *the board must not run into the box*.
-3. **Standoffs** under the board's holes, with heat-set inserts, lift it off the floor: the solder joints underneath need the room.
+3. **Standoffs** (short posts) under the board's holes, with heat-set inserts, lift it off the floor: the solder joints underneath need the room.
 4. **The opening** for the socket is a rounded rectangle cut into the left wall, at the height of the socket's middle (`at:`), with 0.5 mm of play all round.
 5. **Vents** are cut into the lid's plate from its outer face (`faces.bottom`, as the lid is laid out to print).
 6. **The board** is a see-through part that is not exported: it shows the fit and lets a unittest test it.
@@ -430,12 +472,3 @@ What to measure on a real board, with calipers:
 - In the 3D view, pick faces (Alt+2) and right-click: **Shell, opening this face…** (or *opening N faces*) writes `.shell(open: …, thickness: 2.mm)` with the selected faces. Fillet the edges first (**Fillet face edges…**).
 - Right-click a face, at the point where it goes: **Hole at point** › *Clearance* or *Tapping* › M2 to M8 writes a `.cut(circle(d: …), on: …, at: …, depth: 5.mm)`, *Heat-set insert*, *Counterbore* or *Countersink* a `.cut(hole(M3, 5.mm, "insert"), on: …, at: …)`; **Boss at point…** an `.extrude(circle(d: 6.mm), …)`; **Pocket at point…** a rectangular pocket. Change the sizes in the code.
 - The `@param`s of the case (the board's size, the room, the play) are sliders in the Parameters panel: the case follows.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `enclosures`), or `hcad docs --guide enclosures` from the command line. It follows these rules:
-
-- Before modelling a case for something that exists (a board, a battery, a phone), it asks for the sizes, saying what to measure and how (the list above): the board, the hole centres, the tallest part, every connector and the side it is on. It also asks how the case closes (screws, inserts, a snap), how it will be printed (for the play), and whether the inside gets warm (for vents). Any it is not told, it estimates and makes `@param`s, and says so.
-- It uses the library first: `enclosure()` for a screwed case, `tray()` for an open one, `hole()` from `hardware` for the screws; a box of its own only when the shape asks for it.
-- It puts the thing inside as a see-through part not exported (`@part("…", alpha: 0.4, export: false)`) and checks the fit in a unittest, `(base() & board()).volume == 0.mm ^^ 3`, before showing the result.
-- It checks with `hcad_check`, looks at `hcad_render` pictures (from the side of each opening), and with the window open adds a shell, a hole or a boss with `hcad_gui_feature` (actions `shell`, `hole` with `kind` and `size`, `boss`), which do what the right-click menu does.

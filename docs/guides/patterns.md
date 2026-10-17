@@ -1,19 +1,10 @@
 # Patterns, textures and noise
 
-Many copies of one thing: a row, a ring, a grid, a mirror image; layouts the plain patterns cannot make, written as loops; and surfaces with a texture, ribbed or bumpy, from `noise`, `loopNoise` and `loft` through rings of points. Which to use, how to keep them quick to evaluate, and when a pattern belongs in a library.
+Many copies of one thing: a row, a ring, a grid, a mirror image; layouts the plain patterns cannot make, written as loops; surfaces with a texture, ribbed or bumpy, from `noise`, `loopNoise` and `loft` through rings of points; how to keep them quick to evaluate, and when a pattern belongs in a library.
 
-## Choosing one
+A *pattern* is one shape repeated: `linearPattern` copies it along a straight line at an even step, `circularPattern` round an axis at even angles, `mirror` reflects it across a plane. A grid is two `linearPattern`s, one along each side. Copies that change from one to the next, or skip some places, are a loop (below).
 
-| You want | Use |
-|---|---|
-| copies in a row, evenly spaced | `s.linearPattern(n, step: vec(…))` |
-| copies round an axis | `s.circularPattern(n, axis:, angle:)` |
-| a grid | two `linearPattern`s, one along each side |
-| the same thing on the other side | `s + s.mirror(X)` |
-| copies that change, skip places, or follow a rule | a `foreach` loop collecting them in a list |
-| a surface that ripples or is bumpy | rings of points pushed by a function, `loft(rings)` |
-
-A pattern gives **one solid** with all the copies. Add it to put pegs on a part, subtract it to cut all the holes at once.
+A pattern gives **one solid** with all the copies. Add it to a part to put pegs on it; subtract it to cut all the holes at once.
 
 <!-- render: patterns-four --from 0.3,-1,1.2 -->
 ```d
@@ -62,14 +53,40 @@ Mind the brackets: a chained call belongs to what stands right before it. In `pl
 | `circularPattern` | `n` | how many copies | — |
 | | `axis:` | a direction through the origin (`Z`), or an `Axis` anywhere: `axis(origin: vec(…), direction: Z)`, `body.axis(edges…)` | `Z` |
 | | `angle:` | a full turn spaces the copies evenly; less than a turn puts the first and the last at its two ends | `360.deg` |
-| `mirror` | a direction | across the plane through the origin with that normal | — |
+| `mirror` | a direction | across the plane through the origin with that normal (the direction the plane faces) | — |
 | | a plane | across any plane: `plane(origin: vec(20.mm, 0.mm, 0.mm), normal: X)` | — |
 
 Profiles take the same calls (`circle(d: 4.mm).linearPattern(5, step: vec(6.mm, 0.mm))`), and `mirror` keeps only the image: `s + s.mirror(X)` keeps both.
 
 ## Loops: patterns with rules
 
-When the copies change from one to the next, or only some places get one, write the loop. Collect the copies in a list and join them once at the end with `.sum` (or `fuse(list)`):
+When the copies change from one to the next, or only some places get one, write a loop. Collect the copies in a list and join them once at the end with `.sum` (or `fuse(list)`). Here each Carlo has one tooth more than the one before, so it is longer: its bounding box (the smallest box round it, `bbox`) says how long, and the next one starts 8 mm after it:
+
+<!-- render: patterns-carlos --from 0.3,-1,1.2 -->
+```d
+// Carlos in a row, one more tooth each time, each
+// placed 8 mm after the one before
+
+import carlo;
+
+@part("Sky Pop")
+Solid row()
+{
+    Solid[] clips;
+    auto x = 0.mm;
+    foreach (i; 0 .. 4)
+    {
+        auto c = carlo(teeth: i + 1);
+        clips ~= c.move(x: x - c.bbox.min.x);
+        x += c.bbox.size.x + 8.mm;
+    }
+    return clips.sum;
+}
+```
+
+![Four Carlos in a row, with one, two, three and four teeth](img/patterns-carlos.png)
+
+A loop also makes layouts no pattern gives. A round vent: hexagons in staggered rows, kept only where they fall wholly inside the circle:
 
 <!-- render: patterns-vent --from top -->
 ```d
@@ -110,11 +127,13 @@ Solid vent()
 
 ![A round vent of hexagonal cells](img/patterns-vent.png)
 
-The loop works on profiles and extrudes once: flat cuts through a plate are quickest that way (below). Other rules a loop makes easy: sizes that grow along the row (`d: 3.mm + 0.5.mm * i`), a place left empty (`if (i == 2) continue;`), heights from `random(4.mm, 10.mm, seed: 2)` (the same numbers at every run; another seed, others).
+The loop works on profiles (flat outlines) and extrudes once (pushes the outline up into a solid, 2 mm here): flat cuts through a plate are quickest that way (below). Other rules a loop makes easy: sizes that grow along the row (`d: 3.mm + 0.5.mm * i`), a place left empty (`if (i == 2) continue;`), heights from `random(4.mm, 10.mm, seed: 2)` (the same numbers at every run; another seed, others).
 
 ## Textures and noise
 
-A textured surface is a stack of rings of points, each point pushed out along the outline's normal by a function of where it is, and one smooth surface lofted through them all:
+A textured surface is a stack of rings of points, one above the other. Each point is pushed out along the outline's normal (the direction straight out of the outline at that point) by a function of where it is. Then one smooth surface is *lofted* through them all: stretched from ring to ring, like a skin over hoops.
+
+The calls:
 
 - `profile.outline(n)` gives `n` points evenly round a profile, each with `.at` (where it is), `.normal` (outwards) and `.around` (0 to 1 round the outline);
 - `loft(rings)` takes the rings (`Vec3[][]`, the same number of points in each) and closes the ends flat; `loft(rings, inside: innerRings)` makes it hollow, with a floor;
@@ -224,7 +243,7 @@ Solid pot()
 
 ![A pen pot with a bumpy skin](img/patterns-pot.png)
 
-Along a curved spine, `path.frames(n)` gives `n` frames along it to place the rings on: see `examples/03_randomvase.hcad`, a vase on a random spine with its lid.
+Along a curved spine, `path.frames(n)` gives `n` frames along it (each a point with directions to build on) to place the rings on: see `examples/03_randomvase.hcad`, a vase on a random spine with its lid.
 
 ## In the model or in a library
 
@@ -264,12 +283,3 @@ Measured on a 200 × 200 mm plate with 400 holes:
 ## In the application
 
 There is no pattern command in the menus: a pattern is a line of code. Write it in the editor and the view follows as you type; the copies are one solid, picked together. A count or a step made a `@param` gets a field in the Parameters panel, to try other counts with the mouse.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `patterns`), or `hcad docs --guide patterns` from the command line. It follows these rules:
-
-- It uses `linearPattern` and `circularPattern` for even layouts and a loop for the rest, collecting the copies in a list and joining them once; it never adds or subtracts one copy at a time inside a loop.
-- It makes the counts, spacings and seeds `@param`s, so that the user can try others.
-- For a texture it asks what the surface is for, when that is not said (grip, looks, a printed vase), since that sets the depth and size of the bumps, and keeps the rings and points as few as the bumps allow.
-- It checks the result with `hcad_check` (time included: a model of more than a few seconds is worth rewriting as above) and looks at it with `hcad_render`.

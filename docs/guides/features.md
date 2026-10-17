@@ -4,7 +4,7 @@ Rounding, bevelling, hollowing and tapering a solid: `fillet`, `chamfer`, `shell
 
 ## The four features
 
-A feature changes a solid that is already there. It takes a selector, which is resolved against that solid at the moment the feature is applied:
+A feature changes a solid that is already there. A *fillet* is a rounded edge; a *chamfer* a bevelled one, cut flat at an angle; a *shell* hollows the solid out, leaving walls; a *draft* tilts the sides a little, so that a moulded part slides out of its mould. Each takes a *selector*, a description of which edges or faces to work on ("the top edges", "the edges along Z"), resolved against that solid at the moment the feature is applied:
 
 | Feature | What it does | Takes |
 |---|---|---|
@@ -43,6 +43,23 @@ Solid tapered() => block()
 
 ![A block filleted, chamfered, shelled and drafted](img/features-four.png)
 
+Features work on any shape, not only on boxes. Carlo, the mascot clip, with the rim of its top face rounded, teeth and keyring eye included, and the rim of its bottom face bevelled a little, as is usual for a part printed flat on that face:
+
+<!-- render: features-carlo --from 1,-1,0.8 -->
+```d
+import carlo;
+
+// the top rim rounded, the bottom rim bevelled
+@part("Sky Pop")
+Solid smooth() => carlo()
+    .fillet(edges.loop(faces.top), r: 1.5.mm)
+    .chamfer(edges.loop(faces.bottom), d: 0.6.mm);
+```
+
+![Carlo with its top rim rounded and its bottom rim bevelled](img/features-carlo.png)
+
+`edges.loop(faces.top)` is every edge round the outside of the top face: the keyring hole's rim is left sharp.
+
 ## The parameters
 
 | Parameter | What it does | Default |
@@ -59,7 +76,7 @@ Solid tapered() => block()
 
 ## Selectors
 
-`edges` and `faces` stand alone, without a solid in front: they mean the edges and faces of the solid the feature is applied to. They narrow down by chaining, and combine with `+` (either), `-` (the first without the second) and `&` (both).
+A solid is bounded by *faces* (flat or curved patches of its surface) that meet along *edges*. `edges` and `faces` stand alone, without a solid in front: they mean the edges and faces of the solid the feature is applied to. They narrow down by chaining, and combine with `+` (either), `-` (the first without the second) and `&` (both).
 
 | Selector | Picks |
 |---|---|
@@ -82,7 +99,7 @@ A face selector where edges are expected is an error that says so: `fillet(faces
 
 ## Select by provenance, not by position
 
-Every face remembers the tool or feature that made it. `faces.from(tool)` picks those faces, and `edges.between(faces.from(a), faces.from(b))` the edges where two pieces meet. A selector written this way follows the model when a parameter changes: the post below can be any height, and the fillet stays where the post meets the plate.
+*Provenance* is where something came from. Every face remembers the tool or feature that made it. `faces.from(tool)` picks those faces, and `edges.between(faces.from(a), faces.from(b))` the edges where two pieces meet. A selector written this way follows the model when a parameter changes: the post below can be any height, and the fillet stays where the post meets the plate.
 
 <!-- render: features-provenance -->
 ```d
@@ -182,13 +199,3 @@ Right-click the selection:
 - **Copy as code › Face selector** or **Edge selector** puts a selector for what is selected on the clipboard.
 
 Each entry writes the feature into the part's code with a value to change (1 mm for a fillet, 2 mm for a shell, 3° for a draft). The selector it writes picks the clicked items by name or position (`faces.top`, `edges.of(faces.top).parallel(X)`, or a filter on a point when nothing shorter fits): it is right for the model as it is now. Where the part's sizes are parameters, rewrite it by provenance before relying on it.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `features`), or `hcad docs --guide features` from the command line. It follows these rules:
-
-- It selects by provenance whenever the edges come from a piece it built (`edges.between(faces.from(upright), faces.from(foot))`), keeping each tool in a variable, and uses positions only for a model that has no parameters.
-- It applies fillets and chamfers before `shell` and before cutting holes, and rounds what the cuts left afterwards by provenance.
-- When an error names a face too narrow, it makes the radius smaller or moves the fillet before the cut, and says which it chose.
-- When the user says "this edge", it reads the selection with `hcad_gui_selection` (each item's selector and sizes), or selects with a selector to show which edges it means. `hcad_gui_feature` with action `fillet-edge`, `chamfer-edge`, `fillet-face`, `chamfer-face`, `shell` or `draft` does what the right-click menu does at a point of the view (`use_selection: true` on the whole selection).
-- It checks the result: the model must check with no errors, and `hcad_render` shows whether the right edges are round. Asked to change a parameter, it checks again at the limits of the `@param` (`hcad_check` with `params`), where selectors by position are the first to fail.

@@ -1,10 +1,12 @@
 # Fits and printing
 
-How much play to leave between parts that slide, press or turn together, for FDM, resin and machined parts; how to test a fit in a `unittest` before printing; snap hooks and print-in-place hinges from the `snaps` and `hinges` libraries; and how to make a part printable: overhangs, thin walls, which way up it prints.
+How much play to leave between parts that slide, press or turn together, printed or machined; how to test a fit in a `unittest` before printing; snap hooks and print-in-place hinges from the `snaps` and `hinges` libraries; and how to make a part print well: overhangs, thin walls, which way up it lies.
 
 ## Play, clearance, interference
 
-Two parts that go together are never drawn at the same size. The hole is made larger than the pin by the **play** (or clearance) on each side; a hole made smaller than the pin is an **interference**, and the pin has to be pressed in. In a model the play is one number, written once as a `@param` so that it can be changed after a test print:
+Two parts that go together are never drawn at the same size. A pin drawn at ⌀8 does not go into a hole drawn at ⌀8: the hole is made larger than the pin by the **play** (also called clearance), the gap left on each side. A hole made smaller than the pin is an **interference**: the pin has to be pressed in, and the material round it holds it.
+
+In a model the play is one number, written once as a `@param` (a value shown as a slider, to change without reading the code), so that it can be changed after a test print:
 
 ```d
 @param("Play each side", min: 0.mm, max: 0.6.mm)
@@ -15,7 +17,13 @@ and every hole that takes a mating part grows by it: `cylinder(d: pinD + 2 * pla
 
 ## How much play
 
-It depends first on how the part is made, then on the printer. These are starting points, each side:
+It depends first on how the part is made, then on the printer. Three ways of making it appear below:
+
+- **FDM**, the common 3D printer: it melts a plastic thread and lays it down through a nozzle, a line at a time, a layer at a time.
+- **Resin** (SLA, MSLA): a printer that hardens a liquid resin with light, layer by layer; finer and more exact than FDM.
+- **Machined**: cut from a block of metal or plastic on a lathe or a mill.
+
+These are starting points, each side:
 
 | Fit | FDM (0.4 mm nozzle) | Resin (SLA, MSLA) | Machined |
 |---|---|---|---|
@@ -31,7 +39,7 @@ Things that move these numbers:
 - **Standing or lying.** A hole printed standing (its axis vertical) is round; across a wall it comes out a little oval and sags at the top (see the [guide on holes](holes.md) for teardrops).
 - **Material.** PETG and TPU need more play than PLA; PLA cracks when pressed hard, PETG flexes.
 - **The printer.** A well tuned printer takes the low end; an untuned one, or a first try, the high end.
-- **Machined parts** are drawn at the nominal size, both of them: the machinist works to the fit you name (H7/g6, a hole ⌀8 H7), written on the drawing as a dimension's `text:` or a `d.note(…)`.
+- **Machined parts** are drawn at the nominal size, both of them: the machinist works to the fit you name, written on the drawing as a dimension's `text:` or a `d.note(…)`. Names like H7/g6 are standard (ISO) fits: the letter and number after the hole's size (⌀8 H7) and the shaft's (⌀8 g6) say how far each may be from the size.
 
 The only sure number comes from a test print: make one before a part that takes hours.
 
@@ -80,11 +88,11 @@ Solid pin() => cylinder(d: pinD, h: 15.mm)
 
 ![A test bar with five holes of growing play, and its pin](img/fits-gauge.png)
 
-Print it the way the real part will print (here the holes stand up), in the same material. Change `pinD` to the size that matters in the real part: play does not scale with the diameter, but roundness does.
+The pin's top edge is chamfered (bevelled) so that it finds the hole. Print it the way the real part will print (here the holes stand up), in the same material. Change `pinD` to the size that matters in the real part: play does not scale with the diameter, but roundness does.
 
 ## Testing a fit in a unittest
 
-A fit can be checked before printing, with the parts it joins. The part you fit onto (a bearing, a shaft, a phone) goes in the model as a **reference part**: see-through and not exported. Then a `unittest` says what must hold:
+A fit can be checked before printing, with the parts it joins. The part you fit onto (a bearing, a shaft, a phone) goes in the model as a **reference part**: shown see-through and never exported, so it is there to look at and to test against, not to print. Then a `unittest`, a block of checks that runs with the model, says what must hold:
 
 | Check | Means |
 |---|---|
@@ -95,6 +103,7 @@ A fit can be checked before printing, with the parts it joins. The part you fit 
 
 A holder for a 608 skate bearing, pressed in:
 
+<!-- render: fits-ex1 -->
 ```d
 // a holder for a 608 skate bearing (⌀22 × 7 mm),
 // pressed in from the top
@@ -130,13 +139,17 @@ unittest
 }
 ```
 
+![A holder for a 608 skate bearing (⌀22 × 7 mm), pressed in from the top](img/fits-ex1.png)
+
 With `-D play=-0.05.mm` the console says `interference: 24.1353 mm^3`: the plastic the bearing has to push aside. For a part that must move freely, assert the opposite: `assert((a & b).volume == 0.mm ^^ 3, "the pin is stuck")`, or a gap of at least the play, `assert(distance(a, b) >= play * 0.9)`.
 
 In the application, select two faces of a part and right-click: **Measure** gives their **Distance** and, for two parallel faces, the **Gap between planes**; **Part volume** and **Part size** are there too.
 
+`hcad fit` is not about fits: it tunes the sizes of a copy to its original, see the [guide on remodelling](remodel.md).
+
 ## Snap hooks: the snaps library
 
-A snap hook is a flexible beam with a barb on its tip: pushed through a window, the beam bends, and the barb clicks over the window's edge.
+A snap hook is a flexible beam with a barb (a small wedge) on its tip: pushed through a window, the beam bends, and the barb clicks over the window's edge. It holds two parts together with no screw.
 
 ```d
 import snaps;
@@ -201,7 +214,7 @@ For printing: stand the hook up, so that the layers run along the beam (lying do
 
 ## Print-in-place hinges: the hinges library
 
-A hinge that comes out of the printer already assembled: the knuckles alternate between two leaves, a pin of the fixed leaf runs through the moving ones, and the play keeps them apart while printing.
+A hinge that comes out of the printer already assembled, nothing to put together. Each half, a **leaf**, carries rings round the axis, the **knuckles**; the knuckles of the two leaves alternate along the axis. A pin of the fixed leaf runs through the moving leaf's knuckles, and the play keeps them apart while printing so that they do not fuse.
 
 <!-- render: fits-hinge -->
 ```d
@@ -243,7 +256,7 @@ unittest
 
 A part that checks may still print badly. Two things go wrong most often:
 
-- **Overhangs:** a surface facing down more steeply than about 45° from a wall has nothing under it to print on: it needs supports, or it sags.
+- **Overhangs:** a printer builds each layer on the one below. A surface facing down more steeply than about 45° from a wall has nothing under it to print on: it needs **supports** (scaffolding printed with the part and broken off after), or it sags.
 - **Thin walls:** a wall thinner than two lines of the nozzle (0.8 mm for a 0.4 mm nozzle) prints with gaps, or not at all.
 
 hackerscad finds both:
@@ -268,7 +281,7 @@ A `unittest` keeps a model printable as it changes: `assert(part.thinWalls(0.8.m
 
 Every part has a best way to lie on the bed, and choosing it is part of the design:
 
-1. **The largest flat face down**: it holds the part and needs no supports. `.aligned` turns a solid onto its largest flat face (useful on a part loaded from a mesh).
+1. **The largest flat face down**, on the printer's bed (the plate it prints on): it holds the part and needs no supports. `.aligned` turns a solid onto its largest flat face (useful on a part loaded from a mesh).
 2. **The fewest overhangs**: compare orientations with `--printability`.
 3. **Strength along the layers.** A print is weakest between layers: a hook, a beam, a clip must have its layers running along it, not across.
 4. **Holes that matter standing up**: round holes and threads print rounder with their axis vertical. Holes across a wall get a teardrop (see the [guide on holes](holes.md)).
@@ -322,16 +335,3 @@ A failing `assert` in a `unittest` does not stop the model: the parts are still 
 - Right-click a part: **Measure** gives distances between two selected faces, **Part size** and **Part volume**.
 - Right-click a flat face: **Place on…** places another solid against it, writing `placeOn(…)`.
 - Reference parts (`alpha:`, `export: false`) show see-through, so you see a fit from outside; a `unittest` runs with F5 or the bug button over the console, and before an export.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `fits`), or `hcad docs --guide fits` from the command line. It follows these rules:
-
-- Before choosing any play, it asks how the part will be made: FDM, resin or machined, and with which printer, nozzle and material. It does not guess them: the play changes with each. If you do not know, it uses the FDM column above, says so, and proposes the test piece.
-- It writes every play as a `@param`, named for what it does, so that you change it after a test print without reading the code.
-- The parts a design fits onto go in as reference parts, and it writes the fit as a `unittest`: `(a & b).volume` for an interference or none, `distance` for a gap, `pieces` for print-in-place parts.
-- It uses the libraries: `hinge()` for a print-in-place hinge, `snapHook` and `snapSlot` for a snap, `clearance:` on a thread.
-- It checks printability: `hcad_check` or `hcad_render` with `printability: true` (and `overhang_angle`, `min_wall`), which report the areas per part and mark the pictures; with your window open, `hcad_gui_view` with `printability: true` shows the same marks to you, and `hcad_gui_state` reads their areas. `hcad_measure` gives the smallest distance between two parts and where.
-- It says how the part is meant to print, lays it that way, and says what was not checked: a fit is not proven until it is printed.
-
-`hcad_fit` (`hcad fit`) is not about fits: it tunes the sizes of a copy to its original, see the [guide on remodelling](remodel.md).

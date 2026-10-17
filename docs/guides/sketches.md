@@ -1,22 +1,10 @@
 # Constrained sketches
 
-A flat outline drawn as points, lines, arcs, circles, ellipses, splines and ready-made shapes, held in place by constraints and dimensions, then extruded, revolved or cut: `sketch()`, every constraint, construction geometry, degrees of freedom and their warning, reading the solved sketch back, sketches on the faces of a solid, when a sketch beats unions of shapes, and the sketch bar of the application.
-
-## When to use one
-
-A sketch is an outline told by its sizes and its relations: this side horizontal, that arc tangent to this line, the hole 5 mm from that edge. hackerscad solves the constraints and gives the outline as a `Profile`, which extrudes, revolves and cuts like any other. When a `@param` changes, the outline is solved again: tangents stay tangent, holes stay where they were measured from.
-
-| The outline is | Use |
-|---|---|
-| one shape: a rectangle with round corners, a circle, a slot | a profile in one line: `rect(40.mm, 20.mm, corner: 3.mm)` (see [the guide on profiles](profiles.md)) |
-| several shapes overlapping, an offset of another, text, an SVG | profile operations: `+ - &`, `.offset`, `text()`, `load()` |
-| a prismatic part from a drawing: a bracket, a plate, a lever, a cam, a gasket, a clip | **a sketch**, each size of the drawing a constraint |
-| a feature on a face of a solid, measured from that face's edges | **a sketch on the face**: `body.sketch(faces.top)` |
-| a sculpted shape: a figurine, a vase with a texture | not a sketch: lofts, sweeps, noise (see [the guide on sweeps](sweeps.md)) |
-
-A profile made of more than three shapes, moved by sizes worked out by hand, or rounded with `.offset(r).offset(-r)`, is an outline that wants a sketch: it reads as its dimensions, keeps its tangents when a size changes, and its edges take fillets. The two mix: `s.profile - circle(d: 5.mm)` is a profile too.
+A sketch is a flat outline drawn from points, lines, arcs, circles, ellipses, splines and ready-made shapes, held in place by constraints (rules such as "this line is level" or "these two points are 30 mm apart"), then extruded (pushed up into a solid), revolved (turned round an axis) or cut into a part. This guide covers `sketch()`, every constraint, construction geometry, degrees of freedom and their warning, reading the solved sketch back, sketches on the faces of a solid, where a sketch beats shapes added together, and the sketch bar of the application.
 
 ## A first sketch
+
+A sketch is an outline told by its sizes and its relations: this side level, that arc touching this line, the hole 5 mm from that edge. hackerscad solves the constraints (it works out where every point must go) and gives the outline as a `Profile`, a flat outline that extrudes, revolves and cuts like any other. When a `@param` (a size that can be changed from outside the code) changes, the outline is solved again: arcs that touched a line still touch it, holes stay where they were measured from. For one plain shape, a rectangle with round corners or a circle, a profile in one line is shorter: `rect(40.mm, 20.mm, corner: 3.mm)` (see [the guide on profiles](profiles.md)).
 
 An L bracket. Each point is drawn roughly where it goes; the constraints then say what is exact.
 
@@ -61,7 +49,7 @@ Solid bracket() => outline().extrude(20.mm);
 
 ![An L bracket extruded from a sketch](img/sketches-bracket.png)
 
-The steps are always the same: `sketch()`, the geometry, the constraints, `s.profile`. `s.dof` is 0 here: every point is decided. Then the solid takes the 3D features (holes, fillets, shells) that are not part of the outline.
+The steps are always the same: `sketch()`, the geometry, the constraints, `s.profile`. `s.fillet(c, 4.mm)` rounds the inside corner at `c` (a fillet is a rounded corner or edge). `s.dof` is 0 here: every point is decided. Then the solid takes the 3D features that are not part of the outline: holes, fillets on its edges, a shell (the part hollowed out to walls of one thickness).
 
 ## The geometry
 
@@ -114,7 +102,7 @@ A distance is never negative: which side a point lies on comes from where it is 
 
 ## Where a sketch beats unions
 
-A lever: two round ends joined by sides tangent to both. As unions of circles and boxes, every size of the sides would be worked out by hand, and wrong as soon as the span changes. As a sketch it is its dimensions:
+A union is shapes added together into one. A lever: two round ends joined by sides tangent to both (touching each round end without crossing it). As unions of circles and boxes, every size of the sides would be worked out by hand, and wrong as soon as the span changes. As a sketch it is its dimensions:
 
 <!-- render: sketches-lever --from top -->
 ```d
@@ -159,6 +147,8 @@ Solid arm() => lever().extrude(5.mm);
 ```
 
 ![A lever drawn with tangent arcs](img/sketches-lever.png)
+
+A profile made of more than three shapes, moved by sizes worked out by hand, or rounded with `.offset(r).offset(-r)`, is an outline that wants a sketch: it reads as its dimensions, keeps its tangents when a size changes, and its edges take fillets. The two mix: `s.profile - circle(d: 5.mm)` is a profile too.
 
 The profile fills what lies inside an odd number of loops: the circles inside the outline are holes. `s.fill(at)` makes the area holding a point full whatever the loops say, `s.fill(at, full: false)` empty.
 
@@ -297,6 +287,7 @@ Solid marked()
 
 A rim under the face, made concentric with a boss on top:
 
+<!-- render: sketches-ex1 -->
 ```d
 @part
 Solid block()
@@ -313,6 +304,8 @@ Solid block()
     return body.extrude(s.profile, depth: 2.mm);
 }
 ```
+
+![The blind hole under the top face](img/sketches-ex1.png)
 
 `sketch(frame)` and `sketch(plane)` draw on a frame or a plane instead (`sketch(XZ)`: seen from the front), with `s.origin` and no edges: see [the guide on planes](planes.md). A sketch's profile stays where it was drawn: moved or combined with a profile of no place, it stays in its plane; two profiles drawn on different faces do not combine.
 
@@ -333,13 +326,3 @@ Solid block()
 - **Opening a sketch.** The view bar's **View › Sketches** lists the model's sketches (line, dimensions, whether fully constrained); right-click a face made from a sketch: **Edit sketch…**.
 - **New sketches.** Right-click a flat face: **Sketch on face…** keeps the part's solid in a variable and starts an empty sketch on it, its edges as references. **View › New sketch…** draws on the face or plane picked, or shows the planes and waits for a click on one.
 - **The sketch bar.** While a sketch is shown and its code can be written to (kept in a variable, in the open file, not in a loop), a bar of tools runs down the left of the view. The left column draws: select (↖), point, lines, smooth curve, rectangle (by corners, from its centre, turned), regular polygon, slot, circle, ellipse, teardrop, arc (by centre or through 3 points), fill (◩, an area full or empty); ⌫ deletes what is selected with what is drawn on it and its constraints; ┄ turns it into construction geometry (with nothing selected, what you draw next). The other column constrains what is selected: coincident, fix, horizontal, vertical, parallel, perpendicular, equal, midpoint, symmetric, tangent, concentric, on, and, asking for a value, length, distance, angle, radius, diameter. Each button writes the line into the code; the tooltips say what each needs selected.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `sketches`), or `hcad docs --guide sketches` from the command line. It follows these rules:
-
-- For an outline given by its dimensions it prefers a sketch to unions of shapes: each size a constraint, `s.dof == 0`, sizes it estimated made `@param`s.
-- Before starting, it asks for the sizes it cannot read from the request (and which are critical, which can be rough), not afterwards.
-- It treats the under-constrained warning as a fault to fix, not as done.
-- In the window it uses `hcad_gui_feature` with action `sketch` (on a face, or `plane:` for XY, XZ, YZ or a plane of the code) to start a sketch, `hcad_gui_sketch` to show one, select its entities, draw (`draw:`) and constrain (`constrain:`) as the sketch bar does, and `hcad_gui_dimension` to change a dimension; the code itself it edits with `hcad_gui_edit`.
-- It checks the result: `hcad_check` with no errors and no warnings, `hcad_gui_sketch`'s reply (degrees_of_freedom, free_points) or `s.dof` in a `unittest`, and the pictures of `hcad_render` looked at.

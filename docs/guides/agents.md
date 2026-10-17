@@ -49,7 +49,7 @@ The skill carries the stamp of the docs it was made from. At the start of a sess
 
 ## What the agent asks before starting
 
-A good agent asks first, in one message, the few questions that change the result most, numbered, and says that you answer the ones you can: the rest it estimates and makes `@param`s, to change after a test print.
+A good agent asks first, in one message, the few questions that change the result most, numbered, and says that you answer the ones you can: the rest it estimates and makes `@param`s (sizes you can change later in the Parameters panel), to change after a test print.
 
 | When the request has | It asks | Why |
 |---|---|---|
@@ -116,7 +116,7 @@ unittest
 
 ![Iso, front, top and right: what hcad_render returns](img/agents-views.png)
 
-For a part to print it also looks at printability: overhangs that need supports striped red, walls too thin hatched violet.
+For a part to print it also looks at printability. A 3D printer lays each layer on the one below: a surface that hangs over empty space (an overhang) needs supports printed under it, and a wall thinner than the nozzle's line may not print at all. Overhangs are striped red, walls too thin hatched violet.
 
 <!-- render: agents-printability --printability --from 1,-1,0.3 -->
 ```d
@@ -153,7 +153,7 @@ What the command line cannot do is your window: no editing, no annotations, no v
 
 ## The guides
 
-These pages are written for you and for the agent alike. The agent reads one in full before using a feature: `hcad_docs` with format `guide` and a topic (`threads`, `sketches`, `remodel`, `parts`…), or without a topic for the list; on the command line `hcad docs --guide NAME`. In the application, **☰ › Guides** opens them on the website.
+These pages are written for you and for the agent alike. The agent reads one in full before using a feature: `hcad_docs` with format `guide` and a topic (`threads`, `sketches`, `remodel`, `parts`…), or without a topic for the list; on the command line `hcad docs --guide NAME`. In the application, **☰ › Guides** opens them on the website. The rules the agent follows, in brief, are in [AGENTS.md](../AGENTS.md) (`hcad_docs` format `agents`): read them to know what to expect of it, and say so when it does not.
 
 ## Common problems
 
@@ -171,7 +171,3 @@ These pages are written for you and for the agent alike. The agent reads one in 
 - The window's **name** is in the header bar, with the agent icon: click it to rename the window (*Name for AI agents*).
 - **Annotate** (A) in the view bar: arrows, crosses, circles, freehand lines and text, a colour for each; Clear, Done, Save, Copy in its bar.
 - **☰ › Guides**, **Cheatsheet**, **Language Reference**: the same texts the agent reads.
-
-## With an AI agent
-
-This guide is `hcad_docs` format `guide`, topic `agents` (`hcad docs --guide agents`). The rules the agent follows in brief are in [AGENTS.md](../AGENTS.md), `hcad_docs` format `agents`: read them to know what to expect of it, and say so when it does not.

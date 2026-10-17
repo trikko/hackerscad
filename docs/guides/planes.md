@@ -1,23 +1,10 @@
 # Planes, frames and placement
 
-Where things go: the three main planes XY, XZ and YZ (and which way each faces), planes of every other kind (through points, on a face, halfway between two faces, moved off another), frames to build on a face, placing parts on faces and next to each other, axes, sketching on a plane, and the planes shown in the 3D view with the menus that write them.
-
-## When to use what
-
-Everything in hackerscad is built on XY, Z up, round the origin: a box stands on z = 0, a profile lies in XY. Planes and frames say where that XY is somewhere else.
-
-| You want to | Use |
-|---|---|
-| draw an outline as the Front or Right view shows it | `sketch(XZ)`, `sketch(YZ)` |
-| cut, split or mirror a solid | a plane: `body.split(XZ)`, `body.mirror(YZ)`, `body.section(XY.offset(5.mm))` |
-| put a boss, a pocket, a text on a face | the face's frame: `body.frame(faces.top)`, with `on:` or `placeOn` |
-| lay a part with one of its faces against another part | `part.placeOn(frame, from: faces.bottom)` |
-| put a part on top of, or beside, another | `a.on(b)`, `a.nextTo(b, X, gap: 10.mm)`, `a.align(b, …)` |
-| turn about a line, or copy round it | an axis: `rotate(30.deg, axis: a)`, `circularPattern(6, axis: a)` |
-
-Placing parts relative to each other, rather than by coordinates worked out by hand, keeps them in place when a `@param` changes.
+Where things go. A plane is a flat surface without end, given by a point and the direction it faces; a frame is a place to build from, a point with its own three axes. This guide covers the three main planes XY, XZ and YZ (and which way each faces), planes of every other kind (through points, on a face, halfway between two faces, moved off another), frames to build on a face, placing parts on faces and next to each other, axes, sketching on a plane, and the planes shown in the 3D view with the menus that write them.
 
 ## The main planes
+
+Everything in hackerscad is built on XY, Z up, round the origin (the point 0, 0, 0): a box stands on z = 0, a profile lies in XY. Planes and frames say where that XY is somewhere else. A plane's normal is the direction it faces, square to it.
 
 | Plane | Normal | Faces | x and y of a sketch on it |
 |---|---|---|---|
@@ -49,6 +36,8 @@ Solid onYZ() => letter().placeOn(YZ);
 ![An F on XY, XZ and YZ](img/planes-main.png)
 
 ## Making planes
+
+Planes cut, split and mirror solids, and carry sketches.
 
 | Form | The plane |
 |---|---|
@@ -105,8 +94,11 @@ A frame has `origin`, `x`, `y`, `z`. Take a frame on the solid before a feature 
 
 ## Placing parts
 
+Placing parts relative to each other, rather than by coordinates worked out by hand, keeps them in place when a `@param` (a size that can be changed) changes.
+
 `solid.placeOn(f)` moves a solid built on XY (Z up) onto a frame: its origin on the frame's origin, its X, Y, Z on the frame's. A plane works too: `placeOn(plane)`, with the axes a frame on a face would have.
 
+<!-- render: planes-ex1 -->
 ```d
 // a peg on Carlo's top, 12 mm left of the face's centre
 import carlo;
@@ -119,6 +111,8 @@ Solid pegged()
         + cylinder(d: 5.mm, h: 4.mm).placeOn(top);
 }
 ```
+
+![A peg on Carlo's top, 12 mm left of the face's centre](img/planes-ex1.png)
 
 `placeOn(f, from: faces.bottom)` lays a face of the solid against the frame instead: that face's middle on the frame's origin, the two facing each other, X on X; `at: vec(…)` carries that point of the face instead of its middle. Turn it on the face with `f.turn(…)`.
 
@@ -185,7 +179,7 @@ Solid behind() => box(50, 8, 20)
 
 ## Axes
 
-An axis is a line in space, for turning and for patterns:
+An axis is a line in space, for turning and for patterns (copies of a part repeated round it):
 
 | Form | The axis |
 |---|---|
@@ -195,6 +189,7 @@ An axis is a line in space, for turning and for patterns:
 | `frame.axis(X)` | an axis of a frame |
 | `X`, `Y`, `Z` | the directions through the origin, where an axis is taken |
 
+<!-- render: planes-ex2 -->
 ```d
 // a lever turned 30° about its hole's axis
 @part
@@ -208,12 +203,15 @@ Solid turned()
 }
 ```
 
+![A lever turned 30° about its hole's axis](img/planes-ex2.png)
+
 `body.axis` needs exactly one edge: a hole has two rims, so pick one (`edges.of(faces.top)`).
 
 ## Sketching on a plane
 
 `sketch(plane)` and `sketch(frame)` draw on a plane or a frame instead of XY, with its x and y as the table above gives them and `s.origin` its origin (no edges: those are for sketches on faces, see [the guide on sketches](sketches.md)). The profile lies where it was drawn, and extrudes across its own plane, along the normal.
 
+<!-- render: planes-ex3 -->
 ```d
 // a hook drawn as the Front view shows it, on XZ, made
 // 10 mm thick towards the back (XZ faces the front)
@@ -245,6 +243,8 @@ Profile side()
 Solid hook() => side().extrude(-10.mm);
 ```
 
+![A hook drawn as the Front view shows it, on XZ, made 10 mm thick towards the back (XZ faces the front)](img/planes-ex3.png)
+
 A sketch on `XZ.offset(10.mm)` lies 10 mm in front of XZ; on `body.plane(faces.top, faces.bottom)`, in the middle of the part.
 
 ## Common errors
@@ -264,13 +264,3 @@ A sketch on `XZ.offset(10.mm)` lies 10 mm in front of XZ; on `body.plane(faces.t
 - **Copy as code.** On a face: **Frame on face** (`.frame(…)`) and **Plane of face** (`.plane(…)`); on an edge: **Axis along edge** (`.axis(…)`).
 - **Placing with the mouse.** Right-click a face of a part: **Place on…** carries a corner or the middle of that face onto a face of another part (or the ground), with a ring to spin it; when both faces are flat it writes `.placeOn(other().frame(faces…), from: faces…)`, which follows the other part when it changes. **Move…** and **Rotate…** write a `.move()` or `.rotate()`; **Rotate around its normal…**, **Rotate around its axis…** (a round face) and **Rotate around this edge…** turn the part about what is picked.
 - **Section parallel to face** (right-click › View) cuts the view with a plane through that face, to look inside.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `planes`), or `hcad docs --guide planes` from the command line. It follows these rules:
-
-- It places parts by each other (`on`, `nextTo`, `align`, `placeOn` a face's frame), not by coordinates worked out by hand, and takes frames on the solid before a feature changes the face.
-- It remembers that XZ faces the front: a sketch on XZ reads as the Front view, and a positive extrusion comes towards the viewer.
-- When a placement depends on a real object (where a part must sit on it), it asks for the sizes rather than guessing.
-- In the window it uses `hcad_gui_view` with `planes: true` to show the planes, `hcad_gui_feature` with action `sketch` and `plane:` (XY, XZ, YZ or a plane of the code by name) to start a sketch on one, `hcad_gui_transform` with `place` for Place on…, and `hcad_gui_menu` for Plane on face… and the other entries.
-- It checks the result: `hcad_check` with no errors or warnings, the parts' sizes and positions, a `unittest` on what must hold (no overlap: `(a & b).volume`, a plane where it should be), and the pictures of `hcad_render` looked at from the side that shows the placement.

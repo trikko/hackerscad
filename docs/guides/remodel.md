@@ -1,23 +1,10 @@
 # Remodelling a mesh or STEP
 
-Turning an STL, OBJ, 3MF or STEP file into a parametric hackerscad model that matches it: loading it as a see-through reference, reading its features, sections and holes, building the copy from the largest shape to the smallest, then the review round that says what still differs, the pictures that show it, and when the copy is done.
-
-## When to remodel
-
-A mesh can be used as it is: `load("part.stl")` gives a solid you can cut, drill and measure. Remodel it when you want to change its sizes, not only add to it.
-
-| You have | You want | Do |
-|---|---|---|
-| an STL from a download | a hole a little bigger, a tab cut off | `load()` it and cut or add: no remodelling |
-| an STL or STEP | the same part, but 10 mm longer, or for another screw | remodel it: sizes become `@param`s |
-| a STEP from a supplier | a part that fits onto it | load it as a reference part and model only your part (see [the guide on parts](parts.md)) |
-| a real object, a photo | a copy | measure it: see [the guide on sketches](sketches.md); this guide needs a file |
-
-A mesh has every size in it, so a remodel needs no questions: the tools below read the sizes, and the review measures how far the copy is.
+Turning an STL, OBJ, 3MF or STEP file into a hackerscad model that matches it and whose sizes you can change: loading it as a see-through reference, reading its features, sections and holes, building the copy from the largest shape to the smallest, then the review round that says what still differs, the pictures that show it, and when the copy is done.
 
 ## An original to practise on
 
-The examples in this guide copy a small bracket. To follow along, save this model as `bracket.hcad` and make an STL of it; it stands for a file you downloaded.
+The examples in this guide copy a small bracket: a flat plate with a round post on it (a boss), a hole down the post (a bore), and two holes for screws whose heads sink into the plate (countersunk holes). The plate's top edges are bevelled (a chamfer). To follow along, save this model as `bracket.hcad` and make an STL of it; it stands for a file you downloaded.
 
 <!-- render: remodel-original -->
 ```d
@@ -50,7 +37,9 @@ hcad render bracket.hcad -o bracket.stl
 
 ## 1. Load it as a reference
 
-In a new model next to the file, the original is a part like any other, drawn see-through and left out of the exports. A part of your own grows beside it:
+An STL, OBJ or 3MF file is a mesh: the surface of the part as thousands of small flat triangles, with no sizes or steps written in it. A STEP file, made by other CAD programs, has exact surfaces but no parameters either. `load("part.stl")` already gives a solid you can cut, drill and measure: a hole a little bigger, a tab cut off, need no copy. Remodelling is for when you want to change its sizes (the same part 10 mm longer, or for another screw): the copy is built from shapes and sizes you can read and change. To build onto a supplier's part rather than copy it, load it as a reference part and model only your own (see [the guide on parts](parts.md)). A real object or a photo has no file to read: measure it (see [the guide on sketches](sketches.md)).
+
+The file has every size in it: the tools below read them, and the review measures how far the copy is. In a new model next to the file, the original is a part like any other, drawn see-through and left out of the exports. A part of your own grows beside it:
 
 ```
 @part("slategray", alpha: 0.35, export: false)
@@ -72,7 +61,7 @@ Solid copy() => rect(60.mm, 30.mm, corner: 6.mm)
 
 ## 2. Read it
 
-Three commands read what the part is made of. Each has an MCP tool of the same name for agents (`hcad_features`, `hcad_scan`, `hcad_section`).
+Three commands read what the part is made of. A section, here and in all of hackerscad, is a cut through the part: the flat outline you would see if you sawed it across at that level.
 
 ```bash
 hcad features bracket.stl
@@ -86,12 +75,12 @@ hcad section bracket.stl --plane xy --at 3
 
 ## 3. Build from the largest to the smallest
 
-Copy the part the way it was made, one operation at a time, so that every step is a line you can read and a size you can change:
+Copy the part the way it was made, one operation at a time, so that every step is a line you can read and a size you can change. Most steps take a flat outline (a profile) and extrude it: push it up into a solid.
 
 1. **The outside**: one outline per stretch the scan names, the sketch the section gives pasted and extruded (here the plate, 0 to 6 mm, and the boss, 6 to 14 mm).
-2. **Features on its faces**, in steps, as on a machine (see [the guide on features](features.md)): a boss, a pocket, a step. One of one shape is a profile with the sizes features and scan give; one whose outline has several shapes is a section of the original just inside that face, its sketch pasted and extruded from the face.
+2. **Features on its faces**, in steps, as on a machine (see [the guide on features](features.md)): a boss, a pocket (a hollow cut into a face, not through it), a step. One of one shape is a profile with the sizes features and scan give; one whose outline has several shapes is a section of the original just inside that face, its sketch pasted and extruded from the face.
 3. **The chamfers and roundings of the outside**, before anything is cut into the faces they touch.
-4. **Holes, pockets and traps**: `hole()` when features names a screw size (see [the guide on holes](holes.md)).
+4. **Holes, pockets and traps** (a trap is a pocket shaped to hold a nut): `hole()` when features names a screw size (see [the guide on holes](holes.md)).
 5. **Last, the small things**: small chamfers, notches, lettering. Lettering (regular grooves about 0.5 mm deep) is a section 0.25 mm inside the face with `--region` round the letters, its sketch extruded 0.5 mm into the face: never traced by hand.
 
 The bracket, copied in those steps:
@@ -125,6 +114,35 @@ Solid copy()
     return b;
 }
 ```
+
+A part that is one outline pushed up needs a single section. Carlo, the mascot clip, is one: cut halfway up, his outline extruded as high as he is gives him back. Here `carlo()` stands in for the loaded file:
+
+<!-- render: remodel-carlo -->
+```d
+import carlo;
+
+// the original, see-through, and the copy: its section
+// halfway up, pushed up as high as the original
+
+@part("slategray", alpha: 0.35, export: false)
+Solid original() => carlo();
+
+@part("Sky Pop")
+Solid copy() => original
+    .section(XY.offset(7.5.mm))
+    .extrude(15.mm)
+    .move(z: -7.5.mm);
+
+unittest
+{
+    assert(copy.deviation(original) < 0.1.mm,
+        "the copy follows the original");
+}
+```
+
+![Carlo copied from one section: the copy covers the original exactly](img/remodel-carlo.png)
+
+The section sits at the height it was cut, 7.5 mm, so the copy is moved down by as much. With a file, `hcad section carlo.stl --plane xy --at 7.5` gives the same outline as a sketch to paste, its arcs and lines with their sizes, ready to change.
 
 ## 4. The review round
 
@@ -187,7 +205,7 @@ unittest
 
 Parts printed and shared online have details made for printing. Look for them in the sections and the drawings:
 
-- a notch on top of a sideways hole, a teardrop point cut flat at an angle that is not 45° (read it from the section);
+- a notch on top of a sideways hole, or a hole drawn as a teardrop (round with a point on top, so that it prints without support) with its point cut flat at an angle that is not 45° (read it from the section);
 - a layer that closes a hole for a millimetre, printed over and drilled after;
 - nut traps wider at the mouth, 0.5 mm chamfers where holes open.
 
@@ -206,13 +224,3 @@ Parts printed and shared online have details made for printing. Look for them in
 - **☰ › Open…** on an `.stl`, `.obj`, `.3mf`, `.step`, `.svg` or `.dxf` file starts a new model, not saved yet, with that file in a `load()` line (its own file goes next to it when saved): the start of a remodel.
 - **Section view** in the view bar cuts the model with a plane you slide; right-click a face › **Section parallel to face** cuts parallel to it: the place to compare the inside of the copy with the see-through original.
 - Right-click the original › **Hide original** and **Show only copy** to look at one at a time; **Measure** for a distance or a diameter, **Copy as code** for a face selector or a frame to paste.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `remodel`), or `hcad docs --guide remodel`; `hcad_docs` with topic `remodel` gives the short rules. It follows them:
-
-- It asks nothing before starting: the sizes are in the file. It loads it as a see-through reference part, straightened with `.aligned` if it is tilted.
-- It reads it with `hcad_features`, `hcad_scan` along x, y and z and `hcad_section` at the levels the scans name, then builds from the largest shape to the smallest.
-- After every change it calls `hcad_review` (`look: [x, y, z]` to see one place again), fixes what the close-ups show, and goes deeper with `hcad_compare`, `hcad_diff`, `hcad_lines`, `hcad_match` and `hcad_section` with `compare` only where the review points; `hcad_fit` only to tune sizes of a shape already right.
-- It stops when `hcad_review` says so and the close-ups show nothing worth fixing, then names the measures with `hcad_literals` and puts the relations in `unittest`s.
-- In your window it works with `hcad_gui_edit`, and shows where a difference is with `hcad_gui_annotate` (see [the guide on agents](agents.md)).

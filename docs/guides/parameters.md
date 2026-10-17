@@ -1,10 +1,10 @@
 # Parameters, presets and checks
 
-The sizes a user may want to change, made parameters with `@param` (limits, steps, a list of choices) and grouped into named presets with `@preset`; units and the mistakes they catch, and the few they do not; design checks in `unittest` blocks with `assert`; measuring a model (bounding box, volume, mass, distances) and printing values with `writeln`; and changing parameters from the Parameters panel, the command line (`-D`, `--preset`) and an agent (`hcad_gui_set`).
+The sizes you may want to change, made parameters with `@param` (limits, steps, a list of choices) and grouped into named presets with `@preset`; units and the mistakes they catch, and the few they do not; design checks in `unittest` blocks with `assert`; measuring a model (its size, volume, weight, distances) and printing values with `writeln`; and changing parameters from the Parameters panel and the command line (`-D`, `--preset`).
 
 ## What makes a good parameter
 
-A parameter is a size someone will change: the inside of a box, the diameter of the shaft a knob fits on, the play of a printed fit, how many holes. Not every number: a parameter for each fillet makes a panel nobody reads. Name the measures that decide whether the part works, give each a description that says what it is, and limits that keep the model valid.
+A parameter is a named value in the model that you can change without touching the rest of the code: change it, and the part is rebuilt to fit. Make one of each size someone will change: the inside of a box, the diameter of the shaft a knob fits on, the play of a printed fit, how many holes. Not every number: a parameter for each fillet (a rounded edge) makes a panel nobody reads. Name the measures that decide whether the part works, give each a description that says what it is, and limits that keep the model valid.
 
 | Kind of value | Write | The panel shows |
 |---|---|---|
@@ -18,7 +18,9 @@ A parameter is a size someone will change: the inside of a box, the diameter of 
 
 ## A complete example
 
-A box with a lid, sized for what goes in it. The inside sizes are parameters, with presets for two uses; the play of the lid is a parameter because it depends on the printer; the checks say what must hold whatever the values.
+A box with a lid, sized for what goes in it. The inside sizes are parameters, with presets for two uses. The play of the lid (the small gap left round it so that it slides in) is a parameter too, because it depends on the printer. The checks at the end say what must hold whatever the values.
+
+The tray is a rounded rectangle pushed up into a block (`extrude`), then hollowed out with walls of one thickness and the top left open (`shell`). The lid is a flat plate with a lip under it that goes inside the tray.
 
 <!-- render: parameters-box -->
 ```d
@@ -93,7 +95,7 @@ unittest
 | Argument | What it does | Default |
 |---|---|---|
 | description | the label in the panel: say what it is, and what to measure for a real object | the name |
-| `min:`, `max:` | the limits; a value outside them is an error, from the panel, `-D` or an agent | none |
+| `min:`, `max:` | the limits; a value outside them is an error, from the panel or from `-D` | none |
 | `step:` | how much the panel's arrows change it | 1 for whole numbers; 0.1 or 1 for others, from the range |
 | `choices:` | the only values allowed, shown as a list | — |
 
@@ -112,6 +114,35 @@ immutable width = 64.mm;
 ```
 
 Short annotations share a line; long ones get one each. Presets are for combinations that belong together (sizes for one phone, one card deck, one printer), not for single values.
+
+Carlo, the mascot clip, made for two kinds of bag. A thin bag of crisps wants the usual gap between the jaws; a thick bag of coffee wants a wider gap and one more tooth to hold it. Each preset sets both at once:
+
+<!-- render: parameters-carlo --preset coffee -->
+```d
+import carlo;
+
+// Carlo for thin and thick bags: a preset sets the
+// teeth and the gap between the jaws together
+
+@param("Teeth on each jaw", min: 1, max: 6)
+@preset("crisps", 3) @preset("coffee", 4)
+immutable teeth = 3;
+
+@param("Gap between the jaws", min: 1.5.mm, max: 5.mm)
+@preset("crisps", 2.9.mm) @preset("coffee", 4.mm)
+immutable gap = 2.9.mm;
+
+@param("Height", min: 8.mm, max: 25.mm)
+immutable height = 15.mm;
+
+@part("Sky Pop")
+Solid clip() => carlo(teeth: teeth, gap: gap,
+    height: height);
+```
+
+![Carlo with the coffee preset: four teeth, a wider gap](img/parameters-carlo.png)
+
+`height` has no preset: both presets keep its default, 15 mm.
 
 ## Units, and the mistakes they catch
 
@@ -134,7 +165,7 @@ Some mistakes are valid code and give wrong numbers. The checks do not catch the
 
 ## Checks: unittest and assert
 
-`unittest { … }` blocks are the design's requirements, written so that they are checked every time: a size that must fit a drawer, a fit that must have play, a wall that must print. `assert(condition, "message")` fails with the message, and the problem is reported with its line; the parts are still built and shown.
+`unittest { … }` blocks are the design's requirements, the things that must be true for the part to work, written so that they are checked every time: a size that must fit a drawer, a fit that must have play, a wall that must print. `assert(condition, "message")` fails with the message, and the problem is reported with its line; the parts are still built and shown.
 
 ```d
 unittest
@@ -152,18 +183,43 @@ An `assert` inside a part's function is different: when it fails, the evaluation
 
 ## Measuring
 
+A model can measure itself. The **bounding box** is the smallest box, square to the axes, that holds the part: its size is the part's width, depth and height. Carlo, measured in a check:
+
+<!-- render: parameters-ex1 -->
+```d
+import carlo;
+
+// Carlo measured: his size, volume and weight
+
+@part("Sky Pop")
+Solid clip() => carlo();
+
+unittest
+{
+    writeln("size: $(clip.bbox.size)");
+    writeln("volume: $(clip.volume / 1.cm ^^ 3) cm³");
+    immutable grams = clip.mass(density: 1.24);
+    writeln("in PLA: $(grams) g");
+    assert(grams < 15, "too heavy for a bag clip");
+}
+```
+
+![Carlo measured](img/parameters-ex1.png)
+
+It prints *size: [41.5497 mm, 28.6709 mm, 15 mm]*, *volume: 9.0432 cm³* and *in PLA: 11.2136 g*: Carlo printed solid in PLA weighs about 11 g.
+
 | What | Gives |
 |---|---|
 | `s.bbox.size`, `.min`, `.max`, `.center` | the bounding box: width, depth, height; its corners and centre |
 | `s.volume`, `s.area` | volume (mm³) and surface area (mm²) |
 | `s.mass(density: 1.24)` | grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85 |
-| `s.centroid` | the centre of mass |
-| `s.inertia(density: 1.24)` | the principal moments of inertia, in g·mm² |
+| `s.centroid` | the centre of mass, the point it balances on |
+| `s.inertia(density: 1.24)` | the principal moments of inertia (how hard it is to set spinning round each axis), in g·mm² |
 | `distance(a, b)` | how far apart two solids are, 0 when they touch or overlap; between two points, their distance |
 | `(a & b).volume` | how much two parts overlap: 0 when they only touch |
-| `s.overhangs(45.deg)`, `s.thinWalls(0.8.mm)` | the area needing supports, and the area of walls too thin to print |
+| `s.overhangs(45.deg)`, `s.thinWalls(0.8.mm)` | the area that hangs over empty space and needs supports to print, and the area of walls too thin to print |
 
-A fit is best measured against the object it fits: model that object as a reference part, drawn see-through and never exported, and measure the gap in a unittest. Seen from the front, cut through the axis:
+A fit is best measured against the object it fits: model that object as a reference part, drawn see-through and never exported, and measure the gap in a unittest. Here a knob goes on a motor's shaft; its top edge is rounded (`fillet`). Seen from the front, cut through the axis:
 
 <!-- render: parameters-fit --from front --cut --look-at 0,15,12 --size 30 -->
 ```d
@@ -201,7 +257,7 @@ With `-D play=0.05.mm` the check fails: *the knob is too tight*, with its line.
 
 ## writeln
 
-`writeln(…)` prints to the application's Console (and to the output of `hcad check`, and to agents): its arguments one after the other, or a string with `$(…)` in it, which inserts the value of the expression. Values print with their units: `writeln("gap: $(gap)")` gives `gap: 0.15 mm`. It works in a `unittest` and in any function.
+`writeln(…)` prints to the application's Console (and to the output of `hcad check`): its arguments one after the other, or a string with `$(…)` in it, which inserts the value of the expression. Values print with their units: `writeln("gap: $(gap)")` gives `gap: 0.15 mm`. It works in a `unittest` and in any function.
 
 ## Changing parameters
 
@@ -209,8 +265,6 @@ With `-D play=0.05.mm` the check fails: *the knob is too tight*, with its line.
 |---|---|
 | the application | the **Parameters** panel: a field for each `@param`, a **Preset** list when there are presets |
 | the command line | `-D name=value`, as many as needed: `-D width=80.mm`, `-D width=80` (in the file's unit), `-D lid=false`, `-D label='"BOX"'`; `--preset name` |
-| an agent, on a file | `hcad_check`, `hcad_render`, `hcad_export` with `params` (`{"width": "80.mm"}`, or a number in mm) and `preset` |
-| an agent, in the user's window | `hcad_gui_set` with `params`, `preset`, `reset` |
 
 `-D` and the panel apply on top of a preset: `--preset phone -D height=20.mm` is the phone box, 20 mm high. Values are checked as the code's are:
 
@@ -228,14 +282,3 @@ With `-D play=0.05.mm` the check fails: *the knob is too tight*, with its line.
 The **Parameters** panel, on the right, has a field for each parameter, with the description above it: a number field with its unit (mm or °), a switch for yes or no, a list for choices, a text field for strings. Hovering over a description shows the variable's name, and a click on it shows its line in the code. A value changed by hand is marked with a dot, and the arrow beside it takes it back to the default (or the preset's value); **Reset to defaults** takes them all back. With presets, the **Preset** list at the top switches between them; choosing one clears the values changed by hand.
 
 The **Console** under the editor shows `writeln` output, failed checks and errors. The bug button over it runs the unittests (F5); its tooltip says how many passed or failed. The right-click menu's **Measure** group gives the size and volume of a part, the area of the selected faces, and the distance between two selected vertices, with a click to copy each value.
-
-## With an AI agent
-
-An agent reads this guide with `hcad_docs` (format `guide`, topic `parameters`), or `hcad docs --guide parameters` from the command line. It follows these rules:
-
-- It makes `@param`s of the sizes the user gave, the sizes it estimated (so that they can be corrected after a test print) and the plays of fits, with limits and a description that says what to measure; and names the parameters to try when it is done.
-- It asks for the sizes of a real object the part fits on instead of guessing them, and how the part will be made before choosing a play.
-- It writes the request's requirements as `unittest` blocks (it fits, it holds this much, it is not too heavy), and checks fits against reference parts with `distance` or `(a & b).volume`.
-- It writes areas and volumes as `600 * 1.mm ^^ 2`, never `600.mm ^^ 2`.
-- It checks the model at its defaults, at each preset and at the limits of its parameters (`hcad_check` with `params` and `preset`), and runs the user's checks in the window with `hcad_gui_test`.
-- In the user's window it changes values with `hcad_gui_set` (`params`, `preset`, `reset`), which the panel shows as changed by hand, rather than editing the defaults in the code; the defaults change only when the user asks.
