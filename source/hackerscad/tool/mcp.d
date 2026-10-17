@@ -670,7 +670,7 @@ JValue toolList()
         tool("hcad_render", "Evaluate a model and return the same report as hcad_check plus a PNG of the parts "
             ~ "(default views: iso, front, top, right; 'parts' draws only some), and where each picture looks from. "
             ~ "view {from: a view name or [x, y, z] towards the viewer, look_at: [x, y, z], size: mm across, cut: true "
-            ~ "leaves out what lies in front} gives one picture from there, close on a detail; opaque: true draws "
+            ~ "cuts the parts across the view through look_at, the cut faces closed} gives one picture from there, close on a detail; opaque: true draws "
             ~ "see-through parts solid (a reference mesh, to read its shape). Use it to verify the result visually.",
             modelProps ~ `, "views": {"type": "array", "items": {"type": "string", "enum": ["iso", "front", "back", "top", "bottom", "left", "right"]}}, `
             ~ partsProp ~ `, "view": {"type": "object", "properties": {"from": {"type": ["string", "array"]}, `
