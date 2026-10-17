@@ -137,7 +137,9 @@ struct ThreadSpec
                 // root's, centred r out, half a pitch along: r = ((p/2)² + h²) / 4h; from the middle
                 // of a root (y = -p/2) round the crest to just before the next root's middle
                 immutable r = (p * p / 4 + h * h) / (4 * h);
-                enum steps = 12;
+                // 5 points a quarter pitch: within 0.01 mm of the arcs (every point is a helix and a
+                // face of the thread: 12 took three times as long)
+                enum steps = 5;
                 // the tangent point: half way between the two centres, a quarter pitch along
                 immutable yt = p / 4;
                 xy = [];
@@ -157,7 +159,8 @@ struct ThreadSpec
                 immutable half = 27.5 * PI / 180, r = 0.1373 * p, foot = 0.4167 * p + overlap * tan(half);
                 immutable centre = 0.5030 * p;   // the arc's centre, out from the root
                 xy = [overlap, -foot];
-                enum steps = 8;
+                // within 0.01 mm of the arc on a G1 (p 2.31), closer on finer pitches
+                enum steps = 5;
                 foreach (i; 0 .. steps + 1)
                 {
                     immutable a = -(PI / 2 - half) + (PI - 2 * half) * i / steps;

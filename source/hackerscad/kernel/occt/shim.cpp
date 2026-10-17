@@ -682,8 +682,10 @@ hc_shape *hc_profile_round(const hc_shape *s, double r)
 }
 
 // A solid grown (d > 0) or shrunk by d, round where it turns: the
-// Minkowski sum with a ball of radius d, exactly.
-hc_shape *hc_offset_solid(const hc_shape *s, double d)
+// Minkowski sum with a ball of radius d, exactly. sharp: its faces moved out
+// and extended until they meet, edges and corners staying sharp (far fewer
+// faces on a many-faceted solid, a hull: quicker to work on after).
+hc_shape *hc_offset_solid(const hc_shape *s, double d, int sharp)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         if (std::abs(d) < 1e-6) {
@@ -710,7 +712,8 @@ hc_shape *hc_offset_solid(const hc_shape *s, double d)
         for (double tol : tols) {
             try {
                 BRepOffsetAPI_MakeOffsetShape off;
-                off.PerformByJoin(unify.Shape(), d, tol, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Arc);
+                off.PerformByJoin(unify.Shape(), d, tol, BRepOffset_Skin, Standard_False, Standard_False,
+                                  sharp ? GeomAbs_Intersection : GeomAbs_Arc);
                 if (!off.IsDone())
                     continue;
                 done = true;
@@ -3831,7 +3834,7 @@ hc_shape *hc_fill(const hc_shape *path, const hc_shape *s, const int *idx, int n
         // WORKAROUND (OpenCascade 7.9.3, BRepOffsetAPI_MakeFilling): along curved edges the plate
         // strays far from its boundary (a saddle rim 4 mm deep filled by a bowl 8 mm deep, whatever
         // its degree, points and iterations), and follows straight ones exactly: the edges that
-        // need no tangency are added as chords, short enough to stay within 0.005 mm of the curve.
+        // need no tangency are added as chords, short enough to stay within 0.05 mm of the curve.
         // The "known bugs" unittest in lang/tests.d turns this off (HC_WORKAROUND_FILL_CHORDS)
         auto addPieces = [&](const TopoDS_Edge &e) {
             BRepAdaptor_Curve c(e);
@@ -3839,7 +3842,8 @@ hc_shape *hc_fill(const hc_shape *path, const hc_shape *s, const int *idx, int n
                 fill.Add(e, GeomAbs_C0);
                 return;
             }
-            GCPnts_QuasiUniformDeflection pts(c, 0.005);
+            // 0.05 mm: well within what prints; finer, the plate takes far longer (0.005 mm: 15 times)
+            GCPnts_QuasiUniformDeflection pts(c, 0.05);
             if (!pts.IsDone() || pts.NbPoints() < 2) {
                 fill.Add(e, GeomAbs_C0);
                 return;

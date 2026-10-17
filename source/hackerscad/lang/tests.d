@@ -4504,3 +4504,14 @@ unittest
     stillBroken(lowest(src.replace("24)", "25)").replace("i * 15.deg", "i * 14.4.deg").replace("i * 30.deg", "i * 28.8.deg")) < -5,
         "MakeFilling sagging along curved edges (shim.cpp, hc_fill)");
 }
+
+unittest
+{
+    // offset(sharp: true): a box grown stays a box
+    auto r = runModel(q{
+        @part Solid p() => box(20, 10, 5).offset(2.mm, sharp: true);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(isClose(partVolume(r, "p"), 24.0 * 14 * 9, 1e-6));
+}

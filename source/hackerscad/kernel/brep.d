@@ -189,7 +189,7 @@ interface BrepKernel
     /// Grows (d > 0) or shrinks (d < 0) a profile.
     Brep profileOffset(Brep s, double d);
     /// A solid grown (d > 0) or shrunk, round where it turns.
-    Brep offset(Brep s, double d);
+    Brep offset(Brep s, double d, bool sharp = false);
     /// How many edges and corners the bodies of `s` only touch along or at
     /// (a mesh of them is not a closed surface).
     int touching(Brep s);

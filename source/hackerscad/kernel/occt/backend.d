@@ -198,7 +198,7 @@ final class OcctKernel : BrepKernel
         return wrap(hc_sew(ps.ptr, cast(int) ps.length, tolerance, &open), "sew");
     }
 
-    Brep offset(Brep s, double d) => wrap(hc_offset_solid(h(s), d), "offset");
+    Brep offset(Brep s, double d, bool sharp = false) => wrap(hc_offset_solid(h(s), d, sharp), "offset");
     int touching(Brep s) => hc_touching_count(h(s));
     Brep bridgeTouching(Brep s, double r) => wrap(hc_bridge_touching(h(s), r), "joining");
 

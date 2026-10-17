@@ -100,15 +100,20 @@ Enclosure hullCase(Solid[] inside, Length wall = 2.mm, Length clearance = 0.5.mm
     assert(cut > lo && cut < hi, "hullCase: the cut (at) goes through what it holds, between its bottom and its top");
     auto cavity = h.offset(clearance);
     auto outer = h.offset(clearance + wall);
-    // a slab round the cut, as wide as the case, z0 to z1
-    immutable s = outer.bbox.size.x + outer.bbox.size.y + 10.mm;
-    Solid slab(Length z0, Length z1) => box(s, s, z1 - z0).move(x: outer.bbox.center.x, y: outer.bbox.center.y, z: z0);
-    auto walls = outer - cavity;
-    auto base = walls & slab(outer.bbox.min.z - 1.mm, cut);
-    auto lid = walls & slab(cut, outer.bbox.max.z + 1.mm);
-    // the lip: the inner half of the wall, rising from the base; the lid's wall thinned there
-    auto ring = (h.offset(clearance + wall / 2 - play / 2) - cavity) & slab(cut - 0.01.mm, cut + lip);
-    base += ring;
-    lid -= h.offset(clearance + wall / 2 + play / 2) & slab(cut - 0.01.mm, cut + lip + play);
+    // a slab round the cut, as wide as the case, z0 to z1 (measured on the hull, a polyhedron: the
+    // box of the grown one, all rounds, takes much longer to find)
+    immutable hb = h.bbox, grow = clearance + wall;
+    immutable s = hb.size.x + hb.size.y + 4 * grow + 10.mm;
+    Solid slab(Length z0, Length z1) => box(s, s, z1 - z0).move(x: hb.center.x, y: hb.center.y, z: z0);
+    // the lip's offsets of only the band of the hull round the cut: within it they are the same
+    // as the whole hull's (no point of the band is nearer its cut ends than the offset), and the
+    // few faces of a band are much quicker to offset and combine than the whole hull's
+    immutable reach = clearance + wall + 1.mm;
+    auto band = h & slab(cut - reach, cut + lip + play + reach);
+    auto ring = band.offset(clearance + wall / 2 - play / 2) & slab(cut - 0.01.mm, cut + lip);
+    auto notch = band.offset(clearance + wall / 2 + play / 2) & slab(cut - 0.01.mm, cut + lip + play);
+    // the base: the outside below the cut and the lip, the inside taken out once
+    auto base = ((outer & slab(hb.min.z - grow - 1.mm, cut)) + ring) - cavity;
+    auto lid = (outer & slab(cut, hb.max.z + grow + 1.mm)) - cavity - notch;
     return Enclosure(base, lid);
 }

@@ -434,7 +434,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - `a + b` union, `a - b` difference, `a & b` intersection; `s += x` inside functions.
   - `hull(a, b, …)` or `hull([a, b, …])`: the smallest convex shape around solids and profiles (two spheres make a capsule, four cylinders a plate with round corners); profiles in one plane give a profile, `hull(circle(r: 4.mm), circle(r: 4.mm).move(x: 20.mm))` a slot. Curved surfaces become flat facets within 0.05 mm.
   - `minkowski(a, b)`: `a` moved by every point of `b`. With a sphere (a circle for profiles) it rounds every edge and corner exactly, like `s.offset(r)`; with another convex shape (a box, a cylinder) it is made of flat facets, and one of the two shapes must be convex.
-  - `s.offset(d)` grows a solid by `d` (or shrinks it, `d` negative), round where it turns.
+  - `s.offset(d)` grows a solid by `d` (or shrinks it, `d` negative), round where it turns; `sharp: true` moves its faces and extends them until they meet, the edges staying sharp (a box stays a box).
 - **Printing:** `teardrop(d: 5.mm)` (in a sketch `s.teardrop(c, d: 5.mm)`) is a round hole with a 45° point towards +Y: cut on a wall (`carlo().cut(teardrop(d: 3.4.mm), on: faces.farthest(-Y), through: true)`) the point is up and the hole prints without supports (`angle:` another point, `flat: true` cuts it at the circle's top). `faces.overhanging()` selects the faces facing down more steeply than 45° from a wall (`faces.overhanging(60.deg)` another angle; faces resting on the bed are not counted), `s.overhangs(45.deg)` is their area and `s.thinWalls(0.8.mm)` the surface over walls thinner than that: `assert(part.thinWalls == 0.mm ^^ 2)` in a unittest keeps a model printable. The Printability check box of the display menu marks both on the model.
 - **Profiles from solids:** `s.section(XZ)` (any plane: `s.section(s.plane(faces.top).offset(-2.mm))`) is the cut of the solid by the plane, a profile lying in it; `s.projection` is the solid's shadow seen from above, a profile on XY, and `s.projection(XZ)` its shadow on any plane, cast along the plane's normal (curved surfaces within 0.02 mm; its outline read back as lines, arcs and circles, so that it extrudes and sweeps as fast as one drawn). Both can be extruded, offset, combined like any profile.
 - **Mass:** `s.centroid` is the centre of mass; `s.mass(density: 1.24)` the mass in grams for a density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85); `s.inertia(density: 1.24)` the principal moments of inertia about the centre of mass, ascending, in g·mm².
@@ -2009,16 +2009,21 @@ Enclosure hullCase(Solid[] inside, Length wall = 2.mm, Length clearance = 0.5.mm
     assert(cut > lo && cut < hi, "hullCase: the cut (at) goes through what it holds, between its bottom and its top");
     auto cavity = h.offset(clearance);
     auto outer = h.offset(clearance + wall);
-    // a slab round the cut, as wide as the case, z0 to z1
-    immutable s = outer.bbox.size.x + outer.bbox.size.y + 10.mm;
-    Solid slab(Length z0, Length z1) => box(s, s, z1 - z0).move(x: outer.bbox.center.x, y: outer.bbox.center.y, z: z0);
-    auto walls = outer - cavity;
-    auto base = walls & slab(outer.bbox.min.z - 1.mm, cut);
-    auto lid = walls & slab(cut, outer.bbox.max.z + 1.mm);
-    // the lip: the inner half of the wall, rising from the base; the lid's wall thinned there
-    auto ring = (h.offset(clearance + wall / 2 - play / 2) - cavity) & slab(cut - 0.01.mm, cut + lip);
-    base += ring;
-    lid -= h.offset(clearance + wall / 2 + play / 2) & slab(cut - 0.01.mm, cut + lip + play);
+    // a slab round the cut, as wide as the case, z0 to z1 (measured on the hull, a polyhedron: the
+    // box of the grown one, all rounds, takes much longer to find)
+    immutable hb = h.bbox, grow = clearance + wall;
+    immutable s = hb.size.x + hb.size.y + 4 * grow + 10.mm;
+    Solid slab(Length z0, Length z1) => box(s, s, z1 - z0).move(x: hb.center.x, y: hb.center.y, z: z0);
+    // the lip's offsets of only the band of the hull round the cut: within it they are the same
+    // as the whole hull's (no point of the band is nearer its cut ends than the offset), and the
+    // few faces of a band are much quicker to offset and combine than the whole hull's
+    immutable reach = clearance + wall + 1.mm;
+    auto band = h & slab(cut - reach, cut + lip + play + reach);
+    auto ring = band.offset(clearance + wall / 2 - play / 2) & slab(cut - 0.01.mm, cut + lip);
+    auto notch = band.offset(clearance + wall / 2 + play / 2) & slab(cut - 0.01.mm, cut + lip + play);
+    // the base: the outside below the cut and the lip, the inside taken out once
+    auto base = ((outer & slab(hb.min.z - grow - 1.mm, cut)) + ring) - cavity;
+    auto lid = (outer & slab(cut, hb.max.z + grow + 1.mm)) - cavity - notch;
     return Enclosure(base, lid);
 }
 ```

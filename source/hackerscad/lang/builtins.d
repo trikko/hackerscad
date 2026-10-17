@@ -1896,13 +1896,15 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (a.positional.length && a.positional[0].kind == Kind.solid && !a.positional[0].solid.flat
             && !a.positional[0].solid.path)
         {
-            auto x = Args(it, a, "offset", ["solid", "distance"]);
+            auto x = Args(it, a, "offset", ["solid", "distance", "sharp"]);
             auto s = x.solid("solid");
             immutable d = x.len("distance");
+            // sharp: the faces moved and extended to meet, no rounds (quicker on many faces: a hull)
+            immutable sharp = x.flag("sharp", false);
             // no distance: the solid as it is (the kernel cannot offset by nothing)
             if (abs(d) < 1e-6)
                 return Value.of(s);
-            return transformed(it, a.span, s, b => k.offset(b, d), "offset");
+            return transformed(it, a.span, s, b => k.offset(b, d, sharp), "offset");
         }
         if (a.positional.length && a.positional[0].kind == Kind.solid)
         {
