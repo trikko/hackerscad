@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# The topic guides (docs/guides) as one page of HTML, pictures inside, for
-# reading offline or serving on a LAN: build/guides-site/index.html.
+# The topic guides (docs/guides) as one page of HTML, for reading offline or
+# serving on a LAN: build/guides-site/index.html, its pictures in img/ beside it.
 # Needs python-markdown and pygments. Usage: python3 tools/guides-html.py
-import markdown, re, base64, os, html
+import markdown, re, os, html
 
 base=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 root=os.path.join(base,'docs')
@@ -18,16 +18,13 @@ for title,slug,desc in entries:
     t=open(f'{root}/guides/{slug}.md').read()
     m0=re.search(r'img/([\w-]+\.png)',t)
     if m0:
-        heads[slug]='data:image/png;base64,'+base64.b64encode(open(f'{root}/guides/img/'+m0.group(1),'rb').read()).decode()
+        heads[slug]='img/'+m0.group(1)
     t=re.sub(r'<!-- render:.*?-->\n','',t)
     t=t.replace('```d\n','```d\n')
     md=markdown.Markdown(extensions=ext, extension_configs={'codehilite':{'guess_lang':False,'css_class':'codehilite'},'toc':{'slugify':lambda v,s: slug+'-'+re.sub(r'[^a-z0-9]+','-',v.lower()).strip('-')}})
     h=md.convert(t)
-    def img(m):
-        p=f'{root}/guides/{m.group(1)}'
-        b=base64.b64encode(open(p,'rb').read()).decode()
-        return f'src="data:image/png;base64,{b}"'
-    h=re.sub(r'src="(img/[^"]+)"',img,h)
+    # the pictures as files beside the page, loaded as they come into view
+    h=re.sub(r'<img ([^>]*)src="(img/[^"]+)"',r'<img loading="lazy" \1src="\2"',h)
     h=re.sub(r'href="(\w+)\.md"',lambda m: f'href="#{m.group(1)}"',h)
     h=re.sub(r'href="\.\./(\w+)\.md"',r'href="https://github.com/trikko/hackerscad/blob/main/docs/\1.md"',h)
     h=h.replace('href="TUTORIAL.md"','href="https://github.com/trikko/hackerscad/blob/main/docs/TUTORIAL.md"')
@@ -65,5 +62,5 @@ pre{{background:#f3f6fa;border:1px solid var(--line);border-left:4px solid var(-
 <nav><div class="brand">{logo}<span>hackerscad guides</span></div><ol>{''.join(nav)}</ol></nav>
 <main><header class="hero" id="index"><h1>Guides</h1><p>One page for each topic: what it is for and when to choose it, its variants side by side, every parameter, the usual mistakes, where it is in the application and what an AI agent asks and checks.</p></header>
 <div class="cards">{cards}</div>{''.join(secs)}</main></body></html>'''
-os.makedirs(os.path.join(base,'build','guides-site'),exist_ok=True); open(os.path.join(base,'build','guides-site','index.html'),'w').write(page)
+import shutil; os.makedirs(os.path.join(base,'build','guides-site'),exist_ok=True); shutil.copytree(os.path.join(root,'guides','img'),os.path.join(base,'build','guides-site','img'),dirs_exist_ok=True); open(os.path.join(base,'build','guides-site','index.html'),'w').write(page)
 print(len(page)//1024,'KB')
