@@ -3991,3 +3991,64 @@ unittest
         writeln(format("%.3f", disc.sweep(path([vec(0, 0, 0), vec(90.mm, 0, 0)]), guide: spline(pts)).volume
             / 1.mm ^^ 3 / (90 * PI * (100 - 16))));`, "1.000\n1.000", "import std.math;");
 }
+
+unittest
+{
+    mixin(slowTest);
+    // a thread along an arc, lofted through rings, and a hex head: OpenCascade warned and dropped the thread
+    // (the union was the head alone, no error), and with the head sunk in, the volume of the union meshed
+    // its big B-spline face for minutes; now a union is the right one or an error, quickly
+    enum thread = q{
+        import std.math;
+        Length radiusAt(Length u)
+        {
+            immutable p = 1.25.mm, h = 0.5413 * p;
+            immutable q = u - p * floor(u / p);
+            immutable x = q > p / 2 ? p - q : q;
+            if (x <= p / 16) return 4.mm;
+            if (x >= p / 2 - p / 8) return 4.mm - h;
+            return 4.mm - h * (x - p / 16) / (p / 2 - p / 8 - p / 16);
+        }
+        Solid thread()
+        {
+            Vec3[] pts;
+            foreach (i; 0 .. 61)
+                pts ~= vec(100.mm - 100.mm * cos(i / 60.0 * 0.5), 0.mm, 100.mm * sin(i / 60.0 * 0.5));
+            immutable frames = spline(pts).frames(161);
+            Vec3[][] rings;
+            foreach (k, f; frames)
+            {
+                Vec3[] ring;
+                foreach (j; 0 .. 32)
+                {
+                    immutable phi = j * 360.deg / 32;
+                    immutable r = radiusAt(50.mm * k / 160 - 1.25.mm * j / 32);
+                    ring ~= f.origin + f.x * (r * cos(phi)) + f.y * (r * sin(phi));
+                }
+                rings ~= [ring];
+            }
+            return loft(rings);
+        }
+        Solid head(Length top) => polygon(6, d: 13.mm, fit: "sides").extrude(5.3.mm).move(z: top - 5.3.mm);
+    };
+    // touching at z = 0: the whole of both, or an error saying it could not be done
+    try
+    {
+        auto r = runModel(thread ~ q{
+            unittest { writeln(format("%.1f", ((thread() + head(0.mm)).volume - thread().volume - head(0.mm).volume) / 1.mm ^^ 3)); }
+            @part Solid p() => box(1, 1, 1);
+        });
+        foreach (d; r.diagnostics)
+            assert(d.severity != Severity.error || d.message.canFind("could not combine") || d.message.canFind("wrong result"),
+                d.message);
+        if (r.log.length)
+            assert(r.log[0].text == "0.0" || r.log[0].text == "-0.0", "the union lost a body: " ~ r.log[0].text);
+    }
+    catch (HcadError e)
+        assert(e.msg.canFind("could not combine") || e.msg.canFind("wrong result"), e.msg);
+    // sunk 0.5 mm: the union's volume is the two less what they share
+    expectOut(`immutable both = thread() + head(0.5.mm);
+        immutable shared_ = thread() & head(0.5.mm);
+        writeln(format("%.1f", (both.volume + shared_.volume - thread().volume - head(0.5.mm).volume) / 1.mm ^^ 3));`,
+        "0.0", thread);
+}

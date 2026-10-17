@@ -8,6 +8,8 @@
 #include <Standard_Failure.hxx>
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
+#include <Message_Report.hxx>
+#include <Message_Alert.hxx>
 #include <TopoDS.hxx>
 #include <BRepGProp_Face.hxx>
 #include <TopoDS_Shape.hxx>
@@ -1483,6 +1485,80 @@ static TopoDS_Shape unify_keeping_origins(BRepBuilderAPI_MakeShape &mk, const hc
 
 // A boolean of solids whose result has the faces lying on one surface
 // merged (a face pushed or pulled stays one face with its neighbours).
+// What OpenCascade said about a boolean, its alerts' names ("SelfInterferingShape"…).
+static std::vector<std::string> boolean_alerts(BRepAlgoAPI_BooleanOperation &mk, Message_Gravity gravity)
+{
+    std::vector<std::string> r;
+    Handle(Message_Report) report = mk.GetReport();
+    if (report.IsNull())
+        return r;
+    for (const Handle(Message_Alert) &alert : report->GetAlerts(gravity)) {
+        std::string name = alert->DynamicType()->Name();
+        const std::string prefix = "BOPAlgo_Alert";
+        if (name.rfind(prefix, 0) == 0)
+            name = name.substr(prefix.size());
+        if (std::find(r.begin(), r.end(), name) == r.end())
+            r.push_back(name);
+    }
+    return r;
+}
+
+// set by check_boolean when the failure is one a fuzzier try would only hide
+static thread_local bool g_boolean_broken = false;
+
+static double solid_volume(const TopoDS_Shape &s)
+{
+    GProp_GProps g;
+    BRepGProp::VolumeProperties(s, g, 1e-6);
+    return std::abs(g.Mass());
+}
+
+// A boolean's result, checked: OpenCascade's errors stop it; its warnings
+// say the result may be wrong (a body or a piece left out without an
+// error: an argument that runs into itself, faces nearly on each other),
+// so then the volume of a solids' result must be one the operation can
+// give, or the result is refused. `retry` builds it again with some
+// fuzziness (for faces that nearly coincide), once.
+static void check_boolean(BRepAlgoAPI_BooleanOperation &mk, const TopoDS_Shape &a, const TopoDS_Shape &b, int op)
+{
+    auto list = [](const std::vector<std::string> &names) {
+        std::string r;
+        for (auto &n : names)
+            r += (r.empty() ? "" : ", ") + n;
+        return r;
+    };
+    if (mk.HasErrors() || !mk.IsDone())
+        throw Standard_Failure(("the boolean operation failed (" + list(boolean_alerts(mk, Message_Fail)) + ")").c_str());
+    if (!mk.HasWarnings())
+        return;
+    const auto warnings = boolean_alerts(mk, Message_Warning);
+    const bool solids = TopExp_Explorer(a, TopAbs_SOLID).More() && TopExp_Explorer(b, TopAbs_SOLID).More();
+    // these say the topology broke: pieces dropped without a word (a fuzzier try hides them, it does not
+    // mend them); the others (edges too small, edges a face did not use) can come with a right result:
+    // its volume tells
+    for (auto &w : warnings)
+        if (w == "SelfInterferingShape" || w == "AcquiredSelfIntersection") {
+            g_boolean_broken = true;
+            throw Standard_Failure(("OpenCascade could not combine these solids: the result would miss pieces (it "
+                                    "warns: " + list(warnings) + "; a solid through rings or a sweep that folds on "
+                                    "itself, or faces nearly on each other?)").c_str());
+        }
+    if (!solids)
+        return;
+    const double va = solid_volume(a), vb = solid_volume(b), vr = solid_volume(mk.Shape());
+    const double tol = 1e-4 * (va + vb) + 1e-3;
+    double lo = 0, hi = 0;
+    switch (op) {
+    case HC_FUSE: lo = std::max(va, vb); hi = va + vb; break;
+    case HC_CUT: lo = std::max(0.0, va - vb); hi = va; break;
+    default: lo = 0; hi = std::min(va, vb); break;
+    }
+    if (vr < lo - tol || vr > hi + tol)
+        throw Standard_Failure(("the boolean operation gave a wrong result (volume " + std::to_string(vr) +
+                                " mm³, it can only be between " + std::to_string(lo) + " and " + std::to_string(hi) +
+                                "; OpenCascade warns: " + list(warnings) + ")").c_str());
+}
+
 hc_shape *hc_boolean_merged(const hc_shape *a, const hc_shape *b, int op)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -1493,10 +1569,7 @@ hc_shape *hc_boolean_merged(const hc_shape *a, const hc_shape *b, int op)
         case HC_COMMON: mk.reset(new BRepAlgoAPI_Common(a->shape, b->shape)); break;
         default: set_error("invalid boolean operation"); return nullptr;
         }
-        if (!mk->IsDone()) {
-            set_error("the boolean operation failed");
-            return nullptr;
-        }
+        check_boolean(*mk, a->shape, b->shape, op);
         return wrap(unify_keeping_origins(*mk, a, b));
     });
 }
@@ -1555,21 +1628,39 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
         };
         // on every core: the intersections of the faces of one with the other
         // go in parallel (the random vase example: 1.56 s → 1.23 s)
-        auto parallel = [&](BRepAlgoAPI_BooleanOperation &&mk) -> hc_shape * {
+        auto parallel = [&](BRepAlgoAPI_BooleanOperation &&mk, double fuzzy) -> hc_shape * {
             TopTools_ListOfShape args, tools;
             args.Append(a->shape);
             tools.Append(tool);
             mk.SetArguments(args);
             mk.SetTools(tools);
             mk.SetRunParallel(Standard_True);
+            if (fuzzy > 0)
+                mk.SetFuzzyValue(fuzzy);
             mk.Build();
+            check_boolean(mk, a->shape, tool, op);
             return run(std::move(mk));
         };
-        switch (op) {
-        case HC_FUSE: return parallel(BRepAlgoAPI_Fuse());
-        case HC_CUT: return parallel(BRepAlgoAPI_Cut());
-        case HC_COMMON: return parallel(BRepAlgoAPI_Common());
-        default: set_error("invalid boolean operation"); return nullptr;
+        auto make = [&](double fuzzy) -> hc_shape * {
+            switch (op) {
+            case HC_FUSE: return parallel(BRepAlgoAPI_Fuse(), fuzzy);
+            case HC_CUT: return parallel(BRepAlgoAPI_Cut(), fuzzy);
+            case HC_COMMON: return parallel(BRepAlgoAPI_Common(), fuzzy);
+            default: throw Standard_Failure("invalid boolean operation");
+            }
+        };
+        // faces that nearly coincide can make it go wrong: then once more, with a little fuzziness
+        g_boolean_broken = false;
+        try {
+            return make(0);
+        } catch (const Standard_Failure &first) {
+            if (g_boolean_broken)
+                throw;
+            try {
+                return make(1e-5);
+            } catch (const Standard_Failure &) {
+                throw first;
+            }
         }
     });
 }
@@ -2270,18 +2361,6 @@ static bool triangle_properties(const hc_shape *s, double &volume, double &area)
 // (an M8 × 50 thread came out 1967 mm³ for 2066), the adaptive one is not.
 static const double mass_accuracy = 1e-5;
 
-// Whether a face is freeform (a B-spline, a curve swept along a line…),
-// where the integration of volumes can go wrong.
-static bool freeform(const TopoDS_Face &f)
-{
-    switch (BRepAdaptor_Surface(f, Standard_False).GetType()) {
-    case GeomAbs_BSplineSurface: case GeomAbs_BezierSurface: case GeomAbs_SurfaceOfExtrusion:
-    case GeomAbs_OffsetSurface: case GeomAbs_OtherSurface:
-        return true;
-    default:
-        return false;
-    }
-}
 
 // The volume summed over the triangles of the faces' meshes (meshed finely
 // here when they have none), each face's turned as the face is.
@@ -2332,9 +2411,11 @@ double hc_volume(const hc_shape *s)
         // made of a smooth polygon extruded: 18300 mm³ for 10500, a smooth C:
         // +6%); the volume of the mesh is then the truer one. lang/tests.d
         // turns this off (HC_WORKAROUND_MESH_VOLUME) and fails once it is right
+        // only on faces swept from a curve, where it goes wrong: meshing a big B-spline surface (a
+        // loft through hundreds of rings) finely takes minutes and gigabytes, and its integration is right
         bool any = false;
         for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More() && !any; ex.Next())
-            any = freeform(TopoDS::Face(ex.Current()));
+            any = BRepAdaptor_Surface(TopoDS::Face(ex.Current()), Standard_False).GetType() == GeomAbs_SurfaceOfExtrusion;
         if (any && workaround(HC_WORKAROUND_MESH_VOLUME)) {
             const double m = mesh_volume(s->shape);
             if (m > 0 && std::abs(m - p.Mass()) > 0.01 * m)
