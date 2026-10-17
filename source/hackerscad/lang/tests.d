@@ -4369,3 +4369,39 @@ unittest
     stillBroken(fails("import carlo;\n@part Solid x() => carlo().offset(0.31.mm);"),
         "MakeOffsetShape at 1e-6 on tangent faces (shim.cpp, hc_offset_solid)");
 }
+
+unittest
+{
+    mixin(slowTest);
+    // the hardware library's heads, larger and inch sizes, square nuts and extrusions with their T-nuts
+    auto r = runModel(q{
+        import hardware;
+        @part Solid heads() => screw(M4, 12.mm, head: "button") + screw(M4, 12.mm, head: "flat").move(x: 12)
+            + screw(M4, 12.mm, head: "hex").move(x: 24) + screw(ST2_9, 10.mm, head: "pan").move(x: 36)
+            + screw(M12, 20.mm).move(x: 52) + screw(UNC1_4_20, 15.mm).move(x: 72);
+        @part Solid slot() => box(20, 20, 10) - squareNutSlot(M3, 15.mm).move(z: 5) - hole(M3, 10.mm).move(z: 10);
+        Solid rail(int series) => extrusion(series, 40.mm).move(z: -20.mm).rotate(y: -90)
+            .move(z: -extrusionSeries(series).size / 2);
+        @part Solid r20() => rail(20);
+        unittest
+        {
+            assert(heads.isValid && slot.isValid, "valid");
+            // the T-nuts and the key sit in their slots without touching
+            foreach (series; [20, 30])
+            {
+                assert((rail(series) & tNut(series)).volume < 0.001 * 1.mm ^^ 3, "T-nut");
+                assert((rail(series) & slotKey(series, 20.mm)).volume < 0.001 * 1.mm ^^ 3, "key");
+                // and they are in it: lifted above the face, a T-nut would not be under the lips
+                assert(tNut(series).bbox.max.z <= 0.mm && tNut(series).bbox.min.z < -extrusionSeries(series).lip, "depth");
+            }
+            // the nut in its slot, the screw through both
+            assert((squareNut(M3).move(z: -squareNutHeight(M3) / 2) & squareNutSlot(M3, 10.mm)).volume
+                > 0.9 * squareNut(M3).volume, "the nut in its slot");
+            assert(abs(headOf(M4, "flat").d - 8.96.mm) < 0.01.mm, "ISO 10642 head");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error("import hardware; @part Solid p() => box(10, 10, 10) - hole(ST2_9, 5.mm, \"insert\");")
+        .message.canFind("no heat-set insert"));
+}

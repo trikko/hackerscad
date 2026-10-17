@@ -22,7 +22,7 @@ A printed part held by a screw needs a hole on each side of the joint: one the s
 import hardware : M3, hole, nutTrap, screw, nut, washer;
 ```
 
-`M2`, `M2_5`, `M3`, `M4`, `M5`, `M6` and `M8` are `Screw` values: the sizes of an ISO 4762 socket head cap screw, its ISO 4032 nut and ISO 7089 washer, and the holes to print for them. Use them by name in your own geometry: `M3.clearance`, `M3.head`, `M3.nut`.
+`M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8`, `M10` and `M12` are `Screw` values: the sizes of an ISO 4762 socket head cap screw, its ISO 4032 nut and ISO 7089 washer, and the holes to print for them. Inch sizes and self-tapping screws for plastic are further down. Use them by name in your own geometry: `M3.clearance`, `M3.head`, `M3.nut`.
 
 | Size | `clearance` | `tap` | `insert` × `insertDepth` | `head` × `headHeight` | `nut` × `nutHeight` |
 |---|---|---|---|---|---|
@@ -33,6 +33,8 @@ import hardware : M3, hole, nutTrap, screw, nut, washer;
 | M5 | 5.5 | 4.2 | 6.4 × 9.5 | 8.5 × 5 | 8 × 4.7 |
 | M6 | 6.6 | 5 | 8 × 12.7 | 10 × 6 | 10 × 5.2 |
 | M8 | 9 | 6.8 | 9.7 × 12.7 | 13 × 8 | 13 × 6.8 |
+| M10 | 11 | 8.5 | 12 × 14 | 16 × 10 | 16 × 8.4 |
+| M12 | 13.5 | 10.2 | 14.4 × 16 | 18 × 12 | 18 × 10.8 |
 
 All in millimetres; `nut` is across the flats (the spanner size). The other fields are `d` (nominal diameter), `pitch` (coarse), `key` (the hex key), `washer` (its outer diameter) and `name` (`"M3"`). Insert sizes vary between makers: check the one you bought, and write its hole as `cylinder(d: …)` if it differs.
 
@@ -184,6 +186,132 @@ Solid block() => box(16.mm, 16.mm, 10.mm)
 ![A nut trap with a channel from the side](img/holes-side-trap.png)
 
 The roof of a trap is a bridge when the part prints: a layer laid across empty space, held only at its ends. A trap closed on every side, with no channel, needs a pause in the print at the layer above its roof, to drop the nut in.
+
+## Other heads
+
+A screw's head can be of five kinds. `screw(size, length, head: …)` draws it, and `hole(size, depth, "counterbore", head: …)` makes the recess it sits in, so the head ends level with the face:
+
+| `head:` | The head | Standard |
+|---|---|---|
+| `"socket"` | a cylinder with a hex socket: the default, the strongest | ISO 4762 |
+| `"button"` | low and domed, with a hex socket: neat on show | ISO 7380 |
+| `"flat"` | a 90° cone that sinks into a countersink, flush with the face | ISO 10642 |
+| `"hex"` | a hexagon for a spanner | ISO 4017 |
+| `"pan"` | low and rounded: the self-tapping screws below | ISO 7049 |
+
+`headOf(size, head)` gives the head's sizes (`d`, `h`, `key`) for geometry of your own.
+
+<!-- render: holes-heads --from 1,-1.6,0.8 -->
+```d
+import hardware;
+
+// the same M4 screw with four heads, then a
+// self-tapping one
+@part("Sky Pop")
+Solid screws() => screw(M4, 12.mm, head: "socket")
+    + screw(M4, 12.mm, head: "button").move(x: 12.mm)
+    + screw(M4, 12.mm, head: "flat").move(x: 24.mm)
+    + screw(M4, 12.mm, head: "hex").move(x: 36.mm)
+    + screw(ST2_9, 10.mm, head: "pan").move(x: 48.mm);
+```
+
+![Socket, button, flat, hex and pan heads](img/holes-heads.png)
+
+## Square nuts
+
+A square nut (DIN 562) is thin and slides into a slot from the side: the slot can open on a wall, so the nut goes in after the part is printed, where a hex nut needs a pocket from above. `squareNut(size)` is the nut; `squareNutSlot(size, reach)` is the slot to subtract, centred on the screw's axis with its middle on z = 0, open towards +X for `reach` millimetres.
+
+<!-- render: holes-square-nut --from 1,-1.4,1 -->
+```d
+import hardware;
+
+// a block with a slot for an M3 square nut, open
+// on the right, and the screw's hole through it
+@part("Sky Pop")
+Solid block() => box(20.mm, 20.mm, 12.mm)
+    - squareNutSlot(M3, 15.mm).move(z: 6.mm)
+    - hole(M3, 12.mm).move(z: 12.mm);
+
+// the nut, beside it
+@part("Pink Pop")
+Solid nut() => squareNut(M3).move(x: 22.mm);
+```
+
+![A slot for an M3 square nut, open on the side, and the nut](img/holes-square-nut.png)
+
+Square nuts go from M2 to M8; `squareNutSize(size)` and `squareNutHeight(size)` give their sizes.
+
+## Inch screws
+
+`UNC4_40`, `UNC6_32`, `UNC8_32`, `UNC10_24` and `UNC1_4_20` are the common unified inch sizes, with the same fields as the metric ones: socket head cap screws (ASME B18.3), hex nuts and SAE washers. `UNC1_4_20` is the thread of cameras and tripods: a printed camera mount takes a 1/4-20 screw through a clearance hole, or holds its nut in a trap.
+
+| Size | `d` | `clearance` | `tap` | `nut` across flats |
+|---|---|---|---|---|
+| `UNC4_40` | 2.85 | 3.3 | 2.26 | 6.35 |
+| `UNC6_32` | 3.51 | 3.7 | 2.71 | 7.94 |
+| `UNC8_32` | 4.17 | 4.4 | 3.45 | 8.73 |
+| `UNC10_24` | 4.83 | 5.1 | 3.8 | 9.53 |
+| `UNC1_4_20` | 6.35 | 6.8 | 5.11 | 11.11 |
+
+## Self-tapping screws for plastic
+
+A self-tapping screw cuts its own thread in a plain hole: no nut, no insert. It holds well in printed parts that are opened a few times. `ST2_2`, `ST2_9`, `ST3_5` and `ST4_2` are the ISO 7049 sizes, pan head; their `tap` is the hole to print, 0.8 of the screw's diameter (a little wider in hard or brittle plastics). Use `hole(ST2_9, depth, "tap")`, and a boss round it two or three times the screw's diameter across, so the wall does not split.
+
+<!-- render: holes-self-tapping --from 1,-1.2,1.2 -->
+```d
+import hardware;
+
+// a boss for an ST2.9 self-tapping screw, and the
+// screw above it
+@part("Sky Pop")
+Solid boss() => box(20.mm, 20.mm, 2.mm)
+    + cylinder(d: 7.mm, h: 10.mm)
+    - hole(ST2_9, 9.mm, "tap").move(z: 10.mm);
+
+@part("Pink Pop")
+Solid selfTapper() => screw(ST2_9, 9.5.mm, head: "pan")
+    .move(z: 16.mm);
+```
+
+![A boss with the hole for an ST2.9 self-tapping screw](img/holes-self-tapping.png)
+
+## Aluminium extrusions and T-nuts
+
+Frames and supports are often built from aluminium extrusions: long square bars with a slot on each side, 20 or 30 mm across (2020, 3030). Parts are screwed to them with T-nuts, which slide into the slot and grip it from behind its lips.
+
+- `extrusion(series, length)` is a length of extrusion (`series` 20 or 30), standing along Z and centred: a reference part to build onto.
+- `tNut(series)` is a T-nut as it sits in a slot facing up, the extrusion's face on z = 0; its hole is a tap hole for M5 (20 series) or M6 (30 series).
+- `slotKey(series, length)` is a key to add under a printed part: it drops into the slot and keeps the part square to the bar.
+- `extrusionSeries(series)` gives the sizes: `size`, `slot` (the opening), `lip`, `cavity`, `depth`, `bore`, `screw`.
+
+The sizes are the typical ones of the B-type slot; makers differ by a few tenths, so check yours for a tight fit.
+
+<!-- render: holes-extrusion --from 0.5,-1.6,0.25 -->
+```d
+import hardware;
+
+// a printed bracket on a 2020 extrusion: a key in
+// the slot, an M5 screw into a T-nut
+immutable series = 20;
+
+// the extrusion lying along X, a slot facing up, its
+// face on z = 0
+@part("slategray", alpha: 0.5, export: false)
+Solid rail() => extrusion(series, 60.mm)
+    .move(z: -30.mm)
+    .rotate(y: -90)
+    .move(z: -10.mm);
+
+@part("Sky Pop")
+Solid bracket() => box(30.mm, 20.mm, 8.mm)
+    + slotKey(series, 30.mm)
+    - hole(M5, 8.mm, "counterbore").move(z: 8.mm);
+
+@part("Pink Pop")
+Solid nut() => tNut(series);
+```
+
+![A printed bracket on a 2020 extrusion, its key in the slot and a T-nut under it](img/holes-extrusion.png)
 
 ## Teardrops: holes printed sideways
 

@@ -28,6 +28,60 @@ immutable M4 = Screw("M4", 4.mm, 0.7.mm, 3.3.mm, 4.5.mm, 7.mm, 4.mm, 3.mm, 7.mm,
 immutable M5 = Screw("M5", 5.mm, 0.8.mm, 4.2.mm, 5.5.mm, 8.5.mm, 5.mm, 4.mm, 8.mm, 4.7.mm, 10.mm, 6.4.mm, 9.5.mm);
 immutable M6 = Screw("M6", 6.mm, 1.mm, 5.mm, 6.6.mm, 10.mm, 6.mm, 5.mm, 10.mm, 5.2.mm, 12.mm, 8.mm, 12.7.mm);
 immutable M8 = Screw("M8", 8.mm, 1.25.mm, 6.8.mm, 9.mm, 13.mm, 8.mm, 6.mm, 13.mm, 6.8.mm, 16.mm, 9.7.mm, 12.7.mm);
+immutable M10 = Screw("M10", 10.mm, 1.5.mm, 8.5.mm, 11.mm, 16.mm, 10.mm, 8.mm, 16.mm, 8.4.mm, 20.mm, 12.mm, 14.mm);
+immutable M12 = Screw("M12", 12.mm, 1.75.mm, 10.2.mm, 13.5.mm, 18.mm, 12.mm, 10.mm, 18.mm, 10.8.mm, 24.mm, 14.4.mm, 16.mm);
+
+/// Unified inch (UNC) sizes, socket head cap screws (ASME B18.3), finished
+/// hex nuts and SAE washers: #4-40, #6-32, #8-32, #10-24 and 1/4-20 (the
+/// thread of cameras and tripods). Insert holes vary between makers: check yours.
+immutable UNC4_40 = Screw("#4-40 UNC", 2.845.mm, 0.635.mm, 2.26.mm, 3.3.mm, 4.65.mm, 2.845.mm, 2.38.mm, 6.35.mm, 2.38.mm, 7.9.mm, 4.mm, 3.4.mm);
+immutable UNC6_32 = Screw("#6-32 UNC", 3.505.mm, 0.794.mm, 2.71.mm, 3.7.mm, 5.74.mm, 3.505.mm, 2.78.mm, 7.94.mm, 2.78.mm, 9.5.mm, 4.7.mm, 3.8.mm);
+immutable UNC8_32 = Screw("#8-32 UNC", 4.166.mm, 0.794.mm, 3.45.mm, 4.4.mm, 6.86.mm, 4.166.mm, 3.57.mm, 8.73.mm, 3.18.mm, 11.1.mm, 5.6.mm, 5.mm);
+immutable UNC10_24 = Screw("#10-24 UNC", 4.826.mm, 1.058.mm, 3.8.mm, 5.1.mm, 7.92.mm, 4.826.mm, 3.97.mm, 9.53.mm, 3.18.mm, 12.7.mm, 6.4.mm, 6.4.mm);
+immutable UNC1_4_20 = Screw("1/4-20 UNC", 6.35.mm, 1.27.mm, 5.11.mm, 6.8.mm, 9.53.mm, 6.35.mm, 4.76.mm, 11.11.mm, 5.56.mm, 15.9.mm, 8.1.mm, 9.5.mm);
+
+/// Self-tapping screws for plastic (ISO 7049 pan head, ST sizes): they cut
+/// their own thread in the hole `tap` wide (0.8 of the diameter, for PLA,
+/// PETG and ABS: a little wider in harder plastics), with no nut nor insert.
+/// screw() draws them with head: "pan".
+immutable ST2_2 = Screw("ST2.2", 2.2.mm, 0.8.mm, 1.8.mm, 2.6.mm, 4.2.mm, 1.6.mm, 1.5.mm, 0.mm, 0.mm, 5.mm, 0.mm, 0.mm);
+immutable ST2_9 = Screw("ST2.9", 2.9.mm, 1.1.mm, 2.3.mm, 3.3.mm, 5.6.mm, 2.4.mm, 2.mm, 0.mm, 0.mm, 7.mm, 0.mm, 0.mm);
+immutable ST3_5 = Screw("ST3.5", 3.5.mm, 1.3.mm, 2.8.mm, 4.mm, 7.mm, 2.6.mm, 2.5.mm, 0.mm, 0.mm, 8.mm, 0.mm, 0.mm);
+immutable ST4_2 = Screw("ST4.2", 4.2.mm, 1.4.mm, 3.4.mm, 4.8.mm, 8.mm, 3.1.mm, 3.mm, 0.mm, 0.mm, 10.mm, 0.mm, 0.mm);
+
+/// The head of another kind for screw s: its diameter (across the flats for
+/// "hex"), its height and the hex key. "button" ISO 7380, "flat" ISO 10642
+/// (countersunk, 90°), "hex" ISO 4017 (spanner across the flats), "pan"
+/// ISO 7049 (self-tapping); "socket" the ISO 4762 of the size itself.
+struct Head
+{
+    Length d;
+    Length h;
+    Length key;
+}
+
+Head headOf(Screw s, string head)
+{
+    // the hex keys of button and flat heads, a size smaller than the socket's
+    immutable small = s.d <= 3.mm ? 2.mm : s.d <= 4.mm ? 2.5.mm : s.d <= 5.mm ? 3.mm : s.d <= 6.mm ? 4.mm
+        : s.d <= 8.mm ? 5.mm : s.d <= 10.mm ? 6.mm : 8.mm;
+    switch (head)
+    {
+    case "socket":
+        return Head(s.head, s.headHeight, s.key);
+    case "button":
+        return Head((s.d <= 5.mm ? 1.9 : 1.75) * s.d, 0.55 * s.d, small);
+    case "flat":
+        return Head(2.24 * s.d, 0.62 * s.d, small);
+    case "hex":
+        // ISO 4017 heights (k), about 0.65 d (0.7 under M5)
+        return Head(s.nut > 0.mm ? s.nut : 1.6 * s.d, (s.d < 5.mm ? 0.7 : 0.65) * s.d, 0.mm);
+    case "pan":
+        return Head(s.head, s.headHeight, s.key);
+    default:
+        assert(false, "head must be socket, button, flat, hex or pan, not " ~ head);
+    }
+}
 
 /// Hexagonal prism standing on XY, flats parallel to the X axis.
 Solid hexPrism(Length acrossFlats, Length h)
@@ -36,21 +90,47 @@ Solid hexPrism(Length acrossFlats, Length h)
     return slab & slab.rotate(z: 60) & slab.rotate(z: 120);
 }
 
-/// Socket head cap screw. The underside of the head lies on z = 0: the head
-/// grows upwards and the shank downwards, so the screw drops into a hole.
-/// threaded: true models the ISO thread (slower); otherwise the shank is plain.
-Solid screw(Screw s, Length length, bool socket = true, bool threaded = false)
+/// A screw: head "socket" (ISO 4762, the default), "button" (ISO 7380),
+/// "flat" (ISO 10642, countersunk), "hex" (ISO 4017) or "pan" (the
+/// self-tapping ST sizes). The underside of the head lies on z = 0 (for a
+/// flat head, its top: it sinks into its countersink): the head grows
+/// upwards and the shank downwards, so the screw drops into a hole.
+/// threaded: true models the ISO thread (slower); otherwise the shank is
+/// plain; socket: false leaves out the hex socket.
+Solid screw(Screw s, Length length, bool socket = true, bool threaded = false, string head = "socket")
 {
     auto shank = threaded
         ? threadedRod(s.d, s.pitch, length).move(z: -length)
         : cylinder(d: s.d, h: length)
             .chamfer(edges.filter(e => e.isCircle && e.mid.z < 1.mm), d: s.d * 0.1)
             .move(z: -length);
-    auto head = cylinder(d: s.head, h: s.headHeight)
-        .fillet(edges.filter(e => e.isCircle && e.mid.z > s.headHeight / 2), r: s.d * 0.12);
-    if (socket)
-        head -= hexPrism(s.key, s.headHeight).move(z: s.headHeight * 0.45);
-    return head + shank;
+    immutable hd = headOf(s, head);
+    Solid top;
+    switch (head)
+    {
+    case "flat":
+        // a cone from the shank to the head, its top on z = 0
+        top = cone(d1: s.d, d2: hd.d, h: (hd.d - s.d) / 2).move(z: -(hd.d - s.d) / 2);
+        if (socket)
+            top -= hexPrism(hd.key, hd.h).move(z: -hd.h * 0.6);
+        return top + shank;
+    case "hex":
+        top = hexPrism(hd.d, hd.h)
+            .chamfer(edges.of(faces.top), d: hd.h * 0.12);
+        return top + shank;
+    case "button", "pan":
+        top = cylinder(d: hd.d, h: hd.h)
+            .fillet(edges.filter(e => e.isCircle && e.mid.z > hd.h / 2), r: hd.h * 0.6);
+        break;
+    default:
+        top = cylinder(d: hd.d, h: hd.h)
+            .fillet(edges.filter(e => e.isCircle && e.mid.z > hd.h / 2), r: s.d * 0.12);
+        break;
+    }
+    // a pan head's recess is a cross (Phillips): left plain
+    if (socket && hd.key > 0.mm && head != "pan")
+        top -= hexPrism(hd.key, hd.h).move(z: hd.h * 0.45);
+    return top + shank;
 }
 
 /// Hex nut standing on z = 0, with the corners chamfered on both faces.
@@ -73,7 +153,7 @@ Solid washer(Screw s) => cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.cle
 /// "clearance" (the screw passes), "tap" (pilot hole for the thread),
 /// "insert" (heat-set insert), "counterbore" (clearance with room for the
 /// head) or "countersink" (for flat heads).
-Solid hole(Screw s, Length depth, string kind = "clearance")
+Solid hole(Screw s, Length depth, string kind = "clearance", string head = "socket")
 {
     switch (kind)
     {
@@ -82,11 +162,17 @@ Solid hole(Screw s, Length depth, string kind = "clearance")
     case "tap":
         return cylinder(d: s.tap, h: depth + 0.01.mm).move(z: -depth);
     case "insert":
+        assert(s.insert > 0.mm, s.name ~ " has no heat-set insert: a tap hole for a self-tapping screw");
         return cylinder(d: s.insert, h: s.insertDepth).move(z: -s.insertDepth)
             + cylinder(d: s.tap, h: depth).move(z: -depth);
     case "counterbore":
-        return cylinder(d: s.head + 0.6.mm, h: s.headHeight + 0.2.mm).move(z: -s.headHeight - 0.2.mm)
-            + cylinder(d: s.clearance, h: depth).move(z: -depth);
+        {
+            // room for the head given (a hex head's corners, 1.155 times across its flats)
+            immutable hd = headOf(s, head);
+            immutable wide = head == "hex" ? hd.d * 1.155 : hd.d;
+            return cylinder(d: wide + 0.6.mm, h: hd.h + 0.2.mm).move(z: -hd.h - 0.2.mm)
+                + cylinder(d: s.clearance, h: depth).move(z: -depth);
+        }
     case "countersink":
         // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
         return cone(d1: s.clearance, d2: 2.24 * s.d + 0.3.mm, h: (2.24 * s.d + 0.3.mm - s.clearance) / 2)
@@ -100,3 +186,95 @@ Solid hole(Screw s, Length depth, string kind = "clearance")
 /// A pocket to trap a nut, from z = 0 going down `depth` (with a little clearance).
 Solid nutTrap(Screw s, Length depth, Length clearance = 0.2.mm) =>
     hexPrism(s.nut + 2 * clearance, depth + 0.01.mm).move(z: -depth);
+
+/// Square nuts (DIN 562, thin): across the flats and height. They slide
+/// into a slot from the side, where a hex nut needs a pocket from above.
+Length squareNutSize(Screw s) => s.d <= 2.mm ? 4.mm : s.d <= 2.5.mm ? 5.mm : s.d <= 3.mm ? 5.5.mm
+    : s.d <= 4.mm ? 7.mm : s.d <= 5.mm ? 8.mm : s.d <= 6.mm ? 10.mm : 13.mm;
+Length squareNutHeight(Screw s) => s.d <= 2.mm ? 1.2.mm : s.d <= 2.5.mm ? 1.6.mm : s.d <= 3.mm ? 1.8.mm
+    : s.d <= 4.mm ? 2.2.mm : s.d <= 5.mm ? 2.7.mm : s.d <= 6.mm ? 3.2.mm : 4.mm;
+
+/// A square nut standing on z = 0, centred, its hole plain.
+Solid squareNut(Screw s)
+{
+    assert(s.d <= 8.mm, "square nuts (DIN 562) go from M2 to M8");
+    return box(squareNutSize(s), squareNutSize(s), squareNutHeight(s))
+        - cylinder(d: s.d, h: 3 * squareNutHeight(s), center: true);
+}
+
+/// The slot a square nut slides into, to subtract: centred on the screw's
+/// axis at the origin, its middle on z = 0, open towards +X for `reach`
+/// (out through the part's side), `clearance` larger all round.
+Solid squareNutSlot(Screw s, Length reach, Length clearance = 0.2.mm)
+{
+    immutable w = squareNutSize(s) + 2 * clearance, h = squareNutHeight(s) + 2 * clearance;
+    return box(w, w, h).move(z: -h / 2)
+        + box(reach, w, h).move(x: reach / 2, z: -h / 2);
+}
+
+/// Aluminium extrusions, B-type slot (the common 20 and 30 series: 2020,
+/// 3030, Misumi HFS5 and HFS6 and their copies): `series` 20 or 30. The
+/// sizes are typical ones: check your supplier's drawing for tight fits.
+struct Extrusion
+{
+    Length size;     /// the square's side
+    Length slot;     /// the opening of a slot
+    Length lip;      /// the thickness of the slot's lips
+    Length cavity;   /// the width of the space behind the lips
+    Length depth;    /// from the face to the bottom of the slot
+    Length bore;     /// the centre hole (tapped for the end screw)
+    Screw screw;     /// the screw its T-nuts take
+}
+
+Extrusion extrusionSeries(int series)
+{
+    assert(series == 20 || series == 30, "extrusions here are of the 20 or 30 series");
+    return series == 20 ? Extrusion(20.mm, 6.2.mm, 1.8.mm, 11.mm, 6.1.mm, 4.2.mm, M5)
+        : Extrusion(30.mm, 8.2.mm, 2.2.mm, 16.5.mm, 9.mm, 6.8.mm, M6);
+}
+
+/// A length of extrusion standing on z = 0 along Z, centred in X and Y: a
+/// reference part to build onto (a bracket, a printed T-nut, a clamp).
+Solid extrusion(int series, Length length)
+{
+    immutable e = extrusionSeries(series);
+    auto body = box(e.size, e.size, length) - cylinder(d: e.bore, h: 3 * length, center: true);
+    foreach (i; 0 .. 4)
+    {
+        // the slot: its opening through the lip, then the cavity behind, narrowing at 45°
+        immutable back = e.depth - e.lip;
+        auto cut = box(e.lip + 0.02.mm, e.slot, length + 2.mm).move(x: e.size / 2 - e.lip / 2 + 0.01.mm)
+            + (polygon([vec(e.size / 2 - e.lip, -e.cavity / 2), vec(e.size / 2 - e.lip, e.cavity / 2),
+                vec(e.size / 2 - e.depth, e.cavity / 2 - back), vec(e.size / 2 - e.depth, -e.cavity / 2 + back)])
+                .extrude(length + 2.mm));
+        body -= cut.move(z: -1.mm).rotate(z: i * 90);
+    }
+    return body;
+}
+
+/// A T-nut that slides into the slot of an extrusion (`series` 20 or 30),
+/// as it sits in a slot facing +Z with the extrusion's face on z = 0: its
+/// neck in the opening, its body under the lips, `length` long along X, a
+/// hole for the series' screw through it (a tap hole: printed, the screw
+/// cuts its thread; the metal ones are the same shape).
+Solid tNut(int series, Length length = 10.mm, Length clearance = 0.2.mm)
+{
+    immutable e = extrusionSeries(series);
+    immutable back = e.depth - e.lip, w = e.cavity - 2 * clearance;
+    // the body: the cavity's section, a clearance smaller, under the lips
+    auto body = polygon([vec(-w / 2, -e.lip), vec(w / 2, -e.lip), vec(w / 2 - back, -e.depth + clearance),
+            vec(-w / 2 + back, -e.depth + clearance)])
+        .extrude(length, along: X)
+        .move(x: -length / 2);
+    auto neck = box(length, e.slot - 2 * clearance, e.lip).move(z: -e.lip);
+    return body + neck - cylinder(d: e.screw.tap, h: 4 * e.depth, center: true);
+}
+
+/// A key along the bottom of a printed part, to sit in an extrusion's slot
+/// and keep the part square to it: `length` long along X, standing down
+/// from z = 0 into the slot.
+Solid slotKey(int series, Length length, Length clearance = 0.15.mm)
+{
+    immutable e = extrusionSeries(series);
+    return box(length, e.slot - 2 * clearance, e.lip).move(z: -e.lip);
+}

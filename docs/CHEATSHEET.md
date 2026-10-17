@@ -385,13 +385,24 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 ## Library: import hardware;
 
 - `struct Screw(name: string, d: Length, pitch: Length, tap: Length, clearance: Length, head: Length, headHeight: Length, key: Length, nut: Length, nutHeight: Length, washer: Length, insert: Length, insertDepth: Length)` — Metric screw sizes (ISO 4762 socket head cap screws, ISO 4032 nuts, ISO 7089 washers) with the holes to print or drill for them.
+- `struct Head(d: Length, h: Length, key: Length)` — The head of another kind for screw s: its diameter (across the flats for "hex"), its height and the hex key. "button" ISO 7380, "flat" ISO 10642 (countersunk, 90°), "hex" ISO 4017 (spanner across the flats), "pan" ISO 7049 (self-tapping); "socket" the ISO 4762 of the size itself.
+- `headOf(s: Screw, head: string) → Head`
 - `hexPrism(acrossFlats: Length, h: Length) → Solid` — Hexagonal prism standing on XY, flats parallel to the X axis.
-- `screw(s: Screw, length: Length, socket: bool = true, threaded: bool = false) → Solid` — Socket head cap screw. The underside of the head lies on z = 0: the head grows upwards and the shank downwards, so the screw drops into a hole. threaded: true models the ISO thread (slower); otherwise the shank is plain.
+- `screw(s: Screw, length: Length, socket: bool = true, threaded: bool = false, head: string = "socket") → Solid` — A screw: head "socket" (ISO 4762, the default), "button" (ISO 7380), "flat" (ISO 10642, countersunk), "hex" (ISO 4017) or "pan" (the self-tapping ST sizes). The underside of the head lies on z = 0 (for a flat head, its top: it sinks into its countersink): the head grows upwards and the shank downwards, so the screw drops into a hole. threaded: true models the ISO thread (slower); otherwise the shank is plain; socket: false leaves out the hex socket.
 - `nut(s: Screw, threaded: bool = false) → Solid` — Hex nut standing on z = 0, with the corners chamfered on both faces. threaded: true cuts the ISO thread in the hole.
 - `washer(s: Screw) → Solid` — Flat washer standing on z = 0.
-- `hole(s: Screw, depth: Length, kind: string = "clearance") → Solid` — A hole to subtract, with its top on z = 0 going down `depth`: "clearance" (the screw passes), "tap" (pilot hole for the thread), "insert" (heat-set insert), "counterbore" (clearance with room for the head) or "countersink" (for flat heads).
+- `hole(s: Screw, depth: Length, kind: string = "clearance", head: string = "socket") → Solid` — A hole to subtract, with its top on z = 0 going down `depth`: "clearance" (the screw passes), "tap" (pilot hole for the thread), "insert" (heat-set insert), "counterbore" (clearance with room for the head) or "countersink" (for flat heads).
 - `nutTrap(s: Screw, depth: Length, clearance: Length = …) → Solid` — A pocket to trap a nut, from z = 0 going down `depth` (with a little clearance).
-- `M2, M2_5, M3, M4, M5, M6, M8: Screw`
+- `squareNutSize(s: Screw) → Length` — Square nuts (DIN 562, thin): across the flats and height. They slide into a slot from the side, where a hex nut needs a pocket from above.
+- `squareNutHeight(s: Screw) → Length`
+- `squareNut(s: Screw) → Solid` — A square nut standing on z = 0, centred, its hole plain.
+- `squareNutSlot(s: Screw, reach: Length, clearance: Length = …) → Solid` — The slot a square nut slides into, to subtract: centred on the screw's axis at the origin, its middle on z = 0, open towards +X for `reach` (out through the part's side), `clearance` larger all round.
+- `struct Extrusion(size: Length, slot: Length, lip: Length, cavity: Length, depth: Length, bore: Length, screw: Screw)` — Aluminium extrusions, B-type slot (the common 20 and 30 series: 2020, 3030, Misumi HFS5 and HFS6 and their copies): `series` 20 or 30. The sizes are typical ones: check your supplier's drawing for tight fits.
+- `extrusionSeries(series: int) → Extrusion`
+- `extrusion(series: int, length: Length) → Solid` — A length of extrusion standing on z = 0 along Z, centred in X and Y: a reference part to build onto (a bracket, a printed T-nut, a clamp).
+- `tNut(series: int, length: Length = …, clearance: Length = …) → Solid` — A T-nut that slides into the slot of an extrusion (`series` 20 or 30), as it sits in a slot facing +Z with the extrusion's face on z = 0: its neck in the opening, its body under the lips, `length` long along X, a hole for the series' screw through it (a tap hole: printed, the screw cuts its thread; the metal ones are the same shape).
+- `slotKey(series: int, length: Length, clearance: Length = …) → Solid` — A key along the bottom of a printed part, to sit in an extrusion's slot and keep the part square to it: `length` long along X, standing down from z = 0 into the slot.
+- `M2, M2_5, M3, M4, M5, M6, M8, M10, M12, UNC4_40, UNC6_32, UNC8_32, UNC10_24, UNC1_4_20, ST2_2, ST2_9, ST3_5, ST4_2: Screw`
 
 ## Library: import threads;
 
