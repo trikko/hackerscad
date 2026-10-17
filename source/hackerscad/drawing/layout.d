@@ -3,7 +3,8 @@
 /// on a sheet.
 module hackerscad.drawing.layout;
 
-import std.algorithm : min, max, sort, canFind;
+import std.algorithm : min, max, maxElement, minElement, sort, canFind;
+import std.range : walkLength;
 import std.array : array;
 import std.format : format;
 import std.math : abs, sqrt, floor, PI, isNaN, cos, sin;
@@ -339,50 +340,95 @@ string measure(double x) => format("%g", floor(x * 10 + 0.5) / 10);
 
 void holeCallouts(ref Sheet sh, ref View v, BrepKernel k)
 {
-    struct Hole
+    // the full circles seen end-on, grouped by the line they lie on: one hole each, with its
+    // circles at every depth (a counterbore's two diameters, a countersink's rim)
+    struct Circle
     {
         Vec3 center;
         double radius;
     }
 
+    struct Hole
+    {
+        Vec3 center;
+        Circle[] circles;
+    }
+
+    immutable dir = v.direction.dir;
     Hole[] holes;
     foreach (e; k.edges(v.solid))
     {
-        if (e.kind != EdgeKind.circle || abs(abs(e.axis.dot(v.direction.dir)) - 1) > 1e-6)
+        if (e.kind != EdgeKind.circle || abs(abs(e.axis.dot(dir)) - 1) > 1e-6)
             continue;
         if ((e.end - e.start).length > 1e-6)
             continue;   // only full circles
-        bool seen;
-        foreach (h; holes)
+        bool placed;
+        foreach (ref h; holes)
         {
-            // the same hole seen at another depth
             auto d = e.center - h.center;
-            if (abs(h.radius - e.radius) < 1e-6 && (d - v.direction.dir * d.dot(v.direction.dir)).length < 1e-6)
-                seen = true;
+            if ((d - dir * d.dot(dir)).length < 1e-6)
+            {
+                h.circles ~= Circle(e.center, e.radius);
+                placed = true;
+                break;
+            }
         }
-        if (!seen)
-            holes ~= Hole(e.center, e.radius);
+        if (!placed)
+            holes ~= Hole(e.center, [Circle(e.center, e.radius)]);
     }
-    // the outer silhouette of round parts is not a hole: skip circles as big as the view
-    size_t[double] counts;
-    Hole[double] first;
+    // a circle round empty space, both sides of it along the axis just inside the rim: a hole's
+    // (a boss's top or a round part's outline have material on one side)
+    auto side = dir.cross(abs(dir.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).normalized;
+    bool aroundVoid(Circle c)
+    {
+        immutable inward = c.radius - min(0.01, c.radius / 4), along = 0.01;
+        auto p = c.center + side * inward;
+        return !k.inside(v.solid, p + dir * along) && !k.inside(v.solid, p - dir * along);
+    }
+    size_t[string] counts;
+    Vec3[string] where;
+    double[string] rim;
     foreach (h; holes)
     {
-        if (2 * h.radius >= min(v.maxX - v.minX, v.maxY - v.minY) - 1e-6)
+        Circle[] open;
+        foreach (c; h.circles)
+            if (2 * c.radius < min(v.maxX - v.minX, v.maxY - v.minY) - 1e-6 && aroundVoid(c))
+                open ~= c;
+        if (open.length == 0)
             continue;
-        immutable key = round2(2 * h.radius);
-        counts[key]++;
-        if (key !in first)
-            first[key] = h;
+        double small = double.infinity, large = 0;
+        foreach (c; open)
+        {
+            small = min(small, c.radius);
+            large = max(large, c.radius);
+        }
+        string text = format("⌀%g", round2(2 * small));
+        if (large > small + 1e-6)
+        {
+            // the wider part: a cylinder (its rim at two depths) is a counterbore, a cone a countersink
+            double[] depths;
+            foreach (c; h.circles)
+                if (abs(c.radius - large) < 1e-6)
+                    depths ~= c.center.dot(dir);
+            if (depths.length >= 2)
+                text ~= format(", counterbore ⌀%g × %s", round2(2 * large), measure(depths.maxElement - depths.minElement));
+            else
+                text ~= format(", countersink ⌀%g", round2(2 * large));
+        }
+        counts[text]++;
+        if (text !in where)
+        {
+            where[text] = h.center;
+            rim[text] = large;
+        }
     }
     auto keys = counts.keys;
     keys.sort;
     foreach (i, key; keys)
     {
-        auto h = first[key];
-        auto c = v.project(h.center);
+        auto c = v.project(where[key]);
         auto p = v.toSheet(c[0], c[1]);
-        immutable r = h.radius * v.scale;
+        immutable r = rim[key] * v.scale;
         // centre mark
         sh.line(p[0] - r - 1.5, p[1], p[0] + r + 1.5, p[1], Pen.center);
         sh.line(p[0], p[1] - r - 1.5, p[0], p[1] + r + 1.5, Pen.center);
@@ -392,8 +438,8 @@ void holeCallouts(ref Sheet sh, ref View v, BrepKernel k)
         immutable ex = max(sx + 6, v.x + v.width / 2 + 4 + i * 2), ey = max(sy + 6, v.y + v.height / 2 + 4 + i * 6);
         sh.line(ex, ey, sx, sy, Pen.thin);
         sh.arrow(sx, sy, sx - ex, sy - ey, 2.5);
-        auto text = (counts[key] > 1 ? format("%d× ", counts[key]) : "") ~ format("⌀%g", key);
-        sh.line(ex, ey, ex + text.length * 1.6, ey, Pen.thin);
+        auto text = (counts[key] > 1 ? format("%d× ", counts[key]) : "") ~ key;
+        sh.line(ex, ey, ex + text.walkLength * 1.6, ey, Pen.thin);
         sh.text(ex + 0.5, ey + 1, text, 2.5);
     }
 }

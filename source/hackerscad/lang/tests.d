@@ -4198,3 +4198,29 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    // hole callouts: a countersunk and a counterbored hole named so, a boss not taken for a hole
+    import hackerscad.lang.drawingval : DrawingVal;
+    import hackerscad.drawing.sheet : toSvg;
+    auto r = runModel(q{
+        import hardware : M4, hole;
+        @part Solid plate() => box(60, 30, 6)
+            + cylinder(d: 16, h: 14).move(x: 18)
+            - hole(M4, 6.mm, "countersink").move(x: -22, y: -7, z: 6)
+            - hole(M4, 6.mm, "countersink").move(x: -22, y: 7, z: 6)
+            - hole(M4, 6.mm, "counterbore").move(x: 0, y: -7, z: 6);
+        @drawing Drawing sheet()
+        {
+            auto d = drawing(title: "Plate");
+            d.standardViews(plate);
+            return d;
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    auto svg = toSvg((cast(DrawingVal) r.drawings[0].drawing).render());
+    assert(svg.canFind("2× ⌀4.5, countersink ⌀") && svg.canFind("⌀4.5, counterbore ⌀"), svg);
+    assert(!svg.canFind(">⌀16<"), "the boss is not a hole");
+}
