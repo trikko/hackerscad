@@ -548,7 +548,22 @@ struct Guide
 
 /// The guides, in the order of docs/GUIDES.md.
 static immutable Guide[] guides = [
+    Guide("sketches", "Constrained sketches", import("guides/sketches.md")),
+    Guide("profiles", "From profile to solid", import("guides/profiles.md")),
+    Guide("sweeps", "Paths, sweeps and lofts", import("guides/sweeps.md")),
+    Guide("surfaces", "Surfaces", import("guides/surfaces.md")),
+    Guide("planes", "Planes, frames and placement", import("guides/planes.md")),
+    Guide("features", "Selectors and features", import("guides/features.md")),
+    Guide("patterns", "Patterns, textures and noise", import("guides/patterns.md")),
     Guide("threads", "Threads", import("guides/threads.md")),
+    Guide("holes", "Holes and hardware", import("guides/holes.md")),
+    Guide("fits", "Fits and printing", import("guides/fits.md")),
+    Guide("gears", "Gears", import("guides/gears.md")),
+    Guide("enclosures", "Enclosures and boxes", import("guides/enclosures.md")),
+    Guide("parameters", "Parameters, presets and checks", import("guides/parameters.md")),
+    Guide("remodel", "Remodelling a mesh or STEP", import("guides/remodel.md")),
+    Guide("parts", "Parts, export and drawings", import("guides/parts.md")),
+    Guide("agents", "Working with an AI agent", import("guides/agents.md")),
 ];
 
 /// The guide named `slug`, or null.
