@@ -219,7 +219,14 @@ final class SketchVal : ObjectVal
                 result = all[0];
                 return true;
             }
-        case "dof": result = Value.integer(sk.report().dof); return true;
+        case "dof":
+            {
+                // conflicting constraints leave no degrees of freedom to count: the conflict, at once
+                auto rep = sk.report();
+                requireSolved(rep);
+                result = Value.integer(rep.dof);
+                return true;
+            }
         case "edges":
             {
                 // the face's edges, as references (a curve that is neither a line nor a circle:
@@ -1712,26 +1719,31 @@ final class SketchVal : ObjectVal
         return r.join("; ");
     }
 
+    /// An error naming the conflicting constraints when the sketch does not solve.
+    void requireSolved(SolveReport rep)
+    {
+        if (rep.solved)
+            return;
+        size_t[] tags;
+        foreach (c; rep.conflicting)
+            // past the constraints: equations the sketch adds itself
+            if (c < sk.constraints.length)
+                tags ~= sk.constraints[c].tag;
+        import std.algorithm : canFind;
+        immutable where = lines(tags, constraintSpans);
+        if (where.length == 0)
+            throw new HcadError(Code.sketch, "the sketch constraints conflict, and no single one is to blame: "
+                ~ "several contradict each other, or the points start too far from where they must go", span,
+                "draw the points nearer where they go, pin fewer of them (fixed: true), or leave out the "
+                ~ "constraints added last until it solves");
+        throw new HcadError(Code.sketch, format("the sketch constraints conflict: check the constraints at line%s %s",
+            where.canFind(",") ? "s" : "", where), constraintSpans[tags[0]], "remove or change one of them");
+    }
+
     Value profile(Span at)
     {
         auto rep = sk.report();
-        if (!rep.solved)
-        {
-            size_t[] tags;
-            foreach (c; rep.conflicting)
-                // past the constraints: equations the sketch adds itself
-                if (c < sk.constraints.length)
-                    tags ~= sk.constraints[c].tag;
-            import std.algorithm : canFind;
-            immutable where = lines(tags, constraintSpans);
-            if (where.length == 0)
-                throw new HcadError(Code.sketch, "the sketch constraints conflict, and no single one is to blame: "
-                    ~ "several contradict each other, or the points start too far from where they must go", span,
-                    "draw the points nearer where they go, pin fewer of them (fixed: true), or leave out the "
-                    ~ "constraints added last until it solves");
-            throw new HcadError(Code.sketch, format("the sketch constraints conflict: check the constraints at line%s %s",
-                where.canFind(",") ? "s" : "", where), constraintSpans[tags[0]], "remove or change one of them");
-        }
+        requireSolved(rep);
         import hackerscad.kernel.brep : OutlineSeg;
 
         OutlineSeg[] segs;

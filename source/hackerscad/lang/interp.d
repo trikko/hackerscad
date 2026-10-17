@@ -2428,6 +2428,13 @@ final class Interp
         case "Vec2": return Value.vector(Vec3(0, 0, 0), 2, Dim.length);
         case "Vec3": return Value.vector(Vec3(0, 0, 0), 3, Dim.length);
         case "Solid": return Value.of(new SolidVal(null, span));
+        case "Profile":
+            {
+                // an empty profile, to add to in a loop as an empty Solid is
+                auto e = new SolidVal(null, span);
+                e.flat = true;
+                return Value.of(e);
+            }
         default:
             {
                 // an object (a sketch point, an arc…) starts as null, as a class in D

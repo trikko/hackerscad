@@ -4317,3 +4317,37 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error && d.severity != Severity.warning, d.message);
 }
+
+unittest
+{
+    // s.dof of a sketch whose constraints conflict: the conflict, not 0
+    auto d = error(`Profile p()
+        {
+            auto s = sketch();
+            auto l = s.rect(vec(0, 0), vec(20, 10));
+            s.length(l[0], 20.mm);
+            s.length(l[0], 30.mm);
+            writeln(s.dof);
+            return s.profile;
+        }
+        @part Solid x() => p().extrude(1.mm);`);
+    assert(d.message.canFind("conflict"), d.message);
+}
+
+unittest
+{
+    // Profile p; is an empty profile, to add to in a loop as an empty Solid is
+    auto r = runModel(q{
+        Profile holes()
+        {
+            Profile all;
+            foreach (i; 0 .. 4)
+                all = all + circle(d: 3.mm).move(x: i * 6.mm);
+            return all;
+        }
+        @part Solid x() => (rect(30.mm, 10.mm) - holes().move(x: -9.mm)).extrude(2.mm);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(isClose(partVolume(r, "x"), 600 - 4 * PI * 1.5 * 1.5 * 2, 1e-3));
+}
