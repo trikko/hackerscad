@@ -83,3 +83,32 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
         }
     return Enclosure(base, lid);
 }
+
+/// A case shaped round what it holds: the convex hull of `inside` (the
+/// smallest shape with no hollows round them all) grown by `clearance`, its
+/// walls `wall` thick, cut at the height `at` (by default halfway up) into
+/// a base and a lid. A lip `lip` high rises from the base's wall into the
+/// lid, `play` narrower, so the two close on each other and stay put.
+Enclosure hullCase(Solid[] inside, Length wall = 2.mm, Length clearance = 0.5.mm, Length at = -1.mm,
+    Length lip = 3.mm, Length play = 0.2.mm)
+{
+    assert(inside.length > 0, "hullCase: give it the solids it holds");
+    assert(wall > 0.mm && clearance >= 0.mm, "hullCase: a wall thicker than 0, a clearance of 0 or more");
+    auto h = hull(inside);
+    immutable lo = h.bbox.min.z, hi = h.bbox.max.z;
+    immutable cut = at >= 0.mm ? at : (lo + hi) / 2;
+    assert(cut > lo && cut < hi, "hullCase: the cut (at) goes through what it holds, between its bottom and its top");
+    auto cavity = h.offset(clearance);
+    auto outer = h.offset(clearance + wall);
+    // a slab round the cut, as wide as the case, z0 to z1
+    immutable s = outer.bbox.size.x + outer.bbox.size.y + 10.mm;
+    Solid slab(Length z0, Length z1) => box(s, s, z1 - z0).move(x: outer.bbox.center.x, y: outer.bbox.center.y, z: z0);
+    auto walls = outer - cavity;
+    auto base = walls & slab(outer.bbox.min.z - 1.mm, cut);
+    auto lid = walls & slab(cut, outer.bbox.max.z + 1.mm);
+    // the lip: the inner half of the wall, rising from the base; the lid's wall thinned there
+    auto ring = (h.offset(clearance + wall / 2 - play / 2) - cavity) & slab(cut - 0.01.mm, cut + lip);
+    base += ring;
+    lid -= h.offset(clearance + wall / 2 + play / 2) & slab(cut - 0.01.mm, cut + lip + play);
+    return Enclosure(base, lid);
+}

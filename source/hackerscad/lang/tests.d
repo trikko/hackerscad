@@ -4439,3 +4439,24 @@ unittest
     assert(error(`@part Solid p() => fill(path([vec(0, 0, 0), vec(10, 0, 0), vec(10, 10, 0)])).thicken(1.mm);`)
         .message.canFind("closed"));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // hullCase: a case round a box and a cylinder, nothing touching, the lid on the base
+    auto r = runModel(q{
+        import enclosures : hullCase;
+        immutable things = [box(20, 15, 10), cylinder(d: 12, h: 18).move(x: 25)];
+        immutable c = hullCase(things);
+        @part Solid base() => c.base;
+        @part Solid lid() => c.lid.move(z: 30);
+        unittest
+        {
+            assert(c.base.isValid && c.lid.isValid, "valid");
+            assert((c.base & things[0]).volume == 0.mm ^^ 3 && (c.lid & things[1]).volume == 0.mm ^^ 3, "room inside");
+            assert((c.base & c.lid).volume < 0.01 * 1.mm ^^ 3, "the lid on the base");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

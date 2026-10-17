@@ -438,6 +438,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `tray(x: Length, y: Length, z: Length, wall: Length = …, r: Length = …) → Solid` — An open box: walls `wall` thick, open on top.
 - `struct Enclosure(base: Solid, lid: Solid)` — A base and a lid that fit together, both standing on z = 0.
 - `enclosure(inner: Vec3, wall: Length = …, r: Length = …, lidHeight: Length = …, screw: Screw = …, clearance: Length = …) → Enclosure` — An enclosure with `inner` free space (x, y, z), a lid with a lip that fits inside the base, and a screw post in each corner.
+- `hullCase(inside: Solid[], wall: Length = …, clearance: Length = …, at: Length = …, lip: Length = …, play: Length = …) → Enclosure` — A case shaped round what it holds: the convex hull of `inside` (the smallest shape with no hollows round them all) grown by `clearance`, its walls `wall` thick, cut at the height `at` (by default halfway up) into a base and a lid. A lip `lip` high rises from the base's wall into the lid, `play` narrower, so the two close on each other and stay put.
 
 ## How do I…
 
