@@ -121,7 +121,7 @@ Position-based selectors break in quiet ways:
 - `faces.top` is the *highest* face. Here it is the top of the post, not of the plate: `edges.between(faces.from(holes), faces.top)` matches nothing.
 - `faces.normal(Z)` takes every face facing up; a curved face whose normal at its centre points up counts too.
 
-**Keep the tool in a variable.** Provenance belongs to one value: `auto holes = …; body - holes; faces.from(holes)` works, and so does a module-level `immutable holes = …`. A function called twice, `body - holes()` then `faces.from(holes())`, makes two different tools, and the selector matches nothing.
+**Keep the tool in a variable.** Provenance belongs to one value: `auto holes = …; body - holes; faces.from(holes)` reads best, and so does a module-level `immutable holes = …`. A function called twice, `body - holes()` then `faces.from(holes())`, makes a second tool; it still finds the faces, by the lines of code that made them, but the variable says plainly which tool it is.
 
 ## The order of operations
 
@@ -161,7 +161,7 @@ Fillets before holes, because a hole near an edge narrows the faces a fillet nee
 
 | Message | What it means, what to do |
 |---|---|
-| *the selector matched no edges on this solid* | nothing fits: a face that is not where you think (`faces.top` is the highest face), a tool called twice instead of kept in a variable, a filter on a position that moved |
+| *the selector matched no edges on this solid* | nothing fits: a face that is not where you think (`faces.top` is the highest face), a tool that never cut this solid, a filter on a position that moved |
 | *fillet failed on the straight edge at (0, -15, 3)… a face beside them is only 3 mm wide there, and a fillet of r 5 needs that much room on it* | the radius is larger than a face next to the edge: a smaller `r`, or fillet before the cut that narrowed the face |
 | *fillet failed: each of the 4 edges takes it on its own, not all together* | each edge alone works, but where they meet the rounds do not close: fillet them in groups, or a smaller `r` |
 | *'edges' must be a edge selector (e.g. edges.parallel(Z)), not FaceSelector* | a face selector where edges are wanted: `edges.of(faces.top)` |

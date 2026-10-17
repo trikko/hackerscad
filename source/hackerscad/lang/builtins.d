@@ -4173,15 +4173,46 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
         return fn((ref CallArgs a) {
             auto x = Args(it, a, "from", ["selector", "solid"]);
             bool[uint] ids;
+            // the features by where in the code they ran: a tool made again by calling its function
+            // a second time (body - holes(), then faces.from(holes())) has new features from the
+            // same lines, which find the faces when the features themselves are not on the solid
+            bool[string] lines;
+            string where(uint c) => c > 0 && c <= it.features.length
+                ? it.features[c - 1].kind ~ "@" ~ it.features[c - 1].span.toString : null;
             foreach (c; x.solid("solid").creators)
+            {
                 ids[c] = true;
+                if (auto w = where(c))
+                    lines[w] = true;
+            }
+            // per solid looked at: whether any of its faces comes from the tool itself
+            const(uint)* seenFor;
+            bool byId;
+            bool fromTool(ref SelectCtx c, uint creator)
+            {
+                if (seenFor !is c.creators.ptr)
+                {
+                    seenFor = c.creators.ptr;
+                    byId = false;
+                    foreach (cr; c.creators)
+                        if (cr in ids)
+                        {
+                            byId = true;
+                            break;
+                        }
+                }
+                if (byId)
+                    return (creator in ids) !is null;
+                auto w = where(creator);
+                return w !is null && (w in lines) !is null;
+            }
             if (sel.faces)
-                return with_((size_t i, ref SelectCtx c) => c.creators.length && (c.creators[i] in ids) !is null);
+                return with_((size_t i, ref SelectCtx c) => c.creators.length && fromTool(c, c.creators[i]));
             return with_((size_t i, ref SelectCtx c) {
                 if (!c.creators.length)
                     return false;
                 foreach (f; c.edgeFaces[i])
-                    if (f < 0 || (c.creators[f] in ids) is null)
+                    if (f < 0 || !fromTool(c, c.creators[f]))
                         return false;
                 return true;
             });

@@ -4224,3 +4224,20 @@ unittest
     assert(svg.canFind("2× ⌀4.5, countersink ⌀") && svg.canFind("⌀4.5, counterbore ⌀"), svg);
     assert(!svg.canFind(">⌀16<"), "the boss is not a hole");
 }
+
+unittest
+{
+    // faces.from a tool made again by calling its function a second time: the same faces
+    auto r = runModel(q{
+        Solid holes() => cylinder(d: 4, h: 20).move(x: 5) + cylinder(d: 4, h: 20).move(x: -5);
+        @part Solid b() => (box(30, 20, 10) - holes())
+            .chamfer(edges.between(faces.from(holes()), faces.top), d: 0.5.mm);
+        unittest
+        {
+            immutable plain = box(30, 20, 10) - holes();
+            assert(b.volume < plain.volume, "chamfered");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
