@@ -415,12 +415,13 @@ What to measure on a real board, with calipers:
 
 | Message | What to do |
 |---|---|
-| *shell failed: the kernel could not hollow this solid: the wall must be thinner than the smallest fillet radius…* | a thinner wall, or a wall different from `r` (in `tray`, `wall` equal to `r` fails) |
+| *shell failed: the kernel could not hollow this solid: the wall must be thinner than the smallest fillet radius…* | a thinner wall |
 | *a wall of 25 mm leaves nothing inside a part 20 mm thin* | the wall is thicker than the part: a thinner one |
 | *every face is open: nothing would be left to make the walls of* | the selector in `open:` took every face: select only the openings |
 | *missing argument 'open' for shell(solid, open, thickness)* | a shell needs an opening; for a closed hollow, subtract `offset(-wall)` as above |
-| *fillet failed: each of the 4 edges takes it on its own, not all together* (from `roundedBox`) | `r` is more than half the narrower side: a smaller radius |
-| *cylinder sizes must be positive* (inside `enclosure`) | `lidHeight` is taller than `inner.z`: a shorter lip or a taller box |
+| *roundedBox: r must be more than 0 and less than half the shorter side* | a smaller radius |
+| *tray: a wall as thick as r leaves sharp inside corners that cannot be built…* | a larger `r` (or a thicker wall) |
+| *enclosure: the lid's lip (lidHeight) must be lower than the inside (inner.z)* | a shorter lip or a taller box |
 | *undefined identifier 'M3'* | import the size: `import hardware : M3;` |
 
 ## In the application

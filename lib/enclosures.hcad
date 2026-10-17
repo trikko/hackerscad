@@ -5,12 +5,21 @@ import hardware : Screw, M3, hole;
 /// Boxes with rounded corners and enclosures with lids.
 
 /// A box centred in X and Y on z = 0, with vertical edges rounded by `r`.
-Solid roundedBox(Length x, Length y, Length z, Length r = 3.mm) =>
-    box(x, y, z).fillet(edges.parallel(Z), r: r);
+Solid roundedBox(Length x, Length y, Length z, Length r = 3.mm)
+{
+    assert(r > 0.mm && 2 * r < min(x, y), "roundedBox: r must be more than 0 and less than half the shorter side");
+    return box(x, y, z).fillet(edges.parallel(Z), r: r);
+}
 
 /// An open box: walls `wall` thick, open on top.
-Solid tray(Length x, Length y, Length z, Length wall = 2.mm, Length r = 3.mm) =>
-    roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+Solid tray(Length x, Length y, Length z, Length wall = 2.mm, Length r = 3.mm)
+{
+    assert(wall > 0.mm && 2 * wall < min(x, y) && wall < z, "tray: the wall must be thinner than half the box and its height");
+    // a wall as thick as the corners' radius leaves the inside corners a radius of nothing
+    assert(abs(wall - r) > 0.05.mm, "tray: a wall as thick as r leaves sharp inside corners that cannot be built: "
+        ~ "make r larger than the wall (or the wall thicker than r)");
+    return roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+}
 
 /// A base and a lid that fit together, both standing on z = 0.
 struct Enclosure
@@ -24,6 +33,7 @@ struct Enclosure
 Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidHeight = 4.mm,
     Screw screw = M3, Length clearance = 0.2.mm)
 {
+    assert(lidHeight > 0.mm && lidHeight < inner.z, "enclosure: the lid's lip (lidHeight) must be lower than the inside (inner.z)");
     immutable ox = inner.x + 2 * wall, oy = inner.y + 2 * wall;
     auto base = tray(ox, oy, inner.z + wall, wall, r);
     auto lid = roundedBox(ox, oy, wall, r);

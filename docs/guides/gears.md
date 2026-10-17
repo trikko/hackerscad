@@ -269,7 +269,7 @@ A round bore on a round shaft slips under load: press-fit it (see the guide on [
 | *the backlash would thin the teeth to nothing: keep it below half the tooth (π·m/2)* | a backlash of tenths of a millimetre, not millimetres |
 | *a rack needs at least 1 tooth* | `teeth` of 1 or more |
 | *unknown argument 'hub' for spurGear(m, teeth, thickness, bore, pressure, backlash)* | the library has no hub: add a cylinder, as above |
-| *@part '…' is empty (did a boolean remove everything?)* | the bore is larger than the gear: keep it inside `rootDiameter` |
+| *spurGear: the bore must be smaller than the gear's root circle…* | a smaller bore: within `rootDiameter` less a module each side |
 | the two gears overlap (`(a & b).volume` is not zero) | the same module and pressure angle on both; the second turned by `180.deg - 180.deg / z2`; centres `centerDistance` apart |
 
 The first three messages point at the line of the library that checks them, not at your call: look for the `spurGear` or `rack` call in your model.

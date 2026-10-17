@@ -67,14 +67,17 @@ enum Code : string
 /// Renders a diagnostic like rustc/dmd do, with the offending line.
 string render(const Diagnostic d, string source)
 {
-    import std.string : splitLines;
+    import std.string : splitLines, strip;
     import std.array : replicate;
     import std.conv : to;
 
-    string head = format("%s[%s]: %s\n  --> %s\n", d.severity, d.code, d.message, d.span);
     auto lines = source.splitLines;
+    // no line to show (a preset, a -D, the export as a whole): the file alone, or nothing
     if (d.span.line == 0 || d.span.line > lines.length)
-        return head;
+        return format("%s[%s]: %s\n", d.severity, d.code, d.message)
+            ~ (d.span.file.length ? "  --> " ~ d.span.file ~ "\n" : "")
+            ~ (d.suggestion.length ? "  " ~ d.suggestion.strip ~ "\n" : "");
+    string head = format("%s[%s]: %s\n  --> %s\n", d.severity, d.code, d.message, d.span);
     immutable num = d.span.line.to!string;
     immutable pad = " ".replicate(num.length);
     auto r = head ~ format("%s |\n%s | %s\n%s | %s%s", pad, num, lines[d.span.line - 1], pad,

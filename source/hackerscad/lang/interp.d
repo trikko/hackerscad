@@ -269,7 +269,8 @@ final class Interp
                             presetNames ~= lit.text;
                     }
         if (preset.length && !presetNames.canFind(preset))
-            throw new HcadError(Code.undefined, format("unknown preset '%s'", preset), Span(path, 0, 0), suggest(preset, presetNames));
+            throw new HcadError(Code.undefined, format("unknown preset '%s'", preset), Span(path, 0, 0),
+                suggest(preset, presetNames) ~ namesOf(presetNames, "presets"));
 
         // parameters, in source order
         foreach (d; collectOrdered!VarDecl(mod))
@@ -278,7 +279,7 @@ final class Interp
         foreach (name, _; overrides)
             if (!params.canFind!(p => p.name == name))
                 throw new HcadError(Code.undefined, format("'%s' is not a @param of this model", name), Span(path),
-                    suggest(name, params.map!(p => p.name).array));
+                    suggest(name, params.map!(p => p.name).array) ~ namesOf(params.map!(p => p.name).array, "@params"));
 
         // parts: @part, a body; @parts, a part per body of a Solid or per element of a Solid[]
         size_t partCount, partIndex;
@@ -1908,7 +1909,20 @@ final class Interp
                 args.namedSpans[a.name] = a.span;
             }
         }
-        return callValue(callee, args, c.callee.span);
+        // an error inside a built-in library (its file "<hardware>") is shown where the model
+        // called it, the library's own line said in the message
+        try
+            return callValue(callee, args, c.callee.span);
+        catch (HcadError e)
+        {
+            if (e.diag.span.file.startsWith("<") && !c.span.file.startsWith("<"))
+            {
+                e.diag.message ~= format(" (in the %s library, line %d)", e.diag.span.file[1 .. $ - 1], e.diag.span.line);
+                e.diag.span = c.span;
+                e.msg = e.diag.message;
+            }
+            throw e;
+        }
     }
 
     Value callValue(Value f, ref CallArgs args, Span span)
@@ -2484,6 +2498,15 @@ final class Interp
     }
 
     private bool openLine;
+
+    /// " (the presets: a, b)", or that there are none, to follow a suggestion
+    static string namesOf(const(string)[] names, string what)
+    {
+        import std.array : join;
+        if (!names.length)
+            return format(" (the model has no %s)", what);
+        return format(" (the %s: %s)", what, names.join(", "));
+    }
 
     static string suggest(string name, const(string)[] candidates)
     {

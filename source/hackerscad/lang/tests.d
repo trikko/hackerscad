@@ -357,7 +357,8 @@ unittest
     it = make();
     it.overrides["ww"] = "1";
     auto d = error(model, it);
-    assert(d.code == Code.undefined && d.suggestion == "did you mean 'w'?");
+    assert(d.code == Code.undefined && d.suggestion.canFind("did you mean 'w'?") && d.suggestion.canFind("(the @params: w"),
+        d.suggestion);
     it = make();
     it.preset = "huge";
     assert(error(model, it).code == Code.undefined);
