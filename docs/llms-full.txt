@@ -419,7 +419,7 @@ basic construct once, with comments saying what each makes appear; in the applic
   - Combine with `+ - &`: profiles overlap, add up and cut each other, where a sketch draws one outline; a sketch's `s.profile` is a Profile too, so the two mix (`s.profile - circle(d: 5.mm)`). Profiles move, turn, scale and mirror like solids: `p.move(x: 10.mm, y: 5.mm)`, `p.rotate(30.deg)` or `p.rotate(z: 30)` (in its plane, about the origin; `around: q` about a point), `p.scale(2)` or `p.scale(x: 2, y: 3)`, `p.mirror(X)` (across the line through the origin with that normal). `.round(r)` rounds the corners; `.offset(d)` grows (d > 0) or shrinks it; `.area`. `p.across(X)` stands it up across X as `extrude(along: X)` does (its x along Y, its y up Z; `across(Y)`: its x along X): `loft([a.across(X), b.across(X).move(x: 20.mm)])` lofts along X.
   - `.extrude(h)` makes a solid along +Z (negative h goes down); options `shear: vec(dx, dy)` (the top moved that much sideways from the bottom, the sides leaning straight: an oblique prism), `taper: 3.deg` (the sides lean in going away from the profile, whichever way the solid goes: up, down with a negative height, along X or Y; staying flat and meeting at sharp edges: the outline narrows and the holes widen; a negative taper the other way; `h` is still the height along the axis, and an edge or hole of the profile that would close up before the top is an error), `symmetric: true`, `twist: 90.deg` (the profile turns around Z as it rises, evenly: twisted vases, spiral columns; `twist: 2 * 360.deg` two turns; not with `taper`). `along: Y` stands the profile up across Y (its x along X, its y up Z) and pushes it towards +Y, `along: X` across X (its x along Y, its y up Z) towards +X; a negative height goes the other way: a prism along X or Y without turning anything. A profile lying in another plane, a section (`body.section(XZ.offset(10.mm)).extrude(2.mm)`), one turned or moved whole, or one drawn on a face, is extruded across its own plane, along its normal, from where it lies.
   - `.revolve()`: turned around the axis, standing up: the profile's x is the radius and its y the height along Z (pots, bottles, knobs). `.revolve(axis: X, angle: 180.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`), without standing up; `angle:` turns less than all the way.
-  - On a face or plane, add or remove material in one step: `carlo().extrude(circle(d: 6.mm), on: frame, depth: 5.mm)` grows outwards along the frame's Z; `carlo().cut(circle(d: 6.mm), on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. Both accept `taper:`; `on:` also takes a face selector (`on: faces.top`) or a plane, and `at: vec(…)` a point, brought onto the face, where the profile's origin goes (`body.cut(circle(d: 3.mm), on: faces.top, at: vec(5.mm, 2.mm, 0.mm), depth: 2.mm)`).
+  - On a face or plane, add or remove material in one step: `carlo().extrude(circle(d: 6.mm), on: frame, depth: 5.mm)` grows outwards along the frame's Z; `carlo().cut(circle(d: 6.mm), on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. Both accept `taper:`; `on:` also takes a face selector (`on: faces.top`) or a plane, and `at: vec(…)` a point, brought onto the face, where the profile's origin goes (`body.cut(circle(d: 3.mm), on: faces.top, at: vec(5.mm, 2.mm, 0.mm), depth: 2.mm)`); a solid in place of the profile is placed as it is, its z = 0 on the face and +Z out of it, no depth: `body.cut(hole(M3, 6.mm, "counterbore"), on: faces.top, at: vec(…))`.
   - Threads: `body.thread(face, "M8")` cuts a thread on a cylindrical face: on the outside of a shaft (made at the thread's nominal diameter, ⌀8) the grooves, on the wall of a hole (made at the tap drill, about ⌀6.8 for M8) the thread a screw fits. The size names the standard: ISO metric `"M8"` (coarse) or `"M8x1"` (fine), unified inch `"1/4-20 UNC"`, `"1/4 UNF"`, `"#10-32"`, trapezoidal for lead screws `"Tr12x3"`, ACME `"1/2-10 ACME"`, buttress `"S20x4"` (DIN 513), BSP pipe threads `"G1/2"` (parallel) and `"R1/2"` (tapered), `"1/2 NPT"` (tapered; the shaft is the pipe's outside diameter), Edison lamp bases `"E27"`, `"E14"`, bottle and jar necks `"28-400"` (SPI/GPI 400, 410, 415 from 13 to 120 mm), PET bottles `"PCO 1881"`, `"PCO 1810"`, and the garden hose `"3/4 GHT"`; which to use, and how to recognise one, under Threads: choosing one, recognising one. Tapered threads have their nominal size at the fixed end and narrow by 1 in 16 on the diameter towards the tip of a shaft, or into a hole. `taper: 1.79.deg` makes any thread conical the same way, the angle each side leans from the axis (R and NPT have 1.79°, 1 in 16; `taper: 0.deg` makes them parallel): a tapered metric plug, a conical thread that tightens as it goes in. `pitch: 1.mm` alone puts a 60° thread of that pitch on the cylinder's own diameter. The thread covers the whole face, or `length: 10.mm` or `turns: 8` from the free end (the tip of a shaft, the opening of a hole; `flip: true` the other end). `starts: 2` for multi-start threads, `left: true` left-handed, `clearance: 0.2.mm` the play for printed parts (0.15 mm by default in holes, none on shafts), `chamfer: false` without the 45° bevel at the free end. In the 3D view, right-click a cylinder: **Thread** lists the sizes that fit it. Every thread is built exactly from its boundary (each corner of the profile on its own helix, on a cone for tapered ones, a ruled face between two of them; the profile repeated in a lead for more starts) and cut to the face: a second or less for an M8 × 25. The `threads` library (`threadedRod`, `tappedHole`) makes loose rods and tools to cut.
 - Extrude and cut faces: `carlo().extrude(faces.top, depth: 5.mm)` sweeps flat faces of the body outwards along their normals and adds the material, `carlo().cut(faces.top, depth: 2.mm)` sinks them (a negative depth to extrude does the same). `along: vec(1, 0, 1)` sweeps them in another direction, slanted sides: material is added when the direction leaves the face, removed when it enters. In the 3D view: right-click a face, Extrude face… or Cut face….
 - **Paths, sweeps and lofts:**
@@ -434,7 +434,7 @@ basic construct once, with comments saying what each makes appear; in the applic
 - **Constrained sketches** (2D, on XY or on a face): `auto s = sketch();` then add geometry and constraints and take `s.profile`.
   - Areas: the profile fills what lies inside an odd number of loops: a loop inside another is a hole, and where two loops overlap (two circles crossing) the overlap is a hole too. `s.fill(at)` makes the area holding `at` full whatever the loops say, `s.fill(at, full: false)` empty (`at` a vector, or a point of the sketch, which keeps it in its area as the constraints move it; such a point, used by nothing else, does not count among the degrees of freedom; the last fill in an area counts). In the window the full areas are tinted, and the sketch bar's ◩ turns an area full or empty with a click inside it.
   - Construction geometry: `construction: true` on any geometry call or shape (`s.line(p, q, construction: true)`, `s.rect(…, construction: true)`) makes guides to constrain to, drawn dashed in the window, never part of the profile.
-  - Geometry: `s.point(x, y)` (where it starts: constraints move it; `fixed: true` pins it there), `s.line(p, q)`, `s.arc(center, start, end)` (counter-clockwise), `s.circle(center, r: | d:)` (without r/d the radius is left to the constraints), `s.polyline([p1, p2, vec(…)], closed: true)` (returns the lines; vectors become new points), `s.ellipse(center, rx:, ry:, angle:)` (rx along its own x axis, `angle` from X, ry across; what is not given is left to the constraints, the turn too: `s.ellipse(c, rx: 20.mm, ry: 12.mm)` with c fixed leaves 1 degree of freedom), `s.spline([p1, p2, vec(…)], closed: false)` (a smooth curve through the points, in order, vectors becoming new points: open, its two ends join lines and arcs as theirs do; `closed: true` goes round back to the first point, a loop of its own; it bends evenly, as a thin strip bent through the points would, and its points move it: constrain them; `.points`, `.start`, `.end`, `.closed`, `.length` along the curve). `construction: true` geometry helps constraining but is not part of the outline.
+  - Geometry: `s.point(x, y)` (where it starts: constraints move it; `fixed: true` pins it there), `s.line(p, q)`, `s.arc(center, start, end)` (counter-clockwise; their points sketch points or vectors, which become new points: to join two lines, give the second the first one's `.end`), `s.circle(center, r: | d:)` (without r/d the radius is left to the constraints), `s.polyline([p1, p2, vec(…)], closed: true)` (returns the lines; vectors become new points), `s.ellipse(center, rx:, ry:, angle:)` (rx along its own x axis, `angle` from X, ry across; what is not given is left to the constraints, the turn too: `s.ellipse(c, rx: 20.mm, ry: 12.mm)` with c fixed leaves 1 degree of freedom), `s.spline([p1, p2, vec(…)], closed: false)` (a smooth curve through the points, in order, vectors becoming new points: open, its two ends join lines and arcs as theirs do; `closed: true` goes round back to the first point, a loop of its own; it bends evenly, as a thin strip bent through the points would, and its points move it: constrain them; `.points`, `.start`, `.end`, `.closed`, `.length` along the curve). `construction: true` geometry helps constraining but is not part of the outline.
   - Shapes, made of the geometry above with their constraints, the same shapes and arguments as the profiles above (the points they need are new; a vector where a point goes, here and in `s.circle` and `s.ellipse`, becomes a new point starting there; without the centre, `s.circle(d: 10.mm)`, `s.rect(40.mm, 20.mm)`, `s.polygon(6, d: 10.mm)`, `s.slot(30.mm, 6.mm)`, `s.teardrop(d: 5.mm)`, it is a new point at the origin, free to move): `s.rect(p, q)` (opposite corners), `s.rect(p, w:, h:)` (one corner, p the lower left) or `s.rect(center: c, w:, h:)` returns its 4 lines p → (q.x, p.y) → q → (p.x, q.y), that is bottom, right, top, left when p is the lower left corner; they are horizontal and vertical, so a rectangle of new corners has 4 degrees of freedom, 0 with w, h and a fixed centre (a construction diagonal holds the centre in its middle); `angle: 30.deg` turns it (its first side that far from X: the sides are then square to each other and parallel in pairs instead of horizontal and vertical), `angle: "free"` leaves the turn to the constraints (`s.parallel(r[0], line)` lays it along a slanted line); `corner: r` rounds the four corners. `s.polygon(center, n, r: | d:, fit:, angle:)` returns the n lines of a regular polygon, its corners on a construction circle of that radius (`fit: "corners"`, the default), or its sides touching it with `fit: "sides"` (`d` across the flats: a nut's spanner size); `angle` is the direction of the first corner from the centre, else the turn is left free (1 degree of freedom: `s.horizontal(lines[0])` takes it; it starts with the first side at the bottom, horizontal, where the profile has it); `s.polygon([p, q, vec(0, 20)])` is the closed polyline through the points. `s.slot(p, q, w:)` returns `[line, arc round q, line, arc round p]`: two half circles joined by lines tangent to them, 0 degrees of freedom with p, q fixed and w given; `s.slot(length, w, center: c, angle:)` the same by its length end to end, along X unless turned (a construction line joins the two centres, c in its middle). `s.teardrop(c, r: | d:, angle:, flat:)` returns `[arc, line, line]`: an arc round c and two lines tangent to it meeting above it, `angle` (45° unless given) from the vertical; `flat: true` cuts the point with a line touching the circle's top (`[arc, line, flat, line]`); 0 degrees of freedom with c fixed and r given. Sizes given (w, h, r, d, rx, ry, angle, corner: one dimension for the four corners) are dimensions, shown and editable in the sketch view (a slot's length is not: the dimension would be between its centres).
   - Constraints: `coincident(p, q)`, `fix(p)`, `horizontal(line | p, q)`, `vertical(…)`, `length(line, v)`, `distance(p, q, v)`, `distance(p, q, v, along: X | Y)`, `distance(p, line, v)`, `on(p, line | circle | arc)` (a shape's lines instead of p: every corner on the circle, the shape inscribed: `s.on(s.polygon(c, 6), circ)`), `parallel(a, b)`, `perpendicular(a, b)`, `angle(a, b, v)` (between the line directions, start → end), `equal(a, b)` (lengths or radii), `radius(c, v)`, `diameter(c, v)`, `tangent(line | circle, circle | line)` (a shape's lines and a circle: every side touching it, the shape round it: `s.tangent(s.rect(center: c), circ)`), `midpoint(p, line)`, `symmetric(p, q, line)`, `concentric(a, b)` (circles, arcs, ellipses or a point round the same centre), `angle(line, v)` (of one line from X).
   - On ellipses: `on(p, e)`, `tangent(line, e)`, `concentric(e, …)`, `radius(e, rx: v, ry: v)` (either or both), `horizontal(e)` / `vertical(e)` (its x axis along X or Y), `angle(e, v)`, and `equal(e)`: as wide as tall, a circle. A round ellipse looks the same however it is turned: its turn then stays where it is, unless an angle sets it, and is not a degree of freedom.
@@ -496,13 +496,13 @@ basic construct once, with comments saying what each makes appear; in the applic
 - **Built-in libraries** (`import gears;` or `import std.gears;`, selective imports work too):
   - `hardware`: `Screw` sizes `M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8` with `d`, `pitch`, `tap`, `clearance`, `head`, `headHeight`, `key`, `nut`, `nutHeight`, `washer`, `insert`, `insertDepth`; `screw(M3, 20.mm, threaded: false)` (socket head cap screw, underside of the head on z = 0), `nut(M3, threaded: false)`, `washer(M3)`, `hexPrism(acrossFlats, h)`; tools to subtract, top on z = 0 going down: `hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" | "countersink")`, `nutTrap(M3, depth)`.
   - `threads`: `threadedRod(d, pitch, length, chamfer: true, left: false)` (ISO metric profile, real geometry), `tappedHole(d, pitch, depth, clearance: 0.15.mm)` (a tool to subtract for an internal thread), `toothHeight(pitch)`. They are made with `isoThread(d:, pitch:, length:, chamfer:)`, a thread built exactly from its boundary (each corner of the profile on its own helix, a ruled face between two of them, one a turn) and cut to length: no sweep, no core to fuse; an M8 × 60 rod in about a second.
-  - `gears`: `spurGear(m, teeth, thickness, bore: 0.mm, pressure: 20.deg, backlash: 0.1.mm)` (involute, centred, a tooth on +X), `gearProfile(m, teeth, …)`, `rack(m, teeth, thickness)`, `pitchDiameter`, `outsideDiameter`, `rootDiameter`, `centerDistance(m, z1, z2)` (where to put two meshing gears; turn the second so a gap faces the first's tooth on +X: `rotate(z: 180.deg - 180.deg / z2)`, right for any number of teeth).
+  - `gears`: `spurGear(m, teeth, thickness, bore: 0.mm, pressure: 20.deg, backlash: 0.1.mm, steps: 6)` (involute, centred, a tooth on +X), `gearProfile(m, teeth, …)`, `rack(m, teeth, thickness, base:, pressure: 20.deg, backlash: 0.1.mm)`, `pitchDiameter`, `outsideDiameter`, `rootDiameter`, `centerDistance(m, z1, z2)` (where to put two meshing gears; turn the second so a gap faces the first's tooth on +X: `rotate(z: 180.deg - 180.deg / z2)`, right for any number of teeth).
   - `hinges`: `hinge(length:, width:, thickness:, knuckles: 5, clearance: 0.4.mm)` returns `.fixed` and `.moving`, two leaves printed in place around an axis along X at z = thickness.
-  - `snaps`: `snapHook(length:, thickness:, width:, overhang:, lead: 30.deg)` (a cantilever hook standing on z = 0, barb towards +X) and `snapSlot(…)` (the window to subtract from the mating wall).
+  - `snaps`: `snapHook(length:, thickness:, width:, overhang:, lead: 30.deg)` (a cantilever hook standing on z = 0, barb towards +X) and `snapSlot(…)` (the window to subtract from the mating wall where the hook stands: round the beam, with room for it to bend, the barb then resting on its +X edge).
   - `enclosures`: `roundedBox(x, y, z, r)`, `tray(x, y, z, wall:, r:)` (open on top), `enclosure(vec(x, y, z), wall:, r:, lidHeight:, screw: M3)` returns `.base` and `.lid` (lid with a lip that fits inside, screw posts in the corners).
   - `carlo`: `carlo(teeth: 3, height: 15.mm, toothR:, gap:, jaw:, back:, lean: 17.deg, mouth: 1.5.deg, eye: true)`, Carlo the mascot, a bag clip lying on z = 0 (the constrained sketch of the tutorial's chapter 13, extruded; `lean` tilts the back and the tips, a positive `mouth` opens the slot towards the tips, a negative one closes it).
 - **Drawings** (technical sheets, exported as SVG, PDF or DXF): a function marked `@drawing` returns `drawing(size: "A4", title:, author:, material:, projection: "first" | "third", scale: 0 (fit), landscape: true)` after adding to it:
-  - `d.standardViews(solid, iso: true, dimensions: true)`: front, top, side and an isometric view, laid out and scaled to fit, with overall dimensions and hole callouts;
+  - `d.standardViews(solid, iso: true, dimensions: true)`: front, top, side and an isometric view, laid out and scaled to fit, with overall dimensions and hole callouts (one per kind of hole seen end-on, with the count: `2× ⌀4.5, countersink ⌀9.26`, `⌀4.5, counterbore ⌀7.6 × 4.2`; bosses and round outlines are not holes);
   - `d.view(solid, "front" | "back" | "top" | "bottom" | "right" | "left" | "iso", at: vec(x, y), scale:)` (without `at:` the layout places it; `at:` is in paper mm from the bottom-left corner);
   - `d.section(solid, plane, label: "A")`: the solid cut by the plane, seen from the side the normal points to, cut faces hatched;
   - `d.dimension(view, from: vec(…), to: vec(…), offset: 8.mm, text:)` between two model points, on a view returned by `view`/`standardViews`; `d.note("text", at: vec(x, y), size: 3.5.mm)`.
@@ -1473,7 +1473,9 @@ Solid hole(Screw s, Length depth, string kind = "clearance")
         return cylinder(d: s.head + 0.6.mm, h: s.headHeight + 0.2.mm).move(z: -s.headHeight - 0.2.mm)
             + cylinder(d: s.clearance, h: depth).move(z: -depth);
     case "countersink":
-        return cone(d1: s.clearance, d2: s.d * 2, h: s.d / 2).move(z: -s.d / 2)
+        // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
+        return cone(d1: s.clearance, d2: 2.24 * s.d + 0.3.mm, h: (2.24 * s.d + 0.3.mm - s.clearance) / 2)
+            .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
             + cylinder(d: s.clearance, h: depth).move(z: -depth);
     default:
         assert(false, "hole kind must be clearance, tap, insert, counterbore or countersink, not " ~ kind);
@@ -1574,20 +1576,26 @@ Profile gearProfile(Length m, int teeth, Angle pressure = 20.deg, Length backlas
     return polygon(pts);
 }
 
-/// A spur gear standing on z = 0, with an optional bore.
+/// A spur gear standing on z = 0, with an optional bore; `steps` points on
+/// each flank (more: smoother teeth, slower).
 Solid spurGear(Length m, int teeth, Length thickness, Length bore = 0.mm, Angle pressure = 20.deg,
-    Length backlash = 0.1.mm)
+    Length backlash = 0.1.mm, int steps = 6)
 {
-    auto g = gearProfile(m, teeth, pressure, backlash).extrude(thickness);
+    assert(bore < rootDiameter(m, teeth) - 2 * m, "spurGear: the bore must be smaller than the gear's root circle, with a module of material left");
+    auto g = gearProfile(m, teeth, pressure, backlash, steps).extrude(thickness);
     if (bore > 0.mm)
         g -= cylinder(d: bore, h: 3 * thickness, center: true);
     return g;
 }
 
-/// A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0.
-Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pressure = 20.deg)
+/// A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0;
+/// backlash thins the teeth on the pitch line, as on a gear.
+Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pressure = 20.deg,
+    Length backlash = 0.1.mm)
 {
     assert(teeth >= 1, "a rack needs at least 1 tooth");
+    assert(backlash >= 0.mm && backlash < PI * m / 2, "rack: the backlash goes from 0 to under half the tooth (π·m/2)");
+    immutable e = backlash / 2;
     immutable p = PI * m;
     immutable b = base > 0.mm ? base : 2 * m;
     immutable t = tan(pressure);
@@ -1595,8 +1603,8 @@ Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pres
     foreach (k; 0 .. teeth)
     {
         immutable x0 = k * p;
-        pts ~= [vec(x0, -1.25 * m), vec(x0 + p / 4 - 1.25 * m * t, -1.25 * m), vec(x0 + p / 4 + m * t, m),
-                vec(x0 + 3 * p / 4 - m * t, m), vec(x0 + 3 * p / 4 + 1.25 * m * t, -1.25 * m)];
+        pts ~= [vec(x0, -1.25 * m), vec(x0 + p / 4 - 1.25 * m * t + e, -1.25 * m), vec(x0 + p / 4 + m * t + e, m),
+                vec(x0 + 3 * p / 4 - m * t - e, m), vec(x0 + 3 * p / 4 + 1.25 * m * t - e, -1.25 * m)];
     }
     pts ~= [vec(teeth * p, -1.25 * m), vec(teeth * p, -1.25 * m - b)];
     return polygon(pts).extrude(thickness);
@@ -1677,11 +1685,13 @@ Solid snapHook(Length length = 10.mm, Length thickness = 1.5.mm, Length width = 
 }
 
 /// The slot a hook clicks into, to subtract from the mating wall: a window
-/// `clearance` larger than the barb.
+/// round the beam, `clearance` larger, with room on the -X side for the beam
+/// to bend aside while the barb goes through; then the barb rests on the
+/// wall beyond the window's +X edge.
 Solid snapSlot(Length thickness = 1.5.mm, Length width = 5.mm, Length overhang = 1.mm, Length wall = 2.mm,
     Length clearance = 0.3.mm) =>
     box(thickness + overhang + 2 * clearance, width + 2 * clearance, wall + 1.mm)
-        .move(x: (thickness + overhang) / 2, z: -0.5.mm);
+        .move(x: (thickness - overhang) / 2, z: -0.5.mm);
 ```
 
 ## Library source: enclosures
@@ -1694,12 +1704,21 @@ import hardware : Screw, M3, hole;
 /// Boxes with rounded corners and enclosures with lids.
 
 /// A box centred in X and Y on z = 0, with vertical edges rounded by `r`.
-Solid roundedBox(Length x, Length y, Length z, Length r = 3.mm) =>
-    box(x, y, z).fillet(edges.parallel(Z), r: r);
+Solid roundedBox(Length x, Length y, Length z, Length r = 3.mm)
+{
+    assert(r > 0.mm && 2 * r < min(x, y), "roundedBox: r must be more than 0 and less than half the shorter side");
+    return box(x, y, z).fillet(edges.parallel(Z), r: r);
+}
 
 /// An open box: walls `wall` thick, open on top.
-Solid tray(Length x, Length y, Length z, Length wall = 2.mm, Length r = 3.mm) =>
-    roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+Solid tray(Length x, Length y, Length z, Length wall = 2.mm, Length r = 3.mm)
+{
+    assert(wall > 0.mm && 2 * wall < min(x, y) && wall < z, "tray: the wall must be thinner than half the box and its height");
+    // a wall as thick as the corners' radius leaves the inside corners a radius of nothing
+    assert(abs(wall - r) > 0.05.mm, "tray: a wall as thick as r leaves sharp inside corners that cannot be built: "
+        ~ "make r larger than the wall (or the wall thicker than r)");
+    return roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+}
 
 /// A base and a lid that fit together, both standing on z = 0.
 struct Enclosure
@@ -1713,6 +1732,7 @@ struct Enclosure
 Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidHeight = 4.mm,
     Screw screw = M3, Length clearance = 0.2.mm)
 {
+    assert(lidHeight > 0.mm && lidHeight < inner.z, "enclosure: the lid's lip (lidHeight) must be lower than the inside (inner.z)");
     immutable ox = inner.x + 2 * wall, oy = inner.y + 2 * wall;
     auto base = tray(ox, oy, inner.z + wall, wall, r);
     auto lid = roundedBox(ox, oy, wall, r);

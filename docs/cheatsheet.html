@@ -187,7 +187,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>loft(profiles: Profile[], ruled: bool, inside: Vec3[][]) → Solid</dt><dd>A solid through profiles placed in space; through paths (Path[]), a Surface; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane).</dd>
 <dt>hull(shapes…) → Solid</dt><dd>The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.</dd>
 <dt>minkowski(a, b) → Solid</dt><dd>a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.</dd>
-<dt>s.cut(profile: Profile, on: Frame | Faces | Plane, at: Vec3, depth: Length, through: bool, taper: Angle) → Solid</dt><dd>Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).</dd>
+<dt>s.cut(profile: Profile | Solid, on: Frame | Faces | Plane, at: Vec3, depth: Length, through: bool, taper: Angle) → Solid</dt><dd>Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).</dd>
 <dt>s.thread(face: Faces, size: string, pitch: Length, length: Length, turns: number, starts: int, left: bool, clearance: Length, chamfer: bool, flip: bool, taper: Angle) → Solid</dt><dd>A thread on a cylindrical face, outside a shaft or inside a hole (made at the tap drill size): "M8", "M8x1", "1/4-20 UNC", "#10-32 UNF", "Tr12x3", "G1/2", tapered "R1/2" and "1/2 NPT"; taper: 1.79.deg makes any thread conical (each side's lean, narrowing to the free end).</dd>
 <dt>s.extrude(faces: Selector, depth: Length, along: Vec3) → Solid</dt><dd>Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in.</dd>
 </dl></section>
@@ -287,8 +287,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.origin → Point</dt><dd>A sketch on a face or plane: its origin (the face's centre) as a fixed reference point.</dd>
 <dt>sk.project(edges: Edges) → Entity[]</dt><dd>Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them.</dd>
 <dt>sk.point(x: Length, y: Length, fixed: bool, construction: bool) → Point</dt><dd>A point where it starts; constraints move it.</dd>
-<dt>sk.line(p: Point, q: Point, construction: bool) → Line</dt><dd>A line between two points; construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never part of the profile.</dd>
-<dt>sk.arc(center: Point, start: Point, end: Point, construction: bool) → Arc</dt><dd>An arc, counter-clockwise.</dd>
+<dt>sk.line(p: Point | Vec2, q: Point | Vec2, construction: bool) → Line</dt><dd>A line between two points (a vector makes a new point); construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never part of the profile.</dd>
+<dt>sk.arc(center: Point | Vec2, start: Point | Vec2, end: Point | Vec2, construction: bool) → Arc</dt><dd>An arc, counter-clockwise (a vector makes a new point).</dd>
 <dt>sk.polyline(points, closed: bool, construction: bool) → Line[]</dt><dd>Lines through points (vectors become new points).</dd>
 <dt>sk.spline(points, closed: bool) → SketchSpline</dt><dd>A smooth curve through points (vectors become new points): open, its ends join lines and arcs as theirs do; closed: true, a loop of its own. Its points move it: constrain them.</dd>
 <dt>sk.circle(center: Point, r: Length, d: Length) → Circle</dt><dd>A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…).</dd>
@@ -417,8 +417,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>centerDistance(m: Length, teeth1: int, teeth2: int) → Length</dt><dd></dd>
 <dt>involute(rb: Length, r: Length) → double</dt><dd>Angle of the involute of a circle of radius rb at radius r.</dd>
 <dt>gearProfile(m: Length, teeth: int, pressure: Angle = …, backlash: Length = …, steps: int = 6) → Profile</dt><dd>The outline of a spur gear centred on the origin, a tooth on +X. backlash thins the teeth (measured on the pitch circle) so that printed gears do not bind.</dd>
-<dt>spurGear(m: Length, teeth: int, thickness: Length, bore: Length = …, pressure: Angle = …, backlash: Length = …) → Solid</dt><dd>A spur gear standing on z = 0, with an optional bore.</dd>
-<dt>rack(m: Length, teeth: int, thickness: Length, base: Length = …, pressure: Angle = …) → Solid</dt><dd>A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0.</dd>
+<dt>spurGear(m: Length, teeth: int, thickness: Length, bore: Length = …, pressure: Angle = …, backlash: Length = …, steps: int = 6) → Solid</dt><dd>A spur gear standing on z = 0, with an optional bore; `steps` points on each flank (more: smoother teeth, slower).</dd>
+<dt>rack(m: Length, teeth: int, thickness: Length, base: Length = …, pressure: Angle = …, backlash: Length = …) → Solid</dt><dd>A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0; backlash thins the teeth on the pitch line, as on a gear.</dd>
 </dl></section>
 <section><h2>import hinges;</h2><dl>
 <dt>struct Hinge(fixed: Solid, moving: Solid)</dt><dd>The two leaves of a hinge, printed in place: they come out of the printer already joined and turn around the X axis.</dd>
@@ -426,7 +426,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 </dl></section>
 <section><h2>import snaps;</h2><dl>
 <dt>snapHook(length: Length = …, thickness: Length = …, width: Length = …, overhang: Length = …, lead: Angle = …) → Solid</dt><dd>A hook: a flexible beam `length` long with a barb `overhang` deep at the top. `lead` is the slope that pushes it aside when inserting.</dd>
-<dt>snapSlot(thickness: Length = …, width: Length = …, overhang: Length = …, wall: Length = …, clearance: Length = …) → Solid</dt><dd>The slot a hook clicks into, to subtract from the mating wall: a window `clearance` larger than the barb.</dd>
+<dt>snapSlot(thickness: Length = …, width: Length = …, overhang: Length = …, wall: Length = …, clearance: Length = …) → Solid</dt><dd>The slot a hook clicks into, to subtract from the mating wall: a window round the beam, `clearance` larger, with room on the -X side for the beam to bend aside while the barb goes through; then the barb rests on the wall beyond the window's +X edge.</dd>
 </dl></section>
 <section><h2>import enclosures;</h2><dl>
 <dt>roundedBox(x: Length, y: Length, z: Length, r: Length = …) → Solid</dt><dd>A box centred in X and Y on z = 0, with vertical edges rounded by `r`.</dd>

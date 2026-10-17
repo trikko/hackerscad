@@ -164,7 +164,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `loft(profiles: Profile[], ruled: bool, inside: Vec3[][]) → Solid` — A solid through profiles placed in space; through paths (Path[]), a Surface; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane).
 - `hull(shapes…) → Solid` — The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile.
 - `minkowski(a, b) → Solid` — a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex.
-- `s.cut(profile: Profile, on: Frame | Faces | Plane, at: Vec3, depth: Length, through: bool, taper: Angle) → Solid` — Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).
+- `s.cut(profile: Profile | Solid, on: Frame | Faces | Plane, at: Vec3, depth: Length, through: bool, taper: Angle) → Solid` — Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm).
 - `s.thread(face: Faces, size: string, pitch: Length, length: Length, turns: number, starts: int, left: bool, clearance: Length, chamfer: bool, flip: bool, taper: Angle) → Solid` — A thread on a cylindrical face, outside a shaft or inside a hole (made at the tap drill size): "M8", "M8x1", "1/4-20 UNC", "#10-32 UNF", "Tr12x3", "G1/2", tapered "R1/2" and "1/2 NPT"; taper: 1.79.deg makes any thread conical (each side's lean, narrowing to the free end).
 - `s.extrude(faces: Selector, depth: Length, along: Vec3) → Solid` — Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in.
 
@@ -269,8 +269,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `sk.origin → Point` — A sketch on a face or plane: its origin (the face's centre) as a fixed reference point.
 - `sk.project(edges: Edges) → Entity[]` — Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them.
 - `sk.point(x: Length, y: Length, fixed: bool, construction: bool) → Point` — A point where it starts; constraints move it.
-- `sk.line(p: Point, q: Point, construction: bool) → Line` — A line between two points; construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never part of the profile.
-- `sk.arc(center: Point, start: Point, end: Point, construction: bool) → Arc` — An arc, counter-clockwise.
+- `sk.line(p: Point | Vec2, q: Point | Vec2, construction: bool) → Line` — A line between two points (a vector makes a new point); construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never part of the profile.
+- `sk.arc(center: Point | Vec2, start: Point | Vec2, end: Point | Vec2, construction: bool) → Arc` — An arc, counter-clockwise (a vector makes a new point).
 - `sk.polyline(points, closed: bool, construction: bool) → Line[]` — Lines through points (vectors become new points).
 - `sk.spline(points, closed: bool) → SketchSpline` — A smooth curve through points (vectors become new points): open, its ends join lines and arcs as theirs do; closed: true, a loop of its own. Its points move it: constrain them.
 - `sk.circle(center: Point, r: Length, d: Length) → Circle` — A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…).
@@ -407,8 +407,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `centerDistance(m: Length, teeth1: int, teeth2: int) → Length`
 - `involute(rb: Length, r: Length) → double` — Angle of the involute of a circle of radius rb at radius r.
 - `gearProfile(m: Length, teeth: int, pressure: Angle = …, backlash: Length = …, steps: int = 6) → Profile` — The outline of a spur gear centred on the origin, a tooth on +X. backlash thins the teeth (measured on the pitch circle) so that printed gears do not bind.
-- `spurGear(m: Length, teeth: int, thickness: Length, bore: Length = …, pressure: Angle = …, backlash: Length = …) → Solid` — A spur gear standing on z = 0, with an optional bore.
-- `rack(m: Length, teeth: int, thickness: Length, base: Length = …, pressure: Angle = …) → Solid` — A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0.
+- `spurGear(m: Length, teeth: int, thickness: Length, bore: Length = …, pressure: Angle = …, backlash: Length = …, steps: int = 6) → Solid` — A spur gear standing on z = 0, with an optional bore; `steps` points on each flank (more: smoother teeth, slower).
+- `rack(m: Length, teeth: int, thickness: Length, base: Length = …, pressure: Angle = …, backlash: Length = …) → Solid` — A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0; backlash thins the teeth on the pitch line, as on a gear.
 
 ## Library: import hinges;
 
@@ -418,7 +418,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 ## Library: import snaps;
 
 - `snapHook(length: Length = …, thickness: Length = …, width: Length = …, overhang: Length = …, lead: Angle = …) → Solid` — A hook: a flexible beam `length` long with a barb `overhang` deep at the top. `lead` is the slope that pushes it aside when inserting.
-- `snapSlot(thickness: Length = …, width: Length = …, overhang: Length = …, wall: Length = …, clearance: Length = …) → Solid` — The slot a hook clicks into, to subtract from the mating wall: a window `clearance` larger than the barb.
+- `snapSlot(thickness: Length = …, width: Length = …, overhang: Length = …, wall: Length = …, clearance: Length = …) → Solid` — The slot a hook clicks into, to subtract from the mating wall: a window round the beam, `clearance` larger, with room on the -X side for the beam to bend aside while the barb goes through; then the barb rests on the wall beyond the window's +X edge.
 
 ## Library: import enclosures;
 
