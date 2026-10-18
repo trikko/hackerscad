@@ -8,7 +8,7 @@ A *thread* is the spiral ridge that lets a screw turn into a nut. Its *pitch* is
 
 ## Choosing a thread
 
-A printed thread is worth making when the part screws onto something that already has one (a tap, a hose, a bottle, a camera, a pipe), or when screwing is the point (a lid, a lead screw, a knob that tightens). To hold printed parts together with small screws, M2 to M5, a heat-set insert or a self-tapping screw holds better: see [the guide on holes](holes.md). For a part that screws onto a real thing, never guess its thread: measure it (next section).
+A printed thread is worth making when the part screws onto something that already has one (a tap, a hose, a bottle, a camera, a pipe), or when screwing is the point (a lid, a lead screw, a knob that tightens). To hold printed parts together with small screws, M2 to M5, a printed thread comes out too fine: a hole with ribs the screw cuts its own thread into (`hole(M3, 8.mm, "ribs")`), a heat-set insert or a self-tapping screw holds better: see [the guide on holes](holes.md). For a part that screws onto a real thing, never guess its thread: measure it (next section).
 
 By what it does:
 
@@ -229,7 +229,7 @@ Solid block() => (box(20.mm, 20.mm, 15.mm)
 
 ## Printing threads
 
-- Under M5 they print badly: use a heat-set insert (a brass sleeve with a thread inside, melted into the plastic with a soldering iron) or a self-tapping screw (one that cuts its own thread).
+- Under M5 they print badly: try a hole with ribs first (`hole(M3, depth, "ribs")`: three ribs along the hole that the screw cuts its thread into, see [the guide on holes](holes.md)), or use a heat-set insert (a brass sleeve with a thread inside, melted into the plastic with a soldering iron) or a self-tapping screw (one that cuts its own thread).
 - M6 to M12 print well standing up, with 0.15 to 0.3 mm of play (`clearance:`). Print a short test piece first: printers differ.
 - A lid that opens often wants a coarse pitch (2 to 4 mm), and more starts for less turning.
 - Caps for bottles: 0.3 to 0.5 mm of play, in PETG (it flexes onto the neck's seal, where PLA cracks). A 400 neck has about one turn of thread, 410 one and a half, 415 two: `turns:`.

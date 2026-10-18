@@ -4670,6 +4670,11 @@ unittest
         ~ "writeln(h.volume > PI * 1.25 ^^ 2 * 10 * 1.mm ^^ 3 && h.volume < PI * 1.65 ^^ 2 * 10 * 1.mm ^^ 3, \" \", "
         ~ "h.contains(vec(0.mm, -1.4.mm, -5.mm)), \" \", h.contains(vec(0.mm, 1.4.mm, -5.mm)), \" \", "
         ~ "h.contains(vec(0.mm, -1.4.mm, -0.3.mm)));", "true false true true");
+    // the mouth chamfered 0.5 mm for ribs unless told otherwise; any kind takes chamfer:
+    expectOut("import hardware; writeln(hole(M3, 10.mm, \"ribs\").contains(vec(1.9.mm, 0.mm, -0.1.mm)), \" \", "
+        ~ "hole(M3, 10.mm, \"ribs\", chamfer: 0.mm).contains(vec(1.9.mm, 0.mm, -0.1.mm)), \" \", "
+        ~ "hole(M3, 10.mm, chamfer: 0.4.mm).contains(vec(1.95.mm, 0.mm, -0.1.mm)), \" \", "
+        ~ "hole(M3, 10.mm).contains(vec(1.95.mm, 0.mm, -0.1.mm)));", "true false true false");
 }
 
 unittest

@@ -158,7 +158,23 @@ Solid washer(Screw s) => cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.cle
 /// plain tap hole: less material to cut, so less force and no split wall).
 /// One rib points to -Y: on a wall (where a face's frame has y up) it is the
 /// bottom one, which prints best; the ribs start 0.6 mm in, a lead for the tip.
-Solid hole(Screw s, Length depth, string kind = "clearance", string head = "socket")
+///
+/// `chamfer` widens the mouth at 45° by that much all round: it guides the
+/// screw in, and takes up the first layers' spread when the hole opens on the
+/// bed. 0.5 mm for "ribs" unless given, none for the others (a counterbore
+/// and a countersink have their own).
+Solid hole(Screw s, Length depth, string kind = "clearance", string head = "socket", Length chamfer = -1.mm)
+{
+    auto shape = holeShape(s, depth, kind, head);
+    immutable c = chamfer >= 0.mm ? chamfer : kind == "ribs" ? 0.5.mm : 0.mm;
+    if (c <= 0.mm || kind == "counterbore" || kind == "countersink")
+        return shape;
+    immutable mouth = kind == "tap" ? s.tap : kind == "insert" ? s.insert : kind == "ribs" ? s.d + 0.3.mm
+        : s.clearance;
+    return shape + cone(d1: mouth, d2: mouth + 2 * c, h: c + 0.01.mm).move(z: -c);
+}
+
+private Solid holeShape(Screw s, Length depth, string kind, string head)
 {
     switch (kind)
     {

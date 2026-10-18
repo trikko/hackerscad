@@ -270,7 +270,7 @@ Solid selfTapper() => screw(ST2_9, 9.5.mm, head: "pan")
 
 A plain `tap` hole makes the screw cut its thread all the way round: for small screws that takes force, and can split a thin wall. With `"ribs"` the hole is wide enough for the screw, and three narrow ribs along it, 120° apart, are all the screw has to cut: it forms its thread in them as it goes in, holds well, and goes in easily. For small screws it works better than a printed thread, which comes out too fine.
 
-One rib points to −Y. In a wall, cut with `on:` a face (whose frame has y going up), that is the rib at the bottom, which prints best when the hole lies sideways; the other two lean over it at 120°. The ribs start 0.6 mm in from the face, so the screw's tip finds the hole before it has to cut.
+One rib points to −Y. In a wall, cut with `on:` a face (whose frame has y going up), that is the rib at the bottom, which prints best when the hole lies sideways; the other two lean over it at 120°. The ribs start 0.6 mm in from the face, so the screw's tip finds the hole before it has to cut. The mouth is chamfered 0.5 mm at 45°, which guides the screw in and takes up the first layers' spread when the hole opens on the bed: `chamfer:` sets it (`chamfer: 0.mm` none), and gives any other kind of hole a chamfered mouth too.
 
 <!-- render: holes-ribs --from front --look-at 0,-2,6 --size 14 --cut -->
 ```d
