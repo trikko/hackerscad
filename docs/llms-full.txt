@@ -2105,17 +2105,22 @@ private Keys keys(string kind, Length s, Length len, Length g, int count)
         }
     case "pins":
         {
-            // `count` round pins in a row along x, chamfered at their tips
-            // as many as fit in a row across the middle, 1.6 diameters apart at least
-            immutable d = 0.22 * s;
-            immutable n = max(1, min(count, floor((0.8 * s - d) / (1.6 * d)).to!int + 1));
-            immutable step = n > 1 ? max(0.6 * s / (n - 1), 1.6 * d) : 0.mm;
+            // `count` round pins in a row along x: stout (a third of the size across, at most one
+            // and a half times as long as thick) and flared at their foot, where a pin printed
+            // standing up would snap along a layer; their holes get the same flare as a mouth
+            // as thick as `count` of them allow in a row across 0.85 of the size, flares 1.4 times
+            // their width apart, a third of the size at most
+            immutable n = max(1, count);
+            immutable d = min(0.3 * s, 0.85 * s / (2.24 * (n - 1) + 1.6));
+            immutable tall = min(len, 1.5 * d), flare = 0.3 * d;
+            immutable step = n > 1 ? max(0.55 * s / (n - 1), 2.24 * d) : 0.mm;
             Solid[] pins;
             foreach (i; 0 .. n)
             {
-                auto pin = cylinder(d: d + 2 * g, h: len + g + 0.01.mm).move(z: -0.01.mm);
+                auto pin = cylinder(d: d + 2 * g, h: tall + g + 0.01.mm).move(z: -0.01.mm)
+                    + cone(d1: d + 2 * flare + 2 * g, d2: d + 2 * g, h: flare).move(z: -0.01.mm);
                 if (g == 0.mm)
-                    pin = pin.chamfer(edges.of(faces.top), d: 0.1 * d);
+                    pin = pin.chamfer(edges.of(faces.top), d: 0.12 * d);
                 pins ~= pin.move(x: (i - (n - 1) / 2.0) * step);
             }
             return Keys(fuse(pins), none);
@@ -2181,7 +2186,7 @@ private Keys keys(string kind, Length s, Length len, Length g, int count)
 /// section), `turn` turns it about the plane's normal; `size` sets its scale
 /// (by default the square root of the section's area: the width of a square
 /// beam) and `length` how far it reaches across the plane (0.6 of the size).
-/// `count` is the number of fingers, or of pins (as many as fit in a row).
+/// `count` is the number of fingers or pins (pins thinner the more there are).
 ///
 /// - "tenon": a tenon on a, its mortise in b (hozo);
 /// - "dovetail": a tail across the piece, sliding in sideways (ari);

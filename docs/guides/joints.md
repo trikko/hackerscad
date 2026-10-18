@@ -60,7 +60,7 @@ The joint sits in the middle of the cut. Its size follows the cut: by default it
 |---|---|---|---|
 | `"tenon"` | a rectangular tenon in a mortise (hozo) | pushed straight in | bending; glue or a pin for pulling |
 | `"dovetail"` | a tail widening into the other piece (ari) | slid in from the side | pulling apart |
-| `"pins"` | round pins in holes (`count:` of them) | pushed straight in | bending and twisting |
+| `"pins"` | round pins in holes (`count:` of them), stout and flared at the foot, the holes flared at the mouth | pushed straight in | bending and twisting |
 | `"fingers"` | a finger (box) joint, the fingers of each in turn (`count:`) | pushed straight in | bending; a wide gluing surface |
 | `"lap"` | a half lap (ai-gaki): each piece keeps half the thickness | laid on each other | bending one way |
 | `"kama"` | a gooseneck (kama tsugi): a neck and a wider head | dropped in from the side | pulling apart |
@@ -73,7 +73,7 @@ The joint sits in the middle of the cut. Its size follows the cut: by default it
 | `size:` | the joint's scale, instead of the square root of the section's area |
 | `length:` | how far it reaches across the cut, 0.6 of the size unless given |
 | `turn:` | turns it about the plane's normal: which way a dovetail or a gooseneck slides in |
-| `count:` | the number of pins or fingers |
+| `count:` | the number of pins (thinner the more there are) or fingers |
 
 ## A rail longer than the bed
 
