@@ -114,7 +114,7 @@ Solid right() => pieces().b.move(x: 8.mm);
 
 ## The wedged scarf
 
-The kanawa tsugi of Japanese carpentry joins two beams end to end in a half lap with a hook at each end; a wedge driven through the middle pushes the hooks against each other, and the joint becomes as stiff as the beam. The wedge is a loose part, printed apart, tapering 1 in 20: it goes in by hand and is tapped home.
+The kanawa tsugi of Japanese carpentry joins two beams end to end in a half lap with a hook at each end; a wedge driven through the middle pushes the hooks against each other, and the joint becomes as stiff as the beam. The wedge is a loose part, printed apart, tapering 1 in 20: it goes in by hand and is tapped home, its narrow end flush with the post's side and its wide end standing out 3 mm, to tap it and to pull it out again.
 
 <!-- render: joints-kanawa --from 0.8,-1,0.6 -->
 ```d

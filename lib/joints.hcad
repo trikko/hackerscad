@@ -176,10 +176,17 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
     if (kind == "kanawa")
     {
         // the wedge: square, tapering 1 in 20, through both halves at the
-        // middle of the lap; its hole is left the clearance larger
+        // middle of the lap; its hole is left the clearance larger. The
+        // wedge goes in narrow end first: seated, that end lies flush with
+        // the piece's side, the wide end stands out 3 mm to tap it home and
+        // pull it out
         immutable w = 0.18 * s, reach = 2 * s, taper = reach / 20;
-        auto wedge = loft([rect(w, w).move(z: -reach / 2),
-                rect(w + taper, w + taper).move(z: reach / 2)])
+        // the piece's thickness the way the wedge goes through
+        auto ky = box(0.001.mm, 10.mm, 0.001.mm).rotate(z: spin).placeOn(here).bbox.size / 10.mm;
+        immutable through = dot(section.bbox.size, ky), head = 3.mm;
+        Length wide(Length z) => w + taper * (z + reach / 2) / reach;
+        auto wedge = loft([rect(wide(-through / 2), wide(-through / 2)).move(z: -through / 2),
+                rect(wide(through / 2 + head), wide(through / 2 + head)).move(z: through / 2 + head)])
             .rotate(x: -90)
             .move(z: len / 2);
         auto hole = loft([rect(w + 2 * clearance, w + 2 * clearance).move(z: -reach / 2),
