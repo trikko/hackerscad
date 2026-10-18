@@ -657,16 +657,21 @@ struct TypesView
 struct PendingMap
 {
     private VarDecl[Sym] decls;
-    size_t length() const => decls.length;
-    VarDecl* find(Sym s) => decls.length ? s in decls : null;
+    private size_t count_;   // kept here: a scope's lookups ask first whether there are any
+    size_t length() const => count_;
+    VarDecl* find(Sym s) => count_ ? s in decls : null;
     void remove(Sym s)
     {
-        decls.remove(s);
+        if (decls.remove(s))
+            count_--;
     }
     VarDecl* opBinaryRight(string op : "in")(string name) => find(intern(name));
     void opIndexAssign(VarDecl d, string name)
     {
-        decls[intern(name)] = d;
+        immutable s = intern(name);
+        if ((s in decls) is null)
+            count_++;
+        decls[s] = d;
     }
     VarDecl get(string name, VarDecl fallback)
     {
@@ -675,7 +680,7 @@ struct PendingMap
     }
     void remove(string name)
     {
-        decls.remove(intern(name));
+        remove(intern(name));
     }
     string[] keys()
     {
@@ -804,15 +809,89 @@ final class Builtin
 }
 
 /// Evaluated call arguments with their source positions.
+/// A few values by name, in the order they were given: a call's named arguments. Looked through in a row
+/// (there are rarely more than a handful), with nothing allocated until the first; an associative array
+/// cost two allocations and a hash per argument on every call. Copies share their values, as an
+/// associative array's do.
+struct SmallMap(V)
+{
+    private string[] keys_;
+    private V[] vals_;
+    private size_t count_;
+
+    size_t length() const => count_;
+
+    /// Room for n of them, made at once (filled in place, not grown one by one).
+    void reserve(size_t n)
+    {
+        if (n > keys_.length)
+        {
+            auto k = new string[](n);
+            auto v = new V[](n);
+            k[0 .. count_] = keys_[0 .. count_];
+            v[0 .. count_] = vals_[0 .. count_];
+            keys_ = k;
+            vals_ = v;
+        }
+    }
+
+    V* opBinaryRight(string op : "in")(string k)
+    {
+        foreach (i; 0 .. count_)
+            if (keys_[i] == k)
+                return &vals_[i];
+        return null;
+    }
+
+    ref V opIndex(string k)
+    {
+        import core.exception : RangeError;
+        if (auto p = k in this)
+            return *p;
+        throw new RangeError;
+    }
+
+    void opIndexAssign(V v, string k)
+    {
+        if (auto p = k in this)
+        {
+            *p = v;
+            return;
+        }
+        if (count_ == keys_.length)
+            reserve(count_ ? 2 * count_ : 4);
+        keys_[count_] = k;
+        vals_[count_] = v;
+        count_++;
+    }
+
+    V get(string k, V fallback)
+    {
+        auto p = k in this;
+        return p ? *p : fallback;
+    }
+
+    /// The names, in the order they were given.
+    const(string)[] keys() const => keys_[0 .. count_];
+
+    int opApply(scope int delegate(string, ref V) dg)
+    {
+        foreach (i; 0 .. count_)
+            if (auto r = dg(keys_[i], vals_[i]))
+                return r;
+        return 0;
+    }
+}
+
 struct CallArgs
 {
     Value[] positional;
-    Value[string] named;
+    SmallMap!Value named;
     string[] namedOrder;
     Value[] templateArgs;  /// f!(a, b)(…)
     Span span;
     Span[] positionalSpans;
-    Span[string] namedSpans;
+    SmallMap!Span namedSpans;
     ModuleVal caller;
 }
 

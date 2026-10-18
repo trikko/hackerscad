@@ -76,7 +76,7 @@ struct FeatureInfo
     bool moved;        /// result is the solid moved, turned or mirrored right after it was made
     SolidVal made;     /// moved: the solid as the feature made it, before
     SolidVal[] operands;   /// of a union, difference or intersection: the two solids it combined
-    Object frame;      /// the function call it ran in (Interp.callFrame)
+    ulong frame;       /// the function call it ran in (Interp.callFrame)
     Object statement;  /// the statement it ran in (Interp.currentStatement)
     /// what a feature made from a profile or a path (extrude, revolve, sweep,
     /// loft…) was made from: the features of the faces of its inputs (a
@@ -1619,6 +1619,24 @@ final class Interp
         return applyBinary(b.op, eval(b.left, env), eval(b.right, env), b.span);
     }
 
+    /// faces.left + faces.top: union; - difference; & intersection. A function of its own: the test it
+    /// makes keeps its operands, and a function holding such a closure has its whole frame allocated
+    /// on every call (applyBinary, at every + of two numbers)
+    private Value combineSelectors(Tok op, Value l, Value r, Span span)
+    {
+        if (l.sel.faces != r.sel.faces)
+            throw new HcadError(Code.type, "cannot combine a face selector with an edge selector", span);
+        auto a = l.sel, b = r.sel;
+        auto c = new SelectorVal;
+        c.faces = a.faces;
+        immutable o = op;
+        c.tests ~= (size_t i, ref SelectCtx ctx) {
+            immutable inA = ctx.resolve(a).canFind(cast(int) i), inB = ctx.resolve(b).canFind(cast(int) i);
+            return o == Tok.plus ? inA || inB : o == Tok.minus ? inA && !inB : inA && inB;
+        };
+        return Value.make(Kind.selector, c);
+    }
+
     Value applyBinary(Tok op, Value l, Value r, Span span)
     {
         import hackerscad.lang.builtins : solidBoolean;
@@ -1649,20 +1667,7 @@ final class Interp
         }
 
         if (l.kind == Kind.selector && r.kind == Kind.selector && (op == Tok.plus || op == Tok.minus || op == Tok.amp))
-        {
-            // faces.left + faces.top: union; - difference; & intersection
-            if (l.sel.faces != r.sel.faces)
-                throw new HcadError(Code.type, "cannot combine a face selector with an edge selector", span);
-            auto a = l.sel, b = r.sel;
-            auto c = new SelectorVal;
-            c.faces = a.faces;
-            immutable o = op;
-            c.tests ~= (size_t i, ref SelectCtx ctx) {
-                immutable inA = ctx.resolve(a).canFind(cast(int) i), inB = ctx.resolve(b).canFind(cast(int) i);
-                return o == Tok.plus ? inA || inB : o == Tok.minus ? inA && !inB : inA && inB;
-            };
-            return Value.make(Kind.selector, c);
-        }
+            return combineSelectors(op, l, r, span);
         if (op == Tok.tilde)
         {
             // doubling a list in a loop reaches any size in a few steps
@@ -1919,8 +1924,20 @@ final class Interp
         // UFCS: a free function taking obj as first argument
         Value f;
         if (tryLookup(symOf(m), env, f, true))
+        {
+            // a unit on a plain number (2.mm, 30.deg): the length or angle at once, as the unit's own
+            // function makes it (not a call through its arguments)
+            if (!forCall && obj.isNum && obj.n.dim == Dim.none && f.kind == Kind.builtin && f.bi.unitFactor != 0)
+                return Value.number(obj.n.value * f.bi.unitFactor, f.bi.unitDim);
             return finish(boundTo(obj, f), forCall, m.span);
+        }
+        noMember(m, obj, env);
+    }
 
+    /// The error for a member there is not. A function of its own: its suggestions keep a lambda over
+    /// `m`, and member() holding one had its whole frame allocated at every member read.
+    private noreturn noMember(Member m, Value obj, Env env)
+    {
         string[] candidates;
         if (obj.kind == Kind.object_)
             candidates = obj.obj.memberNames;
@@ -1996,6 +2013,11 @@ final class Interp
         {
             args.positional = new Value[](positional);
             args.positionalSpans = new Span[](positional);
+        }
+        if (positional < c.args.length)
+        {
+            args.named.reserve(c.args.length - positional);
+            args.namedSpans.reserve(c.args.length - positional);
         }
         foreach (a; c.args)
         {
@@ -2081,7 +2103,8 @@ final class Interp
     ModuleVal currentModule;
     /// One object per running call of a declared function (null at module
     /// level): a feature is moved with its solid only within its own call.
-    Object callFrame;
+    ulong callFrame;    /// which call is running: a number each (an object each was an allocation a call)
+    private ulong callsMade;
 
     private Value callClosure(Closure c, ref CallArgs args, Span span)
     {
@@ -2109,7 +2132,7 @@ final class Interp
         auto savedModule = currentModule;
         auto savedFrame = callFrame;
         currentModule = c.mod;
-        callFrame = new Object;
+        callFrame = ++callsMade;
         scope (exit)
         {
             depth--;

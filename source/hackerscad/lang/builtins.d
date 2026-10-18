@@ -2972,6 +2972,34 @@ Value arrayToVec(Interp it, Value[] items, ModuleVal mod, Span span)
 /// the receiver with isMethod set, so `e.isLine` and `e.isParallel(Z)` work.
 bool builtinMember(Interp it, Value obj, string name, Span span, out Value result, out bool isMethod)
 {
+    // the members read most (a list's length, a vector's x), here: builtinMemberAll keeps a closure
+    // (its methods' receiver), so its whole frame is allocated on every call
+    switch (obj.kind)
+    {
+    case Kind.array:
+        if (name == "length") { result = Value.integer(obj.arr.length); return true; }
+        if (name == "empty") { result = Value.of(obj.arr.length == 0); return true; }
+        break;
+    case Kind.str:
+        if (name == "length") { result = Value.integer(obj.s.length); return true; }
+        break;
+    case Kind.vec:
+        if (name == "x") { result = Value.number(obj.v.v.x, obj.v.dim); return true; }
+        if (name == "y") { result = Value.number(obj.v.v.y, obj.v.dim); return true; }
+        if (name == "z" && obj.v.n == 3) { result = Value.number(obj.v.v.z, obj.v.dim); return true; }
+        break;
+    case Kind.object_, Kind.aa, Kind.type, Kind.solid, Kind.edge, Kind.face, Kind.selector:
+        break;
+    default:
+        // a number (1.mm), a struct, a function…: no builtin members
+        return false;
+    }
+    return builtinMemberAll(it, obj, name, span, result, isMethod);
+}
+
+/// ditto
+private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out Value result, out bool isMethod)
+{
     Value method(BuiltinImpl impl)
     {
         auto b = new Builtin;
@@ -3355,9 +3383,9 @@ struct Args
     CallArgs* raw;
     string fn;
     string[] names;
-    Value[string] vals;
-    Span[string] spans;
 
+    // the arguments are read where the call left them, by position (the declared names' order) or by
+    // name: nothing copied (every builtin call, 1.mm included, made two associative arrays of them)
     this(Interp it, ref CallArgs a, string fn, string[] names)
     {
         this.it = it;
@@ -3369,29 +3397,48 @@ struct Args
         if (a.positional.length > names.length)
             throw new HcadError(Code.arity, format("%s(%s) takes at most %d arguments, %d given", fn, names.join(", "),
                 names.length, a.positional.length), a.span);
-        foreach (i, v; a.positional)
-        {
-            vals[names[i]] = v;
-            spans[names[i]] = i < a.positionalSpans.length ? a.positionalSpans[i] : a.span;
-        }
         foreach (k; a.namedOrder)
         {
-            if (!names.canFind(k))
+            immutable i = position(k);
+            if (i < 0)
                 throw new HcadError(Code.unknownArg, format("unknown argument '%s' for %s(%s)", k, fn, names.join(", ")),
                     a.namedSpans[k], Interp.suggest(k, names));
-            if (k in vals)
+            if (i < a.positional.length)
                 throw new HcadError(Code.unknownArg, format("argument '%s' given both by position and by name", k), a.namedSpans[k]);
-            vals[k] = a.named[k];
-            spans[k] = a.namedSpans[k];
         }
     }
 
-    bool has(string n) => (n in vals) !is null;
-    Span spanOf(string n) => spans.get(n, raw.span);
+    /// Where `n` is among the declared names (-1: not there).
+    private ptrdiff_t position(string n) const
+    {
+        foreach (i, m; names)
+            if (m == n)
+                return i;
+        return -1;
+    }
+
+    /// The value given for `n`, or null.
+    private Value* find(string n)
+    {
+        immutable i = position(n);
+        if (i >= 0 && i < raw.positional.length)
+            return &raw.positional[i];
+        return n in raw.named;
+    }
+
+    bool has(string n) => find(n) !is null;
+
+    Span spanOf(string n)
+    {
+        immutable i = position(n);
+        if (i >= 0 && i < raw.positional.length)
+            return i < raw.positionalSpans.length ? raw.positionalSpans[i] : raw.span;
+        return raw.namedSpans.get(n, raw.span);
+    }
 
     Value get(string n)
     {
-        if (auto v = n in vals)
+        if (auto v = find(n))
             return *v;
         throw new HcadError(Code.missingArg, format("missing argument '%s' for %s(%s)", n, fn, names.join(", ")), raw.span);
     }
