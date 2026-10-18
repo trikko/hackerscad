@@ -190,6 +190,10 @@ final class CachingKernel : BrepKernel
 
     int wrapSkipped() => inner.wrapSkipped();
 
+    Brep threadSleeve(const(double)[] rz, double lead, double length, int sides, double rPoly) =>
+        op(key("threadSleeve", rz, lead, length, cast(double) sides, rPoly), inner.threadSleeve(rz, lead, length, sides, rPoly));
+    Brep joinCoincident(Brep a, Brep b) => op(key("joinCoincident", a, b), inner.joinCoincident(a, b));
+
     Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode, double minArea = 0)
     {
         double[] ks = [cast(double) mode, minArea, region is null ? 0 : cast(double) keyOf(region)];

@@ -4840,3 +4840,42 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    mixin(slowTest);
+    import std.process : environment;
+    // a thread through a hole made as a sleeve joined by hand (the default) and the boolean way: the same solid,
+    // right and left handed, two starts, with and without the countersink
+    immutable model = "@part Solid a() => (polygon(6, d: 19.mm, fit: \"sides\").extrude(10.mm) "
+        ~ "- cylinder(d: 10.3.mm, h: 30.mm, center: true)).thread(faces.largest, \"M12\", clearance: 0.2.mm);\n"
+        ~ "@part Solid b() => (cylinder(d: 34.mm, h: 16.mm) - cylinder(d: 17.3.mm, h: 40.mm, center: true))"
+        ~ ".thread(faces.filter(f => f.area < 1000.mm * 1.mm && f.area > 800.mm * 1.mm), \"M20\", left: true, chamfer: false);\n"
+        ~ "@part Solid c() => (box(30.mm, 30.mm, 12.mm) - cylinder(d: 12.mm, h: 40.mm, center: true))"
+        ~ ".thread(faces.filter(f => f.area < 500.mm * 1.mm && f.area > 400.mm * 1.mm), \"Tr14x3\", starts: 2);\n";
+    double[] volumes(string sleeve)
+    {
+        auto before = environment.get("HCAD_THREAD_SLEEVE");
+        environment["HCAD_THREAD_SLEEVE"] = sleeve;
+        scope (exit)
+        {
+            if (before is null)
+                environment.remove("HCAD_THREAD_SLEEVE");
+            else
+                environment["HCAD_THREAD_SLEEVE"] = before;
+        }
+        auto r = runModel(model);
+        foreach (d; r.diagnostics)
+            assert(d.severity != Severity.error && d.code != Code.kernel, d.message);
+        double[] v;
+        foreach (p; r.parts)
+        {
+            assert(kernel.isValid(p.solid.brep), p.name);
+            v ~= kernel.volume(p.solid.brep);
+        }
+        return v;
+    }
+    auto sleeve = volumes("1"), boolean = volumes("0");
+    foreach (i; 0 .. 3)
+        assert(abs(sleeve[i] - boolean[i]) < 1e-3 * boolean[i], format("%s: %s %s", i, sleeve[i], boolean[i]));
+}

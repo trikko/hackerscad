@@ -227,6 +227,10 @@ Solid block() => (box(20.mm, 20.mm, 15.mm)
 
 `isoThread(d:, pitch:, length:, chamfer:)` is the builtin underneath, an exact ISO thread. For anything that is not an ISO metric thread, or for starts and tapers, use `thread()` on a cylinder.
 
+## Keeping it quick
+
+A thread on a shaft is built straight from its faces and joined to the part by hand, with no boolean on its helical faces; so is a thread through a hole: a hole of a few flat sides is cut round it, and a sleeve, flat outside and threaded inside, built from its faces, is sewn in where its flat sides lie on the hole's. Both are two to ten times quicker than cutting the thread with a boolean, and the same solid. Tapered threads, blind holes and threads shorter than their hole are cut the boolean way.
+
 ## Printing threads
 
 - Under M5 they print badly: try a hole with ribs first (`hole(M3, depth, "ribs")`: three ribs along the hole that the screw cuts its thread into, see [the guide on holes](holes.md)), or use a heat-set insert (a brass sleeve with a thread inside, melted into the plastic with a soldering iron) or a self-tapping screw (one that cuts its own thread).

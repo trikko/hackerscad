@@ -256,6 +256,10 @@ final class OcctKernel : BrepKernel
 
     int wrapSkipped() => hc_wrap_skipped();
 
+    Brep threadSleeve(const(double)[] rz, double lead, double length, int sides, double rPoly) =>
+        wrap(hc_thread_sleeve(rz.ptr, cast(int)(rz.length / 2), lead, length, sides, rPoly), "thread");
+    Brep joinCoincident(Brep a, Brep b) => wrap(hc_join_coincident(h(a), h(b)), "union");
+
     Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode, double minArea = 0)
     {
         const(hc_shape)*[] ms;

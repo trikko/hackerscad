@@ -4584,6 +4584,26 @@ Value threadFace(Interp it, ref CallArgs a)
     // threads and holes the boolean way (HCAD_THREAD_DIRECT=0 always so, to compare)
     import std.process : environment;
     bool direct = outside && t.taper == 0 && environment.get("HCAD_THREAD_DIRECT", "1") != "0";
+    // a straight thread through a hole: a sleeve built straight from its faces (HCAD_THREAD_SLEEVE=0 never, to
+    // compare); blind and tapered holes, and threads shorter than the hole, the boolean way
+    immutable trySleeve = !outside && t.taper == 0 && sink == 0 && len >= faceLen - 1e-6
+        && environment.get("HCAD_THREAD_SLEEVE", "1") != "0";
+    // the screw that fits, cut into the wall
+    Brep holeTool()
+    {
+        // tapered: the full size at the opening, narrowing inwards
+        immutable slope = tan(t.taper), dd = t.major + 2 * clearance;   // at the opening, z = len
+        // past the opening (and past the far end of a through hole) the tool reaches into the
+        // air a little: cutting nothing there, it leaves no face lying on the body's
+        immutable below = sink > 0 ? 0 : 0.2 * pitch, above = 0.2 * pitch;
+        immutable d0 = dd - 2 * slope * (len + below);   // at z = -below
+        auto r = k.boolean(k.translate(threadedCore(k, t, d0, slope, len + below + above, starts, left), Vec3(0, 0, -below)),
+            k.translate(k.cylinder(dd, len + below + above), Vec3(0, 0, -below)), BoolOp.common);
+        if (chamfer)   // the opening countersunk at 45°, to start the screw
+            r = k.boolean(r, k.translate(k.cone(dd / 2 - h, dd / 2 + 0.01, h + 0.01), Vec3(0, 0, len - h)),
+                BoolOp.fuse);
+        return r;
+    }
     try
     {
         if (outside && direct)
@@ -4629,27 +4649,15 @@ Value threadFace(Interp it, ref CallArgs a)
                 tool = k.boolean(tool, k.translate(k.cylinder(dd / 2 - h - 0.02, sink + 0.02), Vec3(0, 0, -sink)),
                     BoolOp.fuse);
         }
-        else if (!outside)
-        {
-            // the screw that fits, cut into the wall
-            // tapered: the full size at the opening, narrowing inwards
-            immutable slope = tan(t.taper), dd = t.major + 2 * clearance;   // at the opening, z = len
-            // past the opening (and past the far end of a through hole) the tool reaches into the
-            // air a little: cutting nothing there, it leaves no face lying on the body's
-            immutable below = sink > 0 ? 0 : 0.2 * pitch, above = 0.2 * pitch;
-            immutable d0 = dd - 2 * slope * (len + below);   // at z = -below
-            tool = k.boolean(k.translate(threadedCore(k, t, d0, slope, len + below + above, starts, left), Vec3(0, 0, -below)),
-                k.translate(k.cylinder(dd, len + below + above), Vec3(0, 0, -below)), BoolOp.common);
-            if (chamfer)   // the opening countersunk at 45°, to start the screw
-                tool = k.boolean(tool, k.translate(k.cone(dd / 2 - h, dd / 2 + 0.01, h + 0.01), Vec3(0, 0, len - h)),
-                    BoolOp.fuse);
-        }
+        else if (!outside && !trySleeve)
+            tool = holeTool();
     }
     catch (KernelException e)
         throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
     // the helices start at the bottom of what was built (sink or below it); turned so that each is at
     // angle 0 at the free end instead, a male thread and a female one cut from the same free end are
     // in step, whatever their lengths (a nut cut over a bolt's tip fits it)
+    void inStep()
     {
         immutable shift = outside ? (direct ? 0 : sink) : (sink > 0 ? 0 : 0.2 * pitch);
         immutable turn = 2 * PI * (len + shift) / lead * (left ? 1 : -1);
@@ -4660,6 +4668,8 @@ Value threadFace(Interp it, ref CallArgs a)
             catch (KernelException e)
                 throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
     }
+    if (tool !is null)
+        inStep();
     // +Z onto the axis, pointing to the free end; z = 0 at len before it
     immutable dir = freeAtTo ? c.axis : -c.axis;
     immutable start = c.origin + c.axis * (freeAtTo ? to - len : from + len);
@@ -4671,6 +4681,89 @@ Value threadFace(Interp it, ref CallArgs a)
         if (angle > 1e-12)
             t = k.rotate(t, ax, angle);
         return k.translate(t, start);
+    }
+    // a through hole threaded with no boolean on helical faces: a prism hole of a few flat sides cut
+    // (planes only), and a sleeve built straight from its faces, flat outside and threaded inside,
+    // joined to it by hand where their flat faces lie on each other: two to three times quicker
+    if (trySleeve)
+    {
+        immutable dd = t.major + 2 * clearance, r0 = dd / 2 - t.depth;
+        auto xy = t.tooth(0);
+        double[] rz;
+        foreach (st; 0 .. starts)
+            for (size_t i = 0; i + 1 < xy.length; i += 2)
+                rz ~= [r0 - xy[i], xy[i + 1] + pitch * st];
+        // the hole drilled wider than the thread's root (a tap drill on the large side): the crests stop at its
+        // wall, as the boolean leaves them. The profile, one pitch of corners, is cut at r = the hole's radius,
+        // a corner put where an edge crosses it
+        {
+            immutable rh = c.radius;
+            double[] cut;
+            immutable m = rz.length / 2;
+            foreach (i; 0 .. m)
+            {
+                immutable r1 = rz[2 * i], z1 = rz[2 * i + 1];
+                // the next corner: the first one again, a lead on, after the last
+                immutable r2 = rz[(2 * i + 2) % rz.length], z2 = rz[(2 * i + 3) % rz.length] + (i + 1 == m ? lead : 0);
+                if (r1 >= rh)
+                    cut ~= [r1, z1];
+                if ((r1 >= rh) != (r2 >= rh))
+                {
+                    immutable f = (rh - r1) / (r2 - r1);
+                    cut ~= [rh, z1 + f * (z2 - z1)];
+                }
+            }
+            if (cut.length >= 6)
+                rz = cut;
+        }
+        // the fewest sides whose flats clear the thread's crests by 0.5 mm and whose corners stay in the part        // the fewest sides whose flats clear the thread's crests by 0.5 mm and whose corners stay in the part
+        foreach (sides; [3, 4, 6, 8, 12])
+        {
+            immutable rPoly = (dd / 2 + 0.5) / cos(PI / sides);
+            bool fits = true;
+            foreach (i; 0 .. sides)
+            {
+                auto corner = placed(k.translate(k.box(0.001, 0.001, 0.001), Vec3(rPoly * cos(2 * PI * i / sides),
+                    rPoly * sin(2 * PI * i / sides), len / 2)));
+                fits = fits && k.inside(b, k.bbox(corner).center);
+            }
+            if (!fits)
+                continue;
+            try
+            {
+                immutable turn = 2 * PI * len / lead * (left ? 1 : -1);
+                immutable phase = turn - 2 * PI * floor(turn / (2 * PI));
+                auto sleeve = k.threadSleeve(rz, lead, len, sides, rPoly);
+                if (left)
+                    sleeve = k.mirror(sleeve, Vec3(0, 1, 0));
+                double[] ring;
+                foreach (i; 0 .. sides)
+                    ring ~= [rPoly * cos(2 * PI * i / sides), rPoly * sin(2 * PI * i / sides)];
+                auto prism = k.extrude(k.polygon(ring), len, 0);
+                if (left)
+                    prism = k.mirror(prism, Vec3(0, 1, 0));
+                if (phase > 1e-12)
+                {
+                    sleeve = k.rotate(sleeve, Vec3(0, 0, 1), phase);
+                    prism = k.rotate(prism, Vec3(0, 0, 1), phase);
+                }
+                auto holed = k.boolean(b, placed(prism), BoolOp.cut);
+                auto joined = k.joinCoincident(holed, placed(sleeve));
+                // the opening countersunk at 45°, to start the screw
+                if (chamfer)
+                    joined = k.boolean(joined, placed(k.translate(k.cone(dd / 2 - h, dd / 2 + 0.01 + 0.01, h + 0.01),
+                        Vec3(0, 0, len - h))), BoolOp.cut);
+                return Value.of(derived(it, joined, [body], "thread", a.span));
+            }
+            catch (KernelException)
+                break;
+        }
+        // no sleeve: the boolean way
+        try
+            tool = holeTool();
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
+        inStep();
     }
     auto sv = derived(it, placed(tool), [body], "thread", a.span);
     sv.flat = false;

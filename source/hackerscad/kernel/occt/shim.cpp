@@ -5123,6 +5123,151 @@ hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length
 // joined. glue: OpenCascade's fuse told so (BOPAlgo_GlueShift); else by
 // hand: `a`'s face given a hole the shape of `b`'s, `b`'s face left out, the
 // rest sewn. -1 when no such pair of faces is found.
+// A sleeve threaded inside: outside a prism of `sides` flat faces round the axis, its corners `rPoly`
+// from it; inside the room a screw takes (the thread hc_thread_direct builds, the same corners `rz`,
+// cut to z = 0 .. length), with no boolean: the screw's faces turned inside out, the prism's sides,
+// and its two ends, each a polygon holed by the screw's end. Its flat outside joins a part by hand.
+hc_shape *hc_thread_sleeve(const double *rz, int n, double lead, double length, int sides, double rPoly)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        if (sides < 3)
+            throw Standard_Failure("a sleeve needs 3 sides at least");
+        hc_shape *screw = hc_thread_direct(rz, n, lead, length, 0, rPoly);
+        if (!screw)
+            throw Standard_Failure(g_error.c_str());
+        const TopoDS_Shape room = screw->shape;
+        delete screw;
+        BRepBuilderAPI_Sewing sew(1e-5);
+        std::vector<gp_Pnt> ring0, ring1;
+        for (int i = 0; i < sides; i++) {
+            const double a = 2 * M_PI * i / sides;
+            ring0.push_back(gp_Pnt(rPoly * std::cos(a), rPoly * std::sin(a), 0));
+            ring1.push_back(gp_Pnt(rPoly * std::cos(a), rPoly * std::sin(a), length));
+        }
+        // the screw's faces: its ends become the holes of the sleeve's ends, the rest its inside
+        for (const TopoDS_Face &f : faces_of(room)) {
+            BRepAdaptor_Surface sf(f);
+            const bool flat = sf.GetType() == GeomAbs_Plane && std::abs(std::abs(sf.Plane().Axis().Direction().Z()) - 1) < 1e-9;
+            if (!flat) {
+                sew.Add(f.Reversed());
+                continue;
+            }
+            const double zf = sf.Plane().Location().Z();
+            BRepBuilderAPI_MakePolygon poly;
+            for (auto &q : (zf > length / 2 ? ring1 : ring0))
+                poly.Add(q);
+            poly.Close();
+            BRepBuilderAPI_MakeFace mf(gp_Pln(gp_Pnt(0, 0, zf), gp_Dir(0, 0, 1)), poly.Wire());
+            // the screw's end, as its face has it, runs counter-clockwise round the face's outward
+            // normal: a hole in a face looking up (+Z) runs the other way, so the end looking up is
+            // reversed and the one looking down is not
+            const bool up = sf.Plane().Axis().Direction().Z() * (f.Orientation() == TopAbs_REVERSED ? -1 : 1) > 0;
+            const TopoDS_Wire end = BRepTools::OuterWire(f);
+            mf.Add(up ? TopoDS::Wire(end.Reversed()) : end);
+            ShapeFix_Face fix(mf.Face());
+            fix.FixOrientationMode() = 1;
+            fix.Perform();
+            sew.Add(fix.Face());
+        }
+        for (int i = 0; i < sides; i++) {
+            const int j = (i + 1) % sides;
+            BRepBuilderAPI_MakePolygon q(ring0[i], ring0[j], ring1[j], ring1[i], Standard_True);
+            sew.Add(BRepBuilderAPI_MakeFace(q.Wire(), Standard_True).Face());
+        }
+        sew.Perform();
+        TopoDS_Shell shell;
+        int shells = 0;
+        for (TopExp_Explorer sh(sew.SewedShape(), TopAbs_SHELL); sh.More(); sh.Next(), shells++)
+            shell = TopoDS::Shell(sh.Current());
+        if (shells != 1)
+            throw Standard_Failure("the sleeve's faces did not sew into one shell");
+        ShapeFix_Shell orient(shell);
+        orient.FixFaceOrientation(shell);
+        shell = orient.Shell();
+        TopoDS_Solid solid = BRepBuilderAPI_MakeSolid(shell).Solid();
+        BRepLib::OrientClosedSolid(solid);
+        if (solid_volume(solid) <= 0)
+            throw Standard_Failure("the sleeve came out empty");
+        return primitive(solid);
+    });
+}
+
+// `a` and `b` joined by hand where they touch over whole flat faces lying on each other (a sleeve in a
+// hole of its shape): those faces of both left out, the rest sewn into one solid. An error where they do
+// not so touch, or the result is not sound.
+hc_shape *hc_join_coincident(const hc_shape *a, const hc_shape *b)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        auto fa = faces_of(a->shape), fb = faces_of(b->shape);
+        struct Info {
+            bool flat;
+            gp_Pnt c;
+            double area;
+            gp_Dir n;
+        };
+        // only the flat faces measured: a helical one costs a hundred times as much and is never a match
+        auto info = [](const TopoDS_Face &f) {
+            Info r{false, gp_Pnt(), 0, gp_Dir(0, 0, 1)};
+            BRepAdaptor_Surface sf(f);
+            if (sf.GetType() != GeomAbs_Plane)
+                return r;
+            GProp_GProps g;
+            BRepGProp::SurfaceProperties(f, g);
+            r.flat = true;
+            r.area = g.Mass();
+            r.c = g.CentreOfMass();
+            r.n = sf.Plane().Axis().Direction();
+            return r;
+        };
+        std::vector<Info> ia, ib;
+        for (auto &f : fa)
+            ia.push_back(info(f));
+        for (auto &f : fb)
+            ib.push_back(info(f));
+        std::vector<bool> dropA(fa.size(), false), dropB(fb.size(), false);
+        int pairs = 0;
+        for (size_t i = 0; i < fa.size(); i++) {
+            if (!ia[i].flat)
+                continue;
+            for (size_t j = 0; j < fb.size(); j++)
+                if (!dropB[j] && ib[j].flat && std::abs(ia[i].area - ib[j].area) < 1e-6 * (1 + ia[i].area)
+                    && ia[i].c.Distance(ib[j].c) < 1e-6 && std::abs(std::abs(ia[i].n.Dot(ib[j].n)) - 1) < 1e-9) {
+                    dropA[i] = dropB[j] = true;
+                    pairs++;
+                    break;
+                }
+        }
+        if (pairs == 0)
+            throw Standard_Failure("the two do not touch over whole flat faces");
+        BRepBuilderAPI_Sewing sew(1e-5);
+        for (size_t i = 0; i < fa.size(); i++)
+            if (!dropA[i])
+                sew.Add(fa[i]);
+        for (size_t j = 0; j < fb.size(); j++)
+            if (!dropB[j])
+                sew.Add(fb[j]);
+        sew.Perform();
+        TopoDS_Shell shell;
+        int shells = 0;
+        for (TopExp_Explorer sh(sew.SewedShape(), TopAbs_SHELL); sh.More(); sh.Next(), shells++)
+            shell = TopoDS::Shell(sh.Current());
+        if (shells != 1)
+            throw Standard_Failure("the faces left did not sew into one shell");
+        ShapeFix_Shell orient(shell);
+        orient.FixFaceOrientation(shell);
+        shell = orient.Shell();
+        TopoDS_Solid solid = BRepBuilderAPI_MakeSolid(shell).Solid();
+        BRepLib::OrientClosedSolid(solid);
+        // closed: every edge between two faces
+        TopTools_IndexedDataMapOfShapeListOfShape ef;
+        TopExp::MapShapesAndAncestors(solid, TopAbs_EDGE, TopAbs_FACE, ef);
+        for (int i = 1; i <= ef.Extent(); i++)
+            if (!BRep_Tool::Degenerated(TopoDS::Edge(ef.FindKey(i))) && ef(i).Extent() != 2)
+                throw Standard_Failure("the joined solid is not closed");
+        return primitive(solid);
+    });
+}
+
 hc_shape *hc_join_touching(const hc_shape *a, const hc_shape *b, int glue)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {

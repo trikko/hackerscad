@@ -126,6 +126,8 @@ hc_shape* hc_loft(const(hc_shape*)* profiles, int n, int ruled);
 hc_shape* hc_loft_open(const(hc_shape*)* paths, int n, int ruled);
 hc_shape* hc_join_touching(const(hc_shape)* a, const(hc_shape)* b, int glue);
 hc_shape* hc_thread_direct(const(double)* rz, int n, double lead, double length, double chamfer, double rOut);
+hc_shape* hc_thread_sleeve(const(double)* rz, int n, double lead, double length, int sides, double rPoly);
+hc_shape* hc_join_coincident(const(hc_shape)* a, const(hc_shape)* b);
 hc_shape* hc_fill(const(hc_shape)* path, const(hc_shape)* s, const(int)* idx, int n, const(int)* tangent, int nt,
     const(double)* xyz, int np);
 hc_shape* hc_thicken_loft(const(hc_shape*)* paths, int n, int ruled, double t);

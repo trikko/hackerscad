@@ -259,6 +259,12 @@ interface BrepKernel
     /// A right-handed thread band (corners `rz`, as threadBand) cut to z = 0 .. length straight from its
     /// faces, with no boolean; `chamfer` > 0 bevels the tip at 45° from the radius `rOut`. Not tapered.
     Brep threadDirect(const(double)[] rz, double lead, double length, double chamfer, double rOut);
+    /// A sleeve threaded inside (the room of threadDirect's screw, cut to z = 0 .. length), outside a prism of
+    /// `sides` flat faces whose corners are `rPoly` from the axis, built with no boolean.
+    Brep threadSleeve(const(double)[] rz, double lead, double length, int sides, double rPoly);
+    /// `a` and `b` joined by hand where whole flat faces of the two lie on each other (those left out, the rest
+    /// sewn); an exception when they do not so touch.
+    Brep joinCoincident(Brep a, Brep b);
     /// Two solids touching only where a flat face of `b` lies inside a flat face of `a`, joined by hand
     /// (that face holed, the two sewn): a fuse ten times quicker; an exception when they do not so touch.
     Brep joinTouching(Brep a, Brep b);
