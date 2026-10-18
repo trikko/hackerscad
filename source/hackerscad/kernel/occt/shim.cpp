@@ -133,6 +133,10 @@
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <ShapeFix_Solid.hxx>
 #include <ShapeFix_Face.hxx>
+#include <TopoDS_Iterator.hxx>
+#include <BRepGProp_Domain.hxx>
+#include <BRepGProp_Vinert.hxx>
+#include <IntCurvesFace_ShapeIntersector.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <ShapeUpgrade_FaceDivideArea.hxx>
 #include <BRepOffset_MakeOffset.hxx>
@@ -170,6 +174,8 @@ struct hc_shape {
     // checked it already, so hc_is_valid does not check it again (on a face of hundreds of holes the
     // check grows with the square of its edges)
     mutable std::atomic<int> valid{-1};
+    // its volume, when the operation that made it worked it out already (NaN: not known)
+    double volume = std::numeric_limits<double>::quiet_NaN();
 };
 
 static thread_local std::string g_error;
@@ -1636,6 +1642,22 @@ static double quick_volume(const TopoDS_Shape &s)
     return std::abs(g.Mass());
 }
 
+// One face's part of a solid's volume: the volume of the cone from `apex` to the face, signed by the face's
+// orientation, to a relative 1e-3; over every face of a solid, with the same apex, they add up to its
+// volume (VolumeProperties takes an apex of its own for each shape it is given, so its volumes of single
+// faces do not add up)
+static double face_volume_term(const TopoDS_Face &f, const gp_Pnt &apex)
+{
+    BRepGProp_Face bf(f);
+    if (!TopoDS_Iterator(f).More()) {
+        BRepGProp_Vinert v(bf, apex, 1e-3);
+        return v.Mass();
+    }
+    BRepGProp_Domain bd(f);
+    BRepGProp_Vinert v(bf, bd, apex, 1e-3);
+    return v.Mass();
+}
+
 // The volume by Gauss points fixed per face, with no refinement at all: quicker still, and off by up to a
 // few percent on holes through a curved wall; only for checks with a wide margin
 static double rough_volume(const TopoDS_Shape &s)
@@ -2838,7 +2860,10 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             const Handle(Geom_Surface) floorSurf = offsetSurface(inner);
             // the floors must lie in the material (a pocket) or out of it (a relief): a pocket
             // through the wall, or into another face, takes the boolean way
-            BRepClass3d_SolidClassifier material(s->shape);
+            // what the segment from the face out to a floor crosses (built once: a classifier searched
+            // the whole solid again for each point)
+            IntCurvesFace_ShapeIntersector crossing;
+            crossing.Load(s->shape, 1e-7);
             const double period = Sface->IsUPeriodic() ? Sface->UPeriod()
                                   : S->IsUPeriodic()   ? S->UPeriod()
                                                        : 0;
@@ -2945,7 +2970,7 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             BRepBuilderAPI_MakeFace holedFar;
             if (through)
                 holedFar.Init(TopoDS::Face(farBase.Oriented(TopAbs_FORWARD)));
-            std::vector<TopoDS_Face> extra;
+            std::vector<TopoDS_Face> extra, patches, patchesFar;
             double expected = 0;
             const auto regionFaces = faces_of(profile->shape);
             for (const TopoDS_Face &pf : regionFaces) {
@@ -2972,25 +2997,23 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                                 || (through && insideFar->Perform(q) != TopAbs_IN))
                                 throw Standard_Failure("direct: a region is not wholly inside the face");
                         }
-                // a floor in the material (a pocket) or out of it (a relief); through, the middle of the wall
-                // (three points spread round the outline, one when there are many regions: each costs
-                // a search over the whole solid, and a floor through a wall or into another face is
-                // never only at one corner)
+                // a floor in the material (a pocket) or out of it (a relief); through, the middle of the wall:
+                // the segment from the face to it, at points round the outline, crosses no face of the
+                // solid (the face itself where it starts aside), so it lies on the face's inner side for a
+                // pocket and its outer side for a relief, as just under and just over the face
                 const Handle(Geom_Surface) probe = through ? offsetSurface(-thick / 2) : floorSurf;
-                {
-                    const auto &ol = loops[0];
-                    const size_t nc = ol.size();
-                    const int probes = regionFaces.size() > 64 ? 1 : 3;
-                    for (int k = 0; k < probes; k++) {
-                        const double at = (k + 0.5) / probes * nc;
-                        const auto &c2 = ol[std::min<size_t>((size_t)at, nc - 1)];
-                        const double f = at - std::floor(at);
-                        const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * f);
-                        material.Perform(probe->Value(q.X(), q.Y()), 1e-6);
-                        if (material.State() != (inner < 0 ? TopAbs_IN : TopAbs_OUT))
+                for (auto &c2 : loops[0])
+                    for (int k = 0; k < 8; k++) {
+                        const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 8);
+                        const gp_Pnt Q = S->Value(q.X(), q.Y()), P = probe->Value(q.X(), q.Y());
+                        const gp_Vec d(Q, P);
+                        const double len = d.Magnitude();
+                        if (len < 1e-9)
+                            continue;
+                        crossing.Perform(gp_Lin(Q, gp_Dir(d)), std::min(0.01 * len, 1e-3), len);
+                        if (crossing.IsDone() && crossing.NbPnt() > 0)
                             throw Standard_Failure("direct: a floor does not lie where it should (through the wall?)");
                     }
-                }
                 // the outline a hole in the face, the islands faces of their own at the face
                 // in (u, v) an outline runs counter-clockwise round a face made the surface's way, a
                 // hole clockwise: each loop turned so (it runs either way as it comes, x turning
@@ -3016,6 +3039,8 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                         g_wrap_skipped++;
                         continue;
                     }
+                    // the piece of the face the hole takes away, for the volume
+                    patches.push_back(alone.Face());
                 }
                 holed.Add(turned_(loops[0], wireOn(loops[0], holeSurf, du, nullptr), false));
                 std::vector<std::vector<TopoDS_Edge>> top(loops.size()), bottom(loops.size());
@@ -3027,6 +3052,8 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 if (through) {
                     // the far face holed by the outline, the islands' far ends faces of their own
                     holedFar.Add(turned_(loops[0], wireOn(loops[0], farSurf, 0, nullptr), false));
+                    patchesFar.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[0], wireOn(loops[0], farSurf, 0, nullptr),
+                                                                 true), Standard_True).Face());
                     for (size_t i = 0; i < loops.size(); i++)
                         wireOn(loops[i], farSurf, 0, &bottom[i]);
                     for (size_t i = 1; i < loops.size(); i++)
@@ -3057,9 +3084,10 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             for (int i = 1; i <= m.Extent(); i++)
                 if (i != face + 1 && i != farFace)
                     sew.Add(m(i));
-            sew.Add(holed.Face());
+            const TopoDS_Face holedNear = holed.Face(), holedFarFace = through ? holedFar.Face() : TopoDS_Face();
+            sew.Add(holedNear);
             if (through)
-                sew.Add(holedFar.Face());
+                sew.Add(holedFarFace);
             for (auto &f : extra)
                 sew.Add(f);
             sew.Perform();
@@ -3075,10 +3103,76 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             orient.FixFaceOrientation(shell);
             shell = orient.Shell();
             TopoDS_Solid solid = BRepBuilderAPI_MakeSolid(shell).Solid();
-            BRepLib::OrientClosedSolid(solid);
+            // which way it faces, from a face of the solid it was made from, left as it was: its normal
+            // there points out of the old solid, so it must out of the new one (OrientClosedSolid finds it
+            // by classifying a point, and on thousands of faces builds a structure for each: 650 MB and
+            // seconds for a knurl of a thousand cells)
+            {
+                bool decided = false;
+                for (TopExp_Explorer x(s->shape, TopAbs_FACE); x.More() && !decided; x.Next()) {
+                    const TopoDS_Face g = TopoDS::Face(x.Current());
+                    if (g.IsSame(F))
+                        continue;
+                    const TopoDS_Shape gm = sew.IsModified(g) ? sew.Modified(g) : TopoDS_Shape(g);
+                    for (TopExp_Explorer y(solid, TopAbs_FACE); y.More() && !decided; y.Next()) {
+                        if (!y.Current().IsSame(gm))
+                            continue;
+                        const TopoDS_Face h = TopoDS::Face(y.Current());
+                        double u0g, u1g, v0g, v1g;
+                        BRepTools::UVBounds(g, u0g, u1g, v0g, v1g);
+                        const double ug = (u0g + u1g) / 2, vg = (v0g + v1g) / 2;
+                        auto normal = [](const TopoDS_Face &f, double u, double v) {
+                            BRepAdaptor_Surface a(f, Standard_False);
+                            gp_Pnt p;
+                            gp_Vec du, dv;
+                            a.D1(u, v, p, du, dv);
+                            gp_Vec n = du.Crossed(dv);
+                            return f.Orientation() == TopAbs_REVERSED ? n.Reversed() : n;
+                        };
+                        const gp_Vec ng = normal(g, ug, vg), nh = normal(h, ug, vg);
+                        if (ng.Magnitude() < 1e-12 || nh.Magnitude() < 1e-12)
+                            continue;
+                        if (ng.Dot(nh) < 0)
+                            solid.Reverse();
+                        decided = true;
+                    }
+                }
+                if (!decided)
+                    BRepLib::OrientClosedSolid(solid);
+            }
             // as it should be: closed, sound, its volume changed by about the regions' area times the depth
-            // (within half the expected change either way: the rough volume does)
-            const double before = rough_volume(s->shape), after = rough_volume(solid);
+            // its volume face by face, and of each holed face the whole face less the pieces the holes take
+            // (an integral over a face with thousands of holes takes seconds; over each small face and
+            // piece, and the face whole, moments)
+            double after = 0;
+            {
+                Bnd_Box sb;
+                BRepBndLib::Add(s->shape, sb, false);
+                double bx0, by0, bz0, bx1, by1, bz1;
+                sb.Get(bx0, by0, bz0, bx1, by1, bz1);
+                const gp_Pnt apex((bx0 + bx1) / 2, (by0 + by1) / 2, (bz0 + bz1) / 2);
+                const TopoDS_Shape nearIn = sew.IsModified(holedNear) ? sew.Modified(holedNear) : TopoDS_Shape(holedNear);
+                const TopoDS_Shape farIn = !through ? TopoDS_Shape()
+                                           : sew.IsModified(holedFarFace) ? sew.Modified(holedFarFace)
+                                                                          : TopoDS_Shape(holedFarFace);
+                auto holedTerm = [&](const TopoDS_Face &in, const TopoDS_Face &whole, const std::vector<TopoDS_Face> &pieces) {
+                    double t = face_volume_term(TopoDS::Face(whole.Oriented(TopAbs_FORWARD)), apex);
+                    for (auto &p : pieces)
+                        t -= face_volume_term(TopoDS::Face(p.Oriented(TopAbs_FORWARD)), apex);
+                    return in.Orientation() == TopAbs_REVERSED ? -t : t;
+                };
+                for (TopExp_Explorer x(solid, TopAbs_FACE); x.More(); x.Next()) {
+                    const TopoDS_Face f = TopoDS::Face(x.Current());
+                    if (f.IsSame(nearIn))
+                        after += holedTerm(f, base, patches);
+                    else if (through && f.IsSame(farIn))
+                        after += holedTerm(f, farBase, patchesFar);
+                    else
+                        after += face_volume_term(f, apex);
+                }
+            }
+            // (within half the expected change either way)
+            const double before = quick_volume(s->shape);
             const double change = inner < 0 ? before - after : after - before;
             if (!(change > 0.5 * expected && change < 1.5 * expected))
                 throw Standard_Failure("direct: the volume is not what it should be");
@@ -3090,7 +3184,13 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             if (ef.Extent() <= 10000 && !BRepCheck_Analyzer(solid).IsValid()) {
                 throw Standard_Failure("direct: the solid came out broken");
             }
-            return ef.Extent() <= 10000 ? checked(primitive(solid)) : primitive(solid);
+            // valid as hc_is_valid would say: checked whole, or past 10 000 edges (where it only checks that
+            // the surface closes round a positive volume) closed with its volume as it should be; its
+            // volume known
+            hc_shape *r = checked(primitive(solid));
+            if (r)
+                r->volume = after;
+            return r;
         }
 
         std::vector<TopoDS_Shape> tools;
@@ -3594,6 +3694,8 @@ static double mesh_volume(const TopoDS_Shape &shape)
 
 double hc_volume(const hc_shape *s)
 {
+    if (s && !std::isnan(s->volume))
+        return s->volume;
     return guarded<>(-1.0, [&] {
         double volume, area;
         if (triangle_properties(s, volume, area))
@@ -3676,9 +3778,44 @@ int hc_bbox(const hc_shape *s, double out[6])
         // AddOptimal on a box with its 12 edges filleted.
         Bnd_Box b;
         std::vector<TopoDS_Face> slow;
+        // a solid of many faces (a knurl, a tiling laid on a face): its small faces, under 10 mm across,
+        // boxed by points along their edges and a few inside, AddOptimal taking milliseconds each on a
+        // surface offset from a B-spline. Over a face that small the surface bulges past its edges by
+        // a few thousandths of a millimetre at most
+        int faceCount = 0;
+        for (TopExp_Explorer f(s->shape, TopAbs_FACE); f.More() && faceCount <= 500; f.Next())
+            faceCount++;
+        auto sampled = [](const TopoDS_Face &face, Bnd_Box &into) {
+            Bnd_Box rough;
+            BRepBndLib::Add(face, rough, false);
+            if (rough.IsVoid() || rough.SquareExtent() > 100)
+                return false;
+            for (TopExp_Explorer e(face, TopAbs_EDGE); e.More(); e.Next()) {
+                const TopoDS_Edge &ed = TopoDS::Edge(e.Current());
+                if (BRep_Tool::Degenerated(ed))
+                    continue;
+                BRepAdaptor_Curve c(ed);
+                for (int k = 0; k <= 16; k++)
+                    into.Add(c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * k / 16));
+            }
+            // inside: the middle of its parameters, and halfway from there to its corners, where on it
+            double u0, u1, v0, v1;
+            BRepTools::UVBounds(face, u0, u1, v0, v1);
+            BRepAdaptor_Surface a(face, Standard_True);
+            BRepTopAdaptor_FClass2d inside(face, 1e-7);
+            const double um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
+            const double pts[5][2] = {{um, vm}, {(um + u0) / 2, (vm + v0) / 2}, {(um + u1) / 2, (vm + v0) / 2},
+                                      {(um + u0) / 2, (vm + v1) / 2}, {(um + u1) / 2, (vm + v1) / 2}};
+            for (auto &q : pts)
+                if (inside.Perform(gp_Pnt2d(q[0], q[1])) == TopAbs_IN)
+                    into.Add(a.Value(q[0], q[1]));
+            return true;
+        };
         for (TopExp_Explorer f(s->shape, TopAbs_FACE); f.More(); f.Next())
         {
             const TopoDS_Face &face = TopoDS::Face(f.Current());
+            if (faceCount > 500 && sampled(face, b))
+                continue;
             const GeomAbs_SurfaceType type = BRepAdaptor_Surface(face, false).GetType();
             // a B-spline (or a surface offset from one) trimmed by a boundary that is not its four sides
             // (fill's plates, thickened): its
