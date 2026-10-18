@@ -73,6 +73,9 @@
 #include <vector>
 #include <BRepTools_WireExplorer.hxx>
 #include <Geom_OffsetSurface.hxx>
+#include <Geom2d_TrimmedCurve.hxx>
+#include <TColgp_HArray1OfPnt2d.hxx>
+#include <Geom2dAPI_Interpolate.hxx>
 #include <Geom_SurfaceOfRevolution.hxx>
 #include <Geom_ElementarySurface.hxx>
 #include <GCE2d_MakeSegment.hxx>
@@ -2532,7 +2535,7 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
             return uv(tx.param(bx * x), ty.param(by * y));
         };
 
-        // each edge of the profile as a curve in (u, v)
+        // on a cylinder or a plane, each edge of the profile as a curve in (u, v), carried exactly
         auto pcurve = [&](const TopoDS_Edge &e) -> Handle(Geom2d_Curve) {
             double f, l;
             TopLoc_Location loc;
@@ -2556,31 +2559,89 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
                 bs->Weights(weights);
                 return new Geom2d_BSplineCurve(poles, weights, knots, mults, bs->Degree(), bs->IsPeriodic());
             }
-            // points about every 0.3 mm along a curve, every 1 mm along a line: a short
-            // arc fitted through dozens of points crowded together comes out wavy
-            GeomAdaptor_Curve gc(c, f, l);
-            const bool straight = gc.GetType() == GeomAbs_Line;
-            const double len = GCPnts_AbscissaPoint::Length(gc);
-            // a curve shorter than 0.6 mm (a small rounding) as its chord, a chamfer too small to
-            // see on a print: fitted, it can leave the region's outline crossing itself
-            if (len < 0.6 && !straight) {
-                const gp_Pnt a = c->Value(rev ? l : f), b = c->Value(rev ? f : l);
-                const gp_Pnt2d pa = mapped(a.X(), a.Y()), pb = mapped(b.X(), b.Y());
-                if (pa.Distance(pb) < 1e-12)
-                    throw Standard_Failure("an edge of the profile is too short to lay on the face");
-                return GCE2d_MakeSegment(pa, pb).Value();
+            throw Standard_Failure("an edge carried exactly onto a face that does not unroll");
+        };
+        // elsewhere, a loop of the profile as curves interpolated through points of it carried
+        // onto the face, one curve for each run of edges between sharp corners (one closed curve
+        // when it has none, a rounded outline): two curves meeting tangentially, a rounding and
+        // its side, interpolated each on its own, can cross again a micron past where they meet,
+        // an outline crossing itself
+        auto chains = [&](const TopoDS_Wire &w, const TopoDS_Face &on) {
+            struct Piece {
+                std::vector<gp_Pnt2d> pts;
+                gp_Vec2d t0, t1;   // directions on the profile at its start and end
+            };
+            std::vector<Piece> pieces;
+            for (BRepTools_WireExplorer we(w, on); we.More(); we.Next()) {
+                const TopoDS_Edge &e = we.Current();
+                BRepAdaptor_Curve ac(e);
+                const double f = ac.FirstParameter(), l = ac.LastParameter();
+                const bool rev = e.Orientation() == TopAbs_REVERSED;
+                const bool straight = ac.GetType() == GeomAbs_Line;
+                const double len = GCPnts_AbscissaPoint::Length(ac);
+                // a point every half millimetre of a curve, every millimetre of a line: fewer and the
+                // interpolation swings out round a tight rounding, more make heavier curves and
+                // slower booleans
+                const int n = len < 0.05 ? 1
+                                         : std::max(straight ? 1 : 3,
+                                                    std::min(straight ? 16 : 48,
+                                                             (int)std::ceil(len / (straight ? 1.0 : 0.5))));
+                Piece pc;
+                for (int i = 0; i <= n; i++) {
+                    const double t = rev ? l - (l - f) * i / n : f + (l - f) * i / n;
+                    const gp_Pnt q = ac.Value(t);
+                    pc.pts.push_back(gp_Pnt2d(q.X(), q.Y()));
+                }
+                gp_Pnt q;
+                gp_Vec d;
+                ac.D1(rev ? l : f, q, d);
+                pc.t0 = gp_Vec2d(d.X(), d.Y()) * (rev ? -1 : 1);
+                ac.D1(rev ? f : l, q, d);
+                pc.t1 = gp_Vec2d(d.X(), d.Y()) * (rev ? -1 : 1);
+                pieces.push_back(pc);
             }
-            const int n = std::max(3, std::min(straight ? 16 : 48, (int)std::ceil(len / (straight ? 1.0 : 0.3))));
-            TColgp_Array1OfPnt2d pts(1, n + 1);
-            for (int i = 0; i <= n; i++) {
-                const double t = rev ? l - (l - f) * i / n : f + (l - f) * i / n;
-                const gp_Pnt q = c->Value(t);
-                pts(i + 1) = mapped(q.X(), q.Y());
+            const size_t m = pieces.size();
+            auto smooth = [&](size_t i) {   // piece i runs on into piece i + 1 without a corner
+                const gp_Vec2d a = pieces[i].t1, b = pieces[(i + 1) % m].t0;
+                return a.Magnitude() > 1e-12 && b.Magnitude() > 1e-12 && a.Angle(b) < 1e-3 && std::abs(a.Angle(b)) < 1e-3;
+            };
+            size_t start = m;
+            for (size_t i = 0; i < m; i++)
+                if (!smooth((i + m - 1) % m)) {
+                    start = i;
+                    break;
+                }
+            auto interpolate = [&](const std::vector<gp_Pnt2d> &xy, bool periodic) -> Handle(Geom2d_Curve) {
+                if (xy.size() == 2 && !periodic)
+                    return GCE2d_MakeSegment(mapped(xy[0].X(), xy[0].Y()), mapped(xy[1].X(), xy[1].Y())).Value();
+                Handle(TColgp_HArray1OfPnt2d) pts = new TColgp_HArray1OfPnt2d(1, (int)xy.size());
+                for (size_t i = 0; i < xy.size(); i++)
+                    pts->SetValue((int)i + 1, mapped(xy[i].X(), xy[i].Y()));
+                Geom2dAPI_Interpolate interp(pts, periodic, 1e-9);
+                interp.Perform();
+                if (!interp.IsDone())
+                    throw Standard_Failure("an outline of the profile could not be laid on the face");
+                return interp.Curve();
+            };
+            std::vector<Handle(Geom2d_Curve)> out;
+            if (start == m) {
+                // no corner: one closed curve round the whole loop
+                std::vector<gp_Pnt2d> xy;
+                for (auto &pc : pieces)
+                    xy.insert(xy.end(), pc.pts.begin(), pc.pts.end() - 1);
+                out.push_back(interpolate(xy, true));
+                return out;
             }
-            Geom2dAPI_PointsToBSpline fit(pts, 3, 8, GeomAbs_C2, 1e-6);
-            if (!fit.IsDone())
-                throw Standard_Failure("an edge of the profile could not be laid on the face");
-            return fit.Curve();
+            std::vector<gp_Pnt2d> xy;
+            for (size_t k = 0; k < m; k++) {
+                const size_t i = (start + k) % m;
+                xy.insert(xy.end(), pieces[i].pts.begin() + (xy.empty() ? 0 : 1), pieces[i].pts.end());
+                if (!smooth(i)) {
+                    out.push_back(interpolate(xy, false));
+                    xy.clear();
+                }
+            }
+            return out;
         };
         auto offsetSurface = [&](double d) -> Handle(Geom_Surface) {
             if (std::abs(d) < 1e-12)
@@ -2604,8 +2665,11 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
                     wires.push_back(TopoDS::Wire(w.Current()));
             for (const TopoDS_Wire &w : wires) {
                 std::vector<Handle(Geom2d_Curve)> loop;
-                for (BRepTools_WireExplorer we(w, fwd); we.More(); we.Next())
-                    loop.push_back(pcurve(we.Current()));
+                if (affine) {
+                    for (BRepTools_WireExplorer we(w, fwd); we.More(); we.Next())
+                        loop.push_back(pcurve(we.Current()));
+                } else
+                    loop = chains(w, fwd);
                 loops.push_back(loop);
             }
             // the region on both offset surfaces, and the sides between them
