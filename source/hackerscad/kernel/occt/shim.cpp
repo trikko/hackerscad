@@ -166,6 +166,10 @@ struct hc_shape {
     // (hc_face_info, hc_edge_info, …) would otherwise rebuild them per call
     mutable std::mutex lock;
     mutable std::map<int, TopTools_IndexedMapOfShape> maps;
+    // whether it is a valid solid, once known (-1 not yet): set by the operation that made it when it
+    // checked it already, so hc_is_valid does not check it again (on a face of hundreds of holes the
+    // check grows with the square of its edges)
+    mutable std::atomic<int> valid{-1};
 };
 
 static thread_local std::string g_error;
@@ -277,6 +281,14 @@ static hc_shape *transformed(const hc_shape *s, const gp_Trsf &t)
         history_record(mk, {&s->shape}, mk.Shape());
         return wrap(mk.Shape());
     });
+}
+
+// `h` marked as checked valid by the operation that made it (BRepCheck_Analyzer passed on its shape)
+static hc_shape *checked(hc_shape *h)
+{
+    if (h)
+        h->valid = 1;
+    return h;
 }
 
 static hc_shape *primitive(const TopoDS_Shape &s)
@@ -2292,7 +2304,7 @@ hc_shape *hc_fillet(const hc_shape *s, const int *edges, int nedges, double r)
             mk.Add(r, TopoDS::Edge(m(edges[i] + 1)));
         require_valid(mk.Shape(), "the result is not a valid solid");
         history_record(mk, {&s->shape}, mk.Shape());
-        return wrap(mk.Shape());
+        return checked(wrap(mk.Shape()));
     });
 }
 
@@ -2305,7 +2317,7 @@ hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d)
             mk.Add(d, TopoDS::Edge(m(edges[i] + 1)));
         require_valid(mk.Shape(), "the result is not a valid solid");
         history_record(mk, {&s->shape}, mk.Shape());
-        return wrap(mk.Shape());
+        return checked(wrap(mk.Shape()));
     });
 }
 
@@ -3078,7 +3090,7 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             if (ef.Extent() <= 10000 && !BRepCheck_Analyzer(solid).IsValid()) {
                 throw Standard_Failure("direct: the solid came out broken");
             }
-            return primitive(solid);
+            return ef.Extent() <= 10000 ? checked(primitive(solid)) : primitive(solid);
         }
 
         std::vector<TopoDS_Shape> tools;
@@ -3434,7 +3446,7 @@ hc_shape *hc_draft(const hc_shape *s, const int *faces, int nfaces, double angle
         mk.Build();
         require_valid(mk.Shape(), "draft failed: the result is not a valid solid");
         history_record(mk, {&s->shape}, mk.Shape());
-        return wrap(mk.Shape());
+        return checked(wrap(mk.Shape()));
     });
 }
 
@@ -3731,7 +3743,9 @@ int hc_is_valid(const hc_shape *s)
 {
     // the faces checked on every core: a solid made from a mesh has a face per
     // triangle (the phone stand example's phone: 7 s on one core)
-    return guarded<>(0, [&] {
+    if (s && s->valid >= 0)
+        return s->valid.load();
+    const int r = guarded<>(0, [&] {
         // a face of thousands of holes (a grille) takes BRepCheck minutes: its
         // checks of a face's vertices and wires grow with the square of its
         // edges. Past 10 000 edges the check is that the surface closes (every
@@ -3747,6 +3761,9 @@ int hc_is_valid(const hc_shape *s)
         BRepGProp::VolumeProperties(s->shape, p);
         return p.Mass() > 0 ? 1 : 0;
     });
+    if (s)
+        s->valid = r;
+    return r;
 }
 
 // A planar face bounded by three straight edges (the faces of an imported
@@ -5544,7 +5561,7 @@ hc_shape *hc_join_touching(const hc_shape *a, const hc_shape *b, int glue)
         for (int i = 1; i <= mb.Extent(); i++)
             if (!mb(i).IsSame(fb))
                 mark(mb(i), 1, i - 1);
-        return wrap(r);
+        return checked(wrap(r));
     });
 }
 
