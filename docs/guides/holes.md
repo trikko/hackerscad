@@ -432,7 +432,7 @@ Each post is 7 mm across for a 3.6 mm insert: leave at least 1.5 mm of wall roun
 
 ## In the application
 
-Right-click a face in the 3D view: **Hole at point** opens five groups, **Clearance**, **Tapping**, **Heat-set insert**, **Counterbore** and **Countersink**, each with the sizes M2 to M8 and the hole's diameter beside them. Clearance and tapping write a plain round hole 5 mm deep at the point clicked, with a comment naming it (any size can be typed over it):
+Right-click a face in the 3D view: **Hole at point** opens six groups, **Clearance**, **Tapping**, **Heat-set insert**, **Counterbore**, **Countersink** and **Ribs**, each with the sizes M2 to M12 and the hole's diameter beside them. Clearance and tapping write a plain round hole 5 mm deep at the point clicked, with a comment naming it (any size can be typed over it):
 
 <!-- render: holes-menu-clearance --from 1,-1,1.4 -->
 ```d

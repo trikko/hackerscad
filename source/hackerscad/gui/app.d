@@ -4883,7 +4883,7 @@ private:
             entries ~= S();
             MenuEntry[] holes;
             foreach (kind; [["Clearance", "clearance"], ["Tapping", "tap"], ["Heat-set insert", "insert"],
-                    ["Counterbore", "counterbore"], ["Countersink", "countersink"]])
+                    ["Counterbore", "counterbore"], ["Countersink", "countersink"], ["Ribs (the screw cuts its thread)", "ribs"]])
             {
                 MenuEntry[] sizes;
                 foreach (size; ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"])
@@ -5403,7 +5403,7 @@ private:
                 if (!onFace || !holeKinds.canFind(kind) || !["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"].canFind(size))
                     return null;
                 // a plain round hole for clearance and tapping, any size typed over it afterwards; the
-                // shaped ones (an insert's pocket over its pilot, a counterbore, a countersink) from hole()
+                // shaped ones (an insert's pocket over its pilot, a counterbore, a countersink, ribs) from hole()
                 if (kind == "clearance" || kind == "tap")
                     return format("// %s %s hole (through: true goes all the way)\n"
                         ~ ".cut(circle(d: %g.mm), on: %s, at: %s, depth: %s)", size, kind, holeDiameter(kind, size),
@@ -5452,7 +5452,7 @@ private:
 
     /// `code` with %s for the face selector and %s for the clicked point.
 
-    static immutable holeKinds = ["clearance", "tap", "insert", "counterbore", "countersink"];
+    static immutable holeKinds = ["clearance", "tap", "insert", "counterbore", "countersink", "ribs"];
 
     static double holeDiameter(string kind, string size)
     {
@@ -5460,8 +5460,10 @@ private:
         immutable sizes = ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"];
         immutable double[] cl = [2.4, 2.9, 3.4, 4.5, 5.5, 6.6, 9, 11, 13.5], tp = [1.6, 2.05, 2.5, 3.3, 4.2, 5, 6.8, 8.5, 10.2],
             ins = [3.2, 3.6, 4.2, 5.6, 6.4, 8, 9.7, 12, 14.4];
+        immutable double[] nominal = [2, 2.5, 3, 4, 5, 6, 8, 10, 12];
         auto i = sizes.countUntil(size);
-        return kind == "tap" ? tp[i] : kind == "insert" ? ins[i] : cl[i];
+        // ribs: the hole the screw passes, its ribs reaching in to the tap size
+        return kind == "tap" ? tp[i] : kind == "insert" ? ins[i] : kind == "ribs" ? nominal[i] + 0.3 : cl[i];
     }
 
     bool threadOutside;   /// what threadSizes found: a shaft (true) or a hole

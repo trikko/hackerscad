@@ -526,5 +526,5 @@ What to measure on a real board, with calipers:
 
 - **Examples › Box with lid** opens a box with a lid to choose (snap, lip, screws, flush) and its parameters: a good start to change.
 - In the 3D view, pick faces (Alt+2) and right-click: **Shell, opening this face…** (or *opening N faces*) writes `.shell(open: …, thickness: 2.mm)` with the selected faces. Fillet the edges first (**Fillet face edges…**).
-- Right-click a face, at the point where it goes: **Hole at point** › *Clearance* or *Tapping* › M2 to M8 writes a `.cut(circle(d: …), on: …, at: …, depth: 5.mm)`, *Heat-set insert*, *Counterbore* or *Countersink* a `.cut(hole(M3, 5.mm, "insert"), on: …, at: …)`; **Boss at point…** an `.extrude(circle(d: 6.mm), …)`; **Pocket at point…** a rectangular pocket. Change the sizes in the code.
+- Right-click a face, at the point where it goes: **Hole at point** › *Clearance* or *Tapping* › M2 to M8 writes a `.cut(circle(d: …), on: …, at: …, depth: 5.mm)`, *Heat-set insert*, *Counterbore*, *Countersink* or *Ribs* a `.cut(hole(M3, 5.mm, "insert"), on: …, at: …)`; **Boss at point…** an `.extrude(circle(d: 6.mm), …)`; **Pocket at point…** a rectangular pocket. Change the sizes in the code.
 - The `@param`s of the case (the board's size, the room, the play) are sliders in the Parameters panel: the case follows.
