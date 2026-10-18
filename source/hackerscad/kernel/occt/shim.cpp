@@ -3669,6 +3669,18 @@ double hc_distance(const hc_shape *a, const hc_shape *b, double out[6])
         }
         if (d.Value() > Precision::Confusion()) {
             auto inside = [&](const TopoDS_Shape &outer, const TopoDS_Shape &inner, gp_Pnt &at) {
+                // one within the other only if its box is within the other's: not, no point to classify
+                // (a classifier on an imported mesh builds a structure over its thousands of faces)
+                Bnd_Box bo, bi;
+                BRepBndLib::Add(outer, bo, false);
+                BRepBndLib::Add(inner, bi, false);
+                if (bo.IsVoid() || bi.IsVoid())
+                    return false;
+                double ox0, oy0, oz0, ox1, oy1, oz1, ix0, iy0, iz0, ix1, iy1, iz1;
+                bo.Get(ox0, oy0, oz0, ox1, oy1, oz1);
+                bi.Get(ix0, iy0, iz0, ix1, iy1, iz1);
+                if (ix0 < ox0 || iy0 < oy0 || iz0 < oz0 || ix1 > ox1 || iy1 > oy1 || iz1 > oz1)
+                    return false;
                 for (TopExp_Explorer s(outer, TopAbs_SOLID); s.More(); s.Next())
                     for (TopExp_Explorer i(inner, TopAbs_SOLID); i.More(); i.Next()) {
                         TopExp_Explorer v(i.Current(), TopAbs_VERTEX);
@@ -3850,6 +3862,11 @@ int hc_bbox(const hc_shape *s, double out[6])
         for (TopExp_Explorer f(s->shape, TopAbs_FACE); f.More() && faceCount <= 500; f.Next())
             faceCount++;
         auto sampled = [](const TopoDS_Face &face, Bnd_Box &into) {
+            // only where AddOptimal is slow: on a plane (a mesh's triangles) it is quicker than this
+            const GeomAbs_SurfaceType st = BRepAdaptor_Surface(face, false).GetType();
+            if (st != GeomAbs_BSplineSurface && st != GeomAbs_BezierSurface && st != GeomAbs_OffsetSurface
+                && st != GeomAbs_OtherSurface)
+                return false;
             Bnd_Box rough;
             BRepBndLib::Add(face, rough, false);
             if (rough.IsVoid() || rough.SquareExtent() > 100)
