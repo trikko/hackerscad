@@ -49,12 +49,12 @@ Solid upper() => carloMold().b;
 
 ## The mold
 
-`mold(part, plane)` gives a `Mold`: the halves where they go (`.a` behind the plane, `.b` in front of it) and laid for printing (`.aPrint`, `.bPrint`). The block is `wall` thick round the part (10 mm unless given) and rounded at its upright edges.
+`mold(part, plane)` gives a `Mold`: the halves where they go (`.a` behind the plane, `.b` in front of it) and laid for printing (`.aPrint`, `.bPrint`). The block is `wall` thick round the part (10 mm unless given), square to the parting plane even when that is slanted, and rounded at its edges across it.
 
 The **parting plane** decides whether the cast comes out: it must cross the part where it is widest, so that nothing of the part hides behind something else seen from either side. A part lying flat (Carlo) parts at half its height; an egg or a figure parts through its middle, along its length.
 
 - **Keys** line the halves up: truncated cones on `a`'s parting face, their sockets in `b`'s, `clearance` larger (0.15 mm unless given), as many as `keys:` (4 unless given), placed where the face has room, as far apart as they can be.
-- **The seal** keeps the liquid from creeping out between the halves: a ridge round the cavity on `a`, `seal` high (0.8 mm unless given), pressing into a groove in `b`. `seal: 0.mm` leaves it out.
+- **The seal** keeps the liquid from creeping out between the halves: a ridge round the cavity (round its convex hull, so it stays one smooth loop past notches) on `a`, `seal` high (0.8 mm unless given), pressing into a groove in `b`. `seal: 0.mm` leaves it out.
 - **Notches** across the parting line on two opposite sides take a flat screwdriver to open the mold without marring its faces; `pry: false` leaves them out.
 - **The pour hole** goes up through `b` from just under the cavity's top, along the plane's normal, `sprue` wide (6 mm unless given) and opening into a funnel at the block's face; `vents:` thinner channels (2 unless given) let the air out from other high points. Pour with `b` on top.
 

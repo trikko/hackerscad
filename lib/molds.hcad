@@ -17,7 +17,7 @@ struct Mold
 /// - `keys` cones on a's parting face and their sockets in b's line the halves
 ///   up (where the face has room, as far apart as they can be), `clearance`
 ///   apart;
-/// - a seal round the cavity, a ridge `seal` high on a and its groove in b,
+/// - a seal round the cavity (its convex hull), a ridge `seal` high on a and its groove in b,
 ///   keeps the liquid from creeping out between the halves (0.mm: none);
 /// - a pour hole `sprue` wide with a funnel, and `vents` thin channels for the
 ///   air, go up through b from the cavity's highest points (along the plane's
@@ -34,9 +34,46 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
 {
     immutable n = at.normal;
     auto bb = object.bbox;
-    auto block = box(bb.size.x + 2 * wall, bb.size.y + 2 * wall, bb.size.z + 2 * wall)
-        .move(x: bb.center.x, y: bb.center.y, z: bb.min.z - wall)
-        .fillet(edges.parallel(Z), r: wall / 2);
+
+    // the block square to the parting plane: the object's box measured along the plane's own axes
+    // (read from a speck laid on it along each), grown by the wall, built there and placed on the plane
+    auto centre = plane(origin: bb.center - n * dot(bb.center - at.origin, n), normal: n);
+    Vec3 axis(Solid speck) => (speck.placeOn(centre).bbox.center - centre.origin).normalized;
+    auto xd = axis(box(0.001.mm, 0.001.mm, 0.001.mm).move(x: 10.mm));
+    auto yd = axis(box(0.001.mm, 0.001.mm, 0.001.mm).move(y: 10.mm));
+    Vec3[] corners;
+    foreach (x; [bb.min.x, bb.max.x])
+        foreach (y; [bb.min.y, bb.max.y])
+            foreach (z; [bb.min.z, bb.max.z])
+                corners ~= vec(x, y, z) - centre.origin;
+    // how far the object reaches along d from the centre: between where its box's corners say, halved
+    // until what of the object lies beyond is gone
+    immutable big = 4 * bb.size.length + 10.mm;
+    immutable square = abs(n.x) > 0.9999 || abs(n.y) > 0.9999 || abs(n.z) > 0.9999;
+    Length extent(Vec3 d)
+    {
+        Length inside = corners.map(c => dot(c, d)).minElement, outside = corners.map(c => dot(c, d)).maxElement;
+        // a plane square to an axis: the box is the object's own, along the frame's axes too
+        if (square)
+            return outside;
+        foreach (k; 0 .. 14)
+        {
+            immutable mid = (inside + outside) / 2;
+            auto past = box(big, big, big).placeOn(plane(origin: centre.origin + d * mid, normal: d));
+            if ((object & past).volume > 0.001 * 1.mm ^^ 3)
+                inside = mid;
+            else
+                outside = mid;
+        }
+        return outside;
+    }
+    immutable hx = extent(xd), lx = -extent(-xd), hy = extent(yd), ly = -extent(-yd), hn = extent(n), ln = -extent(-n);
+    Length lo(Vec3 d) => d == xd ? lx : d == yd ? ly : ln;
+    Length hi(Vec3 d) => d == xd ? hx : d == yd ? hy : hn;
+    auto block = box(hi(xd) - lo(xd) + 2 * wall, hi(yd) - lo(yd) + 2 * wall, hi(n) - lo(n) + 2 * wall)
+        .move(x: (hi(xd) + lo(xd)) / 2, y: (hi(yd) + lo(yd)) / 2, z: lo(n) - wall)
+        .fillet(edges.parallel(Z), r: wall / 2)
+        .placeOn(centre);
     auto sides = (block - object).halves(at);
     Solid a = sides.below, b = sides.above;
 
@@ -46,8 +83,11 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
     auto key = cone(d1: kd, d2: kd / 2, h: kh) + cylinder(d: kd, h: 0.01.mm).move(z: -0.01.mm);
     auto socket = cone(d1: kd + 2 * clearance, d2: kd / 2 + 2 * clearance, h: kh + clearance)
         .move(z: -0.01.mm);
-    auto face = (block - object).section(at);
-    immutable clear = kd / 2 + 1.5.mm + (seal > 0.mm ? 1.5.mm + seal + clearance : 0.mm);
+    // the seal runs round the cavity's convex hull (an outline grown that far round a concave
+    // cavity would overlap itself across its notches); the keys stay outside the seal
+    auto rim = hull(object.section(at));
+    auto face = block.section(at) - (seal > 0.mm ? rim.offset(1.5.mm + seal + clearance) : rim);
+    immutable clear = kd / 2 + 1.5.mm;
     Solid[] knobs, holes;
     auto spots = face.spots(keys, margin: clear);
     assert(spots.length > 0, "mold: no room for the keys on the parting face: a thicker wall:");
@@ -63,24 +103,21 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
     // the seal: a ridge round the cavity, 1.5 mm out from it, as wide as it is high, and its groove
     if (seal > 0.mm)
     {
-        auto rim = object.section(at);
-        auto ring = rim.offset(1.5.mm + seal) - rim.offset(1.5.mm);
-        a = a + ring.extrude(seal);
-        b = b - (rim.offset(1.5.mm + seal + clearance) - rim.offset(1.5.mm - clearance))
-            .extrude(seal + clearance);
+        // each outline extruded on its own, then one less the other (a ring extruded in a slanted
+        // plane comes out broken); the ridge starts a little inside a, so the two do not merely meet
+        // on the parting face (a fuse on a slanted face that they share fails)
+        immutable sink = 0.05.mm;
+        a = a + (rim.offset(1.5.mm + seal).extrude(seal + sink) - rim.offset(1.5.mm).extrude(seal + sink))
+            .move(n * -sink);
+        b = b - (rim.offset(1.5.mm + seal + clearance).extrude(seal + clearance)
+            - rim.offset(1.5.mm - clearance).extrude(seal + clearance));
     }
 
     // the pour hole and the vents: from points just under the cavity's top, along the normal, out
     // through b; the pour hole opens into a funnel at the block's face
-    immutable corners = [vec(bb.min.x, bb.min.y, bb.min.z), vec(bb.max.x, bb.max.y, bb.max.z),
-        vec(bb.min.x, bb.max.y, bb.min.z), vec(bb.max.x, bb.min.y, bb.max.z),
-        vec(bb.min.x, bb.min.y, bb.max.z), vec(bb.max.x, bb.max.y, bb.min.z),
-        vec(bb.min.x, bb.max.y, bb.max.z), vec(bb.max.x, bb.min.y, bb.min.z)];
-    Length top = dot(corners[0], n);
-    foreach (c; corners)
-        top = max(top, dot(c, n));
+    immutable top = dot(centre.origin, n) + hn;
     immutable reach = top + wall - dot(at.origin, n);
-    auto near = plane(origin: at.origin + n * (reach - wall - 0.5.mm), normal: n);
+    auto near = plane(origin: at.origin + n * (reach - wall - 0.3.mm), normal: n);
     auto highs = object.section(near).spots(vents + 1, margin: 0.mm);
     foreach (i, p; highs)
     {
@@ -96,7 +133,7 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
     // the notches to pry it open: half-round, across the parting line, in the middle of two opposite sides
     if (pry)
     {
-        auto across = abs(n.z) > 0.9 ? X : normalize(cross(n, Z));
+        auto across = abs(n.z) > 0.9 ? X : cross(n, Z).normalized;
         auto mid = bb.center - n * dot(bb.center - at.origin, n);
         immutable half = (abs(across.x) * bb.size.x + abs(across.y) * bb.size.y + abs(across.z) * bb.size.z) / 2
             + wall;
