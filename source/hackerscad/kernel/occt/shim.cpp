@@ -3934,7 +3934,7 @@ static std::vector<std::array<double, 2>> clip_poly(const std::vector<std::array
     return out;
 }
 
-hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length)
+hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length, double chamfer, double rOut)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         std::vector<std::pair<double, double>> rz;
@@ -3946,33 +3946,46 @@ hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length
         for (int i = 0; i < n; i++)
             for (int k = 0; k <= turns; k++)
                 e[i].push_back(helix_turn(rz[i].first, z + rz[i].second, lead, k, 0));
+        // the chamfer: a 45° cone, rOut at z = length - chamfer, rOut - chamfer at the top; what lies
+        // beyond it (r + z > K) is cut away
+        const bool bevel = chamfer > 0;
+        const double K = rOut + length - chamfer, rTop = rOut - chamfer;
         BRepBuilderAPI_Sewing sew(1e-5);
-        std::vector<TopoDS_Edge> bottom, top;
-        const double eps = 1e-9;
+        std::vector<TopoDS_Edge> bottom, top, cone;
+        const double eps = 1e-9, tol = 1e-7;
         for (int k = 0; k < turns; k++)
             for (int i = 0; i < n; i++) {
                 const TopoDS_Edge &e1 = e[i][k], &e2 = i + 1 < n ? e[i + 1][k] : e[0][k + 1];
-                // the z range of the face: its helices' ends
                 double f1, l1, f2, l2;
                 Handle(Geom_Curve) c1 = BRep_Tool::Curve(e1, f1, l1), c2 = BRep_Tool::Curve(e2, f2, l2);
                 const double zlo = std::min(c1->Value(f1).Z(), c2->Value(f2).Z()),
                              zhi = std::max(c1->Value(l1).Z(), c2->Value(l2).Z());
                 if (zhi <= 0 || zlo >= length)
                     continue;   // wholly outside
+                const double rmax = std::max(rz[i].first, rz[(i + 1) % n].first);
                 TopoDS_Face face = BRepFill::Face(e1, e2);
-                if (zlo >= 0 && zhi <= length) {
+                if (zlo >= 0 && zhi <= length && (!bevel || rmax + zhi <= K)) {
                     sew.Add(face);   // wholly inside: as it is
                     continue;
                 }
                 Handle(Geom_Surface) S = BRep_Tool::Surface(face);
                 double u0, u1, v0, v1;
                 BRepTools::UVBounds(face, u0, u1, v0, v1);
-                // z = a + b u + c v, from three corners
-                const double z00 = S->Value(u0, v0).Z(), z10 = S->Value(u1, v0).Z(), z01 = S->Value(u0, v1).Z();
-                const double b = (z10 - z00) / (u1 - u0), c = (z01 - z00) / (v1 - v0), a = z00 - b * u0 - c * v0;
+                // z and r + z, both affine in u and v (two helices of one lead, a radial ruling)
+                auto fit = [&](auto f, double &a, double &b, double &c) {
+                    const double f00 = f(S->Value(u0, v0)), f10 = f(S->Value(u1, v0)), f01 = f(S->Value(u0, v1));
+                    b = (f10 - f00) / (u1 - u0);
+                    c = (f01 - f00) / (v1 - v0);
+                    a = f00 - b * u0 - c * v0;
+                };
+                double za, zb, zc, ga, gb, gc;
+                fit([](const gp_Pnt &q) { return q.Z(); }, za, zb, zc);
+                fit([](const gp_Pnt &q) { return std::hypot(q.X(), q.Y()) + q.Z(); }, ga, gb, gc);
                 std::vector<std::array<double, 2>> poly = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
-                poly = clip_poly(poly, a, b, c, 0);
-                poly = clip_poly(poly, -a, -b, -c, -length);
+                poly = clip_poly(poly, za, zb, zc, 0);
+                poly = clip_poly(poly, -za, -zb, -zc, -length);
+                if (bevel)
+                    poly = clip_poly(poly, -ga, -gb, -gc, -K);
                 if (poly.size() < 3)
                     continue;
                 BRepBuilderAPI_MakeWire wire;
@@ -3985,12 +3998,15 @@ hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length
                     TopoDS_Edge ed = BRepBuilderAPI_MakeEdge(l, S, 0, p2.Distance(q2)).Edge();
                     BRepLib::BuildCurves3d(ed, 1e-7);
                     wire.Add(ed);
-                    // an edge on a cutting plane: for that cap
-                    const double zp = a + b * P[0] + c * P[1], zq = a + b * Q[0] + c * Q[1];
-                    if (std::abs(zp) < 1e-7 && std::abs(zq) < 1e-7)
+                    // an edge on a cut: for that cap
+                    auto zf = [&](const std::array<double, 2> &X) { return za + zb * X[0] + zc * X[1]; };
+                    auto gf = [&](const std::array<double, 2> &X) { return ga + gb * X[0] + gc * X[1]; };
+                    if (std::abs(zf(P)) < tol && std::abs(zf(Q)) < tol)
                         bottom.push_back(ed);
-                    else if (std::abs(zp - length) < 1e-7 && std::abs(zq - length) < 1e-7)
+                    else if (std::abs(zf(P) - length) < tol && std::abs(zf(Q) - length) < tol)
                         top.push_back(ed);
+                    else if (bevel && std::abs(gf(P) - K) < tol && std::abs(gf(Q) - K) < tol)
+                        cone.push_back(ed);
                 }
                 BRepBuilderAPI_MakeFace mf(S, wire.Wire());
                 if (!mf.IsDone())
@@ -3999,16 +4015,65 @@ hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length
                 fix.Perform();
                 sew.Add(fix.Face());
             }
-        for (auto *cap : {&bottom, &top}) {
-            auto wires = joined_wires(*cap, 1e-5);
+        // the bottom cap: the profile's loop at z = 0
+        auto planeFace = [&](const std::vector<TopoDS_Edge> &edges) {
+            auto wires = joined_wires(edges, 1e-5);
             if (wires.size() != 1)
                 throw Standard_Failure(("a cap's edges make " + std::to_string(wires.size()) + " loops").c_str());
             BRepBuilderAPI_MakeFace mf(wires[0], Standard_True);
             if (!mf.IsDone())
                 throw Standard_Failure("a cap could not be made");
-            sew.Add(mf.Face());
+            return mf.Face();
+        };
+        sew.Add(planeFace(bottom));
+        if (!bevel || cone.empty())
+            sew.Add(planeFace(top));
+        else {
+            // each run of the cone's edges goes from the top circle back to it, round a tooth's
+            // crest the cone cut: closed by the circle's arc between its ends, a patch of the
+            // cone; the same arcs close the top cap between the profile's runs
+            Handle(Geom_ConicalSurface) coneSurf =
+                new Geom_ConicalSurface(gp_Ax3(gp_Pnt(0, 0, length - chamfer), gp_Dir(0, 0, 1)), -M_PI / 4, rOut);
+            std::vector<TopoDS_Edge> topLoop = top;
+            for (const TopoDS_Wire &run : joined_wires(cone, 1e-5)) {
+                TopoDS_Vertex va, vb;
+                TopExp::Vertices(run, va, vb);
+                const gp_Pnt pa = BRep_Tool::Pnt(va), pb = BRep_Tool::Pnt(vb);
+                // the arc sweeps the same angle as the run does, from end to end: the run's points
+                // sampled, their angles unwrapped and added up
+                BRepAdaptor_CompCurve cc(run);
+                double sweep = 0, prev = std::atan2(pa.Y(), pa.X());
+                const gp_Pnt first = cc.Value(cc.FirstParameter());
+                const bool fromA = first.Distance(pa) < first.Distance(pb);
+                for (int q = 1; q <= 200; q++) {
+                    const double t = cc.FirstParameter() + (cc.LastParameter() - cc.FirstParameter()) * q / 200;
+                    const gp_Pnt pt = cc.Value(fromA ? t : cc.LastParameter() + cc.FirstParameter() - t);
+                    const double ang = std::atan2(pt.Y(), pt.X());
+                    double dAng = ang - prev;
+                    while (dAng > M_PI) dAng -= 2 * M_PI;
+                    while (dAng < -M_PI) dAng += 2 * M_PI;
+                    sweep += dAng;
+                    prev = ang;
+                }
+                const double mid = std::atan2(pa.Y(), pa.X()) + sweep / 2;
+                const gp_Pnt arcMid(rTop * std::cos(mid), rTop * std::sin(mid), length);
+                TopoDS_Edge arc = BRepBuilderAPI_MakeEdge(GC_MakeArcOfCircle(pa, arcMid, pb).Value()).Edge();
+                topLoop.push_back(arc);
+                BRepBuilderAPI_MakeWire w;
+                w.Add(run);
+                w.Add(arc);
+                BRepBuilderAPI_MakeFace mf(coneSurf, w.Wire());
+                if (!mf.IsDone())
+                    throw Standard_Failure("a patch of the chamfer could not be made");
+                ShapeFix_Face fix(mf.Face());
+                fix.Perform();
+                sew.Add(fix.Face());
+            }
+            sew.Add(planeFace(topLoop));
         }
         sew.Perform();
+        if (sew.NbFreeEdges() > 0)
+            throw Standard_Failure(("the direct thread's faces do not close: " + std::to_string(sew.NbFreeEdges()) + " edges open").c_str());
         BRepBuilderAPI_MakeSolid ms;
         for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next())
             ms.Add(TopoDS::Shell(ex.Current()));
@@ -4017,8 +4082,6 @@ hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length
         BRepGProp::VolumeProperties(r, g);
         if (g.Mass() < 0)
             r.Reverse();
-        if (sew.NbFreeEdges() > 0)
-            throw Standard_Failure("the direct thread's faces do not close");
         return primitive(r);
     });
 }
