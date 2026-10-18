@@ -1,15 +1,19 @@
-// Library tour: the built-in hardware, gears and printable mechanisms
+// Library tour: the built-in hardware, gears, printable mechanisms, joints and molds
 // A tour of the built-in libraries, one row each: hardware,
-// gears, printable mechanisms. Under every object, its name
+// gears, printable mechanisms, joints, flex and molds. Under
+// every object, its name
 // (a reference part: drawn, never exported).
 module library_tour;
 
 import std.shapes;
 import hardware;
 import gears;
-import hinges : hinge;
+import hinges : hinge, livingHinge;
 import snaps;
 import enclosures;
+import joints;
+import flex;
+import molds;
 
 // the grid: columns along X, rows along -Y
 immutable col = 55.mm;
@@ -34,9 +38,9 @@ Solid m8washer() => cell(washer(M8), 2, 0);
 Solid holes()
 {
     auto b = box(50.mm, 20.mm, 10.mm);
-    immutable kinds = ["clearance", "tap", "insert", "counterbore", "countersink"];
+    immutable kinds = ["clearance", "tap", "insert", "ribs", "counterbore", "countersink"];
     foreach (i, k; kinds)
-        b -= hole(M3, 10.mm, k).move(x: (i - 2.0) * 9.mm, z: 10.mm);
+        b -= hole(M3, 10.mm, k).move(x: (i - 2.5) * 8.mm, z: 10.mm);
     return cell(b, 3, 0);
 }
 
@@ -71,6 +75,35 @@ Solid box1() => cell(enclosure(vec(40.mm, 30.mm, 20.mm)).base, 2, 2);
 @part("lightgreen")
 Solid lid1() => cell(enclosure(vec(40.mm, 30.mm, 20.mm)).lid, 3, 2);
 
+// ---- row 3: joints, flex and molds
+
+// a bar cut in two where a dovetail locks the pieces, drawn apart
+immutable dovetail = splitJoint(box(40.mm, 12.mm, 12.mm),
+    plane(origin: vec(0.mm, 0.mm, 0.mm), normal: X), kind: "dovetail");
+
+@part("peru")
+Solid pieceA() => cell(dovetail.a.move(x: -3.mm), 0, 3);
+
+@part("burlywood")
+Solid pieceB() => cell(dovetail.b.move(x: 3.mm), 0, 3);
+
+// a strip that bends in its middle, through rows of slots
+@part("mediumpurple")
+Solid strip() => cell(kerf(box(45.mm, 20.mm, 2.mm), box(20.mm, 30.mm, 10.mm)), 1, 3);
+
+@part("orchid")
+Solid living() => cell(livingHinge(), 2, 3);
+
+// the two halves of a mold round a ball, laid for printing
+immutable ballMold = mold(sphere(d: 16.mm),
+    plane(origin: vec(0.mm, 0.mm, 0.mm), normal: Z), keys: 3);
+
+@part("khaki")
+Solid moldA() => cell(ballMold.aPrint, 3, 3);
+
+@part("darkkhaki")
+Solid moldB() => cell(ballMold.bPrint, 4, 3);
+
 // ---- the names, under each column
 
 /// A name lying on the floor, under cell (c, r).
@@ -82,4 +115,5 @@ Solid labels() => fuse([
     name("screw", 0, 0), name("nut", 1, 0), name("washer", 2, 0), name("hole kinds", 3, 0),
     name("spurGear", 0, 1), name("rack", 2, 1),
     name("hinge", 0, 2), name("snapHook", 1, 2), name("enclosure", 2, 2), name("lid", 3, 2),
+    name("splitJoint", 0, 3), name("kerf", 1, 3), name("livingHinge", 2, 3), name("mold", 3, 3), name("its other half", 4, 3),
 ]);

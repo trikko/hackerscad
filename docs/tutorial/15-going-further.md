@@ -365,7 +365,7 @@ Solid jug()
 
 ![The jug](img/15-jug.png)
 
-## Libraries: screws, threads, gears, enclosures
+## Libraries: screws, gears, joints, molds
 
 ```d
 module fixings;
@@ -392,11 +392,18 @@ Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);
 ![A lid with holes for M3 screws, and a gear](img/15-fixings.png)
 
 - `hardware`: screw sizes `M2` to `M8`, screws, nuts, washers, and holes made
-  for them (`"clearance"`, `"tap"`, `"insert"`, `"counterbore"`,
-  `"countersink"`).
+  for them (`"clearance"`, `"tap"`, `"insert"`, `"ribs"`, `"counterbore"`,
+  `"countersink"`; `"ribs"` leaves three thin ribs a small screw cuts its
+  own thread into).
 - `threads`: real ISO threads; `gears`: gears and racks; `hinges`, `snaps`,
-  `enclosures`: print-in-place hinges, snap-fit hooks, boxes with lids.
-  [examples/09_library.hcad](../../examples/09_library.hcad) shows them all.
+  `enclosures`: hinges (printed in place, on a pin, snapped together or a
+  thin web that bends), snap-fit hooks, boxes with lids.
+- `joints`: a part too long for the bed cut in two pieces that lock
+  together (a dovetail, pins, Japanese joints), or two parts joined where
+  they meet; `flex`: rows of slots that make a stiff part bend; `molds`: a
+  two-part mold to cast copies of a part.
+  [examples/09_library.hcad](../../examples/09_library.hcad) shows them all,
+  and [the guides](../GUIDES.md) explain each one.
 - Your own functions go in a file next to the model (`lib/name.hcad`, then
   `import lib.name;`), or in your personal library folder, to use them in
   every project.

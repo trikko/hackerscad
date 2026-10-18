@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-6de49f6f`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-57c04bf1`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-6de49f6f`:** this text is up to date.
+- **It prints `0.3.1-57c04bf1`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -305,7 +305,14 @@ format stamp):
   import threads (threadedRod, tappedHole); import gears (spurGear, rack,
   centerDistance); import hinges (hinge(…).fixed/.moving, print in place);
   import snaps (snapHook, snapSlot); import enclosures (roundedBox, tray,
-  enclosure(vec(x, y, z)).base/.lid).
+  enclosure(vec(x, y, z)).base/.lid); import joints (splitJoint(body,
+  plane, kind: "dovetail"|…).a/.b for a part longer than the bed, splitFlat
+  for two halves printed on their cut faces, joinParts(a, b, plane)); import
+  molds (mold(part, plane).aPrint/.bPrint); import flex (kerf(body, zone)
+  to make it bend; hinges also has pinHinge, snapHinge, livingHinge).
+  Built in: region.tiles(kind: "hex"|"voronoi"|…) fills a profile with
+  cells, body.knurl(face) raises a grip, body.cut(profile, wrap: face,
+  depth:) lays a profile on a curved face.
 - Before modelling anything common by hand (a teardrop, a screw hole, a
   nut trap, a thread, a slot, a rounded box), look for it: hcad_docs with
   a topic, or format: cheatsheet (every function in one line); write your
@@ -322,7 +329,8 @@ format stamp):
   callouts) and d.section(part, XZ, label: "A"); export it as .pdf/.svg/.dxf.
 - Keep models quick to evaluate: text cut into curved faces and threads take
   seconds; prefer text in relief as a separate part, and plain holes or
-  heat-set inserts (hole(M3, d, "insert")) to modelled threads.
+  heat-set inserts (hole(M3, d, "insert")) or ribs the screw cuts its
+  thread into (hole(M3, d, "ribs")) to modelled threads under M5.
 - Style: annotations (@param, @preset, @part, @drawing) go on their own line above
   the declaration, several per line when short; chains break before each
   call, the line starting with the dot; lines short (the editor shows about
@@ -351,7 +359,7 @@ format stamp):
 ## Prismatic parts and 3D printing
 - A prismatic part: its outline as a sketch from the drawing's dimensions,
   extruded or revolved; then fillets and chamfers; then holes (hardware:
-  hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" |
+  hole(M3, depth, "clearance" | "tap" | "insert" | "ribs" | "counterbore" |
   "countersink")); then check.
 - Then build in steps, as on a machine: each further feature (a boss, a
   pocket, a slot, a rib, a step) starts from a face and is extruded from
