@@ -3053,9 +3053,14 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 };
                 // a sliver whose outline, carried onto the face, crosses itself would break the whole
                 // face it is a hole in: checked on its own first, and left out (counted) if broken
+                // the loops on the face once: the hole, the piece it takes, the islands and the walls' tops
+                // all made of these edges, shared already, not left for the sewing to find and merge
+                std::vector<std::vector<TopoDS_Edge>> top(loops.size()), bottom(loops.size());
+                std::vector<TopoDS_Wire> topWires;
+                for (size_t i = 0; i < loops.size(); i++)
+                    topWires.push_back(wireOn(loops[i], holeSurf, du, &top[i]));
                 {
-                    BRepBuilderAPI_MakeFace alone(holeSurf, turned_(loops[0], wireOn(loops[0], holeSurf, du, nullptr), true),
-                                                  Standard_True);
+                    BRepBuilderAPI_MakeFace alone(holeSurf, turned_(loops[0], topWires[0], true), Standard_True);
                     if (!alone.IsDone() || !BRepCheck_Analyzer(alone.Face()).IsValid()) {
                         g_wrap_skipped++;
                         continue;
@@ -3063,23 +3068,18 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     // the piece of the face the hole takes away, for the volume
                     patches.push_back(alone.Face());
                 }
-                holed.Add(turned_(loops[0], wireOn(loops[0], holeSurf, du, nullptr), false));
-                std::vector<std::vector<TopoDS_Edge>> top(loops.size()), bottom(loops.size());
-                for (size_t i = 0; i < loops.size(); i++)
-                    wireOn(loops[i], holeSurf, du, &top[i]);
+                holed.Add(turned_(loops[0], topWires[0], false));
                 for (size_t i = 1; i < loops.size(); i++)
-                    extra.push_back(BRepBuilderAPI_MakeFace(holeSurf, turned_(loops[i], wireOn(loops[i], holeSurf, du, nullptr), true),
-                                                            Standard_True).Face());
+                    extra.push_back(BRepBuilderAPI_MakeFace(holeSurf, turned_(loops[i], topWires[i], true), Standard_True).Face());
                 if (through) {
                     // the far face holed by the outline, the islands' far ends faces of their own
-                    holedFar.Add(turned_(loops[0], wireOn(loops[0], farSurf, 0, nullptr), false));
-                    patchesFar.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[0], wireOn(loops[0], farSurf, 0, nullptr),
-                                                                 true), Standard_True).Face());
+                    std::vector<TopoDS_Wire> farWires;
                     for (size_t i = 0; i < loops.size(); i++)
-                        wireOn(loops[i], farSurf, 0, &bottom[i]);
+                        farWires.push_back(wireOn(loops[i], farSurf, 0, &bottom[i]));
+                    holedFar.Add(turned_(loops[0], farWires[0], false));
+                    patchesFar.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[0], farWires[0], true), Standard_True).Face());
                     for (size_t i = 1; i < loops.size(); i++)
-                        extra.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[i], wireOn(loops[i], farSurf, 0, nullptr),
-                                                                true), Standard_True).Face());
+                        extra.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[i], farWires[i], true), Standard_True).Face());
                 } else {
                     BRepBuilderAPI_MakeFace fl;
                     for (size_t i = 0; i < loops.size(); i++) {
