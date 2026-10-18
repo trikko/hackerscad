@@ -441,6 +441,12 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `enclosure(inner: Vec3, wall: Length = …, r: Length = …, lidHeight: Length = …, screw: Screw = …, clearance: Length = …) → Enclosure` — An enclosure with `inner` free space (x, y, z), a lid with a lip that fits inside the base, and a screw post in each corner.
 - `hullCase(inside: Solid[], wall: Length = …, clearance: Length = …, at: Length = …, lip: Length = …, play: Length = …) → Enclosure` — A case shaped round what it holds: the convex hull of `inside` (the smallest shape with no hollows round them all) grown by `clearance`, its walls `wall` thick, cut at the height `at` (by default halfway up) into a base and a lid. A lip `lip` high rises from the base's wall into the lid, `play` narrower, so the two close on each other and stay put.
 
+## Library: import joints;
+
+- `struct Joint(a: Solid, b: Solid, loose: Solid[])` — The two pieces of a solid cut along a plane with a joint between them, and the loose parts that lock it (a wedge), if any.
+- `splitJoint(body: Solid, at: Plane, kind: string = "tenon", size: Length = …, length: Length = …, clearance: Length = …, turn: Angle = …, count: int = 2) → Joint` — `body` cut along the plane `at` into two pieces that fit together with a joint, `clearance` apart where they meet (0.2 mm suits most FDM printers: see the fits guide). The joint is centred on the cut (the middle of the section), `turn` turns it about the plane's normal; `size` sets its scale (by default the square root of the section's area: the width of a square beam) and `length` how far it reaches across the plane (0.6 of the size). `count` is the number of fingers, or of pins (as many as fit in a row).  - "tenon": a tenon on a, its mortise in b (hozo); - "dovetail": a tail across the piece, sliding in sideways (ari); - "pins": round pins on a, holes in b; - "fingers": a box joint, fingers of a and b in turn; - "lap": a half lap (ai-gaki), each piece keeping half the thickness; - "kama": a gooseneck, dropping in from the side (kama tsugi); - "kanawa": a half lap with hooks at both ends, locked by a wedge driven through the middle (kanawa tsugi): the wedge is in `loose`.
+- `jointKinds: string[]`
+
 ## How do I…
 
 - Copy a solid (values never change: use it again): `auto b = a.move(x: 20.mm);`

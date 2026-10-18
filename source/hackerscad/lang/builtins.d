@@ -36,6 +36,7 @@ shared static this()
         "hinges": import("hinges.hcad"),
         "snaps": import("snaps.hcad"),
         "enclosures": import("enclosures.hcad"),
+        "joints": import("joints.hcad"),
         "carlo": import("carlo.hcad"),
     ];
 }

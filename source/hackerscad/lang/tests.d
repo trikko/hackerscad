@@ -4712,3 +4712,21 @@ unittest
     foreach (i; 0 .. 3)
         assert(abs(direct[i] - boolean[i]) < 1e-3 * 1000, format("%s: %s %s", i, direct[i], boolean[i]));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // every joint: the two pieces apart from each other, one body each, and together the solid less
+    // the play; the wedge of the scarf a body of its own
+    auto r = runModel("import joints;\n"
+        ~ "unittest { auto beam = box(20.mm, 20.mm, 120.mm); auto p = plane(origin: vec(0.mm, 0.mm, 60.mm), normal: Z);\n"
+        ~ "foreach (kind; jointKinds) { auto j = splitJoint(beam, p, kind: kind, count: 3);\n"
+        ~ "assert((j.a & j.b).volume < 0.001 * 1.mm ^^ 3, kind ~ \": the pieces overlap\");\n"
+        ~ "assert(j.a.pieces.length == 1 && j.b.pieces.length == 1, kind ~ \": a piece in several bodies\");\n"
+        ~ "auto lost = beam.volume - j.a.volume - j.b.volume;\n"
+        ~ "assert(lost > 0.mm ^^ 3 && lost < 0.03 * beam.volume, kind ~ \": the play takes $(lost)\"); }\n"
+        ~ "auto k = splitJoint(beam, p, kind: \"kanawa\"); assert(k.loose.length == 1 && k.loose[0].volume > 0.mm ^^ 3);\n"
+        ~ "assert((k.loose[0] & k.a).volume < 0.001 * 1.mm ^^ 3 && (k.loose[0] & k.b).volume < 0.001 * 1.mm ^^ 3); }\n");
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

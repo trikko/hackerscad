@@ -1,0 +1,173 @@
+module joints;
+
+/// The two pieces of a solid cut along a plane with a joint between them,
+/// and the loose parts that lock it (a wedge), if any.
+struct Joint
+{
+    Solid a;        /// the piece behind the plane (against its normal)
+    Solid b;        /// the piece in front of it (where the normal points)
+    Solid[] loose;  /// a wedge or pins to print apart, in place
+}
+
+/// The kinds of joint splitJoint() knows.
+immutable string[] jointKinds = ["tenon", "dovetail", "pins", "fingers", "lap", "kama", "kanawa"];
+
+/// What a joint pushes across the plane, in the plane's own frame (x and y
+/// in the plane, z along its normal), `s` its size and `g` added all round
+/// (the clearance, for the hollow it fits in): `up` what piece a pushes into
+/// b (z > 0), `down` what b pushes into a (z < 0).
+private struct Keys
+{
+    Solid up;
+    Solid down;
+}
+
+/// A box from (x0, y0, z0) to (x1, y1, z1), grown by g all round.
+private Solid span(Length x0, Length x1, Length y0, Length y1, Length z0, Length z1, Length g) =>
+    box(x1 - x0 + 2 * g, y1 - y0 + 2 * g, z1 - z0 + 2 * g)
+        .move(x: (x0 + x1) / 2, y: (y0 + y1) / 2, z: z0 - g);
+
+/// A prism across the whole piece along y, its outline in x and z.
+private Solid acrossY(Vec2[] xz, Length reach) =>
+    polygon(xz).extrude(2 * reach, along: Y).move(y: -reach);
+
+private Keys keys(string kind, Length s, Length len, Length g, int count)
+{
+    // far enough to cross the whole section, whatever its shape
+    immutable far = 4 * s;
+    Solid none = box(0.01.mm, 0.01.mm, 0.01.mm).move(z: -10 * s - 1.mm);
+    switch (kind)
+    {
+    case "tenon":
+        {
+            // a rectangular tenon, its tip chamfered to find its mortise
+            immutable w = 0.5 * s, t = 0.3 * s, c = min(0.1 * t, 1.mm);
+            Solid tenon = span(-w / 2, w / 2, -t / 2, t / 2, -0.01.mm, len, g);
+            if (g == 0.mm)
+                tenon = tenon.chamfer(edges.of(faces.top), d: c);
+            return Keys(tenon, none);
+        }
+    case "pins":
+        {
+            // `count` round pins in a row along x, chamfered at their tips
+            // as many as fit in a row across the middle, 1.6 diameters apart at least
+            immutable d = 0.22 * s;
+            immutable n = max(1, min(count, floor((0.8 * s - d) / (1.6 * d)).to!int + 1));
+            immutable step = n > 1 ? max(0.6 * s / (n - 1), 1.6 * d) : 0.mm;
+            Solid[] pins;
+            foreach (i; 0 .. n)
+            {
+                auto pin = cylinder(d: d + 2 * g, h: len + g + 0.01.mm).move(z: -0.01.mm);
+                if (g == 0.mm)
+                    pin = pin.chamfer(edges.of(faces.top), d: 0.1 * d);
+                pins ~= pin.move(x: (i - (n - 1) / 2.0) * step);
+            }
+            return Keys(fuse(pins), none);
+        }
+    case "dovetail":
+        {
+            // a tail widening into b, across the piece: it slides in along y
+            // and holds against pulling apart along the normal
+            immutable w = 0.35 * s, flare = len * tan(12.deg);
+            return Keys(acrossY([vec(-w / 2 - g, -0.01.mm), vec(w / 2 + g, -0.01.mm),
+                vec(w / 2 + flare + g, len + g), vec(-w / 2 - flare - g, len + g)], far), none);
+        }
+    case "fingers":
+        {
+            // `count` fingers across x, a's and b's in turn, as long as len
+            immutable n = max(count, 3), w = s / n;
+            Solid[] ups, downs;
+            foreach (i; 0 .. n + 2)
+            {
+                immutable x0 = -s / 2 - w + i * w;
+                if (i % 2 == 0)
+                    ups ~= span(x0, x0 + w, -far, far, -0.01.mm, len, g);
+                else
+                    downs ~= span(x0, x0 + w, -far, far, -len, 0.01.mm, g);
+            }
+            return Keys(fuse(ups), fuse(downs));
+        }
+    case "lap":
+        {
+            // a half lap: a keeps the half on -y over len, b the half on +y
+            return Keys(span(-far, far, -far, 0.mm, -0.01.mm, len, g),
+                span(-far, far, 0.mm, far, -len, 0.01.mm, g));
+        }
+    case "kama":
+        {
+            // a gooseneck: a neck and a head wider than it, through along y;
+            // it drops into b from the side and holds against pulling apart
+            immutable neck = 0.25 * s, head = 0.45 * s, h = len / 3;
+            return Keys(acrossY([vec(-neck / 2 - g, -0.01.mm), vec(neck / 2 + g, -0.01.mm),
+                vec(neck / 2 + g, len - h - g), vec(head / 2 + g, len - h - g),
+                vec(head / 2 + g, len + g), vec(-head / 2 - g, len + g),
+                vec(-head / 2 - g, len - h - g), vec(-neck / 2 - g, len - h - g)], far), none);
+        }
+    case "kanawa":
+        {
+            // a half lap with a hook at each end that holds the two against
+            // pulling apart; a wedge through the middle keeps them together
+            immutable hook = 0.2 * s, lip = min(0.15 * len, 0.3 * s);
+            auto up = span(-far, far, -far, 0.mm, -0.01.mm, len, g)
+                + span(-far, far, -0.01.mm, hook, len - lip, len, g);
+            auto down = span(-far, far, 0.mm, far, -len, 0.01.mm, g)
+                + span(-far, far, -hook, 0.01.mm, -len, -len + lip, g);
+            return Keys(up, down);
+        }
+    default:
+        assert(false, "the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, not " ~ kind);
+    }
+}
+
+/// `body` cut along the plane `at` into two pieces that fit together with a
+/// joint, `clearance` apart where they meet (0.2 mm suits most FDM printers:
+/// see the fits guide). The joint is centred on the cut (the middle of the
+/// section), `turn` turns it about the plane's normal; `size` sets its scale
+/// (by default the square root of the section's area: the width of a square
+/// beam) and `length` how far it reaches across the plane (0.6 of the size).
+/// `count` is the number of fingers, or of pins (as many as fit in a row).
+///
+/// - "tenon": a tenon on a, its mortise in b (hozo);
+/// - "dovetail": a tail across the piece, sliding in sideways (ari);
+/// - "pins": round pins on a, holes in b;
+/// - "fingers": a box joint, fingers of a and b in turn;
+/// - "lap": a half lap (ai-gaki), each piece keeping half the thickness;
+/// - "kama": a gooseneck, dropping in from the side (kama tsugi);
+/// - "kanawa": a half lap with hooks at both ends, locked by a wedge driven
+///   through the middle (kanawa tsugi): the wedge is in `loose`.
+Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
+    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
+{
+    auto section = body.section(at);
+    immutable s = size > 0.mm ? size : sqrt(section.area);
+    immutable len = length > 0.mm ? length : 0.6 * s;
+
+    // the joint's frame: on the plane, at the middle of the section
+    auto here = plane(origin: section.bbox.center, normal: at.normal);
+    Solid placed(Solid k) => k.rotate(z: turn).placeOn(here);
+
+    auto exact = keys(kind, s, len, 0.mm, count);
+    auto room = keys(kind, s, len, clearance, count);
+    auto sides = body.halves(here);
+    auto a = (sides.below - placed(room.down)) + (body & placed(exact.up));
+    auto b = (sides.above - placed(room.up)) + (body & placed(exact.down));
+    Solid[] loose;
+    if (kind == "kanawa")
+    {
+        // the wedge: square, tapering 1 in 20, through both halves at the
+        // middle of the lap; its hole is left the clearance larger
+        immutable w = 0.18 * s, reach = 2 * s, taper = reach / 20;
+        auto wedge = loft([rect(w, w).move(z: -reach / 2),
+                rect(w + taper, w + taper).move(z: reach / 2)])
+            .rotate(x: -90)
+            .move(z: len / 2);
+        auto hole = loft([rect(w + 2 * clearance, w + 2 * clearance).move(z: -reach / 2),
+                rect(w + taper + 2 * clearance, w + taper + 2 * clearance).move(z: reach / 2)])
+            .rotate(x: -90)
+            .move(z: len / 2);
+        a -= placed(hole);
+        b -= placed(hole);
+        loose ~= placed(wedge);
+    }
+    return Joint(a, b, loose);
+}

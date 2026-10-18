@@ -74,6 +74,12 @@ Spur gears and racks from the `gears` library: module, number of teeth and press
 
 Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`, `enclosure(…).base` and `.lid`) and every option of it, boxes hollowed with `shell()` or cut in two, screw bosses, ventilation slots and holes, and a worked example of a case for a circuit board.
 
+### [Joints between parts](guides/joints.md)
+
+[<img src="guides/img/joints-kinds.png" width="420" alt="Joints between parts">](guides/joints.md)
+
+A part too long for the printer's bed, cut in two pieces that lock together with no screws and no glue, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck and the wedged scarf of Japanese carpentry. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
+
 ### [Parameters, presets and checks](guides/parameters.md)
 
 [<img src="guides/img/parameters-carlo.png" width="420" alt="Parameters, presets and checks">](guides/parameters.md)
