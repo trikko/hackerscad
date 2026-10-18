@@ -313,6 +313,9 @@ interface BrepKernel
     Vec3[] spots(Brep s, int n, double margin);
     /// How many regions the last wrapTool left out, too broken to lay on the face (slivers).
     int wrapSkipped();
+    /// Face `face` of `s` unrolled flat as wrapTool lays a profile on it at its default place: its outline
+    /// and holes, a profile on XY; `round` the length once round it when it closes round on itself, else 0.
+    Brep wrapFlat(Brep s, int face, out double round);
     /// Copies of the flat `motifs`, each placed by four numbers in `place` (which motif, dx, dy, a scale
     /// about its origin), as one profile; mode 1 cut to `region` (the pieces cut off smaller than `minArea`
     /// left out), mode 2 only those wholly inside it.

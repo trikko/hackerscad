@@ -256,6 +256,8 @@ final class OcctKernel : BrepKernel
 
     int wrapSkipped() => hc_wrap_skipped();
 
+    Brep wrapFlat(Brep s, int face, out double round) => wrap(hc_wrap_flat(h(s), face, &round), "wrap");
+
     Brep threadSleeve(const(double)[] rz, double lead, double length, int sides, double rPoly) =>
         wrap(hc_thread_sleeve(rz.ptr, cast(int)(rz.length / 2), lead, length, sides, rPoly), "thread");
     Brep joinCoincident(Brep a, Brep b) => wrap(hc_join_coincident(h(a), h(b)), "union");

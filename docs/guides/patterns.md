@@ -459,7 +459,7 @@ A region that is a ring of noise instead, on any surface: the grooves of `kind: 
 
 ## Knurling
 
-A knob or a handle grips better with a pattern raised on its side. `body.knurl(face)` raises one on a whole cylindrical face: diamonds (the default), straight ridges along the axis, or ridges leaning round it. The pitch is adjusted a little so that a whole number go round and the pattern closes on itself.
+A knob or a handle grips better with a pattern raised on its side. `body.knurl(face)` raises one on a face: diamonds (the default), straight ridges along it, or ridges leaning across. Round a face that closes on itself, a cylinder or the side of a shape lofted through rings, the pitch is adjusted a little so that a whole number go round and the pattern closes on itself.
 
 <!-- render: patterns-knurl --from 0.3,-1,0.6 -->
 ```d
@@ -482,13 +482,47 @@ Solid diagonal() => cylinder(d: 30.mm, h: 20.mm)
 
 ![Three knobs with diamond, straight and diagonal knurling](img/patterns-knurl.png)
 
+Any other face takes it too: a flat one inside its outline, a curved one as `wrap:` lays a profile on it. A grip pad on a slider, and the oval side of a handle lofted through rings:
+
+<!-- render: patterns-knurl-any --from 0.4,-1,0.7 -->
+```d
+// a slider's flat pad, and an oval handle swelling in the middle
+
+@part("Sky Pop")
+Solid slider() => box(30.mm, 18.mm, 6.mm)
+    .knurl(faces.top, margin: 2.mm);
+
+/// The handle: oval rings, widest halfway up.
+Solid oval()
+{
+    Vec3[][] rings;
+    foreach (i; 0 .. 9)
+    {
+        immutable r = 9.mm + 3.mm * sin(i * 22.5.deg);
+        Vec3[] ring;
+        foreach (j; 0 .. 72)
+            ring ~= vec(1.5 * r * cos(j * 5.deg), r * sin(j * 5.deg),
+                i * 6.mm);
+        rings ~= [ring];
+    }
+    return loft(rings);
+}
+
+@part("gold")
+Solid handle() => oval()
+    .knurl(faces.largest, kind: "diagonal", margin: 4.mm)
+    .move(x: 50.mm);
+```
+
+![A slider's pad knurled with diamonds, and an oval handle with diagonal ridges](img/patterns-knurl-any.png)
+
 | Argument | What it does |
 |---|---|
 | `kind:` | `"diamond"`, `"straight"` or `"diagonal"` |
 | `pitch:` | from one ridge to the next round the face, 1.6 mm unless given (adjusted to a whole number round) |
 | `depth:` | how far the pattern stands out, 0.5 mm unless given |
 | `angle:` | how far a diagonal ridge leans from the axis, and the diamonds' slant: 30° unless given |
-| `margin:` | the plain band left at each end, 0.5 mm unless given |
+| `margin:` | the plain band left along the face's edges (at each end round a cylinder), 0.5 mm unless given |
 
 The pattern stands out of the face: the knob grows by `depth` all round. Printed standing, the ridges and diamonds come out crisp; a pitch under 1.2 mm blurs on a 0.4 mm nozzle.
 

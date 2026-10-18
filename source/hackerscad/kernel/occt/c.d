@@ -64,6 +64,7 @@ hc_shape* hc_wrap_tool(const(hc_shape)* s, int face, const(hc_shape)* profile, i
 hc_shape* hc_wrap_direct(const(hc_shape)* s, int face, const(hc_shape)* profile, int project, const(double)* at, const(double)* dir, double floor);
 int hc_spots(const(hc_shape)* s, int n, double margin, double* buf);
 int hc_wrap_skipped();
+hc_shape* hc_wrap_flat(const(hc_shape)* s, int face, double* round_);
 hc_shape* hc_offset_solid(const(hc_shape)* s, double d, int sharp);
 int hc_touching_count(const(hc_shape)* s);
 hc_shape* hc_bridge_touching(const(hc_shape)* s, double r);

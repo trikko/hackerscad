@@ -190,6 +190,8 @@ final class CachingKernel : BrepKernel
 
     int wrapSkipped() => inner.wrapSkipped();
 
+    Brep wrapFlat(Brep s, int face, out double round) => inner.wrapFlat(s, face, round);
+
     Brep threadSleeve(const(double)[] rz, double lead, double length, int sides, double rPoly) =>
         op(key("threadSleeve", rz, lead, length, cast(double) sides, rPoly), inner.threadSleeve(rz, lead, length, sides, rPoly));
     Brep joinCoincident(Brep a, Brep b) => op(key("joinCoincident", a, b), inner.joinCoincident(a, b));

@@ -4186,12 +4186,13 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
     return solidBoolean(it, body, placed.solid, remove ? BoolOp.cut : BoolOp.fuse, a.span);
 }
 
-/// body.knurl(faces.…, kind: "diamond", pitch: 1.6.mm, depth: 0.5.mm): a grip raised on a cylindrical face,
-/// diamonds, straight ridges along the axis or slanted ones, a whole number of them round so the pattern
-/// closes on itself; laid on the face as wrap: does.
+/// body.knurl(faces.…, kind: "diamond", pitch: 1.6.mm, depth: 0.5.mm): a grip raised on a face of any shape,
+/// diamonds, straight ridges along it or slanted ones, laid on the face as wrap: does; round a face that
+/// closes on itself (a cylinder, a vase's side) a whole number of them, so the pattern closes too.
 Value knurlOf(Interp it, ref CallArgs a)
 {
-    import std.math : PI, tan, round, abs;
+    import std.math : PI, tan, round, abs, floor, ceil;
+    import std.algorithm : max;
     auto k = it.kernel;
     auto x = Args(it, a, "knurl", ["solid", "face", "kind", "pitch", "depth", "angle", "margin"]);
     auto body = x.solid("solid");
@@ -4199,24 +4200,62 @@ Value knurlOf(Interp it, ref CallArgs a)
     if (idx.length != 1)
         throw new HcadError(Code.type, format("knurl needs exactly one face, the selector matched %d", idx.length),
             x.spanOf("face"));
-    CylinderInfo cyl;
-    if (!k.faceCylinder(nonEmpty(body, a.span), idx[0], cyl))
-        throw new HcadError(Code.type, "knurl goes on a cylindrical face (a knob's side, a handle)", x.spanOf("face"));
     immutable kind = x.has("kind") ? x.get("kind").s : "diamond";
     if (!["diamond", "straight", "diagonal"].canFind(kind))
         throw new HcadError(Code.type, "the knurl is \"diamond\", \"straight\" or \"diagonal\"", x.spanOf("kind"));
     immutable depth = x.lenOr("depth", 0.5), margin = x.lenOr("margin", 0.5), slant = x.angleOr("angle", 30 * PI / 180);
     if (!(depth > 0) || margin < 0 || !(slant > 0 && slant < PI / 2))
         throw new HcadError(Code.type, "knurl: depth above 0, margin not below 0, angle between 0 and 90°", a.span);
-    immutable double round_ = 2 * PI * cyl.radius, high = abs(cyl.to - cyl.from) - 2 * margin;
-    if (!(high > 0) || cyl.span < 2 * PI - 1e-6)
-        throw new HcadError(Code.type, "knurl goes on a whole cylinder, all round, taller than twice its margin",
-            x.spanOf("face"));
-    // a whole number of them round: the pattern closes on itself where the face does
-    immutable n = cast(int) round(round_ / x.lenOr("pitch", 1.6));
-    if (n < 6)
-        throw new HcadError(Code.type, "knurl: the pitch leaves fewer than 6 round the face", x.spanOf("pitch"));
-    immutable double p = round_ / n, rise = p / tan(slant);
+    immutable pitch = x.lenOr("pitch", 1.6);
+
+    // where the cells go: the face unrolled flat as wrap: lays a profile on it, `margin` in from its edges;
+    // round a face that closes on itself, the length once round (a hair less, so the pattern does not
+    // run onto itself where it closes), and margin in from the edges it has
+    Brep region;
+    double round_ = 0;
+    CylinderInfo cyl;
+    if (k.faceCylinder(nonEmpty(body, a.span), idx[0], cyl) && cyl.span >= 2 * PI - 1e-6)
+    {
+        round_ = 2 * PI * cyl.radius;
+        immutable high = abs(cyl.to - cyl.from) - 2 * margin;
+        if (!(high > 0))
+            throw new HcadError(Code.type, "knurl: the face is not taller than twice its margin", x.spanOf("face"));
+        region = k.rect(round_ - 1e-3, high);
+    }
+    else
+    {
+        Brep flat;
+        try
+            flat = k.wrapFlat(body.brep, idx[0], round_);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, "knurl: the face cannot be unrolled: " ~ e.msg, x.spanOf("face"));
+        if (round_ > 0)
+        {
+            immutable fb = k.bbox(flat);
+            immutable high = fb.size.y - 2 * margin;
+            if (!(high > 0))
+                throw new HcadError(Code.type, "knurl: the face is not taller than twice its margin", x.spanOf("face"));
+            region = k.translate(k.rect(round_ - 1e-3, high), Vec3(0, fb.center.y, 0));
+        }
+        else
+        {
+            try
+                region = margin > 0 ? k.profileOffset(flat, -margin) : flat;
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, "knurl: the face is too small for its margin", x.spanOf("face"));
+        }
+    }
+    immutable rb = k.bbox(region);
+    // a whole number of them round a face that closes on itself: the pattern closes where the face does
+    int n = 0;
+    if (round_ > 0)
+    {
+        n = cast(int) round(round_ / pitch);
+        if (n < 6)
+            throw new HcadError(Code.type, "knurl: the pitch leaves fewer than 6 round the face", x.spanOf("pitch"));
+    }
+    immutable double p = round_ > 0 ? round_ / n : pitch, rise = p / tan(slant);
+    immutable double yc = rb.center.y, high = rb.size.y;
     Brep tile;
     double[2][2] step;
     final switch (kind)
@@ -4227,26 +4266,31 @@ Value knurlOf(Interp it, ref CallArgs a)
         step = [[p, 0], [p / 2, rise / 2]];
         break;
     case "straight":
-        tile = k.polygon([-p / 4, -high, p / 4, -high, p / 4, high, -p / 4, high]);
+        tile = k.polygon([-p / 4, yc - high, p / 4, yc - high, p / 4, yc + high, -p / 4, yc + high]);
         step = [[p, 0], [0, 4 * high]];
         break;
     case "diagonal":
         {
-            // a ridge leaning at the angle from the axis
+            // a ridge leaning at the angle from the face's length
             immutable double lean = 2 * high * tan(slant);
-            tile = k.polygon([-p / 4 - lean / 2, -high, p / 4 - lean / 2, -high, p / 4 + lean / 2, high,
-                -p / 4 + lean / 2, high]);
+            tile = k.polygon([-p / 4 - lean / 2, yc - high, p / 4 - lean / 2, yc - high, p / 4 + lean / 2, yc + high,
+                -p / 4 + lean / 2, yc + high]);
             step = [[p, 0], [0, 4 * high]];
             break;
         }
     }
-    // the cells over the face, a hair less than once round, cut at the ends
-    auto region = k.rect(round_ - 1e-3, high);
+    // the cells over the region, a lattice from the anchor, cut at the region's edges
+    immutable reachJ = kind == "diamond" ? cast(long) ceil(max(abs(rb.min.y), abs(rb.max.y)) / (rise / 2)) + 2 : 0;
+    immutable reachI = cast(long) ceil(max(abs(rb.min.x), abs(rb.max.x)) / p) + reachJ / 2 + 4;
     double[] place;
-    immutable reachI = cast(long)(round_ / p) + 4, reachJ = kind == "diamond" ? cast(long)(high / rise) * 2 + 4 : 1;
     foreach (i; -reachI .. reachI + 1)
         foreach (j; -reachJ .. reachJ + 1)
-            place ~= [0.0, i * step[0][0] + j * step[1][0], i * step[0][1] + j * step[1][1], 1.0];
+        {
+            immutable px = i * step[0][0] + j * step[1][0], py = i * step[0][1] + j * step[1][1];
+            if (px < rb.min.x - p || px > rb.max.x + p)
+                continue;
+            place ~= [0.0, px, py, 1.0];
+        }
     Brep cells;
     try
         cells = k.tiles([tile], place, region, 1, 0);

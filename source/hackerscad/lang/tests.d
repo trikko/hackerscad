@@ -4822,8 +4822,18 @@ unittest
     expectOut("auto c = cylinder(d: 30.mm, h: 20.mm); auto k = c.knurl(faces.largest); "
         ~ "writeln(abs(k.bbox.size.x - 31.mm) < 0.01.mm, \" \", k.volume > c.volume, \" \", k.isValid, \" \", "
         ~ "c.knurl(faces.largest, kind: \"straight\").volume > c.volume);", "true true true true");
-    expectErr("box(10.mm, 10.mm, 10.mm).knurl(faces.top);", Code.type);
     expectErr("cylinder(d: 30.mm, h: 20.mm).knurl(faces.largest, kind: \"wavy\");", Code.type);
+    // any other face: a flat one (raised inside its outline, the margin in from it) and the side of a
+    // loft through rings, which closes round on itself
+    expectOut("auto b = box(30.mm, 20.mm, 5.mm); auto k = b.knurl(faces.top, margin: 2.mm); "
+        ~ "writeln(abs(k.bbox.size.z - 5.5.mm) < 0.01.mm, \" \", abs(k.bbox.size.x - 30.mm) < 0.01.mm, \" \", "
+        ~ "k.volume > b.volume, \" \", k.isValid);", "true true true true");
+    expectOut("Vec3[][] rings; foreach (i; 0 .. 7) { Vec3[] r; foreach (j; 0 .. 60) "
+        ~ "r ~= vec((25.mm + i * 1.mm) * cos(j * 6.deg) * 1.4, (25.mm + i * 1.mm) * sin(j * 6.deg), i * 5.mm); "
+        ~ "rings ~= [r]; } auto v = loft(rings); "
+        ~ "auto k = v.knurl(faces.largest, kind: \"diagonal\", margin: 3.mm); "
+        ~ "writeln(k.volume > v.volume, \" \", k.isValid, \" \", abs(k.bbox.size.z - 30.mm) < 0.01.mm);",
+        "true true true");
 }
 
 unittest
