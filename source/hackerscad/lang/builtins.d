@@ -4396,22 +4396,54 @@ Value onCurvedFace(Interp it, ref CallArgs a, ref Args x, SolidVal body, bool re
                 ~ "not be laid on the face (a sliver, a tiny arc) and %s left out", what, n, n == 1 ? "was" : "were"),
                 a.span);
     }
-    if (environment.get("HCAD_WRAP_DIRECT", "1") != "0")
-    try
-    {
-        auto r = k.wrapDirect(nonEmpty(body, a.span), idx[0], nonEmpty(p, a.span), project, at, dir,
-            remove ? -depth : depth);
-        skipped();
-        return Value.of(derived(it, r, [body, p], fn, a.span));
-    }
-    catch (KernelException e)
-    {
-        // why the direct way was not taken, for whoever works on it
-        if (environment.get("HCAD_WRAP_DEBUG"))
-            it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, e.msg, a.span);
-    }
     // a little beyond the face on the side away from the material, so the two do not share a surface
     immutable over = 0.01;
+    if (environment.get("HCAD_WRAP_DIRECT", "1") != "0")
+    {
+        // the regions that run off the face (a cell of a tiling cut at its edge, a letter over it) take
+        // the boolean way on their own, the rest built at once: one region off the face no longer sends
+        // them all the slow way
+        try
+        {
+            int regions;
+            auto off = k.wrapOutside(nonEmpty(body, a.span), idx[0], nonEmpty(p, a.span), project, at, dir,
+                remove ? -depth : depth, regions);
+            if (off.length > 0 && off.length < regions)
+            {
+                int[] on;
+                foreach (i; 0 .. regions)
+                    if (!off.canFind(i))
+                        on ~= i;
+                auto r = k.wrapDirect(body.brep, idx[0], k.profileRegions(p.brep, on), project, at, dir,
+                    remove ? -depth : depth);
+                skipped();
+                auto tool = k.wrapTool(body.brep, idx[0], k.profileRegions(p.brep, off), project, at, dir,
+                    remove ? -depth : -over, remove ? over : depth);
+                skipped();
+                auto parts = k.solids(tool);
+                auto joined = remove ? k.cutAll(r, parts) : k.fuseAll(r ~ parts);
+                return Value.of(derived(it, joined, [body, p], fn, a.span));
+            }
+        }
+        catch (KernelException e)
+        {
+            if (environment.get("HCAD_WRAP_DEBUG"))
+                it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, "split: " ~ e.msg, a.span);
+        }
+        try
+        {
+            auto r = k.wrapDirect(nonEmpty(body, a.span), idx[0], nonEmpty(p, a.span), project, at, dir,
+                remove ? -depth : depth);
+            skipped();
+            return Value.of(derived(it, r, [body, p], fn, a.span));
+        }
+        catch (KernelException e)
+        {
+            // why the direct way was not taken, for whoever works on it
+            if (environment.get("HCAD_WRAP_DEBUG"))
+                it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, e.msg, a.span);
+        }
+    }
     Brep tool;
     try
         tool = k.wrapTool(nonEmpty(body, a.span), idx[0], nonEmpty(p, a.span), project, at, dir,

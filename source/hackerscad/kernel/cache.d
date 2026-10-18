@@ -192,6 +192,12 @@ final class CachingKernel : BrepKernel
 
     Brep wrapFlat(Brep s, int face, out double round) => inner.wrapFlat(s, face, round);
 
+    int[] wrapOutside(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double floor, out int regions) =>
+        inner.wrapOutside(s, face, profile, project, at, dir, floor, regions);
+
+    Brep profileRegions(Brep profile, const(int)[] which) =>
+        op(key("profileRegions", profile, which.map!(i => cast(double) i).array), inner.profileRegions(profile, which));
+
     Brep threadSleeve(const(double)[] rz, double lead, double length, int sides, double rPoly) =>
         op(key("threadSleeve", rz, lead, length, cast(double) sides, rPoly), inner.threadSleeve(rz, lead, length, sides, rPoly));
     Brep joinCoincident(Brep a, Brep b) => op(key("joinCoincident", a, b), inner.joinCoincident(a, b));

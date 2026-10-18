@@ -316,6 +316,11 @@ interface BrepKernel
     /// Face `face` of `s` unrolled flat as wrapTool lays a profile on it at its default place: its outline
     /// and holes, a profile on XY; `round` the length once round it when it closes round on itself, else 0.
     Brep wrapFlat(Brep s, int face, out double round);
+    /// Which regions of `profile` (by their order) run off face `face` of `s`, laid as wrapDirect lays them;
+    /// `regions` how many it has. An exception when the face takes no direct wrap at all.
+    int[] wrapOutside(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double floor, out int regions);
+    /// The regions of a profile chosen by their order, as one profile.
+    Brep profileRegions(Brep profile, const(int)[] which);
     /// Copies of the flat `motifs`, each placed by four numbers in `place` (which motif, dx, dy, a scale
     /// about its origin), as one profile; mode 1 cut to `region` (the pieces cut off smaller than `minArea`
     /// left out), mode 2 only those wholly inside it.

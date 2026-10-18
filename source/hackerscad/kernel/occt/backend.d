@@ -258,6 +258,25 @@ final class OcctKernel : BrepKernel
 
     Brep wrapFlat(Brep s, int face, out double round) => wrap(hc_wrap_flat(h(s), face, &round), "wrap");
 
+    int[] wrapOutside(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double floor, out int regions)
+    {
+        double[3] a = [at.x, at.y, at.z], d = [dir.x, dir.y, dir.z];
+        int n;
+        auto buf = new int[](4096);
+        immutable got = hc_wrap_outside(h(s), face, h(profile), project, a.ptr, d.ptr, floor, buf.ptr, cast(int) buf.length, &n);
+        check(got >= 0, "wrap");
+        regions = n;
+        if (got > buf.length)
+        {
+            buf.length = got;
+            hc_wrap_outside(h(s), face, h(profile), project, a.ptr, d.ptr, floor, buf.ptr, got, &n);
+        }
+        return buf[0 .. got];
+    }
+
+    Brep profileRegions(Brep profile, const(int)[] which) =>
+        wrap(hc_profile_regions(h(profile), which.ptr, cast(int) which.length), "regions");
+
     Brep threadSleeve(const(double)[] rz, double lead, double length, int sides, double rPoly) =>
         wrap(hc_thread_sleeve(rz.ptr, cast(int)(rz.length / 2), lead, length, sides, rPoly), "thread");
     Brep joinCoincident(Brep a, Brep b) => wrap(hc_join_coincident(h(a), h(b)), "union");

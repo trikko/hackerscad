@@ -2362,9 +2362,19 @@ static int g_wrap_skipped = 0;
 // How many regions the last hc_wrap_tool left out, broken.
 int hc_wrap_skipped(void) { return g_wrap_skipped; }
 
+// What wrap_impl was asked, beyond its arguments: flat, the face unrolled (*round the length round it);
+// outside, which regions of the profile are not wholly inside the face, nothing built (*classified set
+// once it has gone through them all)
+struct WrapAsk {
+    double *round = nullptr;
+    std::vector<int> *outside = nullptr;
+    bool *classified = nullptr;
+};
+
 static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
-                           const double *dir, double inner, double outer, bool direct, double *flat = nullptr)
+                           const double *dir, double inner, double outer, bool direct, WrapAsk ask = WrapAsk())
 {
+    double *flat = ask.round;
     g_wrap_skipped = 0;
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         const auto &m = map_of(s, TopAbs_FACE);
@@ -2973,7 +2983,9 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             std::vector<TopoDS_Face> extra, patches, patchesFar;
             double expected = 0;
             const auto regionFaces = faces_of(profile->shape);
+            int regionIndex = -1;
             for (const TopoDS_Face &pf : regionFaces) {
+                regionIndex++;
                 const auto loops = loopsOf(pf);
                 // where on the face's own parameters: turned back, then by whole periods into its bounds
                 double du = band ? 0 : turned;
@@ -2989,14 +3001,23 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     if (period > 0)
                         du += period * std::round(((fu0 + fu1) / 2 - (a0 + a1) / 2) / period);
                 }
+                bool within = true;
                 for (auto &loop : loops)
                     for (auto &c2 : loop)
-                        for (int k = 0; k < 24; k++) {
+                        for (int k = 0; k < 24 && within; k++) {
                             const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 24);
                             if (inside.Perform(gp_Pnt2d(q.X() + du, q.Y())) != TopAbs_IN
                                 || (through && insideFar->Perform(q) != TopAbs_IN))
-                                throw Standard_Failure("direct: a region is not wholly inside the face");
+                                within = false;
                         }
+                if (ask.outside) {
+                    // only which regions run off the face
+                    if (!within)
+                        ask.outside->push_back(regionIndex);
+                    continue;
+                }
+                if (!within)
+                    throw Standard_Failure("direct: a region is not wholly inside the face");
                 // a floor in the material (a pocket) or out of it (a relief); through, the middle of the wall:
                 // the segment from the face to it, at points round the outline, crosses no face of the
                 // solid (the face itself where it starts aside), so it lies on the face's inner side for a
@@ -3075,6 +3096,10 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 GProp_GProps g;
                 BRepGProp::SurfaceProperties(pf, g);
                 expected += g.Mass() * (through ? thick : std::abs(inner));
+            }
+            if (ask.outside) {
+                *ask.classified = true;
+                return nullptr;
             }
             if (!holed.IsDone())
                 throw Standard_Failure("direct: the holes could not be made in the face");
@@ -3281,7 +3306,46 @@ hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, i
 hc_shape *hc_wrap_flat(const hc_shape *s, int face, double *round_)
 {
     const double nan3[3] = {NAN, NAN, NAN}, zero3[3] = {0, 0, 0};
-    return wrap_impl(s, face, nullptr, 0, nan3, zero3, 0, 0, false, round_);
+    WrapAsk ask;
+    ask.round = round_;
+    return wrap_impl(s, face, nullptr, 0, nan3, zero3, 0, 0, false, ask);
+}
+
+// Which regions of `profile` (by their order among its faces) the direct wrap would find not wholly inside
+// face `face` of `s`, laid as hc_wrap_direct lays them: up to `max` of them in `out`, how many there are;
+// *regions how many regions the profile has. -1 (and an error) when the face takes no direct wrap at all.
+int hc_wrap_outside(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
+                    const double *dir, double floor, int *out, int max, int *regions)
+{
+    std::vector<int> outside;
+    bool classified = false;
+    WrapAsk ask;
+    ask.outside = &outside;
+    ask.classified = &classified;
+    wrap_impl(s, face, profile, project, at, dir, floor, 0, true, ask);
+    if (!classified)
+        return -1;
+    *regions = (int)faces_of(profile->shape).size();
+    for (int i = 0; i < (int)outside.size() && i < max; i++)
+        out[i] = outside[i];
+    return (int)outside.size();
+}
+
+// The regions of a profile chosen by their order among its faces, as one profile.
+hc_shape *hc_profile_regions(const hc_shape *profile, const int *which, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const auto faces = faces_of(profile->shape);
+        std::vector<TopoDS_Shape> picked;
+        for (int i = 0; i < n; i++) {
+            if (which[i] < 0 || which[i] >= (int)faces.size())
+                throw Standard_Failure("no such region");
+            picked.push_back(faces[which[i]]);
+        }
+        if (picked.empty())
+            throw Standard_Failure("no region chosen");
+        return wrap(compound_of(picked));
+    });
 }
 
 // Up to n points inside the flat faces of `s` (in any plane), at least `margin` from their edges, as far

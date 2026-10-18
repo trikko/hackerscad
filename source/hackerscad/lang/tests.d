@@ -4695,7 +4695,11 @@ unittest
         ~ "@part Solid sleeve() => loft([circle(d: 40.mm), circle(d: 50.mm).move(z: 60.mm)])"
         ~ ".shell(open: faces.top + faces.bottom, thickness: 2.mm)"
         ~ ".cut(rect(90.mm, 30.mm).tiles(kind: \"voronoi\", size: 9.mm, gap: 2.mm, round: 1.mm, relax: 2), "
-        ~ "wrap: faces.largest, depth: 4.mm);\n";
+        ~ "wrap: faces.largest, depth: 4.mm);\n"
+        // cells running off the face at its top and bottom: those the boolean way, the rest at once
+        ~ "@part Solid edged() => cylinder(d: 40.mm, h: 30.mm)"
+        ~ ".cut(rect(100.mm, 40.mm).tiles(kind: \"voronoi\", size: 7.mm, gap: 1.2.mm, round: 0.8.mm, relax: 2), "
+        ~ "wrap: faces.largest, depth: 1.mm);\n";
     double[] volumes(string direct)
     {
         auto before = environment.get("HCAD_WRAP_DIRECT");
@@ -4719,7 +4723,7 @@ unittest
         return v;
     }
     auto direct = volumes("1"), boolean = volumes("0");
-    foreach (i; 0 .. 4)
+    foreach (i; 0 .. 5)
         assert(abs(direct[i] - boolean[i]) < 1e-3 * 1000, format("%s: %s %s", i, direct[i], boolean[i]));
 }
 
