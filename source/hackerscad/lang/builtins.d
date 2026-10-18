@@ -3847,6 +3847,26 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
             b = k.rotate(b, axis, angle);
         return k.translate(b, o);
     });
+    // a boss on a face with the whole body behind that face's plane: it can touch the body only
+    // there, so it is joined by hand (that face holed, the two sewn), ten times quicker than the
+    // fuse on a body of many faces; anything else, and a profile not inside the face, the fuse
+    if (!remove && taper >= 0 && body.brep !is null)
+    {
+        immutable bb = k.bbox(body.brep);
+        double ahead = -double.infinity;
+        foreach (i; 0 .. 8)
+        {
+            immutable q = Vec3(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z);
+            ahead = max(ahead, (q - o).dot(az));
+        }
+        if (ahead <= 1e-7 * (1 + bb.size.length))
+            try
+                return Value.of(derived(it, k.joinTouching(body.brep, placed.solid.brep), [body, placed.solid], "union",
+                    a.span));
+            catch (KernelException)
+            {
+            }
+    }
     return solidBoolean(it, body, placed.solid, remove ? BoolOp.cut : BoolOp.fuse, a.span);
 }
 
