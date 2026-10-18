@@ -4661,3 +4661,13 @@ unittest
     expectErr("cylinder(r: 5.mm, h: 10.mm).cut(rect(4.mm, 4.mm), wrap: faces.largest, on: faces.top, depth: 1.mm);",
         Code.type);
 }
+
+unittest
+{
+    // a hole with ribs: wider than the tap hole, narrower than the screw's wall; a rib towards -Y
+    // (none opposite it), and none in the lead at the top
+    expectOut("import hardware; auto h = hole(M3, 10.mm, \"ribs\"); "
+        ~ "writeln(h.volume > PI * 1.25 ^^ 2 * 10 * 1.mm ^^ 3 && h.volume < PI * 1.65 ^^ 2 * 10 * 1.mm ^^ 3, \" \", "
+        ~ "h.contains(vec(0.mm, -1.4.mm, -5.mm)), \" \", h.contains(vec(0.mm, 1.4.mm, -5.mm)), \" \", "
+        ~ "h.contains(vec(0.mm, -1.4.mm, -0.3.mm)));", "true false true true");
+}

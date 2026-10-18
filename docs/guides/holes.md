@@ -28,7 +28,7 @@ import hardware : M3, hole, nutTrap, screw, nut, washer;
 
 All in millimetres; `nut` is across the flats (the spanner size). The other fields are `d` (nominal diameter), `pitch` (coarse), `key` (the hex key), `washer` (its outer diameter) and `name` (`"M3"`). Insert sizes vary between makers: check the one you bought, and write its hole as `cylinder(d: …)` if it differs.
 
-## hole(): the five kinds
+## hole(): the six kinds
 
 `hole(screw, depth, kind)` is a tool: a solid shaped like the hole, made to be subtracted from the part. Its top is at z = 0 and it goes down `depth`, so move it to the face it opens on:
 
@@ -77,6 +77,7 @@ Solid block()
 | `"insert"` | the hole of a heat-set insert (a brass sleeve threaded inside, pressed in with a soldering iron), `insert` wide and `insertDepth` deep, and below it a `tap` hole down to `depth` for the screw's tip | |
 | `"counterbore"` | a wider step at the top, room for a socket head to sit below the surface (`head` + 0.6 mm wide, `headHeight` + 0.2 mm deep), then the clearance hole down to `depth` | |
 | `"countersink"` | a cone at the top, for a flat (conical) head to sit flush: a 90° cone from `clearance` to 2.24 `d` + 0.3 mm across (an ISO 10642 flat head, 6.72 mm for M3, sits a little below the face), then the clearance hole | |
+| `"ribs"` | a hole the screw passes freely, with three ribs along it, 120° apart, reaching in to the `tap` size: the screw cuts its thread in the ribs only (below) | |
 
 Any other kind is an error. The depth is always the whole depth from z = 0: a counterbore of `depth` 10 mm is 10 mm deep, the head's seat included. For a hole all the way through, give the thickness of the wall; `hole()` already reaches 0.01 mm past the top, so the cut is clean.
 
@@ -264,6 +265,31 @@ Solid selfTapper() => screw(ST2_9, 9.5.mm, head: "pan")
 ```
 
 ![A boss with the hole for an ST2.9 self-tapping screw](img/holes-self-tapping.png)
+
+### Ribs instead of a thread
+
+A plain `tap` hole makes the screw cut its thread all the way round: for small screws that takes force, and can split a thin wall. With `"ribs"` the hole is wide enough for the screw, and three narrow ribs along it, 120° apart, are all the screw has to cut: it forms its thread in them as it goes in, holds well, and goes in easily. For small screws it works better than a printed thread, which comes out too fine.
+
+One rib points to −Y. In a wall, cut with `on:` a face (whose frame has y going up), that is the rib at the bottom, which prints best when the hole lies sideways; the other two lean over it at 120°. The ribs start 0.6 mm in from the face, so the screw's tip finds the hole before it has to cut.
+
+<!-- render: holes-ribs --from front --look-at 0,-2,6 --size 14 --cut -->
+```d
+// an M3 hole with ribs across a wall, printed lying
+// down: one rib at the bottom, two above it
+
+import hardware : M3, hole;
+
+@part("Sky Pop")
+Solid wall()
+{
+    auto w = box(20.mm, 8.mm, 12.mm, center: true)
+        .move(z: 6.mm);
+    return w.cut(hole(M3, 8.mm, "ribs"),
+        on: faces.farthest(-Y));
+}
+```
+
+![An M3 hole with three ribs, one at the bottom](img/holes-ribs.png)
 
 ## Aluminium extrusions and T-nuts
 

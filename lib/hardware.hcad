@@ -152,7 +152,12 @@ Solid washer(Screw s) => cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.cle
 /// A hole to subtract, with its top on z = 0 going down `depth`:
 /// "clearance" (the screw passes), "tap" (pilot hole for the thread),
 /// "insert" (heat-set insert), "counterbore" (clearance with room for the
-/// head) or "countersink" (for flat heads).
+/// head), "countersink" (for flat heads) or "ribs": a hole the screw passes
+/// with three ribs along it, 120° apart, that the screw cuts its thread into
+/// as it goes in (better than a printed thread for small screws, and than a
+/// plain tap hole: less material to cut, so less force and no split wall).
+/// One rib points to -Y: on a wall (where a face's frame has y up) it is the
+/// bottom one, which prints best; the ribs start 0.6 mm in, a lead for the tip.
 Solid hole(Screw s, Length depth, string kind = "clearance", string head = "socket")
 {
     switch (kind)
@@ -173,13 +178,27 @@ Solid hole(Screw s, Length depth, string kind = "clearance", string head = "sock
             return cylinder(d: wide + 0.6.mm, h: hd.h + 0.2.mm).move(z: -hd.h - 0.2.mm)
                 + cylinder(d: s.clearance, h: depth).move(z: -depth);
         }
+    case "ribs":
+        {
+            // the wall clear of the crests; the ribs reach in to the tap size
+            immutable wall = s.d / 2 + 0.15.mm;
+            immutable w = max(0.8.mm, 0.35 * s.d);
+            immutable lead = min(0.6.mm, depth / 4);
+            Solid[] ribs;
+            foreach (k; 0 .. 3)
+                ribs ~= cylinder(d: w, h: depth)
+                    .move(y: -(s.tap / 2 + w / 2), z: -depth - lead)
+                    .rotate(z: k * 120);
+            return cylinder(r: wall, h: depth + 0.01.mm).move(z: -depth)
+                - ribs;
+        }
     case "countersink":
         // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
         return cone(d1: s.clearance, d2: 2.24 * s.d + 0.3.mm, h: (2.24 * s.d + 0.3.mm - s.clearance) / 2)
             .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
             + cylinder(d: s.clearance, h: depth).move(z: -depth);
     default:
-        assert(false, "hole kind must be clearance, tap, insert, counterbore or countersink, not " ~ kind);
+        assert(false, "hole kind must be clearance, tap, insert, counterbore, countersink or ribs, not " ~ kind);
     }
 }
 
