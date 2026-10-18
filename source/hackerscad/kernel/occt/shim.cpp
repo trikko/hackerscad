@@ -3908,6 +3908,121 @@ hc_shape *hc_fill(const hc_shape *path, const hc_shape *s, const int *idx, int n
     });
 }
 
+// PERFORMANCE TEST (not used by the language): a thread band cut to z = 0 ..
+// length without a boolean. Each ruled face of the band rises linearly in its
+// parameters (two helices of one lead, a straight ruling between them), so
+// the planes z = 0 and z = length are straight lines across its rectangle of
+// parameters: the rectangle is clipped as a polygon, the faces inside kept as
+// they are, the ones across rebuilt from the clipped polygon, the two caps
+// made from the new edges, all sewn.
+static std::vector<std::array<double, 2>> clip_poly(const std::vector<std::array<double, 2>> &poly,
+                                                    double a, double b, double c, double keepAbove)
+{
+    // keeps a + b u + c v >= keepAbove
+    std::vector<std::array<double, 2>> out;
+    const size_t m = poly.size();
+    for (size_t i = 0; i < m; i++) {
+        const auto &P = poly[i], &Q = poly[(i + 1) % m];
+        const double fp = a + b * P[0] + c * P[1] - keepAbove, fq = a + b * Q[0] + c * Q[1] - keepAbove;
+        if (fp >= 0)
+            out.push_back(P);
+        if ((fp >= 0) != (fq >= 0)) {
+            const double t = fp / (fp - fq);
+            out.push_back({P[0] + t * (Q[0] - P[0]), P[1] + t * (Q[1] - P[1])});
+        }
+    }
+    return out;
+}
+
+hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<std::pair<double, double>> rz;
+        for (int i = 0; i < n; i++)
+            rz.push_back({rzIn[2 * i], rzIn[2 * i + 1]});
+        const double z = -2 * lead;
+        const int turns = (int)std::ceil(length / lead) + 4;
+        std::vector<std::vector<TopoDS_Edge>> e(n);
+        for (int i = 0; i < n; i++)
+            for (int k = 0; k <= turns; k++)
+                e[i].push_back(helix_turn(rz[i].first, z + rz[i].second, lead, k, 0));
+        BRepBuilderAPI_Sewing sew(1e-5);
+        std::vector<TopoDS_Edge> bottom, top;
+        const double eps = 1e-9;
+        for (int k = 0; k < turns; k++)
+            for (int i = 0; i < n; i++) {
+                const TopoDS_Edge &e1 = e[i][k], &e2 = i + 1 < n ? e[i + 1][k] : e[0][k + 1];
+                // the z range of the face: its helices' ends
+                double f1, l1, f2, l2;
+                Handle(Geom_Curve) c1 = BRep_Tool::Curve(e1, f1, l1), c2 = BRep_Tool::Curve(e2, f2, l2);
+                const double zlo = std::min(c1->Value(f1).Z(), c2->Value(f2).Z()),
+                             zhi = std::max(c1->Value(l1).Z(), c2->Value(l2).Z());
+                if (zhi <= 0 || zlo >= length)
+                    continue;   // wholly outside
+                TopoDS_Face face = BRepFill::Face(e1, e2);
+                if (zlo >= 0 && zhi <= length) {
+                    sew.Add(face);   // wholly inside: as it is
+                    continue;
+                }
+                Handle(Geom_Surface) S = BRep_Tool::Surface(face);
+                double u0, u1, v0, v1;
+                BRepTools::UVBounds(face, u0, u1, v0, v1);
+                // z = a + b u + c v, from three corners
+                const double z00 = S->Value(u0, v0).Z(), z10 = S->Value(u1, v0).Z(), z01 = S->Value(u0, v1).Z();
+                const double b = (z10 - z00) / (u1 - u0), c = (z01 - z00) / (v1 - v0), a = z00 - b * u0 - c * v0;
+                std::vector<std::array<double, 2>> poly = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
+                poly = clip_poly(poly, a, b, c, 0);
+                poly = clip_poly(poly, -a, -b, -c, -length);
+                if (poly.size() < 3)
+                    continue;
+                BRepBuilderAPI_MakeWire wire;
+                for (size_t q = 0; q < poly.size(); q++) {
+                    const auto &P = poly[q], &Q = poly[(q + 1) % poly.size()];
+                    const gp_Pnt2d p2(P[0], P[1]), q2(Q[0], Q[1]);
+                    if (p2.Distance(q2) < eps)
+                        continue;
+                    Handle(Geom2d_Line) l = new Geom2d_Line(p2, gp_Dir2d(Q[0] - P[0], Q[1] - P[1]));
+                    TopoDS_Edge ed = BRepBuilderAPI_MakeEdge(l, S, 0, p2.Distance(q2)).Edge();
+                    BRepLib::BuildCurves3d(ed, 1e-7);
+                    wire.Add(ed);
+                    // an edge on a cutting plane: for that cap
+                    const double zp = a + b * P[0] + c * P[1], zq = a + b * Q[0] + c * Q[1];
+                    if (std::abs(zp) < 1e-7 && std::abs(zq) < 1e-7)
+                        bottom.push_back(ed);
+                    else if (std::abs(zp - length) < 1e-7 && std::abs(zq - length) < 1e-7)
+                        top.push_back(ed);
+                }
+                BRepBuilderAPI_MakeFace mf(S, wire.Wire());
+                if (!mf.IsDone())
+                    throw Standard_Failure("a clipped face could not be made");
+                ShapeFix_Face fix(mf.Face());
+                fix.Perform();
+                sew.Add(fix.Face());
+            }
+        for (auto *cap : {&bottom, &top}) {
+            auto wires = joined_wires(*cap, 1e-5);
+            if (wires.size() != 1)
+                throw Standard_Failure(("a cap's edges make " + std::to_string(wires.size()) + " loops").c_str());
+            BRepBuilderAPI_MakeFace mf(wires[0], Standard_True);
+            if (!mf.IsDone())
+                throw Standard_Failure("a cap could not be made");
+            sew.Add(mf.Face());
+        }
+        sew.Perform();
+        BRepBuilderAPI_MakeSolid ms;
+        for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next())
+            ms.Add(TopoDS::Shell(ex.Current()));
+        TopoDS_Shape r = ms.Solid();
+        GProp_GProps g;
+        BRepGProp::VolumeProperties(r, g);
+        if (g.Mass() < 0)
+            r.Reverse();
+        if (sew.NbFreeEdges() > 0)
+            throw Standard_Failure("the direct thread's faces do not close");
+        return primitive(r);
+    });
+}
+
 // The plane of a flat path: false when it is not flat (or a straight line).
 static bool path_plane(const TopoDS_Shape &w, gp_Pln &pln)
 {

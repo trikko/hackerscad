@@ -113,6 +113,10 @@ final class OcctKernel : BrepKernel
         wrap(hc_helix_tapered(r, pitch, height, left, taper), "helix");
     Brep isoThread(double d, double pitch, double length, double chamfer) =>
         wrap(hc_iso_thread(d, pitch, length, chamfer), "thread");
+    /// The performance test's thread cut to length without a boolean (see perftest.d).
+    Brep threadDirect(const(double)[] rz, double lead, double length) =>
+        wrap(hc_thread_direct(rz.ptr, cast(int)(rz.length / 2), lead, length), "direct thread");
+
     Brep threadBand(const(double)[] rz, double lead, double length, double slope) =>
         wrap(hc_thread_band(rz.ptr, cast(int)(rz.length / 2), lead, length, slope), "thread");
     Brep gridSolid(const(Vec3)[] pts, int rings, int per) =>
