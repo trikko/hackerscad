@@ -4859,14 +4859,25 @@ unittest
 {
     mixin(slowTest);
     import std.process : environment;
-    // a thread through a hole made as a sleeve joined by hand (the default) and the boolean way: the same solid,
-    // right and left handed, two starts, with and without the countersink
+    // a thread in a hole made as a sleeve joined by hand (the default) and the boolean way: the same solid,
+    // right and left handed, two starts, with and without the countersink, through and blind, its length
+    // or shorter
     immutable model = "@part Solid a() => (polygon(6, d: 19.mm, fit: \"sides\").extrude(10.mm) "
         ~ "- cylinder(d: 10.3.mm, h: 30.mm, center: true)).thread(faces.largest, \"M12\", clearance: 0.2.mm);\n"
         ~ "@part Solid b() => (cylinder(d: 34.mm, h: 16.mm) - cylinder(d: 17.3.mm, h: 40.mm, center: true))"
         ~ ".thread(faces.filter(f => f.area < 1000.mm * 1.mm && f.area > 800.mm * 1.mm), \"M20\", left: true, chamfer: false);\n"
         ~ "@part Solid c() => (box(30.mm, 30.mm, 12.mm) - cylinder(d: 12.mm, h: 40.mm, center: true))"
-        ~ ".thread(faces.filter(f => f.area < 500.mm * 1.mm && f.area > 400.mm * 1.mm), \"Tr14x3\", starts: 2);\n";
+        ~ ".thread(faces.filter(f => f.area < 500.mm * 1.mm && f.area > 400.mm * 1.mm), \"Tr14x3\", starts: 2);\n"
+        // shorter than the hole, and in blind holes: the sleeve's end on its pocket's floor; each cut in
+        // half after, a boolean on what the join left
+        ~ "Solid threaded(bool blind, Length length) { auto hole = blind ? cylinder(d: 6.8.mm, h: 16.mm).move(z: 10.mm) "
+        ~ ": cylinder(d: 6.8.mm, h: 27.mm).move(z: -1.mm); auto b = box(30.mm, 30.mm, 25.mm) - hole; "
+        ~ "auto wall = faces.filter(f => f.area > 200.mm * 1.mm && f.area < 600.mm * 1.mm); "
+        ~ "return length > 0.mm ? b.thread(wall, \"M8\", length: length) : b.thread(wall, \"M8\"); }\n"
+        ~ "Solid half(Solid s) => s - box(60.mm, 60.mm, 60.mm).move(y: -30.mm, z: -5.mm);\n"
+        ~ "@part Solid d() => half(threaded(false, 10.mm)).move(x: 100.mm);\n"
+        ~ "@part Solid e() => half(threaded(true, 0.mm)).move(x: 140.mm);\n"
+        ~ "@part Solid f() => half(threaded(true, 8.mm)).move(x: 180.mm);\n";
     double[] volumes(string sleeve)
     {
         auto before = environment.get("HCAD_THREAD_SLEEVE");
@@ -4890,6 +4901,6 @@ unittest
         return v;
     }
     auto sleeve = volumes("1"), boolean = volumes("0");
-    foreach (i; 0 .. 3)
+    foreach (i; 0 .. 6)
         assert(abs(sleeve[i] - boolean[i]) < 1e-3 * boolean[i], format("%s: %s %s", i, sleeve[i], boolean[i]));
 }

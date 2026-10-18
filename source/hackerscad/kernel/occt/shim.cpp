@@ -5567,8 +5567,9 @@ hc_shape *hc_thread_sleeve(const double *rz, int n, double lead, double length, 
 }
 
 // `a` and `b` joined by hand where they touch over whole flat faces lying on each other (a sleeve in a
-// hole of its shape): those faces of both left out, the rest sewn into one solid. An error where they do
-// not so touch, or the result is not sound.
+// hole of its shape): those faces of both left out, a face of b lying within one of a's taken out of it
+// (a short sleeve's end on its pocket's floor), the rest sewn into one solid. An error where they do not
+// so touch, or the result is not sound.
 hc_shape *hc_join_coincident(const hc_shape *a, const hc_shape *b)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -5611,12 +5612,124 @@ hc_shape *hc_join_coincident(const hc_shape *a, const hc_shape *b)
                     break;
                 }
         }
-        if (pairs == 0)
-            throw Standard_Failure("the two do not touch over whole flat faces");
+        // a flat face of b lying within a's faces in its plane (a short sleeve's end on the floor of its
+        // pocket, the round hole going on below; a blind hole's floor, which the pocket left in two): those
+        // faces of a, one, less b's, b's left out
+        std::vector<std::vector<TopoDS_Shape>> replaced(fa.size());
+        for (size_t j = 0; j < fb.size(); j++) {
+            if (dropB[j] || !ib[j].flat)
+                continue;
+            // points along b's edges, and the middle of its parameters if inside it
+            std::vector<gp_Pnt> pts;
+            for (TopExp_Explorer e(fb[j], TopAbs_EDGE); e.More(); e.Next()) {
+                BRepAdaptor_Curve cv(TopoDS::Edge(e.Current()));
+                for (int k = 0; k < 4; k++)
+                    pts.push_back(cv.Value(cv.FirstParameter() + (cv.LastParameter() - cv.FirstParameter()) * (k + 0.5) / 4));
+            }
+            // a's faces in its plane that it lies over in part
+            std::vector<size_t> under;
+            for (size_t i = 0; i < fa.size(); i++) {
+                if (dropA[i] || !ia[i].flat || std::abs(std::abs(ib[j].n.Dot(ia[i].n)) - 1) > 1e-9)
+                    continue;
+                const gp_Pln pa = BRepAdaptor_Surface(fa[i]).Plane();
+                if (pa.Distance(ib[j].c) > 1e-6)
+                    continue;
+                BRepClass_FaceClassifier cls;
+                bool over = false;
+                for (auto &q : pts) {
+                    cls.Perform(fa[i], q, 1e-6);
+                    if (cls.State() == TopAbs_IN) {
+                        over = true;
+                        break;
+                    }
+                }
+                if (over)
+                    under.push_back(i);
+            }
+            if (under.empty())
+                continue;
+            // those faces as one
+            TopoDS_Face target = fa[under[0]];
+            if (under.size() > 1) {
+                std::vector<TopoDS_Shape> parts;
+                for (auto i : under)
+                    parts.push_back(fa[i]);
+                ShapeUpgrade_UnifySameDomain one(compound_of(parts), Standard_True, Standard_True, Standard_False);
+                one.Build();
+                std::vector<TopoDS_Face> merged = faces_of(one.Shape());
+                if (merged.size() != 1)
+                    continue;
+                target = merged[0];
+            }
+            // b wholly within them
+            bool within = true;
+            BRepClass_FaceClassifier cls;
+            for (auto &q : pts) {
+                cls.Perform(target, q, 1e-6);
+                if (cls.State() == TopAbs_OUT) {
+                    within = false;
+                    break;
+                }
+            }
+            if (!within)
+                continue;
+            std::vector<TopoDS_Shape> rest;
+            // the two outlines the same (a sleeve's end and the floor of its pocket): what is left is made of
+            // b's own edges, those round its holes the outlines, and the holes of a's face within them holes
+            // again; the edges b shares with its other faces so stay shared
+            const gp_Pln pa = BRepAdaptor_Surface(target).Plane();
+            const TopoDS_Wire outA = BRepTools::OuterWire(target), outB = BRepTools::OuterWire(fb[j]);
+            GProp_GProps la, lb;
+            BRepGProp::LinearProperties(outA, la);
+            BRepGProp::LinearProperties(outB, lb);
+            if (std::abs(la.Mass() - lb.Mass()) < 1e-6 * (1 + la.Mass()) && la.CentreOfMass().Distance(lb.CentreOfMass()) < 1e-6) {
+                for (TopExp_Explorer w(fb[j], TopAbs_WIRE); w.More(); w.Next()) {
+                    const TopoDS_Wire wb = TopoDS::Wire(w.Current());
+                    if (wb.IsSame(outB))
+                        continue;
+                    BRepBuilderAPI_MakeFace mf(pa, wb, Standard_True);
+                    if (!mf.IsDone())
+                        break;
+                    ShapeFix_Face around(mf.Face());
+                    around.FixOrientation();
+                    around.Perform();
+                    const TopoDS_Face island = around.Face();
+                    BRepClass_FaceClassifier inIsland;
+                    for (TopExp_Explorer wa(target, TopAbs_WIRE); wa.More(); wa.Next()) {
+                        if (wa.Current().IsSame(outA))
+                            continue;
+                        TopExp_Explorer v(wa.Current(), TopAbs_VERTEX);
+                        if (!v.More())
+                            continue;
+                        inIsland.Perform(island, BRep_Tool::Pnt(TopoDS::Vertex(v.Current())), 1e-6);
+                        if (inIsland.State() == TopAbs_IN)
+                            mf.Add(TopoDS::Wire(wa.Current()));
+                    }
+                    ShapeFix_Face fixed(mf.Face());
+                    fixed.FixOrientation();
+                    fixed.Perform();
+                    rest.push_back(fixed.Face());
+                }
+            }
+            if (rest.empty()) {
+                BRepAlgoAPI_Cut cut(target, fb[j]);
+                if (!cut.IsDone())
+                    continue;
+                for (TopExp_Explorer f(cut.Shape(), TopAbs_FACE); f.More(); f.Next())
+                    rest.push_back(f.Current());
+            }
+            for (auto i : under)
+                dropA[i] = true;
+            replaced[under[0]] = rest;
+            dropB[j] = true;
+        }
         BRepBuilderAPI_Sewing sew(1e-5);
-        for (size_t i = 0; i < fa.size(); i++)
+        for (size_t i = 0; i < fa.size(); i++) {
             if (!dropA[i])
                 sew.Add(fa[i]);
+            for (auto &r : replaced[i])
+                sew.Add(r);
+        }
         for (size_t j = 0; j < fb.size(); j++)
             if (!dropB[j])
                 sew.Add(fb[j]);

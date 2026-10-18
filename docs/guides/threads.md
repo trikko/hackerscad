@@ -229,7 +229,7 @@ Solid block() => (box(20.mm, 20.mm, 15.mm)
 
 ## Keeping it quick
 
-A thread on a shaft is built straight from its faces and joined to the part by hand, with no boolean on its helical faces; so is a thread through a hole: a hole of a few flat sides is cut round it, and a sleeve, flat outside and threaded inside, built from its faces, is sewn in where its flat sides lie on the hole's. Both are two to ten times quicker than cutting the thread with a boolean, and the same solid. Tapered threads, blind holes and threads shorter than their hole are cut the boolean way.
+A thread on a shaft is built straight from its faces and joined to the part by hand, with no boolean on its helical faces; so is a thread in a hole, through or blind, as long as the hole or shorter: a pocket of a few flat sides is cut round it, and a sleeve, flat outside and threaded inside, built from its faces, is sewn in where its flat sides lie on the pocket's, its end on the pocket's floor. Both are two to ten times quicker than cutting the thread with a boolean, and the same solid. Tapered threads are cut the boolean way.
 
 ## Printing threads
 

@@ -4707,10 +4707,10 @@ Value threadFace(Interp it, ref CallArgs a)
     // threads and holes the boolean way (HCAD_THREAD_DIRECT=0 always so, to compare)
     import std.process : environment;
     bool direct = outside && t.taper == 0 && environment.get("HCAD_THREAD_DIRECT", "1") != "0";
-    // a straight thread through a hole: a sleeve built straight from its faces (HCAD_THREAD_SLEEVE=0 never, to
-    // compare); blind and tapered holes, and threads shorter than the hole, the boolean way
-    immutable trySleeve = !outside && t.taper == 0 && sink == 0 && len >= faceLen - 1e-6
-        && environment.get("HCAD_THREAD_SLEEVE", "1") != "0";
+    // a straight thread in a hole, through or blind, as long as it or shorter: a sleeve built straight from
+    // its faces, its end closed by its own face (the reach into the material, sink, is for the boolean
+    // way's tool); HCAD_THREAD_SLEEVE=0 never, to compare; tapered threads the boolean way
+    immutable trySleeve = !outside && t.taper == 0 && environment.get("HCAD_THREAD_SLEEVE", "1") != "0";
     // the screw that fits, cut into the wall
     Brep holeTool()
     {
@@ -4820,7 +4820,10 @@ Value threadFace(Interp it, ref CallArgs a)
         // wall, as the boolean leaves them. The profile, one pitch of corners, is cut at r = the hole's radius,
         // a corner put where an edge crosses it
         {
-            immutable rh = c.radius;
+            // where the sleeve ends inside the part (a short thread, a blind hole) the crests stop 0.01 mm
+            // short of the hole's wall: lying on it, the floor between them and the round hole going on
+            // would be a face of no width along them, and booleans after it fail
+            immutable rh = c.radius + (sink > 0 ? 0.01 : 0);
             double[] cut;
             immutable m = rz.length / 2;
             foreach (i; 0 .. m)
@@ -4839,7 +4842,7 @@ Value threadFace(Interp it, ref CallArgs a)
             if (cut.length >= 6)
                 rz = cut;
         }
-        // the fewest sides whose flats clear the thread's crests by 0.5 mm and whose corners stay in the part        // the fewest sides whose flats clear the thread's crests by 0.5 mm and whose corners stay in the part
+        // the fewest sides whose flats clear the thread's crests by 0.5 mm and whose corners stay in the part
         foreach (sides; [3, 4, 6, 8, 12])
         {
             immutable rPoly = (dd / 2 + 0.5) / cos(PI / sides);
@@ -4876,10 +4879,23 @@ Value threadFace(Interp it, ref CallArgs a)
                 if (chamfer)
                     joined = k.boolean(joined, placed(k.translate(k.cone(dd / 2 - h, dd / 2 + 0.01 + 0.01, h + 0.01),
                         Vec3(0, 0, len - h))), BoolOp.cut);
+                if (environment.get("HCAD_THREAD_DEBUG"))
+                {
+                    import std.stdio : stderr;
+                    stderr.writefln("sleeve: %s sides, length %s of %s", sides, len, faceLen);
+                }
                 return Value.of(derived(it, joined, [body], "thread", a.span));
             }
-            catch (KernelException)
+            catch (KernelException e)
+            {
+                // why the sleeve was not taken, for whoever works on it
+                if (environment.get("HCAD_THREAD_DEBUG"))
+                {
+                    import std.stdio : stderr;
+                    stderr.writefln("sleeve failed: %s", e.msg);
+                }
                 break;
+            }
         }
         // no sleeve: the boolean way
         try
