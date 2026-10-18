@@ -46,6 +46,7 @@
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <OSD_ThreadPool.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <BRepCheck_Shell.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -280,6 +281,13 @@ void hc_workaround(int which, int on)
 }
 
 int hc_history_size(void) { return (int)g_history.size(); }
+
+// The threads of OpenCascade's pool, which its parallel booleans and meshing share.
+void hc_set_threads(int n)
+{
+    if (n >= 1)
+        OSD_ThreadPool::DefaultPool()->Init(n);
+}
 
 void hc_history_get(int *input, int *index)
 {

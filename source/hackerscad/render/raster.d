@@ -273,7 +273,38 @@ private Image render(const Shaded[] items, const Prepared[] prepared, Shot shot,
             Vec3 light(Vec3 n) => viewLighting(n, cam.eye, base);
             Vec3 overhangLight(Vec3 n) => viewLighting(n, cam.eye, Vec3(230, 64, 51));
             Vec3 thinLight(Vec3 n) => viewLighting(n, cam.eye, Vec3(148, 92, 224));
-            if (it.faces.triangleCount)
+            if (it.faces.triangleCount && !see && it.colors.length == 0)
+            {
+                // smooth inside each face, as in the 3D view; an opaque part drawn in horizontal bands,
+                // one a thread (--threads, HCAD_THREADS), each going through every triangle in the
+                // same order: the picture is the same as drawn in one go
+                import std.parallelism : parallel, taskPool;
+                import std.range : iota;
+                auto f = it.faces;
+                auto normals = prepared[i].normals;
+                auto scr = new Vec3[f.vertexCount];
+                foreach (v; 0 .. f.vertexCount)
+                    scr[v] = toScreen(f.vertex(v));
+                immutable bands = max(1, taskPool.size + 1);
+                immutable rows = (c.h + bands - 1) / bands;
+                foreach (band; parallel(iota(bands), 1))
+                {
+                    auto cb = c;
+                    cb.rowStart = cast(uint)(band * rows);
+                    cb.rowEnd = cast(uint) min(c.h, (band + 1) * rows);
+                    foreach (t; 0 .. f.triangleCount)
+                    {
+                        auto ia = f.tris[t * 3], ib = f.tris[t * 3 + 1], ic = f.tris[t * 3 + 2];
+                        immutable lo = min(scr[ia].y, scr[ib].y, scr[ic].y), hi = max(scr[ia].y, scr[ib].y, scr[ic].y);
+                        if (hi < cb.rowStart || lo >= cb.rowEnd)
+                            continue;
+                        immutable mark = t < it.marks.length ? it.marks[t] : 0;
+                        cb.triangle(scr[ia], scr[ib], scr[ic], normals[ia], normals[ib], normals[ic],
+                            mark ? (mark == 1 ? &overhangLight : &thinLight) : &light, alpha, mark, 10.0 * ss);
+                    }
+                }
+            }
+            else if (it.faces.triangleCount)
             {
                 // smooth inside each face, as in the 3D view
                 auto f = it.faces;
@@ -330,7 +361,9 @@ Image renderSheet(const Shaded[] items, const Shot[] shots, uint cell, uint colu
     Image sheet = Image(cell * columns, cell * rows, new ubyte[cell * columns * cell * rows * 3]);
     sheet.rgb[] = 255;
     auto prepared = prepare(items);
-    foreach (i, v; shots)
+    // each view on its own canvas, side by side on the threads there are (--threads, HCAD_THREADS)
+    import std.parallelism : parallel;
+    foreach (i, v; parallel(shots.dup, 1))
     {
         auto img = render(items, prepared, v, cell, cell);
         immutable cx = cast(uint)(i % columns) * cell, cy = cast(uint)(i / columns) * cell;
@@ -548,6 +581,9 @@ public struct Canvas
     /// how far behind what is drawn a see-through face still shows: one lying on an opaque face
     /// (a reference part resting on the floor of another) would otherwise show in stripes
     float seeThroughBias = 0;
+    /// the rows drawn into, `rowStart` to `rowEnd` (all of them unless set): a band of the image,
+    /// several of which are drawn at once on their threads
+    uint rowStart = 0, rowEnd = uint.max;
 
     this(uint w, uint h)
     {
@@ -578,13 +614,17 @@ public struct Canvas
         if (abs(area) < 1e-12)
             return;
         immutable xs = max(0, cast(int) floor(min(a.x, b.x, c.x))), xe = min(cast(int) w - 1, cast(int) ceil(max(a.x, b.x, c.x)));
-        immutable ys = max(0, cast(int) floor(min(a.y, b.y, c.y))), ye = min(cast(int) h - 1, cast(int) ceil(max(a.y, b.y, c.y)));
+        immutable ys = max(cast(int) rowStart, cast(int) floor(min(a.y, b.y, c.y))),
+            ye = min(cast(int) min(h, rowEnd) - 1, cast(int) ceil(max(a.y, b.y, c.y)));
+        // the barycentric weights step along a row by constants: one division a triangle, not two a pixel
+        immutable inv = 1 / area, step0 = (b.y - c.y) * inv, step1 = (c.y - a.y) * inv;
         foreach (y; ys .. ye + 1)
-            foreach (x; xs .. xe + 1)
+        {
+            immutable py = y + 0.5, px0 = xs + 0.5;
+            double w0 = ((b.x - px0) * (c.y - py) - (b.y - py) * (c.x - px0)) * inv;
+            double w1 = ((c.x - px0) * (a.y - py) - (c.y - py) * (a.x - px0)) * inv;
+            for (int x = xs; x <= xe; x++, w0 += step0, w1 += step1)
             {
-                immutable px = x + 0.5, py = y + 0.5;
-                immutable w0 = ((b.x - px) * (c.y - py) - (b.y - py) * (c.x - px)) / area;
-                immutable w1 = ((c.x - px) * (a.y - py) - (c.y - py) * (a.x - px)) / area;
                 immutable w2 = 1 - w0 - w1;
                 if (w0 < 0 || w1 < 0 || w2 < 0)
                     continue;
@@ -605,6 +645,7 @@ public struct Canvas
                 if (alpha >= 1)
                     depth[i] = z;
             }
+        }
     }
 
     /// alpha < 1 blends over what is there, without hiding what comes later.
@@ -614,13 +655,17 @@ public struct Canvas
         if (abs(area) < 1e-12)
             return;
         immutable xs = max(0, cast(int) floor(min(a.x, b.x, c.x))), xe = min(cast(int) w - 1, cast(int) ceil(max(a.x, b.x, c.x)));
-        immutable ys = max(0, cast(int) floor(min(a.y, b.y, c.y))), ye = min(cast(int) h - 1, cast(int) ceil(max(a.y, b.y, c.y)));
+        immutable ys = max(cast(int) rowStart, cast(int) floor(min(a.y, b.y, c.y))),
+            ye = min(cast(int) min(h, rowEnd) - 1, cast(int) ceil(max(a.y, b.y, c.y)));
+        // the barycentric weights step along a row by constants: one division a triangle, not two a pixel
+        immutable inv = 1 / area, step0 = (b.y - c.y) * inv, step1 = (c.y - a.y) * inv;
         foreach (y; ys .. ye + 1)
-            foreach (x; xs .. xe + 1)
+        {
+            immutable py = y + 0.5, px0 = xs + 0.5;
+            double w0 = ((b.x - px0) * (c.y - py) - (b.y - py) * (c.x - px0)) * inv;
+            double w1 = ((c.x - px0) * (a.y - py) - (c.y - py) * (a.x - px0)) * inv;
+            for (int x = xs; x <= xe; x++, w0 += step0, w1 += step1)
             {
-                immutable px = x + 0.5, py = y + 0.5;
-                immutable w0 = ((b.x - px) * (c.y - py) - (b.y - py) * (c.x - px)) / area;
-                immutable w1 = ((c.x - px) * (a.y - py) - (c.y - py) * (a.x - px)) / area;
                 immutable w2 = 1 - w0 - w1;
                 if (w0 < 0 || w1 < 0 || w2 < 0)
                     continue;
@@ -632,6 +677,7 @@ public struct Canvas
                 if (alpha >= 1)
                     depth[i] = z;
             }
+        }
     }
 
     /// The opaque parts' edges, laid over the image where they are sparse and

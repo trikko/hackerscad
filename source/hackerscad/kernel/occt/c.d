@@ -25,6 +25,7 @@ enum HC_WORKAROUND_MESH_DIVIDE = 0, HC_WORKAROUND_SHELL_STRATEGIES = 1, HC_WORKA
     HC_WORKAROUND_OFFSET_TOLERANCE = 4,
     HC_WORKAROUND_FILL_CHORDS = 5;
 void hc_workaround(int which, int on);
+void hc_set_threads(int n);
 
 int hc_history_size();
 void hc_history_get(int* input, int* index);

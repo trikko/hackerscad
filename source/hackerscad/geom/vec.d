@@ -27,13 +27,15 @@ struct Vec3
         return i == 0 ? x : i == 1 ? y : z;
     }
 
-    double dot(Vec3 o) const => x * o.x + y * o.y + z * o.z;
+    // inline wherever they are used (ldc does not inline across modules otherwise): the renderer
+    // and the mesh code call them millions of times
+    pragma(inline, true) double dot(Vec3 o) const => x * o.x + y * o.y + z * o.z;
 
-    Vec3 cross(Vec3 o) const => Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x);
+    pragma(inline, true) Vec3 cross(Vec3 o) const => Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x);
 
-    double length() const => sqrt(dot(this));
+    pragma(inline, true) double length() const => sqrt(dot(this));
 
-    Vec3 normalized() const
+    pragma(inline, true) Vec3 normalized() const
     {
         immutable l = length;
         return l > 0 ? this / l : this;

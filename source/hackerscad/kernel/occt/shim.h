@@ -31,6 +31,7 @@ enum { HC_WORKAROUND_MESH_DIVIDE = 0, HC_WORKAROUND_SHELL_STRATEGIES = 1, HC_WOR
     HC_WORKAROUND_MESH_VOLUME = 3, HC_WORKAROUND_OFFSET_TOLERANCE = 4,
     HC_WORKAROUND_FILL_CHORDS = 5 };
 void hc_workaround(int which, int on);
+void hc_set_threads(int n);
 
 /* Face history of the last operation on this thread: for every face of the
  * result, the operand it comes from (0 = first, 1 = second) and its face

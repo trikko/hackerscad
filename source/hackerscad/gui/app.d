@@ -434,6 +434,16 @@ int main(string[] args)
         _putenv_s("XDG_DATA_DIRS", toStringz(dirs.length ? share ~ ";" ~ dirs : share));
         _putenv_s("GSETTINGS_SCHEMA_DIR", toStringz(buildPath(share, "glib-2.0", "schemas")));
     }
+    {
+        // --threads N (or HCAD_THREADS): how many threads OpenCascade and the program use
+        import hackerscad.parallel : threadsFromArgs;
+        if (auto problem = threadsFromArgs(args))
+        {
+            import std.stdio : stderr;
+            stderr.writeln("hackerscad: ", problem);
+            return 2;
+        }
+    }
     // --help, -h: the options, without opening a window
     foreach (a; args[1 .. $])
         if (a == "--help" || a == "-h")
@@ -445,6 +455,7 @@ int main(string[] args)
                 ~ "  --theme=light|dark|system   for this run only\n"
                 ~ "  --size=WIDTHxHEIGHT  the window that big\n"
                 ~ "  --screenshot=FILE.png  save the window after the first evaluation, then quit\n"
+                ~ "  --threads=N          threads for the heavy work (default: every CPU; also HCAD_THREADS)\n"
                 ~ "  -h, --help           this text\n\n"
                 ~ "The command line tool is hcad (hcad --help); the guides: hcad docs --guide.");
             return 0;
