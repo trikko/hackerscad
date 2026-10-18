@@ -37,6 +37,7 @@ shared static this()
         "snaps": import("snaps.hcad"),
         "enclosures": import("enclosures.hcad"),
         "joints": import("joints.hcad"),
+        "molds": import("molds.hcad"),
         "carlo": import("carlo.hcad"),
     ];
 }
@@ -3168,15 +3169,7 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
                         immutable margin = x.lenOr("margin", 0);
                         Brep b = nonEmpty(s, a.span);
                         Value[] r;
-                        if (margin > 0)
-                        {
-                            // nothing that far from the edges: no points
-                            try
-                                b = it.kernel.profileOffset(b, -margin);
-                            catch (KernelException)
-                                return Value.of(r);
-                        }
-                        foreach (q; it.kernel.spots(b, n))
+                        foreach (q; it.kernel.spots(b, n, margin))
                             r ~= Value.vector(q, 3, Dim.length);
                         return Value.of(r);
                     });

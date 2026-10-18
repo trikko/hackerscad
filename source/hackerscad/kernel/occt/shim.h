@@ -82,7 +82,7 @@ hc_shape *hc_cut_all(const hc_shape *a, const hc_shape *const *tools, int n);
 hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, int n, const hc_shape *region, int mode, double minArea);
 hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at, const double *dir, double inner, double outer);
 hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at, const double *dir, double floor);
-int hc_spots(const hc_shape *s, int n, double *out);
+int hc_spots(const hc_shape *s, int n, double margin, double *out);
 int hc_wrap_skipped(void);
 hc_shape *hc_offset_solid(const hc_shape *s, double d, int sharp);
 int hc_touching_count(const hc_shape *s);

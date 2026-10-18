@@ -2939,13 +2939,31 @@ hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, i
     return wrap_impl(s, face, profile, project, at, dir, floor, 0, true);
 }
 
-// Up to n points inside the flat faces of `s` (in any plane), as far apart from each other as they can
-// be: a grid of points over each face kept where it lies inside, then the one farthest from their
+// Up to n points inside the flat faces of `s` (in any plane), at least `margin` from their edges, as far
+// apart from each other as they can be: a grid of points over each face kept where it lies inside, then the one farthest from their
 // middle, the one farthest from it, and so on, each the farthest from those chosen. x y z of each in
 // `out` (room for 3 n); how many there are.
-int hc_spots(const hc_shape *s, int n, double *out)
+int hc_spots(const hc_shape *s, int n, double margin, double *out)
 {
     return guarded<>(-1, [&]() -> int {
+        // the edges as points close together, to keep the candidates `margin` from them all
+        std::vector<gp_Pnt> rim;
+        if (margin > 0) {
+            const double step = std::max(margin / 6, 0.05);
+            for (TopExp_Explorer e(s->shape, TopAbs_EDGE); e.More(); e.Next()) {
+                BRepAdaptor_Curve c(TopoDS::Edge(e.Current()));
+                const double len = GCPnts_AbscissaPoint::Length(c);
+                const int k = std::max(2, (int)std::ceil(len / step));
+                for (int i = 0; i <= k; i++)
+                    rim.push_back(c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * i / k));
+            }
+        }
+        auto clear = [&](const gp_Pnt &q) {
+            for (const gp_Pnt &r : rim)
+                if (q.SquareDistance(r) < margin * margin)
+                    return false;
+            return true;
+        };
         std::vector<gp_Pnt> cand;
         for (const TopoDS_Face &f : faces_of(s->shape)) {
             double u0, u1, v0, v1;
@@ -2956,8 +2974,11 @@ int hc_spots(const hc_shape *s, int n, double *out)
             for (int i = 0; i <= g; i++)
                 for (int j = 0; j <= g; j++) {
                     const gp_Pnt2d q(u0 + (u1 - u0) * i / g, v0 + (v1 - v0) * j / g);
-                    if (inside.Perform(q) == TopAbs_IN)
-                        cand.push_back(surf.Value(q.X(), q.Y()));
+                    if (inside.Perform(q) == TopAbs_IN) {
+                        const gp_Pnt p = surf.Value(q.X(), q.Y());
+                        if (clear(p))
+                            cand.push_back(p);
+                    }
                 }
         }
         if (cand.empty() || n < 1)

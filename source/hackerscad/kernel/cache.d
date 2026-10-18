@@ -186,7 +186,7 @@ final class CachingKernel : BrepKernel
         op(key("wrapDirect", s, cast(double) face, profile, cast(double) project, at, dir, floor),
             inner.wrapDirect(s, face, profile, project, at, dir, floor));
 
-    Vec3[] spots(Brep s, int n) => inner.spots(s, n);
+    Vec3[] spots(Brep s, int n, double margin) => inner.spots(s, n, margin);
 
     int wrapSkipped() => inner.wrapSkipped();
 

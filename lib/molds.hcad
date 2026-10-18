@@ -1,0 +1,94 @@
+module molds;
+
+/// The two halves of a mold, where they go and laid for printing.
+struct Mold
+{
+    Solid a;        /// the half behind the parting plane (against its normal), with the keys and the seal
+    Solid b;        /// the half in front of it, with the pour hole and the vents
+    Solid aPrint;   /// a on its outer face on z = 0, the parting face up
+    Solid bPrint;   /// b the same
+}
+
+/// A two-part mold to cast `object` in (silicone, resin, plaster): a block
+/// `wall` thick round it, cut along the parting plane `at`, the object's
+/// shape hollow inside. The plane should cross the object where it is widest,
+/// so each half lets go of the cast.
+///
+/// - `keys` cones on a's parting face and their sockets in b's line the halves
+///   up (where the face has room, as far apart as they can be), `clearance`
+///   apart;
+/// - a seal round the cavity, a ridge `seal` high on a and its groove in b,
+///   keeps the liquid from creeping out between the halves (0.mm: none);
+/// - a pour hole `sprue` wide with a funnel, and `vents` thin channels for the
+///   air, go up through b from the cavity's highest points (along the plane's
+///   normal: put that side up when pouring).
+///
+/// Both halves print with the parting face up, on their outer faces
+/// (`aPrint`, `bPrint`): the keys and the seal stand up, the sockets and the
+/// groove open upwards, with no supports.
+Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length sprue = 6.mm, int vents = 2,
+    Length seal = 0.8.mm, Length clearance = 0.15.mm)
+{
+    immutable n = at.normal;
+    auto bb = object.bbox;
+    auto block = box(bb.size.x + 2 * wall, bb.size.y + 2 * wall, bb.size.z + 2 * wall)
+        .move(x: bb.center.x, y: bb.center.y, z: bb.min.z - wall)
+        .fillet(edges.parallel(Z), r: wall / 2);
+    auto sides = (block - object).halves(at);
+    Solid a = sides.below, b = sides.above;
+
+    // the keys: truncated cones, half as high as they are wide at the foot, on the parting face round
+    // the cavity, clear of the edges and of the seal
+    immutable kd = clamp(0.35 * wall, 3.mm, 8.mm), kh = kd / 2;
+    auto key = cone(d1: kd, d2: kd / 2, h: kh) + cylinder(d: kd, h: 0.01.mm).move(z: -0.01.mm);
+    auto socket = cone(d1: kd + 2 * clearance, d2: kd / 2 + 2 * clearance, h: kh + clearance)
+        .move(z: -0.01.mm);
+    auto face = (block - object).section(at);
+    immutable clear = kd / 2 + 1.5.mm + (seal > 0.mm ? 1.5.mm + seal + clearance : 0.mm);
+    Solid[] knobs, holes;
+    auto spots = face.spots(keys, margin: clear);
+    assert(spots.length > 0, "mold: no room for the keys on the parting face: a thicker wall:");
+    foreach (p; spots)
+    {
+        auto here = plane(origin: p, normal: n);
+        knobs ~= key.placeOn(here);
+        holes ~= socket.placeOn(here);
+    }
+    a = a + fuse(knobs);
+    b = b - holes;
+
+    // the seal: a ridge round the cavity, 1.5 mm out from it, as wide as it is high, and its groove
+    if (seal > 0.mm)
+    {
+        auto rim = object.section(at);
+        auto ring = rim.offset(1.5.mm + seal) - rim.offset(1.5.mm);
+        a = a + ring.extrude(seal);
+        b = b - (rim.offset(1.5.mm + seal + clearance) - rim.offset(1.5.mm - clearance))
+            .extrude(seal + clearance);
+    }
+
+    // the pour hole and the vents: from points just under the cavity's top, along the normal, out
+    // through b; the pour hole opens into a funnel at the block's face
+    immutable corners = [vec(bb.min.x, bb.min.y, bb.min.z), vec(bb.max.x, bb.max.y, bb.max.z),
+        vec(bb.min.x, bb.max.y, bb.min.z), vec(bb.max.x, bb.min.y, bb.max.z),
+        vec(bb.min.x, bb.min.y, bb.max.z), vec(bb.max.x, bb.max.y, bb.min.z),
+        vec(bb.min.x, bb.max.y, bb.max.z), vec(bb.max.x, bb.min.y, bb.min.z)];
+    Length top = dot(corners[0], n);
+    foreach (c; corners)
+        top = max(top, dot(c, n));
+    immutable reach = top + wall - dot(at.origin, n);
+    auto near = plane(origin: at.origin + n * (reach - wall - 0.5.mm), normal: n);
+    auto highs = object.section(near).spots(vents + 1, margin: 0.mm);
+    foreach (i, p; highs)
+    {
+        auto here = plane(origin: p, normal: n);
+        immutable length = wall + 1.mm;
+        if (i == 0)
+            b = b - (cylinder(d: sprue, h: length)
+                + cone(d1: sprue, d2: 2 * sprue, h: sprue / 2 + 0.01.mm).move(z: wall + 0.5.mm - sprue / 2))
+                .placeOn(here);
+        else
+            b = b - cylinder(d: 2.mm, h: length).placeOn(here);
+    }
+    return Mold(a, b, a.placeOn(World, from: faces.farthest(-n)), b.placeOn(World, from: faces.farthest(n)));
+}

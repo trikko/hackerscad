@@ -85,7 +85,7 @@ LibLine[][string] libraryLines(out string[] order)
 {
     import hackerscad.tool.outline;
     import hackerscad.lang.builtins : librarySources;
-    order = ["hardware", "threads", "gears", "hinges", "snaps", "enclosures", "joints"];
+    order = ["hardware", "threads", "gears", "hinges", "snaps", "enclosures", "joints", "molds"];
     LibLine[][string] r;
     foreach (lib; order)
     {

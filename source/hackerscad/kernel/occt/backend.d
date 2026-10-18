@@ -243,10 +243,10 @@ final class OcctKernel : BrepKernel
         return wrap(hc_wrap_direct(h(s), face, h(profile), project, a.ptr, d.ptr, floor), "wrap");
     }
 
-    Vec3[] spots(Brep s, int n)
+    Vec3[] spots(Brep s, int n, double margin)
     {
         auto buf = new double[3 * n];
-        immutable got = hc_spots(h(s), n, buf.ptr);
+        immutable got = hc_spots(h(s), n, margin, buf.ptr);
         check(got >= 0, "spots");
         Vec3[] r;
         foreach (i; 0 .. got)

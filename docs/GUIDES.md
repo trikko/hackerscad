@@ -80,6 +80,12 @@ Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`
 
 A part too long for the printer's bed, cut in two pieces that lock together with no screws and no glue, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck and the wedged scarf of Japanese carpentry. Or a part cut into two halves with flat faces, each printed lying on its cut face, joined by flat keys. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
 
+### [Molds for casting](guides/molds.md)
+
+[<img src="guides/img/molds-open.png" width="420" alt="Molds for casting">](guides/molds.md)
+
+A two-part mold to cast copies of a part in silicone, resin or plaster: a block round the part, cut in two along a parting plane, the part's shape hollow inside, with keys that line the halves up, a seal round the cavity so the liquid stays in, and a pour hole with vents for the air. The `molds` library makes it from the part itself.
+
 ### [Parameters, presets and checks](guides/parameters.md)
 
 [<img src="guides/img/parameters-carlo.png" width="420" alt="Parameters, presets and checks">](guides/parameters.md)
