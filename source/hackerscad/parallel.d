@@ -1,21 +1,31 @@
 /// How many threads the heavy work uses: OpenCascade's booleans and meshing
 /// (its thread pool) and hackerscad's own (the views of a picture drawn side
-/// by side). Every CPU unless set: `--threads N` on the command line, or the
-/// environment variable HCAD_THREADS (the window and the MCP server too).
+/// by side). A third of the CPUs unless set: `--threads N` on the command
+/// line, or the environment variable HCAD_THREADS (the window and the MCP
+/// server too). Measured on 10 cores with 2 threads each (20 CPUs), the
+/// quickest were 4 to 12 threads; all 20 were 7% to 31% slower than that
+/// (the two threads of a core share it, and more threads cost more to
+/// coordinate).
 module hackerscad.parallel;
 
 import core.atomic : atomicLoad, atomicStore;
 
 private shared uint chosen;
 
-/// The threads in use: what was set, else every CPU.
+/// The threads in use: what was set, else a third of the CPUs (rounded up).
 uint threadCount()
 {
     immutable n = atomicLoad(chosen);
     if (n > 0)
         return n;
+    return defaultThreads();
+}
+
+/// A third of the CPUs, rounded up: 7 of 20, 6 of 16, 2 of 4, 1 of 2.
+uint defaultThreads()
+{
     import std.parallelism : totalCPUs;
-    return totalCPUs;
+    return (totalCPUs + 2) / 3;
 }
 
 /// Sets the threads for everything that runs in parallel (at least 1).
@@ -53,7 +63,7 @@ string threadsFromArgs(ref string[] args)
     args = rest;
     if (value.length == 0)
     {
-        setThreads(threadCount());
+        setThreads(defaultThreads());
         return null;
     }
     try

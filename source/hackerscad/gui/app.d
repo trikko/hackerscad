@@ -455,7 +455,7 @@ int main(string[] args)
                 ~ "  --theme=light|dark|system   for this run only\n"
                 ~ "  --size=WIDTHxHEIGHT  the window that big\n"
                 ~ "  --screenshot=FILE.png  save the window after the first evaluation, then quit\n"
-                ~ "  --threads=N          threads for the heavy work (default: every CPU; also HCAD_THREADS)\n"
+                ~ "  --threads=N          threads for the heavy work (default: a third of the CPUs; also HCAD_THREADS)\n"
                 ~ "  -h, --help           this text\n\n"
                 ~ "The command line tool is hcad (hcad --help); the guides: hcad docs --guide.");
             return 0;

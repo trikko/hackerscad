@@ -17,7 +17,8 @@ enum usage = `hackerscad — parametric CAD with a D-like language
 usage:
   hcad [--threads N] COMMAND …
       --threads N: how many threads the heavy work uses (booleans, meshing,
-      pictures; default every CPU, also the environment variable HCAD_THREADS)
+      pictures; default a third of the CPUs, also the environment variable
+      HCAD_THREADS)
   hcad render FILE.hcad -o OUT [-o OUT…] [-D name=value…] [--preset NAME] [--part NAME…]
       OUT can be .3mf (one object per part), .stl (one part), .zip (one STL
       per part), .step (one named body per part) or .png (iso view;
