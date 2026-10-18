@@ -4214,12 +4214,26 @@ Value onCurvedFace(Interp it, ref CallArgs a, ref Args x, SolidVal body, bool re
     // first built at once, the face holed and the floors sewn in, with no boolean: quicker, and sound
     // where a boolean against curved faces fails; a region not inside the face takes the boolean way
     import std.process : environment;
+    void skipped()
+    {
+        if (immutable n = k.wrapSkipped())
+            it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("%s: %s of the profile's regions could "
+                ~ "not be laid on the face (a sliver, a tiny arc) and %s left out", what, n, n == 1 ? "was" : "were"),
+                a.span);
+    }
     if (environment.get("HCAD_WRAP_DIRECT", "1") != "0")
     try
-        return Value.of(derived(it, k.wrapDirect(nonEmpty(body, a.span), idx[0], nonEmpty(p, a.span), project, at, dir,
-            remove ? -depth : depth), [body, p], fn, a.span));
-    catch (KernelException)
     {
+        auto r = k.wrapDirect(nonEmpty(body, a.span), idx[0], nonEmpty(p, a.span), project, at, dir,
+            remove ? -depth : depth);
+        skipped();
+        return Value.of(derived(it, r, [body, p], fn, a.span));
+    }
+    catch (KernelException e)
+    {
+        // why the direct way was not taken, for whoever works on it
+        if (environment.get("HCAD_WRAP_DEBUG"))
+            it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, e.msg, a.span);
     }
     // a little beyond the face on the side away from the material, so the two do not share a surface
     immutable over = 0.01;
@@ -4229,9 +4243,7 @@ Value onCurvedFace(Interp it, ref CallArgs a, ref Args x, SolidVal body, bool re
             remove ? -depth : -over, remove ? over : depth);
     catch (KernelException e)
         throw new HcadError(Code.kernel, format("%s: %s", what, e.msg), a.span);
-    if (immutable n = k.wrapSkipped())
-        it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("%s: %s of the profile's regions could not "
-            ~ "be laid on the face (a sliver, a tiny arc) and %s left out", what, n, n == 1 ? "was" : "were"), a.span);
+    skipped();
     auto t = derived(it, tool, [p], fn, a.span);
     t.flat = false;
     // the regions all in one boolean: a fuse with a compound of several leaves them out

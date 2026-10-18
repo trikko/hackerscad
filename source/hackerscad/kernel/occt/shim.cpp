@@ -2584,13 +2584,11 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 const bool rev = e.Orientation() == TopAbs_REVERSED;
                 const bool straight = ac.GetType() == GeomAbs_Line;
                 const double len = GCPnts_AbscissaPoint::Length(ac);
-                // a point every half millimetre of a curve, every millimetre of a line: fewer and the
-                // interpolation swings out round a tight rounding, more make heavier curves and
-                // slower booleans
-                const int n = len < 0.05 ? 1
-                                         : std::max(straight ? 1 : 3,
-                                                    std::min(straight ? 16 : 48,
-                                                             (int)std::ceil(len / (straight ? 1.0 : 0.5))));
+                // points evenly spaced along the whole outline, lines and arcs alike: spaced unevenly
+                // (close on a tight rounding, far on a side) the interpolation swings out past the
+                // rounding and can loop on itself
+                const double step = 0.5;
+                const int n = len < 0.05 ? 1 : std::max(straight ? 1 : 2, (int)std::ceil(len / step));
                 Piece pc;
                 for (int i = 0; i <= n; i++) {
                     const double t = rev ? l - (l - f) * i / n : f + (l - f) * i / n;
@@ -2746,8 +2744,83 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 fu0 = u0 - period / 2;
                 fu1 = u0 + period / 2;
             }
+            // a pocket deeper than the wall: through it, when the wall's other face is this one moved in
+            // by the wall's thickness (a shell's, a tube's) and a band too: that face holed as well with
+            // the same loops (the two surfaces share their parameters), the sides between the two
+            int farFace = 0;
+            double thick = 0;
+            Handle(Geom_Surface) farSurf;
+            TopoDS_Face farBase;
+            if (inner < 0 && band) {
+                gp_Pnt p0;
+                gp_Vec du0, dv0;
+                S->D1(u0, v0, p0, du0, dv0);
+                const gp_Vec n0 = du0.Crossed(dv0).Normalized() * sign;
+                double best = 1e100;
+                for (int i = 1; i <= m.Extent(); i++) {
+                    if (i == face + 1)
+                        continue;
+                    const TopoDS_Face G = TopoDS::Face(m(i));
+                    GeomAPI_ProjectPointOnSurf pr(p0, BRep_Tool::Surface(G));
+                    if (pr.NbPoints() == 0)
+                        continue;
+                    const gp_Vec w(p0, pr.NearestPoint());
+                    const double dist = w.Magnitude();
+                    if (dist < 1e-6 || dist > -inner + 1e-7 || w.Normalized().Dot(-n0) < 0.9999)
+                        continue;
+                    double gu, gv;
+                    pr.LowerDistanceParameters(gu, gv);
+                    if (BRepTopAdaptor_FClass2d(G, 1e-7).Perform(gp_Pnt2d(gu, gv)) != TopAbs_IN)
+                        continue;
+                    if (dist < best) {
+                        best = dist;
+                        farFace = i;
+                    }
+                }
+                if (farFace > 0) {
+                    const TopoDS_Face G = TopoDS::Face(m(farFace));
+                    const Handle(Geom_Surface) gs = BRep_Tool::Surface(G);
+                    const Handle(Geom_Surface) off = offsetSurface(-best);
+                    // the far face must lie on this surface moved in, all round and along it
+                    bool same = true;
+                    for (int i = 0; i < 8 && same; i++)
+                        for (int j = 0; j <= 2 && same; j++) {
+                            const gp_Pnt q = off->Value(u0 - period / 2 + period * i / 8, fv0 + (fv1 - fv0) * j / 2);
+                            GeomAPI_ProjectPointOnSurf pr(q, gs);
+                            same = pr.NbPoints() > 0 && pr.LowerDistance() < 1e-6;
+                        }
+                    // and be a band: its v range on the moved surface from where its edges lie
+                    double gv0 = 1e100, gv1 = -1e100, gu0, gu1, gw0, gw1;
+                    BRepTools::UVBounds(G, gu0, gu1, gw0, gw1);
+                    same = same && std::abs((gu1 - gu0) - period) < 1e-7;
+                    for (TopExp_Explorer e(G, TopAbs_VERTEX); same && e.More(); e.Next()) {
+                        GeomAPI_ProjectPointOnSurf pr(BRep_Tool::Pnt(TopoDS::Vertex(e.Current())), off);
+                        if (pr.NbPoints() == 0) {
+                            same = false;
+                            break;
+                        }
+                        double a, b;
+                        pr.LowerDistanceParameters(a, b);
+                        gv0 = std::min(gv0, b);
+                        gv1 = std::max(gv1, b);
+                    }
+                    if (same && gv1 > gv0) {
+                        thick = best;
+                        farSurf = off;
+                        farBase = BRepBuilderAPI_MakeFace(off, u0 - period / 2, u0 + period / 2, gv0, gv1, 1e-7).Face();
+                    } else
+                        farFace = 0;
+                }
+            }
+            const bool through = farFace > 0;
             BRepTopAdaptor_FClass2d inside(base, 1e-7);
+            std::unique_ptr<BRepTopAdaptor_FClass2d> insideFar;
+            if (through)
+                insideFar.reset(new BRepTopAdaptor_FClass2d(farBase, 1e-7));
             BRepBuilderAPI_MakeFace holed(TopoDS::Face(base.Oriented(TopAbs_FORWARD)));
+            BRepBuilderAPI_MakeFace holedFar;
+            if (through)
+                holedFar.Init(TopoDS::Face(farBase.Oriented(TopAbs_FORWARD)));
             std::vector<TopoDS_Face> extra;
             double expected = 0;
             for (const TopoDS_Face &pf : faces_of(profile->shape)) {
@@ -2770,13 +2843,16 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     for (auto &c2 : loop)
                         for (int k = 0; k < 24; k++) {
                             const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 24);
-                            if (inside.Perform(gp_Pnt2d(q.X() + du, q.Y())) != TopAbs_IN)
+                            if (inside.Perform(gp_Pnt2d(q.X() + du, q.Y())) != TopAbs_IN
+                                || (through && insideFar->Perform(q) != TopAbs_IN))
                                 throw Standard_Failure("direct: a region is not wholly inside the face");
                         }
+                // a floor in the material (a pocket) or out of it (a relief); through, the middle of the wall
+                const Handle(Geom_Surface) probe = through ? offsetSurface(-thick / 2) : floorSurf;
                 for (auto &c2 : loops[0])
                     for (int k = 0; k < 8; k++) {
                         const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 8);
-                        material.Perform(floorSurf->Value(q.X(), q.Y()), 1e-6);
+                        material.Perform(probe->Value(q.X(), q.Y()), 1e-6);
                         if (material.State() != (inner < 0 ? TopAbs_IN : TopAbs_OUT))
                             throw Standard_Failure("direct: a floor does not lie where it should (through the wall?)");
                     }
@@ -2796,6 +2872,16 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     }
                     return (area > 0) == outer ? w : TopoDS::Wire(w.Reversed());
                 };
+                // a sliver whose outline, carried onto the face, crosses itself would break the whole
+                // face it is a hole in: checked on its own first, and left out (counted) if broken
+                {
+                    BRepBuilderAPI_MakeFace alone(holeSurf, turned_(loops[0], wireOn(loops[0], holeSurf, du, nullptr), true),
+                                                  Standard_True);
+                    if (!alone.IsDone() || !BRepCheck_Analyzer(alone.Face()).IsValid()) {
+                        g_wrap_skipped++;
+                        continue;
+                    }
+                }
                 holed.Add(turned_(loops[0], wireOn(loops[0], holeSurf, du, nullptr), false));
                 std::vector<std::vector<TopoDS_Edge>> top(loops.size()), bottom(loops.size());
                 for (size_t i = 0; i < loops.size(); i++)
@@ -2803,28 +2889,42 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 for (size_t i = 1; i < loops.size(); i++)
                     extra.push_back(BRepBuilderAPI_MakeFace(holeSurf, turned_(loops[i], wireOn(loops[i], holeSurf, du, nullptr), true),
                                                             Standard_True).Face());
-                BRepBuilderAPI_MakeFace fl;
-                for (size_t i = 0; i < loops.size(); i++) {
-                    const TopoDS_Wire w = turned_(loops[i], wireOn(loops[i], floorSurf, 0, &bottom[i]), i == 0);
-                    if (i == 0)
-                        fl.Init(floorSurf, Standard_False, 1e-7);
-                    fl.Add(w);
+                if (through) {
+                    // the far face holed by the outline, the islands' far ends faces of their own
+                    holedFar.Add(turned_(loops[0], wireOn(loops[0], farSurf, 0, nullptr), false));
+                    for (size_t i = 0; i < loops.size(); i++)
+                        wireOn(loops[i], farSurf, 0, &bottom[i]);
+                    for (size_t i = 1; i < loops.size(); i++)
+                        extra.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[i], wireOn(loops[i], farSurf, 0, nullptr),
+                                                                true), Standard_True).Face());
+                } else {
+                    BRepBuilderAPI_MakeFace fl;
+                    for (size_t i = 0; i < loops.size(); i++) {
+                        const TopoDS_Wire w = turned_(loops[i], wireOn(loops[i], floorSurf, 0, &bottom[i]), i == 0);
+                        if (i == 0)
+                            fl.Init(floorSurf, Standard_False, 1e-7);
+                        fl.Add(w);
+                    }
+                    extra.push_back(fl.Face());
                 }
-                extra.push_back(fl.Face());
                 for (size_t i = 0; i < loops.size(); i++)
                     for (size_t j = 0; j < top[i].size(); j++)
                         extra.push_back(BRepFill::Face(top[i][j], bottom[i][j]));
                 GProp_GProps g;
                 BRepGProp::SurfaceProperties(pf, g);
-                expected += g.Mass() * std::abs(inner);
+                expected += g.Mass() * (through ? thick : std::abs(inner));
             }
             if (!holed.IsDone())
                 throw Standard_Failure("direct: the holes could not be made in the face");
+            if (through && !holedFar.IsDone())
+                throw Standard_Failure("direct: the holes could not be made in the far face");
             BRepBuilderAPI_Sewing sew(1e-5);
             for (int i = 1; i <= m.Extent(); i++)
-                if (i != face + 1)
+                if (i != face + 1 && i != farFace)
                     sew.Add(m(i));
             sew.Add(holed.Face());
+            if (through)
+                sew.Add(holedFar.Face());
             for (auto &f : extra)
                 sew.Add(f);
             sew.Perform();
