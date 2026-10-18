@@ -11,6 +11,7 @@ public import hackerscad.geom.color;
 import hackerscad.kernel.brep : Brep, EdgeInfo, FaceInfo;
 import hackerscad.lang.errors;
 import hackerscad.lang.ast;
+import hackerscad.lang.symbols;
 
 /// Physical dimension as exponents of length and angle. Values are stored in
 /// millimetres and radians.
@@ -427,6 +428,7 @@ final class StructDef
         string name;
         TypeRef type;
         Expr init;
+        Sym sym_ = noSym;   /// `name`'s number, once looked up (symOf)
     }
 
     ptrdiff_t fieldIndex(string n) const
@@ -444,24 +446,288 @@ struct StructVal
     Value[] fields;
 }
 
+/// A declared type a variable keeps (int n = …), checked again on assignment; `mod` resolves its name.
+struct Typed
+{
+    TypeRef type;
+    ModuleVal mod;
+}
+
+/// The bindings of one scope, found by their names' numbers: a few looked through in a row, many (the
+/// builtins, a module's globals) in a table indexed by the number. Each binding has its value, whether it
+/// is read-only and the type it was declared with. Names as text still work (each turned into its number).
+struct VarMap
+{
+    private static struct Cell
+    {
+        Value value;
+        bool defined;    /// it has a value (read-only can be said of a name before it has one)
+        bool readonly;
+        bool typed;
+        Typed type;
+    }
+
+    private Sym[] keys_;
+    private Cell*[] cells_;     // a cell each, kept where it is (a pointer to a value stays good)
+    private Cell*[] table_;     // by number, once there are more than `small`
+    private size_t count_;
+    private enum small = 8;
+    // the first few bindings in the scope itself (a function's parameters, a loop's variable): a scope
+    // is a class, so they stay where they are, and most scopes allocate nothing more
+    private enum inline = 4;
+    private Cell[inline] inlineCells_;
+    private Sym[inline] inlineKeys_;
+    private Cell*[inline] inlinePtrs_;
+
+    // never copied: its slices point into its own arrays
+    @disable this(this);
+
+    private Cell* cell(Sym s)
+    {
+        if (table_.length)
+            return s < table_.length ? table_[s] : null;
+        foreach (i; 0 .. count_)
+            if (keys_[i] == s)
+                return cells_[i];
+        return null;
+    }
+
+    private Cell* make(Sym s)
+    {
+        if (auto c = cell(s))
+            return c;
+        Cell* c;
+        if (count_ < cells_.length)
+        {
+            // a scope emptied for a loop's next turn: its cells used again
+            c = cells_[count_];
+            *c = Cell.init;
+            keys_[count_] = s;
+        }
+        else if (count_ < inline)
+        {
+            // a scope's first bindings, in the scope (cells_ and keys_ are slices of its own arrays)
+            c = &inlineCells_[count_];
+            inlineKeys_[count_] = s;
+            inlinePtrs_[count_] = c;
+            keys_ = inlineKeys_[0 .. count_ + 1];
+            cells_ = inlinePtrs_[0 .. count_ + 1];
+        }
+        else
+        {
+            c = new Cell;
+            // past the scope's own arrays: copied out onto the heap the first time
+            if (count_ == inline && keys_.ptr is inlineKeys_.ptr)
+            {
+                keys_ = inlineKeys_.dup;
+                cells_ = inlinePtrs_.dup;
+            }
+            cells_ ~= c;
+            keys_ ~= s;
+        }
+        count_++;
+        if (table_.length || count_ > small)
+        {
+            if (!table_.length)
+            {
+                table_ = new Cell*[](symbolCount() + 64);
+                foreach (i; 0 .. count_)
+                    table_[keys_[i]] = cells_[i];
+            }
+            if (s >= table_.length)
+                table_.length = s + 64 > symbolCount() ? s + 64 : symbolCount();
+            table_[s] = c;
+        }
+        return c;
+    }
+
+    /// The value bound to `s`, or null.
+    Value* find(Sym s)
+    {
+        auto c = cell(s);
+        return c !is null && c.defined ? &c.value : null;
+    }
+
+    /// Binds `s` to `v` (read-only and type unchanged).
+    void set(Sym s, Value v)
+    {
+        auto c = make(s);
+        c.value = v;
+        c.defined = true;
+    }
+
+    bool isReadonly(Sym s)
+    {
+        auto c = cell(s);
+        return c !is null && c.readonly;
+    }
+
+    void setReadonly(Sym s)
+    {
+        make(s).readonly = true;
+    }
+
+    /// The type `s` was declared with, or null.
+    Typed* typeOf(Sym s)
+    {
+        auto c = cell(s);
+        return c !is null && c.typed ? &c.type : null;
+    }
+
+    void setType(Sym s, Typed t)
+    {
+        auto c = make(s);
+        c.type = t;
+        c.typed = true;
+    }
+
+    /// Empties the scope, its cells kept for the next bindings.
+    void clear()
+    {
+        if (table_.length)
+            foreach (i; 0 .. count_)
+                table_[keys_[i]] = null;
+        count_ = 0;
+    }
+
+    size_t length() const
+    {
+        size_t n;
+        foreach (i; 0 .. count_)
+            if (cells_[i].defined)
+                n++;
+        return n;
+    }
+
+    /// The names bound, in the order they were bound.
+    string[] keys()
+    {
+        string[] r;
+        foreach (i; 0 .. count_)
+            if (cells_[i].defined)
+                r ~= nameOf(keys_[i]);
+        return r;
+    }
+
+    int opApply(scope int delegate(string, ref Value) dg)
+    {
+        foreach (i; 0 .. count_)
+            if (cells_[i].defined)
+                if (auto r = dg(nameOf(keys_[i]), cells_[i].value))
+                    return r;
+        return 0;
+    }
+
+    // names as text
+    Value* opBinaryRight(string op : "in")(string name) => find(intern(name));
+
+    ref Value opIndex(string name)
+    {
+        import core.exception : RangeError;
+        auto p = find(intern(name));
+        if (p is null)
+            throw new RangeError;
+        return *p;
+    }
+
+    void opIndexAssign(Value v, string name) => set(intern(name), v);
+}
+
+/// The read-only marks of a scope, by name as text (`env.readonly[name] = true`).
+struct ReadonlyView
+{
+    private VarMap* vars;
+    void opIndexAssign(bool b, string name)
+    {
+        assert(b, "a binding cannot be made writable again");
+        vars.setReadonly(intern(name));
+    }
+    bool get(string name, bool fallback) => vars.isReadonly(intern(name)) || fallback;
+}
+
+/// The declared types of a scope, by name as text.
+struct TypesView
+{
+    private VarMap* vars;
+    void opIndexAssign(Typed t, string name) => vars.setType(intern(name), t);
+    Typed* opBinaryRight(string op : "in")(string name) => vars.typeOf(intern(name));
+}
+
+/// Module-level globals not evaluated yet, by number (and by name as text).
+struct PendingMap
+{
+    private VarDecl[Sym] decls;
+    size_t length() const => decls.length;
+    VarDecl* find(Sym s) => decls.length ? s in decls : null;
+    void remove(Sym s)
+    {
+        decls.remove(s);
+    }
+    VarDecl* opBinaryRight(string op : "in")(string name) => find(intern(name));
+    void opIndexAssign(VarDecl d, string name)
+    {
+        decls[intern(name)] = d;
+    }
+    VarDecl get(string name, VarDecl fallback)
+    {
+        auto p = find(intern(name));
+        return p ? *p : fallback;
+    }
+    void remove(string name)
+    {
+        decls.remove(intern(name));
+    }
+    string[] keys()
+    {
+        string[] r;
+        foreach (s; decls.byKey)
+            r ~= nameOf(s);
+        return r;
+    }
+    VarDecl[string] dup()
+    {
+        VarDecl[string] r;
+        foreach (s, d; decls)
+            r[nameOf(s)] = d;
+        return r;
+    }
+}
+
+/// A module's public names, by number (and by name as text).
+struct PublicSet
+{
+    private bool[Sym] syms;
+    bool has(Sym s) => syms.length && (s in syms) !is null;
+    bool* opBinaryRight(string op : "in")(string name) => syms.length ? intern(name) in syms : null;
+    void opIndexAssign(bool b, string name)
+    {
+        if (b)
+            syms[intern(name)] = true;
+    }
+    string[] keys()
+    {
+        string[] r;
+        foreach (s; syms.byKey)
+            r ~= nameOf(s);
+        return r;
+    }
+}
+
 /// Lexical environment. Variables declared with enum/immutable/const are
 /// read-only; module-level globals are evaluated lazily on first use.
 final class Env
 {
     Env parent;
-    Value[string] vars;
-    bool[string] readonly;
-    VarDecl[string] pending;   /// module-level globals not evaluated yet
+    VarMap vars;
+    PendingMap pending;        /// module-level globals not evaluated yet
     bool[string] evaluating;   /// cycle detection for pending globals
     ModuleVal mod;
-    /// Declared types of variables (int n = …), checked again on assignment;
-    /// `mod` resolves the type's name.
-    struct Typed
-    {
-        TypeRef type;
-        ModuleVal mod;
-    }
-    Typed[string] types;
+    alias Typed = .Typed;
+
+    /// Read-only marks and declared types, by name as text: kept with each binding in `vars`.
+    @property ReadonlyView readonly() return => ReadonlyView(&vars);
+    /// ditto
+    @property TypesView types() return => TypesView(&vars);
 
     /// Kept by a function or a lambda made in it or in a scope inside it: no longer emptied and used again.
     bool captured;
@@ -486,20 +752,22 @@ final class Env
         if (last !is null && !last.captured && last.parent is parent)
         {
             last.vars.clear();
-            last.readonly.clear();
-            last.types.clear();
             return last;
         }
         return last = new Env(parent, mod);
     }
 
-    Env find(string name)
+    /// The nearest scope binding `s` (or holding it as a global not evaluated yet).
+    Env find(Sym s)
     {
         for (auto e = this; e !is null; e = e.parent)
-            if (name in e.vars || name in e.pending)
+            if (e.vars.find(s) !is null || e.pending.find(s) !is null)
                 return e;
         return null;
     }
+
+    /// ditto
+    Env find(string name) => find(intern(name));
 
     string[] allNames()
     {
@@ -568,7 +836,7 @@ final class ModuleVal
     string source;
     Env env;
     double unitFactor = 1;   /// default unit for bare lengths, in mm
-    bool[string] publicNames;
+    PublicSet publicNames;
     Program program;
     Unittest[] unittests;
     ModuleVal[] imported;    /// plain `import x;`: public names visible unqualified

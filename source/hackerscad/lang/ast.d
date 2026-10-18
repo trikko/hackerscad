@@ -2,6 +2,7 @@ module hackerscad.lang.ast;
 
 import hackerscad.lang.errors : Span;
 import hackerscad.lang.lexer : Tok;
+import hackerscad.lang.symbols : Sym, noSym, intern;
 
 /// `Length`, `Solid[]`, `Length[string]`; null means `auto`.
 final class TypeRef
@@ -35,6 +36,24 @@ struct Param
     string name;
     Expr defaultValue;
     Span span;
+    Sym sym_ = noSym;   /// `name`'s number, once looked up (symOf)
+}
+
+/// The number of a node's name, worked out the first time and kept in the node (a Param by reference, in
+/// the array of the function it belongs to).
+Sym symOf(N)(N n) if (is(N == class))
+{
+    if (n.sym_ == noSym)
+        n.sym_ = intern(n.name);
+    return n.sym_;
+}
+
+/// ditto
+Sym symOf(N)(ref N n) if (is(N == struct))
+{
+    if (n.sym_ == noSym)
+        n.sym_ = intern(n.name);
+    return n.sym_;
 }
 
 struct Arg
@@ -77,6 +96,7 @@ final class InterpString : Expr
 
 final class Ident : Expr
 {
+    Sym sym_ = noSym;   /// `name`'s number, once looked up (symOf)
     string name;
 }
 
@@ -123,6 +143,7 @@ final class Call : Expr
 
 final class Member : Expr
 {
+    Sym sym_ = noSym;   /// `name`'s number, once looked up (symOf)
     Expr object;
     string name;
     Span nameSpan;
@@ -185,6 +206,7 @@ enum Storage
 
 final class VarDecl : Stmt
 {
+    Sym sym_ = noSym;   /// `name`'s number, once looked up (symOf)
     Attribute[] attrs;
     Storage storage;
     TypeRef type;
@@ -196,6 +218,7 @@ final class VarDecl : Stmt
 
 final class FuncDecl : Stmt
 {
+    Sym sym_ = noSym;   /// `name`'s number, once looked up (symOf)
     Attribute[] attrs;
     TypeRef returnType;   /// null for auto
     string name;

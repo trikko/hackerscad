@@ -11,6 +11,25 @@ import std.string : startsWith, strip;
 import std.uni : toLower;
 
 import hackerscad.lang.errors;
+import hackerscad.lang.symbols;
+
+// the names the interpreter binds itself, numbered the first time (no module constructor: this module
+// and builtins import each other)
+private Sym symThis()
+{
+    __gshared Sym s = noSym;
+    if (s == noSym)
+        s = intern("this");
+    return s;
+}
+
+private Sym symDollar()
+{
+    __gshared Sym s = noSym;
+    if (s == noSym)
+        s = intern("$");
+    return s;
+}
 import hackerscad.lang.lexer : Tok;
 import hackerscad.lang.ast;
 import hackerscad.lang.parser;
@@ -739,16 +758,19 @@ final class Interp
     }
 
     /// The module whose public name `name` is, following `public import`s.
-    static ModuleVal publicOwner(ModuleVal m, string name, int depth = 0)
+    static ModuleVal publicOwner(ModuleVal m, Sym s, int depth = 0)
     {
-        if (name in m.publicNames)
+        if (m.publicNames.has(s))
             return m;
         if (depth < 32)
             foreach (r; m.reexported)
-                if (auto o = publicOwner(r, name, depth + 1))
+                if (auto o = publicOwner(r, s, depth + 1))
                     return o;
         return null;
     }
+
+    /// ditto
+    static ModuleVal publicOwner(ModuleVal m, string name) => publicOwner(m, intern(name));
 
     /// Every public name of a module, re-exported ones included (for suggestions).
     static string[] publicNamesOf(ModuleVal m, int depth = 0)
@@ -764,52 +786,59 @@ final class Interp
 
     /// Resolves a name: locals, module globals (evaluated lazily), imported
     /// modules, then the prelude.
-    Value lookup(string name, Env env, Span span)
+    Value lookup(Sym s, Env env, Span span)
     {
         for (auto e = env; e !is null; e = e.parent)
         {
-            if (auto v = name in e.vars)
+            if (auto v = e.vars.find(s))
                 return *v;
-            if (name in e.pending)
-                return global(e, name, span);
+            if (e.pending.find(s) !is null)
+                return global(e, s, span);
             if (e.mod !is null && e.parent is prelude)
                 foreach (m; e.mod.imported)
-                    if (auto owner = publicOwner(m, name))
-                        return global(owner.env, name, span);
+                    if (auto owner = publicOwner(m, s))
+                        return global(owner.env, s, span);
         }
+        immutable name = nameOf(s);
         throw new HcadError(Code.undefined, format("undefined identifier '%s'", name), span, suggest(name, env.allNames));
     }
+
+    /// ditto
+    Value lookup(string name, Env env, Span span) => lookup(intern(name), env, span);
 
     /// The nearest binding of `name`; with `callable`, bindings that are
     /// not functions are skipped (UFCS: a `bool chamfer` parameter does not
     /// hide the chamfer function).
-    bool tryLookup(string name, Env env, out Value v, bool callable = false)
+    bool tryLookup(Sym s, Env env, out Value v, bool callable = false)
     {
         for (auto e = env; e !is null; e = e.parent)
         {
-            if (auto p = name in e.vars)
+            if (auto p = e.vars.find(s))
             {
                 v = *p;
                 if (!callable || v.isCallable)
                     return true;
             }
-            if (name in e.pending)
+            if (e.pending.find(s) !is null)
             {
-                v = global(e, name, Span.init);
+                v = global(e, s, Span.init);
                 if (!callable || v.isCallable)
                     return true;
             }
             if (e.mod !is null && e.parent is prelude)
                 foreach (m; e.mod.imported)
-                    if (name in m.publicNames)
+                    if (m.publicNames.has(s))
                     {
-                        v = global(m.env, name, Span.init);
+                        v = global(m.env, s, Span.init);
                         if (!callable || v.isCallable)
                             return true;
                     }
         }
         return false;
     }
+
+    /// ditto
+    bool tryLookup(string name, Env env, out Value v, bool callable = false) => tryLookup(intern(name), env, v, callable);
 
     /// A plane kept in variable `name`: noted for the window to show.
     private void notePlane(string name, Value v, Span span)
@@ -856,13 +885,15 @@ final class Interp
 
     /// Evaluates a module-level variable on first use (order independent,
     /// like D module scope), applying @param overrides.
-    Value global(Env env, string name, Span span)
+    Value global(Env env, Sym s, Span span)
     {
-        if (auto v = name in env.vars)
+        if (auto v = env.vars.find(s))
             return *v;
-        auto d = env.pending.get(name, null);
-        if (d is null)
-            return lookup(name, env, span);
+        auto dp = env.pending.find(s);
+        if (dp is null)
+            return lookup(s, env, span);
+        auto d = *dp;
+        immutable name = nameOf(s);
         if (name in env.evaluating)
             throw new HcadError(Code.redefined, format("'%s' depends on itself", name), d.nameSpan);
         env.evaluating[name] = true;
@@ -875,11 +906,14 @@ final class Interp
 
         if (auto pa = findAttr(d.attrs, "param"))
             v = applyParam(d, *pa, v, env);
-        env.vars[name] = v;
-        env.pending.remove(name);
+        env.vars.set(s, v);
+        env.pending.remove(s);
         notePlane(name, v, d.nameSpan);
         return v;
     }
+
+    /// ditto
+    Value global(Env env, string name, Span span) => global(env, intern(name), span);
 
     private Value applyParam(VarDecl d, Attribute a, Value def, Env env)
     {
@@ -993,24 +1027,25 @@ final class Interp
         {
             if (v.attrs.length)
                 throw new HcadError(Code.syntax, "attributes are only allowed on module-level declarations", v.attrs[0].span);
-            if (v.name in env.vars)
+            immutable sym = symOf(v);
+            if (env.vars.find(sym) !is null)
                 throw new HcadError(Code.redefined, format("'%s' is already declared in this scope", v.name), v.nameSpan);
             auto val = v.init ? eval(v.init, env) : defaultOf(v.type, env.mod, v.nameSpan);
             if (v.type)
             {
                 val = coerce(val, v.type, env.mod, v.init ? v.init.span : v.nameSpan, "'" ~ v.name ~ "'");
-                env.types[v.name] = Env.Typed(v.type, env.mod);
+                env.vars.setType(sym, Env.Typed(v.type, env.mod));
             }
-            env.vars[v.name] = val;
+            env.vars.set(sym, val);
             notePlane(v.name, val, v.nameSpan);
             if (v.storage != Storage.auto_)
-                env.readonly[v.name] = true;
+                env.vars.setReadonly(sym);
             return Flow.normal;
         }
         if (auto f = as!FuncDecl(s))
         {
-            env.vars[f.name] = Value.make(Kind.func, closureOf(f, env, env.mod));
-            env.readonly[f.name] = true;
+            env.vars.set(symOf(f), Value.make(Kind.func, closureOf(f, env, env.mod)));
+            env.vars.setReadonly(symOf(f));
             return Flow.normal;
         }
         if (auto i = as!If(s))
@@ -1143,12 +1178,12 @@ final class Interp
         {
             auto scope_ = Env.next(lastTurn, env, env.mod);
             if (f.key.name.length)
-                scope_.vars[f.key.name] = f.key.type ? coerce(key, f.key.type, env.mod, f.key.span, "'" ~ f.key.name ~ "'") : key;
-            scope_.vars[f.value.name] = f.value.type ? coerce(val, f.value.type, env.mod, f.value.span, "'" ~ f.value.name ~ "'") : val;
+                scope_.vars.set(symOf(f.key), f.key.type ? coerce(key, f.key.type, env.mod, f.key.span, "'" ~ f.key.name ~ "'") : key);
+            scope_.vars.set(symOf(f.value), f.value.type ? coerce(val, f.value.type, env.mod, f.value.span, "'" ~ f.value.name ~ "'") : val);
             if (f.key.type && f.key.name.length)
-                scope_.types[f.key.name] = Env.Typed(f.key.type, env.mod);
+                scope_.vars.setType(symOf(f.key), Env.Typed(f.key.type, env.mod));
             if (f.value.type)
-                scope_.types[f.value.name] = Env.Typed(f.value.type, env.mod);
+                scope_.vars.setType(symOf(f.value), Env.Typed(f.value.type, env.mod));
             return loopBody(f.body, scope_, lastBody);
         }
 
@@ -1243,7 +1278,7 @@ final class Interp
         if (auto l = as!Literal(e))
             return literal(l);
         if (auto id = as!Ident(e))
-            return autoCall(lookup(id.name, env, id.span), id.span);
+            return autoCall(lookup(symOf(id), env, id.span), id.span);
         if (auto is_ = as!InterpString(e))
         {
             string r = is_.parts[0];
@@ -1265,7 +1300,7 @@ final class Interp
                 auto id = as!Ident(u.operand);
                 if (id is null)
                     throw new HcadError(Code.type, "'&' can only take a function name", u.span);
-                return lookup(id.name, env, id.span);
+                return lookup(symOf(id), env, id.span);
             }
             auto v = eval(u.operand, env);
             switch (u.op)
@@ -1288,12 +1323,12 @@ final class Interp
             // kept the collector busy), and with a declared type only what is added is checked against it
             if (a.op == Tok.catAssign)
                 if (auto id = as!Ident(a.target))
-                    if (auto holder = env.find(id.name))
-                        if (auto cur = id.name in holder.vars)
-                            if (cur.kind == Kind.array && !holder.readonly.get(id.name, false))
+                    if (auto holder = env.find(symOf(id)))
+                        if (auto cur = holder.vars.find(symOf(id)))
+                            if (cur.kind == Kind.array && !holder.vars.isReadonly(symOf(id)))
                             {
                                 auto add = v;
-                                if (auto t = id.name in holder.types)
+                                if (auto t = holder.vars.typeOf(symOf(id)))
                                     if (t.type.isArray)
                                         add = v.kind == Kind.array
                                             ? coerce(v, t.type, env.mod, id.span, "'" ~ id.name ~ "'", t.mod)
@@ -1372,7 +1407,7 @@ final class Interp
             throw new HcadError(Code.type, "cannot slice " ~ obj.typeName, sl.span);
         }
         if (auto d = as!Dollar(e))
-            return lookup("$", env, d.span);
+            return lookup(symDollar, env, d.span);
         if (auto l = as!Lambda(e))
         {
             env.capture();
@@ -1445,7 +1480,7 @@ final class Interp
         if (obj.kind != Kind.array && obj.kind != Kind.str)
             return env;
         auto e = new Env(env, env.mod);
-        e.vars["$"] = Value.integer(obj.kind == Kind.array ? obj.arr.length : obj.s.length);
+        e.vars.set(symDollar, Value.integer(obj.kind == Kind.array ? obj.arr.length : obj.s.length));
         return e;
     }
 
@@ -1504,15 +1539,16 @@ final class Interp
     {
         if (auto id = as!Ident(target))
         {
-            auto e = env.find(id.name);
+            immutable sym = symOf(id);
+            auto e = env.find(sym);
             if (e is null)
                 throw new HcadError(Code.undefined, format("undefined identifier '%s'", id.name), id.span, suggest(id.name, env.allNames));
-            if (e.readonly.get(id.name, false))
+            if (e.vars.isReadonly(sym))
                 throw new HcadError(Code.immutable_, format("cannot modify '%s': it is enum/immutable/const or module-level", id.name), id.span);
             // a declared type holds for every assignment, not only the first
-            if (auto t = id.name in e.types)
+            if (auto t = e.vars.typeOf(sym))
                 v = coerce(v, t.type, env.mod, id.span, "'" ~ id.name ~ "'", t.mod);
-            e.vars[id.name] = v;
+            e.vars.set(sym, v);
             return;
         }
         if (auto ix = as!Index(target))
@@ -1882,7 +1918,7 @@ final class Interp
 
         // UFCS: a free function taking obj as first argument
         Value f;
-        if (tryLookup(m.name, env, f, true))
+        if (tryLookup(symOf(m), env, f, true))
             return finish(boundTo(obj, f), forCall, m.span);
 
         string[] candidates;
@@ -1938,7 +1974,7 @@ final class Interp
         if (auto m = as!Member(c.callee))
             callee = member(m, env, true);
         else if (auto id = as!Ident(c.callee))
-            callee = lookup(id.name, env, id.span);
+            callee = lookup(symOf(id), env, id.span);
         else
             callee = eval(c.callee, env);
 
@@ -1951,13 +1987,23 @@ final class Interp
             auto id = as!Ident(t);
             args.templateArgs ~= id ? lookup(id.name, env, id.span) : eval(t, env);
         }
+        // the lists of positional arguments made once at their length and filled in, not grown one by one
+        size_t positional, filled;
+        foreach (a; c.args)
+            if (a.name is null)
+                positional++;
+        if (positional)
+        {
+            args.positional = new Value[](positional);
+            args.positionalSpans = new Span[](positional);
+        }
         foreach (a; c.args)
         {
             auto v = eval(a.value, env);
             if (a.name is null)
             {
-                args.positional ~= v;
-                args.positionalSpans ~= a.value.span;
+                args.positional[filled] = v;
+                args.positionalSpans[filled++] = a.value.span;
             }
             else
             {
@@ -2076,12 +2122,12 @@ final class Interp
         {
             // struct method: fields are visible by name, the struct as `this`
             auto self = args.positional[0];
-            env.vars["this"] = self;
-            env.readonly["this"] = true;
-            foreach (i, f; self.st.def.fields)
+            env.vars.set(symThis, self);
+            env.vars.setReadonly(symThis);
+            foreach (i, ref f; self.st.def.fields)
             {
-                env.vars[f.name] = self.st.fields[i];
-                env.readonly[f.name] = true;
+                env.vars.set(symOf(f), self.st.fields[i]);
+                env.vars.setReadonly(symOf(f));
             }
             args.positional = args.positional[1 .. $];
             if (args.positionalSpans.length)
@@ -2094,7 +2140,7 @@ final class Interp
             throw new HcadError(Code.arity, format("'%s' takes %d argument%s, %d given", c.name, c.params.length,
                 c.params.length == 1 ? "" : "s", args.positional.length), args.span);
 
-        foreach (i, p; c.params)
+        foreach (i, ref p; c.params)
         {
             Value v;
             Span vs = args.span;
@@ -2121,9 +2167,9 @@ final class Interp
             if (p.type)
             {
                 v = coerce(v, p.type, args.caller, vs, "argument '" ~ p.name ~ "'", c.mod);
-                env.types[p.name] = Env.Typed(p.type, c.mod);
+                env.vars.setType(symOf(p), Env.Typed(p.type, c.mod));
             }
-            env.vars[p.name] = v;
+            env.vars.set(symOf(p), v);
         }
         foreach (name; args.namedOrder)
             if (!c.params.canFind!(p => p.name == name))
