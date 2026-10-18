@@ -331,13 +331,23 @@ final class OcctKernel : BrepKernel
 
     FaceInfo[] faces(Brep s)
     {
+        // each face's area and centre is an integration over it, ~8 ms on a thread's helical
+        // faces: on the threads there are (--threads), the faces being independent
+        import std.parallelism : parallel;
         auto r = new FaceInfo[hc_face_count(h(s))];
-        foreach (i, ref f; r)
+        auto shape = h(s);
+        shared bool failed;
+        foreach (i, ref f; parallel(r, 4))
         {
             double[7] v;
-            check(hc_face_info(h(s), cast(int) i, v) == 0, "face query");
+            if (hc_face_info(shape, cast(int) i, v) != 0)
+            {
+                failed = true;
+                continue;
+            }
             f = FaceInfo(Vec3(v[0], v[1], v[2]), Vec3(v[3], v[4], v[5]), v[6]);
         }
+        check(!failed, "face query");
         return r;
     }
 
