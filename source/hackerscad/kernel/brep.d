@@ -299,6 +299,9 @@ interface BrepKernel
     /// along `dir` (zero: the face's normal), its origin at `at` (NaN: the face's middle): each region a
     /// solid from `inner` to `outer` along the face's normal, to cut or add.
     Brep wrapTool(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double inner, double outer);
+    /// `s` with the regions of `profile` laid on face `face` (as wrapTool) dug in (floor < 0) or raised by
+    /// `floor`, built at once with no boolean; an exception when it cannot be (a region not inside the face).
+    Brep wrapDirect(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double floor);
     /// How many regions the last wrapTool left out, too broken to lay on the face (slivers).
     int wrapSkipped();
     /// Copies of the flat `motifs`, each placed by four numbers in `place` (which motif, dx, dy, a scale

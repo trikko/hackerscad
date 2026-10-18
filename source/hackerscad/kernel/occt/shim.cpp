@@ -73,6 +73,7 @@
 #include <vector>
 #include <BRepTools_WireExplorer.hxx>
 #include <Geom_OffsetSurface.hxx>
+#include <ShapeFix_Shell.hxx>
 #include <Geom2d_TrimmedCurve.hxx>
 #include <TColgp_HArray1OfPnt2d.hxx>
 #include <Geom2dAPI_Interpolate.hxx>
@@ -2308,8 +2309,8 @@ static int g_wrap_skipped = 0;
 // How many regions the last hc_wrap_tool left out, broken.
 int hc_wrap_skipped(void) { return g_wrap_skipped; }
 
-hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
-                       const double *dir, double inner, double outer)
+static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
+                           const double *dir, double inner, double outer, bool direct)
 {
     g_wrap_skipped = 0;
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -2318,6 +2319,9 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
             throw Standard_Failure("no such face");
         const TopoDS_Face F = TopoDS::Face(m(face + 1));
         Handle(Geom_Surface) S = BRep_Tool::Surface(F);
+        TopLoc_Location faceLoc;
+        const Handle(Geom_Surface) Sface = BRep_Tool::Surface(F, faceLoc);   // the face's own, unmoved
+        double turned = 0;   // how far S was turned round its axis: S(u, v) is the face's surface at u + turned
         const double sign = F.Orientation() == TopAbs_REVERSED ? -1 : 1;
         // a trimmed surface: the one it trims (the same parameters, beyond the trim too)
         while (Handle(Geom_RectangularTrimmedSurface) tr = Handle(Geom_RectangularTrimmedSurface)::DownCast(S))
@@ -2395,8 +2399,9 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
             if (round && S->IsUPeriodic() && std::abs(u0 - M_PI) > 1e-12) {
                 S = Handle(Geom_Surface)::DownCast(S->Copy());
                 S->Rotate(axis, u0 - M_PI);
-                umin -= u0 - M_PI;
-                umax -= u0 - M_PI;
+                turned = u0 - M_PI;
+                umin -= turned;
+                umax -= turned;
                 u0 = M_PI;
             }
         }
@@ -2654,8 +2659,8 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
         };
         const Handle(Geom_Surface) Sin = offsetSurface(inner), Sout = offsetSurface(outer);
 
-        std::vector<TopoDS_Shape> tools;
-        for (const TopoDS_Face &pf : faces_of(profile->shape)) {
+        // the loops of each region of the profile, carried onto the face
+        auto loopsOf = [&](const TopoDS_Face &pf) {
             std::vector<std::vector<Handle(Geom2d_Curve)>> loops;
             const TopoDS_Face fwd = TopoDS::Face(pf.Oriented(TopAbs_FORWARD));
             const TopoDS_Wire outerWire = BRepTools::OuterWire(fwd);
@@ -2672,6 +2677,189 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
                     loop = chains(w, fwd);
                 loops.push_back(loop);
             }
+            return loops;
+        };
+        // a loop as a wire of edges on `surf`, its curves moved by `du` along u first
+        auto wireOn = [&](const std::vector<Handle(Geom2d_Curve)> &loop, const Handle(Geom_Surface) &surf, double du,
+                          std::vector<TopoDS_Edge> *edges) {
+            BRepBuilderAPI_MakeWire mw;
+            for (auto &c2 : loop) {
+                Handle(Geom2d_Curve) c = c2;
+                if (du != 0) {
+                    c = Handle(Geom2d_Curve)::DownCast(c2->Copy());
+                    c->Translate(gp_Vec2d(du, 0));
+                }
+                TopoDS_Edge e = BRepBuilderAPI_MakeEdge(c, surf).Edge();
+                BRepLib::BuildCurves3d(e, 1e-7);
+                mw.Add(e);
+                if (!mw.IsDone())
+                    throw Standard_Failure("the profile's outline does not close on the face");
+                if (edges)
+                    edges->push_back(mw.Edge());
+            }
+            return mw.Wire();
+        };
+
+        if (direct) {
+            // the result built at once, with no boolean: the face with each region's outline as a
+            // hole, the region's islands left at the face, its floor on the surface moved `inner`
+            // along the normal (in for a pocket, out for a relief), the sides between, sewn to the
+            // rest of the solid. Only for a region wholly inside the face; anything else, the caller
+            // takes the boolean way
+            if (!faceLoc.IsIdentity())
+                throw Standard_Failure("direct: the face is placed by a location");
+            int solids = 0;
+            for (TopExp_Explorer e(s->shape, TopAbs_SOLID); e.More(); e.Next())
+                solids++;
+            if (solids != 1)
+                throw Standard_Failure("direct: not one solid");
+            const Handle(Geom_Surface) floorSurf = offsetSurface(inner);
+            // the floors must lie in the material (a pocket) or out of it (a relief): a pocket
+            // through the wall, or into another face, takes the boolean way
+            BRepClass3d_SolidClassifier material(s->shape);
+            const double period = Sface->IsUPeriodic() ? Sface->UPeriod()
+                                  : S->IsUPeriodic()   ? S->UPeriod()
+                                                       : 0;
+            double fu0, fu1, fv0, fv1;
+            BRepTools::UVBounds(F, fu0, fu1, fv0, fv1);
+            // a band all round an axis (the side of a cylinder, a cone, a vase), bounded by lines of
+            // constant v and its seam: made again on S, whose seam is turned to the back, so the
+            // regions (round the front) never cross it; on S the loops need no moving
+            bool band = period > 0 && S->IsUPeriodic() && std::abs((fu1 - fu0) - period) < 1e-7;
+            for (TopExp_Explorer e(F, TopAbs_EDGE); band && e.More(); e.Next()) {
+                const TopoDS_Edge &ed = TopoDS::Edge(e.Current());
+                if (BRep_Tool::IsClosed(ed, F) || BRep_Tool::Degenerated(ed))
+                    continue;
+                double a, b;
+                const Handle(Geom2d_Curve) c = BRep_Tool::CurveOnSurface(ed, F, a, b);
+                const double va = c->Value(a).Y(), vb = c->Value(b).Y(), vm = c->Value((a + b) / 2).Y();
+                band = std::abs(va - vb) < 1e-7 && std::abs(va - vm) < 1e-7
+                       && (std::abs(va - fv0) < 1e-7 || std::abs(va - fv1) < 1e-7);
+            }
+            TopoDS_Face base = F;
+            Handle(Geom_Surface) holeSurf = Sface;
+            if (band) {
+                base = BRepBuilderAPI_MakeFace(S, u0 - period / 2, u0 + period / 2, fv0, fv1, 1e-7).Face();
+                if (F.Orientation() == TopAbs_REVERSED)
+                    base.Reverse();
+                holeSurf = S;
+                fu0 = u0 - period / 2;
+                fu1 = u0 + period / 2;
+            }
+            BRepTopAdaptor_FClass2d inside(base, 1e-7);
+            BRepBuilderAPI_MakeFace holed(TopoDS::Face(base.Oriented(TopAbs_FORWARD)));
+            std::vector<TopoDS_Face> extra;
+            double expected = 0;
+            for (const TopoDS_Face &pf : faces_of(profile->shape)) {
+                const auto loops = loopsOf(pf);
+                // where on the face's own parameters: turned back, then by whole periods into its bounds
+                double du = band ? 0 : turned;
+                if (!band) {
+                    Bnd_Box2d b;
+                    for (auto &c2 : loops[0])
+                        for (int k = 0; k <= 8; k++) {
+                            const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 8);
+                            b.Add(gp_Pnt2d(q.X() + du, q.Y()));
+                        }
+                    double a0, b0, a1, b1;
+                    b.Get(a0, b0, a1, b1);
+                    if (period > 0)
+                        du += period * std::round(((fu0 + fu1) / 2 - (a0 + a1) / 2) / period);
+                }
+                for (auto &loop : loops)
+                    for (auto &c2 : loop)
+                        for (int k = 0; k < 24; k++) {
+                            const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 24);
+                            if (inside.Perform(gp_Pnt2d(q.X() + du, q.Y())) != TopAbs_IN)
+                                throw Standard_Failure("direct: a region is not wholly inside the face");
+                        }
+                for (auto &c2 : loops[0])
+                    for (int k = 0; k < 8; k++) {
+                        const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 8);
+                        material.Perform(floorSurf->Value(q.X(), q.Y()), 1e-6);
+                        if (material.State() != (inner < 0 ? TopAbs_IN : TopAbs_OUT))
+                            throw Standard_Failure("direct: a floor does not lie where it should (through the wall?)");
+                    }
+                // the outline a hole in the face, the islands faces of their own at the face
+                // in (u, v) an outline runs counter-clockwise round a face made the surface's way, a
+                // hole clockwise: each loop turned so (it runs either way as it comes, x turning
+                // round on the inside of a hole's wall)
+                auto turned_ = [&](const std::vector<Handle(Geom2d_Curve)> &loop, const TopoDS_Wire &w, bool outer) {
+                    double area = 0;
+                    std::vector<gp_Pnt2d> poly;
+                    for (auto &c2 : loop)
+                        for (int k = 0; k < 16; k++)
+                            poly.push_back(c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 16));
+                    for (size_t i = 0; i < poly.size(); i++) {
+                        const gp_Pnt2d &a = poly[i], &b = poly[(i + 1) % poly.size()];
+                        area += a.X() * b.Y() - b.X() * a.Y();
+                    }
+                    return (area > 0) == outer ? w : TopoDS::Wire(w.Reversed());
+                };
+                holed.Add(turned_(loops[0], wireOn(loops[0], holeSurf, du, nullptr), false));
+                std::vector<std::vector<TopoDS_Edge>> top(loops.size()), bottom(loops.size());
+                for (size_t i = 0; i < loops.size(); i++)
+                    wireOn(loops[i], holeSurf, du, &top[i]);
+                for (size_t i = 1; i < loops.size(); i++)
+                    extra.push_back(BRepBuilderAPI_MakeFace(holeSurf, turned_(loops[i], wireOn(loops[i], holeSurf, du, nullptr), true),
+                                                            Standard_True).Face());
+                BRepBuilderAPI_MakeFace fl;
+                for (size_t i = 0; i < loops.size(); i++) {
+                    const TopoDS_Wire w = turned_(loops[i], wireOn(loops[i], floorSurf, 0, &bottom[i]), i == 0);
+                    if (i == 0)
+                        fl.Init(floorSurf, Standard_False, 1e-7);
+                    fl.Add(w);
+                }
+                extra.push_back(fl.Face());
+                for (size_t i = 0; i < loops.size(); i++)
+                    for (size_t j = 0; j < top[i].size(); j++)
+                        extra.push_back(BRepFill::Face(top[i][j], bottom[i][j]));
+                GProp_GProps g;
+                BRepGProp::SurfaceProperties(pf, g);
+                expected += g.Mass() * std::abs(inner);
+            }
+            if (!holed.IsDone())
+                throw Standard_Failure("direct: the holes could not be made in the face");
+            BRepBuilderAPI_Sewing sew(1e-5);
+            for (int i = 1; i <= m.Extent(); i++)
+                if (i != face + 1)
+                    sew.Add(m(i));
+            sew.Add(holed.Face());
+            for (auto &f : extra)
+                sew.Add(f);
+            sew.Perform();
+            TopoDS_Shell shell;
+            int shells = 0;
+            for (TopExp_Explorer sh(sew.SewedShape(), TopAbs_SHELL); sh.More(); sh.Next(), shells++)
+                shell = TopoDS::Shell(sh.Current());
+            if (shells != 1)
+                throw Standard_Failure("direct: the faces did not sew into one shell");
+            // the new faces turned all one way with the rest (made on a surface whose normal points
+            // into the material, a hole's wall, they come the other way round)
+            ShapeFix_Shell orient(shell);
+            orient.FixFaceOrientation(shell);
+            shell = orient.Shell();
+            TopoDS_Solid solid = BRepBuilderAPI_MakeSolid(shell).Solid();
+            BRepLib::OrientClosedSolid(solid);
+            // as it should be: closed, sound, its volume changed by about the regions' area times the depth
+            const double before = solid_volume(s->shape), after = solid_volume(solid);
+            const double change = inner < 0 ? before - after : after - before;
+            if (!(change > 0.5 * expected && change < 1.5 * expected))
+                throw Standard_Failure("direct: the volume is not what it should be");
+            TopTools_IndexedDataMapOfShapeListOfShape ef;
+            TopExp::MapShapesAndAncestors(solid, TopAbs_EDGE, TopAbs_FACE, ef);
+            for (int i = 1; i <= ef.Extent(); i++)
+                if (!BRep_Tool::Degenerated(TopoDS::Edge(ef.FindKey(i))) && ef(i).Extent() != 2)
+                    throw Standard_Failure("direct: the solid is not closed");
+            if (ef.Extent() <= 10000 && !BRepCheck_Analyzer(solid).IsValid()) {
+                throw Standard_Failure("direct: the solid came out broken");
+            }
+            return primitive(solid);
+        }
+
+        std::vector<TopoDS_Shape> tools;
+        for (const TopoDS_Face &pf : faces_of(profile->shape)) {
+            const auto loops = loopsOf(pf);
             // the region on both offset surfaces, and the sides between them
             std::vector<std::vector<TopoDS_Edge>> eIn, eOut;
             auto faceOn = [&](const Handle(Geom_Surface) &surf, std::vector<std::vector<TopoDS_Edge>> &edges) {
@@ -2735,6 +2923,20 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
             throw Standard_Failure("the profile is empty");
         return primitive(compound_of(tools));
     });
+}
+
+hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
+                       const double *dir, double inner, double outer)
+{
+    return wrap_impl(s, face, profile, project, at, dir, inner, outer, false);
+}
+
+// The same, the solid itself with the regions dug in (floor < 0) or raised (floor > 0) by `floor` along
+// the face's normal, built at once with no boolean: nullptr (and an error) when that cannot be done.
+hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
+                         const double *dir, double floor)
+{
+    return wrap_impl(s, face, profile, project, at, dir, floor, 0, true);
 }
 
 hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, double vz)

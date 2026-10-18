@@ -4189,6 +4189,16 @@ Value onCurvedFace(Interp it, ref CallArgs a, ref Args x, SolidVal body, bool re
         throw new HcadError(Code.type, "depth must be greater than 0", x.spanOf("depth"));
     immutable at = x.has("at") ? x.vecLen("at") : Vec3(double.nan, double.nan, double.nan);
     immutable dir = x.has("along") ? x.dir("along") : Vec3(0, 0, 0);
+    // first built at once, the face holed and the floors sewn in, with no boolean: quicker, and sound
+    // where a boolean against curved faces fails; a region not inside the face takes the boolean way
+    import std.process : environment;
+    if (environment.get("HCAD_WRAP_DIRECT", "1") != "0")
+    try
+        return Value.of(derived(it, k.wrapDirect(nonEmpty(body, a.span), idx[0], nonEmpty(p, a.span), project, at, dir,
+            remove ? -depth : depth), [body, p], fn, a.span));
+    catch (KernelException)
+    {
+    }
     // a little beyond the face on the side away from the material, so the two do not share a surface
     immutable over = 0.01;
     Brep tool;

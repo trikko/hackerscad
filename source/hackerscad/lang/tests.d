@@ -4671,3 +4671,44 @@ unittest
         ~ "h.contains(vec(0.mm, -1.4.mm, -5.mm)), \" \", h.contains(vec(0.mm, 1.4.mm, -5.mm)), \" \", "
         ~ "h.contains(vec(0.mm, -1.4.mm, -0.3.mm)));", "true false true true");
 }
+
+unittest
+{
+    mixin(slowTest);
+    import std.process : environment;
+    // pockets and reliefs laid on a curved face, built at once (no boolean) and the boolean way: the
+    // same solid; on a cone, a hole's inner wall, and with islands (the O, the D)
+    immutable model = "@part Solid cone() => loft([circle(d: 40.mm), circle(d: 25.mm).move(z: 40.mm)])"
+        ~ ".cut(rect(70.mm, 25.mm).tiles(kind: \"voronoi\", size: 8.mm, gap: 1.2.mm, round: 1.mm, relax: 2), "
+        ~ "wrap: faces.largest, depth: 1.mm);\n"
+        ~ "@part Solid tube() => (cylinder(d: 40.mm, h: 40.mm) - cylinder(d: 34.mm, h: 50.mm).move(z: -5.mm))"
+        ~ ".cut(text(\"ODD\", size: 6.mm).centered, wrap: faces.filter(f => f.area > 4000.mm * 1.mm "
+        ~ "&& f.area < 4500.mm * 1.mm), depth: 1.mm);\n"
+        ~ "@part Solid mug() => cylinder(d: 40.mm, h: 40.mm)"
+        ~ ".extrude(text(\"ODD\", size: 8.mm).centered, wrap: faces.largest, depth: 0.8.mm);\n";
+    double[] volumes(string direct)
+    {
+        auto before = environment.get("HCAD_WRAP_DIRECT");
+        environment["HCAD_WRAP_DIRECT"] = direct;
+        scope (exit)
+        {
+            if (before is null)
+                environment.remove("HCAD_WRAP_DIRECT");
+            else
+                environment["HCAD_WRAP_DIRECT"] = before;
+        }
+        auto r = runModel(model);
+        foreach (d; r.diagnostics)
+            assert(d.severity != Severity.error && d.code != Code.kernel, d.message);
+        double[] v;
+        foreach (p; r.parts)
+        {
+            assert(kernel.isValid(p.solid.brep), p.name);
+            v ~= kernel.volume(p.solid.brep);
+        }
+        return v;
+    }
+    auto direct = volumes("1"), boolean = volumes("0");
+    foreach (i; 0 .. 3)
+        assert(abs(direct[i] - boolean[i]) < 1e-3 * 1000, format("%s: %s %s", i, direct[i], boolean[i]));
+}

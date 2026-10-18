@@ -237,6 +237,12 @@ final class OcctKernel : BrepKernel
         return wrap(hc_wrap_tool(h(s), face, h(profile), project, a.ptr, d.ptr, inner, outer), "wrap");
     }
 
+    Brep wrapDirect(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double floor)
+    {
+        double[3] a = [at.x, at.y, at.z], d = [dir.x, dir.y, dir.z];
+        return wrap(hc_wrap_direct(h(s), face, h(profile), project, a.ptr, d.ptr, floor), "wrap");
+    }
+
     int wrapSkipped() => hc_wrap_skipped();
 
     Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode, double minArea = 0)
