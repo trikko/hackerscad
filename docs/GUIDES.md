@@ -86,6 +86,12 @@ A part too long for the printer's bed cut in two pieces that lock together with 
 
 A two-part mold to cast copies of a part in silicone, resin or plaster: a block round the part, cut in two along a parting plane, the part's shape hollow inside, with keys that line the halves up, a seal round the cavity so the liquid stays in, and a pour hole with vents for the air. The `molds` library makes it from the part itself.
 
+### [Flexible parts and hinges](guides/flex.md)
+
+[<img src="guides/img/flex-kerf.png" width="420" alt="Flexible parts and hinges">](guides/flex.md)
+
+Parts that bend where they should: a rigid plate made to bend in a band by rows of slots (kerf bending), and the hinges of the `hinges` library. Printed flat, in one piece.
+
 ### [Parameters, presets and checks](guides/parameters.md)
 
 [<img src="guides/img/parameters-carlo.png" width="420" alt="Parameters, presets and checks">](guides/parameters.md)

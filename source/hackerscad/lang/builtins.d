@@ -38,6 +38,7 @@ shared static this()
         "enclosures": import("enclosures.hcad"),
         "joints": import("joints.hcad"),
         "molds": import("molds.hcad"),
+        "flex": import("flex.hcad"),
         "carlo": import("carlo.hcad"),
     ];
 }

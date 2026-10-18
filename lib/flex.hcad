@@ -1,0 +1,64 @@
+module flex;
+
+/// `body` made to bend where it lies inside `zone` (any solid: a box across
+/// a plate, a ring round a tube): rows of slots through its thickness, each
+/// row shifted half a slot from the next, so what is left is a lattice of thin
+/// bars that twist and bend (kerf bending, as in laser-cut plywood). The slots
+/// go through the part's thinnest way inside the zone, and run across the
+/// body's length (along its shorter side), so it bends along its length.
+/// `along:` (X, Y or Z) sets the way they run instead.
+///
+/// - `width`: how wide each slot is (0.8 mm: two lines of a 0.4 mm nozzle
+///   leave it open);
+/// - `bridge`: the material between two slots of a row: the narrower, the
+///   softer it bends;
+/// - `pitch`: from one row to the next: the closer, the tighter it bends;
+/// - `length`: of each slot (six times the pitch unless given).
+///
+/// In PLA a few degrees per row; PETG and TPU bend much further. Print the part
+/// lying flat, the slots upright.
+Solid kerf(Solid body, Solid zone, Length width = 0.8.mm, Length bridge = 2.mm, Length pitch = 2.5.mm,
+    Length length = 0.mm, Vec3 along = vec(0, 0, 0))
+{
+    auto part = body & zone;
+    assert(part.volume > 0.mm ^^ 3, "kerf: the zone does not meet the body");
+    auto bb = part.bbox;
+    auto size = bb.size;
+
+    // which way is through (the thinnest), which along (the longest, or as given), which across
+    int thin = size.x <= size.y && size.x <= size.z ? 0 : size.y <= size.z ? 1 : 2;
+    int run = 0;
+    if (along != vec(0, 0, 0))
+    {
+        run = abs(along.x) > 0.5 ? 0 : abs(along.y) > 0.5 ? 1 : 2;
+        assert(run != thin, "kerf: the slots cannot run along the way they go through");
+    }
+    else
+    {
+        // across the body's length: the shorter of the other two ways of the whole body, so the part
+        // bends along its length (a strip bends end to end, a tube's band lets it bow)
+        auto whole = body.bbox.size;
+        auto s = [whole.x / 1.mm, whole.y / 1.mm, whole.z / 1.mm];
+        immutable a = (thin + 1) % 3, b = (thin + 2) % 3;
+        run = s[a] <= s[b] ? a : b;
+    }
+    auto dims = [size.x / 1.mm, size.y / 1.mm, size.z / 1.mm];
+    immutable across = 3 - thin - run;
+    immutable longSide = dims[run] * 1.mm, wide = dims[across] * 1.mm, deep = dims[thin] * 1.mm;
+    immutable len = length > 0.mm ? length : 6 * pitch;
+
+    // the slots as a profile: x along them, y across, then stood on the plane square to `through`
+    auto region = rect(longSide + 2 * len, wide);
+    auto slots = region.tiles(tile: slot(len, width), step: [vec(len + bridge, 0.mm), vec((len + bridge) / 2, pitch)],
+        whole: true);
+
+    // the profile's plane square to the thinnest way: extrude(along:) stands it across X or Y, its x along
+    // the other horizontal axis (along: X) or X itself (along: Y), its y up Z; turned when the slots must
+    // run the other way in that plane
+    immutable h = deep + 2.mm;
+    auto turned = (thin == 0 ? run == 1 : run == 0) ? slots : slots.rotate(z: 90);
+    auto cutter = thin == 2 ? turned.extrude(h).move(z: -h / 2)
+        : thin == 1 ? turned.extrude(h, along: Y).move(y: -h / 2)
+        : turned.extrude(h, along: X).move(x: -h / 2);
+    return body - (cutter.move(x: bb.center.x, y: bb.center.y, z: bb.center.z) & zone);
+}

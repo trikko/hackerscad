@@ -4792,3 +4792,20 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    mixin(slowTest);
+    // kerf: slots through a plate in the zone only, running across its length (along Y here), the
+    // plate one piece; along: turns them
+    auto r = runModel("import flex;\n"
+        ~ "unittest { auto plate = box(120.mm, 40.mm, 3.mm); auto zone = box(40.mm, 50.mm, 10.mm, center: true);\n"
+        ~ "auto k = kerf(plate, zone); assert(k.volume < plate.volume && k.pieces.length == 1);\n"
+        ~ "auto mid = k.section(plane(origin: vec(0.mm, 0.mm, 1.5.mm), normal: Z));\n"
+        ~ "assert(mid.holes.length > 10, \"no slots\"); auto h = mid.holes[0].bbox.size; assert(h.y > h.x, \"slots along X\");\n"
+        ~ "assert((plate - zone).volume - (k - zone).volume < 0.01 * 1.mm ^^ 3, \"slots outside the zone\");\n"
+        ~ "auto t = kerf(plate, zone, along: X).section(plane(origin: vec(0.mm, 0.mm, 1.5.mm), normal: Z));\n"
+        ~ "auto g = t.holes[0].bbox.size; assert(g.x > g.y); }\n");
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

@@ -591,6 +591,7 @@ static immutable Guide[] guides = [
     Guide("enclosures", "Enclosures and boxes", import("guides/enclosures.md")),
     Guide("joints", "Joints between parts", import("guides/joints.md")),
     Guide("molds", "Molds for casting", import("guides/molds.md")),
+    Guide("flex", "Flexible parts and hinges", import("guides/flex.md")),
     Guide("parameters", "Parameters, presets and checks", import("guides/parameters.md")),
     Guide("parts", "Parts, export and drawings", import("guides/parts.md")),
     Guide("agents", "Working with an AI agent", import("guides/agents.md")),
@@ -644,7 +645,7 @@ string guideIndex()
 string librarySection()
 {
     string r;
-    foreach (name; ["hardware", "threads", "gears", "hinges", "snaps", "enclosures", "joints", "molds", "carlo"])
+    foreach (name; ["hardware", "threads", "gears", "hinges", "snaps", "enclosures", "joints", "molds", "flex", "carlo"])
         r ~= "\n## Library source: " ~ name ~ "\n\n```d\n" ~ librarySources[name] ~ "```\n";
     return r;
 }
