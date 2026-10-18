@@ -529,7 +529,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - face properties: `center`, `normal`, `area`.
   - selectors combine: `edges.parallel(Z) - edges.of(faces.top)`, `faces.top + faces.bottom`, `a & b` (in both).
 - **Built-in libraries** (`import gears;` or `import std.gears;`, selective imports work too):
-  - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa", clearance: 0.2.mm, size:, length:, turn:, count:)` cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi); it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it) and `.loose` (the wedge), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says; `jointKinds` lists the kinds. For a part longer than the printer's bed. `splitFlat(body, plane, keys: 2, kind: "bowtie" | "disc", size:, depth:, clearance: 0.15.mm, wall: 1.6.mm)` cuts it into two halves with flat faces, each to print lying on its cut face, joined by flat keys (butterflies, chigiri) in pockets cut in both faces, placed where the cut has room, as far apart as they can be: a `FlatSplit` with `.a`, `.b`, `.keys` (in place), and laid for printing `.aPrint`, `.bPrint` (on their cut faces, on z = 0) and `.print` (the keys flat in a row). `profile.spots(n, margin:)` gives the points it uses: up to n inside a profile in any plane, at least margin from its edges, far apart.
+  - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa", clearance: 0.2.mm, size:, length:, turn:, count:)` cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi); it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it) and `.loose` (the wedge), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says; `jointKinds` lists the kinds. For a part longer than the printer's bed. `splitFlat(body, plane, keys: 2, kind: "bowtie" | "disc", size:, depth:, clearance: 0.15.mm, wall: 1.6.mm)` cuts it into two halves with flat faces, each to print lying on its cut face, joined by flat keys (butterflies, chigiri) in pockets cut in both faces, placed where the cut has room, as far apart as they can be: a `FlatSplit` with `.a`, `.b`, `.keys` (in place), and laid for printing `.aPrint`, `.bPrint` (on their cut faces, on z = 0) and `.print` (the keys flat in a row). `joinParts(a, b, plane, kind:)` joins two separate parts where `b` ends on a face of `a` (the plane, its normal into `b`): the same joints, from `b` into `a`, sized by `b`'s end, a tenon longer than `a` is thick flush on the far side; joints lie along the cut's longer side unless `turn:` says. `profile.spots(n, margin:)` gives the points it uses: up to n inside a profile in any plane, at least margin from its edges, far apart.
   - `molds`: `mold(part, plane, wall: 10.mm, keys: 4, sprue: 6.mm, vents: 2, seal: 0.8.mm, clearance: 0.15.mm, pry: true)` a two-part mold to cast the part in (silicone, resin, plaster): a block round it cut along the parting plane (where the part is widest), the part hollow inside, cone keys on one half's parting face and sockets in the other, a seal ridge round the cavity and its groove, a pour hole with a funnel and vents up through the half in front of the plane, notches on two sides to pry it open; a `Mold` with `.a`, `.b` and, laid on their outer faces with the parting face up, `.aPrint`, `.bPrint`.
   - `hardware`: `Screw` sizes `M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8`, `M10`, `M12`, unified inch `UNC4_40`, `UNC6_32`, `UNC8_32`, `UNC10_24`, `UNC1_4_20` (cameras and tripods), and self-tapping screws for plastic `ST2_2`, `ST2_9`, `ST3_5`, `ST4_2` (their `tap` is the hole they cut their thread in), with `d`, `pitch`, `tap`, `clearance`, `head`, `headHeight`, `key`, `nut`, `nutHeight`, `washer`, `insert`, `insertDepth`; `screw(M3, 20.mm, threaded: false, head: "socket" | "button" | "flat" | "hex" | "pan")` (ISO 4762, 7380, 10642, 4017, 7049; underside of the head on z = 0, a flat head's top), `headOf(M3, "button")` its `d`, `h`, `key`, `nut(M3, threaded: false)`, `washer(M3)`, `hexPrism(acrossFlats, h)`, `squareNut(M3)` (DIN 562, `squareNutSize`, `squareNutHeight`); tools to subtract, top on z = 0 going down: `hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" | "countersink" | "ribs", head: "socket")` (a counterbore sized for that head; `"ribs"` a hole the screw passes with three ribs along it, 120° apart and one towards -Y, the bottom one on a wall, that the screw cuts its thread into), `nutTrap(M3, depth)`, `squareNutSlot(M3, reach, clearance: 0.2.mm)` (centred on the axis, its middle on z = 0, open towards +X `reach` long, for the nut to slide in from the side); aluminium extrusions of the 20 and 30 series (2020, 3030, B-type slot, typical sizes): `extrusion(20, length)` (standing along Z, centred: a reference part), `extrusionSeries(20)` its sizes (`size`, `slot`, `lip`, `cavity`, `depth`, `bore`, `screw`), `tNut(20, length: 10.mm)` (a T-nut as it sits in a slot facing +Z, the face on z = 0, a tap hole for M5 or M6) and `slotKey(20, length)` (a key under a printed part, down from z = 0 into a slot, to keep it square to the extrusion).
   - `threads`: `threadedRod(d, pitch, length, chamfer: true, left: false)` (ISO metric profile, real geometry), `tappedHole(d, pitch, depth, clearance: 0.15.mm)` (a tool to subtract for an internal thread), `toothHeight(pitch)`. They are made with `isoThread(d:, pitch:, length:, chamfer:)`, a thread built exactly from its boundary (each corner of the profile on its own helix, a ruled face between two of them, one a turn) and cut to length: no sweep, no core to fuse; an M8 × 60 rod in about a second.
@@ -2181,10 +2181,25 @@ private Keys keys(string kind, Length s, Length len, Length g, int count)
     }
 }
 
+/// How far to turn a joint in the frame of plane `here` so it lies along the
+/// section's longer side: a tenon's width, the way a dovetail slides.
+private Angle alongLonger(Profile section, Plane here, string kind)
+{
+    // a dovetail and a gooseneck slide along the frame's y: that way along the longer side
+    // the frame's x and y, read from a thin bar placed along each
+    auto xd = box(10.mm, 0.001.mm, 0.001.mm).placeOn(here).bbox.size / 10.mm;
+    auto yd = box(0.001.mm, 10.mm, 0.001.mm).placeOn(here).bbox.size / 10.mm;
+    auto size = section.bbox.size;
+    immutable longerY = dot(size, yd) > dot(size, xd) + 0.01.mm;
+    immutable slides = kind == "dovetail" || kind == "kama";
+    return longerY != slides ? 90.deg : 0.deg;
+}
+
 /// `body` cut along the plane `at` into two pieces that fit together with a
 /// joint, `clearance` apart where they meet (0.2 mm suits most FDM printers:
 /// see the fits guide). The joint is centred on the cut (the middle of the
-/// section), `turn` turns it about the plane's normal; `size` sets its scale
+/// section), laid along the section's longer side; `turn` turns it further
+/// about the plane's normal; `size` sets its scale
 /// (by default the square root of the section's area: the width of a square
 /// beam) and `length` how far it reaches across the plane (0.6 of the size).
 /// `count` is the number of fingers or pins (pins thinner the more there are).
@@ -2206,7 +2221,8 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
 
     // the joint's frame: on the plane, at the middle of the section
     auto here = plane(origin: section.bbox.center, normal: at.normal);
-    Solid placed(Solid k) => k.rotate(z: turn).placeOn(here);
+    immutable spin = turn + alongLonger(section, here, kind);
+    Solid placed(Solid k) => k.rotate(z: spin).placeOn(here);
 
     auto exact = keys(kind, s, len, 0.mm, count);
     auto room = keys(kind, s, len, clearance, count);
@@ -2328,6 +2344,41 @@ FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", 
     auto aPrint = a.placeOn(World, from: faces.filter(f => cutFace(f, at.normal)));
     auto bPrint = b.placeOn(World, from: faces.filter(f => cutFace(f, -at.normal)));
     return FlatSplit(a, b, placed, aPrint, bPrint, flat);
+}
+
+/// Two separate parts joined where one meets the other: `b` ends on the plane
+/// `at` (a face of `a`, its normal pointing into `b`), and the joint goes from
+/// `b` into `a`: a shelf into an upright, a rail into a post. The joint is
+/// centred on `b`'s end and sized by it, as splitJoint does; what reaches past
+/// `a`'s far side stops flush with it (a through tenon). Kinds: "tenon",
+/// "dovetail" (a sliding dovetail, its housing running out of `a` the way it
+/// slides in), "pins", "fingers" (a corner of a box), "lap", "kama" (its
+/// housing too runs out of `a`). Gives the two parts changed: `.a` with the hollows,
+/// `.b` with what fits in them.
+Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
+    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
+{
+    assert(kind != "kanawa", "joinParts joins two parts that meet; a wedged scarf joins two ends: splitJoint");
+    // b's end, a hair inside it
+    auto end = b.section(plane(origin: at.origin + at.normal * 0.01.mm, normal: at.normal));
+    immutable s = size > 0.mm ? size : sqrt(end.area);
+    immutable len = length > 0.mm ? length : 0.6 * s;
+
+    // the joint's frame on the plane, in the middle of b's end, its z going into a
+    auto here = plane(origin: end.bbox.center - at.normal * 0.01.mm, normal: -at.normal);
+    immutable spin = turn + alongLonger(end, here, kind);
+    Solid placed(Solid k) => k.rotate(z: spin).placeOn(here);
+    auto exact = keys(kind, s, len, 0.mm, count);
+    auto room = keys(kind, s, len, clearance, count);
+    // what one pushes into the other stays within b's end, carried across the plane both ways
+    auto footprint = end.extrude(2 * (len + 1.mm), symmetric: true);
+    // a dovetail's or a gooseneck's housing runs on along the way it slides, out of a, so b goes in
+    immutable slides = kind == "dovetail" || kind == "kama";
+    auto housing = slides ? placed(room.up) : placed(room.up) & footprint.offset(clearance, sharp: true);
+    auto na = a - housing + (b & placed(exact.down) & footprint);
+    auto nb = b + (a & placed(exact.up) & footprint) - placed(room.down);
+    Solid[] none;
+    return Joint(na, nb, none);
 }
 ```
 

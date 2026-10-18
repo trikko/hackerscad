@@ -1,6 +1,6 @@
 # Joints between parts
 
-A part too long for the printer's bed, cut in two pieces that lock together with no screws and no glue, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck and the wedged scarf of Japanese carpentry. Or a part cut into two halves with flat faces, each printed lying on its cut face, joined by flat keys. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
+A part too long for the printer's bed cut in two pieces that lock together with no screws and no glue, or two parts joined where they meet, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck and the wedged scarf of Japanese carpentry. Or a part cut into two halves with flat faces, each printed lying on its cut face, joined by flat keys. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
 
 <!-- render: joints-kinds --from 0.6,-1,0.5 -->
 ```d
@@ -72,7 +72,7 @@ The joint sits in the middle of the cut. Its size follows the cut: by default it
 | `clearance:` | the play where the pieces meet, 0.2 mm unless given |
 | `size:` | the joint's scale, instead of the square root of the section's area |
 | `length:` | how far it reaches across the cut, 0.6 of the size unless given |
-| `turn:` | turns it about the plane's normal: which way a dovetail or a gooseneck slides in |
+| `turn:` | turns it about the plane's normal (it lies along the cut's longer side unless turned): which way a dovetail or a gooseneck slides in |
 | `count:` | the number of pins (thinner the more there are) or fingers |
 
 ## A rail longer than the bed
@@ -138,6 +138,53 @@ Solid wedge() => scarf().loose[0].move(y: -25.mm, z: 6.mm);
 ```
 
 ![A post joined with a wedged scarf, the wedge beside it](img/joints-kanawa.png)
+
+## Two parts that meet
+
+`joinParts(a, b, plane)` joins two separate parts where one ends on the other: a shelf on an upright, a rail on a post, the sides of a box. `b` is the part that ends on the plane (a face of `a`, the plane's normal pointing into `b`), and the joint goes from `b` into `a`, centred on `b`'s end and sized by it. A tenon longer than `a` is thick comes out flush on the far side, a through tenon, as the frames of Japanese cabinets (sashimono) show them. The kinds are those of `splitJoint` but the wedged scarf; `.a` comes back with the hollows, `.b` with what fits in them.
+
+<!-- render: joints-parts --from -0.5,1,0.6 -->
+```d
+// a shelf into an upright with a through tenon, a rail
+// into a post with a sliding dovetail, pulled apart
+
+import joints;
+
+Solid upright() => box(12.mm, 60.mm, 100.mm)
+    .move(x: -6.mm);
+Solid shelf() => box(60.mm, 50.mm, 12.mm)
+    .move(x: 30.mm, z: 40.mm);
+
+// the shelf ends on the upright's face x = 0
+Joint shelved() => joinParts(upright(), shelf(),
+    plane(origin: vec(0.mm, 0.mm, 46.mm), normal: X));
+
+@part("Sky Pop")
+Solid side() => shelved().a;
+
+@part("Pink Pop")
+Solid board() => shelved().b.move(x: 25.mm);
+
+Solid post() => box(20.mm, 20.mm, 80.mm)
+    .move(x: 100.mm);
+Solid rail() => box(15.mm, 60.mm, 25.mm)
+    .move(x: 100.mm, y: 40.mm, z: 30.mm);
+
+// the rail ends on the post's face y = 10
+Joint railed() => joinParts(post(), rail(),
+    plane(origin: vec(100.mm, 10.mm, 42.5.mm), normal: Y),
+    kind: "dovetail");
+
+@part("gold")
+Solid upright2() => railed().a;
+
+@part("mediumseagreen")
+Solid rail2() => railed().b.move(y: 25.mm);
+```
+
+![A shelf with a through tenon into an upright, a rail with a sliding dovetail into a post](img/joints-parts.png)
+
+The joint lies along the longer side of the end, as a tenon goes along a board's width and a dovetail slides along a rail's height; `turn: 90.deg` turns it across. The housing of a dovetail or a gooseneck runs on out of `a` the way it slides, so the rail goes in from the post's end.
 
 ## Two halves cut flat, joined by keys
 

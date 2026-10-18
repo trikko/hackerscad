@@ -4776,3 +4776,19 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    mixin(slowTest);
+    // two parts joined where one meets the other: apart, the tenon inside the upright's room and not
+    // past its far side, nothing pushed outside the shelf's end
+    auto r = runModel("import joints;\n"
+        ~ "unittest { auto up = box(12.mm, 60.mm, 100.mm).move(x: -6.mm); auto sh = box(60.mm, 50.mm, 12.mm).move(x: 30.mm, z: 40.mm);\n"
+        ~ "foreach (kind; [\"tenon\", \"dovetail\", \"pins\", \"lap\", \"kama\"]) {\n"
+        ~ "auto j = joinParts(up, sh, plane(origin: vec(0.mm, 0.mm, 46.mm), normal: X), kind: kind);\n"
+        ~ "assert((j.a & j.b).volume < 0.001 * 1.mm ^^ 3, kind ~ \": overlap\");\n"
+        ~ "assert(j.b.bbox.min.x >= -12.mm - 1e-6.mm && j.b.bbox.min.z >= 40.mm - 1e-6.mm && j.b.bbox.max.z <= 52.mm + 1e-6.mm, kind ~ \": past the shelf\");\n"
+        ~ "assert(j.a.pieces.length == 1 && j.b.pieces.length == 1, kind); } }\n");
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
