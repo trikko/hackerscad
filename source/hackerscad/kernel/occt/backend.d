@@ -113,6 +113,9 @@ final class OcctKernel : BrepKernel
         wrap(hc_helix_tapered(r, pitch, height, left, taper), "helix");
     Brep isoThread(double d, double pitch, double length, double chamfer) =>
         wrap(hc_iso_thread(d, pitch, length, chamfer), "thread");
+    /// The performance test's join of two solids touching on a flat face (see perftest.d).
+    Brep joinTouching(Brep a, Brep b, bool glue) => wrap(hc_join_touching(h(a), h(b), glue), "join");
+
     /// The performance test's thread cut to length without a boolean (see perftest.d).
     Brep threadDirect(const(double)[] rz, double lead, double length, double chamfer = 0, double rOut = 0) =>
         wrap(hc_thread_direct(rz.ptr, cast(int)(rz.length / 2), lead, length, chamfer, rOut), "direct thread");

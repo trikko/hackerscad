@@ -54,4 +54,32 @@ unittest
                 k.faceCount(viaBoolean), k.faceCount(direct));
         }
     }
+
+    // joining a thread to the part it stands on: the boolean fuse, the same glued, and by hand
+    foreach (spec; [[20.0, 2.5, 40.0], [8.0, 1.25, 25.0], [24.0, 3.0, 70.0]])
+    {
+        immutable d = spec[0], p = spec[1], len = spec[2];
+        immutable h = 0.5413 * p, R = d / 2, r = R - h;
+        double[] rz = [R, -p / 16, R, p / 16, r, 3 * p / 8, r, 5 * p / 8];
+        auto thread = k.threadDirect(rz, p, len, h, R + 0.01);
+        // a shoulder under it, its top face on z = 0
+        auto shoulder = k.translate(k.cylinder(d * 0.8, 8), Vec3(0, 0, -8));
+        double tf, tg, tm;
+        Brep fused, glued, manual;
+        foreach (round; 0 .. 2)
+        {
+            auto sw = StopWatch(AutoStart.yes);
+            fused = k.boolean(shoulder, thread, BoolOp.fuse);
+            tf = sw.peek.total!"usecs" / 1000.0;
+            sw.reset();
+            glued = k.joinTouching(shoulder, thread, true);
+            tg = sw.peek.total!"usecs" / 1000.0;
+            sw.reset();
+            manual = k.joinTouching(shoulder, thread, false);
+            tm = sw.peek.total!"usecs" / 1000.0;
+        }
+        writefln("join M%g x %g: fuse %.1f ms; glued %.1f ms (%.1fx); by hand %.1f ms (%.1fx); volumes %.3f / %.3f / %.3f, "
+            ~ "valid %s / %s / %s", d, len, tf, tg, tf / tg, tm, tf / tm, k.volume(fused), k.volume(glued), k.volume(manual),
+            k.isValid(fused), k.isValid(glued), k.isValid(manual));
+    }
 }

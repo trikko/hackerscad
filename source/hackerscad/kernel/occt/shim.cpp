@@ -46,6 +46,9 @@
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BOPAlgo_GlueEnum.hxx>
+#include <ElSLib.hxx>
+#include <BRepTopAdaptor_FClass2d.hxx>
 #include <OSD_ThreadPool.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <BRepCheck_Shell.hxx>
@@ -4074,6 +4077,94 @@ hc_shape *hc_thread_direct(const double *rzIn, int n, double lead, double length
         sew.Perform();
         if (sew.NbFreeEdges() > 0)
             throw Standard_Failure(("the direct thread's faces do not close: " + std::to_string(sew.NbFreeEdges()) + " edges open").c_str());
+        BRepBuilderAPI_MakeSolid ms;
+        for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next())
+            ms.Add(TopoDS::Shell(ex.Current()));
+        TopoDS_Shape r = ms.Solid();
+        GProp_GProps g;
+        BRepGProp::VolumeProperties(r, g);
+        if (g.Mass() < 0)
+            r.Reverse();
+        return primitive(r);
+    });
+}
+
+// PERFORMANCE TEST: two solids that touch only where a flat face of `b` lies
+// on a flat face of `a` (a thread standing on a shoulder, a boss on a plate)
+// joined. glue: OpenCascade's fuse told so (BOPAlgo_GlueShift); else by
+// hand: `a`'s face given a hole the shape of `b`'s, `b`'s face left out, the
+// rest sewn. -1 when no such pair of faces is found.
+hc_shape *hc_join_touching(const hc_shape *a, const hc_shape *b, int glue)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        if (glue) {
+            BRepAlgoAPI_Fuse mk;
+            TopTools_ListOfShape args, tools;
+            args.Append(a->shape);
+            tools.Append(b->shape);
+            mk.SetArguments(args);
+            mk.SetTools(tools);
+            mk.SetRunParallel(Standard_True);
+            mk.SetGlue(BOPAlgo_GlueShift);
+            mk.Build();
+            if (!mk.IsDone())
+                throw Standard_Failure("the glued fuse failed");
+            return primitive(mk.Shape());
+        }
+        // b's flat face lying on one of a's, facing it
+        TopoDS_Face fa, fb;
+        for (TopExp_Explorer eb(b->shape, TopAbs_FACE); eb.More() && fb.IsNull(); eb.Next()) {
+            const TopoDS_Face &f = TopoDS::Face(eb.Current());
+            BRepAdaptor_Surface sb(f);
+            if (sb.GetType() != GeomAbs_Plane)
+                continue;
+            const gp_Pln pb = sb.Plane();
+            for (TopExp_Explorer ea(a->shape, TopAbs_FACE); ea.More(); ea.Next()) {
+                const TopoDS_Face &g = TopoDS::Face(ea.Current());
+                BRepAdaptor_Surface sa(g);
+                if (sa.GetType() != GeomAbs_Plane)
+                    continue;
+                const gp_Pln pa = sa.Plane();
+                if (!pa.Axis().IsParallel(pb.Axis(), 1e-9) || pa.Distance(pb.Location()) > 1e-7)
+                    continue;
+                // b's face inside a's: its points classified on a's face
+                BRepTopAdaptor_FClass2d cls(g, 1e-7);
+                bool inside = true;
+                for (TopExp_Explorer v(f, TopAbs_VERTEX); v.More() && inside; v.Next()) {
+                    gp_Pnt p = BRep_Tool::Pnt(TopoDS::Vertex(v.Current()));
+                    double u, w;
+                    ElSLib::Parameters(pa, p, u, w);
+                    inside = cls.Perform(gp_Pnt2d(u, w)) == TopAbs_IN;
+                }
+                if (inside) {
+                    fa = g;
+                    fb = f;
+                    break;
+                }
+            }
+        }
+        if (fa.IsNull())
+            throw Standard_Failure("no flat face of the one lies on a flat face of the other");
+        // a's face with a hole: its own wires, and b's face's outer wire, reversed
+        BRepBuilderAPI_MakeFace mf(BRep_Tool::Surface(fa), BRepTools::OuterWire(fa));
+        for (TopExp_Explorer w(fa, TopAbs_WIRE); w.More(); w.Next())
+            if (!w.Current().IsSame(BRepTools::OuterWire(fa)))
+                mf.Add(TopoDS::Wire(w.Current()));
+        TopoDS_Wire hole = BRepTools::OuterWire(fb);
+        mf.Add(TopoDS::Wire(fa.Orientation() == fb.Orientation() ? hole.Reversed() : hole));
+        ShapeFix_Face fix(mf.Face());
+        fix.Perform();
+        BRepBuilderAPI_Sewing sew(1e-6);
+        for (TopExp_Explorer ea(a->shape, TopAbs_FACE); ea.More(); ea.Next())
+            if (!ea.Current().IsSame(fa))
+                sew.Add(ea.Current());
+        sew.Add(fix.Face());
+        for (TopExp_Explorer eb(b->shape, TopAbs_FACE); eb.More(); eb.Next())
+            if (!eb.Current().IsSame(fb))
+                sew.Add(eb.Current());
+        sew.Perform();
+        if (sew.NbFreeEdges() > 0)
+            throw Standard_Failure(("the joined faces do not close: " + std::to_string(sew.NbFreeEdges()) + " edges open").c_str());
         BRepBuilderAPI_MakeSolid ms;
         for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next())
             ms.Add(TopoDS::Shell(ex.Current()));
