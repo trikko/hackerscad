@@ -5264,7 +5264,11 @@ hc_shape *hc_join_coincident(const hc_shape *a, const hc_shape *b)
         for (int i = 1; i <= ef.Extent(); i++)
             if (!BRep_Tool::Degenerated(TopoDS::Edge(ef.FindKey(i))) && ef(i).Extent() != 2)
                 throw Standard_Failure("the joined solid is not closed");
-        return primitive(solid);
+        // the faces of the two lying in one plane side by side (a sleeve's end and the part's face round it)
+        // merged into one, as a boolean leaves them: faces.top finds one face
+        ShapeUpgrade_UnifySameDomain unify(solid, Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        return primitive(unify.Shape());
     });
 }
 
