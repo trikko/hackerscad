@@ -421,7 +421,41 @@ Solid graded()
 
 ![A grille of plus signs and a plate with graded holes](img/patterns-own-tile.png)
 
-Tilings follow flat faces. On a curved surface, give it the grooves of `kind: "edges"` instead (above).
+On a curved face, roll the tiling onto it with `wrap:` instead of `on:` (see [From profile to solid](profiles.md)): the cells keep their size round a cylinder or a cone.
+
+<!-- render: patterns-wrapped --from 0.3,-1,0.5 -->
+```d
+// a honeycomb rolled round a cup, Voronoi cells round
+// a cone
+
+@part("Sky Pop")
+Solid cup()
+{
+    auto body = cylinder(d: 40.mm, h: 50.mm);
+    auto cells = rect(125.mm, 34.mm)
+        .tiles(kind: "hex", size: 6.mm, gap: 1.2.mm,
+            round: 0.4.mm);
+    return body.cut(cells, wrap: faces.largest,
+        depth: 1.mm);
+}
+
+@part("Pink Pop")
+Solid cone()
+{
+    auto body = loft([circle(d: 44.mm),
+        circle(d: 26.mm).move(z: 45.mm)]);
+    auto cells = rect(80.mm, 32.mm)
+        .tiles(kind: "voronoi", size: 6.mm, gap: 1.2.mm,
+            round: 0.4.mm, relax: 2);
+    return body.cut(cells, wrap: faces.largest,
+            depth: 1.2.mm)
+        .move(x: 55.mm);
+}
+```
+
+![A honeycomb round a cup and Voronoi cells round a cone](img/patterns-wrapped.png)
+
+A region that is a ring of noise instead, on any surface: the grooves of `kind: "edges"` (above).
 
 ## In the model or in a library
 

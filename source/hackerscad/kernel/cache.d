@@ -178,12 +178,18 @@ final class CachingKernel : BrepKernel
         return op(key("cutAll", cast(const(double)[]) ks.map!(x => cast(double) x).array), inner.cutAll(a, tools));
     }
 
-    Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode)
+    Brep wrapTool(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double lo, double hi) =>
+        op(key("wrapTool", s, cast(double) face, profile, cast(double) project, at, dir, lo, hi),
+            inner.wrapTool(s, face, profile, project, at, dir, lo, hi));
+
+    int wrapSkipped() => inner.wrapSkipped();
+
+    Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode, double minArea = 0)
     {
-        double[] ks = [cast(double) mode, region is null ? 0 : cast(double) keyOf(region)];
+        double[] ks = [cast(double) mode, minArea, region is null ? 0 : cast(double) keyOf(region)];
         foreach (m; motifs)
             ks ~= cast(double) keyOf(m);
-        return op(key("tiles", cast(const(double)[])(ks ~ place)), inner.tiles(motifs, place, region, mode));
+        return op(key("tiles", cast(const(double)[])(ks ~ place)), inner.tiles(motifs, place, region, mode, minArea));
     }
 
     Brep fuseAll(Brep[] parts)

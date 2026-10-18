@@ -72,6 +72,17 @@
 #include <mutex>
 #include <vector>
 #include <BRepTools_WireExplorer.hxx>
+#include <Geom_OffsetSurface.hxx>
+#include <Geom_SurfaceOfRevolution.hxx>
+#include <Geom_ElementarySurface.hxx>
+#include <GCE2d_MakeSegment.hxx>
+#include <ShapeFix_Shape.hxx>
+#include <Geom_RectangularTrimmedSurface.hxx>
+#include <GeomConvert.hxx>
+#include <Geom2d_BSplineCurve.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <Geom2dAPI_PointsToBSpline.hxx>
+#include <TColgp_Array1OfPnt2d.hxx>
 #include <array>
 #include <initializer_list>
 #include <BRepBuilderAPI_MakePolygon.hxx>
@@ -1801,9 +1812,10 @@ hc_shape *hc_cut_all(const hc_shape *a, const hc_shape *const *tools, int n)
 // Tiles: copies of the motif faces, each placed by four numbers in `place`
 // (which motif, dx, dy, a scale about the motif's origin), gathered into one
 // compound. mode 1 cuts them to `region` (only those crossing its border go
-// through the boolean), mode 2 keeps only those wholly inside it.
+// through the boolean, the pieces smaller than minArea left out), mode 2 keeps
+// only those wholly inside it.
 hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, int n, const hc_shape *region,
-                   int mode)
+                   int mode, double minArea)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         std::vector<TopoDS_Face> rfaces;
@@ -1854,8 +1866,13 @@ hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, i
             mk.Build();
             if (!mk.IsDone() || mk.HasErrors())
                 throw Standard_Failure("the tiles could not be cut to the region");
-            for (const TopoDS_Face &f : faces_of(mk.Shape()))
-                kept.push_back(f);
+            // the slivers of cells the border cuts off, too small to print or to lay on a curved face, left out
+            for (const TopoDS_Face &f : faces_of(mk.Shape())) {
+                GProp_GProps g;
+                BRepGProp::SurfaceProperties(f, g);
+                if (g.Mass() >= minArea)
+                    kept.push_back(f);
+            }
         }
         if (kept.empty()) {
             set_error("no tile lies in the region (are the tiles larger than it?)");
@@ -2271,6 +2288,391 @@ hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d)
 
 // The flat face `face` swept by the vector v: the solid a push or pull of
 // the face adds or removes.
+// ---------------------------------------------------------------- profiles on curved faces
+
+// A flat profile (on XY) laid on face `face` of `s`: wrapped (project 0), rolled
+// onto it as a label onto a bottle, lengths kept along the face; or projected
+// (project 1), each point carried along `dir` (the face's normal at the anchor
+// when zero) from the plane touching the face at the anchor. The profile's origin
+// goes to the anchor `at` (NaN: the middle of the face's parameters), its x
+// across the face (round a cylinder), its y along it, read from outside. Each
+// region of the profile becomes a solid between `inner` and `outer` along the
+// face's normal (outwards positive): what to cut or add. The edges are curves
+// on the surface, exact where the face unrolls flat (a cylinder: lines and
+// arcs carried exactly), fitted within a micron elsewhere.
+static int g_wrap_skipped = 0;
+
+// How many regions the last hc_wrap_tool left out, broken.
+int hc_wrap_skipped(void) { return g_wrap_skipped; }
+
+hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
+                       const double *dir, double inner, double outer)
+{
+    g_wrap_skipped = 0;
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const auto &m = map_of(s, TopAbs_FACE);
+        if (face < 0 || face >= m.Extent())
+            throw Standard_Failure("no such face");
+        const TopoDS_Face F = TopoDS::Face(m(face + 1));
+        Handle(Geom_Surface) S = BRep_Tool::Surface(F);
+        const double sign = F.Orientation() == TopAbs_REVERSED ? -1 : 1;
+        // a trimmed surface: the one it trims (the same parameters, beyond the trim too)
+        while (Handle(Geom_RectangularTrimmedSurface) tr = Handle(Geom_RectangularTrimmedSurface)::DownCast(S))
+            S = tr->BasisSurface();
+        // a surface closed round on itself but not periodic (a loft through rings): made
+        // periodic, so the profile can run on across the line where it closes
+        if (Handle(Geom_BSplineSurface) bs = Handle(Geom_BSplineSurface)::DownCast(S)) {
+            Handle(Geom_BSplineSurface) c = Handle(Geom_BSplineSurface)::DownCast(bs->Copy());
+            try {
+                if (c->IsUClosed() && !c->IsUPeriodic())
+                    c->SetUPeriodic();
+                if (c->IsVClosed() && !c->IsVPeriodic())
+                    c->SetVPeriodic();
+                S = c;
+            } catch (const Standard_Failure &) {
+            }
+        }
+        double umin, umax, vmin, vmax;
+        BRepTools::UVBounds(F, umin, umax, vmin, vmax);
+        double u0 = (umin + umax) / 2, v0 = (vmin + vmax) / 2;
+        if (std::isnan(at[0]) && GeomAdaptor_Surface(S).GetType() != GeomAbs_Plane) {
+            // a curved face: the place across it that faces the front (-Y), as a wall's
+            // frame is seen, halfway along it
+            double best = -2;
+            for (int i = 0; i <= 720; i++) {
+                const double u = umin + (umax - umin) * i / 720, v = (vmin + vmax) / 2;
+                gp_Pnt q;
+                gp_Vec du, dv;
+                S->D1(u, v, q, du, dv);
+                const gp_Vec n = du.Crossed(dv);
+                if (n.Magnitude() < 1e-12)
+                    continue;
+                const double f = -n.Normalized().Y() * sign;
+                if (f > best + 1e-9) {
+                    best = f;
+                    u0 = u;
+                }
+            }
+            // a face whose across-parameter is v (a surface lofted the other way)
+            for (int i = 0; i <= 720 && best < 0.999; i++) {
+                const double v = vmin + (vmax - vmin) * i / 720, u = (umin + umax) / 2;
+                gp_Pnt q;
+                gp_Vec du, dv;
+                S->D1(u, v, q, du, dv);
+                const gp_Vec n = du.Crossed(dv);
+                if (n.Magnitude() < 1e-12)
+                    continue;
+                const double f = -n.Normalized().Y() * sign;
+                if (f > best + 1e-9) {
+                    best = f;
+                    u0 = u;
+                    v0 = v;
+                }
+            }
+        }
+        if (!std::isnan(at[0])) {
+            GeomAPI_ProjectPointOnSurf pr(gp_Pnt(at[0], at[1], at[2]), S);
+            if (pr.NbPoints() == 0)
+                throw Standard_Failure("the point given by at: does not lie over the face");
+            pr.LowerDistanceParameters(u0, v0);
+        }
+        // a surface turned round an axis (cylinder, cone, sphere, a turned profile): turned so that the
+        // anchor sits halfway round its parameter, and a profile shorter than once round never crosses the
+        // line where the parameter starts again (a face across it comes out broken)
+        {
+            gp_Ax1 axis;
+            bool round = false;
+            if (Handle(Geom_ElementarySurface) el = Handle(Geom_ElementarySurface)::DownCast(S)) {
+                round = !Handle(Geom_Plane)::DownCast(S);
+                axis = el->Axis();
+            } else if (Handle(Geom_SurfaceOfRevolution) rv = Handle(Geom_SurfaceOfRevolution)::DownCast(S)) {
+                round = true;
+                axis = rv->Axis();
+            }
+            if (round && S->IsUPeriodic() && std::abs(u0 - M_PI) > 1e-12) {
+                S = Handle(Geom_Surface)::DownCast(S->Copy());
+                S->Rotate(axis, u0 - M_PI);
+                umin -= u0 - M_PI;
+                umax -= u0 - M_PI;
+                u0 = M_PI;
+            }
+        }
+        gp_Pnt O;
+        gp_Vec Su, Sv;
+        S->D1(u0, v0, O, Su, Sv);
+        if (Su.Magnitude() < 1e-9 || Sv.Magnitude() < 1e-9)
+            throw Standard_Failure("the anchor is at a pole of the face: give another point with at:");
+        gp_Vec N = Su.Crossed(Sv).Normalized() * sign;
+        // x along the parameter that runs most across Z (round a cylinder standing up),
+        // y along the other; turned so that y goes up and x, y and the normal turn right-handed
+        const bool swap = std::abs(Su.Normalized().Z()) > std::abs(Sv.Normalized().Z()) + 1e-9;
+        const gp_Vec Px = swap ? Sv : Su, Py = swap ? Su : Sv;
+        const double by = Py.Z() < -1e-9 ? -1 : 1;
+        const double bx = (Px.Crossed(Py).Dot(N) > 0 ? 1 : -1) * by;
+        // (x, y) as (u, v) through the parameters of x and y
+        auto uv = [&](double px, double py) { return swap ? gp_Pnt2d(py, px) : gp_Pnt2d(px, py); };
+        const double p0x = swap ? v0 : u0, p0y = swap ? u0 : v0;
+        const GeomAbs_SurfaceType type = GeomAdaptor_Surface(S).GetType();
+        const bool affine = !project && (type == GeomAbs_Cylinder || type == GeomAbs_Plane);
+        const double lx = Px.Magnitude(), ly = Py.Magnitude();
+
+        // wrapping elsewhere: arc length along the two lines of the surface through the anchor
+        struct Table {
+            std::vector<double> t, len;
+            double param(double l) const
+            {
+                if (l < len.front() - 1e-9 || l > len.back() + 1e-9)
+                    throw Standard_Failure("the profile runs off the face's surface: make it smaller, or move "
+                                           "it with at:");
+                const size_t i = std::min<size_t>(
+                    std::max<size_t>(std::lower_bound(len.begin(), len.end(), l) - len.begin(), 1), len.size() - 1);
+                const double f = (l - len[i - 1]) / std::max(len[i] - len[i - 1], 1e-300);
+                return t[i - 1] + f * (t[i] - t[i - 1]);
+            }
+        };
+        auto table = [&](bool alongU) {
+            double a, b;
+            const double p0 = alongU ? u0 : v0;
+            const bool periodic = alongU ? S->IsUPeriodic() : S->IsVPeriodic();
+            if (periodic) {
+                const double per = alongU ? S->UPeriod() : S->VPeriod();
+                a = p0 - per / 2;
+                b = p0 + per / 2;
+            } else {
+                double s0, s1, t0, t1;
+                S->Bounds(s0, s1, t0, t1);
+                a = alongU ? s0 : t0;
+                b = alongU ? s1 : t1;
+                const double lo = alongU ? umin : vmin, hi = alongU ? umax : vmax, span = hi - lo;
+                a = std::max(a, lo - 2 * span);
+                b = std::min(b, hi + 2 * span);
+            }
+            Table tb;
+            const int n = 4000;
+            gp_Pnt prev;
+            double acc = 0;
+            for (int i = 0; i <= n; i++) {
+                const double t = a + (b - a) * i / n;
+                const gp_Pnt q = alongU ? S->Value(t, v0) : S->Value(u0, t);
+                if (i > 0)
+                    acc += q.Distance(prev);
+                prev = q;
+                tb.t.push_back(t);
+                tb.len.push_back(acc);
+            }
+            // lengths from the anchor
+            double l0 = 0;
+            for (int i = 1; i <= n; i++)
+                if (tb.t[i] >= p0) {
+                    const double f = (p0 - tb.t[i - 1]) / (tb.t[i] - tb.t[i - 1]);
+                    l0 = tb.len[i - 1] + f * (tb.len[i] - tb.len[i - 1]);
+                    break;
+                }
+            for (double &l : tb.len)
+                l -= l0;
+            return tb;
+        };
+        if (affine) {
+            // round a cylinder: no longer than once round
+            Bnd_Box pb;
+            BRepBndLib::Add(profile->shape, pb);
+            double x0, y0, z0, x1, y1, z1;
+            pb.Get(x0, y0, z0, x1, y1, z1);
+            const bool periodic = swap ? S->IsVPeriodic() : S->IsUPeriodic();
+            const double per = swap ? (periodic ? S->VPeriod() : 0) : (periodic ? S->UPeriod() : 0);
+            if (periodic && (x1 - x0) > lx * per + 1e-6)
+                throw Standard_Failure("the profile runs off the face's surface: it is longer than once round it");
+        }
+        Table tx, ty;
+        if (!affine && !project) {
+            tx = table(!swap);
+            ty = table(swap);
+        }
+
+        // projecting: from the plane touching the face at the anchor, along dir
+        gp_Vec X = (Px * bx).Normalized();
+        X = (X - N * X.Dot(N)).Normalized();
+        const gp_Vec Y = N.Crossed(X);
+        gp_Vec D(dir[0], dir[1], dir[2]);
+        if (D.Magnitude() < 1e-12)
+            D = -N;
+        D.Normalize();
+        double lastU = u0, lastV = v0;
+        auto projected = [&](double x, double y) {
+            const gp_Pnt P = O.Translated(X * x + Y * y);
+            double u = lastU, v = lastV, t = 0;
+            for (int it = 0; it < 50; it++) {
+                gp_Pnt q;
+                gp_Vec du, dv;
+                S->D1(u, v, q, du, dv);
+                const gp_Vec r(P.Translated(D * t), q);   // S(u, v) - (P + t D)
+                if (r.Magnitude() < 1e-9)
+                    break;
+                // solve [du dv -D] (Δu Δv Δt) = -r
+                const gp_Vec c3 = -D;
+                const double det = du.Dot(dv.Crossed(c3));
+                if (std::abs(det) < 1e-14)
+                    throw Standard_Failure("the projection runs along the face: give another direction");
+                const gp_Vec mr = -r;
+                u += mr.Dot(dv.Crossed(c3)) / det;
+                v += du.Dot(mr.Crossed(c3)) / det;
+                t += du.Dot(dv.Crossed(mr)) / det;
+                if (it == 49)
+                    throw Standard_Failure("part of the profile, projected, misses the face's surface");
+            }
+            lastU = u;
+            lastV = v;
+            return gp_Pnt2d(u, v);
+        };
+        auto mapped = [&](double x, double y) -> gp_Pnt2d {
+            if (project)
+                return projected(x, y);
+            if (affine)
+                return uv(p0x + bx * x / lx, p0y + by * y / ly);
+            return uv(tx.param(bx * x), ty.param(by * y));
+        };
+
+        // each edge of the profile as a curve in (u, v)
+        auto pcurve = [&](const TopoDS_Edge &e) -> Handle(Geom2d_Curve) {
+            double f, l;
+            TopLoc_Location loc;
+            Handle(Geom_Curve) c = BRep_Tool::Curve(e, loc, f, l);
+            if (c.IsNull())
+                throw Standard_Failure("an edge of the profile has no curve");
+            if (!loc.IsIdentity())
+                c = Handle(Geom_Curve)::DownCast(c->Transformed(loc.Transformation()));
+            const bool rev = e.Orientation() == TopAbs_REVERSED;
+            if (affine) {
+                Handle(Geom_BSplineCurve) bs = GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(c, f, l));
+                if (rev)
+                    bs->Reverse();
+                TColgp_Array1OfPnt2d poles(1, bs->NbPoles());
+                for (int i = 1; i <= bs->NbPoles(); i++)
+                    poles(i) = mapped(bs->Pole(i).X(), bs->Pole(i).Y());
+                TColStd_Array1OfReal knots(1, bs->NbKnots()), weights(1, bs->NbPoles());
+                TColStd_Array1OfInteger mults(1, bs->NbKnots());
+                bs->Knots(knots);
+                bs->Multiplicities(mults);
+                bs->Weights(weights);
+                return new Geom2d_BSplineCurve(poles, weights, knots, mults, bs->Degree(), bs->IsPeriodic());
+            }
+            // points about every 0.3 mm along a curve, every 1 mm along a line: a short
+            // arc fitted through dozens of points crowded together comes out wavy
+            GeomAdaptor_Curve gc(c, f, l);
+            const bool straight = gc.GetType() == GeomAbs_Line;
+            const double len = GCPnts_AbscissaPoint::Length(gc);
+            // a curve shorter than 0.6 mm (a small rounding) as its chord, a chamfer too small to
+            // see on a print: fitted, it can leave the region's outline crossing itself
+            if (len < 0.6 && !straight) {
+                const gp_Pnt a = c->Value(rev ? l : f), b = c->Value(rev ? f : l);
+                const gp_Pnt2d pa = mapped(a.X(), a.Y()), pb = mapped(b.X(), b.Y());
+                if (pa.Distance(pb) < 1e-12)
+                    throw Standard_Failure("an edge of the profile is too short to lay on the face");
+                return GCE2d_MakeSegment(pa, pb).Value();
+            }
+            const int n = std::max(3, std::min(straight ? 16 : 48, (int)std::ceil(len / (straight ? 1.0 : 0.3))));
+            TColgp_Array1OfPnt2d pts(1, n + 1);
+            for (int i = 0; i <= n; i++) {
+                const double t = rev ? l - (l - f) * i / n : f + (l - f) * i / n;
+                const gp_Pnt q = c->Value(t);
+                pts(i + 1) = mapped(q.X(), q.Y());
+            }
+            Geom2dAPI_PointsToBSpline fit(pts, 3, 8, GeomAbs_C2, 1e-6);
+            if (!fit.IsDone())
+                throw Standard_Failure("an edge of the profile could not be laid on the face");
+            return fit.Curve();
+        };
+        auto offsetSurface = [&](double d) -> Handle(Geom_Surface) {
+            if (std::abs(d) < 1e-12)
+                return S;
+            Handle(Geom_OffsetSurface) os = new Geom_OffsetSurface(S, sign * d);
+            Handle(Geom_Surface) b = os->Surface();
+            if (!b.IsNull())
+                return b;
+            return os;
+        };
+        const Handle(Geom_Surface) Sin = offsetSurface(inner), Sout = offsetSurface(outer);
+
+        std::vector<TopoDS_Shape> tools;
+        for (const TopoDS_Face &pf : faces_of(profile->shape)) {
+            std::vector<std::vector<Handle(Geom2d_Curve)>> loops;
+            const TopoDS_Face fwd = TopoDS::Face(pf.Oriented(TopAbs_FORWARD));
+            const TopoDS_Wire outerWire = BRepTools::OuterWire(fwd);
+            std::vector<TopoDS_Wire> wires{outerWire};
+            for (TopExp_Explorer w(fwd, TopAbs_WIRE); w.More(); w.Next())
+                if (!w.Current().IsSame(outerWire))
+                    wires.push_back(TopoDS::Wire(w.Current()));
+            for (const TopoDS_Wire &w : wires) {
+                std::vector<Handle(Geom2d_Curve)> loop;
+                for (BRepTools_WireExplorer we(w, fwd); we.More(); we.Next())
+                    loop.push_back(pcurve(we.Current()));
+                loops.push_back(loop);
+            }
+            // the region on both offset surfaces, and the sides between them
+            std::vector<std::vector<TopoDS_Edge>> eIn, eOut;
+            auto faceOn = [&](const Handle(Geom_Surface) &surf, std::vector<std::vector<TopoDS_Edge>> &edges) {
+                BRepBuilderAPI_MakeFace mf;
+                bool first = true;
+                for (auto &loop : loops) {
+                    BRepBuilderAPI_MakeWire mw;
+                    std::vector<TopoDS_Edge> es;
+                    for (auto &c2 : loop) {
+                        TopoDS_Edge e = BRepBuilderAPI_MakeEdge(c2, surf).Edge();
+                        BRepLib::BuildCurves3d(e, 1e-7);
+                        mw.Add(e);
+                        if (!mw.IsDone())
+                            throw Standard_Failure("the profile's outline does not close on the face");
+                        es.push_back(mw.Edge());
+                    }
+                    edges.push_back(es);
+                    if (first)
+                        mf.Init(surf, Standard_False, 1e-7);
+                    mf.Add(mw.Wire());
+                    first = false;
+                }
+                ShapeFix_Face fix(mf.Face());
+                fix.FixOrientationMode() = 1;
+                fix.Perform();
+                return fix.Face();
+            };
+            const TopoDS_Face bottom = faceOn(Sin, eIn), top = faceOn(Sout, eOut);
+            BRepBuilderAPI_Sewing sew(1e-5);
+            sew.Add(bottom);
+            sew.Add(top);
+            for (size_t i = 0; i < eIn.size(); i++)
+                for (size_t j = 0; j < eIn[i].size(); j++)
+                    sew.Add(BRepFill::Face(eIn[i][j], eOut[i][j]));
+            sew.Perform();
+            TopoDS_Shell shell;
+            for (TopExp_Explorer sh(sew.SewedShape(), TopAbs_SHELL); sh.More(); sh.Next())
+                shell = TopoDS::Shell(sh.Current());
+            if (shell.IsNull())
+                throw Standard_Failure("a region laid on the face did not close into a solid");
+            BRepBuilderAPI_MakeSolid ms(shell);
+            TopoDS_Solid solid = ms.Solid();
+            BRepLib::OrientClosedSolid(solid);
+            if (solid_volume(solid) <= 0)
+                throw Standard_Failure("a region laid on the face gave no volume");
+            // a sliver (a cell cut at the border of the profile, a short arc) can come out
+            // broken, and one broken tool breaks the whole cut: mended, or left out
+            if (!BRepCheck_Analyzer(solid).IsValid()) {
+                ShapeFix_Shape fix(solid);
+                fix.Perform();
+                if (!BRepCheck_Analyzer(fix.Shape()).IsValid() || solid_volume(fix.Shape()) <= 0) {
+                    g_wrap_skipped++;
+                    continue;
+                }
+                tools.push_back(fix.Shape());
+                continue;
+            }
+            tools.push_back(solid);
+        }
+        if (tools.empty())
+            throw Standard_Failure("the profile is empty");
+        return primitive(compound_of(tools));
+    });
+}
+
 hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, double vz)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {

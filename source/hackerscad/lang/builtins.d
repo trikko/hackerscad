@@ -3999,8 +3999,15 @@ Value tilesOf(Interp it, ref CallArgs a)
     if (place.length == 0)
         throw new HcadError(Code.type, "no tile is left (keep: or scale: dropped them all?)", a.span);
     try
+    {
+        // a sliver the border cuts off a cell: under 2% of a cell, left out
+        double cell = 0;
+        foreach (mo; motifs)
+            cell += k.area(mo);
+        cell /= motifs.length;
         return Value.of(flatResult(Value.of(primitive(it, k.tiles(motifs, place, region.brep,
-            x.flag("whole", false) ? 2 : 1), "tiles", a.span))));
+            x.flag("whole", false) ? 2 : 1, 0.02 * cell), "tiles", a.span))));
+    }
     catch (KernelException e)
         throw new HcadError(Code.kernel, e.msg, a.span);
 }
@@ -4029,8 +4036,12 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
 {
     auto k = it.kernel;
     immutable fn = remove ? "cut" : "extrude";
-    auto x = Args(it, a, fn, ["solid", "profile", "on", "at", "depth", "through", "taper"]);
+    auto x = Args(it, a, fn, ["solid", "profile", "on", "at", "depth", "through", "taper", "wrap", "project", "along"]);
     auto body = x.solid("solid");
+    if (x.has("wrap") || x.has("project"))
+        return onCurvedFace(it, a, x, body, remove);
+    if (x.has("along"))
+        throw new HcadError(Code.type, "along: is the direction of project:", x.spanOf("along"));
     // a solid as the tool: built on XY, its z = 0 brought onto the face and +Z out of it (a hole()
     // from the hardware library, which goes down from z = 0, cuts into the material)
     auto given = x.get("profile");
@@ -4149,6 +4160,58 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
             }
     }
     return solidBoolean(it, body, placed.solid, remove ? BoolOp.cut : BoolOp.fuse, a.span);
+}
+
+/// body.cut(profile, wrap: faces.…, depth:) and project:: the profile laid on a face of any shape,
+/// rolled onto it (wrap, its lengths kept along the face) or carried along a direction (project, from
+/// the plane touching the face), then dug in or raised `depth` along the face's normal.
+Value onCurvedFace(Interp it, ref CallArgs a, ref Args x, SolidVal body, bool remove)
+{
+    auto k = it.kernel;
+    immutable fn = remove ? "cut" : "extrude";
+    if (x.has("wrap") && x.has("project"))
+        throw new HcadError(Code.unknownArg, "give either wrap: or project:, not both", x.spanOf("project"));
+    foreach (n; ["on", "through", "taper"])
+        if (x.has(n))
+            throw new HcadError(Code.type, format("'%s' does not go with wrap: or project:", n), x.spanOf(n));
+    immutable project = x.has("project");
+    immutable what = project ? "project" : "wrap";
+    if (x.has("along") && !project)
+        throw new HcadError(Code.type, "along: is the direction of project:", x.spanOf("along"));
+    auto p = profileArg(x, "profile");
+    requireXY(it, p, a.span);
+    auto idx = resolveSelector(it, x.selector(what, true), body, x.spanOf(what));
+    if (idx.length != 1)
+        throw new HcadError(Code.type, format("'%s' needs exactly one face, the selector matched %d", what, idx.length),
+            x.spanOf(what));
+    immutable depth = x.len("depth");
+    if (!(depth > 0))
+        throw new HcadError(Code.type, "depth must be greater than 0", x.spanOf("depth"));
+    immutable at = x.has("at") ? x.vecLen("at") : Vec3(double.nan, double.nan, double.nan);
+    immutable dir = x.has("along") ? x.dir("along") : Vec3(0, 0, 0);
+    // a little beyond the face on the side away from the material, so the two do not share a surface
+    immutable over = 0.01;
+    Brep tool;
+    try
+        tool = k.wrapTool(nonEmpty(body, a.span), idx[0], nonEmpty(p, a.span), project, at, dir,
+            remove ? -depth : -over, remove ? over : depth);
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, format("%s: %s", what, e.msg), a.span);
+    if (immutable n = k.wrapSkipped())
+        it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("%s: %s of the profile's regions could not "
+            ~ "be laid on the face (a sliver, a tiny arc) and %s left out", what, n, n == 1 ? "was" : "were"), a.span);
+    auto t = derived(it, tool, [p], fn, a.span);
+    t.flat = false;
+    // the regions all in one boolean: a fuse with a compound of several leaves them out
+    auto parts = k.solids(tool);
+    if (parts.length > 1)
+        try
+            return Value.of(derived(it, remove ? k.cutAll(body.brep, parts) : k.fuseAll(body.brep ~ parts), [body, t],
+                remove ? "cut" : "union", a.span));
+        catch (KernelException)
+        {
+        }
+    return solidBoolean(it, body, t, remove ? BoolOp.cut : BoolOp.fuse, a.span);
 }
 
 /// Whether an extrude() or cut() of a solid is given faces of it (a push

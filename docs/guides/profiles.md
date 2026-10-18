@@ -238,6 +238,44 @@ Solid tag()
 
 A profile drawn in a sketch on the face (`body.sketch(faces.top)`) already knows where it is: `body.cut(s.profile, depth:)`, no `on:`. Use a sketch when the feature has several shapes or relations, or is measured from the face's edges; a plain profile when it is one shape at a place you know.
 
+## On a curved face
+
+`on:` needs a flat face. On a curved one (the side of a cup, a cone, a ball) the profile is laid on the face itself:
+
+- `wrap: faces.…` rolls it onto the face like a label onto a bottle: its lengths stay the same along the face, so a 10 mm letter is 10 mm round a cup too;
+- `project: faces.…` casts it onto the face along a direction, as a light through a stencil would (`along:`, else straight at the face): simpler to picture, but stretched where the face turns away, so keep it to the part that faces the light.
+
+The profile's origin lands on the front of the face (the side facing −Y, halfway up), or on `at:`, a point over the face. Its x runs round the face and its y along it, read from outside. `depth:` digs in or grows along the face.
+
+<!-- render: profiles-curved --from 0.4,-1,0.4 -->
+```d
+// a name round a mug, Carlo stamped on a ball
+
+import carlo;
+
+@part("Sky Pop")
+Solid mug()
+{
+    auto body = cylinder(d: 40.mm, h: 45.mm);
+    auto name = text("CARLO", size: 9.mm).centered;
+    return body.extrude(name, wrap: faces.largest,
+        depth: 0.8.mm);
+}
+
+@part("Pink Pop")
+Solid ball()
+{
+    auto body = sphere(18.mm).move(x: 55.mm, z: 18.mm);
+    auto badge = carlo().projection.scale(0.5).centered;
+    return body.cut(badge, project: faces.largest,
+        along: Y, depth: 1.mm);
+}
+```
+
+![A name round a mug and Carlo stamped on a ball](img/profiles-curved.png)
+
+Wrapping is exact on faces that unroll flat (cylinders, cones, extruded outlines); on lofted and turned shapes it is close, and on a sphere the profile stretches, more the larger it is. A tiling (see [Patterns](patterns.md)) wraps the same way.
+
 ## Extruding and cutting faces
 
 A face is one of the surfaces that bound a solid: a box has six. Instead of a profile, the faces of the solid themselves can move: `body.extrude(faces.right, depth: 10.mm)` sweeps the flat faces outwards along their normals and adds the material; `body.cut(faces.top, depth: 4.mm)` sinks them (as does a negative depth to extrude). `along: vec(1, 0, 1)` sweeps them in another direction, with slanted sides: material is added where the direction leaves the face, removed where it enters.
@@ -271,6 +309,8 @@ Use it to change a part as it is (a wall thicker, a loaded STL made taller); for
 
 | Message | What to do |
 |---|---|
+| *wrap: the profile runs off the face's surface* | the profile is longer than the face (round a cylinder, more than its circumference): make it smaller, or move it with `at:` |
+| *project: part of the profile, projected, misses the face's surface* | the profile is wider than the face seen from that direction: smaller, or `wrap:` |
 | *tapered extrusion failed: an edge or a hole of the profile closes up before the top…* | a smaller taper or a lower height: a corner of radius r lasts while h × tan(taper) ≤ r |
 | *an extrusion is either twisted or tapered, not both* | choose one; for both, loft through turned and scaled profiles |
 | *revolve failed: the profile crosses the axis…* | move the profile to one side of the axis (x ≥ 0 for `revolve()`) |

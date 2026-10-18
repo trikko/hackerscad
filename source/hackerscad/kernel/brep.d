@@ -295,9 +295,16 @@ interface BrepKernel
     Brep fuseAll(Brep[] parts);
     /// `a` less every one of `tools`, in one boolean (faces: input 0 `a`, i + 1 the tool i).
     Brep cutAll(Brep a, Brep[] tools);
+    /// The flat `profile` laid on face `face` of `s`, wrapped (lengths kept along the face) or projected
+    /// along `dir` (zero: the face's normal), its origin at `at` (NaN: the face's middle): each region a
+    /// solid from `inner` to `outer` along the face's normal, to cut or add.
+    Brep wrapTool(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double inner, double outer);
+    /// How many regions the last wrapTool left out, too broken to lay on the face (slivers).
+    int wrapSkipped();
     /// Copies of the flat `motifs`, each placed by four numbers in `place` (which motif, dx, dy, a scale
-    /// about its origin), as one profile; mode 1 cut to `region`, mode 2 only those wholly inside it.
-    Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode);
+    /// about its origin), as one profile; mode 1 cut to `region` (the pieces cut off smaller than `minArea`
+    /// left out), mode 2 only those wholly inside it.
+    Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode, double minArea = 0);
     /// The disconnected solid bodies of `s` (face origins point into `s`).
     Brep[] solids(Brep s);
 
