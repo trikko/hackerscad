@@ -529,7 +529,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - face properties: `center`, `normal`, `area`.
   - selectors combine: `edges.parallel(Z) - edges.of(faces.top)`, `faces.top + faces.bottom`, `a & b` (in both).
 - **Built-in libraries** (`import gears;` or `import std.gears;`, selective imports work too):
-  - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa", clearance: 0.2.mm, size:, length:, turn:, count:)` cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi); it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it) and `.loose` (the wedge), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says; `jointKinds` lists the kinds. For a part longer than the printer's bed.
+  - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa", clearance: 0.2.mm, size:, length:, turn:, count:)` cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi); it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it) and `.loose` (the wedge), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says; `jointKinds` lists the kinds. For a part longer than the printer's bed. `splitFlat(body, plane, keys: 2, kind: "bowtie" | "disc", size:, depth:, clearance: 0.15.mm, wall: 1.6.mm)` cuts it into two halves with flat faces, each to print lying on its cut face, joined by flat keys (butterflies, chigiri) in pockets cut in both faces, placed where the cut has room, as far apart as they can be: a `FlatSplit` with `.a`, `.b`, `.keys` (in place), and laid for printing `.aPrint`, `.bPrint` (on their cut faces, on z = 0) and `.print` (the keys flat in a row). `profile.spots(n, margin:)` gives the points it uses: up to n inside a profile in any plane, at least margin from its edges, far apart.
   - `hardware`: `Screw` sizes `M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8`, `M10`, `M12`, unified inch `UNC4_40`, `UNC6_32`, `UNC8_32`, `UNC10_24`, `UNC1_4_20` (cameras and tripods), and self-tapping screws for plastic `ST2_2`, `ST2_9`, `ST3_5`, `ST4_2` (their `tap` is the hole they cut their thread in), with `d`, `pitch`, `tap`, `clearance`, `head`, `headHeight`, `key`, `nut`, `nutHeight`, `washer`, `insert`, `insertDepth`; `screw(M3, 20.mm, threaded: false, head: "socket" | "button" | "flat" | "hex" | "pan")` (ISO 4762, 7380, 10642, 4017, 7049; underside of the head on z = 0, a flat head's top), `headOf(M3, "button")` its `d`, `h`, `key`, `nut(M3, threaded: false)`, `washer(M3)`, `hexPrism(acrossFlats, h)`, `squareNut(M3)` (DIN 562, `squareNutSize`, `squareNutHeight`); tools to subtract, top on z = 0 going down: `hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" | "countersink" | "ribs", head: "socket")` (a counterbore sized for that head; `"ribs"` a hole the screw passes with three ribs along it, 120° apart and one towards -Y, the bottom one on a wall, that the screw cuts its thread into), `nutTrap(M3, depth)`, `squareNutSlot(M3, reach, clearance: 0.2.mm)` (centred on the axis, its middle on z = 0, open towards +X `reach` long, for the nut to slide in from the side); aluminium extrusions of the 20 and 30 series (2020, 3030, B-type slot, typical sizes): `extrusion(20, length)` (standing along Z, centred: a reference part), `extrusionSeries(20)` its sizes (`size`, `slot`, `lip`, `cavity`, `depth`, `bore`, `screw`), `tNut(20, length: 10.mm)` (a T-nut as it sits in a slot facing +Z, the face on z = 0, a tap hole for M5 or M6) and `slotKey(20, length)` (a key under a printed part, down from z = 0 into a slot, to keep it square to the extrusion).
   - `threads`: `threadedRod(d, pitch, length, chamfer: true, left: false)` (ISO metric profile, real geometry), `tappedHole(d, pitch, depth, clearance: 0.15.mm)` (a tool to subtract for an internal thread), `toothHeight(pitch)`. They are made with `isoThread(d:, pitch:, length:, chamfer:)`, a thread built exactly from its boundary (each corner of the profile on its own helix, a ruled face between two of them, one a turn) and cut to length: no sweep, no core to fuse; an M8 × 60 rod in about a second.
   - `gears`: `spurGear(m, teeth, thickness, bore: 0.mm, pressure: 20.deg, backlash: 0.1.mm, steps: 6)` (involute, centred, a tooth on +X), `gearProfile(m, teeth, …)`, `rack(m, teeth, thickness, base:, pressure: 20.deg, backlash: 0.1.mm)`, `pitchDiameter`, `outsideDiameter`, `rootDiameter`, `centerDistance(m, z1, z2)` (where to put two meshing gears; turn the second so a gap faces the first's tooth on +X: `rotate(z: 180.deg - 180.deg / z2)`, right for any number of teeth).
@@ -2226,6 +2226,102 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
         loose ~= placed(wedge);
     }
     return Joint(a, b, loose);
+}
+
+/// The two halves of a solid cut flat along a plane, each to print lying on
+/// its cut face, and the flat keys that join them.
+struct FlatSplit
+{
+    Solid a;        /// the half behind the plane (against its normal)
+    Solid b;        /// the half in front of it
+    Solid[] keys;   /// the keys, in place, where they go
+    Solid aPrint;   /// a, lying on its cut face on z = 0, to print
+    Solid bPrint;   /// b, the same
+    Solid[] print;  /// the keys lying flat on z = 0 in a row beside the body, to print
+}
+
+/// The outline of a key, along x, `len` long, centred on the origin.
+private Profile keyOutline(string kind, Length len)
+{
+    switch (kind)
+    {
+    case "bowtie":
+        {
+            // a butterfly (chigiri): wide ends, a narrow waist
+            immutable wide = 0.6 * len, waist = 0.3 * len;
+            return polygon([vec(-len / 2, -wide / 2), vec(0.mm, -waist / 2), vec(len / 2, -wide / 2),
+                    vec(len / 2, wide / 2), vec(0.mm, waist / 2), vec(-len / 2, wide / 2)])
+                .round(min(1.mm, 0.08 * len));
+        }
+    case "disc":
+        return circle(d: 0.6 * len);
+    default:
+        assert(false, "the key kind is bowtie or disc, not " ~ kind);
+    }
+}
+
+/// `body` cut flat along the plane `at` into two halves, each printed lying
+/// on its cut face (nothing stands out of it, so it lies flat on the bed),
+/// joined by `keys` flat keys: a pocket in each half's cut face, half the
+/// key in each. The keys print lying flat too, and fit their pockets
+/// `clearance` apart; glue them in, or leave them dry to take apart.
+///
+/// The keys go where the cut has room for them, at least `wall` from its
+/// edges, as far apart as they can be. "bowtie" keys (butterflies, chigiri)
+/// keep the halves from sliding and from turning, even one alone; "disc"
+/// keys are round, two at least. `size` is a key's length (from the
+/// section's size unless given), `depth` how deep it goes into each half.
+/// The pockets open with a 0.4 mm chamfer: the first layers spread a little
+/// on the bed, and the pocket's mouth is on the bed.
+FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", Length size = 0.mm,
+    Length depth = 0.mm, Length clearance = 0.15.mm, Length wall = 1.6.mm)
+{
+    assert(keys >= 1, "splitFlat needs one key at least");
+    auto section = body.section(at);
+
+    // the keys' length: given, or from the section's size, smaller until they find room in it
+    // (half their length, half their width for a disc, and the wall, from its edges)
+    Length len = size > 0.mm ? size : clamp(0.3 * sqrt(section.area), 8.mm, 30.mm);
+    Length room(Length l) => (kind == "disc" ? 0.3 : 0.5) * l + wall;
+    auto spots = section.spots(keys, margin: room(len));
+    while (spots.length == 0 && size == 0.mm && len > 4.mm)
+    {
+        len = max(4.mm, 0.8 * len);
+        spots = section.spots(keys, margin: room(len));
+    }
+    assert(spots.length > 0, "splitFlat: the cut has no room for a key $(len) long $(wall) from its edges: "
+        ~ "a smaller size: or wall:");
+    immutable d = depth > 0.mm ? depth : clamp(0.25 * len, 2.mm, 6.mm);
+    immutable thick = 2 * d - 0.3.mm;
+    auto outline = keyOutline(kind, len);
+
+    // the pocket through both halves at the cut, its mouth chamfered both ways
+    immutable lip = 0.4.mm;
+    auto mouth = outline.offset(clearance + lip).extrude(lip, taper: 45.deg);
+    auto pocket = outline.offset(clearance).extrude(2 * d).move(z: -d)
+        + mouth + mouth.mirror(Z);
+    auto key = outline.extrude(thick)
+        .chamfer(edges.of(faces.top) + edges.of(faces.bottom), d: 0.3.mm);
+
+    Solid[] pockets, placed, flat;
+    auto bb = body.bbox;
+    foreach (i, p; spots)
+    {
+        auto here = plane(origin: p, normal: at.normal);
+        pockets ~= pocket.placeOn(here);
+        placed ~= key.move(z: -thick / 2).placeOn(here);
+        flat ~= key.move(x: bb.max.x + 10.mm + len / 2 + i * (len + 5.mm), y: bb.center.y);
+    }
+    auto sides = body.halves(at);
+    auto a = sides.below - pockets;
+    auto b = sides.above - pockets;
+
+    // each half on its cut face: the face lying in the plane, facing out of the half
+    bool cutFace(Face f, Vec3 n) =>
+        dot(f.normal, n) > 0.999 && abs(dot(f.center - at.origin, at.normal)) < 0.001.mm;
+    auto aPrint = a.placeOn(World, from: faces.filter(f => cutFace(f, at.normal)));
+    auto bPrint = b.placeOn(World, from: faces.filter(f => cutFace(f, -at.normal)));
+    return FlatSplit(a, b, placed, aPrint, bPrint, flat);
 }
 ```
 

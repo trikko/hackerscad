@@ -1,6 +1,6 @@
 # Joints between parts
 
-A part too long for the printer's bed, cut in two pieces that lock together with no screws and no glue, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck and the wedged scarf of Japanese carpentry. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
+A part too long for the printer's bed, cut in two pieces that lock together with no screws and no glue, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck and the wedged scarf of Japanese carpentry. Or a part cut into two halves with flat faces, each printed lying on its cut face, joined by flat keys. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
 
 <!-- render: joints-kinds --from 0.6,-1,0.5 -->
 ```d
@@ -139,6 +139,85 @@ Solid wedge() => scarf().loose[0].move(y: -25.mm, z: 6.mm);
 
 ![A post joined with a wedged scarf, the wedge beside it](img/joints-kanawa.png)
 
+## Two halves cut flat, joined by keys
+
+A round or tall part often prints best in two halves, each lying on the face of the cut: no supports under the curves, and the nicest surface outside. Nothing may stand out of that face, or the half would not lie flat on the bed; so the halves are joined by **keys** printed apart: a pocket in each cut face, half of the key in each.
+
+`splitFlat(body, plane)` does it all. It finds where the cut has room for the keys (away from its edges, as far apart as they can be), cuts the pockets, and gives the halves both where they are (`.a`, `.b`, with `.keys` in place) and laid for printing (`.aPrint`, `.bPrint` on their cut faces, `.print` the keys flat in a row).
+
+<!-- render: joints-flat --from 0.2,1,0.7 -->
+```d
+// an egg 90 mm tall cut in two down the middle: one
+// half with its keys in, the other turned round beside
+// it to show its pockets
+
+import joints;
+
+Solid egg() => sphere(30.mm)
+    .scale(z: 1.5)
+    .move(z: 45.mm);
+
+FlatSplit halves() => splitFlat(egg(),
+    plane(origin: vec(0.mm, 0.mm, 45.mm), normal: Y));
+
+@part("Sky Pop")
+Solid front() => halves().a;
+
+@part("gold")
+Solid keys() => fuse(halves().keys);
+
+@part("Pink Pop")
+Solid back() => halves().b
+    .rotate(z: 180)
+    .move(x: 70.mm);
+```
+
+![An egg in two halves: the keys in one, the bowtie pockets in the other](img/joints-flat.png)
+
+The keys are **bowties** (butterflies, the chigiri of Japanese joinery): wide at the ends, narrow in the middle, they keep the halves from sliding apart in any direction along the cut and from turning, and they print lying flat, quickly and strongly, with their layers along the cut. Round pins do the same job worse: printed standing up they are weak and come out oval; printed lying down they come out flat on one side.
+
+The holes need no teardrop: each half prints on its cut face, so the pockets stand upright on the bed and come out true. Their mouths, on the bed, open with a 0.4 mm chamfer, for the first layers that spread a little.
+
+Laid out for printing, the same split:
+
+<!-- render: joints-flat-print --from 0.3,-1,1.2 -->
+```d
+// the egg's halves on their cut faces and the keys
+// lying flat: one bed
+
+import joints;
+
+Solid egg() => sphere(30.mm)
+    .scale(z: 1.5)
+    .move(z: 45.mm);
+
+FlatSplit halves() => splitFlat(egg(),
+    plane(origin: vec(0.mm, 0.mm, 45.mm), normal: Y));
+
+@part("Sky Pop")
+Solid front() => halves().aPrint;
+
+@part("Pink Pop")
+Solid back() => halves().bPrint.move(x: 70.mm);
+
+@part("gold")
+Solid keys() => fuse(halves().print)
+    .move(x: 40.mm, y: 50.mm);
+```
+
+![The two halves lying on their cut faces and the keys flat beside them](img/joints-flat-print.png)
+
+| Argument | What it does |
+|---|---|
+| `keys:` | how many keys (2 unless given); one bowtie alone already holds |
+| `kind:` | `"bowtie"`, or `"disc"`: round keys, which keep the halves from sliding but not from turning: two at least |
+| `size:` | a key's length; from the section's size unless given, smaller until the keys find room |
+| `depth:` | how deep a key goes into each half (a quarter of its length, 2 to 6 mm) |
+| `clearance:` | the play round a key in its pocket, 0.15 mm unless given: tight enough to hold dry, or loose enough for glue (0.25 mm) |
+| `wall:` | how much of the cut stays round each pocket, 1.6 mm unless given |
+
+To choose the places yourself, `profile.spots(n, margin:)` gives the points `splitFlat` uses: up to `n` points inside a profile, at least `margin` from its edges, as far apart as they can be (in any plane: `body.section(plane).spots(3, margin: 6.mm)`).
+
 ## Printing joints
 
 - Lay each piece so that what holds the joint lies along the layers, not across them: a tenon or a pin printed standing up snaps off along a layer. The rail above prints lying flat, its neck along the bed.
@@ -155,6 +234,7 @@ Solid wedge() => scarf().loose[0].move(y: -25.mm, z: 6.mm);
 | one piece comes out in two bodies | the plane cuts through two separate parts of the solid (both jaws of a clip): cut where the section is one piece |
 | the joint is too big for a flat part | the size follows the section's area: give `size:` (and `length:`) |
 | the pieces do not go together | the joint slides the wrong way for how you want to assemble them: `turn: 90.deg` |
+| *splitFlat: the cut has no room for a key…* | the cut is too narrow for a key with `wall` round it: a smaller `size:` or `wall:`, or a cut elsewhere |
 | *undefined identifier 'splitJoint'* | `import joints;` |
 
 ## In the application

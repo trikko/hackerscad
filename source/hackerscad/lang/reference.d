@@ -323,6 +323,7 @@ immutable Ref[] reference =
     F("text", "", ["text: string", "size: Length", "font: string"], "Profile", "A text outline starting at the origin on the baseline."),
     F("round", "Profile", ["r: Length"], "Profile", "Rounds every corner, outward and inward, holes too; an error names a corner r is too large for."),
     F("offset", "Profile", ["distance: Length"], "Profile", "Grows (d > 0) or shrinks the outline; on a plane, the parallel plane."),
+    F("spots", "Profile", ["n: int", "margin: Length"], "Vec3[]", "Up to n points inside the profile (in any plane), at least margin from its edges, as far apart as they can be: where to put keys, pins or feet; one point: the middle; none when nothing is that far from the edges."),
     F("across", "Profile", ["axis: X | Y"], "Profile", "The profile stood up across X or Y, as extrude(along:) stands it (across X: its x along Y, its y up Z), at the origin: move it along the axis and loft through several, or extrude it where it is."),
     F("offset", "Solid", ["distance: Length", "sharp: bool"], "Solid", "Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened); sharp: true its faces moved and extended until they meet, edges staying sharp."),
     withForms(F("extrude", "Profile", ["height: Length", "taper: Angle", "symmetric: bool", "twist: Angle", "along: X | Y", "shear: Vec"], "Solid",

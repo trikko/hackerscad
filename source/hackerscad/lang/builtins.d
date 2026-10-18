@@ -3154,6 +3154,34 @@ bool builtinMember(Interp it, Value obj, string name, Span span, out Value resul
                     });
                     return true;
                 }
+            case "spots":
+                {
+                    // profile.spots(3, margin: 5.mm): points inside it, at least margin from its edges, as far
+                    // apart as they can be (where to put the keys, the pins, the feet)
+                    if (!s.flat)
+                        return false;
+                    result = method((ref CallArgs a) {
+                        auto x = Args(it, a, "spots", ["profile", "n", "margin"]);
+                        immutable n = cast(int) x.num("n");
+                        if (n < 1 || n > 100)
+                            throw new HcadError(Code.type, "spots: from 1 to 100 points", x.spanOf("n"));
+                        immutable margin = x.lenOr("margin", 0);
+                        Brep b = nonEmpty(s, a.span);
+                        Value[] r;
+                        if (margin > 0)
+                        {
+                            // nothing that far from the edges: no points
+                            try
+                                b = it.kernel.profileOffset(b, -margin);
+                            catch (KernelException)
+                                return Value.of(r);
+                        }
+                        foreach (q; it.kernel.spots(b, n))
+                            r ~= Value.vector(q, 3, Dim.length);
+                        return Value.of(r);
+                    });
+                    return true;
+                }
             case "isValid": result = Value.of(s.brep !is null && it.kernel.isValid(s.brep)); return true;
             default: return false;
             }

@@ -4730,3 +4730,25 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    mixin(slowTest);
+    // halves cut flat with keys: apart from each other and from the keys, the keys in both pockets,
+    // each half laid on its cut face on z = 0; spots far apart and away from the edges
+    auto r = runModel("import joints;\n"
+        ~ "unittest { auto egg = sphere(30.mm).scale(z: 1.5).move(z: 45.mm);\n"
+        ~ "auto h = splitFlat(egg, plane(origin: vec(0.mm, 0.mm, 45.mm), normal: Y), keys: 2);\n"
+        ~ "assert(h.keys.length == 2 && h.print.length == 2);\n"
+        ~ "assert((h.a & h.b).volume < 0.001 * 1.mm ^^ 3);\n"
+        ~ "foreach (k; h.keys) { assert((k & h.a).volume < 0.001 * 1.mm ^^ 3 && (k & h.b).volume < 0.001 * 1.mm ^^ 3);\n"
+        ~ "assert(k.bbox.min.y < -0.5.mm && k.bbox.max.y > 0.5.mm); }\n"
+        ~ "assert(abs(h.aPrint.bbox.min.z) < 1e-6.mm && abs(h.aPrint.bbox.max.z - 30.mm) < 0.01.mm);\n"
+        ~ "assert(abs(h.bPrint.bbox.min.z) < 1e-6.mm && abs(h.bPrint.bbox.max.z - 30.mm) < 0.01.mm);\n"
+        ~ "foreach (k; h.print) assert(abs(k.bbox.min.z) < 1e-6.mm);\n"
+        ~ "auto sp = rect(100.mm, 20.mm).spots(2, margin: 5.mm);\n"
+        ~ "assert(sp.length == 2 && distance(sp[0], sp[1]) > 80.mm && abs(sp[0].x) <= 45.mm + 1e-6.mm);\n"
+        ~ "assert(rect(10.mm, 10.mm).spots(2, margin: 6.mm).length == 0); }\n");
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

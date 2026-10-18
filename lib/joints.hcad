@@ -171,3 +171,99 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
     }
     return Joint(a, b, loose);
 }
+
+/// The two halves of a solid cut flat along a plane, each to print lying on
+/// its cut face, and the flat keys that join them.
+struct FlatSplit
+{
+    Solid a;        /// the half behind the plane (against its normal)
+    Solid b;        /// the half in front of it
+    Solid[] keys;   /// the keys, in place, where they go
+    Solid aPrint;   /// a, lying on its cut face on z = 0, to print
+    Solid bPrint;   /// b, the same
+    Solid[] print;  /// the keys lying flat on z = 0 in a row beside the body, to print
+}
+
+/// The outline of a key, along x, `len` long, centred on the origin.
+private Profile keyOutline(string kind, Length len)
+{
+    switch (kind)
+    {
+    case "bowtie":
+        {
+            // a butterfly (chigiri): wide ends, a narrow waist
+            immutable wide = 0.6 * len, waist = 0.3 * len;
+            return polygon([vec(-len / 2, -wide / 2), vec(0.mm, -waist / 2), vec(len / 2, -wide / 2),
+                    vec(len / 2, wide / 2), vec(0.mm, waist / 2), vec(-len / 2, wide / 2)])
+                .round(min(1.mm, 0.08 * len));
+        }
+    case "disc":
+        return circle(d: 0.6 * len);
+    default:
+        assert(false, "the key kind is bowtie or disc, not " ~ kind);
+    }
+}
+
+/// `body` cut flat along the plane `at` into two halves, each printed lying
+/// on its cut face (nothing stands out of it, so it lies flat on the bed),
+/// joined by `keys` flat keys: a pocket in each half's cut face, half the
+/// key in each. The keys print lying flat too, and fit their pockets
+/// `clearance` apart; glue them in, or leave them dry to take apart.
+///
+/// The keys go where the cut has room for them, at least `wall` from its
+/// edges, as far apart as they can be. "bowtie" keys (butterflies, chigiri)
+/// keep the halves from sliding and from turning, even one alone; "disc"
+/// keys are round, two at least. `size` is a key's length (from the
+/// section's size unless given), `depth` how deep it goes into each half.
+/// The pockets open with a 0.4 mm chamfer: the first layers spread a little
+/// on the bed, and the pocket's mouth is on the bed.
+FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", Length size = 0.mm,
+    Length depth = 0.mm, Length clearance = 0.15.mm, Length wall = 1.6.mm)
+{
+    assert(keys >= 1, "splitFlat needs one key at least");
+    auto section = body.section(at);
+
+    // the keys' length: given, or from the section's size, smaller until they find room in it
+    // (half their length, half their width for a disc, and the wall, from its edges)
+    Length len = size > 0.mm ? size : clamp(0.3 * sqrt(section.area), 8.mm, 30.mm);
+    Length room(Length l) => (kind == "disc" ? 0.3 : 0.5) * l + wall;
+    auto spots = section.spots(keys, margin: room(len));
+    while (spots.length == 0 && size == 0.mm && len > 4.mm)
+    {
+        len = max(4.mm, 0.8 * len);
+        spots = section.spots(keys, margin: room(len));
+    }
+    assert(spots.length > 0, "splitFlat: the cut has no room for a key $(len) long $(wall) from its edges: "
+        ~ "a smaller size: or wall:");
+    immutable d = depth > 0.mm ? depth : clamp(0.25 * len, 2.mm, 6.mm);
+    immutable thick = 2 * d - 0.3.mm;
+    auto outline = keyOutline(kind, len);
+
+    // the pocket through both halves at the cut, its mouth chamfered both ways
+    immutable lip = 0.4.mm;
+    auto mouth = outline.offset(clearance + lip).extrude(lip, taper: 45.deg);
+    auto pocket = outline.offset(clearance).extrude(2 * d).move(z: -d)
+        + mouth + mouth.mirror(Z);
+    auto key = outline.extrude(thick)
+        .chamfer(edges.of(faces.top) + edges.of(faces.bottom), d: 0.3.mm);
+
+    Solid[] pockets, placed, flat;
+    auto bb = body.bbox;
+    foreach (i, p; spots)
+    {
+        auto here = plane(origin: p, normal: at.normal);
+        pockets ~= pocket.placeOn(here);
+        placed ~= key.move(z: -thick / 2).placeOn(here);
+        flat ~= key.move(x: bb.max.x + 10.mm + len / 2 + i * (len + 5.mm), y: bb.center.y);
+    }
+    auto sides = body.halves(at);
+    auto a = sides.below - pockets;
+    auto b = sides.above - pockets;
+
+    // each half on its cut face: the face lying in the plane, facing out of the half
+    bool cutFace(Face f, Vec3 n) =>
+        dot(f.normal, n) > 0.999 && abs(dot(f.center - at.origin, at.normal)) < 0.001.mm;
+    auto aPrint = a.placeOn(World, from: faces.filter(f => cutFace(f, at.normal)));
+    auto bPrint = b.placeOn(World, from: faces.filter(f => cutFace(f, -at.normal)));
+    return FlatSplit(a, b, placed, aPrint, bPrint, flat);
+}

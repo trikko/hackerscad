@@ -302,6 +302,8 @@ interface BrepKernel
     /// `s` with the regions of `profile` laid on face `face` (as wrapTool) dug in (floor < 0) or raised by
     /// `floor`, built at once with no boolean; an exception when it cannot be (a region not inside the face).
     Brep wrapDirect(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double floor);
+    /// Up to n points inside the flat faces of `s` (any plane), as far apart from each other as they can be.
+    Vec3[] spots(Brep s, int n);
     /// How many regions the last wrapTool left out, too broken to lay on the face (slivers).
     int wrapSkipped();
     /// Copies of the flat `motifs`, each placed by four numbers in `place` (which motif, dx, dy, a scale

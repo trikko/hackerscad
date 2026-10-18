@@ -2939,6 +2939,66 @@ hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, i
     return wrap_impl(s, face, profile, project, at, dir, floor, 0, true);
 }
 
+// Up to n points inside the flat faces of `s` (in any plane), as far apart from each other as they can
+// be: a grid of points over each face kept where it lies inside, then the one farthest from their
+// middle, the one farthest from it, and so on, each the farthest from those chosen. x y z of each in
+// `out` (room for 3 n); how many there are.
+int hc_spots(const hc_shape *s, int n, double *out)
+{
+    return guarded<>(-1, [&]() -> int {
+        std::vector<gp_Pnt> cand;
+        for (const TopoDS_Face &f : faces_of(s->shape)) {
+            double u0, u1, v0, v1;
+            BRepTools::UVBounds(f, u0, u1, v0, v1);
+            BRepTopAdaptor_FClass2d inside(f, 1e-7);
+            BRepAdaptor_Surface surf(f);
+            const int g = 60;
+            for (int i = 0; i <= g; i++)
+                for (int j = 0; j <= g; j++) {
+                    const gp_Pnt2d q(u0 + (u1 - u0) * i / g, v0 + (v1 - v0) * j / g);
+                    if (inside.Perform(q) == TopAbs_IN)
+                        cand.push_back(surf.Value(q.X(), q.Y()));
+                }
+        }
+        if (cand.empty() || n < 1)
+            return 0;
+        gp_XYZ mid(0, 0, 0);
+        for (auto &c : cand)
+            mid += c.XYZ();
+        mid /= (double)cand.size();
+        std::vector<gp_Pnt> chosen;
+        std::vector<double> nearest(cand.size(), 0);
+        for (size_t i = 0; i < cand.size(); i++)
+            nearest[i] = cand[i].Distance(gp_Pnt(mid));
+        while ((int)chosen.size() < n) {
+            size_t best = 0;
+            for (size_t i = 1; i < cand.size(); i++)
+                if (nearest[i] > nearest[best])
+                    best = i;
+            if (!chosen.empty() && nearest[best] < 1e-9)
+                break;
+            chosen.push_back(cand[best]);
+            for (size_t i = 0; i < cand.size(); i++)
+                nearest[i] = chosen.size() == 1 ? cand[i].Distance(cand[best])
+                                                : std::min(nearest[i], cand[i].Distance(cand[best]));
+        }
+        // for one point: the middle, or the candidate nearest it
+        if (n == 1) {
+            size_t best = 0;
+            for (size_t i = 1; i < cand.size(); i++)
+                if (cand[i].Distance(gp_Pnt(mid)) < cand[best].Distance(gp_Pnt(mid)))
+                    best = i;
+            chosen = {cand[best]};
+        }
+        for (size_t i = 0; i < chosen.size(); i++) {
+            out[3 * i] = chosen[i].X();
+            out[3 * i + 1] = chosen[i].Y();
+            out[3 * i + 2] = chosen[i].Z();
+        }
+        return (int)chosen.size();
+    });
+}
+
 hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, double vz)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
