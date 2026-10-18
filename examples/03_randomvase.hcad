@@ -2,13 +2,13 @@
 // The vase follows a spine that leaves the origin straight up and bends
 // aside as it rises, to a random point 5 to 10 cm up and up to 5 cm aside;
 // its rings, square to the spine, widen towards the mouth and ripple with
-// a sine or with noise; it is hollow, open at the top.
+// a sine, with noise, or with noisy bands; it is hollow, open at the top.
 // Change the seed for another vase: the same seed always gives the same
 // one, so a vase you like can be made again.
 //
 // Try it:
 //  - change Seed (or any value in Parameters); Straight stands it upright;
-//  - switch Noise on and off: the same vase, another surface;
+//  - change Ripple (sine, noise, bands): the same vase, another surface;
 //  - edit `ripple`: another formula, another surface;
 //  - the lid is made for the mouth and placed on it with placeOn wherever
 //    the seed puts it; switch Lid on the bed to lay it beside the vase face
@@ -22,8 +22,8 @@ import std.math;
 @param("Straight: the spine upright, no lean")
 immutable straight = false;
 
-@param("Noise instead of the sine")
-immutable noisy = false;
+@param("Ripple: a sine, noise, or bands (noise round the vase only)", choices: ["sine", "noise", "bands"])
+immutable style = "sine";
 
 @param("Ripples fade out up the vase: a round mouth")
 immutable fade = false;
@@ -76,13 +76,17 @@ Vec3[] parabola()
 }
 
 // the ripple at a point of a ring: `around` 0…1 round it, `along` 0…1 up
-// the spine. A sine, 12 crests round, turning by Ripple twist as it rises; or
-// noise, about 8 bumps round and as many every 15 mm up (no seam where the
-// ring closes). With Fade it dies away smoothly to nothing at the mouth.
+// the spine. A sine, 12 crests round, turning by Ripple twist as it rises;
+// noise, about 8 bumps round and as many every 15 mm up; or bands: noise
+// round the vase only, the same at every height (an irregular sine), turning
+// as the sine does. No seam where the ring closes. With Fade it dies away
+// smoothly to nothing at the mouth.
 Length ripple(double around, double along)
 {
-    immutable wave = noisy
+    immutable turned = around + along * twist / 360.deg;
+    immutable wave = style == "noise"
         ? loopNoise(around, along * height / 15.mm, bumps: 8, seed: seed)
+        : style == "bands" ? loopNoise(turned - floor(turned), 0, bumps: 14, seed: seed)
         : sin((around * 12 + along * twist / 30.deg) * 360.deg);
     immutable fading = fade ? (1 + cos(PI * along)) / 2 : 1;
     return depth * fading * wave;
