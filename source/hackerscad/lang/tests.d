@@ -4759,7 +4759,7 @@ unittest
     // a mold: the halves apart, the cavity the part's volume, keys on a fitting sockets in b, the
     // pour hole open from the cavity to the outside, both laid on z = 0
     auto r = runModel("import carlo; import molds;\n"
-        ~ "unittest { auto c = carlo(); auto m = mold(c, plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z));\n"
+        ~ "unittest { auto c = carlo(eye: false); auto m = mold(c, plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z));\n"
         ~ "assert((m.a & m.b).volume < 0.001 * 1.mm ^^ 3, \"the halves overlap\");\n"
         ~ "assert((m.a & c).volume < 0.001 * 1.mm ^^ 3 && (m.b & c).volume < 0.001 * 1.mm ^^ 3, \"the cavity is filled\");\n"
         ~ "auto bb = c.bbox; auto block = box(bb.size.x + 20.mm, bb.size.y + 20.mm, bb.size.z + 20.mm);\n"

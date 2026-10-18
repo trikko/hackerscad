@@ -4,13 +4,14 @@ A two-part mold to cast copies of a part in silicone, resin or plaster: a block 
 
 <!-- render: molds-open --from 0.3,-1,1.2 -->
 ```d
-// a mold to cast Carlo in silicone, open: the lower half
-// with its keys and the seal, the upper one turned over
+// a mold to cast Carlo in silicone (without its eye, a
+// thin core that would tear the cast), open: the lower
+// half with its keys and the seal, the upper turned over
 
 import carlo;
 import molds;
 
-Mold carloMold() => mold(carlo(),
+Mold carloMold() => mold(carlo(eye: false),
     plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z));
 
 @part("Sky Pop")
@@ -44,7 +45,7 @@ Each half prints on its outer face, the parting face up: the keys and the seal s
 import carlo;
 import molds;
 
-Mold carloMold() => mold(carlo(),
+Mold carloMold() => mold(carlo(eye: false),
     plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z));
 
 @part("Sky Pop")
