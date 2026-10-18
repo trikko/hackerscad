@@ -23,11 +23,14 @@ struct Mold
 ///   air, go up through b from the cavity's highest points (along the plane's
 ///   normal: put that side up when pouring).
 ///
+/// - `pry`: a notch on two opposite sides, across the parting line, to open
+///   the mold with a flat screwdriver without marring its faces.
+///
 /// Both halves print with the parting face up, on their outer faces
 /// (`aPrint`, `bPrint`): the keys and the seal stand up, the sockets and the
 /// groove open upwards, with no supports.
 Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length sprue = 6.mm, int vents = 2,
-    Length seal = 0.8.mm, Length clearance = 0.15.mm)
+    Length seal = 0.8.mm, Length clearance = 0.15.mm, bool pry = true)
 {
     immutable n = at.normal;
     auto bb = object.bbox;
@@ -89,6 +92,22 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
                 .placeOn(here);
         else
             b = b - cylinder(d: 2.mm, h: length).placeOn(here);
+    }
+    // the notches to pry it open: half-round, across the parting line, in the middle of two opposite sides
+    if (pry)
+    {
+        auto across = abs(n.z) > 0.9 ? X : normalize(cross(n, Z));
+        auto mid = bb.center - n * dot(bb.center - at.origin, n);
+        immutable half = (abs(across.x) * bb.size.x + abs(across.y) * bb.size.y + abs(across.z) * bb.size.z) / 2
+            + wall;
+        immutable notch = clamp(0.6 * wall, 4.mm, 8.mm);
+        Solid[] notches;
+        foreach (side; [1, -1])
+            notches ~= cylinder(d: notch, h: notch / 2 + 1.mm)
+                .move(z: -notch / 2)
+                .placeOn(plane(origin: mid + across * (side * half), normal: across * side));
+        a = a - notches;
+        b = b - notches;
     }
     return Mold(a, b, a.placeOn(World, from: faces.farthest(-n)), b.placeOn(World, from: faces.farthest(n)));
 }
