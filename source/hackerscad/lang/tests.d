@@ -4515,3 +4515,39 @@ unittest
         assert(d.severity != Severity.error, d.message);
     assert(isClose(partVolume(r, "p"), 24.0 * 14 * 9, 1e-6));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // threads on shafts built straight from their faces and joined by hand: the same solids as the
+    // boolean way (HCAD_THREAD_DIRECT=0), whatever the starts, hand, bevel, shoulder or length
+    import std.process : environment;
+    immutable src = q{
+        Solid shaft() => cylinder(d: 32.mm, h: 5.mm) + cylinder(d: 20.mm, h: 30.mm).move(z: 5.mm);
+        @part Solid a() => cylinder(d: 20.mm, h: 30.mm).thread(faces.largest, "M20");
+        @part Solid b() => shaft().thread(faces.largest, "M20", chamfer: false).move(x: 40);
+        @part Solid c() => shaft().thread(faces.largest, "M20", starts: 2, left: true).move(x: 80);
+        @part Solid d() => shaft().thread(faces.largest, "Tr20x4", length: 15.mm).move(x: 120);
+        @part Solid e() => cylinder(d: 8.mm, h: 20.mm).thread(faces.largest, "M8", flip: true).move(x: 160);
+        @part Solid f() => shaft().thread(faces.largest, "M20", clearance: 0.2.mm).move(x: 200);
+    };
+    double[string] volumes(string direct)
+    {
+        environment["HCAD_THREAD_DIRECT"] = direct;
+        scope (exit)
+            environment.remove("HCAD_THREAD_DIRECT");
+        auto r = runModel(src);
+        foreach (d; r.diagnostics)
+            assert(d.severity != Severity.error, d.message);
+        double[string] v;
+        foreach (p; r.parts)
+        {
+            assert(kernel.isValid(p.solid.brep), p.name ~ " is not valid");
+            v[p.name] = kernel.volume(p.solid.brep);
+        }
+        return v;
+    }
+    auto boolean = volumes("0"), direct = volumes("1");
+    foreach (name, vb; boolean)
+        assert(abs(direct[name] - vb) < 1e-4 * vb, format("%s: %s by hand, %s by the boolean", name, direct[name], vb));
+}

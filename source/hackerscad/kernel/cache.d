@@ -113,6 +113,10 @@ final class CachingKernel : BrepKernel
             ks ~= keyOf(p);
         return op(key("loftOpen", cast(const(double)[]) ks.map!(x => cast(double) x).array, ruled), inner.loftOpen(paths, ruled));
     }
+    Brep threadDirect(const(double)[] rz, double lead, double length, double chamfer, double rOut) =>
+        op(key("threadDirect", rz, lead, length, chamfer, rOut), inner.threadDirect(rz, lead, length, chamfer, rOut));
+    Brep joinTouching(Brep a, Brep b) => op(key("joinTouching", a, b), inner.joinTouching(a, b));
+
     Brep fill(Brep path, Brep s, const(int)[] edges, const(int)[] tangent, const(Vec3)[] points)
     {
         double[] pts;

@@ -46,6 +46,7 @@
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <TopTools_DataMapOfShapeInteger.hxx>
 #include <BOPAlgo_GlueEnum.hxx>
 #include <ElSLib.hxx>
 #include <BRepTopAdaptor_FClass2d.hxx>
@@ -4111,6 +4112,24 @@ hc_shape *hc_join_touching(const hc_shape *a, const hc_shape *b, int glue)
                 throw Standard_Failure("the glued fuse failed");
             return primitive(mk.Shape());
         }
+        // a's faces on one plane merged first (a cut leaves the circle a shaft stood in on the face round
+        // it); each merged face remembers the first of a's it came from
+        ShapeUpgrade_UnifySameDomain unify(a->shape, Standard_False, Standard_True, Standard_False);
+        unify.Build();
+        const TopoDS_Shape A = unify.Shape();
+        TopTools_IndexedMapOfShape ma0;
+        TopExp::MapShapes(a->shape, TopAbs_FACE, ma0);
+        TopTools_DataMapOfShapeInteger fromA;
+        for (int i = 1; i <= ma0.Extent(); i++) {
+            const TopTools_ListOfShape &mods = unify.History()->Modified(ma0(i));
+            if (mods.IsEmpty()) {
+                if (!fromA.IsBound(ma0(i)))
+                    fromA.Bind(ma0(i), i - 1);
+            } else
+                for (TopTools_ListOfShape::Iterator it(mods); it.More(); it.Next())
+                    if (!fromA.IsBound(it.Value()))
+                        fromA.Bind(it.Value(), i - 1);
+        }
         // b's flat face lying on one of a's, facing it
         TopoDS_Face fa, fb;
         for (TopExp_Explorer eb(b->shape, TopAbs_FACE); eb.More() && fb.IsNull(); eb.Next()) {
@@ -4119,7 +4138,7 @@ hc_shape *hc_join_touching(const hc_shape *a, const hc_shape *b, int glue)
             if (sb.GetType() != GeomAbs_Plane)
                 continue;
             const gp_Pln pb = sb.Plane();
-            for (TopExp_Explorer ea(a->shape, TopAbs_FACE); ea.More(); ea.Next()) {
+            for (TopExp_Explorer ea(A, TopAbs_FACE); ea.More(); ea.Next()) {
                 const TopoDS_Face &g = TopoDS::Face(ea.Current());
                 BRepAdaptor_Surface sa(g);
                 if (sa.GetType() != GeomAbs_Plane)
@@ -4155,7 +4174,7 @@ hc_shape *hc_join_touching(const hc_shape *a, const hc_shape *b, int glue)
         ShapeFix_Face fix(mf.Face());
         fix.Perform();
         BRepBuilderAPI_Sewing sew(1e-6);
-        for (TopExp_Explorer ea(a->shape, TopAbs_FACE); ea.More(); ea.Next())
+        for (TopExp_Explorer ea(A, TopAbs_FACE); ea.More(); ea.Next())
             if (!ea.Current().IsSame(fa))
                 sew.Add(ea.Current());
         sew.Add(fix.Face());
@@ -4173,7 +4192,26 @@ hc_shape *hc_join_touching(const hc_shape *a, const hc_shape *b, int glue)
         BRepGProp::VolumeProperties(r, g);
         if (g.Mass() < 0)
             r.Reverse();
-        return primitive(r);
+        if (!BRepCheck_Analyzer(r).IsValid())
+            throw Standard_Failure("the joined solid is not valid");
+        // each face from the one it was: a's, b's, and the holed face from a's face
+        history_new(r);
+        TopTools_IndexedMapOfShape res, mb;
+        TopExp::MapShapes(r, TopAbs_FACE, res);
+        TopExp::MapShapes(b->shape, TopAbs_FACE, mb);
+        auto mark = [&](const TopoDS_Shape &original, int input, int index) {
+            const int j = res.FindIndex(sew.Modified(original));
+            if (j > 0 && index >= 0)
+                g_history[j - 1] = Origin{input, index};
+        };
+        for (TopExp_Explorer ea(A, TopAbs_FACE); ea.More(); ea.Next())
+            if (!ea.Current().IsSame(fa))
+                mark(ea.Current(), 0, fromA.IsBound(ea.Current()) ? fromA.Find(ea.Current()) : -1);
+        mark(fix.Face(), 0, fromA.IsBound(fa) ? fromA.Find(fa) : -1);
+        for (int i = 1; i <= mb.Extent(); i++)
+            if (!mb(i).IsSame(fb))
+                mark(mb(i), 1, i - 1);
+        return wrap(r);
     });
 }
 

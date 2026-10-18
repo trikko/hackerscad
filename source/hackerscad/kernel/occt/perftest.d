@@ -20,7 +20,8 @@ unittest
     {
         immutable d = spec[0], p = spec[1], len = spec[2];
         immutable h = 0.5413 * p, R = d / 2, r = R - h;
-        double[] rz = [R, -p / 16, R, p / 16, r, 3 * p / 8, r, 5 * p / 8];
+        double[] rz = environment.get("HC_ROOTFIRST") ? [r, -3 * p / 8, R, -p / 16, R, p / 16, r, 3 * p / 8]
+            : [R, -p / 16, R, p / 16, r, 3 * p / 8, r, 5 * p / 8];
         foreach (chamfer; [false, true])
         {
             double tb, tc, td;
@@ -72,10 +73,10 @@ unittest
             fused = k.boolean(shoulder, thread, BoolOp.fuse);
             tf = sw.peek.total!"usecs" / 1000.0;
             sw.reset();
-            glued = k.joinTouching(shoulder, thread, true);
+            glued = k.fuseGlued(shoulder, thread);
             tg = sw.peek.total!"usecs" / 1000.0;
             sw.reset();
-            manual = k.joinTouching(shoulder, thread, false);
+            manual = k.joinTouching(shoulder, thread);
             tm = sw.peek.total!"usecs" / 1000.0;
         }
         writefln("join M%g x %g: fuse %.1f ms; glued %.1f ms (%.1fx); by hand %.1f ms (%.1fx); volumes %.3f / %.3f / %.3f, "

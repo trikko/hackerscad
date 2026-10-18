@@ -4053,9 +4053,33 @@ Value threadFace(Interp it, ref CallArgs a)
 
     // built along +Z from 0 (the fixed end) to len (the free end), then placed
     Brep tool;
+    // a straight thread on a shaft built straight from its faces, cut to length and bevelled with no
+    // boolean, and later joined to the face it stands on by hand: 5 to 10 times quicker. Tapered
+    // threads and holes the boolean way (HCAD_THREAD_DIRECT=0 always so, to compare)
+    import std.process : environment;
+    bool direct = outside && t.taper == 0 && environment.get("HCAD_THREAD_DIRECT", "1") != "0";
     try
     {
-        if (outside)
+        if (outside && direct)
+        {
+            immutable dd = t.major - 2 * clearance;
+            try
+            {
+                // the corners as threadedCore has them
+                immutable r0 = dd / 2 - t.depth;
+                auto xy = t.tooth(0);
+                double[] rz;
+                foreach (st; 0 .. starts)
+                    for (size_t i = 0; i + 1 < xy.length; i += 2)
+                        rz ~= [r0 - xy[i], xy[i + 1] + pitch * st];
+                tool = k.threadDirect(rz, lead, len, chamfer ? h : 0, dd / 2 + 0.01);
+                if (left)
+                    tool = k.mirror(tool, Vec3(0, 1, 0));
+            }
+            catch (KernelException)
+                direct = false;
+        }
+        if (outside && !direct)
         {
             // what the grooves take away: around the cylinder, less the threaded rod
             // tapered: the full size at the fixed end, narrowing to the tip
@@ -4079,7 +4103,7 @@ Value threadFace(Interp it, ref CallArgs a)
                 tool = k.boolean(tool, k.translate(k.cylinder(dd / 2 - h - 0.02, sink + 0.02), Vec3(0, 0, -sink)),
                     BoolOp.fuse);
         }
-        else
+        else if (!outside)
         {
             // the screw that fits, cut into the wall
             // tapered: the full size at the opening, narrowing inwards
@@ -4101,7 +4125,7 @@ Value threadFace(Interp it, ref CallArgs a)
     // angle 0 at the free end instead, a male thread and a female one cut from the same free end are
     // in step, whatever their lengths (a nut cut over a bolt's tip fits it)
     {
-        immutable shift = outside ? sink : (sink > 0 ? 0 : 0.2 * pitch);
+        immutable shift = outside ? (direct ? 0 : sink) : (sink > 0 ? 0 : 0.2 * pitch);
         immutable turn = 2 * PI * (len + shift) / lead * (left ? 1 : -1);
         immutable phase = turn - 2 * PI * floor(turn / (2 * PI));
         if (phase > 1e-12)
@@ -4135,6 +4159,22 @@ Value threadFace(Interp it, ref CallArgs a)
         throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
     plain.flat = false;
     auto bare = solidBoolean(it, body, plain, BoolOp.cut, a.span);
+    // the thread standing on material at its fixed end (a shoulder, a head): joined to that face by
+    // hand, or, when it does not stand on a flat face wider than itself (the shaft goes on at its
+    // own diameter), the boolean with the plain core it needs to fuse cleanly
+    if (direct && sink > 0 && bare.solid.brep !is null)
+    {
+        try
+            return Value.of(derived(it, k.joinTouching(bare.solid.brep, sv.brep), [bare.solid, sv], "union", a.span));
+        catch (KernelException)
+        {
+            immutable dd = t.major - 2 * clearance;
+            auto core = k.translate(k.cylinder(dd / 2 - h - 0.02, sink + 0.02), Vec3(0, 0, -sink));
+            auto withCore = derived(it, placed(k.boolean(tool, core, BoolOp.fuse)), [body], "thread", a.span);
+            withCore.flat = false;
+            return solidBoolean(it, bare.solid, withCore, BoolOp.fuse, a.span);
+        }
+    }
     return solidBoolean(it, bare.solid, sv, BoolOp.fuse, a.span);
 }
 

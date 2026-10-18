@@ -256,6 +256,12 @@ interface BrepKernel
     /// a surface; a surface made `t` thick (on its normals' side; t < 0 the
     /// other); surfaces sewn along their edges into one closed solid.
     Brep loftOpen(Brep[] paths, bool ruled);
+    /// A right-handed thread band (corners `rz`, as threadBand) cut to z = 0 .. length straight from its
+    /// faces, with no boolean; `chamfer` > 0 bevels the tip at 45° from the radius `rOut`. Not tapered.
+    Brep threadDirect(const(double)[] rz, double lead, double length, double chamfer, double rOut);
+    /// Two solids touching only where a flat face of `b` lies inside a flat face of `a`, joined by hand
+    /// (that face holed, the two sewn): a fuse ten times quicker; an exception when they do not so touch.
+    Brep joinTouching(Brep a, Brep b);
     /// A smooth face closing a loop: the closed `path`, or the edges `edges` of solid `s` (tangent to its
     /// faces `tangent` where they lie on one), through `points` too.
     Brep fill(Brep path, Brep s, const(int)[] edges, const(int)[] tangent, const(Vec3)[] points);
