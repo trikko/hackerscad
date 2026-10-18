@@ -305,7 +305,19 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
     // b's end, a hair inside it
     auto end = b.section(plane(origin: at.origin + at.normal * 0.01.mm, normal: at.normal));
     immutable s = size > 0.mm ? size : sqrt(end.area);
-    immutable len = length > 0.mm ? length : 0.6 * s;
+    immutable slides = kind == "dovetail" || kind == "kama";
+
+    // a's depth behind the plane: a housing that runs out of a the way it slides must stop short
+    // of a's far side, or it cuts a in two
+    auto ab = a.bbox;
+    Length deep = 0.mm;
+    foreach (x; [ab.min.x, ab.max.x])
+        foreach (y; [ab.min.y, ab.max.y])
+            foreach (z; [ab.min.z, ab.max.z])
+                deep = max(deep, dot(at.origin - vec(x, y, z), at.normal));
+    Length len = length > 0.mm ? length : 0.6 * s;
+    if (slides)
+        len = min(len, 0.6 * deep);
 
     // the joint's frame on the plane, in the middle of b's end, its z going into a
     auto here = plane(origin: end.bbox.center - at.normal * 0.01.mm, normal: -at.normal);
@@ -316,7 +328,6 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
     // what one pushes into the other stays within b's end, carried across the plane both ways
     auto footprint = end.extrude(2 * (len + 1.mm), symmetric: true);
     // a dovetail's or a gooseneck's housing runs on along the way it slides, out of a, so b goes in
-    immutable slides = kind == "dovetail" || kind == "kama";
     auto housing = slides ? placed(room.up) : placed(room.up) & footprint.offset(clearance, sharp: true);
     auto na = a - housing + (b & placed(exact.down) & footprint);
     auto nb = b + (a & placed(exact.up) & footprint) - placed(room.down);
