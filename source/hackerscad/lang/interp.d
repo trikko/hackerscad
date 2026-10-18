@@ -262,7 +262,7 @@ final class Interp
                 foreach (a; d.attrs)
                     if (a.name == "preset")
                     {
-                        auto lit = a.args.length == 2 ? cast(Literal) a.args[0].value : null;
+                        auto lit = a.args.length == 2 ? as!Literal(a.args[0].value) : null;
                         if (lit is null || lit.type != Literal.Type.string_ || a.args[0].name.length || a.args[1].name.length)
                             throw new HcadError(Code.syntax, `use @preset("name", value)`, a.span);
                         if (!presetNames.canFind(lit.text))
@@ -512,17 +512,17 @@ final class Interp
         {
             foreach (d; decls)
             {
-                if (auto b = cast(Block) d)
+                if (auto b = as!Block(d))
                     walk(b.stmts);
-                else if (auto f = cast(FuncDecl) d)
+                else if (auto f = as!FuncDecl(d))
                     starts ~= Start(startOf(f, f.attrs), f.name, f);
-                else if (auto st = cast(StructDecl) d)
+                else if (auto st = as!StructDecl(d))
                 {
                     starts ~= Start(st.span.line, st.name, null);
                     foreach (m; st.methods)
                         starts ~= Start(startOf(m, m.attrs), st.name ~ "." ~ m.name, m);
                 }
-                else if (auto v = cast(VarDecl) d)
+                else if (auto v = as!VarDecl(d))
                     starts ~= Start(startOf(v, v.attrs), v.name, null);
                 else if (d !is null)
                     starts ~= Start(d.span.line, null, null);
@@ -605,7 +605,7 @@ final class Interp
                 mod.publicNames[name] = true;
         }
 
-        if (auto v = cast(VarDecl) d)
+        if (auto v = as!VarDecl(d))
         {
             checkAttrs(v.attrs, ["param", "preset"]);
             if (findAttr(v.attrs, "preset") && !hasAttr(v.attrs, "param"))
@@ -617,19 +617,19 @@ final class Interp
             if (!v.isPrivate)
                 mod.publicNames[v.name] = true;
         }
-        else if (auto b = cast(Block) d)
+        else if (auto b = as!Block(d))
             foreach (s; b.stmts)
                 declare(s, mod);
-        else if (auto f = cast(FuncDecl) d)
+        else if (auto f = as!FuncDecl(d))
         {
             checkAttrs(f.attrs, ["part", "parts", "drawing"]);
             define(f.name, Value.make(Kind.func, closureOf(f, env, mod)), f.nameSpan, f.isPrivate);
         }
-        else if (auto s = cast(StructDecl) d)
+        else if (auto s = as!StructDecl(d))
             define(s.name, Value.make(Kind.type, structType(s, mod)), s.span, s.isPrivate);
-        else if (auto i = cast(ImportDecl) d)
+        else if (auto i = as!ImportDecl(d))
             doImport(i, mod);
-        else if (auto u = cast(Unittest) d)
+        else if (auto u = as!Unittest(d))
             mod.unittests ~= u;
         else
             throw new HcadError(Code.syntax, "only declarations are allowed at module level (move this inside a function)", d.span);
@@ -829,15 +829,15 @@ final class Interp
             return;
         static bool cheapPlane(Expr e)
         {
-            if (auto i = cast(Ident) e)
+            if (auto i = as!Ident(e))
                 return i.name == "XY" || i.name == "XZ" || i.name == "YZ";
-            if (auto mem = cast(Member) e)
+            if (auto mem = as!Member(e))
                 return (mem.name == "flip") && cheapPlane(mem.object);
-            if (auto c = cast(Call) e)
+            if (auto c = as!Call(e))
             {
-                if (auto i = cast(Ident) c.callee)
+                if (auto i = as!Ident(c.callee))
                     return i.name == "plane";
-                if (auto mem = cast(Member) c.callee)
+                if (auto mem = as!Member(c.callee))
                     return (mem.name == "offset" || mem.name == "flip") && cheapPlane(mem.object);
             }
             return false;
@@ -956,7 +956,7 @@ final class Interp
         check(def, d.nameSpan);
         foreach (pa; d.attrs)
             if (pa.name == "preset")
-                p.presets[(cast(Literal) pa.args[0].value).text] = check(eval(pa.args[1].value, env), pa.args[1].span);
+                p.presets[(as!Literal(pa.args[0].value)).text] = check(eval(pa.args[1].value, env), pa.args[1].span);
 
         Value v = def;
         if (auto pv = preset in p.presets)
@@ -978,18 +978,18 @@ final class Interp
     {
         tick(s.span);
         auto outer = currentStatement;
-        if (cast(Block) s is null)
+        if (as!Block(s) is null)
             currentStatement = s;
         scope (exit)
             currentStatement = outer;
-        if (auto e = cast(ExprStmt) s)
+        if (auto e = as!ExprStmt(s))
         {
             eval(e.expr, env);
             return Flow.normal;
         }
-        if (auto b = cast(Block) s)
+        if (auto b = as!Block(s))
             return execBlock(b, b.scoped ? new Env(env, env.mod) : env);
-        if (auto v = cast(VarDecl) s)
+        if (auto v = as!VarDecl(s))
         {
             if (v.attrs.length)
                 throw new HcadError(Code.syntax, "attributes are only allowed on module-level declarations", v.attrs[0].span);
@@ -1007,13 +1007,13 @@ final class Interp
                 env.readonly[v.name] = true;
             return Flow.normal;
         }
-        if (auto f = cast(FuncDecl) s)
+        if (auto f = as!FuncDecl(s))
         {
             env.vars[f.name] = Value.make(Kind.func, closureOf(f, env, env.mod));
             env.readonly[f.name] = true;
             return Flow.normal;
         }
-        if (auto i = cast(If) s)
+        if (auto i = as!If(s))
         {
             if (eval(i.cond, env).truthy)
                 return exec(i.then, new Env(env, env.mod));
@@ -1021,16 +1021,17 @@ final class Interp
                 return exec(i.otherwise, new Env(env, env.mod));
             return Flow.normal;
         }
-        if (auto f = cast(Foreach) s)
+        if (auto f = as!Foreach(s))
             return execForeach(f, env);
-        if (auto f = cast(For) s)
+        if (auto f = as!For(s))
         {
             auto scope_ = new Env(env, env.mod);
             if (f.init)
                 exec(f.init, scope_);
+            Env lastTurn, lastBody;
             while (f.cond is null || eval(f.cond, scope_).truthy)
             {
-                auto fl = exec(f.body, new Env(scope_, env.mod));
+                auto fl = loopBody(f.body, Env.next(lastTurn, scope_, env.mod), lastBody);
                 if (fl == Flow.break_)
                     break;
                 if (fl == Flow.return_)
@@ -1040,11 +1041,12 @@ final class Interp
             }
             return Flow.normal;
         }
-        if (auto w = cast(While) s)
+        if (auto w = as!While(s))
         {
+            Env lastTurn, lastBody;
             while (eval(w.cond, env).truthy)
             {
-                auto fl = exec(w.body, new Env(env, env.mod));
+                auto fl = loopBody(w.body, Env.next(lastTurn, env, env.mod), lastBody);
                 if (fl == Flow.break_)
                     break;
                 if (fl == Flow.return_)
@@ -1052,16 +1054,16 @@ final class Interp
             }
             return Flow.normal;
         }
-        if (auto r = cast(Return) s)
+        if (auto r = as!Return(s))
         {
             returnValue = r.value ? eval(r.value, env) : Value.void_;
             return Flow.return_;
         }
-        if (cast(Break) s)
+        if (as!Break(s))
             return Flow.break_;
-        if (cast(Continue) s)
+        if (as!Continue(s))
             return Flow.continue_;
-        if (auto a = cast(AssertStmt) s)
+        if (auto a = as!AssertStmt(s))
         {
             if (!eval(a.cond, env).truthy)
             {
@@ -1070,7 +1072,7 @@ final class Interp
             }
             return Flow.normal;
         }
-        if (auto sw = cast(Switch) s)
+        if (auto sw = as!Switch(s))
         {
             auto subject = eval(sw.subject, env);
             ptrdiff_t chosen = -1;
@@ -1103,7 +1105,7 @@ final class Interp
             }
             return Flow.normal;
         }
-        if (auto i = cast(ImportDecl) s)
+        if (auto i = as!ImportDecl(s))
         {
             doImport(i, env.mod);
             return Flow.normal;
@@ -1122,11 +1124,24 @@ final class Interp
         return Flow.normal;
     }
 
+    /// A loop's body for one turn, in `scope_`: a block in a scope of its own, `last` the one the turn before
+    /// used (emptied and used again unless a closure kept it).
+    private Flow loopBody(Stmt body, Env scope_, ref Env last)
+    {
+        // a step, as exec counts one: a loop with an empty body still runs into the limit
+        tick(body.span);
+        if (auto b = as!Block(body))
+            if (b.scoped)
+                return execBlock(b, Env.next(last, scope_, scope_.mod));
+        return exec(body, scope_);
+    }
+
     private Flow execForeach(Foreach f, Env env)
     {
+        Env lastTurn, lastBody;
         Flow iteration(Value key, Value val)
         {
-            auto scope_ = new Env(env, env.mod);
+            auto scope_ = Env.next(lastTurn, env, env.mod);
             if (f.key.name.length)
                 scope_.vars[f.key.name] = f.key.type ? coerce(key, f.key.type, env.mod, f.key.span, "'" ~ f.key.name ~ "'") : key;
             scope_.vars[f.value.name] = f.value.type ? coerce(val, f.value.type, env.mod, f.value.span, "'" ~ f.value.name ~ "'") : val;
@@ -1134,7 +1149,7 @@ final class Interp
                 scope_.types[f.key.name] = Env.Typed(f.key.type, env.mod);
             if (f.value.type)
                 scope_.types[f.value.name] = Env.Typed(f.value.type, env.mod);
-            return exec(f.body, scope_);
+            return loopBody(f.body, scope_, lastBody);
         }
 
         if (f.hi)
@@ -1165,11 +1180,11 @@ final class Interp
             bool enumerated;
             {
                 auto e = f.aggregate;
-                if (auto c = cast(Call) e)
+                if (auto c = as!Call(e))
                     e = c.callee;
-                if (auto m = cast(Member) e)
+                if (auto m = as!Member(e))
                     enumerated = m.name == "enumerate";
-                else if (auto id = cast(Ident) e)
+                else if (auto id = as!Ident(e))
                     enumerated = id.name == "enumerate";
             }
             enumerated = enumerated && f.key.name.length;
@@ -1225,29 +1240,29 @@ final class Interp
 
     private Value evalExpr(Expr e, Env env)
     {
-        if (auto l = cast(Literal) e)
+        if (auto l = as!Literal(e))
             return literal(l);
-        if (auto id = cast(Ident) e)
+        if (auto id = as!Ident(e))
             return autoCall(lookup(id.name, env, id.span), id.span);
-        if (auto is_ = cast(InterpString) e)
+        if (auto is_ = as!InterpString(e))
         {
             string r = is_.parts[0];
             foreach (i, x; is_.exprs)
                 r ~= eval(x, env).toString ~ is_.parts[i + 1];
             return Value.of(r);
         }
-        if (auto b = cast(Binary) e)
+        if (auto b = as!Binary(e))
             return binary(b, env);
-        if (auto c = cast(Call) e)
+        if (auto c = as!Call(e))
             return call(c, env);
-        if (auto m = cast(Member) e)
+        if (auto m = as!Member(e))
             return member(m, env, false);
-        if (auto u = cast(Unary) e)
+        if (auto u = as!Unary(e))
         {
             if (u.op == Tok.amp)
             {
                 // &f: the function itself, not a call
-                auto id = cast(Ident) u.operand;
+                auto id = as!Ident(u.operand);
                 if (id is null)
                     throw new HcadError(Code.type, "'&' can only take a function name", u.span);
                 return lookup(id.name, env, id.span);
@@ -1265,9 +1280,37 @@ final class Interp
                 throw new HcadError(Code.type, "cannot negate " ~ v.typeName, u.span);
             }
         }
-        if (auto a = cast(Assign) e)
+        if (auto a = as!Assign(e))
         {
             Value v = eval(a.value, env);
+            // xs ~= x on a list held in a variable: appended where the list lies (D's ~=, room kept at its
+            // end, so filling one in a loop is linear: a new list each time copied it all, and the copies
+            // kept the collector busy), and with a declared type only what is added is checked against it
+            if (a.op == Tok.catAssign)
+                if (auto id = as!Ident(a.target))
+                    if (auto holder = env.find(id.name))
+                        if (auto cur = id.name in holder.vars)
+                            if (cur.kind == Kind.array && !holder.readonly.get(id.name, false))
+                            {
+                                auto add = v;
+                                if (auto t = id.name in holder.types)
+                                    if (t.type.isArray)
+                                        add = v.kind == Kind.array
+                                            ? coerce(v, t.type, env.mod, id.span, "'" ~ id.name ~ "'", t.mod)
+                                            : coerce(v, t.type.elem, env.mod, id.span, "'" ~ id.name ~ "'", t.mod);
+                                immutable n = cur.arr.length + (add.kind == Kind.array ? add.arr.length : 1);
+                                if (n > limits.arrayLength)
+                                    throw new HcadError(Code.limit, format("a list or text longer than %s elements",
+                                        limits.arrayLength), a.span);
+                                auto items = cur.arr;
+                                if (add.kind == Kind.array)
+                                    items ~= add.arr;
+                                else
+                                    items ~= add;
+                                v = Value.of(items);
+                                *cur = v;
+                                return v;
+                            }
             if (a.op != Tok.assign)
             {
                 auto op = a.op == Tok.plusAssign ? Tok.plus : a.op == Tok.minusAssign ? Tok.minus
@@ -1279,9 +1322,9 @@ final class Interp
             assignTo(a.target, v, env);
             return v;
         }
-        if (auto t = cast(Ternary) e)
+        if (auto t = as!Ternary(e))
             return eval(t.cond, env).truthy ? eval(t.then, env) : eval(t.otherwise, env);
-        if (auto a = cast(ArrayLit) e)
+        if (auto a = as!ArrayLit(e))
         {
             Value[] items;
             items.reserve(a.elems.length);
@@ -1289,7 +1332,7 @@ final class Interp
                 items ~= eval(x, env);
             return Value.of(items);
         }
-        if (auto a = cast(AssocLit) e)
+        if (auto a = as!AssocLit(e))
         {
             auto aa = new AAVal;
             foreach (i, k; a.keys)
@@ -1301,7 +1344,7 @@ final class Interp
             }
             return Value.make(Kind.aa, aa);
         }
-        if (auto ix = cast(Index) e)
+        if (auto ix = as!Index(e))
         {
             auto obj = eval(ix.object, env);
             auto idxEnv = dollarEnv(obj, env);
@@ -1309,7 +1352,7 @@ final class Interp
                 throw new HcadError(Code.index, "only one index is supported", ix.span);
             return index(obj, eval(ix.indices[0], idxEnv), ix.span);
         }
-        if (auto sl = cast(Slice) e)
+        if (auto sl = as!Slice(e))
         {
             auto obj = eval(sl.object, env);
             if (sl.lo is null)
@@ -1328,10 +1371,11 @@ final class Interp
             }
             throw new HcadError(Code.type, "cannot slice " ~ obj.typeName, sl.span);
         }
-        if (auto d = cast(Dollar) e)
+        if (auto d = as!Dollar(e))
             return lookup("$", env, d.span);
-        if (auto l = cast(Lambda) e)
+        if (auto l = as!Lambda(e))
         {
+            env.capture();
             auto c = new Closure;
             c.name = "lambda";
             c.params = l.params;
@@ -1342,7 +1386,7 @@ final class Interp
             c.span = l.span;
             return Value.make(Kind.func, c);
         }
-        if (auto i = cast(IncDec) e)
+        if (auto i = as!IncDec(e))
         {
             auto old = eval(i.target, env);
             if (!old.isNum)
@@ -1356,6 +1400,8 @@ final class Interp
 
     private Value literal(Literal l)
     {
+        if (l.cooked)
+            return l.type == Literal.Type.int_ ? Value.integer(cast(long) l.number) : Value.number(l.number);
         final switch (l.type)
         {
         case Literal.Type.int_:
@@ -1369,6 +1415,8 @@ final class Interp
                 if (x > maxExactInt || x < -maxExactInt)
                     throw new HcadError(Code.lex, format("integer too large: the largest exact one is %s; write it with a "
                         ~ "dot (%s.0) for a floating value", maxExactInt, l.text), l.span);
+                l.number = x;
+                l.cooked = true;
                 return Value.integer(x);
             }
         case Literal.Type.float_:
@@ -1381,6 +1429,8 @@ final class Interp
                     x = double.infinity;   // out of range
                 if (isInfinity(x))
                     throw new HcadError(Code.lex, "number too large: the largest is about 1.8e308", l.span);
+                l.number = x;
+                l.cooked = true;
                 return Value.number(x);
             }
         case Literal.Type.string_: return Value.of(l.text);
@@ -1452,7 +1502,7 @@ final class Interp
     /// Assignment with value semantics: `a.b[2] = x` rebuilds a.b and a.
     private void assignTo(Expr target, Value v, Env env)
     {
-        if (auto id = cast(Ident) target)
+        if (auto id = as!Ident(target))
         {
             auto e = env.find(id.name);
             if (e is null)
@@ -1465,7 +1515,7 @@ final class Interp
             e.vars[id.name] = v;
             return;
         }
-        if (auto ix = cast(Index) target)
+        if (auto ix = as!Index(target))
         {
             auto obj = eval(ix.object, env);
             auto i = eval(ix.indices[0], dollarEnv(obj, env));
@@ -1492,7 +1542,7 @@ final class Interp
             }
             throw new HcadError(Code.type, "cannot assign to an element of " ~ obj.typeName, ix.span);
         }
-        if (auto m = cast(Member) target)
+        if (auto m = as!Member(target))
         {
             auto obj = eval(m.object, env);
             if (obj.kind == Kind.struct_)
@@ -1885,9 +1935,9 @@ final class Interp
     private Value call(Call c, Env env)
     {
         Value callee;
-        if (auto m = cast(Member) c.callee)
+        if (auto m = as!Member(c.callee))
             callee = member(m, env, true);
-        else if (auto id = cast(Ident) c.callee)
+        else if (auto id = as!Ident(c.callee))
             callee = lookup(id.name, env, id.span);
         else
             callee = eval(c.callee, env);
@@ -1898,7 +1948,7 @@ final class Interp
         foreach (t; c.templateArgs)
         {
             // map!colonna passes the function, as a D alias parameter would
-            auto id = cast(Ident) t;
+            auto id = as!Ident(t);
             args.templateArgs ~= id ? lookup(id.name, env, id.span) : eval(t, env);
         }
         foreach (a; c.args)
@@ -2085,7 +2135,7 @@ final class Interp
             result = eval(c.exprBody, env);
         else if (c.body)
         {
-            auto body = cast(Block) c.body;
+            auto body = as!Block(c.body);
             result = execBlock(body, env) == Flow.return_ ? returnValue : Value.void_;
         }
         if (c.returnType && c.returnType.name != "auto")
@@ -2255,6 +2305,8 @@ final class Interp
 
     private Closure closureOf(FuncDecl f, Env env, ModuleVal mod)
     {
+        if (env !is null)
+            env.capture();
         auto c = new Closure;
         c.name = f.name;
         c.params = f.params;
@@ -2271,8 +2323,9 @@ final class Interp
 
     /// Checks a value against a declared type, converting where D would:
     /// int → double, and bare numbers → Length/Angle in the caller's unit.
-    Value coerce(Value v, TypeRef t, ModuleVal mod, Span span, string what, ModuleVal typeScope = null)
+    Value coerce(Value v, TypeRef t, ModuleVal mod, Span span, lazy string what, ModuleVal typeScope = null)
     {
+        // `what` names the value in an error only: lazy, so a list's elements do not each format a name
         // bare numbers take the unit of `mod` (the caller); type names are
         // resolved where the declaration lives (`typeScope`)
         auto types = typeScope ? typeScope : mod;
@@ -2571,7 +2624,7 @@ T[] collectOrdered(T)(ModuleVal mod)
     {
         if (auto x = cast(T) s)
             r ~= x;
-        else if (auto b = cast(Block) s)
+        else if (auto b = as!Block(s))
             foreach (y; b.stmts)
                 walk(y);
     }

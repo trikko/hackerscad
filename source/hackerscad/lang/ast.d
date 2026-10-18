@@ -46,6 +46,13 @@ struct Arg
 
 // ---------------------------------------------------------------- expressions
 
+/// `cast(T) o` for the tree's classes, all final: one comparison of the object's type, where a cast walks
+/// the class hierarchy (the interpreter's dispatch on every node it evaluates).
+T as(T)(Object o) if (is(T == class) && __traits(isFinalClass, T))
+{
+    return o !is null && typeid(o) is typeid(T) ? cast(T) cast(void*) o : null;
+}
+
 abstract class Expr
 {
     Span span;
@@ -56,6 +63,9 @@ final class Literal : Expr
     enum Type { int_, float_, string_, true_, false_, null_ }
     Type type;
     string text;
+    /// A number's value, read from `text` the first time it is evaluated (not at every turn of a loop).
+    bool cooked;
+    double number;   /// ditto
 }
 
 /// `a $(x) b`: parts.length == exprs.length + 1

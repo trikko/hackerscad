@@ -463,10 +463,34 @@ final class Env
     }
     Typed[string] types;
 
+    /// Kept by a function or a lambda made in it or in a scope inside it: no longer emptied and used again.
+    bool captured;
+
     this(Env parent, ModuleVal mod)
     {
         this.parent = parent;
         this.mod = mod;
+    }
+
+    /// Marks this scope and those it lies in as kept by a closure.
+    void capture()
+    {
+        for (auto e = this; e !is null && !e.captured; e = e.parent)
+            e.captured = true;
+    }
+
+    /// The scope for a loop's next turn: the last turn's emptied, unless a closure kept it (or it lies in
+    /// another scope), else a new one; a loop of many turns allocates two scopes, not two a turn.
+    static Env next(ref Env last, Env parent, ModuleVal mod)
+    {
+        if (last !is null && !last.captured && last.parent is parent)
+        {
+            last.vars.clear();
+            last.readonly.clear();
+            last.types.clear();
+            return last;
+        }
+        return last = new Env(parent, mod);
     }
 
     Env find(string name)
