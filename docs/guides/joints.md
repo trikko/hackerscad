@@ -1,6 +1,6 @@
 # Joints between parts
 
-A part too long for the printer's bed cut in two pieces that lock together with no screws and no glue, or two parts joined where they meet, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck and the wedged scarf of Japanese carpentry. Or a part cut into two halves with flat faces, each printed lying on its cut face, joined by flat keys. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
+A part too long for the printer's bed cut in two pieces that lock together with no screws and no glue, or two parts joined where they meet, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck, the wedged scarf and the seated dovetail of Japanese carpentry, and a barbed tenon driven in for good. Or a part cut into two halves with flat faces, each printed lying on its cut face, joined by flat keys. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
 
 <!-- render: joints-kinds --from 0.6,-1,0.5 -->
 ```d
@@ -44,9 +44,15 @@ Solid kama() => shown(5);
 
 @part("gold")
 Solid kanawa() => shown(6);
+
+@part("mediumseagreen")
+Solid koshikake() => shown(7);
+
+@part("Sky Pop")
+Solid barbed() => shown(8);
 ```
 
-![Tenon, dovetail, pins, fingers, half lap, gooseneck and wedged scarf, each pulled apart](img/joints-kinds.png)
+![Tenon, dovetail, pins, fingers, half lap, gooseneck, wedged scarf, seated dovetail and barbed tenon, each pulled apart](img/joints-kinds.png)
 
 ## Cutting with a joint
 
@@ -67,6 +73,8 @@ The joint sits in the middle of the cut. Its size follows the cut: by default it
 | `"lap"` | a half lap (ai-gaki): each piece keeps half the thickness | laid on each other | bending one way |
 | `"kama"` | a gooseneck (kama tsugi): a neck and a wider head | dropped in from the side | pulling apart |
 | `"kanawa"` | a half lap with a hook at each end, locked by a wedge (kanawa tsugi) | laid on, then the wedge driven through | pulling, bending and twisting |
+| `"koshikake"` | a dovetail over a seat the other piece rests on (koshikake ari tsugi) | dropped in from the side | pulling apart, and bending: the seat carries the load |
+| `"barbed"` | a tenon with barbs, split down its middle (the barbs close as it goes in) | driven in | pulling out: it does not come out again |
 
 | Argument | What it does |
 |---|---|
@@ -279,7 +287,7 @@ To choose the places yourself, `profile.spots(n, margin:)` gives the points `spl
 
 | Message | What to do |
 |---|---|
-| *the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa* | a kind from the list |
+| *the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, koshikake, barbed* | a kind from the list |
 | one piece comes out in two bodies | the plane cuts through two separate parts of the solid (both jaws of a clip): cut where the section is one piece |
 | the joint is too big for a flat part | the size follows the section's area: give `size:` (and `length:`) |
 | the pieces do not go together | the joint slides the wrong way for how you want to assemble them: `turn: 90.deg` |

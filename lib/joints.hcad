@@ -10,7 +10,7 @@ struct Joint
 }
 
 /// The kinds of joint splitJoint() knows.
-immutable string[] jointKinds = ["tenon", "dovetail", "pins", "fingers", "lap", "kama", "kanawa"];
+immutable string[] jointKinds = ["tenon", "dovetail", "pins", "fingers", "lap", "kama", "kanawa", "koshikake", "barbed"];
 
 /// What a joint pushes across the plane, in the plane's own frame (x and y
 /// in the plane, z along its normal), `s` its size and `g` added all round
@@ -119,8 +119,42 @@ private Keys keys(string kind, Length s, Length len, Length g, int count)
                 + span(-far, far, -hook, 0.01.mm, -len, -len + lip, g);
             return Keys(up, down);
         }
+    case "koshikake":
+        {
+            // a dovetail in the upper part and, under it, a seat: b's lower part runs on under a,
+            // and a rests on it, so the joint carries a load without bending open
+            immutable w = 0.35 * s, flare = len * tan(12.deg), seatTop = -0.15 * s, seat = 0.5 * len;
+            auto tail = acrossY([vec(-w / 2 - g, -0.01.mm), vec(w / 2 + g, -0.01.mm),
+                vec(w / 2 + flare + g, len + g), vec(-w / 2 - flare - g, len + g)], far);
+            return Keys(tail & span(-far, far, seatTop, far, -far, far, g),
+                span(-far, far, -far, seatTop, -seat, 0.01.mm, g));
+        }
+    case "barbed":
+        {
+            // a tenon with barbs, driven in: each tooth leans towards the tip (it slides in) and
+            // has a flat back (it does not pull out); a slot down its middle lets the barbs close as
+            // they go in and open behind the teeth they pass
+            immutable w = 0.3 * s, barb = 0.05 * s, teeth = 3, seg = len / teeth;
+            Vec2[] right;
+            foreach (k; 0 .. teeth)
+            {
+                right ~= vec(w / 2, k * seg);
+                right ~= vec(w / 2 + barb, k * seg + 0.01.mm);
+            }
+            right ~= vec(w / 2, len);
+            Vec2[] outline = [vec(-w / 2, -0.01.mm), vec(w / 2, -0.01.mm)] ~ right[1 .. $];
+            foreach_reverse (q; right[1 .. $])
+                outline ~= vec(-q.x, q.y);
+            auto shape = polygon(outline);
+            if (g > 0.mm)
+                shape = shape.offset(g);
+            else
+                shape = shape - rect(0.3 * w, 0.6 * len).move(y: len - 0.3 * len + 0.01.mm);
+            return Keys(shape.extrude(2 * far, along: Y).move(y: -far), none);
+        }
     default:
-        assert(false, "the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, not " ~ kind);
+        assert(false, "the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, koshikake, barbed, not "
+            ~ kind);
     }
 }
 
@@ -134,7 +168,7 @@ private Angle alongLonger(Profile section, Plane here, string kind)
     auto yd = box(0.001.mm, 10.mm, 0.001.mm).placeOn(here).bbox.size / 10.mm;
     auto size = section.bbox.size;
     immutable longerY = dot(size, yd) > dot(size, xd) + 0.01.mm;
-    immutable slides = kind == "dovetail" || kind == "kama";
+    immutable slides = kind == "dovetail" || kind == "kama" || kind == "koshikake" || kind == "barbed";
     return longerY != slides ? 90.deg : 0.deg;
 }
 
@@ -154,7 +188,11 @@ private Angle alongLonger(Profile section, Plane here, string kind)
 /// - "lap": a half lap (ai-gaki), each piece keeping half the thickness;
 /// - "kama": a gooseneck, dropping in from the side (kama tsugi);
 /// - "kanawa": a half lap with hooks at both ends, locked by a wedge driven
-///   through the middle (kanawa tsugi): the wedge is in `loose`.
+///   through the middle (kanawa tsugi): the wedge is in `loose`;
+/// - "koshikake": a dovetail over a seat that the other piece rests on
+///   (koshikake ari tsugi), which carries a load without bending open;
+/// - "barbed": a tenon with barbs, split down its middle, driven in: it goes
+///   in and does not come out.
 Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
     Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
 {
