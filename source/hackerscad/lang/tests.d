@@ -4820,3 +4820,18 @@ unittest
     expectErr("box(10.mm, 10.mm, 10.mm).knurl(faces.top);", Code.type);
     expectErr("cylinder(d: 30.mm, h: 20.mm).knurl(faces.largest, kind: \"wavy\");", Code.type);
 }
+
+unittest
+{
+    mixin(slowTest);
+    // the hinges: leaves apart, the pin's bore through every knuckle, the snap's cones in its sockets
+    auto r = runModel("import hinges;\n"
+        ~ "unittest { auto p = pinHinge(); assert((p.fixed & p.moving).volume < 0.001 * 1.mm ^^ 3);\n"
+        ~ "assert(!p.fixed.contains(vec(-19.mm, 0.mm, 3.mm)) && !p.moving.contains(vec(0.mm, 0.mm, 3.mm)), \"no bore\");\n"
+        ~ "auto s = snapHinge(); assert((s.fixed & s.moving).volume < 0.001 * 1.mm ^^ 3);\n"
+        ~ "assert(s.fixed.contains(vec(-4.5.mm, 0.mm, 3.mm)) && s.fixed.contains(vec(4.5.mm, 0.mm, 3.mm)), \"no cones\");\n"
+        ~ "auto l = livingHinge(); assert(l.pieces.length == 1 && l.contains(vec(0.mm, 0.mm, 0.25.mm))\n"
+        ~ "&& !l.contains(vec(0.mm, 0.mm, 1.mm))); }\n");
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}

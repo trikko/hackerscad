@@ -90,7 +90,7 @@ A two-part mold to cast copies of a part in silicone, resin or plaster: a block 
 
 [<img src="guides/img/flex-kerf.png" width="420" alt="Flexible parts and hinges">](guides/flex.md)
 
-Parts that bend where they should: a rigid plate made to bend in a band by rows of slots (kerf bending), and the hinges of the `hinges` library. Printed flat, in one piece.
+Parts that bend where they should: a rigid plate made to bend in a band by rows of slots (kerf bending), and the hinges of the `hinges` library, four kinds, all printed flat without supports.
 
 ### [Parameters, presets and checks](guides/parameters.md)
 

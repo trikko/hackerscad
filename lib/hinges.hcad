@@ -45,3 +45,78 @@ Hinge hinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3.mm
             b -= cylinder(d: pin + 2 * clearance, h: length).rotate(y: 90).move(x: -length / 2, z: thickness);
     return Hinge(a, b);
 }
+
+/// A living hinge: two plates `width` wide each, lying flat side by side
+/// along X, joined by a thin web `web` thick and `gap` wide at their
+/// underside, which bends. For PETG, PP or TPU (PLA cracks after a few
+/// bends); print it flat, the web on the bed, so its layers run across the
+/// fold. The plates lie on -Y and +Y, the fold line along X at y = 0.
+Solid livingHinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3.mm, Length web = 0.5.mm,
+    Length gap = 3.mm)
+{
+    assert(web < thickness, "livingHinge: the web must be thinner than the plates");
+    auto plates = box(length, width, thickness).move(y: -width / 2 - gap / 2)
+        + box(length, width, thickness).move(y: width / 2 + gap / 2);
+    return plates + box(length, gap + 2.mm, web);
+}
+
+/// The knuckles of a hinge along X round the axis at z = thickness, each with
+/// its web to its leaf, for leaf `side` (-1 or +1), as hinge() makes them.
+private Solid knuckleOf(int i, int side, Length length, Length thickness, int knuckles, Length clearance)
+{
+    immutable outer = 2 * thickness, segment = length / knuckles;
+    immutable x0 = -length / 2 + i * segment + (i > 0 ? clearance / 2 : 0.mm);
+    immutable x1 = -length / 2 + (i + 1) * segment - (i < knuckles - 1 ? clearance / 2 : 0.mm);
+    immutable reach = outer / 2 + clearance;
+    auto web = box(x1 - x0, reach, thickness).move(x: (x0 + x1) / 2, y: side * reach / 2);
+    return cylinder(d: outer, h: x1 - x0).rotate(y: 90).move(x: x0, z: thickness) + web;
+}
+
+/// A hinge turning on a separate pin: the knuckles of both leaves holed
+/// `pin` + 2 × `clearance` across, for a length of 1.75 mm filament, a nail or
+/// a screw pushed through when assembled. Laid as hinge() lays its leaves (the
+/// axis along X at z = thickness); the leaves print apart, flat, and the
+/// hinge comes apart again.
+Hinge pinHinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3.mm, int knuckles = 5,
+    Length pin = 1.75.mm, Length clearance = 0.3.mm)
+{
+    assert(knuckles >= 3, "a hinge needs at least 3 knuckles");
+    assert(pin < 1.6 * thickness, "pinHinge: the pin is too thick for the knuckles: thicker leaves");
+    immutable outer = 2 * thickness;
+    Solid a = box(length, width, thickness).move(y: -width / 2 - outer / 2 - clearance);
+    Solid b = box(length, width, thickness).move(y: width / 2 + outer / 2 + clearance);
+    foreach (i; 0 .. knuckles)
+    {
+        if (i % 2 == 0)
+            a += knuckleOf(i, -1, length, thickness, knuckles, clearance);
+        else
+            b += knuckleOf(i, 1, length, thickness, knuckles, clearance);
+    }
+    auto bore = cylinder(d: pin + 2 * clearance, h: length + 2.mm).rotate(y: 90).move(x: -length / 2 - 1.mm,
+        z: thickness);
+    return Hinge(a - bore, b - bore);
+}
+
+/// A hinge that snaps together: three knuckles, the two outer ones on the
+/// fixed leaf with a cone standing in from each, the middle one on the
+/// moving leaf with a conical socket at each end. Spring the outer knuckles
+/// apart a little, push the middle one between them, and the cones click into
+/// their sockets; it comes apart the same way. Laid as hinge() lays its
+/// leaves; they print apart, flat.
+Hinge snapHinge(Length length = 30.mm, Length width = 15.mm, Length thickness = 3.mm, Length clearance = 0.3.mm)
+{
+    immutable outer = 2 * thickness, segment = length / 3;
+    Solid a = box(length, width, thickness).move(y: -width / 2 - outer / 2 - clearance)
+        + knuckleOf(0, -1, length, thickness, 3, clearance) + knuckleOf(2, -1, length, thickness, 3, clearance);
+    Solid b = box(length, width, thickness).move(y: width / 2 + outer / 2 + clearance)
+        + knuckleOf(1, 1, length, thickness, 3, clearance);
+
+    // the cones: from the outer knuckles' inner faces towards the middle, 45° so they print and snap
+    immutable cd = 0.6 * outer, ch = cd / 2 * 0.8;
+    auto cone1 = cone(d1: cd, d2: cd - 2 * ch, h: ch).rotate(y: 90);
+    immutable inner0 = -length / 2 + segment - clearance / 2, inner1 = length / 2 - segment + clearance / 2;
+    a = a + cone1.move(x: inner0, z: thickness) + cone1.mirror(X).move(x: inner1, z: thickness);
+    auto socket = cone(d1: cd + 2 * clearance, d2: cd - 2 * ch + 2 * clearance, h: ch + clearance).rotate(y: 90);
+    b = b - socket.move(x: inner0 - 0.01.mm, z: thickness) - socket.mirror(X).move(x: inner1 + 0.01.mm, z: thickness);
+    return Hinge(a, b);
+}
