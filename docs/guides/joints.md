@@ -14,8 +14,10 @@ Solid shown(int i)
     auto beam = box(20.mm, 20.mm, 120.mm);
     auto middle = plane(origin: vec(0.mm, 0.mm, 60.mm),
         normal: Z);
-    auto j = splitJoint(beam, middle, kind: jointKinds[i],
-        count: 4);
+    // four fingers; two pins, stouter than four would be
+    auto kind = jointKinds[i];
+    auto j = splitJoint(beam, middle, kind: kind,
+        count: kind == "fingers" ? 4 : 2);
     auto s = j.a + j.b.move(z: 30.mm);
     foreach (l; j.loose)
         s += l.move(y: 30.mm, z: 15.mm);

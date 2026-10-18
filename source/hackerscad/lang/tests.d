@@ -4809,3 +4809,14 @@ unittest
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
 }
+
+unittest
+{
+    mixin(slowTest);
+    // knurling: raised all round a cylinder by the depth, a whole number of cells, the ends plain
+    expectOut("auto c = cylinder(d: 30.mm, h: 20.mm); auto k = c.knurl(faces.largest); "
+        ~ "writeln(abs(k.bbox.size.x - 31.mm) < 0.01.mm, \" \", k.volume > c.volume, \" \", k.isValid, \" \", "
+        ~ "c.knurl(faces.largest, kind: \"straight\").volume > c.volume);", "true true true true");
+    expectErr("box(10.mm, 10.mm, 10.mm).knurl(faces.top);", Code.type);
+    expectErr("cylinder(d: 30.mm, h: 20.mm).knurl(faces.largest, kind: \"wavy\");", Code.type);
+}

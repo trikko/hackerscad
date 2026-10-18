@@ -457,6 +457,41 @@ Solid cone()
 
 A region that is a ring of noise instead, on any surface: the grooves of `kind: "edges"` (above).
 
+## Knurling
+
+A knob or a handle grips better with a pattern raised on its side. `body.knurl(face)` raises one on a whole cylindrical face: diamonds (the default), straight ridges along the axis, or ridges leaning round it. The pitch is adjusted a little so that a whole number go round and the pattern closes on itself.
+
+<!-- render: patterns-knurl --from 0.3,-1,0.6 -->
+```d
+// three knobs: diamond, straight and diagonal knurling
+
+@part("Sky Pop")
+Solid diamond() => cylinder(d: 30.mm, h: 20.mm)
+    .knurl(faces.largest);
+
+@part("Pink Pop")
+Solid straight() => cylinder(d: 30.mm, h: 20.mm)
+    .knurl(faces.largest, kind: "straight")
+    .move(x: 40.mm);
+
+@part("gold")
+Solid diagonal() => cylinder(d: 30.mm, h: 20.mm)
+    .knurl(faces.largest, kind: "diagonal")
+    .move(x: 80.mm);
+```
+
+![Three knobs with diamond, straight and diagonal knurling](img/patterns-knurl.png)
+
+| Argument | What it does |
+|---|---|
+| `kind:` | `"diamond"`, `"straight"` or `"diagonal"` |
+| `pitch:` | from one ridge to the next round the face, 1.6 mm unless given (adjusted to a whole number round) |
+| `depth:` | how far the pattern stands out, 0.5 mm unless given |
+| `angle:` | how far a diagonal ridge leans from the axis, and the diamonds' slant: 30° unless given |
+| `margin:` | the plain band left at each end, 0.5 mm unless given |
+
+The pattern stands out of the face: the knob grows by `depth` all round. Printed standing, the ridges and diamonds come out crisp; a pitch under 1.2 mm blurs on a 0.4 mm nozzle.
+
 ## In the model or in a library
 
 - A pattern used once, in this part: in the model, next to what it cuts.

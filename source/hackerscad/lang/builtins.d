@@ -988,6 +988,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return flat(k.polygon(xy), "polygon", a.span);
     });
     def("tiles", (ref CallArgs a) => tilesOf(it, a));
+    def("knurl", (ref CallArgs a) => knurlOf(it, a));
     def("text", (ref CallArgs a) {
         // text("hello", size: 10.mm, font: "Sans"): a text outline starting at the
         // origin on its baseline
@@ -4183,6 +4184,88 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
             }
     }
     return solidBoolean(it, body, placed.solid, remove ? BoolOp.cut : BoolOp.fuse, a.span);
+}
+
+/// body.knurl(faces.…, kind: "diamond", pitch: 1.6.mm, depth: 0.5.mm): a grip raised on a cylindrical face,
+/// diamonds, straight ridges along the axis or slanted ones, a whole number of them round so the pattern
+/// closes on itself; laid on the face as wrap: does.
+Value knurlOf(Interp it, ref CallArgs a)
+{
+    import std.math : PI, tan, round, abs;
+    auto k = it.kernel;
+    auto x = Args(it, a, "knurl", ["solid", "face", "kind", "pitch", "depth", "angle", "margin"]);
+    auto body = x.solid("solid");
+    auto idx = resolveSelector(it, x.selector("face", true), body, x.spanOf("face"));
+    if (idx.length != 1)
+        throw new HcadError(Code.type, format("knurl needs exactly one face, the selector matched %d", idx.length),
+            x.spanOf("face"));
+    CylinderInfo cyl;
+    if (!k.faceCylinder(nonEmpty(body, a.span), idx[0], cyl))
+        throw new HcadError(Code.type, "knurl goes on a cylindrical face (a knob's side, a handle)", x.spanOf("face"));
+    immutable kind = x.has("kind") ? x.get("kind").s : "diamond";
+    if (!["diamond", "straight", "diagonal"].canFind(kind))
+        throw new HcadError(Code.type, "the knurl is \"diamond\", \"straight\" or \"diagonal\"", x.spanOf("kind"));
+    immutable depth = x.lenOr("depth", 0.5), margin = x.lenOr("margin", 0.5), slant = x.angleOr("angle", 30 * PI / 180);
+    if (!(depth > 0) || margin < 0 || !(slant > 0 && slant < PI / 2))
+        throw new HcadError(Code.type, "knurl: depth above 0, margin not below 0, angle between 0 and 90°", a.span);
+    immutable double round_ = 2 * PI * cyl.radius, high = abs(cyl.to - cyl.from) - 2 * margin;
+    if (!(high > 0) || cyl.span < 2 * PI - 1e-6)
+        throw new HcadError(Code.type, "knurl goes on a whole cylinder, all round, taller than twice its margin",
+            x.spanOf("face"));
+    // a whole number of them round: the pattern closes on itself where the face does
+    immutable n = cast(int) round(round_ / x.lenOr("pitch", 1.6));
+    if (n < 6)
+        throw new HcadError(Code.type, "knurl: the pitch leaves fewer than 6 round the face", x.spanOf("pitch"));
+    immutable double p = round_ / n, rise = p / tan(slant);
+    Brep tile;
+    double[2][2] step;
+    final switch (kind)
+    {
+    case "diamond":
+        // a rhombus, its diagonals the pitch round and the rise along: a groove a third of the pitch between
+        tile = k.polygon([-p / 3, 0, 0, -rise / 3, p / 3, 0, 0, rise / 3]);
+        step = [[p, 0], [p / 2, rise / 2]];
+        break;
+    case "straight":
+        tile = k.polygon([-p / 4, -high, p / 4, -high, p / 4, high, -p / 4, high]);
+        step = [[p, 0], [0, 4 * high]];
+        break;
+    case "diagonal":
+        {
+            // a ridge leaning at the angle from the axis
+            immutable double lean = 2 * high * tan(slant);
+            tile = k.polygon([-p / 4 - lean / 2, -high, p / 4 - lean / 2, -high, p / 4 + lean / 2, high,
+                -p / 4 + lean / 2, high]);
+            step = [[p, 0], [0, 4 * high]];
+            break;
+        }
+    }
+    // the cells over the face, a hair less than once round, cut at the ends
+    auto region = k.rect(round_ - 1e-3, high);
+    double[] place;
+    immutable reachI = cast(long)(round_ / p) + 4, reachJ = kind == "diamond" ? cast(long)(high / rise) * 2 + 4 : 1;
+    foreach (i; -reachI .. reachI + 1)
+        foreach (j; -reachJ .. reachJ + 1)
+            place ~= [0.0, i * step[0][0] + j * step[1][0], i * step[0][1] + j * step[1][1], 1.0];
+    Brep cells;
+    try
+        cells = k.tiles([tile], place, region, 1, 0);
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, "knurl: " ~ e.msg, a.span);
+    immutable nan = Vec3(double.nan, double.nan, double.nan);
+    try
+        return Value.of(derived(it, k.wrapDirect(body.brep, idx[0], cells, false, nan, Vec3(0, 0, 0), depth), [body],
+            "knurl", a.span));
+    catch (KernelException)
+    {
+    }
+    try
+    {
+        auto tool = k.wrapTool(body.brep, idx[0], cells, false, nan, Vec3(0, 0, 0), -0.01, depth);
+        return Value.of(derived(it, k.fuseAll(body.brep ~ k.solids(tool)), [body], "knurl", a.span));
+    }
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, "knurl: " ~ e.msg, a.span);
 }
 
 /// body.cut(profile, wrap: faces.…, depth:) and project:: the profile laid on a face of any shape,
