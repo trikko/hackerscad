@@ -210,14 +210,34 @@ void installPrelude(Interp it, Env env)
             throw new HcadError(Code.type, format("%s must be a number, not %s", what, v.typeName), span);
         return v.n.value;   // a length counts in mm
     }
+    import hackerscad.geom.noise : NoiseKind;
+    NoiseKind noiseKind(ref Args x)
+    {
+        if (!x.has("kind"))
+            return NoiseKind.smooth;
+        auto v = x.get("kind");
+        foreach (kind; [NoiseKind.smooth, NoiseKind.cells, NoiseKind.edges, NoiseKind.ridged])
+            if (v.kind == Kind.str && v.s == format("%s", kind))
+                return kind;
+        throw new HcadError(Code.type, "the noise kind is \"smooth\", \"cells\", \"edges\" or \"ridged\"",
+            x.spanOf("kind"));
+    }
+    int octaves(ref Args x)
+    {
+        immutable o = x.has("octaves") ? x.num("octaves") : 1;
+        if (!(o >= 1 && o <= 8))
+            throw new HcadError(Code.type, format("octaves go from 1 to 8, not %g", o), x.spanOf("octaves"));
+        return cast(int) o;
+    }
     def("noise", (ref CallArgs a) {
-        // noise(x, y, z, seed: 3): smooth, about -1…1, features about one unit across
-        import hackerscad.geom.noise : simplex;
-        auto x = Args(it, a, "noise", ["x", "y", "z", "seed"]);
-        return Value.number(simplex(plainOrMm(x.get("x"), "x", x.spanOf("x")),
+        // noise(x, y, z, seed: 3): smooth, about -1…1, features about one unit across;
+        // kind: "cells", "edges", "ridged" (0…1), octaves: finer layers on top
+        import hackerscad.geom.noise : noiseOf;
+        auto x = Args(it, a, "noise", ["x", "y", "z", "seed", "kind", "octaves"]);
+        return Value.number(noiseOf(noiseKind(x), plainOrMm(x.get("x"), "x", x.spanOf("x")),
             x.has("y") ? plainOrMm(x.get("y"), "y", x.spanOf("y")) : 0,
             x.has("z") ? plainOrMm(x.get("z"), "z", x.spanOf("z")) : 0,
-            x.has("seed") ? cast(long) x.num("seed") : 0));
+            x.has("seed") ? cast(long) x.num("seed") : 0, octaves(x)));
     });
     def("random", (ref CallArgs a) {
         // random(lo, hi, seed: 7): uniform between lo and hi (lengths, angles or plain numbers),
@@ -243,9 +263,9 @@ void installPrelude(Interp it, Env env)
     def("loopNoise", (ref CallArgs a) {
         // loopNoise(around, along, bumps: 6): round a loop (0…1), no seam where it closes
         import hackerscad.geom.noise : loopNoise;
-        auto x = Args(it, a, "loopNoise", ["around", "along", "bumps", "seed"]);
+        auto x = Args(it, a, "loopNoise", ["around", "along", "bumps", "seed", "kind", "octaves"]);
         return Value.number(loopNoise(x.num("around"), x.has("along") ? plainOrMm(x.get("along"), "along", x.spanOf("along")) : 0,
-            x.has("bumps") ? x.num("bumps") : 4, x.has("seed") ? cast(long) x.num("seed") : 0));
+            x.has("bumps") ? x.num("bumps") : 4, x.has("seed") ? cast(long) x.num("seed") : 0, noiseKind(x), octaves(x)));
     });
 
     def("min", (ref CallArgs a) => extreme(it, a, "min", false));
@@ -964,6 +984,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         polygonCheck(xy, x.spanOf("points"));
         return flat(k.polygon(xy), "polygon", a.span);
     });
+    def("tiles", (ref CallArgs a) => tilesOf(it, a));
     def("text", (ref CallArgs a) {
         // text("hello", size: 10.mm, font: "Sans"): a text outline starting at the
         // origin on its baseline
@@ -3722,6 +3743,266 @@ SolidVal profileArg(ref Args x, string name)
         throw new HcadError(Code.type, format("'%s' must be a 2D profile (rect, circle, polygon…), not %s", name, v.typeName),
             x.spanOf(name));
     return v.solid;
+}
+
+/// region.tiles(kind: "hex", size: 8.mm, gap: 1.mm): the region filled with
+/// cells, each shrunk to leave `gap` between neighbours (see reference.d).
+Value tilesOf(Interp it, ref CallArgs a)
+{
+    import hackerscad.geom.tiling : Motif, Poly, motif, shrinkConvex, voronoi, scatter, tilingKinds;
+    import std.range : iota;
+    import std.math : cos, sin, sqrt;
+    auto k = it.kernel;
+    auto x = Args(it, a, "tiles", ["region", "kind", "size", "gap", "round", "angle", "tile", "step", "origin",
+        "whole", "scale", "keep", "seed", "jitter", "relax", "points"]);
+    auto region = profileArg(x, "region");
+    requireXY(it, region, x.spanOf("region"));
+    immutable bb = k.bbox(region.brep);
+    immutable gap = x.lenOr("gap", 0), rnd = x.lenOr("round", 0), ang = x.angleOr("angle", 0);
+    if (gap < 0 || rnd < 0)
+        throw new HcadError(Code.type, "gap and round cannot be negative", a.span);
+    immutable custom = x.has("tile");
+    immutable kind = x.has("kind") ? x.get("kind").s : custom ? "tile" : x.has("points") ? "voronoi" : "hex";
+    if (custom && x.has("kind"))
+        throw new HcadError(Code.unknownArg, "give either a kind or your own tile:, not both", x.spanOf("kind"));
+    if (!custom && kind != "voronoi" && !tilingKinds.canFind(kind))
+        throw new HcadError(Code.type, format("the tiling kind is one of %-(\"%s\", %)\" or \"voronoi\" (or give tile: and step:)",
+            tilingKinds), x.spanOf("kind"));
+    if (!custom && !x.has("size") && !x.has("points"))
+        throw new HcadError(Code.missingArg, "tiles needs size: (the distance between neighbouring cells)", a.span);
+    immutable size = x.lenOr("size", 0);
+    if (x.has("size") && !(size > 0))
+        throw new HcadError(Code.type, "the size must be greater than 0", x.spanOf("size"));
+    immutable ca = cos(ang), sa = sin(ang);
+    double[2] turn(double[2] p) => [p[0] * ca - p[1] * sa, p[0] * sa + p[1] * ca];
+    Vec3 origin = x.has("origin") ? x.vecLen("origin")
+        : Vec3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, 0);
+
+    // a scale and a choice for each cell, from its centre
+    double scaleAt(double cx, double cy)
+    {
+        if (!x.has("scale"))
+            return 1;
+        auto f = x.get("scale");
+        auto v = f.isCallable ? call1(it, f, Value.vector(Vec3(cx, cy, 0), 2, Dim.length), x.spanOf("scale")) : f;
+        if (!v.isNum || v.n.dim != Dim.none)
+            throw new HcadError(Code.type, "scale: a plain number, or a function of the cell's centre giving one",
+                x.spanOf("scale"));
+        return v.n.value < 0 ? 0 : v.n.value;
+    }
+    bool keepAt(double cx, double cy)
+    {
+        if (!x.has("keep"))
+            return true;
+        auto v = call1(it, x.get("keep"), Value.vector(Vec3(cx, cy, 0), 2, Dim.length), x.spanOf("keep"));
+        if (v.kind != Kind.bool_)
+            throw new HcadError(Code.type, "keep: a function of the cell's centre giving true or false", x.spanOf("keep"));
+        return v.b;
+    }
+    Brep rounded(Brep b, bool must)
+    {
+        if (rnd <= 0)
+            return b;
+        try
+            return k.profileRound(b, rnd);
+        catch (KernelException e)
+        {
+            if (must)
+                throw new HcadError(Code.kernel, format("round: %s mm is too much for the tile, once shrunk by the gap: %s",
+                    rnd, e.msg), x.spanOf("round"));
+            return b;   // a small Voronoi cell stays sharp
+        }
+    }
+
+    Brep[] motifs;
+    double[] place;
+    double[2] ea, eb;   // the lattice's steps
+    if (kind == "voronoi")
+    {
+        // the points: given, or scattered over the region and a cell beyond
+        double[2][] sites;
+        double spacing = size;
+        immutable x0 = bb.min.x - 2 * size, y0 = bb.min.y - 2 * size, x1 = bb.max.x + 2 * size, y1 = bb.max.y + 2 * size;
+        if (x.has("points"))
+        {
+            auto pv = x.get("points");
+            if (pv.kind != Kind.array || pv.arr.length < 2)
+                throw new HcadError(Code.type, "points: a list of at least two points", x.spanOf("points"));
+            foreach (q; pv.arr)
+            {
+                auto v = q.kind == Kind.array ? arrayToVec(it, q.arr, a.caller, x.spanOf("points")) : q;
+                if (v.kind != Kind.vec)
+                    throw new HcadError(Code.type, "points: vectors", x.spanOf("points"));
+                immutable f = v.v.dim == Dim.none ? x.unitFactor : 1;
+                sites ~= [v.v.v.x * f, v.v.v.y * f];
+            }
+        }
+        else
+        {
+            immutable jitter = x.has("jitter") ? x.num("jitter") : 1;
+            immutable relax = x.has("relax") ? cast(int) x.num("relax") : 0;
+            if (jitter < 0 || jitter > 1 || relax < 0 || relax > 20)
+                throw new HcadError(Code.type, "jitter goes from 0 (hexagons) to 1, relax from 0 to 20", a.span);
+            sites = scatter(x0, y0, x1, y1, size, jitter, relax, x.has("seed") ? cast(long) x.num("seed") : 0);
+        }
+        if (sites.length > 20_000)
+            throw new HcadError(Code.type, format("%s cells: more than 20 000, make them larger", sites.length), a.span);
+        double vx0 = x0, vy0 = y0, vx1 = x1, vy1 = y1;
+        foreach (sp; sites)
+        {
+            vx0 = min(vx0, sp[0] - 1), vy0 = min(vy0, sp[1] - 1);
+            vx1 = max(vx1, sp[0] + 1), vy1 = max(vy1, sp[1] + 1);
+        }
+        auto cells = voronoi(sites, vx0, vy0, vx1, vy1, gap);
+        foreach (i, c; cells)
+        {
+            if (c.length < 3 || !keepAt(sites[i][0], sites[i][1]))
+                continue;
+            immutable sc = scaleAt(sites[i][0], sites[i][1]);
+            if (sc <= 0)
+                continue;
+            double[] xy;
+            foreach (q; c)
+                xy ~= [q[0] - sites[i][0], q[1] - sites[i][1]];
+            Brep m;
+            try
+                m = rounded(k.polygon(xy), false);
+            catch (KernelException)
+                continue;   // a sliver
+            place ~= [cast(double) motifs.length, sites[i][0], sites[i][1], sc];
+            motifs ~= m;
+        }
+    }
+    else
+    {
+        Brep[] base;
+        if (custom)
+        {
+            // your own tile: one profile or several, repeated by step: [a, b]
+            auto tv = x.get("tile");
+            Value[] parts = tv.kind == Kind.array ? tv.arr : [tv];
+            foreach (pv; parts)
+            {
+                if (pv.kind != Kind.solid || !pv.solid.flat)
+                    throw new HcadError(Code.type, "tile: a profile, or a list of profiles", x.spanOf("tile"));
+                requireXY(it, pv.solid, x.spanOf("tile"));
+                Brep b = pv.solid.brep;
+                if (gap > 0)
+                {
+                    try
+                        b = k.profileOffset(b, -gap / 2);
+                    catch (KernelException e)
+                        throw new HcadError(Code.kernel, format("the tile cannot shrink by half the gap (%s mm): %s",
+                            gap / 2, e.msg), x.spanOf("gap"));
+                }
+                base ~= rounded(b, true);
+            }
+            if (!x.has("step"))
+                throw new HcadError(Code.missingArg, "your own tile needs step: [a, b], the two steps it repeats by",
+                    x.spanOf("tile"));
+            auto st = x.get("step");
+            if (st.kind != Kind.array || st.arr.length != 2)
+                throw new HcadError(Code.type, "step: two vectors, [vec(…), vec(…)]", x.spanOf("step"));
+            double[2][2] steps;
+            foreach (i, sv; st.arr)
+            {
+                auto v = sv.kind == Kind.array ? arrayToVec(it, sv.arr, a.caller, x.spanOf("step")) : sv;
+                if (v.kind != Kind.vec)
+                    throw new HcadError(Code.type, "step: two vectors, [vec(…), vec(…)]", x.spanOf("step"));
+                immutable f = v.v.dim == Dim.none ? x.unitFactor : 1;
+                steps[i] = [v.v.v.x * f, v.v.v.y * f];
+            }
+            ea = steps[0], eb = steps[1];
+            if (abs(ea[0] * eb[1] - ea[1] * eb[0]) < 1e-9)
+                throw new HcadError(Code.type, "the two steps lie along one line: they repeat nothing across",
+                    x.spanOf("step"));
+            // the one requirement: the copies (shrunk by the gap) must not overlap
+            Brep all = base.length == 1 ? base[0] : k.tiles(base, iota(base.length).map!(i => [cast(double) i, 0, 0, 1])
+                .join, null, 0);
+            double sum = 0;
+            foreach (b; base)
+                sum += k.area(b);
+            if (base.length > 1 && abs(k.area(k.fuseAll(base)) - sum) > 1e-6 * sum + 1e-9)
+                throw new HcadError(Code.type, "the tile's profiles overlap one another", x.spanOf("tile"));
+            foreach (i; -2 .. 3)
+                foreach (j; -2 .. 3)
+                {
+                    if (i < 0 || (i == 0 && j <= 0))
+                        continue;   // each pair once
+                    auto moved = k.translate(all, Vec3(i * ea[0] + j * eb[0], i * ea[1] + j * eb[1], 0));
+                    auto ov = k.boolean(all, moved, BoolOp.common);
+                    immutable o = ov is null ? 0 : k.area(ov);
+                    if (o > 1e-6 * sum + 1e-9)
+                        throw new HcadError(Code.type, format("the tiles overlap (by %.3g mm² between one and the one "
+                            ~ "%s·a %s %s·b from it): a larger step, a smaller tile or a wider gap", o, i,
+                            j < 0 ? "-" : "+", abs(j)), x.spanOf("tile"));
+                }
+            if (ang != 0)
+            {
+                foreach (ref b; base)
+                    b = k.rotate(b, Vec3(0, 0, 1), ang);
+                ea = turn(ea), eb = turn(eb);
+            }
+        }
+        else
+        {
+            Motif m;
+            motif(kind, size, m);
+            foreach (p; m.polys)
+            {
+                auto q = shrinkConvex(p, gap / 2);
+                if (q is null)
+                    throw new HcadError(Code.type, format("a gap of %s mm leaves nothing of %s cells %s mm across",
+                        gap, kind, size), x.spanOf("gap"));
+                double[] xy;
+                foreach (c; q)
+                    xy ~= turn(c)[];
+                base ~= rounded(k.polygon(xy), true);
+            }
+            ea = turn(m.a), eb = turn(m.b);
+        }
+        // the lattice points whose tiles can reach the region
+        double reach = 0;
+        foreach (b; base)
+        {
+            immutable tb = k.bbox(b);
+            reach = max(reach, abs(tb.min.x), abs(tb.max.x), abs(tb.min.y), abs(tb.max.y));
+        }
+        reach *= sqrt(2.0);
+        immutable det = ea[0] * eb[1] - ea[1] * eb[0];
+        double imin = double.infinity, imax = -double.infinity, jmin = double.infinity, jmax = -double.infinity;
+        foreach (cx; [bb.min.x - reach, bb.max.x + reach])
+            foreach (cy; [bb.min.y - reach, bb.max.y + reach])
+            {
+                immutable dx = cx - origin.x, dy = cy - origin.y;
+                immutable fi = (dx * eb[1] - dy * eb[0]) / det, fj = (ea[0] * dy - ea[1] * dx) / det;
+                imin = min(imin, fi), imax = max(imax, fi), jmin = min(jmin, fj), jmax = max(jmax, fj);
+            }
+        if ((imax - imin) * (jmax - jmin) * base.length > 40_000)
+            throw new HcadError(Code.type, "more than 20 000 tiles: make them larger", a.span);
+        motifs = base;
+        foreach (i; cast(long) floor(imin) .. cast(long) ceil(imax) + 1)
+            foreach (j; cast(long) floor(jmin) .. cast(long) ceil(jmax) + 1)
+            {
+                immutable px = origin.x + i * ea[0] + j * eb[0], py = origin.y + i * ea[1] + j * eb[1];
+                if (px < bb.min.x - reach || px > bb.max.x + reach || py < bb.min.y - reach || py > bb.max.y + reach)
+                    continue;
+                if (!keepAt(px, py))
+                    continue;
+                immutable sc = scaleAt(px, py);
+                if (sc <= 0)
+                    continue;
+                foreach (mi; 0 .. base.length)
+                    place ~= [cast(double) mi, px, py, sc];
+            }
+    }
+    if (place.length == 0)
+        throw new HcadError(Code.type, "no tile is left (keep: or scale: dropped them all?)", a.span);
+    try
+        return Value.of(flatResult(Value.of(primitive(it, k.tiles(motifs, place, region.brep,
+            x.flag("whole", false) ? 2 : 1), "tiles", a.span))));
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, e.msg, a.span);
 }
 
 SolidVal flatResult(Value v)

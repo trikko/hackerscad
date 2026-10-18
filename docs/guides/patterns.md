@@ -1,6 +1,6 @@
 # Patterns, textures and noise
 
-Many copies of one thing: a row, a ring, a grid, a mirror image; layouts the plain patterns cannot make, written as loops; surfaces with a texture, ribbed or bumpy, from `noise`, `loopNoise` and `loft` through rings of points; how to keep them quick to evaluate, and when a pattern belongs in a library.
+Many copies of one thing: a row, a ring, a grid, a mirror image; layouts the plain patterns cannot make, written as loops; surfaces with a texture, ribbed or bumpy, from `noise`, `loopNoise` and `loft` through rings of points; tilings, honeycombs, Voronoi cells or a tile of your own, for grilles, pockets and reliefs; how to keep them quick to evaluate, and when a pattern belongs in a library.
 
 ![A row, a ring, a grid and a mirror](img/patterns-four.png)
 
@@ -194,6 +194,10 @@ Solid spatial() => pot(2).move(x: 80.mm);
 |---|---|---|
 | `noise(x, y, z, seed:)` | smooth noise, about −1 to 1 | features about one unit across; lengths count in millimetres, so `noise(p.x / 10, …)` has bumps about 10 mm apart |
 | `loopNoise(around, along, bumps:, seed:)` | noise round a loop, about −1 to 1 | `around` 0 to 1 once round, no seam; `bumps` about how many round (4 unless given) |
+| `kind: "cells"` (both) | 0 to 1 | cells: 0 at the point each grows from, about 1 farthest from it |
+| `kind: "edges"` (both) | 0 to 1 | 0 on the borders between the cells: a Voronoi relief on any surface |
+| `kind: "ridged"` (both) | 0 to 1 | 1 on sharp ridges, like veins or crumpled paper |
+| `octaves: 3` (both) | the same range | finer and weaker layers on top, up to 8: rougher, more natural |
 | `random(lo, hi, seed:)` | a number between `lo` and `hi` | the next of that seed's stream, the same at every run |
 
 A hollow pot with a floor, its wall following the bumps on both sides:
@@ -247,6 +251,178 @@ Solid pot()
 
 Along a curved spine, `path.frames(n)` gives `n` frames along it (each a point with directions to build on) to place the rings on: see `examples/03_randomvase.hcad`, a vase on a random spine with its lid.
 
+### Cells, edges and ridges
+
+The `kind:` of `noise` and `loopNoise` changes what the bumps look like. `"edges"` is 0 along the borders of cells about one unit across, and rises inside them: push the points in where it is near 0 and the surface gets the grooves of a Voronoi pattern, on any shape, curved or not.
+
+<!-- render: patterns-cells --from 0.3,-1,0.4 -->
+```d
+// three kinds of noise on the same pot: the edges of
+// cells as grooves, the cells as dents, and ridges
+
+immutable height = 50.mm;
+
+Length push(int kind, double around, double up)
+{
+    // grooves 1.2 mm deep where the edges are near 0
+    if (kind == 0)
+    {
+        immutable e = loopNoise(around, up * 5, bumps: 10,
+            kind: "edges");
+        return -1.2.mm * clamp(1 - e * 4, 0, 1);
+    }
+    if (kind == 1)
+        return 1.5.mm * loopNoise(around, up * 5,
+            bumps: 10, kind: "cells");
+    return 1.5.mm * loopNoise(around, up * 3, bumps: 5,
+        kind: "ridged", octaves: 3);
+}
+
+Solid pot(int kind)
+{
+    Vec3[][] rings;
+    foreach (k; 0 .. 61)
+    {
+        immutable up = k / 60.0;
+        Vec3[] pts;
+        foreach (q; circle(r: 18.mm).outline(160))
+        {
+            auto p = q.at
+                + q.normal * push(kind, q.around, up);
+            pts ~= vec(p.x, p.y, height * up);
+        }
+        rings ~= [pts];
+    }
+    return loft(rings);
+}
+
+@part("Sky Pop")
+Solid edges() => pot(0);
+
+@part("Pink Pop")
+Solid cells() => pot(1).move(x: 45.mm);
+
+@part("gold")
+Solid ridged() => pot(2).move(x: 90.mm);
+```
+
+![Voronoi grooves, dents and ridges on three pots](img/patterns-cells.png)
+
+## Tilings
+
+A *tiling* covers an area with cells that fit together, like the tiles of a floor, with a wall (`gap`) between them. `region.tiles(…)` gives the cells inside a profile, as one profile. What to do with them is up to you:
+
+- subtract them from the region for a grille: `(outline - cells).extrude(3.mm)`;
+- dig them into a face for pockets: `body.cut(cells, on: faces.top, depth: 1.mm)`;
+- grow them from a face for reliefs: `body.extrude(cells, on: faces.top, depth: 1.mm)`, with `taper:` for slanted sides that print without supports.
+
+<!-- render: patterns-tiles --from 0.3,-1,1.4 -->
+```d
+// three tilings: a honeycomb through a flat Carlo,
+// Voronoi pockets in a coaster, studs with slanted
+// sides on a tile
+
+import carlo;
+
+@part("Sky Pop")
+Solid honeycomb()
+{
+    auto outline = carlo().projection;
+    auto cells = outline.offset(-1.5.mm)
+        .tiles(kind: "hex", size: 4.mm, gap: 1.mm);
+    return (outline - cells).extrude(3.mm);
+}
+
+@part("Pink Pop")
+Solid coaster()
+{
+    auto disc = cylinder(d: 50.mm, h: 4.mm);
+    auto cells = circle(d: 44.mm)
+        .tiles(kind: "voronoi", size: 6.mm, gap: 1.2.mm,
+            round: 0.5.mm, relax: 2);
+    return disc.cut(cells, on: faces.top, depth: 1.5.mm)
+        .move(x: 60.mm);
+}
+
+@part("gold")
+Solid studs()
+{
+    auto tile = box(44.mm, 44.mm, 3.mm, center: true);
+    auto squares = rect(40.mm, 40.mm)
+        .tiles(kind: "square", size: 6.mm, gap: 1.5.mm,
+            angle: 45.deg, whole: true);
+    return tile
+        .extrude(squares, on: faces.top, depth: 1.5.mm,
+            taper: 25.deg)
+        .move(x: 120.mm);
+}
+```
+
+![A honeycomb Carlo, a coaster with Voronoi pockets and a tile with studs](img/patterns-tiles.png)
+
+The kinds: `"square"`, `"hex"`, `"triangle"`, `"brick"`, `"octagon"` (octagons with small squares between them) and `"diamond"`, where `size` is the distance from one cell's centre to the next; and `"voronoi"`, cells grown round points scattered about `size` apart, each cell the part of the area nearer its point than any other.
+
+| Argument | What it does |
+|---|---|
+| `gap:` | the wall between two cells (each is shrunk by half of it) |
+| `round:` | rounds the corners of every cell |
+| `angle:` | turns the whole tiling |
+| `origin:` | where one cell sits; the region's centre unless given |
+| `whole: true` | keeps only the cells wholly inside; otherwise those on the border are cut along it |
+| `jitter:` | Voronoi only: 0 puts the points on a grid of hexagons, 1 (the default) scatters them fully |
+| `relax:` | Voronoi only: passes that move each point to the middle of its cell, for evener cells (2 or 3 are plenty) |
+| `seed:` | Voronoi only: another seed, other cells |
+| `points:` | Voronoi round points of your own |
+| `scale:` | a number, or a function of the cell's centre giving one: each cell scaled about its centre |
+| `keep:` | a function of the cell's centre: true to keep the cell |
+
+### A tile of your own
+
+Any profile can be a tile: give it as `tile:` and say how it repeats with `step: [a, b]`, the two moves from one copy to its neighbours. Several profiles repeat together when given as a list, and a profile drawn in a sketch works as well as one built from shapes.
+
+There is one requirement: the copies must not overlap, once shrunk by the gap. They need not cover everything (round holes on a grid are a tiling too), but if two copies overlap, the error says which two: the one next to it along `a`, along `b` or along both.
+
+`scale:` and `keep:` work on any tiling. Here the holes grow towards the middle of the plate, a function of where each one is:
+
+<!-- render: patterns-own-tile --from 0.2,-1,1.4 -->
+```d
+// plus signs, which fit together without gaps, and
+// round holes larger towards the middle
+
+immutable s = 6.mm;
+
+// five squares in a cross: one step two across and
+// one up, the other one back and two up
+Profile plus() => rect(3 * s, s) + rect(s, 3 * s);
+
+@part("Sky Pop")
+Solid crosses()
+{
+    auto cells = rect(90.mm, 50.mm)
+        .tiles(tile: plus(), step: [vec(2 * s, s),
+                vec(-s, 2 * s)],
+            gap: 1.mm, round: 0.4.mm);
+    return (rect(100.mm, 60.mm) - cells).extrude(2.mm);
+}
+
+@part("Pink Pop")
+Solid graded()
+{
+    auto holes = rect(94.mm, 54.mm)
+        .tiles(tile: circle(d: 6.mm), step: [vec(7.mm, 0.mm),
+                vec(3.5.mm, 6.06.mm)],
+            scale: (Vec2 c) => 1.2 - c.length / 60.mm,
+            whole: true);
+    return (rect(100.mm, 60.mm) - holes)
+        .extrude(2.mm)
+        .move(y: 70.mm);
+}
+```
+
+![A grille of plus signs and a plate with graded holes](img/patterns-own-tile.png)
+
+Tilings follow flat faces. On a curved surface, give it the grooves of `kind: "edges"` instead (above).
+
 ## In the model or in a library
 
 - A pattern used once, in this part: in the model, next to what it cuts.
@@ -270,7 +446,8 @@ Measured on a 200 × 200 mm plate with 400 holes:
 - Through-cuts in a flat plate: draw them as profiles and extrude once.
 - Textures: the time grows with rings × points. Make the bumps at least three or four rings and points apart (smaller ones are lost between the points anyway), and lower both while designing.
 - `loft` through rings of points takes milliseconds where a loft through as many smooth profiles takes seconds.
-- A pattern stops at 10 000 copies.
+- A pattern stops at 10 000 copies, a tiling at 20 000 cells.
+- A tiling cuts only the cells on the region's border; those inside are kept as they are, so thousands of cells take about a second.
 
 ## Common errors
 
@@ -282,6 +459,10 @@ Measured on a 200 × 200 mm plate with 400 holes:
 | *cannot combine a Solid and a Profile: extrude the profile first* | a list mixing profiles and solids |
 | *4.83871 is not an integer (use floor/round first)* | `x.to!int` of a fraction: `ceil(x).to!int`, `floor(…)` or `round(…)` |
 | the holes are not there, the part is | a chained `.move` moved the tool, not the part: brackets |
+| *the tiles overlap (by … mm² between one and the one 1·a + 0·b from it)* | your own tile is too large for its steps: a longer step, a smaller tile or a wider `gap` |
+| *a gap of … leaves nothing of … cells* | the gap is wider than the cells: a larger `size` or a smaller `gap` |
+| *round: … is too much for the tile* | a smaller `round:`: at most half the narrowest part of a cell, once shrunk by the gap |
+| the cells on the border are slivers | `whole: true`, or a region shrunk with `.offset(-…)` so a wall runs round them |
 
 ## In the application
 

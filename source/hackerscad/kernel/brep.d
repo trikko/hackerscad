@@ -295,6 +295,9 @@ interface BrepKernel
     Brep fuseAll(Brep[] parts);
     /// `a` less every one of `tools`, in one boolean (faces: input 0 `a`, i + 1 the tool i).
     Brep cutAll(Brep a, Brep[] tools);
+    /// Copies of the flat `motifs`, each placed by four numbers in `place` (which motif, dx, dy, a scale
+    /// about its origin), as one profile; mode 1 cut to `region`, mode 2 only those wholly inside it.
+    Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode);
     /// The disconnected solid bodies of `s` (face origins point into `s`).
     Brep[] solids(Brep s);
 

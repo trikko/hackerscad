@@ -42,7 +42,7 @@ Rounding, bevelling, hollowing and tapering a solid: `fillet`, `chamfer`, `shell
 
 [<img src="guides/img/patterns-four.png" width="420" alt="Patterns, textures and noise">](guides/patterns.md)
 
-Many copies of one thing: a row, a ring, a grid, a mirror image; layouts the plain patterns cannot make, written as loops; surfaces with a texture, ribbed or bumpy, from `noise`, `loopNoise` and `loft` through rings of points; how to keep them quick to evaluate, and when a pattern belongs in a library.
+Many copies of one thing: a row, a ring, a grid, a mirror image; layouts the plain patterns cannot make, written as loops; surfaces with a texture, ribbed or bumpy, from `noise`, `loopNoise` and `loft` through rings of points; tilings, honeycombs, Voronoi cells or a tile of your own, for grilles, pockets and reliefs; how to keep them quick to evaluate, and when a pattern belongs in a library.
 
 ### [Threads](guides/threads.md)
 

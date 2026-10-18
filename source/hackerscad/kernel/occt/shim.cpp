@@ -1296,11 +1296,61 @@ hc_shape *hc_extrude_shear(const hc_shape *s, double height, double dx, double d
     });
 }
 
+// A straight prism of a profile, quick however many edges it has: OpenCascade's
+// MakePrism takes time growing with the square of a face's edges (its sweep
+// asks of every edge whether it is closed on the face, looking through all
+// of them), minutes for a grille of a thousand holes. Here each face is
+// swept on its own, and a face of many edges loop by loop: the sides of
+// each loop, the face below and its copy above, closed into a solid.
+static TopoDS_Shape quick_prism(const TopoDS_Shape &shape, double height)
+{
+    const gp_Vec v(0, 0, height);
+    std::vector<TopoDS_Shape> out;
+    for (const TopoDS_Face &face : faces_of(shape)) {
+        int nedges = 0;
+        for (TopExp_Explorer e(face, TopAbs_EDGE); e.More(); e.Next())
+            nedges++;
+        if (nedges < 200) {
+            out.push_back(BRepPrimAPI_MakePrism(face, v).Shape());
+            continue;
+        }
+        BRep_Builder b;
+        TopoDS_Shell shell;
+        b.MakeShell(shell);
+        // the face above: the same plane moved up, bounded by the loops' tops
+        TopoDS_Face top;
+        b.MakeFace(top, Handle(Geom_Surface)::DownCast(BRep_Tool::Surface(face)->Translated(v)),
+                   BRep_Tool::Tolerance(face));
+        const TopoDS_Face fwd = TopoDS::Face(face.Oriented(TopAbs_FORWARD));
+        for (TopExp_Explorer w(fwd, TopAbs_WIRE); w.More(); w.Next()) {
+            BRepPrimAPI_MakePrism side(w.Current(), v, Standard_False);
+            for (TopExp_Explorer f(side.Shape(), TopAbs_FACE); f.More(); f.Next())
+                b.Add(shell, f.Current());
+            b.Add(top, side.LastShape(w.Current()));
+        }
+        b.Add(shell, fwd.Reversed());
+        b.Add(shell, top);
+        shell.Closed(Standard_True);
+        TopoDS_Solid solid;
+        b.MakeSolid(solid);
+        b.Add(solid, shell);
+        BRepLib::OrientClosedSolid(solid);
+        GProp_GProps area, vol;
+        BRepGProp::SurfaceProperties(face, area);
+        BRepGProp::VolumeProperties(solid, vol);
+        if (std::abs(vol.Mass() - area.Mass() * std::abs(height)) > 1e-6 * area.Mass() * std::abs(height))
+            out.push_back(BRepPrimAPI_MakePrism(face, v).Shape());   // not as it should be: the slow way
+        else
+            out.push_back(solid);
+    }
+    return compound_of(out);
+}
+
 hc_shape *hc_extrude(const hc_shape *s, double height, double taper_rad)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         if (taper_rad == 0)
-            return primitive(BRepPrimAPI_MakePrism(s->shape, gp_Vec(0, 0, height)).Shape());
+            return primitive(quick_prism(s->shape, height));
         if (std::abs(taper_rad) >= M_PI / 2 - 1e-6) {
             set_error("a taper must be less than 90°");
             return nullptr;
@@ -1745,6 +1795,73 @@ hc_shape *hc_cut_all(const hc_shape *a, const hc_shape *const *tools, int n)
         for (int i = 0; i < n; i++)
             record(tools[i]->shape, i + 1);
         return wrap(r);
+    });
+}
+
+// Tiles: copies of the motif faces, each placed by four numbers in `place`
+// (which motif, dx, dy, a scale about the motif's origin), gathered into one
+// compound. mode 1 cuts them to `region` (only those crossing its border go
+// through the boolean), mode 2 keeps only those wholly inside it.
+hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, int n, const hc_shape *region,
+                   int mode)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        std::vector<TopoDS_Face> rfaces;
+        if (region)
+            rfaces = faces_of(region->shape);
+        auto inside = [&](const gp_Pnt &p) {
+            for (const TopoDS_Face &f : rfaces) {
+                BRepClass_FaceClassifier c(f, p, 1e-6);
+                if (c.State() == TopAbs_IN)
+                    return true;
+            }
+            return false;
+        };
+        // whether every point sampled round the face's edges lies inside the region
+        auto whollyInside = [&](const TopoDS_Shape &t) {
+            for (TopExp_Explorer e(t, TopAbs_EDGE); e.More(); e.Next()) {
+                BRepAdaptor_Curve c(TopoDS::Edge(e.Current()));
+                for (int k = 0; k < 4; k++)
+                    if (!inside(c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * k / 4)))
+                        return false;
+            }
+            return true;
+        };
+        std::vector<TopoDS_Shape> kept, border;
+        for (int i = 0; i < n; i++) {
+            const int m = (int)place[4 * i];
+            if (m < 0 || m >= nm)
+                continue;
+            gp_Trsf sc, mv;
+            if (std::abs(place[4 * i + 3] - 1) > 1e-12)
+                sc.SetScale(gp_Pnt(0, 0, 0), place[4 * i + 3]);
+            mv.SetTranslation(gp_Vec(place[4 * i + 1], place[4 * i + 2], 0));
+            const TopoDS_Shape t = BRepBuilderAPI_Transform(motifs[m]->shape, mv * sc, true).Shape();
+            if (mode == 0 || whollyInside(t))
+                kept.push_back(t);
+            else if (mode == 1)
+                border.push_back(t);
+        }
+        if (!border.empty()) {
+            BRepAlgoAPI_Common mk;
+            TopTools_ListOfShape args, tools;
+            for (auto &b : border)
+                args.Append(b);
+            tools.Append(region->shape);
+            mk.SetArguments(args);
+            mk.SetTools(tools);
+            mk.SetRunParallel(Standard_True);
+            mk.Build();
+            if (!mk.IsDone() || mk.HasErrors())
+                throw Standard_Failure("the tiles could not be cut to the region");
+            for (const TopoDS_Face &f : faces_of(mk.Shape()))
+                kept.push_back(f);
+        }
+        if (kept.empty()) {
+            set_error("no tile lies in the region (are the tiles larger than it?)");
+            return nullptr;
+        }
+        return primitive(compound_of(kept));
     });
 }
 
@@ -2609,7 +2726,22 @@ int hc_is_valid(const hc_shape *s)
 {
     // the faces checked on every core: a solid made from a mesh has a face per
     // triangle (the phone stand example's phone: 7 s on one core)
-    return guarded<>(0, [&] { return BRepCheck_Analyzer(s->shape, Standard_True, Standard_True).IsValid() ? 1 : 0; });
+    return guarded<>(0, [&] {
+        // a face of thousands of holes (a grille) takes BRepCheck minutes: its
+        // checks of a face's vertices and wires grow with the square of its
+        // edges. Past 10 000 edges the check is that the surface closes (every
+        // edge between two faces) round a positive volume
+        TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+        TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+        if (edgeFaces.Extent() <= 10000)
+            return BRepCheck_Analyzer(s->shape, Standard_True, Standard_True).IsValid() ? 1 : 0;
+        for (int i = 1; i <= edgeFaces.Extent(); i++)
+            if (!BRep_Tool::Degenerated(TopoDS::Edge(edgeFaces.FindKey(i))) && edgeFaces(i).Extent() != 2)
+                return 0;
+        GProp_GProps p;
+        BRepGProp::VolumeProperties(s->shape, p);
+        return p.Mass() > 0 ? 1 : 0;
+    });
 }
 
 // A planar face bounded by three straight edges (the faces of an imported

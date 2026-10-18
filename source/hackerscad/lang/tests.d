@@ -4578,3 +4578,58 @@ unittest
         assert(d.severity != Severity.error, d.message);
     assert(error("@part Solid p() => box(10, 10, 10) - [box(1, 1, 1), 3];").message.canFind("list holds"));
 }
+
+// ---------------------------------------------------------------- tilings and noise kinds
+
+unittest
+{
+    mixin(slowTest);
+    // nine 10 mm squares, 2 mm apart: 8 × 8 each
+    expectOut("writeln(rect(30.mm, 30.mm).tiles(kind: \"square\", size: 10.mm, gap: 2.mm).area);", "576 mm^2");
+    // cut at the border, or only the whole ones
+    expectOut("writeln(rect(25.mm, 25.mm).tiles(kind: \"square\", size: 10.mm, gap: 2.mm).area);", "441 mm^2");
+    expectOut("writeln(rect(25.mm, 25.mm).tiles(kind: \"square\", size: 10.mm, gap: 2.mm, whole: true).area);",
+        "64 mm^2");
+    // keep: and scale: from each cell's centre
+    expectOut("writeln(rect(30.mm, 30.mm).tiles(kind: \"square\", size: 10.mm, gap: 2.mm, "
+        ~ "keep: (Vec2 c) => c.x > 0.mm).area);", "192 mm^2");
+    expectOut("writeln(rect(30.mm, 30.mm).tiles(kind: \"square\", size: 10.mm, gap: 2.mm, scale: 0.5).area);",
+        "144 mm^2");
+    // every kind fills the region, less the walls
+    foreach (kind; ["hex", "triangle", "brick", "octagon", "diamond", "voronoi"])
+    {
+        auto r = runModel("unittest { auto a = circle(d: 40.mm).tiles(kind: \"" ~ kind ~ "\", size: 6.mm).area; "
+            ~ "auto b = circle(d: 40.mm).tiles(kind: \"" ~ kind ~ "\", size: 6.mm, gap: 1.mm).area; "
+            ~ "assert(abs(a - circle(d: 40.mm).area) < 0.01 * 1.mm ^^ 2, \"" ~ kind ~ " covers\"); "
+            ~ "assert(b < 0.8 * a && b > 0.3 * a, \"" ~ kind ~ " walls\"); }");
+        foreach (dg; r.diagnostics)
+            assert(dg.severity != Severity.error, kind ~ ": " ~ dg.message);
+    }
+    // your own tile: plus signs tile the plane; circles too close overlap
+    expectOut("auto s = 5.mm; auto t = rect(40.mm, 40.mm).tiles(tile: rect(3 * s, s) + rect(s, 3 * s), "
+        ~ "step: [vec(2 * s, s), vec(-s, 2 * s)]); writeln(t.area);", "1600 mm^2");
+    auto d = errorIn("rect(40.mm, 40.mm).tiles(tile: circle(d: 8.mm), step: [vec(6.mm, 0.mm), vec(0.mm, 9.mm)]);");
+    assert(d.code == Code.type && d.message.canFind("overlap") && d.message.canFind("1·a + 0·b"), d.message);
+    expectErr("rect(40.mm, 40.mm).tiles(kind: \"star\", size: 5.mm);", Code.type);
+    expectErr("rect(40.mm, 40.mm).tiles(kind: \"hex\");", Code.missingArg);
+    expectErr("rect(40.mm, 40.mm).tiles(kind: \"hex\", size: 4.mm, gap: 5.mm);", Code.type);
+    // a grille of many holes extrudes (quickly) into a sound solid of the right volume
+    auto g = runModel("@part Solid p() => (rect(100.mm, 100.mm) - rect(96.mm, 96.mm)"
+        ~ ".tiles(kind: \"hex\", size: 3.mm, gap: 0.8.mm)).extrude(2.mm);\n"
+        ~ "unittest { auto f = rect(100.mm, 100.mm) - rect(96.mm, 96.mm).tiles(kind: \"hex\", size: 3.mm, gap: 0.8.mm); "
+        ~ "assert(abs(p.volume - f.area * 2.mm) < 1e-6 * p.volume); }");
+    foreach (dg; g.diagnostics)
+        assert(dg.severity != Severity.error, dg.message);
+    assert(kernel.isValid(g.parts[0].solid.brep));
+}
+
+unittest
+{
+    // the kinds of noise and their ranges; octaves
+    expectOut("double lo = 1, hi = -1; foreach (i; 0 .. 300) { auto v = noise(i * 0.13, i * 0.07, kind: \"edges\"); "
+        ~ "lo = min(lo, v); hi = max(hi, v); } writeln(lo >= 0 && lo < 0.1 && hi <= 1 && hi > 0.3);", "true");
+    expectOut("writeln(noise(0.3, 0.2, kind: \"ridged\", octaves: 3) <= 1, \" \", "
+        ~ "loopNoise(0, 1.5, bumps: 6, kind: \"cells\") == loopNoise(1, 1.5, bumps: 6, kind: \"cells\"));", "true true");
+    expectErr("noise(1, kind: \"perlin\");", Code.type);
+    expectErr("noise(1, octaves: 12);", Code.type);
+}

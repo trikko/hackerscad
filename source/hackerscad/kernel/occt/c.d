@@ -59,6 +59,7 @@ hc_shape* hc_boolean(const(hc_shape)* a, const(hc_shape)* b, int op);
 hc_shape* hc_boolean_merged(const(hc_shape)* a, const(hc_shape)* b, int op);
 hc_shape* hc_fuse_all(const(hc_shape*)* shapes, int n);
 hc_shape* hc_cut_all(const(hc_shape)* a, const(hc_shape*)* tools, int n);
+hc_shape* hc_tiles(const(hc_shape*)* motifs, int nm, const(double)* place, int n, const(hc_shape)* region, int mode);
 hc_shape* hc_offset_solid(const(hc_shape)* s, double d, int sharp);
 int hc_touching_count(const(hc_shape)* s);
 hc_shape* hc_bridge_touching(const(hc_shape)* s, double r);

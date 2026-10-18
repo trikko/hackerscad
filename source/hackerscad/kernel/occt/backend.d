@@ -231,6 +231,15 @@ final class OcctKernel : BrepKernel
         return wrap(hc_cut_all(h(a), ts.ptr, cast(int) ts.length), "cut");
     }
 
+    Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode)
+    {
+        const(hc_shape)*[] ms;
+        foreach (m; motifs)
+            ms ~= h(m);
+        return wrap(hc_tiles(ms.ptr, cast(int) ms.length, place.ptr, cast(int)(place.length / 4),
+            region is null ? null : h(region), mode), "tiles");
+    }
+
     Brep fuseAll(Brep[] parts)
     {
         const(hc_shape)*[] ps;
