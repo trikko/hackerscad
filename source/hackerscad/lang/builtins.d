@@ -2741,6 +2741,40 @@ StructDef builtinStruct(string name, string[] fields, string type)
 /// The radius of the rod that joins bodies touching only along an edge (mm).
 enum touchingBridge = 0.02;
 
+/// `a - [b, c, …]`: a less every solid of the list, in one boolean.
+Value cutAllSolids(Interp it, SolidVal a, Value[] tools, Span span)
+{
+    SolidVal[] ts;
+    foreach (v; tools)
+    {
+        if (v.kind != Kind.solid || v.solid.path || v.solid.surface || v.solid.flat != a.flat)
+            throw new HcadError(Code.type, format("a %s less a list: the list holds %ss, not %s", a.flat ? "profile" : "solid",
+                a.flat ? "profile" : "solid", v.typeName), span);
+        if (v.solid.brep !is null)
+            ts ~= v.solid;
+    }
+    if (a.brep is null || ts.length == 0)
+        return Value.of(a);
+    if (ts.length == 1 || a.flat)
+    {
+        SolidVal r = a;
+        foreach (t; ts)
+            r = solidBoolean(it, r, t, BoolOp.cut, span).solid;
+        return Value.of(r);
+    }
+    Brep[] bs;
+    foreach (t; ts)
+        bs ~= t.brep;
+    Brep b2;
+    try
+        b2 = it.kernel.cutAll(a.brep, bs);
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, e.msg, span);
+    if (it.kernel.faceCount(b2) == 0)
+        return Value.of(new SolidVal(null, span));
+    return Value.of(derived(it, b2, [a] ~ ts, "difference", span));
+}
+
 Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span, bool merged = false)
 {
     SolidVal r;
@@ -4372,6 +4406,23 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
         // faces created by a tool or feature: faces.from(hole); edges: both faces from it
         return fn((ref CallArgs a) {
             auto x = Args(it, a, "from", ["selector", "solid"]);
+            // a list of tools: the faces of any of them (holes taken away all at once)
+            SolidVal[] tools;
+            {
+                auto given = x.get("solid");
+                if (given.kind == Kind.array)
+                {
+                    foreach (v; given.arr)
+                    {
+                        if (v.kind != Kind.solid)
+                            throw new HcadError(Code.type, format("from takes a solid or a list of solids, not a list "
+                                ~ "holding %s", v.typeName), x.spanOf("solid"));
+                        tools ~= v.solid;
+                    }
+                }
+                else
+                    tools = [x.solid("solid")];
+            }
             bool[uint] ids;
             // the features by where in the code they ran: a tool made again by calling its function
             // a second time (body - holes(), then faces.from(holes())) has new features from the
@@ -4379,7 +4430,8 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
             bool[string] lines;
             string where(uint c) => c > 0 && c <= it.features.length
                 ? it.features[c - 1].kind ~ "@" ~ it.features[c - 1].span.toString : null;
-            foreach (c; x.solid("solid").creators)
+            foreach (tool; tools)
+            foreach (c; tool.creators)
             {
                 ids[c] = true;
                 if (auto w = where(c))

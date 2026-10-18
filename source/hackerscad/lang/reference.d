@@ -451,7 +451,7 @@ immutable Ref[] reference =
     F("farthest", "Faces", ["dir: Direction"], "Faces", "The face whose centre lies farthest that way, whichever way it faces: faces.farthest(Z), a tilted top."),
     F("overhanging", "Faces", ["angle: Angle"], "Faces",
         "The faces (or parts of them) facing down more steeply than the angle from a wall (45° by default), off the bed: where a printer needs supports."),
-    F("from", "Faces", ["tool: Solid"], "Faces", "The faces created by a tool or feature: faces.from(holes)."),
+    F("from", "Faces", ["tool: Solid | Solid[]"], "Faces", "The faces created by a tool or feature: faces.from(holes); a list, those of any of its solids."),
     F("parallel", "Edges", ["axis: Direction"], "Edges", "The straight edges along an axis: edges.parallel(Z)."),
     F("perpendicular", "Edges", ["axis: Direction"], "Edges", "The edges at right angles to an axis."),
     P("lines", "Edges", "Edges", "The straight edges."),

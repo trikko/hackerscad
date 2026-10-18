@@ -1701,6 +1701,53 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
     });
 }
 
+// `a` less all of `tools` in one boolean: much quicker than one cut at a time
+// (400 holes in a plate: a cut each grows the plate's faces, and every next
+// cut goes through them all again). Each face remembers where it came from:
+// input 0 is `a`, input i + 1 the tool i.
+hc_shape *hc_cut_all(const hc_shape *a, const hc_shape *const *tools, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        BRepAlgoAPI_Cut mk;
+        TopTools_ListOfShape args, ts;
+        args.Append(a->shape);
+        for (int i = 0; i < n; i++)
+            ts.Append(tools[i]->shape);
+        mk.SetArguments(args);
+        mk.SetTools(ts);
+        mk.SetRunParallel(Standard_True);
+        mk.Build();
+        if (!mk.IsDone() || mk.HasErrors())
+            throw Standard_Failure("the cut failed");
+        const TopoDS_Shape r = mk.Shape();
+        history_new(r);
+        TopTools_IndexedMapOfShape res;
+        TopExp::MapShapes(r, TopAbs_FACE, res);
+        auto record = [&](const TopoDS_Shape &in, int k) {
+            TopTools_IndexedMapOfShape faces;
+            TopExp::MapShapes(in, TopAbs_FACE, faces);
+            for (int i = 1; i <= faces.Extent(); i++) {
+                const TopTools_ListOfShape &mods = mk.Modified(faces(i));
+                if (mods.IsEmpty()) {
+                    const int j = res.FindIndex(faces(i));
+                    if (j > 0 && g_history[j - 1].input < 0)
+                        g_history[j - 1] = Origin{k, i - 1};
+                    continue;
+                }
+                for (TopTools_ListOfShape::Iterator it(mods); it.More(); it.Next()) {
+                    const int j = res.FindIndex(it.Value());
+                    if (j > 0 && g_history[j - 1].input < 0)
+                        g_history[j - 1] = Origin{k, i - 1};
+                }
+            }
+        };
+        record(a->shape, 0);
+        for (int i = 0; i < n; i++)
+            record(tools[i]->shape, i + 1);
+        return wrap(r);
+    });
+}
+
 // All the shapes joined in one general fuse: much faster than one union at
 // a time when there are many (the pieces of a Minkowski sum).
 hc_shape *hc_fuse_all(const hc_shape *const *shapes, int n)

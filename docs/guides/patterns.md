@@ -262,10 +262,11 @@ Measured on a 200 × 200 mm plate with 400 holes:
 | `p -= hole…` inside the loop, one hole at a time | 16.6 s |
 | `holes += hole…` inside the loop, then one subtraction | 12.2 s |
 | the holes collected in a list, `fuse(holes)` or `holes.sum`, then one subtraction | 1.5 s |
+| the holes collected in a list and taken away all at once, `p - holes` | 0.7 s |
 | two `linearPattern`s, then one subtraction | 1.3 s |
 | the same with profiles (`rect - circle….linearPattern…`), extruded once | 0.4 s |
 
-- Never add or subtract inside a loop: collect, then join once. A pattern or `.sum` joins the copies in pairs, then pairs of pairs; a growing body joined one at a time gets slower with every copy.
+- Never add or subtract inside a loop: collect, then join once. A solid less a list, `p - holes`, takes them all away in one go, the quickest. A pattern or `.sum` joins the copies in pairs, then pairs of pairs; a growing body joined one at a time gets slower with every copy.
 - Through-cuts in a flat plate: draw them as profiles and extrude once.
 - Textures: the time grows with rings × points. Make the bumps at least three or four rings and points apart (smaller ones are lost between the points anyway), and lower both while designing.
 - `loft` through rings of points takes milliseconds where a loft through as many smooth profiles takes seconds.

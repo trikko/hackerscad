@@ -223,6 +223,14 @@ final class OcctKernel : BrepKernel
         return MassProps(v[0], Vec3(v[1], v[2], v[3]), [v[4], v[5], v[6]]);
     }
 
+    Brep cutAll(Brep a, Brep[] tools)
+    {
+        const(hc_shape)*[] ts;
+        foreach (t; tools)
+            ts ~= h(t);
+        return wrap(hc_cut_all(h(a), ts.ptr, cast(int) ts.length), "cut");
+    }
+
     Brep fuseAll(Brep[] parts)
     {
         const(hc_shape)*[] ps;

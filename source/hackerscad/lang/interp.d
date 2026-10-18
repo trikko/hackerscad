@@ -1603,6 +1603,15 @@ final class Interp
             throw new HcadError(Code.type, format("cannot concatenate %s and %s", l.typeName, r.typeName), span);
         }
 
+        // a solid less a list of solids: one boolean with all of them (much quicker than one at a time)
+        if (l.kind == Kind.solid && r.kind == Kind.array && op == Tok.minus)
+        {
+            import hackerscad.lang.builtins : cutAllSolids;
+            auto v = cutAllSolids(this, l.solid, r.arr, span);
+            if (recordTrace)
+                traceCall(v, span, opText(op), Span.init);
+            return v;
+        }
         if (l.kind == Kind.solid || r.kind == Kind.solid)
         {
             // the sum of an empty list (0) is no solid at all

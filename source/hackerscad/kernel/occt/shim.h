@@ -78,6 +78,7 @@ hc_shape *hc_mirror(const hc_shape *s, double nx, double ny, double nz);
 hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op);
 hc_shape *hc_boolean_merged(const hc_shape *a, const hc_shape *b, int op);
 hc_shape *hc_fuse_all(const hc_shape *const *shapes, int n);
+hc_shape *hc_cut_all(const hc_shape *a, const hc_shape *const *tools, int n);
 hc_shape *hc_offset_solid(const hc_shape *s, double d, int sharp);
 int hc_touching_count(const hc_shape *s);
 hc_shape *hc_bridge_touching(const hc_shape *s, double r);

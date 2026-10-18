@@ -245,7 +245,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `faces.normal(dir: Direction) → Faces` — The faces with that normal: faces.normal(X).
 - `faces.farthest(dir: Direction) → Faces` — The face whose centre lies farthest that way, whichever way it faces: faces.farthest(Z), a tilted top.
 - `faces.overhanging(angle: Angle) → Faces` — The faces (or parts of them) facing down more steeply than the angle from a wall (45° by default), off the bed: where a printer needs supports.
-- `faces.from(tool: Solid) → Faces` — The faces created by a tool or feature: faces.from(holes).
+- `faces.from(tool: Solid | Solid[]) → Faces` — The faces created by a tool or feature: faces.from(holes); a list, those of any of its solids.
 - `edges.parallel(axis: Direction) → Edges` — The straight edges along an axis: edges.parallel(Z).
 - `edges.perpendicular(axis: Direction) → Edges` — The edges at right angles to an axis.
 - `edges.lines → Edges` — The straight edges.

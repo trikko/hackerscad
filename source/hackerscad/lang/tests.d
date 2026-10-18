@@ -4551,3 +4551,30 @@ unittest
     foreach (name, vb; boolean)
         assert(abs(direct[name] - vb) < 1e-4 * vb, format("%s: %s by hand, %s by the boolean", name, direct[name], vb));
 }
+
+unittest
+{
+    mixin(slowTest);
+    // a solid less a list: one boolean, the same solid as one at a time, the holes' faces theirs
+    auto r = runModel(q{
+        Solid[] holes()
+        {
+            Solid[] h;
+            foreach (i; 0 .. 4)
+                h ~= cylinder(d: 3.mm, h: 10.mm, center: true).move(x: i * 8.mm - 12.mm);
+            return h;
+        }
+        immutable plate = box(40, 10, 4);
+        @part Solid all() => plate - holes();
+        @part Solid each() => plate - holes()[0] - holes()[1] - holes()[2] - holes()[3];
+        @part Solid rounded() => (plate - holes()).chamfer(edges.between(faces.from(holes()), faces.top), d: 0.3.mm);
+        unittest
+        {
+            assert(abs(all.volume - each.volume) < 1e-6 * each.volume, "the same solid");
+            assert(rounded.volume < all.volume, "the holes' faces found");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error("@part Solid p() => box(10, 10, 10) - [box(1, 1, 1), 3];").message.canFind("list holds"));
+}

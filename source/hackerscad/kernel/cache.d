@@ -170,6 +170,14 @@ final class CachingKernel : BrepKernel
     MassProps massProps(Brep s) => inner.massProps(s);
     Brep section(Brep s, Vec3 o, Vec3 n) => op(key("section", s, o, n), inner.section(s, o, n));
 
+    Brep cutAll(Brep a, Brep[] tools)
+    {
+        ulong[] ks = [keyOf(a)];
+        foreach (t; tools)
+            ks ~= keyOf(t);
+        return op(key("cutAll", cast(const(double)[]) ks.map!(x => cast(double) x).array), inner.cutAll(a, tools));
+    }
+
     Brep fuseAll(Brep[] parts)
     {
         ulong[] ks;

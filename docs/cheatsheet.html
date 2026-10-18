@@ -264,7 +264,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>faces.normal(dir: Direction) → Faces</dt><dd>The faces with that normal: faces.normal(X).</dd>
 <dt>faces.farthest(dir: Direction) → Faces</dt><dd>The face whose centre lies farthest that way, whichever way it faces: faces.farthest(Z), a tilted top.</dd>
 <dt>faces.overhanging(angle: Angle) → Faces</dt><dd>The faces (or parts of them) facing down more steeply than the angle from a wall (45° by default), off the bed: where a printer needs supports.</dd>
-<dt>faces.from(tool: Solid) → Faces</dt><dd>The faces created by a tool or feature: faces.from(holes).</dd>
+<dt>faces.from(tool: Solid | Solid[]) → Faces</dt><dd>The faces created by a tool or feature: faces.from(holes); a list, those of any of its solids.</dd>
 <dt>edges.parallel(axis: Direction) → Edges</dt><dd>The straight edges along an axis: edges.parallel(Z).</dd>
 <dt>edges.perpendicular(axis: Direction) → Edges</dt><dd>The edges at right angles to an axis.</dd>
 <dt>edges.lines → Edges</dt><dd>The straight edges.</dd>

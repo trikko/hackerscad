@@ -293,6 +293,8 @@ interface BrepKernel
     Brep booleanMerged(Brep a, Brep b, BoolOp op);
     /// The union of all of `parts`, in one go.
     Brep fuseAll(Brep[] parts);
+    /// `a` less every one of `tools`, in one boolean (faces: input 0 `a`, i + 1 the tool i).
+    Brep cutAll(Brep a, Brep[] tools);
     /// The disconnected solid bodies of `s` (face origins point into `s`).
     Brep[] solids(Brep s);
 
