@@ -8,6 +8,10 @@ mixin template ControlMethods()
 {
     void dispatchControl(string method, JValue p, void delegate(JValue, string) reply)
     {
+        // what the socket writes in the code is built, whether or not the window rebuilds as one types
+        programEdit = true;
+        scope (exit)
+            programEdit = false;
         string arg(string k) => p.safe!string(k).or(null);
         bool has(string k) => p.has(k) && !p[k].isNull;
         // the view is annotated: what would change what it shows waits until it is live again
@@ -34,6 +38,10 @@ mixin template ControlMethods()
                 return;
             }
         case "set":
+            // {"auto_rebuild": false}: the code built when asked, not as it is typed (the header's button);
+            // {"build": true}: built now (Ctrl+B)
+            if (p.has("auto_rebuild"))
+                setAutoRebuild(p.safe!bool("auto_rebuild").or(true));
             if (auto s = arg("source"))
                 replaceCode(s);
             // a preset first (it clears the values set by hand), then the

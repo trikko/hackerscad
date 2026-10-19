@@ -941,6 +941,10 @@ mixin template SketchEdit()
             TextIter a, b;
             buffer.getIterAtOffset(a, cast(int) head);
             buffer.getIterAtOffset(b, cast(int) (now.length - tail));
+            // (built, whether or not the window rebuilds as one types)
+            programEdit = true;
+            scope (exit)
+                programEdit = false;
             buffer.beginUserAction();
             buffer.delete_(a, b);
             buffer.getIterAtOffset(a, cast(int) head);

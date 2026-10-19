@@ -807,8 +807,12 @@ JValue toolList()
             ~ "overrides or a preset (preset \"\" goes back to the defaults, as Reset to defaults). A preset clears the "
             ~ "values set before; params given in the same call apply on top of it; reset lists parameters to take "
             ~ "back to the code's value (or the preset's), as the ↺ next to a changed parameter. The window "
-            ~ "re-evaluates and shows the result; the state's overrides are the values changed by hand.",
-            `"source": {"type": "string"}, "params": {"type": "object", "description": "Parameter values, name to value: `
+            ~ "re-evaluates and shows the result; the state's overrides are the values changed by hand. Every call "
+            ~ "builds the code as it is in the editor (with nothing else given, it just builds: the user's Ctrl+B). "
+            ~ "auto_rebuild: false stops the window rebuilding as the user types (true starts it again, the header's "
+            ~ "button): the state's stale then says the code changed since the last build; what you write through "
+            ~ "these tools is built either way.",
+            `"source": {"type": "string"}, "auto_rebuild": {"type": "boolean"}, "params": {"type": "object", "description": "Parameter values, name to value: `
             ~ `numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\"."}, "preset": {"type": "string"}, `
             ~ `"reset": {"type": "array", "items": {"type": "string"}, "description": "parameter names back to their default"}`),
         gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: as "
@@ -1196,7 +1200,9 @@ JValue toolList()
             ~ "last, the code has not changed and need not be asked again; model_hash the same of what the code "
             ~ "does: changed with source_hash, the model changed; source_hash alone, only spaces or comments (the "
             ~ "window does not evaluate again when they keep every line where it was); modified is false when the code is the "
-            ~ "one saved (typing and undoing back to it included). only gives just the fields named (and the "
+            ~ "one saved (typing and undoing back to it included); auto_rebuild whether the window builds as the "
+            ~ "user types, stale that the code changed since the last build (rebuilding off: hcad_gui_set builds). "
+            ~ "only gives just the fields named (and the "
             ~ "window), e.g. [\"revision\", \"source_hash\", \"camera\"]: a quick look at what changed, "
             ~ "much shorter than the whole state. cursor is the editor's cursor (line, col); sketch the sketch shown (from_cursor, "
             ~ "pinned, partial, stale) and sketch_follow the setting Show the sketch at the cursor; planes, while they are "

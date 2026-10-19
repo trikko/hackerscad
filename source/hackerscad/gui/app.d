@@ -638,6 +638,22 @@ final class MainWindow
         header.packEnd(codeToggle);
         header.packEnd(consoleToggle);
         header.packEnd(busyIndicator);
+        // rebuilding as one types, on or off; off, Build (Ctrl+B) when the code changed
+        {
+            import hackerscad.gui.settings : setting;
+            autoRebuild = setting("auto-rebuild", "on") != "off";
+        }
+        rebuildToggle = toggle("view-refresh-symbolic", "", autoRebuild);
+        rebuildToggle.connectToggled(() => setAutoRebuild(rebuildToggle.getActive()));
+        buildButton = new Button;
+        buildButton.setLabel("Build");
+        buildButton.addCssClass("suggested-action");
+        buildButton.setTooltipText("The code changed since the model was built: build it (" ~ shortcutKey ~ "+B)");
+        buildButton.connectClicked(() => build());
+        buildButton.setVisible(false);
+        header.packEnd(rebuildToggle);
+        header.packEnd(buildButton);
+        updateRebuildTip();
         windowName = new Button;
         windowName.addCssClass("flat");
         {
@@ -1316,6 +1332,8 @@ final class MainWindow
         });
         action(app, "about", [], &showAbout);
         action(app, "run-tests", ["F5"], &runTests);
+        action(app, "build", ["<Primary>b"], () => build());
+        action(app, "auto-rebuild", ["<Primary><Shift>b"], () => rebuildToggle.setActive(!rebuildToggle.getActive()));
         action(app, "find", ["<Primary>f"], () => editorTools.find());
         action(app, "replace", ["<Primary>h"], () => editorTools.replace());
         action(app, "find-next", ["F3"], () => editorTools.next());
@@ -1362,6 +1380,9 @@ final class MainWindow
             codeFingerprints(text(), meaning, layout);
             if (layout != 0 && layout == requestedLayout)
                 return;
+            // typed with rebuilding off: built when asked (Ctrl+B, F5, a value changed, an action of the view)
+            if (!autoRebuild && !programEdit)
+                return setStale(true);
             scheduleEvaluation(250);
         });
         // the sketch at the cursor
@@ -1839,12 +1860,54 @@ private:
         title.setSubtitle(dirName(path));
     }
 
+    // ---- rebuilding as one types, or when asked
+
+    bool autoRebuild = true;   /// the code is evaluated as it is typed
+    bool codeStale;            /// typed with that off, and not built since
+    bool programEdit;          /// the code is being written by the window or the socket, not typed
+    ToggleButton rebuildToggle;
+    Button buildButton;
+
+    /// Rebuilding as one types on or off (the header's button, Ctrl+Shift+B), kept between runs; turned on
+    /// with changes not built, they are built at once.
+    void setAutoRebuild(bool on)
+    {
+        import hackerscad.gui.settings : setSetting;
+        autoRebuild = on;
+        setSetting("auto-rebuild", on ? "on" : "off");
+        if (rebuildToggle !is null && rebuildToggle.getActive() != on)
+            rebuildToggle.setActive(on);
+        updateRebuildTip();
+        if (on && codeStale)
+            build();
+    }
+
+    void updateRebuildTip()
+    {
+        if (rebuildToggle !is null)
+            rebuildToggle.setTooltipText(autoRebuild
+                ? "Rebuilding as you type: on (" ~ shortcutKey ~ "+Shift+B turns it off, to build when you ask)"
+                : "Rebuilding as you type: off, " ~ shortcutKey ~ "+B builds (" ~ shortcutKey ~ "+Shift+B turns it on)");
+    }
+
+    /// The code changed and the model was not built from it (or it was).
+    void setStale(bool stale)
+    {
+        codeStale = stale;
+        if (buildButton !is null)
+            buildButton.setVisible(stale);
+    }
+
+    /// Build now (Ctrl+B, the Build button): the code as it is in the editor.
+    void build() => scheduleEvaluation(0);
+
     void scheduleEvaluation(uint delayMs)
     {
         if (debounce)
             Source.remove(debounce);
         debounce = timeoutAdd(PRIORITY_DEFAULT, delayMs, () {
             debounce = 0;
+            setStale(false);
             busyIndicator.setTooltipText("Evaluating the model");
             busyIndicator.start();
             startProgress();
@@ -5787,6 +5850,20 @@ private:
     /// Applies an edit to the buffer (one undo step) and selects its placeholder.
     void applyEdit(Edit e)
     {
+        // typed and not built: what the view shows (the faces picked, where things are) is older than
+        // the code, and what it would write could miss: built first, the action to do again
+        if (codeStale)
+        {
+            build();
+            idleAdd(PRIORITY_DEFAULT, () {
+                info("the code changed since the model was built: built now, do that again on the new model");
+                return false;
+            });
+            return;
+        }
+        programEdit = true;
+        scope (exit)
+            programEdit = false;
         auto src = text();
         int l0, i0, l1, i1;
         lineIndex(src, e.offset, l0, i0);
@@ -6186,6 +6263,10 @@ private:
         TextIter it;
         buffer.getIterAtMark(it, buffer.getInsert());
         immutable line = it.getLine();
+        // the file as it is on disk: built, whether or not the window rebuilds as one types
+        programEdit = true;
+        scope (exit)
+            programEdit = false;
         buffer.setText(disk);
         TextIter at;
         if (buffer.getIterAtLine(at, line))
@@ -6689,7 +6770,7 @@ private:
 
     /// Every field the state can have, for hcad_gui_state's only.
     static immutable string[] stateFields = ["path", "status", "window", "version", "outdated", "revision",
-        "user_changed", "evaluating", "stage", "seconds", "modified", "source_hash", "model_hash", "preset", "overrides", "parts",
+        "user_changed", "evaluating", "stage", "seconds", "modified", "auto_rebuild", "stale", "source_hash", "model_hash", "preset", "overrides", "parts",
         "params", "presets", "inspect", "sketch", "sketch_follow", "planes", "annotations", "annotate_mode", "annotated_view",
         "cursor", "camera", "printability", "graphics", "problems", "log", "source", "steps"];
 
@@ -6713,6 +6794,9 @@ private:
             j["seconds"] = (MonoTime.currTime - evalStart).total!"msecs" / 1000.0;
         }
         j["modified"] = modified;
+        // rebuilding as the user types, on or off; stale: typed since the last build (the view is older)
+        j["auto_rebuild"] = autoRebuild;
+        j["stale"] = codeStale;
         j["source_hash"] = format("%016x", codeHash(text()));
         {
             // the code's meaning: unchanged by spaces and comments

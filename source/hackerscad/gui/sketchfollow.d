@@ -359,6 +359,10 @@ mixin template SketchFollow()
     /// Replaces the whole code, as loading a model does.
     void replaceCode(string code)
     {
+        // another model: built, whether or not the window rebuilds as one types
+        programEdit = true;
+        scope (exit)
+            programEdit = false;
         buffer.setText(code);
         disarmFollow();
     }
