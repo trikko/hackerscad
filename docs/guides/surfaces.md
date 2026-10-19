@@ -89,7 +89,7 @@ Solid[] halves() => tube()
 // the ribbon itself, shown between the halves: a sheet has
 // no thickness to draw, so a hair-thin solid made from it
 @part("Pink Pop", alpha: 0.6, export: false)
-Solid sheet() => ribbon().thicken(0.3.mm);
+Solid sheet() => ribbon().thicken(0.05.mm);
 ```
 
 ![A bent tube split lengthwise by a ribbon swept along its path: the ribbon in pink, the two halves pushed apart from it](img/surfaces-tube-halves.png)
