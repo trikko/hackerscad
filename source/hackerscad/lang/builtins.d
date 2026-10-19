@@ -4260,10 +4260,21 @@ Value knurlOf(Interp it, ref CallArgs a)
     // run onto itself where it closes), and margin in from the edges it has
     Brep region;
     double round_ = 0;
+    Vec3 middle;
     CylinderInfo cyl;
     if (k.faceCylinder(nonEmpty(body, a.span), idx[0], cyl) && cyl.span >= 2 * PI - 1e-6)
     {
         round_ = 2 * PI * cyl.radius;
+        // where the face's own parameters have their middle, for the anchor
+        middle = Vec3(double.nan, double.nan, double.nan);
+        try
+        {
+            double r;
+            k.wrapFlat(body.brep, idx[0], r, middle);
+        }
+        catch (KernelException)
+        {
+        }
         immutable high = abs(cyl.to - cyl.from) - 2 * margin;
         if (!(high > 0))
             throw new HcadError(Code.type, "knurl: the face is not taller than twice its margin", x.spanOf("face"));
@@ -4273,7 +4284,7 @@ Value knurlOf(Interp it, ref CallArgs a)
     {
         Brep flat;
         try
-            flat = k.wrapFlat(body.brep, idx[0], round_);
+            flat = k.wrapFlat(body.brep, idx[0], round_, middle);
         catch (KernelException e)
             throw new HcadError(Code.kernel, "knurl: the face cannot be unrolled: " ~ e.msg, x.spanOf("face"));
         if (round_ > 0)
@@ -4343,16 +4354,20 @@ Value knurlOf(Interp it, ref CallArgs a)
         cells = k.tiles([tile], place, region, 1, 0);
     catch (KernelException e)
         throw new HcadError(Code.kernel, "knurl: " ~ e.msg, a.span);
+    // round a face that closes on itself, anchored at the middle of its parameters: the pattern closes
+    // where the face's own seam is, so the face itself is holed, its edges shared with the faces round it
+    // (none to sew there); elsewhere where wrap: lays a profile by default
     immutable nan = Vec3(double.nan, double.nan, double.nan);
+    immutable anchor = round_ > 0 && middle == middle ? middle : nan;
     try
-        return Value.of(derived(it, k.wrapDirect(body.brep, idx[0], cells, false, nan, Vec3(0, 0, 0), depth), [body],
+        return Value.of(derived(it, k.wrapDirect(body.brep, idx[0], cells, false, anchor, Vec3(0, 0, 0), depth), [body],
             "knurl", a.span));
     catch (KernelException)
     {
     }
     try
     {
-        auto tool = k.wrapTool(body.brep, idx[0], cells, false, nan, Vec3(0, 0, 0), -0.01, depth);
+        auto tool = k.wrapTool(body.brep, idx[0], cells, false, anchor, Vec3(0, 0, 0), -0.01, depth);
         return Value.of(derived(it, k.fuseAll(body.brep ~ k.solids(tool)), [body], "knurl", a.span));
     }
     catch (KernelException e)

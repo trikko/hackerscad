@@ -314,8 +314,9 @@ interface BrepKernel
     /// How many regions the last wrapTool left out, too broken to lay on the face (slivers).
     int wrapSkipped();
     /// Face `face` of `s` unrolled flat as wrapTool lays a profile on it at its default place: its outline
-    /// and holes, a profile on XY; `round` the length once round it when it closes round on itself, else 0.
-    Brep wrapFlat(Brep s, int face, out double round);
+    /// and holes, a profile on XY; `round` the length once round it when it closes round on itself, else 0;
+    /// `middle` its point at the middle of its parameters.
+    Brep wrapFlat(Brep s, int face, out double round, out Vec3 middle);
     /// Which regions of `profile` (by their order) run off face `face` of `s`, laid as wrapDirect lays them;
     /// `regions` how many it has. An exception when the face takes no direct wrap at all.
     int[] wrapOutside(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double floor, out int regions);

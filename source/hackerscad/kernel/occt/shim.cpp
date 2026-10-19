@@ -2367,6 +2367,7 @@ int hc_wrap_skipped(void) { return g_wrap_skipped; }
 // once it has gone through them all)
 struct WrapAsk {
     double *round = nullptr;
+    double *middle = nullptr;   // flat: the face's point at the middle of its parameters (x y z)
     std::vector<int> *outside = nullptr;
     bool *classified = nullptr;
 };
@@ -2588,6 +2589,12 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             double fu0, fu1, fv0, fv1;
             BRepTools::UVBounds(F, fu0, fu1, fv0, fv1);
             const double spanX = swap ? fv1 - fv0 : fu1 - fu0;
+            if (ask.middle) {
+                const gp_Pnt mid = Sface->Value((fu0 + fu1) / 2, (fv0 + fv1) / 2);
+                ask.middle[0] = mid.X();
+                ask.middle[1] = mid.Y();
+                ask.middle[2] = mid.Z();
+            }
             const gp_Pln xy(gp::XOY());
             *flat = 0;
             // a band all round: the length round, from a line of constant v to another (the lines it is
@@ -2895,7 +2902,10 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             }
             TopoDS_Face base = F;
             Handle(Geom_Surface) holeSurf = Sface;
-            if (band) {
+            // the band's own parameters round the anchor already (its middle the anchor, the surface not
+            // turned): the face itself holed, its edges those of the faces round it, nothing to sew there
+            const bool ownWindow = band && std::abs(turned) < 1e-12 && std::abs((u0 - period / 2) - fu0) < 1e-9;
+            if (band && !ownWindow) {
                 base = BRepBuilderAPI_MakeFace(S, u0 - period / 2, u0 + period / 2, fv0, fv1, 1e-7).Face();
                 if (F.Orientation() == TopAbs_REVERSED)
                     base.Reverse();
@@ -2980,7 +2990,9 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             BRepBuilderAPI_MakeFace holedFar;
             if (through)
                 holedFar.Init(TopoDS::Face(farBase.Oriented(TopAbs_FORWARD)));
-            std::vector<TopoDS_Face> extra, patches, patchesFar;
+            std::vector<TopoDS_Shape> extra;
+            std::vector<TopoDS_Face> patches, patchesFar;
+            bool cellsShared = true;   // each region's faces sewn on their own, keeping the holes' edges
             double expected = 0;
             const auto regionFaces = faces_of(profile->shape);
             int regionIndex = -1;
@@ -3053,14 +3065,14 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     }
                     return (area > 0) == outer ? w : TopoDS::Wire(w.Reversed());
                 };
-                // a sliver whose outline, carried onto the face, crosses itself would break the whole
-                // face it is a hole in: checked on its own first, and left out (counted) if broken
                 // the loops on the face once: the hole, the piece it takes, the islands and the walls' tops
                 // all made of these edges, shared already, not left for the sewing to find and merge
                 std::vector<std::vector<TopoDS_Edge>> top(loops.size()), bottom(loops.size());
                 std::vector<TopoDS_Wire> topWires;
                 for (size_t i = 0; i < loops.size(); i++)
                     topWires.push_back(wireOn(loops[i], holeSurf, du, &top[i]));
+                // a sliver whose outline, carried onto the face, crosses itself would break the whole
+                // face it is a hole in: checked on its own first, and left out (counted) if broken
                 {
                     BRepBuilderAPI_MakeFace alone(holeSurf, turned_(loops[0], topWires[0], true), Standard_True);
                     if (!alone.IsDone() || !BRepCheck_Analyzer(alone.Face()).IsValid()) {
@@ -3071,8 +3083,10 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     patches.push_back(alone.Face());
                 }
                 holed.Add(turned_(loops[0], topWires[0], false));
+                // the region's own faces: its islands, its floor (or the far face's islands), its walls
+                std::vector<TopoDS_Shape> cell;
                 for (size_t i = 1; i < loops.size(); i++)
-                    extra.push_back(BRepBuilderAPI_MakeFace(holeSurf, turned_(loops[i], topWires[i], true), Standard_True).Face());
+                    cell.push_back(BRepBuilderAPI_MakeFace(holeSurf, turned_(loops[i], topWires[i], true), Standard_True).Face());
                 if (through) {
                     // the far face holed by the outline, the islands' far ends faces of their own
                     std::vector<TopoDS_Wire> farWires;
@@ -3081,7 +3095,7 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     holedFar.Add(turned_(loops[0], farWires[0], false));
                     patchesFar.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[0], farWires[0], true), Standard_True).Face());
                     for (size_t i = 1; i < loops.size(); i++)
-                        extra.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[i], farWires[i], true), Standard_True).Face());
+                        cell.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[i], farWires[i], true), Standard_True).Face());
                 } else {
                     BRepBuilderAPI_MakeFace fl;
                     for (size_t i = 0; i < loops.size(); i++) {
@@ -3090,11 +3104,33 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                             fl.Init(floorSurf, Standard_False, 1e-7);
                         fl.Add(w);
                     }
-                    extra.push_back(fl.Face());
+                    cell.push_back(fl.Face());
                 }
                 for (size_t i = 0; i < loops.size(); i++)
                     for (size_t j = 0; j < top[i].size(); j++)
-                        extra.push_back(BRepFill::Face(top[i][j], bottom[i][j]));
+                        cell.push_back(BRepFill::Face(top[i][j], bottom[i][j]));
+                // sewn among themselves (the walls side by side meet along rulings each made its own),
+                // so that the whole needs no sewing: OpenCascade's puts thousands of faces into a shell in a
+                // time that grows with the square of their number. Only if the edges the holes are made
+                // of come through as they were (else the whole is sewn as before)
+                {
+                    BRepBuilderAPI_Sewing local(1e-5);
+                    for (auto &f : cell)
+                        local.Add(f);
+                    local.Perform();
+                    bool kept = true;
+                    for (size_t i = 0; i < loops.size() && kept; i++)
+                        for (size_t j = 0; j < top[i].size() && kept; j++)
+                            kept = !local.IsModifiedSubShape(top[i][j]) && (!through || !local.IsModifiedSubShape(bottom[i][j]));
+                    if (kept) {
+                        for (TopExp_Explorer f(local.SewedShape(), TopAbs_FACE); f.More(); f.Next())
+                            extra.push_back(f.Current());
+                    } else {
+                        cellsShared = false;
+                        for (auto &f : cell)
+                            extra.push_back(f);
+                    }
+                }
                 GProp_GProps g;
                 BRepGProp::SurfaceProperties(pf, g);
                 expected += g.Mass() * (through ? thick : std::abs(inner));
@@ -3107,23 +3143,56 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 throw Standard_Failure("direct: the holes could not be made in the face");
             if (through && !holedFar.IsDone())
                 throw Standard_Failure("direct: the holes could not be made in the far face");
-            BRepBuilderAPI_Sewing sew(1e-5);
+            const TopoDS_Face holedNear = holed.Face(), holedFarFace = through ? holedFar.Face() : TopoDS_Face();
+            std::vector<TopoDS_Shape> kept;
             for (int i = 1; i <= m.Extent(); i++)
                 if (i != face + 1 && i != farFace)
-                    sew.Add(m(i));
-            const TopoDS_Face holedNear = holed.Face(), holedFarFace = through ? holedFar.Face() : TopoDS_Face();
-            sew.Add(holedNear);
-            if (through)
-                sew.Add(holedFarFace);
-            for (auto &f : extra)
-                sew.Add(f);
-            sew.Perform();
+                    kept.push_back(m(i));
             TopoDS_Shell shell;
-            int shells = 0;
-            for (TopExp_Explorer sh(sew.SewedShape(), TopAbs_SHELL); sh.More(); sh.Next(), shells++)
-                shell = TopoDS::Shell(sh.Current());
-            if (shells != 1)
-                throw Standard_Failure("direct: the faces did not sew into one shell");
+            // the faces put together as they are, every edge already between two of them: no sewing (a band
+            // all round made again on the turned surface has edges of its own round it: then it is sewn)
+            bool assembled = false;
+            if (cellsShared) {
+                BRep_Builder bb;
+                bb.MakeShell(shell);
+                for (auto &f : kept)
+                    bb.Add(shell, f);
+                bb.Add(shell, holedNear);
+                if (through)
+                    bb.Add(shell, holedFarFace);
+                for (auto &f : extra)
+                    bb.Add(shell, f);
+                TopTools_IndexedDataMapOfShapeListOfShape ef0;
+                TopExp::MapShapesAndAncestors(shell, TopAbs_EDGE, TopAbs_FACE, ef0);
+                assembled = true;
+                for (int i = 1; i <= ef0.Extent() && assembled; i++)
+                    if (!BRep_Tool::Degenerated(TopoDS::Edge(ef0.FindKey(i))) && ef0(i).Extent() != 2)
+                        assembled = false;
+                if (getenv("HCAD_WRAP_DEBUG"))
+                    fprintf(stderr, "wrap: put together with no sewing: %s\n", assembled ? "yes" : "no");
+            }
+            BRepBuilderAPI_Sewing sew(1e-5);
+            if (!assembled) {
+                for (auto &f : kept)
+                    sew.Add(f);
+                sew.Add(holedNear);
+                if (through)
+                    sew.Add(holedFarFace);
+                for (auto &f : extra)
+                    sew.Add(f);
+                sew.Perform();
+                int shells = 0;
+                for (TopExp_Explorer sh(sew.SewedShape(), TopAbs_SHELL); sh.More(); sh.Next(), shells++)
+                    shell = TopoDS::Shell(sh.Current());
+                if (shells != 1)
+                    throw Standard_Failure("direct: the faces did not sew into one shell");
+            }
+            // a face given to be put together, as it is in the result
+            auto inResult = [&](const TopoDS_Shape &f) -> TopoDS_Shape {
+                if (!assembled)
+                    return sew.IsModified(f) ? sew.Modified(f) : f;
+                return f;
+            };
             // the new faces turned all one way with the rest (made on a surface whose normal points
             // into the material, a hole's wall, they come the other way round)
             ShapeFix_Shell orient(shell);
@@ -3140,7 +3209,7 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     const TopoDS_Face g = TopoDS::Face(x.Current());
                     if (g.IsSame(F))
                         continue;
-                    const TopoDS_Shape gm = sew.IsModified(g) ? sew.Modified(g) : TopoDS_Shape(g);
+                    const TopoDS_Shape gm = inResult(g);
                     for (TopExp_Explorer y(solid, TopAbs_FACE); y.More() && !decided; y.Next()) {
                         if (!y.Current().IsSame(gm))
                             continue;
@@ -3178,10 +3247,9 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 double bx0, by0, bz0, bx1, by1, bz1;
                 sb.Get(bx0, by0, bz0, bx1, by1, bz1);
                 const gp_Pnt apex((bx0 + bx1) / 2, (by0 + by1) / 2, (bz0 + bz1) / 2);
-                const TopoDS_Shape nearIn = sew.IsModified(holedNear) ? sew.Modified(holedNear) : TopoDS_Shape(holedNear);
+                const TopoDS_Shape nearIn = inResult(holedNear);
                 const TopoDS_Shape farIn = !through ? TopoDS_Shape()
-                                           : sew.IsModified(holedFarFace) ? sew.Modified(holedFarFace)
-                                                                          : TopoDS_Shape(holedFarFace);
+                                           : inResult(holedFarFace);
                 auto holedTerm = [&](const TopoDS_Face &in, const TopoDS_Face &whole, const std::vector<TopoDS_Face> &pieces) {
                     double t = face_volume_term(TopoDS::Face(whole.Oriented(TopAbs_FORWARD)), apex);
                     for (auto &p : pieces)
@@ -3305,11 +3373,12 @@ hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, i
 // Face `face` of `s` unrolled flat as wrap lays a profile on it (the same anchor, axes and lengths, at
 // its default place): its outline and holes as one face on XY; *round the length once round it when it
 // closes round on itself (the side of a vase, a loft through rings), else 0.
-hc_shape *hc_wrap_flat(const hc_shape *s, int face, double *round_)
+hc_shape *hc_wrap_flat(const hc_shape *s, int face, double *round_, double *middle)
 {
     const double nan3[3] = {NAN, NAN, NAN}, zero3[3] = {0, 0, 0};
     WrapAsk ask;
     ask.round = round_;
+    ask.middle = middle;
     return wrap_impl(s, face, nullptr, 0, nan3, zero3, 0, 0, false, ask);
 }
 

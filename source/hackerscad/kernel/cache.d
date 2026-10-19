@@ -190,7 +190,7 @@ final class CachingKernel : BrepKernel
 
     int wrapSkipped() => inner.wrapSkipped();
 
-    Brep wrapFlat(Brep s, int face, out double round) => inner.wrapFlat(s, face, round);
+    Brep wrapFlat(Brep s, int face, out double round, out Vec3 middle) => inner.wrapFlat(s, face, round, middle);
 
     int[] wrapOutside(Brep s, int face, Brep profile, bool project, Vec3 at, Vec3 dir, double floor, out int regions) =>
         inner.wrapOutside(s, face, profile, project, at, dir, floor, regions);
