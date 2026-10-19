@@ -3022,10 +3022,12 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 // the segment from the face to it, at points round the outline, crosses no face of the
                 // solid (the face itself where it starts aside), so it lies on the face's inner side for a
                 // pocket and its outer side for a relief, as just under and just over the face
+                // (eight points a side; two with many regions, a knurl's thousands: still eight round each)
                 const Handle(Geom_Surface) probe = through ? offsetSurface(-thick / 2) : floorSurf;
+                const int probes = regionFaces.size() > 64 ? 2 : 8;
                 for (auto &c2 : loops[0])
-                    for (int k = 0; k < 8; k++) {
-                        const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 8);
+                    for (int k = 0; k < probes; k++) {
+                        const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * (k + 0.5) / probes);
                         const gp_Pnt Q = S->Value(q.X(), q.Y()), P = probe->Value(q.X(), q.Y());
                         const gp_Vec d(Q, P);
                         const double len = d.Magnitude();
@@ -3867,22 +3869,38 @@ int hc_bbox(const hc_shape *s, double out[6])
             if (st != GeomAbs_BSplineSurface && st != GeomAbs_BezierSurface && st != GeomAbs_OffsetSurface
                 && st != GeomAbs_OtherSurface)
                 return false;
-            Bnd_Box rough;
-            BRepBndLib::Add(face, rough, false);
-            if (rough.IsVoid() || rough.SquareExtent() > 100)
-                return false;
+            // how large it is from points along its edges (a box from the surface's own would take in the
+            // whole surface an offset face lies on)
+            Bnd_Box edgesBox;
             for (TopExp_Explorer e(face, TopAbs_EDGE); e.More(); e.Next()) {
                 const TopoDS_Edge &ed = TopoDS::Edge(e.Current());
                 if (BRep_Tool::Degenerated(ed))
                     continue;
                 BRepAdaptor_Curve c(ed);
                 for (int k = 0; k <= 16; k++)
-                    into.Add(c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * k / 16));
+                    edgesBox.Add(c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * k / 16));
             }
-            // inside: the middle of its parameters, and halfway from there to its corners, where on it
+            if (edgesBox.IsVoid() || edgesBox.SquareExtent() > 100)
+                return false;
+            into.Add(edgesBox);
+            // inside: the middle of its parameters, and halfway from there to its corners, where on it; a
+            // face of four sides (a knurl's wall or floor) the middle only, which lies on it (a classifier
+            // made for each of thousands of faces took longer than the rest)
             double u0, u1, v0, v1;
             BRepTools::UVBounds(face, u0, u1, v0, v1);
             BRepAdaptor_Surface a(face, Standard_True);
+            int sides = 0;
+            for (TopExp_Explorer e(BRepTools::OuterWire(face), TopAbs_EDGE); e.More() && sides <= 4; e.Next())
+                sides++;
+            if (sides <= 4) {
+                int wires = 0;
+                for (TopExp_Explorer w(face, TopAbs_WIRE); w.More() && wires < 2; w.Next())
+                    wires++;
+                if (wires == 1) {
+                    into.Add(a.Value((u0 + u1) / 2, (v0 + v1) / 2));
+                    return true;
+                }
+            }
             BRepTopAdaptor_FClass2d inside(face, 1e-7);
             const double um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
             const double pts[5][2] = {{um, vm}, {(um + u0) / 2, (vm + v0) / 2}, {(um + u1) / 2, (vm + v0) / 2},
@@ -3923,8 +3941,21 @@ int hc_bbox(const hc_shape *s, double out[6])
                 }
                 slow.push_back(face);
             }
-            else
+            else {
+                // its holes do not reach past its outline: boxed without them (AddOptimal works along every
+                // edge, thousands round a knurl's holes)
+                int wires = 0;
+                for (TopExp_Explorer x(face, TopAbs_WIRE); x.More() && wires < 2; x.Next())
+                    wires++;
+                if (wires > 1) {
+                    BRepBuilderAPI_MakeFace outline(BRep_Tool::Surface(face), BRepTools::OuterWire(face), Standard_True);
+                    if (outline.IsDone()) {
+                        BRepBndLib::AddOptimal(outline.Face(), b, false, false);
+                        continue;
+                    }
+                }
                 BRepBndLib::AddOptimal(face, b, false, false);
+            }
         }
         if (!slow.empty())
         {
