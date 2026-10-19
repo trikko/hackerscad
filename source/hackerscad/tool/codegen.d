@@ -44,7 +44,12 @@ class CodegenException : Exception
 string faceSelector(Interp it, SolidVal s, int face)
 {
     auto info = it.kernel.faces(s.brep)[face];
-    string[] candidates = ["faces.top", "faces.bottom", "faces.front", "faces.back", "faces.left", "faces.right",
+    // a tag of its own first: it follows the face wherever the part goes
+    string[] candidates;
+    if (face < s.faceTags.length)
+        foreach (t; s.faceTags[face])
+            candidates ~= format("faces.tagged(%(%s%))", [t]);
+    candidates ~= ["faces.top", "faces.bottom", "faces.front", "faces.back", "faces.left", "faces.right",
         "faces.largest"];
     if (auto ax = axisName(info.normal))
         candidates ~= ["faces.normal(" ~ ax ~ ").largest"];
@@ -1978,6 +1983,13 @@ unittest
 
     auto es = edgeSelector(it, box, edge);
     assert(es == "edges.between(faces.top, faces.right)" || es == "edges.between(faces.right, faces.top)", es);
+    // a tagged face by its tag first, and the edges beside it through it
+    auto tagged = new SolidVal(box.brep, Span.init);
+    tagged.faceTags = new string[][it.kernel.faceCount(box.brep)];
+    tagged.faceTags[side] = ["wall"];
+    assert(faceSelector(it, tagged, side) == `faces.tagged("wall")`, faceSelector(it, tagged, side));
+    es = edgeSelector(it, tagged, edge);
+    assert(es.canFind(`faces.tagged("wall")`), es);
 
     // several edges or faces: one group when there is one
     int[] vertical, topEdges, sides;

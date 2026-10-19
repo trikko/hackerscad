@@ -1018,6 +1018,10 @@ final class Interp
             currentStatement = outer;
         if (auto e = as!ExprStmt(s))
         {
+            auto outerExpr = statementExpr;
+            statementExpr = e.expr;
+            scope (exit)
+                statementExpr = outerExpr;
             eval(e.expr, env);
             return Flow.normal;
         }
@@ -1209,6 +1213,15 @@ final class Interp
         }
 
         auto agg = eval(f.aggregate, env);
+        // the faces or edges taken from a solid (b.faces.top): one by one, as Face or Edge values
+        if (agg.kind == Kind.selector && agg.sel.of !is null)
+        {
+            import hackerscad.lang.builtins : builtinMember;
+            Value list;
+            bool isMethod;
+            builtinMember(this, agg, "list", f.aggregate.span, list, isMethod);
+            agg = list;
+        }
         if (agg.kind == Kind.array)
         {
             // foreach (i, x; xs.enumerate): x is the element, as in D, not the pair
@@ -1986,6 +1999,94 @@ final class Interp
     }
 
     private Value call(Call c, Env env)
+    {
+        // b.addTag(…), b.faces.top.removeTag(…): the solid in the variable changed, as a method of a D
+        // struct changes the variable it is called on, and given back for a chain
+        if (auto m = as!Member(c.callee))
+            if (m.name == "addTag" || m.name == "removeTag" || m.name == "clearTags")
+            {
+                auto r = callPlain(c, env);
+                if (r.kind == Kind.solid)
+                    retag(c, m, r, env);
+                return r;
+            }
+        return callPlain(c, env);
+    }
+
+    /// The statement running, when it is an expression alone (b.addTag("x");).
+    private Expr statementExpr;
+
+    /// After a tag was changed by a method: `v` back into the variable the solid came from.
+    private void retag(Call c, Member m, Value v, Env env)
+    {
+        // the solid: the receiver, or what b.faces… was taken from
+        Expr root = m.object;
+        for (Expr e = m.object; e !is null;)
+        {
+            if (auto mm = as!Member(e))
+            {
+                if (mm.name == "faces" || mm.name == "edges")
+                {
+                    root = mm.object;
+                    break;
+                }
+                e = mm.object;
+            }
+            else if (auto cc = as!Call(e))
+                e = cc.callee;
+            else
+                break;
+        }
+        // only a variable, or a field or element of one, holding a solid
+        Ident id;
+        for (Expr e = root; id is null;)
+        {
+            if (auto i = as!Ident(e))
+                id = i;
+            else if (auto mm = as!Member(e))
+                e = mm.object;
+            else if (auto ix = as!Index(e))
+                e = ix.object;
+            else
+                break;
+        }
+        immutable statement = c is statementExpr;
+        string lost(string why) => format("%s: the tag would be lost, %s", m.name, why);
+        if (id is null)
+        {
+            if (statement)
+                throw new HcadError(Code.type, lost("as the solid is in no variable"), c.span,
+                    "use the solid it gives back: auto b = box(…).addTag(\"name\")");
+            return;
+        }
+        immutable sym = symOf(id);
+        auto holder = env.find(sym);
+        auto cur = holder is null ? null : holder.vars.find(sym);
+        if (cur is null || cur.kind == Kind.func || cur.kind == Kind.builtin)
+        {
+            if (statement)
+                throw new HcadError(Code.type, lost(format("as '%s' is not a variable", id.name)), c.span,
+                    "use the solid it gives back: auto b = " ~ id.name ~ ".addTag(\"name\")");
+            return;
+        }
+        if (holder.vars.isReadonly(sym))
+        {
+            if (statement)
+                throw new HcadError(Code.immutable_, lost(format("as '%s' cannot change (immutable, const or module-level)",
+                    id.name)), c.span, "tag it where it is made: immutable " ~ id.name ~ " = box(…).addTag(\"name\")");
+            return;
+        }
+        if (eval(root, env).kind != Kind.solid)
+        {
+            if (statement)
+                throw new HcadError(Code.type, lost("as the faces were kept apart from their solid"), c.span,
+                    "take them from the solid where you tag them: b.faces.top.addTag(\"name\")");
+            return;
+        }
+        assignTo(root, v, env);
+    }
+
+    private Value callPlain(Call c, Env env)
     {
         Value callee;
         if (auto m = as!Member(c.callee))

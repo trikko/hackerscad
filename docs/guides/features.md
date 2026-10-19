@@ -1,6 +1,6 @@
 # Selectors and features
 
-Rounding, bevelling, hollowing and tapering a solid: `fillet`, `chamfer`, `shell` and `draft`, and the selectors that say which edges and faces they work on (`edges.parallel(Z)`, `faces.top`, `edges.between(…)`, `faces.from(tool)`). How to pick edges so that they stay the right ones when a parameter changes, in which order to apply the features, what their errors mean, and how to do the same with the mouse in the 3D view.
+Rounding, bevelling, hollowing and tapering a solid: `fillet`, `chamfer`, `shell` and `draft`, and the selectors that say which edges and faces they work on (`edges.parallel(Z)`, `faces.top`, `edges.between(…)`, `faces.from(tool)`). How to pick edges so that they stay the right ones when a parameter changes, names (tags) for the faces you come back to, in which order to apply the features, what their errors mean, and how to do the same with the mouse in the 3D view.
 
 ![Fillet, chamfer, shell and draft on four blocks](img/features-four.png)
 
@@ -88,6 +88,7 @@ A solid is bounded by *faces* (flat or curved patches of its surface) that meet 
 | `faces.farthest(Z)` | the face whose centre is farthest that way, whichever way it faces: a tilted top |
 | `faces.filter(f => f.area > 100 * 1.mm ^^ 2)` | by a property: `center`, `normal`, `area` |
 | `faces.from(tool)` | the faces a tool or feature made: the walls of holes cut with it |
+| `faces.tagged("lid")` | the faces given that name with `addTag` (see below) |
 | `edges.parallel(Z)`, `edges.perpendicular(Z)` | straight edges along, or across, an axis (circles lying across it too) |
 | `edges.lines`, `edges.circles` | straight or circular edges |
 | `edges.of(faces.top)` | every edge round those faces, holes included |
@@ -142,6 +143,49 @@ Position-based selectors break in quiet ways:
 
 **Keep the tool in a variable.** Provenance belongs to one value: `auto holes = …; body - holes; faces.from(holes)` reads best, and so does a module-level `immutable holes = …`. A function called twice, `body - holes()` then `faces.from(holes())`, makes a second tool; it still finds the faces, by the lines of code that made them, but the variable says plainly which tool it is.
 
+## Names for faces: tags
+
+A face you will come back to can be given a name, a *tag*, where it is made: `upright.faces.back.addTag("wall")`. `faces.tagged("wall")` finds it later, wherever the part was turned or moved since, and whatever was done to it: cut, rounded, joined to another part. Where `faces.back` would now pick another face, the tag still picks this one.
+
+<!-- render: features-tags -->
+```d
+// a shelf bracket, built standing, laid on its side to print;
+// the faces that matter found by name wherever they end up
+
+@part("Sky Pop")
+Solid bracket()
+{
+    // the upright and the arm, the faces that matter tagged as they are made
+    auto upright = box(40.mm, 5.mm, 60.mm);
+    upright.faces.back.addTag("wall");
+    upright.faces.front.addTag("inside");
+    auto arm = box(40.mm, 45.mm, 5.mm)
+        .move(y: -25.mm);
+    arm.faces.top.addTag("shelf");
+
+    // on its side to print: top, front and back are other faces now
+    auto b = (upright + arm)
+        .rotate(y: 90);
+
+    // the corner rounded and a screw hole in the wall face, by name
+    return b
+        .fillet(edges.between(faces.tagged("inside"),
+            faces.tagged("shelf")), r: 4.mm)
+        .cut(circle(d: 4.5.mm), on: faces.tagged("wall"),
+            through: true);
+}
+```
+
+![A shelf bracket on its side, rounded in its inner corner, a screw hole in the face against the wall](img/features-tags.png)
+
+- `b.faces` are the faces of `b`, to select some of: `b.faces.top.addTag("lid")`. `addTag` changes `b` (as `b = …` would) and gives the solid back, so it fits in a chain too: `auto b = box(…).faces.top.addTag("lid");`.
+- A face keeps its tags through what changes it: split in two, both pieces have them; two faces joined into one (two blocks side by side), it has the tags of both. Faces made new (a fillet's round, a hole's wall) have none.
+- Tag a tool whole with `recursive: true` and the faces it leaves in the part have its tag: `body - drill.addTag("bore", recursive: true)`, then `faces.tagged("bore")` is the hole's wall.
+- A face can have several tags (`addTag(["lid", "seat"])`); `removeTag("seat")` and `clearTags()` take them off; `b.faces.top.tags` lists them.
+- Name a face for what it does (`wall`, `shelf`, `seat`, `grip`), not for where it is: `top` would be wrong as soon as the part lies on its side.
+
+Points, axes and planes can be tagged too, and follow the part the same way: see [Planes, frames and placement](planes.md). In a sketch, a line or circle tagged gives its tag to the face made from it: see [Sketches in depth](sketches.md).
+
 ## The order of operations
 
 Build in the order a machine would, and the features stay simple:
@@ -181,6 +225,8 @@ Fillets before holes, because a hole near an edge narrows the faces a fillet nee
 | Message | What it means, what to do |
 |---|---|
 | *the selector matched no edges on this solid* | nothing fits: a face that is not where you think (`faces.top` is the highest face), a tool that never cut this solid, a filter on a position that moved |
+| *no face of this solid is tagged 'shelff'; did you mean 'shelf'?* | a tag misspelt, or given to another solid: the message lists the tags there are |
+| *addTag: the tag would be lost, as 'base' cannot change* | the solid is `immutable` (or in no variable): tag it where it is made, `immutable base = box(…).addTag("name")` |
 | *fillet failed on the straight edge at (0, -15, 3)… a face beside them is only 3 mm wide there, and a fillet of r 5 needs that much room on it* | the radius is larger than a face next to the edge: a smaller `r`, or fillet before the cut that narrowed the face |
 | *fillet failed: each of the 4 edges takes it on its own, not all together* | each edge alone works, but where they meet the rounds do not close: fillet them in groups, or a smaller `r` |
 | *'edges' must be a edge selector (e.g. edges.parallel(Z)), not FaceSelector* | a face selector where edges are wanted: `edges.of(faces.top)` |
@@ -198,6 +244,7 @@ Right-click the selection:
 - **Fillet edge…**, **Chamfer edge…** on edges (**Fillet 3 edges…** with several), and **Select the chain**, which grows the selection along edges running on without a corner (`edges.chain`).
 - **Fillet face edges…**, **Chamfer face edges…**, **Shell, opening this face…**, **Draft face…** on faces, and **Select its outer edges** (`edges.loop`).
 - With items of several parts selected, the same entries act on each part in turn (**Fillet edges on 2 parts…**).
+- **Tag face…** writes `.faces.….addTag("name")` with the name selected to type over; from then on, clicking that face shows its tags, and every entry above picks it by its tag.
 - **Copy as code › Face selector** or **Edge selector** puts a selector for what is selected on the clipboard.
 
-Each entry writes the feature into the part's code with a value to change (1 mm for a fillet, 2 mm for a shell, 3° for a draft). The selector it writes picks the clicked items by name or position (`faces.top`, `edges.of(faces.top).parallel(X)`, or a filter on a point when nothing shorter fits): it is right for the model as it is now. Where the part's sizes are parameters, rewrite it by provenance before relying on it.
+Each entry writes the feature into the part's code with a value to change (1 mm for a fillet, 2 mm for a shell, 3° for a draft). The selector it writes picks the clicked items by name or position (`faces.top`, `edges.of(faces.top).parallel(X)`, or a filter on a point when nothing shorter fits): it is right for the model as it is now. Where the part's sizes are parameters, rewrite it by provenance before relying on it, or tag the face where it is made: a tagged face is always written by its tag.

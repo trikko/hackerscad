@@ -105,6 +105,13 @@ struct FaceOrigin
     int index = -1;
 }
 
+/// One more face a result face was made of (two faces merged into one), besides its FaceOrigin.
+struct FaceAlso
+{
+    int face;
+    FaceOrigin origin;
+}
+
 struct FaceInfo
 {
     Vec3 center;
@@ -338,6 +345,11 @@ interface BrepKernel
 
     /// Face origins recorded when `s` was produced (see FaceOrigin).
     FaceOrigin[] faceOrigins(Brep s);
+    /// The faces of `s` made of more than one face: the origins besides the first.
+    FaceAlso[] faceOriginsAlso(Brep s);
+    /// The faces of `s` swept from an edge of an input (an extrusion's sides from its profile's lines):
+    /// `origin.index` is the edge's index there.
+    FaceAlso[] faceFromEdges(Brep s);
     /// For every edge, the indices of its two faces (-1 when missing).
     int[2][] edgeFaces(Brep s);
 

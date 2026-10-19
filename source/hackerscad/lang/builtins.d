@@ -5,7 +5,7 @@ module hackerscad.lang.builtins;
 import std.conv : to, ConvException;
 import std.format : format;
 import std.math : PI, E, abs, sqrt, floor, ceil, round, sin, cos, tan, asin, acos, atan, atan2, isFinite, exp, log, log10, log2, hypot;
-import std.algorithm : canFind, map, sort, max, min;
+import std.algorithm : all, any, canFind, filter, map, sort, max, min;
 import std.array : array, join;
 import std.uni : toLower;
 static import std.string;
@@ -691,6 +691,10 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto s = x.solid("solid");
         auto r = new SolidVal(s.brep, s.origin);
         r.creators = s.creators;
+        r.tags = s.tags;
+        r.faceTags = s.faceTags;
+        r.anchors = s.anchors;
+        r.edgeTags = s.edgeTags;
         r.flat = s.flat;
         r.path = s.path;
         r.rgb = colorOf(x.get("color"), x.spanOf("color"));
@@ -1714,6 +1718,12 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     // ---- planes
     def("plane", (ref CallArgs a) {
         // plane(origin: vec(0, 0, 10), normal: Z) or body.plane(faces.top)
+        if (a.positional.length == 2 && a.positional[0].kind == Kind.solid && a.positional[1].kind == Kind.str)
+        {
+            // body.plane("mid"): the plane tagged so
+            auto x = Args(it, a, "plane", ["solid", "tag"]);
+            return anchorValue(it, x.solid("solid"), tagName(x.get("tag"), x.spanOf("tag")), AnchorKind.plane, x.spanOf("tag"));
+        }
         if (a.positional.length && a.positional[0].kind == Kind.solid)
         {
             // body.plane(faces.top, faces.bottom): halfway between two flat faces that face each other
@@ -1767,6 +1777,12 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     def("axis", (ref CallArgs a) {
         // axis(origin:, direction:), axis(p1, p2), body.axis(edges…) from a straight
         // edge (its line) or a circular one (its centre and normal), frame.axis(Z)
+        if (a.positional.length == 2 && a.positional[0].kind == Kind.solid && a.positional[1].kind == Kind.str)
+        {
+            // body.axis("bore"): the axis tagged so (a circle of its sketch: the circle's)
+            auto x = Args(it, a, "axis", ["solid", "tag"]);
+            return anchorValue(it, x.solid("solid"), tagName(x.get("tag"), x.spanOf("tag")), AnchorKind.axis, x.spanOf("tag"));
+        }
         if (a.positional.length && a.positional[0].kind == Kind.solid)
         {
             auto x = Args(it, a, "axis", ["solid", "edge"]);
@@ -1807,6 +1823,12 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // body.frame(faces.top, origin: vec(…), x: Y) or plane.frame(origin: vec(…), x: Y)
         Vec3 o, n;
         Args x;
+        if (a.positional.length == 2 && a.positional[0].kind == Kind.solid && a.positional[1].kind == Kind.str)
+        {
+            // body.frame("seat"): the frame tagged so (or one on the point, axis or plane tagged so)
+            auto y = Args(it, a, "frame", ["solid", "tag"]);
+            return anchorValue(it, y.solid("solid"), tagName(y.get("tag"), y.spanOf("tag")), AnchorKind.frame, y.spanOf("tag"));
+        }
         if (a.positional.length && a.positional[0].kind == Kind.solid)
         {
             x = Args(it, a, "frame", ["solid", "face", "origin", "x"]);
@@ -3074,6 +3096,68 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
             auto s = obj.solid;
             switch (name)
             {
+            case "faces", "edges":
+                {
+                    // its faces or edges, to select some and tag them: b.faces.top.addTag("lid")
+                    auto r = new SelectorVal;
+                    r.faces = name == "faces";
+                    r.of = s;
+                    result = Value.make(Kind.selector, r);
+                    return true;
+                }
+            case "tags": result = tagList(s.tags); return true;
+            case "point":
+                result = method((ref CallArgs a) {
+                    // the point tagged so (addTag(…, at:), a sketch's point), where the solid now is
+                    auto x = Args(it, a, "point", ["solid", "tag"]);
+                    return anchorValue(it, s, tagName(x.get("tag"), x.spanOf("tag")), AnchorKind.point, x.spanOf("tag"));
+                });
+                return true;
+            case "hasTag":
+                result = method((ref CallArgs a) {
+                    auto x = Args(it, a, "hasTag", ["solid", "tag"]);
+                    return Value.of(s.tags.canFind(tagName(x.get("tag"), x.spanOf("tag"))));
+                });
+                return true;
+            case "addTag", "removeTag", "clearTags":
+                result = method((ref CallArgs a) {
+                    immutable clear = name == "clearTags";
+                    auto x = Args(it, a, name, clear ? ["solid", "recursive"] : name == "addTag"
+                        ? ["solid", "tag", "recursive", "at"] : ["solid", "tag", "recursive"]);
+                    immutable all = x.flag("recursive", false);
+                    auto names = clear ? null : tagNames(x.get("tag"), x.spanOf("tag"));
+                    if (x.has("at"))
+                    {
+                        // a point, axis, plane or frame tagged on the solid, to follow it
+                        if (x.has("recursive"))
+                            throw new HcadError(Code.type, "at: tags a reference on the solid, not its faces: recursive does "
+                                ~ "not apply", x.spanOf("recursive"));
+                        auto r = copySolid(s);
+                        foreach (t; names)
+                            r.anchors ~= anchorOf(x, "at", t);
+                        return Value.of(r);
+                    }
+                    if (name == "removeTag")
+                        foreach (t; names)
+                            if (!s.tags.canFind(t) && !s.anchors.any!(an => an.tag == t)
+                                && !(all && s.faceTags.any!(f => f.canFind(t))))
+                                throw new HcadError(Code.type, format("this solid is not tagged '%s'", t), x.spanOf("tag"),
+                                    tagHint(t, s.tags ~ s.anchors.map!(an => an.tag).array, all ? s.faceTags : null));
+                    string[] change(string[] tags) => name == "addTag" ? tagUnion(tags, names)
+                        : clear ? null : tags.filter!(t => !names.canFind(t)).array;
+                    auto r = copySolid(s);
+                    r.tags = change(s.tags);
+                    if (name != "addTag")
+                        r.anchors = s.anchors.filter!(an => !clear && !names.canFind(an.tag)).array;
+                    if (all && s.brep !is null)
+                    {
+                        r.faceTags = facesTagsOf(it, s).dup;
+                        foreach (ref f; r.faceTags)
+                            f = change(f);
+                    }
+                    return Value.of(r);
+                });
+                return true;
             case "bbox":
                 {
                     auto b = it.kernel.bbox(nonEmpty(s, span));
@@ -3278,6 +3362,92 @@ Value refineSelector(Interp it, SelectorVal sel, ref CallArgs a)
     throw new HcadError(Code.syntax, format("use %s.filter(%s => condition) to select %s", what, what[0 .. 1], what), a.span);
 }
 
+/// A tag: a text, not empty.
+string tagName(Value v, Span span)
+{
+    if (v.kind != Kind.str || v.s.length == 0)
+        throw new HcadError(Code.type, format("a tag is a text, such as \"lid\", not %s", v.kind == Kind.str ? "an empty one"
+            : v.typeName), span);
+    return v.s;
+}
+
+/// Tags given as one text or a list of them.
+string[] tagNames(Value v, Span span)
+{
+    if (v.kind != Kind.array)
+        return [tagName(v, span)];
+    string[] r;
+    foreach (e; v.arr)
+        r = tagUnion(r, [tagName(e, span)]);
+    if (r.length == 0)
+        throw new HcadError(Code.type, "no tag given: the list is empty", span);
+    return r;
+}
+
+Value tagList(const(string)[] tags)
+{
+    Value[] r;
+    foreach (t; tags)
+        r ~= Value.of(t);
+    return Value.of(r);
+}
+
+/// "did you mean" over the tags there are, and which they are.
+string tagHint(string t, const(string)[] tags, const(string[])[] faceTags)
+{
+    string[] all = tags.dup;
+    foreach (f; faceTags)
+        all = tagUnion(all, f);
+    if (all.length == 0)
+        return null;
+    auto close = Interp.suggest(t, all);
+    return (close ? close ~ " " : "") ~ format("(its tags: %-(%s, %))", all);
+}
+
+/// The tags of each face of `s` (a list of empty ones when it has none).
+string[][] facesTagsOf(Interp it, SolidVal s)
+{
+    if (s.brep is null)
+        return null;
+    immutable n = it.kernel.faceCount(s.brep);
+    if (s.faceTags.length == n)
+        return s.faceTags;
+    return new string[][n];
+}
+
+/// The faces a selector taken from a solid (b.faces.top) selects there, for its tags.
+int[] selectedOf(Interp it, SelectorVal sel, string name, Span span)
+{
+    if (!sel.faces)
+        throw new HcadError(Code.type, "edges have no tags yet: tag the faces on either side and take the edges between "
+            ~ "them, edges.between(faces.tagged(\"a\"), faces.tagged(\"b\"))", span);
+    if (sel.of is null)
+        throw new HcadError(Code.type, format("%s: of which solid? take the faces from it, b.faces.top.%s", name, name), span);
+    return resolveSelector(it, sel, sel.of, span);
+}
+
+/// A copy of `s` to change: the same shape, the same everything.
+SolidVal copySolid(SolidVal s)
+{
+    auto r = new SolidVal(s.brep, s.origin);
+    r.rgb = s.rgb;
+    r.hasColor = s.hasColor;
+    r.creators = s.creators;
+    r.tags = s.tags;
+    r.faceTags = s.faceTags;
+    r.anchors = s.anchors;
+    r.edgeTags = s.edgeTags;
+    r.loftPaths = s.loftPaths;
+    r.loftRuled = s.loftRuled;
+    r.flat = s.flat;
+    r.path = s.path;
+    r.pathNormal = s.pathNormal;
+    r.surface = s.surface;
+    r.placed = s.placed;
+    r.place = s.place;
+    return r;
+}
+
 /// Indices of the edges/faces of `s` matched by the selector.
 int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool allowEmpty = false)
 {
@@ -3286,6 +3456,7 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
     auto faces = it.kernel.faces(b);
     ctx.faces = faces;
     ctx.creators = s.creators.length == faces.length ? s.creators : null;
+    ctx.faceTags = s.faceTags.length == faces.length ? s.faceTags : null;
     if (!sel.faces)
     {
         ctx.edges = it.kernel.edges(b);
@@ -3318,10 +3489,15 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
         return shares[angle] = r;
     };
     int[][SelectorVal] nested;
+    // a tag looked for inside (edges.of(faces.tagged("lid"))) and found nowhere: what an error says
+    SelectorVal tagMissing;
     ctx.resolve = (SelectorVal inner) {
         if (auto r = inner in nested)
             return *r;
-        return nested[inner] = resolveSelector(it, inner, s, span, true);
+        auto r = resolveSelector(it, inner, s, span, true);
+        if (r.length == 0 && inner.tagged.length && tagMissing is null)
+            tagMissing = inner;
+        return nested[inner] = r;
     };
 
     immutable n = sel.faces ? faces.length : ctx.edges.length;
@@ -3360,7 +3536,21 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
             r ~= cast(int) i;
     }
     if (r.length == 0 && !allowEmpty)
+    {
+        if (!sel.tagged.length && tagMissing !is null)
+            sel = tagMissing;
+        if (sel.tagged.length)
+        {
+            string[] present;
+            foreach (t; ctx.faceTags)
+                present = tagUnion(present, t);
+            auto close = present.length ? Interp.suggest(sel.tagged[0], present) : null;
+            throw new HcadError(Code.kernel, format("no face of this solid is tagged %-(%s, %)", sel.tagged.map!(t => "'" ~ t ~ "'")),
+                span, present.length ? (close ? close ~ " " : "") ~ format("(the tags on its faces: %-(%s, %))", present)
+                    : "none of its faces has a tag: give them one with addTag (b.faces.top.addTag(\"lid\"))");
+        }
         throw new HcadError(Code.kernel, format("the selector matched no %s on this solid", sel.faces ? "faces" : "edges"), span);
+    }
     return r;
 }
 
@@ -3721,6 +3911,11 @@ Value transformed(Interp it, Span span, SolidVal s, Brep delegate(Brep) f, strin
     if (s.brep is null)
         return Value.of(s);
     auto r = derived(it, f(s.brep), [s], kind, span);
+    // moved, turned, mirrored, scaled: its references too, and a profile's tagged edges, in the same order
+    if (kind == "transform" && s.anchors.length)
+        r.anchors = mapAnchors(it, f, s.anchors, span);
+    if (kind == "transform" && s.edgeTags.length)
+        r.edgeTags = s.edgeTags;
     // moving what a feature has just made, in the same statement
     // (circle(…).move(…)): the feature shows where its solid ends up. A caller
     // moving what a function returned (f().move(…)), or a solid kept in a
@@ -3738,6 +3933,161 @@ Value transformed(Interp it, Span span, SolidVal s, Brep delegate(Brep) f, strin
         }
     }
     return Value.of(r);
+}
+
+/// `as` taken where a transform (`f`, which moves a Brep) takes a solid: the transform read off what
+/// it does to a box's face centres (an affine map), whatever it is made of.
+Anchor[] mapAnchors(Interp it, Brep delegate(Brep) f, const(Anchor)[] as, Span span)
+{
+    auto k = it.kernel;
+    auto probe = k.box(1, 1, 1);
+    auto before = k.faces(probe), after = k.faces(f(probe));
+    if (before.length != after.length)
+        throw new HcadError(Code.kernel, "the references tagged on the solid could not follow it", span);
+    // four centres not in one plane: the map from the differences to the first
+    double[3][3] c, d;
+    size_t[3] pick;
+    bool found;
+    double det3(const ref double[3][3] m) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    search: foreach (a; 1 .. before.length)
+        foreach (b; a + 1 .. before.length)
+            foreach (e; b + 1 .. before.length)
+            {
+                pick = [a, b, e];
+                foreach (col, i; pick)
+                {
+                    auto v = before[i].center - before[0].center;
+                    c[0][col] = v.x;
+                    c[1][col] = v.y;
+                    c[2][col] = v.z;
+                }
+                if (abs(det3(c)) > 1e-6)
+                {
+                    found = true;
+                    break search;
+                }
+            }
+    assert(found);
+    foreach (col, i; pick)
+    {
+        auto v = after[i].center - after[0].center;
+        d[0][col] = v.x;
+        d[1][col] = v.y;
+        d[2][col] = v.z;
+    }
+    // M = D C⁻¹
+    double[3][3] ci, m;
+    immutable det = det3(c);
+    foreach (i; 0 .. 3)
+        foreach (j; 0 .. 3)
+        {
+            immutable i1 = (j + 1) % 3, i2 = (j + 2) % 3, j1 = (i + 1) % 3, j2 = (i + 2) % 3;
+            ci[i][j] = (c[i1][j1] * c[i2][j2] - c[i1][j2] * c[i2][j1]) / det;
+        }
+    foreach (i; 0 .. 3)
+        foreach (j; 0 .. 3)
+            m[i][j] = d[i][0] * ci[0][j] + d[i][1] * ci[1][j] + d[i][2] * ci[2][j];
+    Vec3 lin(Vec3 v) => Vec3(m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
+        m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z, m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z);
+    // a normal goes by the inverse transpose: the same for a turn or a mirror, not for a stretch
+    double[3][3] mi;
+    immutable dm = det3(m);
+    foreach (i; 0 .. 3)
+        foreach (j; 0 .. 3)
+        {
+            immutable i1 = (j + 1) % 3, i2 = (j + 2) % 3, j1 = (i + 1) % 3, j2 = (i + 2) % 3;
+            mi[i][j] = (m[i1][j1] * m[i2][j2] - m[i1][j2] * m[i2][j1]) / dm;
+        }
+    Vec3 normal(Vec3 v) => Vec3(mi[0][0] * v.x + mi[1][0] * v.y + mi[2][0] * v.z,
+        mi[0][1] * v.x + mi[1][1] * v.y + mi[2][1] * v.z, mi[0][2] * v.x + mi[1][2] * v.y + mi[2][2] * v.z).normalized;
+    immutable o0 = before[0].center, o1 = after[0].center;
+    Anchor[] r;
+    foreach (a; as)
+    {
+        Anchor b = a;
+        b.o = o1 + lin(a.o - o0);
+        b.x = lin(a.x).normalized;
+        b.z = a.kind == AnchorKind.axis ? lin(a.z).normalized : normal(a.z);
+        b.y = b.z.cross(b.x).normalized;
+        b.x = b.y.cross(b.z).normalized;
+        r ~= b;
+    }
+    return r;
+}
+
+/// The reference tagged so on `s`, read as `want` (a point, an axis, a plane or a frame), where it is.
+Value anchorValue(Interp it, SolidVal s, string tag, AnchorKind want, Span span)
+{
+    import std.algorithm : filter;
+    auto found = s.anchors.filter!(a => a.tag == tag).array;
+    immutable what = ["point", "axis", "plane", "frame"][want];
+    if (found.length == 0)
+    {
+        auto names = s.anchors.map!(a => a.tag).array;
+        auto close = names.length ? Interp.suggest(tag, names) : null;
+        throw new HcadError(Code.undefined, format("no point, axis, plane or frame of this solid is tagged '%s'", tag), span,
+            names.length ? (close ? close ~ " " : "") ~ format("(its references: %-(%s, %))", names)
+                : "tag one with addTag(\"name\", at: …), or a point of the sketch it is made from");
+    }
+    if (found.length > 1)
+        throw new HcadError(Code.type, format("%d references of this solid are tagged '%s' (a copy joined to it?): tag "
+            ~ "them apart", found.length, tag), span);
+    auto a = found[0];
+    if (want == AnchorKind.plane && a.kind == AnchorKind.point)
+        throw new HcadError(Code.type, format("'%s' is a point: a plane needs a direction too (tag a plane, an axis or "
+            ~ "a frame)", tag), span);
+    if (want == AnchorKind.axis && a.kind == AnchorKind.point)
+        throw new HcadError(Code.type, format("'%s' is a point: an axis needs a direction too (tag a circle, a line, "
+            ~ "an axis or a frame)", tag), span);
+    // a profile drawn on a face: its coordinates are the face's
+    Vec3 at(Vec3 p) => s.placed ? s.place[0] + s.place[1] * p.x + s.place[2] * p.y + s.place[3] * p.z : p;
+    Vec3 dir(Vec3 v) => s.placed ? s.place[1] * v.x + s.place[2] * v.y + s.place[3] * v.z : v;
+    final switch (want)
+    {
+    case AnchorKind.point: return Value.vector(at(a.o), 3, Dim.length);
+    case AnchorKind.axis: return axisValue(at(a.o), dir(a.z));
+    case AnchorKind.plane: return planeValue(at(a.o), dir(a.z));
+    case AnchorKind.frame: return frameValue(at(a.o), dir(a.x), dir(a.y), dir(a.z));
+    }
+}
+
+/// A reference to tag on a solid: a point, an Axis, a Plane or a Frame.
+Anchor anchorOf(ref Args x, string name, string tag)
+{
+    auto v = x.get(name);
+    Anchor a;
+    a.tag = tag;
+    if (v.kind == Kind.vec)
+    {
+        a.kind = AnchorKind.point;
+        a.o = x.vecLen(name);
+        return a;
+    }
+    if (isAxis(v))
+    {
+        a.kind = AnchorKind.axis;
+        axisArg(x, name, a.o, a.z);
+    }
+    else if (v.kind == Kind.struct_ && v.st.def is planeDef)
+    {
+        a.kind = AnchorKind.plane;
+        planeArg(x, name, a.o, a.z);
+    }
+    else if (v.kind == Kind.struct_ && v.st.def is frameDef)
+    {
+        a.kind = AnchorKind.frame;
+        frameArg(x, name, a.o, a.x, a.y, a.z);
+        return a;
+    }
+    else
+        throw new HcadError(Code.type, format("at: is a point, an Axis, a Plane or a Frame to tag, not %s", v.typeName),
+            x.spanOf(name));
+    // an x and a y across the direction, for a frame read from it
+    a.z = a.z.normalized;
+    a.x = (abs(a.z.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(a.z).normalized;
+    a.y = a.z.cross(a.x);
+    return a;
 }
 
 SolidVal primitive(Interp it, Brep b, string kind, Span span)
@@ -3785,6 +4135,7 @@ SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span)
             r.creators[i] = created;
         }
     }
+    inheritTags(it, r, b, inputs, origins);
     // a boolean is a step of the model even when all its faces come from
     // its operands (a - b where b only trims a): the feature tree lists it
     immutable boolean = inputs.length == 2 && (kind == "union" || kind == "difference" || kind == "intersection");
@@ -3802,6 +4153,66 @@ SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span)
                     if (c > 0 && !it.features[created - 1].from.canFind(c))
                         it.features[created - 1].from ~= c;
     }
+    return r;
+}
+
+/// The tags of a result: the solid's own those of the first input (what it was made from, or the
+/// body cut or added to), each face's those of the faces it comes from, all of them when it was made
+/// of several (two faces merged into one); the faces it made new from a profile or a path, the tags
+/// of that profile's or path's faces.
+private void inheritTags(Interp it, SolidVal r, Brep b, SolidVal[] inputs, const(FaceOrigin)[] origins)
+{
+    if (inputs.length == 0)
+        return;
+    if (inputs[0] !is null)
+        r.tags = inputs[0].tags;
+    // the references of all of them: a hole's axis stays when it is cut
+    foreach (input; inputs)
+        if (input !is null && input.anchors.length)
+            r.anchors ~= input.anchors;
+    bool any;
+    string[] fromProfiles;
+    auto fromEdges = it.kernel.faceFromEdges(b);
+    foreach (input; inputs)
+        if (input !is null && input.edgeTags.length && fromEdges.length)
+            any = true;
+    foreach (input; inputs)
+        if (input !is null && input.faceTags.length)
+        {
+            any = true;
+            if (input.flat || input.path)
+                foreach (t; input.faceTags)
+                    fromProfiles = tagUnion(fromProfiles, t);
+        }
+    if (!any)
+        return;
+    const(string)[] tagsOf(FaceOrigin o)
+    {
+        if (o.input < 0 || o.input >= inputs.length || inputs[o.input] is null)
+            return null;
+        auto from = inputs[o.input].faceTags;
+        return o.index >= 0 && o.index < from.length ? from[o.index] : null;
+    }
+    r.faceTags = new string[][origins.length];
+    foreach (i, o; origins)
+        r.faceTags[i] = o.input < 0 ? fromProfiles : tagUnion(null, tagsOf(o));
+    foreach (a; it.kernel.faceOriginsAlso(b))
+        if (a.face >= 0 && a.face < r.faceTags.length)
+            r.faceTags[a.face] = tagUnion(r.faceTags[a.face], tagsOf(a.origin));
+    // the sides swept from a profile's tagged lines and circles
+    foreach (a; fromEdges)
+        if (a.face >= 0 && a.face < r.faceTags.length && a.origin.input >= 0 && a.origin.input < inputs.length
+            && inputs[a.origin.input] !is null && a.origin.index < inputs[a.origin.input].edgeTags.length)
+            r.faceTags[a.face] = tagUnion(r.faceTags[a.face], inputs[a.origin.input].edgeTags[a.origin.index]);
+}
+
+/// `a` with the tags of `b` it does not have, in order.
+string[] tagUnion(const(string)[] a, const(string)[] b)
+{
+    string[] r = a.dup;
+    foreach (t; b)
+        if (!r.canFind(t))
+            r ~= t;
     return r;
 }
 
@@ -4526,6 +4937,8 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
     }
     auto infos = k.faces(nonEmpty(body, a.span));
     Brep[] prisms;
+    // each prism's faces with the tags of the face it sweeps, for the joined tool to hand on
+    SolidVal[] swept;
     int outwards, inwards;
     foreach (f; idx)
     {
@@ -4536,11 +4949,15 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
             prisms ~= k.facePrism(body.brep, f, v);
         catch (KernelException e)
             throw new HcadError(Code.kernel, e.msg, x.spanOf(x.has("along") ? "along" : "faces"));
+        auto p = new SolidVal(prisms[$ - 1], a.span);
+        inheritTags(it, p, p.brep, [body], k.faceOrigins(p.brep));
+        swept ~= p;
     }
     if (outwards && inwards)
         throw new HcadError(Code.type, "the direction goes out of some faces and into others: push or pull them apart",
             x.spanOf("along"));
-    auto tool = derived(it, prisms.length == 1 ? prisms[0] : k.fuseAll(prisms), [body], fn, a.span);
+    auto tool = prisms.length == 1 ? derived(it, prisms[0], [body], fn, a.span)
+        : derived(it, k.fuseAll(prisms), swept, fn, a.span);
     tool.flat = false;
     // the faces beside the pushed one stay whole: a box pulled up is a taller box
     return solidBoolean(it, body, tool, outwards ? BoolOp.fuse : BoolOp.cut, a.span, true);
@@ -5112,6 +5529,8 @@ SelectorVal copy(SelectorVal s)
     r.faces = s.faces;
     r.predicates = s.predicates.dup;
     r.tests = s.tests.dup;
+    r.of = s.of;
+    r.tagged = s.tagged;
     return r;
 }
 
@@ -5148,6 +5567,103 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
             auto r = copy(sel);
             r.predicates ~= f;
             return Value.make(Kind.selector, r);
+        });
+    case "tagged":
+        // the faces tagged so (addTag), or tagged with any of a list
+        return fn((ref CallArgs a) {
+            auto x = Args(it, a, "tagged", ["selector", "tag"]);
+            if (!sel.faces)
+                throw new HcadError(Code.type, "edges have no tags yet: tag the faces on either side and take the edges "
+                    ~ "between them, edges.between(faces.tagged(\"a\"), faces.tagged(\"b\"))", a.span);
+            auto names = tagNames(x.get("tag"), x.spanOf("tag"));
+            auto r = copy(sel);
+            r.tagged = tagUnion(r.tagged, names);
+            r.tests ~= (size_t i, ref SelectCtx c) => c.faceTags.length && c.faceTags[i].any!(t => names.canFind(t));
+            return Value.make(Kind.selector, r);
+        });
+    case "count", "list":
+        {
+            // taken from a solid: how many it selects there, or them (Face or Edge values)
+            if (sel.of is null)
+                throw new HcadError(Code.type, format("%s: of which solid? take them from it, b.%s.….%s", name,
+                    sel.faces ? "faces" : "edges", name), span);
+            auto idx = resolveSelector(it, sel, sel.of, span, true);
+            if (name == "count")
+            {
+                result = Value.integer(idx.length);
+                return true;
+            }
+            Value[] r;
+            auto b = sel.of.brep;
+            if (sel.faces)
+            {
+                auto fs = it.kernel.faces(b);
+                foreach (i; idx)
+                {
+                    auto f = new FaceVal;
+                    f.info = fs[i];
+                    f.index = i;
+                    r ~= Value.make(Kind.face, f);
+                }
+            }
+            else
+            {
+                auto es = it.kernel.edges(b);
+                foreach (i; idx)
+                {
+                    auto e = new EdgeVal;
+                    e.info = es[i];
+                    e.index = i;
+                    r ~= Value.make(Kind.edge, e);
+                }
+            }
+            result = Value.of(r);
+            return true;
+        }
+    case "tags":
+        {
+            // the tags of the faces selected, all of them
+            auto idx = selectedOf(it, sel, name, span);
+            auto all = facesTagsOf(it, sel.of);
+            string[] r;
+            foreach (i; idx)
+                r = tagUnion(r, all[i]);
+            result = tagList(r);
+            return true;
+        }
+    case "hasTag":
+        // whether every face selected has that tag
+        return fn((ref CallArgs a) {
+            auto x = Args(it, a, "hasTag", ["selector", "tag"]);
+            immutable t = tagName(x.get("tag"), x.spanOf("tag"));
+            auto all = facesTagsOf(it, sel.of);
+            return Value.of(selectedOf(it, sel, name, a.span).all!(i => all[i].canFind(t)));
+        });
+    case "addTag", "removeTag", "clearTags":
+        // the solid they were taken from, those faces' tags changed
+        return fn((ref CallArgs a) {
+            immutable clear = name == "clearTags";
+            auto x = Args(it, a, name, clear ? ["selector"] : ["selector", "tag"]);
+            auto names = clear ? null : tagNames(x.get("tag"), x.spanOf("tag"));
+            auto idx = selectedOf(it, sel, name, a.span);
+            auto s = sel.of;
+            auto tags = facesTagsOf(it, s).dup;
+            if (name == "removeTag")
+                foreach (t; names)
+                    if (!idx.any!(i => tags[i].canFind(t)))
+                    {
+                        string[] present;
+                        foreach (i; idx)
+                            present = tagUnion(present, tags[i]);
+                        throw new HcadError(Code.type, format("no face selected is tagged '%s'%s", t, s.tags.canFind(t)
+                            ? " (the solid itself is: b.removeTag)" : ""), x.spanOf("tag"), tagHint(t, present, null));
+                    }
+            foreach (i; idx)
+                tags[i] = name == "addTag" ? tagUnion(tags[i], names)
+                    : clear ? null : tags[i].filter!(t => !names.canFind(t)).array.dup;
+            auto r = copySolid(s);
+            r.faceTags = tags;
+            return Value.make(Kind.solid, r);
         });
     case "from":
         // faces created by a tool or feature: faces.from(hole); edges: both faces from it

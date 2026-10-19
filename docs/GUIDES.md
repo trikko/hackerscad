@@ -36,7 +36,7 @@ Where things go. A plane is a flat surface without end, given by a point and the
 
 [<img src="guides/img/features-four.png" width="420" alt="Selectors and features">](guides/features.md)
 
-Rounding, bevelling, hollowing and tapering a solid: `fillet`, `chamfer`, `shell` and `draft`, and the selectors that say which edges and faces they work on (`edges.parallel(Z)`, `faces.top`, `edges.between(…)`, `faces.from(tool)`). How to pick edges so that they stay the right ones when a parameter changes, in which order to apply the features, what their errors mean, and how to do the same with the mouse in the 3D view.
+Rounding, bevelling, hollowing and tapering a solid: `fillet`, `chamfer`, `shell` and `draft`, and the selectors that say which edges and faces they work on (`edges.parallel(Z)`, `faces.top`, `edges.between(…)`, `faces.from(tool)`). How to pick edges so that they stay the right ones when a parameter changes, names (tags) for the faces you come back to, in which order to apply the features, what their errors mean, and how to do the same with the mouse in the 3D view.
 
 ### [Sketches in depth](guides/sketches.md)
 

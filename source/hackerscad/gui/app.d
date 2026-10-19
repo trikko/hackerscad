@@ -2663,6 +2663,9 @@ private:
                     span = f.span;
             }
         }
+        // a face's tags, its name to select it by in the code
+        if (hit.edge < 0 && hit.face >= 0 && hit.face < part.faceTags.length && part.faceTags[hit.face].length)
+            what ~= format(" · tagged %-(%s, %)", part.faceTags[hit.face]);
         TextIter a, b;
         if (!buffer.getIterAtLine(a, span.line - 1))
             return;
@@ -4813,6 +4816,7 @@ private:
                 some ~= MenuEntry.item("Draft faces" ~ on, () => ctx("draft", "3.deg"));
                 some ~= MenuEntry.item("Extrude faces" ~ on, () => ctx("extrude-face", "5.mm"));
                 some ~= MenuEntry.item("Cut faces" ~ on, () => ctx("cut-face", "2.mm"));
+                some ~= MenuEntry.item("Tag faces" ~ on, () => ctx("tag-face", "name"));
             }
             MenuEntry[] sizes;
             foreach (row; selectionRows())
@@ -4861,6 +4865,7 @@ private:
             entries ~= I(nf == 1 ? "Draft face…" : format("Draft %d faces…", nf), () => ctx("draft", "3.deg"));
             entries ~= I(nf == 1 ? "Extrude face…" : format("Extrude %d faces…", nf), () => ctx("extrude-face", "5.mm"));
             entries ~= I(nf == 1 ? "Cut face…" : format("Cut %d faces…", nf), () => ctx("cut-face", "2.mm"));
+            entries ~= I(nf == 1 ? "Tag face…" : format("Tag %d faces…", nf), () => ctx("tag-face", "name"));
             // a sketch to draw on a flat face, its edges as references
             if (nf == 1 && canSketchOn(contextHit.part, selFaces[0]))
             {
@@ -5196,6 +5201,7 @@ private:
     {
         sv = new SolidVal(part.brep, Span.init);
         sv.creators = part.creators;
+        sv.faceTags = part.faceTags;
         return new Interp(part.kernel);
     }
 
@@ -5409,6 +5415,18 @@ private:
         // flat faces swept along their normals (along: vec(…) slants them)
         case "extrude-face": return faces ? format(".extrude(%s, depth: %s)", facesCode(), or("5.mm")) : null;
         case "cut-face": return faces ? format(".cut(%s, depth: %s)", facesCode(), or("2.mm")) : null;
+        case "tag-face":
+            {
+                // each face tagged by its own selector: a name to find it by later, wherever the part goes
+                if (!faces)
+                    return null;
+                SolidVal sv;
+                auto it = selectorInterp(sv);
+                string code;
+                foreach (f; selFaces)
+                    code ~= format(".%s.addTag(%(%s%))", faceSelector(it, sv, f), [or("name")]);
+                return code;
+            }
         case "hole":
             {
                 import std.string : tr;
@@ -6470,6 +6488,14 @@ private:
         return -1;
     }
 
+    static JValue tagsJson(const(string)[] tags)
+    {
+        JValue r = JSAB();
+        foreach (t; tags)
+            r ~= JValue(t);
+        return r;
+    }
+
     /// What the view shows under window point (x, y), with a selector for it.
     JValue hitJson(Hit hit)
     {
@@ -6489,6 +6515,8 @@ private:
             catch (Exception)
             {
             }
+            if (hit.face < part.faceTags.length && part.faceTags[hit.face].length)
+                r["tags"] = tagsJson(part.faceTags[hit.face]);
         }
         return r;
     }
@@ -6529,6 +6557,8 @@ private:
                     j["kind"] = "face";
                     j["index"] = h.face;
                     j["selector"] = faceSelector(it, sv, h.face);
+                    if (h.face < part.faceTags.length && part.faceTags[h.face].length)
+                        j["tags"] = tagsJson(part.faceTags[h.face]);
                     j["center"] = jsonOf(f.center);
                     j["normal"] = jsonOf(f.normal);
                     j["area"] = f.area;

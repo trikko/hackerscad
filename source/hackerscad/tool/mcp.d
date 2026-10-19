@@ -814,8 +814,9 @@ JValue toolList()
         gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: as "
             ~ "the user's click, what is there joins the selection (picked again, it leaves it; hcad_gui_selection with "
             ~ "clear: true empties it), items of several parts too, and the editor jumps to the feature that created "
-            ~ "it. Returns part, face, the point and normal hit, a selector expression for that face (e.g. faces.top) to "
-            ~ "use in code, and in status the info card, one row per line (the sizes of one item, or how far apart two are). "
+            ~ "it. Returns part, face, the point and normal hit, a selector expression for that face (e.g. faces.top; "
+            ~ "faces.tagged(\"lid\") when it has a tag, which follows it wherever the part goes) to use in code, its tags, "
+            ~ "and in status the info card, one row per line (the sizes of one item, or how far apart two are). "
             ~ "box [x0, y0, x1, y1] (fractions) drags a box instead, as the user's left drag: what is wholly inside it "
             ~ "(crossing: true, as a drag from right to left, what it touches too), in sight and of the kind a click "
             ~ "picks (hcad_gui_view select), joins the selection; with a sketch shown, its points and lines join the "
@@ -975,7 +976,7 @@ JValue toolList()
         gui("hcad_gui_feature", "Point at the user's 3D view (x, y as fractions of its size, or a model point) and add a feature there, "
             ~ "like the right-click menu: the code (with a stable selector) is appended to the part in the editor. Actions: "
             ~ "fillet-edge, chamfer-edge, fillet-face (all edges of the face), chamfer-face, shell (opens the face), "
-            ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep; clearance and tap a plain round hole, insert, counterbore, countersink and ribs (three ribs the screw cuts its thread into) hole() of the hardware library, imported), pocket (a rectangle cut "
+            ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), tag-face (value the tag: .faces.….addTag(\"name\"), a name to select the face by later), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep; clearance and tap a plain round hole, insert, counterbore, countersink and ribs (three ribs the screw cuts its thread into) hole() of the hardware library, imported), pocket (a rectangle cut "
             ~ "in), boss (a cylinder standing on the face), sketch (Sketch on face…: the part's function keeps its "
             ~ "solid in a variable and starts an empty sketch on that flat face, its edges as references; add its "
             ~ "geometry and then cut or extrude its profile with hcad_gui_edit; with plane instead of a point, Sketch on "
@@ -984,7 +985,7 @@ JValue toolList()
             ~ "(each hcad_gui_pick adds to it) that contains the point, as the menu does: several edges or faces at once.",
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"action": {"type": "string", "enum": ["fillet-edge", "chamfer-edge", "fillet-face", "chamfer-face", `
-            ~ `"shell", "draft", "extrude-face", "cut-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
+            ~ `"shell", "draft", "extrude-face", "cut-face", "tag-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
             ~ `"radius, distance, thickness, angle or depth, e.g. 2.mm or -4.deg"}, `
             ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert", "counterbore", "countersink", "ribs"]}, `
             ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6, M8, M10 or M12 for holes; any that fits the cylinder for thread (M10, M12…)"}, `

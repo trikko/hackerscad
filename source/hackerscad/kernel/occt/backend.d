@@ -10,6 +10,8 @@ final class OcctBrep : Brep
 {
     private hc_shape* handle;
     private FaceOrigin[] origins;
+    private FaceAlso[] also;
+    private FaceAlso[] fromEdges;
 
     private this(hc_shape* h)
     {
@@ -23,6 +25,22 @@ final class OcctBrep : Brep
             origins = new FaceOrigin[n];
             foreach (i; 0 .. n)
                 origins[i] = FaceOrigin(input[i], index[i]);
+            if (immutable m = hc_history_edges_size())
+            {
+                auto face = new int[m], ai = new int[m], ax = new int[m];
+                hc_history_edges_get(face.ptr, ai.ptr, ax.ptr);
+                fromEdges = new FaceAlso[m];
+                foreach (i; 0 .. m)
+                    fromEdges[i] = FaceAlso(face[i], FaceOrigin(ai[i], ax[i]));
+            }
+            if (immutable m = hc_history_also_size())
+            {
+                auto face = new int[m], ai = new int[m], ax = new int[m];
+                hc_history_also_get(face.ptr, ai.ptr, ax.ptr);
+                also = new FaceAlso[m];
+                foreach (i; 0 .. m)
+                    also[i] = FaceAlso(face[i], FaceOrigin(ai[i], ax[i]));
+            }
         }
         else
             origins = new FaceOrigin[hc_face_count(h)];
@@ -447,6 +465,20 @@ final class OcctKernel : BrepKernel
         auto o = cast(OcctBrep) s;
         h(s);
         return o.origins;
+    }
+
+    FaceAlso[] faceFromEdges(Brep s)
+    {
+        auto o = cast(OcctBrep) s;
+        h(s);
+        return o.fromEdges;
+    }
+
+    FaceAlso[] faceOriginsAlso(Brep s)
+    {
+        auto o = cast(OcctBrep) s;
+        h(s);
+        return o.also;
     }
 
     int[2][] edgeFaces(Brep s)

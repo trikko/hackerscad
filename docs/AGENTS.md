@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-29e29ae9`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-fedaebfd`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-29e29ae9`:** this text is up to date.
+- **It prints `0.3.1-fedaebfd`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -83,6 +83,9 @@ format stamp):
   before is the same code, no need to fetch it again. The other hcad_gui_*
   tools reply with the whole state too: give them only as well
   (hcad_gui_edit with only: ["revision", "problems", "parts"]).
+  A face the user wants named: hcad_gui_feature with action tag-face, or
+  .faces.….addTag("name") in the code where the face is made, before the
+  part is turned.
   Never take the most recent window for the user's: if it is not clear
   which one they mean, ask, or open one of your own. Show the work in the
   window as it goes, not only pictures at the end, and leave the view on
@@ -152,6 +155,8 @@ format stamp):
 - Reference objects (the shaft a knob fits on, the phone a stand holds) are
   parts too, see-through and not exported, so the fit can be checked:
       @part("slategray", alpha: 0.35, export: false)
+  Tag the faces of the part that touch the object (rest, grip) and check the
+  fit on them.
 - Lengths: write units (60.mm, 2.5.cm, 1.inch). Bare numbers passed to
   geometry are millimetres. Never add a bare number to a length (60.mm + 5 is
   an error; write 60.mm + 5.mm, or d.to!double for the bare number a length
@@ -170,6 +175,12 @@ format stamp):
 - Booleans: a + b (union), a - b (difference), a & b (intersection).
 - Place parts relative to each other instead of computing coordinates:
   lid.nextTo(body, X, gap: 10.mm), cap.on(body).
+  To put a part where another part has a place for it (a pin in a hole, a
+  part on a mount), tag that place where it is made: a point or the hole's
+  circle in the sketch (c.addTag("pivot")), or on the solid (b.addTag("pin",
+  at: vec(…))); then part.placeOn(body.frame("pivot")), and body.point("pin")
+  or body.axis("pivot") for sizes. They follow the body through every turn
+  and cut: no coordinates to work out again.
 - Fillets, chamfers and shells take selectors, evaluated on the solid they
   apply to: .fillet(edges.parallel(Z), r: 3.mm),
   .chamfer(edges.filter(e => e.mid.z > 5.mm), d: 1.mm),
@@ -191,6 +202,20 @@ format stamp):
   edges.loop(faces.top) a face's rim without its holes; a profile's
   p.outer, p.holes and p.pieces give its outline, its holes and its
   regions.
+- Where you can, avoid fixed coordinates and selectors by position (a filter
+  on e.mid.z, on a face's area or centre): they stop matching when a size
+  changes. Prefer what follows the model, provenance or a tag; when no plain
+  selector picks a face, tag it rather than filter for it. Fixed coordinates
+  are right where the place itself is fixed (a hole measured on the real
+  part).
+  Tag a face you will come back to, where it is made: b.faces.top.addTag("lid")
+  (it changes b and gives it back, so box(…).faces.top.addTag("lid") works in
+  a chain), then faces.tagged("lid") wherever the part was turned or placed
+  since; a tool tagged recursive (drill.addTag("bore", recursive: true))
+  tags the wall it cuts. Name what a face does (lid, mount, seat, grip), not
+  where it is; tag only what a later step uses, and in a library the faces
+  its users need. A tag not found: the error lists the tags there are; fix
+  the name rather than switching to a selector by position.
 - Cut with planes: body.halves(body.plane(faces.top).offset(-10.mm)) gives
   .above and .below; body.split(plane) the pieces on both sides; s.pieces
   lists separate bodies, ordered along X, Y, Z.
@@ -350,6 +375,11 @@ format stamp):
   sizes and relations: a sketch. Overlapping shapes, an offset outline, text
   or an SVG on a shape: profile operations (+ - &, .offset). They mix:
   s.profile + circle(d: 5.mm).
+- Tag the lines and circles whose faces a later step works on (a flank for a
+  label, a hole's wall to thread): sides[1].addTag("flank"), then
+  faces.tagged("flank") on the solid. It holds when the profile is extruded
+  or revolved as the sketch gives it (moved or turned first is fine), not
+  when it is joined to another profile, tapered or swept first.
 
 ## Prismatic parts and 3D printing
 - A prismatic part: its outline as a sketch from the drawing's dimensions,
@@ -445,6 +475,9 @@ format stamp):
   model repeats and which sizes of the original they are (a hole's
   diameter, an axis); make those @params or named constants, use the
   names, and put the relations in unittest blocks (the rod fits its hole).
+  Tag the faces that do the work (the one it rests on, a mating face, a
+  screw's seat) where they are made, so the checks and later changes find
+  them by name.
 - What the numbers do not say: hcad_diff leaves out what is thinner than
   two cubes, and says how much it left (chamfers, lettering, notches: look
   at hcad_lines). When hcad_fit takes away little, or moves a size away

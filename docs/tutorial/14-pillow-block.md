@@ -93,6 +93,17 @@ end, nobody has to work out: `s.tangent` does.
     s.tangent(left, top);
 ```
 
+Two of its pieces get a name, a *tag*, for later: the right flank, and the
+point on the shaft. The face the extrusion makes from the flank's line, and
+the point, keep the name wherever the upright goes.
+
+```d
+    // the right flank and the shaft's centre named: the face swept
+    // from the line, and the point, keep the names in the block
+    auto right = s.line(br, tr).addTag("flank");
+    centre.addTag("shaft");
+```
+
 Put the cursor in `uprightSketch()` and the view shows it from above, with
 its dimensions: none of its points is blue, none can still move.
 
@@ -180,14 +191,14 @@ is still the top.
 The seat is a circle as wide as the bearing, and a slot across it, a notch
 to put a screwdriver in and lever the bearing out. The front face of the
 upright is picked by where it came from and which way it faces; the frame's
-origin goes on the shaft.
+origin goes on the shaft, the point tagged in the sketch: `block.point("shaft")`
+is where it ended up, with no height to add up.
 
 ```d
     auto face = faces.from(upright)
         .filter(f => f.normal.y < -0.99);
     block = block.cut(seatSketch(),
-        on: block.frame(face,
-            origin: vec(0, 0, footHeight + axisHeight)),
+        on: block.frame(face, origin: block.point("shaft")),
         depth: bearingWidth + 0.2.mm);
 ```
 
@@ -198,15 +209,14 @@ leaves room for the shaft.
 ## 5. A label, on the slanted flank
 
 The last sketch is a sunk panel with the letters left standing: a
-rectangle, minus a text. `faces.from(upright).farthest(X)` is the
-upright's face that lies farthest to the right: its right flank, however
-much it leans.
+rectangle, minus a text. `faces.tagged("flank")` is the face made from the
+line tagged in the upright's sketch: the right flank, however much it leans
+and whatever was cut since.
 
 ```d
-    auto flank = faces.from(upright)
-        .farthest(X);
+    // 5. on the right flank, leaning: the label
     return block.cut(labelSketch(),
-        on: block.frame(flank), depth: 0.6.mm);
+        on: block.frame(faces.tagged("flank")), depth: 0.6.mm);
 ```
 
 On a wall, a frame's X runs to the right and its Y up the slope, as you

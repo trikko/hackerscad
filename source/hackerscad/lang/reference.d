@@ -393,6 +393,40 @@ immutable Ref[] reference =
     F("turn", "Frame", ["angle: Angle"], "Frame", "The frame turned around its Z."),
     F("flip", "Plane", [], "Plane", "The plane with its normal reversed."),
     ]) ~
+    group("Tags", [
+    withForms(F("addTag", "Solid", ["tag: string | string[]", "recursive: bool"], "Solid",
+        "Tags the solid (a profile, a path, a surface) as an object: b.addTag(\"body\"). recursive: true tags each of its faces as well, which keep it when the solid is joined to or cut from another. Changes the variable it is called on and gives the solid back, for a chain."), [
+        "b.addTag(\"body\")",
+        "auto bore = cylinder(d: 5.mm, h: 20.mm).addTag(\"bore\", recursive: true)   // the hole's wall, tagged"]),
+    withForms(F("addTag", "Solid", ["tag: string | string[]", "at: Vec3 | Axis | Plane | Frame"], "Solid",
+        "Tags a point, an axis, a plane or a frame on the solid: it moves, turns, mirrors and scales with it, and stays through cuts and joins. Read it back with b.point(tag), b.axis(tag), b.plane(tag), b.frame(tag)."), [
+        "b.addTag(\"pin\", at: vec(15.mm, 10.mm, 8.mm))",
+        "b.addTag(\"hinge\", at: axis(origin: vec(-30.mm, 0.mm, 4.mm), direction: Y))"]),
+    F("point", "Solid", ["tag: string"], "Vec3", "Where the reference tagged so is now (a point, or the origin of an axis, plane or frame): b.point(\"pin\")."),
+    F("axis", "Solid", ["tag: string"], "Axis", "The axis tagged so (also a plane's normal or a frame's Z through its origin); a circle or arc tagged in the sketch: its centre, across the sketch."),
+    F("plane", "Solid", ["tag: string"], "Plane", "The plane tagged so (also an axis's or a frame's, across it)."),
+    F("frame", "Solid", ["tag: string"], "Frame", "The frame tagged so, or one on the point, axis or plane tagged so: to place a part there with placeOn."),
+    F("removeTag", "Solid", ["tag: string | string[]", "recursive: bool"], "Solid", "Takes a tag off the solid (and the references tagged so); recursive: true off its faces too."),
+    F("clearTags", "Solid", ["recursive: bool"], "Solid", "Takes every tag off the solid; recursive: true off its faces too."),
+    F("hasTag", "Solid", ["tag: string"], "bool", "Whether the solid itself is tagged so."),
+    P("tags", "Solid", "string[]", "The solid's own tags (not its faces')."),
+    P("faces", "Solid", "Faces", "The solid's faces, to select some and read or change their tags: b.faces.top.addTag(\"lid\")."),
+    P("edges", "Solid", "Edges", "The solid's edges, to select some and count or list them."),
+    withForms(F("addTag", "Faces", ["tag: string | string[]"], "Solid",
+        "Tags the faces selected, on the solid they were taken from: b.faces.top.addTag(\"lid\"). The faces made from them later keep the tag: split, trimmed, filleted, moved, merged with another face (which then has both). Changes the variable it is called on and gives the solid back, for a chain."), [
+        "b.faces.top.addTag(\"lid\")",
+        "auto b = box(40.mm, 30.mm, 10.mm).faces.top.addTag([\"lid\", \"seat\"])"]),
+    F("removeTag", "Faces", ["tag: string | string[]"], "Solid", "Takes a tag off the faces selected: b.faces.top.removeTag(\"seat\")."),
+    F("clearTags", "Faces", [], "Solid", "Takes every tag off the faces selected."),
+    F("hasTag", "Faces", ["tag: string"], "bool", "Whether every face selected has that tag."),
+    P("tags", "Faces", "string[]", "The tags of the faces selected, all of them: b.faces.top.tags."),
+    withForms(F("tagged", "Faces", ["tag: string | string[]"], "Faces",
+        "The faces with that tag, or with any of a list: wherever the solid was moved or turned since."), [
+        "body.fillet(edges.of(faces.tagged(\"lid\")), 1.mm)",
+        "writeln(b.faces.tagged(\"lid\").count)"]),
+    P("count", "Faces", "int", "Taken from a solid (b.faces.top): how many faces are selected. Edges likewise."),
+    P("list", "Faces", "Face[]", "Taken from a solid: the faces selected, as Face values (foreach over b.faces.top does the same). Edges likewise, as Edge values."),
+    ]) ~
     group("Measuring", [
     P("bbox", "Solid", "BBox", "The bounding box: min, max, size, center."),
     P("volume", "Solid", "Volume", "The volume."),
@@ -502,6 +536,12 @@ immutable Ref[] reference =
     withForms(F("project", "Sketch", ["edges: Edges"], "Entity[]", "Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them."), [
         "s.concentric(c, s.project(edges.filter(e => e.isCircle && e.center.z < 5.mm))[0])   // over a hole below"]),
     F("point", "Sketch", ["x: Length", "y: Length", "fixed: bool", "construction: bool"], "Point", "A point where it starts; constraints move it."),
+    withForms(F("addTag", "Sketch", ["tag: string | string[]"], "Sketch", "Tags the sketch: its profile and paths have the tag. removeTag, clearTags, hasTag and tags as on a solid."), [
+        "s.addTag(\"plate\")"]),
+    withForms(F("addTag", "Entity", ["tag: string | string[]"], "Entity",
+        "Tags a point, line, circle, arc or ellipse of the sketch (construction ones too): the profile and paths made from it, and what is extruded or revolved from them, have a reference so tagged, a point where the point is, an axis through a circle's centre across the sketch or along a line; it follows them wherever they are moved. A line, circle or arc also tags the face extruded or revolved from it (a side, a hole's wall), once the profile is extruded or revolved straight away (moved or turned first is fine; joined to another profile, tapered or swept, not yet). Gives the entity back: s.circle(c, d: 6.mm).addTag(\"bore\"). removeTag, clearTags, hasTag and tags as on a solid."), [
+        "auto c = s.point(20, 15).addTag(\"pivot\")",
+        "part.point(\"pivot\")   // later, where the part is"]),
     withForms(F("line", "Sketch", ["p: Point | Vec2", "q: Point | Vec2", "construction: bool"], "Line", "A line between two points (a vector makes a new point); "
         ~ "construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never "
         ~ "part of the profile."), [

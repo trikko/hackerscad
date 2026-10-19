@@ -246,6 +246,8 @@ final class CachingKernel : BrepKernel
     EdgeInfo[] edges(Brep s) => query!"edges"(s, inner.edges(s));
     FaceInfo[] faces(Brep s) => query!"faces"(s, inner.faces(s));
     FaceOrigin[] faceOrigins(Brep s) => inner.faceOrigins(s);
+    FaceAlso[] faceOriginsAlso(Brep s) => inner.faceOriginsAlso(s);
+    FaceAlso[] faceFromEdges(Brep s) => inner.faceFromEdges(s);
     size_t faceCount(Brep s) => inner.faceCount(s);   // stored on the solid itself
     int[2][] edgeFaces(Brep s) => query!"edgeFaces"(s, inner.edgeFaces(s));
     double volume(Brep s) => query!"volume"(s, inner.volume(s));

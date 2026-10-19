@@ -209,6 +209,28 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>f.turn(angle: Angle) → Frame</dt><dd>The frame turned around its Z.</dd>
 <dt>pl.flip() → Plane</dt><dd>The plane with its normal reversed.</dd>
 </dl></section>
+<section><h2>Tags</h2><dl>
+<dt>s.addTag(tag: string | string[], recursive: bool) → Solid</dt><dd>Tags the solid (a profile, a path, a surface) as an object: b.addTag("body"). recursive: true tags each of its faces as well, which keep it when the solid is joined to or cut from another. Changes the variable it is called on and gives the solid back, for a chain.</dd>
+<dt>s.addTag(tag: string | string[], at: Vec3 | Axis | Plane | Frame) → Solid</dt><dd>Tags a point, an axis, a plane or a frame on the solid: it moves, turns, mirrors and scales with it, and stays through cuts and joins. Read it back with b.point(tag), b.axis(tag), b.plane(tag), b.frame(tag).</dd>
+<dt>s.point(tag: string) → Vec3</dt><dd>Where the reference tagged so is now (a point, or the origin of an axis, plane or frame): b.point("pin").</dd>
+<dt>s.axis(tag: string) → Axis</dt><dd>The axis tagged so (also a plane's normal or a frame's Z through its origin); a circle or arc tagged in the sketch: its centre, across the sketch.</dd>
+<dt>s.plane(tag: string) → Plane</dt><dd>The plane tagged so (also an axis's or a frame's, across it).</dd>
+<dt>s.frame(tag: string) → Frame</dt><dd>The frame tagged so, or one on the point, axis or plane tagged so: to place a part there with placeOn.</dd>
+<dt>s.removeTag(tag: string | string[], recursive: bool) → Solid</dt><dd>Takes a tag off the solid (and the references tagged so); recursive: true off its faces too.</dd>
+<dt>s.clearTags(recursive: bool) → Solid</dt><dd>Takes every tag off the solid; recursive: true off its faces too.</dd>
+<dt>s.hasTag(tag: string) → bool</dt><dd>Whether the solid itself is tagged so.</dd>
+<dt>s.tags → string[]</dt><dd>The solid's own tags (not its faces').</dd>
+<dt>s.faces → Faces</dt><dd>The solid's faces, to select some and read or change their tags: b.faces.top.addTag("lid").</dd>
+<dt>s.edges → Edges</dt><dd>The solid's edges, to select some and count or list them.</dd>
+<dt>faces.addTag(tag: string | string[]) → Solid</dt><dd>Tags the faces selected, on the solid they were taken from: b.faces.top.addTag("lid"). The faces made from them later keep the tag: split, trimmed, filleted, moved, merged with another face (which then has both). Changes the variable it is called on and gives the solid back, for a chain.</dd>
+<dt>faces.removeTag(tag: string | string[]) → Solid</dt><dd>Takes a tag off the faces selected: b.faces.top.removeTag("seat").</dd>
+<dt>faces.clearTags() → Solid</dt><dd>Takes every tag off the faces selected.</dd>
+<dt>faces.hasTag(tag: string) → bool</dt><dd>Whether every face selected has that tag.</dd>
+<dt>faces.tags → string[]</dt><dd>The tags of the faces selected, all of them: b.faces.top.tags.</dd>
+<dt>faces.tagged(tag: string | string[]) → Faces</dt><dd>The faces with that tag, or with any of a list: wherever the solid was moved or turned since.</dd>
+<dt>faces.count → int</dt><dd>Taken from a solid (b.faces.top): how many faces are selected. Edges likewise.</dd>
+<dt>faces.list → Face[]</dt><dd>Taken from a solid: the faces selected, as Face values (foreach over b.faces.top does the same). Edges likewise, as Edge values.</dd>
+</dl></section>
 <section><h2>Measuring</h2><dl>
 <dt>s.bbox → BBox</dt><dd>The bounding box: min, max, size, center.</dd>
 <dt>s.volume → Volume</dt><dd>The volume.</dd>
@@ -291,6 +313,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>sk.origin → Point</dt><dd>A sketch on a face or plane: its origin (the face's centre) as a fixed reference point.</dd>
 <dt>sk.project(edges: Edges) → Entity[]</dt><dd>Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them.</dd>
 <dt>sk.point(x: Length, y: Length, fixed: bool, construction: bool) → Point</dt><dd>A point where it starts; constraints move it.</dd>
+<dt>sk.addTag(tag: string | string[]) → Sketch</dt><dd>Tags the sketch: its profile and paths have the tag. removeTag, clearTags, hasTag and tags as on a solid.</dd>
+<dt>x.addTag(tag: string | string[]) → Entity</dt><dd>Tags a point, line, circle, arc or ellipse of the sketch (construction ones too): the profile and paths made from it, and what is extruded or revolved from them, have a reference so tagged, a point where the point is, an axis through a circle's centre across the sketch or along a line; it follows them wherever they are moved. A line, circle or arc also tags the face extruded or revolved from it (a side, a hole's wall), once the profile is extruded or revolved straight away (moved or turned first is fine; joined to another profile, tapered or swept, not yet). Gives the entity back: s.circle(c, d: 6.mm).addTag("bore"). removeTag, clearTags, hasTag and tags as on a solid.</dd>
 <dt>sk.line(p: Point | Vec2, q: Point | Vec2, construction: bool) → Line</dt><dd>A line between two points (a vector makes a new point); construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never part of the profile.</dd>
 <dt>sk.arc(center: Point | Vec2, start: Point | Vec2, end: Point | Vec2, construction: bool) → Arc</dt><dd>An arc, counter-clockwise (a vector makes a new point).</dd>
 <dt>sk.polyline(points, closed: bool, construction: bool) → Line[]</dt><dd>Lines through points (vectors become new points).</dd>
@@ -404,8 +428,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>struct Head(d: Length, h: Length, key: Length)</dt><dd>The head of another kind for screw s: its diameter (across the flats for "hex"), its height and the hex key. "button" ISO 7380, "flat" ISO 10642 (countersunk, 90°), "hex" ISO 4017 (spanner across the flats), "pan" ISO 7049 (self-tapping); "socket" the ISO 4762 of the size itself.</dd>
 <dt>headOf(s: Screw, head: string) → Head</dt><dd></dd>
 <dt>hexPrism(acrossFlats: Length, h: Length) → Solid</dt><dd>Hexagonal prism standing on XY, flats parallel to the X axis.</dd>
-<dt>screw(s: Screw, length: Length, socket: bool = true, threaded: bool = false, head: string = "socket") → Solid</dt><dd>A screw: head "socket" (ISO 4762, the default), "button" (ISO 7380), "flat" (ISO 10642, countersunk), "hex" (ISO 4017) or "pan" (the self-tapping ST sizes). The underside of the head lies on z = 0 (for a flat head, its top: it sinks into its countersink): the head grows upwards and the shank downwards, so the screw drops into a hole. threaded: true models the ISO thread (slower); otherwise the shank is plain; socket: false leaves out the hex socket.</dd>
-<dt>nut(s: Screw, threaded: bool = false) → Solid</dt><dd>Hex nut standing on z = 0, with the corners chamfered on both faces. threaded: true cuts the ISO thread in the hole.</dd>
+<dt>screw(s: Screw, length: Length, socket: bool = true, threaded: bool = false, head: string = "socket") → Solid</dt><dd>A screw: head "socket" (ISO 4762, the default), "button" (ISO 7380), "flat" (ISO 10642, countersunk), "hex" (ISO 4017) or "pan" (the self-tapping ST sizes). The underside of the head lies on z = 0 (for a flat head, its top: it sinks into its countersink): the head grows upwards and the shank downwards, so the screw drops into a hole. threaded: true models the thread (the ISO one for metric sizes), built on the shank's side; otherwise the shank is plain; socket: false leaves out the hex socket.</dd>
+<dt>nut(s: Screw, threaded: bool = false) → Solid</dt><dd>Hex nut standing on z = 0, with the corners chamfered on both faces. threaded: true threads the hole (the ISO thread for metric sizes, with no play: the nut of a real screw).</dd>
 <dt>washer(s: Screw) → Solid</dt><dd>Flat washer standing on z = 0.</dd>
 <dt>hole(s: Screw, depth: Length, kind: string = "clearance", head: string = "socket", chamfer: Length = …) → Solid</dt><dd>A hole to subtract, with its top on z = 0 going down `depth`: "clearance" (the screw passes), "tap" (pilot hole for the thread), "insert" (heat-set insert), "counterbore" (clearance with room for the head), "countersink" (for flat heads) or "ribs": a hole the screw passes with three ribs along it, 120° apart, that the screw cuts its thread into as it goes in (better than a printed thread for small screws, and than a plain tap hole: less material to cut, so less force and no split wall). One rib points to -Y: on a wall (where a face's frame has y up) it is the bottom one, which prints best; the ribs start 0.6 mm in, a lead for the tip.  `chamfer` widens the mouth at 45° by that much all round: it guides the screw in, and takes up the first layers' spread when the hole opens on the bed. 0.5 mm for "ribs" unless given, none for the others (a counterbore and a countersink have their own).</dd>
 <dt>nutTrap(s: Screw, depth: Length, clearance: Length = …) → Solid</dt><dd>A pocket to trap a nut, from z = 0 going down `depth` (with a little clearance).</dd>

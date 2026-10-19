@@ -53,14 +53,15 @@ Solid bolt()
 Solid nut(string size, bool left, Length hole, Length at)
 {
     immutable len = at + nutHeight + 1.mm;
-    auto tube = (cylinder(d: 40.mm, h: len)
-            - cylinder(d: hole, h: len + 2.mm).move(z: -1.mm))
-        .move(z: shank - len);
 
-    // the hole's wall: between the rings and the outside in area
-    tube = tube.thread(faces.filter(f => f.area > 10.mm * len * 3
-        && f.area < 30.mm * len * 3),
-        size, left: left, clearance: play);
+    // the hole tagged whole: the wall it leaves in the tube has its name
+    auto bore = cylinder(d: hole, h: len + 2.mm)
+        .move(z: -1.mm)
+        .addTag("bore", recursive: true);
+    auto tube = (cylinder(d: 40.mm, h: len) - bore)
+        .move(z: shank - len);
+    tube = tube.thread(faces.tagged("bore"), size, left: left,
+        clearance: play);
     auto hex = polygon(6, d: 36.mm, fit: "sides")
         .extrude(nutHeight)
         .chamfer(edges.of(faces.top) + edges.of(faces.bottom),

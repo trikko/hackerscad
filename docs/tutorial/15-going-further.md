@@ -93,6 +93,28 @@ has to print lying sideways can be a `teardrop(d: 4.5.mm)` in place of the
 `circle`: a point at the top, with two 45° sides that print without
 supports.)
 
+### A name for a face
+
+On its back, the hook's faces have changed places: `faces.front` now means
+another face, and a rounding written after the `.rotate(…)` with it would
+land somewhere else. A face you will come back to can be given a name
+instead, a *tag*, while it is still where you know it: before the turn, the
+arm's end is the front. Then round that face's edges by its name, after the
+turn:
+
+```d
+        .extrude(faces.front, depth: 10.mm)
+        .faces.front.addTag("end")
+        .rotate(x: -90)
+        .fillet(edges.of(faces.tagged("end")), r: 1.mm);
+```
+
+The name stays on the face however the hook is turned, and whatever is cut
+or rounded afterwards. In the view, clicking a tagged face shows its name,
+and the right-click menu writes it from then on; **Tag face…** in that
+menu adds a name to the face you clicked, at the end of the chain.
+[Selectors and features](../guides/features.md) says more.
+
 ### Make it sturdy
 
 Printed like this, the layers cross the arm where it meets the plate: the

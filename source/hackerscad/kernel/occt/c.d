@@ -29,6 +29,10 @@ void hc_set_threads(int n);
 
 int hc_history_size();
 void hc_history_get(int* input, int* index);
+int hc_history_also_size();
+int hc_history_edges_size();
+void hc_history_edges_get(int* face, int* input, int* index);
+void hc_history_also_get(int* face, int* input, int* index);
 
 void hc_shape_free(hc_shape* s);
 

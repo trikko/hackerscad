@@ -247,6 +247,45 @@ assert(s.dof == 0, "every size given");
 
 Beyond `s.profile`, a sketch gives what it draws as a path to sweep along: `s.path` (one chain, open or closed), `s.paths` (several). See [the guide on sweeps](sweeps.md).
 
+## Names on the drawing: tags
+
+A line, circle or arc of the sketch can be given a name, a *tag*: the face the extrusion makes from it has that name, and `faces.tagged("name")` finds it later, wherever the part was turned and whatever was cut into it. A point tagged becomes a point of the part, a circle an axis through its centre ([Planes, frames and placement](planes.md) shows how to use them).
+
+<!-- render: sketches-tagged -->
+```d
+// a doorstop whose sloping side and base are tagged in the sketch:
+// the faces made from them keep the names
+
+@part("Sky Pop")
+Solid doorstop()
+{
+    auto s = sketch();
+    auto a = s.point(0, 0, fixed: true);
+    auto b = s.point(100, 0);
+    auto c = s.point(0, 25);
+    auto sides = s.polyline([a, b, c]);
+    s.horizontal(sides[0]);
+    s.vertical(sides[2]);
+    s.length(sides[0], 100.mm);
+    s.length(sides[2], 25.mm);
+
+    // the names, on the lines
+    sides[0].addTag("base");
+    sides[1].addTag("slope");
+
+    // a groove for grip across the slope, and the tip rounded
+    return s.profile
+        .extrude(40.mm, along: Y)
+        .cut(rect(60.mm, 3.mm), on: faces.tagged("slope"), depth: 1.mm)
+        .fillet(edges.between(faces.tagged("slope"),
+            faces.tagged("base")), r: 1.mm);
+}
+```
+
+![A doorstop with a groove across its slope and a rounded tip](img/sketches-tagged.png)
+
+The groove splits the slope in two; both pieces keep the name, and the fillet finds the edge where the slope meets the base. `s.addTag("name")` tags the whole sketch: its profile, and the solid made from it, have the tag. The names hold when the profile is extruded or revolved straight away (moved or turned first is fine); a profile joined to another first, tapered or swept loses the faces' names, not the points'.
+
 ## Sketches on faces
 
 `body.sketch(face)` draws on a flat face of a solid, with the axes of `body.frame(face)`: the origin at the face's centre; on a wall, x to the right and y up seen from outside. The face's edges are in the sketch from the start as references (fixed construction geometry, no degrees of freedom):

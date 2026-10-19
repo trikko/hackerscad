@@ -2728,9 +2728,122 @@ unittest
 
 unittest
 {
+    // tags: on faces and on the solid, kept through moves, cuts, fillets and unions
+    expectOut(`auto b = box(40, 30, 10);
+        b.faces.top.addTag("lid");
+        b.addTag("body");
+        b = b.rotate(x: 180) - cylinder(r: 5, h: 30).move(z: -15);
+        b = b.fillet(edges.of(faces.tagged("lid")), 1);
+        writeln(b.faces.tagged("lid").count, " ", b.faces.tagged("lid").list[0].normal, " ", b.tags);`,
+        `1 [0, 0, -1] ["body"]`);
+    // two faces merged into one carry both tags; a solid tagged recursive hands them to its faces
+    expectOut(`auto a = box(20, 20, 10);
+        a.faces.top.addTag("left");
+        auto b = box(20, 20, 10).move(x: 20);
+        b.faces.top.addTag("right");
+        auto boss = cylinder(r: 5, h: 8).move(x: 10, z: 10).addTag("boss", recursive: true);
+        auto c = a + b + boss;
+        writeln(c.faces.tagged("left").tags, " ", c.faces.tagged("boss").count, " ", c.tags);`,
+        `["left", "right"] 2 []`);
+    // a tool's tags on the walls it cuts; the solid's own tags left to the first operand
+    expectOut(`auto b = box(20, 20, 10).addTag("plate");
+        b -= cylinder(r: 2, h: 20).move(z: -5).addTag("bore", recursive: true);
+        writeln(b.tags, " ", b.faces.tagged("bore").count, " ", b.faces.tagged("bore").hasTag("bore"));`,
+        `["plate"] 1 true`);
+    // remove, clear, a list of tags, a chain, foreach, a profile's tag kept by its extrusion
+    expectOut(`auto b = box(10, 10, 10);
+        b.faces.top.addTag(["lid", "seat"]);
+        b.faces.top.removeTag("seat");
+        auto t = b.faces.top.tags;
+        b.faces.top.clearTags();
+        auto c = box(5, 5, 5).faces.bottom.addTag("foot");
+        int n = 0;
+        foreach (f; c.faces.tagged("foot"))
+            n++;
+        writeln(t, " ", b.faces.top.tags, " ", n, " ", rect(10, 10).addTag("plate").extrude(2).tags);`,
+        `["lid"] [] 1 ["plate"]`);
+    // tags kept by draft, offset, a face pushed out, knurl
+    expectOut(`auto b = box(40, 30, 10);
+        b.faces.top.addTag("lid");
+        b.faces.front.addTag("front");
+        writeln(b.draft(faces.front, 5.deg).faces.tagged("front").count, " ",
+            b.offset(1).faces.tagged("lid").count, " ",
+            b.extrude(faces.top, depth: 2).faces.tagged("lid").count, " ",
+            b.cut(faces.top, depth: 2).faces.tagged("lid").count);`,
+        `1 1 1 1`);
+    // references: a point and an axis tagged on a solid follow it; a sketch's point and circle become them
+    expectOut(`auto b = box(60, 40, 8).addTag("pin", at: vec(15, 10, 8));
+        b.addTag("hinge", at: axis(origin: vec(-30, 0, 4), direction: Y));
+        b = b.rotate(x: 90).move(x: 100);
+        writeln(b.point("pin"), " ", b.axis("hinge").direction, " ", b.mirror(X).point("pin"));`,
+        `[115 mm, -8 mm, 10 mm] [0, 0, 1] [-115 mm, -8 mm, 10 mm]`);
+    expectOut(`auto s = sketch();
+        auto a = s.point(0, 0, fixed: true);
+        auto b = s.point(60, 0);
+        s.horizontal(a, b);
+        s.distance(a, b, 60.mm);
+        s.slot(a, b, w: 16.mm);
+        s.circle(b, d: 6.mm).addTag("hole");
+        b.addTag("pivot");
+        s.addTag("link");
+        auto p = s.profile.extrude(4).rotate(x: 90).move(z: 20);
+        writeln(p.tags, " ", p.point("pivot"), " ", p.axis("hole").direction, " ", p.frame("pivot").origin,
+            " ", b.tags, " ", (p - box(10, 10, 10)).point("pivot"));`,
+        `["link"] [60 mm, 0 mm, 20 mm] [0, -1, 0] [60 mm, 0 mm, 20 mm] ["pivot"] [60 mm, 0 mm, 20 mm]`);
+    // a sketch on a face: its point where the face is
+    expectOut(`auto body = box(40, 40, 10);
+        auto s = sketch(body, faces.top);
+        s.circle(s.point(5, 5).addTag("mark"), d: 4);
+        writeln(s.profile.point("mark"), " ", body.extrude(s.profile, depth: 2).point("mark"));`,
+        `[5 mm, 5 mm, 10 mm] [5 mm, 5 mm, 10 mm]`);
+    assert(error(`@part Solid p() { auto b = box(10, 10, 10).addTag("pin", at: vec(1, 2, 3)); return b.plane("pin"); }`)
+        .message.canFind("'pin' is a point"));
+    assert(error(`@part Solid p() { auto b = box(10, 10, 10).addTag("pin", at: vec(1, 2, 3)); b.point("pn"); return b; }`)
+        .suggestion.canFind("'pin'"));
+    // a sketch's tagged lines and circles: the faces swept from them, extruded (moved after) or revolved
+    expectOut(`auto s = sketch();
+        auto a = s.point(0, 0, fixed: true);
+        auto b = s.point(100, 0);
+        auto c = s.point(0, 25);
+        auto sides = s.polyline([a, b, c]);
+        s.horizontal(sides[0]);
+        s.vertical(sides[2]);
+        s.length(sides[0], 100.mm);
+        s.length(sides[2], 25.mm);
+        sides[0].addTag("base");
+        sides[1].addTag("slope");
+        s.circle(s.point(20, 8), d: 6.mm).addTag("bore");
+        auto d = s.profile.move(x: 5).extrude(40.mm, along: Y);
+        d = d.fillet(edges.between(faces.tagged("slope"), faces.tagged("base")), 3.mm);
+        auto r = sketch();
+        auto p = r.polyline([r.point(0, 0, fixed: true), r.point(20, 0), r.point(10, 30), r.point(0, 30)]);
+        p[1].addTag("cone");
+        writeln(d.faces.tagged("slope").count, " ", d.faces.tagged("bore").count, " ",
+            d.faces.tagged("slope").list[0].normal.y, " ", r.profile.revolve(axis: Y).faces.tagged("cone").count);`,
+        `1 1 0 1`);
+    // the mistakes: a tag not there, an empty one, one lost, edges, faces of no solid
+    auto d = error(`@part Solid p() { auto b = box(10, 10, 10); b.faces.top.addTag("lid");
+        return b.fillet(edges.of(faces.tagged("lidd")), 1); }`);
+    assert(d.message.canFind("tagged 'lidd'") && d.suggestion.canFind("'lid'"), d.message ~ " " ~ d.suggestion);
+    assert(error(`@part Solid p() { auto b = box(10, 10, 10); b.faces.top.removeTag("seat"); return b; }`)
+        .message.canFind("no face selected is tagged 'seat'"));
+    assert(error(`@part Solid p() { auto b = box(10, 10, 10); b.faces.top.addTag(""); return b; }`)
+        .message.canFind("empty"));
+    assert(error(`immutable base = box(10, 10, 10); @part Solid p() { base.addTag("x"); return base; }`)
+        .message.canFind("would be lost"));
+    assert(error(`@part Solid p() { box(10, 10, 10).addTag("x"); return box(1, 1, 1); }`)
+        .message.canFind("would be lost"));
+    assert(error(`@part Solid p() { auto b = box(10, 10, 10); b.edges.parallel(Z).addTag("x"); return b; }`)
+        .message.canFind("edges have no tags"));
+    assert(error(`@part Solid p() { auto b = box(10, 10, 10); faces.top.addTag("x"); return b; }`)
+        .message.canFind("of which solid"));
+}
+
+unittest
+{
     // a name that exists on its own, used as a member: no "did you mean" the same name
-    auto d = error("@part Solid p() { foreach (f; box(1, 1, 1).faces) {} return box(1, 1, 1); }");
-    assert(d.message.canFind("stands on its own") && !d.suggestion.canFind("'faces'"), d.message ~ " " ~ d.suggestion);
+    auto d = error("@part Solid p() { auto w = box(1, 1, 1).World; return box(1, 1, 1); }");
+    assert(d.message.canFind("stands on its own") && !d.suggestion.canFind("'World'"), d.message ~ " " ~ d.suggestion);
 }
 
 unittest

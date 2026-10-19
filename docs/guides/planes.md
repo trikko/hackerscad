@@ -209,6 +209,50 @@ Solid turned()
 
 `body.axis` needs exactly one edge: a hole has two rims, so pick one (`edges.of(faces.top)`).
 
+## Points and axes that travel with a part
+
+A point, an axis, a plane or a frame can be *tagged* on a part: given a name, and kept with it. Moved, turned, mirrored, cut or joined to others, the part takes it along, and `b.point("name")`, `b.axis("name")`, `b.plane("name")` or `b.frame("name")` give it back where it now is. No coordinates to work out again after every turn.
+
+<!-- render: planes-tagged -->
+```d
+// a link stood up and turned; a pin goes in its hole wherever it went
+
+@part("Sky Pop")
+Solid link()
+{
+    auto s = sketch();
+    auto a = s.point(0, 0, fixed: true);
+    auto b = s.point(60, 0);
+    s.horizontal(a, b);
+    s.distance(a, b, 60.mm);
+    s.slot(a, b, w: 16.mm);
+    s.circle(a, d: 6.mm);
+
+    // the hole the pin goes in: its circle tagged, an axis through it
+    s.circle(b, d: 6.mm).addTag("pivot");
+
+    return s.profile
+        .extrude(4.mm)
+        .rotate(x: 90)
+        .rotate(z: 30.deg)
+        .move(z: 20.mm);
+}
+
+@part("Pink Pop")
+Solid pin()
+{
+    // on the hole's axis, however the link was turned
+    return cylinder(d: 5.8.mm, h: 12.mm, center: true)
+        .placeOn(link().frame("pivot"));
+}
+```
+
+![A link turned in the air, a pin in its hole](img/planes-tagged.png)
+
+- On a solid: `b.addTag("pin", at: vec(15.mm, 10.mm, 8.mm))` tags a point; `at:` an `axis(…)`, a `plane(…)` or a frame tags those.
+- In a sketch: a point, line, circle or arc tagged (`c.addTag("pivot")`) gives the profile, and the solid made from it, a reference of that name: a point where the point is, the axis through a circle's centre across the sketch, the axis along a line.
+- `b.frame("pivot")` is a frame on whatever was tagged, its Z along the axis: what `placeOn` needs to put another part there.
+
 ## Sketching on a plane
 
 `sketch(plane)` and `sketch(frame)` draw on a plane or a frame instead of XY, with its x and y as the table above gives them and `s.origin` its origin (no edges: those are for sketches on faces, see [the guide on sketches](sketches.md)). The profile lies where it was drawn, and extrudes across its own plane, along the normal.

@@ -38,6 +38,10 @@ void hc_set_threads(int n);
  * index there, or -1/-1 for faces created by the operation itself. */
 int hc_history_size(void);
 void hc_history_get(int *input, int *index);
+int hc_history_also_size(void);
+int hc_history_edges_size(void);
+void hc_history_edges_get(int *face, int *input, int *index);
+void hc_history_also_get(int *face, int *input, int *index);
 
 void hc_shape_free(hc_shape *s);
 

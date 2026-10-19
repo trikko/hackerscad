@@ -49,6 +49,8 @@ struct PartMesh
     uint[] indices;
     uint[] faceStart;   /// B-rep face i owns triangles faceStart[i] .. faceStart[i + 1]
     uint[] creators;    /// per face: feature id (Outcome.features[id - 1])
+    string[][] faceTags;   /// per face: its tags (empty: none has any)
+    string[] tags;         /// the part's own tags
     float[] edges;      /// x y z pairs (feature edges)
     /// x y z pairs: where two faces meet without a corner (wireframe)
     float[] tangentEdges;
@@ -301,6 +303,8 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
                 m.export_ = p.export_;
                 m.span = p.span;
                 m.creators = p.solid.creators;
+                m.faceTags = p.solid.faceTags;
+                m.tags = p.solid.tags;
             }
             else
             {
@@ -439,6 +443,8 @@ PartMesh prepare(BrepKernel k, PartResult p, double tolerance)
     m.indices = raw.tris;
     m.faceStart = raw.faceStart;
     m.creators = p.solid.creators;
+    m.faceTags = p.solid.faceTags;
+    m.tags = p.solid.tags;
 
     m.edgeInfo = k.edges(p.solid.brep);
     m.edgeFaces = k.edgeFaces(p.solid.brep);

@@ -150,6 +150,8 @@ final class SketchVal : ObjectVal
     bool[] diameters;         /// by tag: the value is a diameter
     string[] constraintKinds; /// by tag: the method that made it ("tangent", "fillet"…)
     size_t[][] constraintRefs;   /// by tag: the entities it involves
+    string[] tags;            /// the sketch's own tags (addTag): its profile's
+    string[][] entityTags;    /// by entity: its tags, references of the profile and paths made from it
     Span[] profileSpans;      /// where `.profile` was read
     Span[] fillSpans;         /// the s.fill calls, in order
     bool asProfile;           /// a profile's one-shape sketch: everything given, not shown as a sketch
@@ -180,6 +182,108 @@ final class SketchVal : ObjectVal
 
     override string typeName() const => "Sketch";
 
+    /// For each edge of `b` (its profile), the tags of the line, circle or arc of the sketch it lies on:
+    /// the faces swept from it have them.
+    string[][] edgeTagsOf(Brep b)
+    {
+        import hackerscad.kernel.brep : EdgeKind;
+        bool anyTagged;
+        foreach (ts; entityTags)
+            anyTagged = anyTagged || ts.length > 0;
+        if (!anyTagged)
+            return null;
+        auto edges = it.kernel.edges(b);
+        auto r = new string[][edges.length];
+        // on the segment from p to q
+        bool onSegment(Vec3 x, Vec3 p, Vec3 q)
+        {
+            immutable d = q - p, l2 = d.dot(d);
+            if (l2 < 1e-18)
+                return false;
+            immutable t = (x - p).dot(d) / l2;
+            return t > -1e-9 && t < 1 + 1e-9 && (p + d * t - x).length < 1e-6;
+        }
+        foreach (id, ts; entityTags)
+        {
+            if (ts.length == 0)
+                continue;
+            const e = sk.entities[id];
+            foreach (i, g; edges)
+            {
+                bool on;
+                switch (e.kind)
+                {
+                case EntityKind.line:
+                    {
+                        immutable p = sk.position(e.refs[0]), q = sk.position(e.refs[1]);
+                        on = g.kind == EdgeKind.line && onSegment(g.start, p, q) && onSegment(g.end, p, q);
+                        break;
+                    }
+                case EntityKind.circle, EntityKind.arc:
+                    {
+                        immutable c = sk.position(e.refs[0]);
+                        on = g.kind == EdgeKind.circle && (Vec3(g.center.x, g.center.y, 0) - c).length < 1e-6
+                            && abs(g.radius - sk.radius(id)) < 1e-6;
+                        break;
+                    }
+                default:
+                    break;
+                }
+                if (on)
+                {
+                    import hackerscad.lang.builtins : tagUnion;
+                    r[i] = tagUnion(r[i], ts);
+                }
+            }
+        }
+        return r;
+    }
+
+    /// The references its tagged entities give, in its own coordinates: a point where it is, a circle,
+    /// an arc or an ellipse the axis through its centre (across the sketch), a line the axis along it.
+    Anchor[] anchors()
+    {
+        Anchor[] r;
+        foreach (id, ts; entityTags)
+        {
+            if (ts.length == 0)
+                continue;
+            const e = sk.entities[id];
+            Anchor a;
+            final switch (e.kind)
+            {
+            case EntityKind.point:
+                a.kind = AnchorKind.point;
+                a.o = sk.position(id);
+                break;
+            case EntityKind.circle, EntityKind.arc, EntityKind.ellipse:
+                a.kind = AnchorKind.axis;
+                a.o = sk.position(e.refs[0]);
+                break;
+            case EntityKind.line:
+                {
+                    a.kind = AnchorKind.axis;
+                    a.o = sk.position(e.refs[0]);
+                    auto d = sk.position(e.refs[1]) - a.o;
+                    a.z = d.length > 1e-12 ? d.normalized : Vec3(1, 0, 0);
+                    a.x = Vec3(0, 0, 1).cross(a.z).normalized;
+                    a.y = a.z.cross(a.x);
+                    break;
+                }
+            case EntityKind.spline:
+                continue;
+            }
+            a.o.z = 0;
+            foreach (t; ts)
+            {
+                auto b = a;
+                b.tag = t;
+                r ~= b;
+            }
+        }
+        return r;
+    }
+
     override string describe()
     {
         auto r = sk.report();
@@ -196,6 +300,12 @@ final class SketchVal : ObjectVal
     {
         switch (name)
         {
+        case "tags":
+            {
+                import hackerscad.lang.builtins : tagList;
+                result = tagList(tags);
+                return true;
+            }
         case "profile":
             {
                 import std.algorithm : canFind;
@@ -255,6 +365,12 @@ final class SketchVal : ObjectVal
     {
         switch (name)
         {
+        case "addTag", "removeTag", "clearTags", "hasTag":
+            return (ref CallArgs a) {
+                // the sketch's own tags: its profile and paths have them
+                auto x = Args(it, a, name, name == "clearTags" ? ["sketch"] : ["sketch", "tag"]);
+                return changeTags(it, tags, name, x, "this sketch", Value.make(Kind.object_, this));
+            };
         case "point":
             return (ref CallArgs a) {
                 // s.point(x, y): x and y are where to start; the constraints move it. fixed: true pins it there
@@ -1818,6 +1934,9 @@ final class SketchVal : ObjectVal
         // drawn on a face or plane: the profile lies there
         sv.placed = placed;
         sv.place = place;
+        sv.tags = tags.dup;
+        sv.anchors = anchors();
+        sv.edgeTags = edgeTagsOf(b);
         return Value.of(sv);
     }
 }
@@ -1855,9 +1974,46 @@ private Value[] sketchPaths(SketchVal sv, Span at)
         auto p = primitive(sv.it, b, "path", at);
         p.path = true;
         p.pathNormal = sv.placed ? sv.place[3] : Vec3(0, 0, 1);
+        // the path is where the sketch lies: its references taken there too
+        p.tags = sv.tags.dup;
+        if (sv.placed)
+        {
+            import hackerscad.lang.builtins : mapAnchors;
+            auto k = sv.it.kernel;
+            p.anchors = mapAnchors(sv.it, (Brep q) => toPlace(k, sv.place, q), sv.anchors(), at);
+        }
+        else
+            p.anchors = sv.anchors();
         r ~= Value.of(p);
     }
     return r;
+}
+
+/// addTag, removeTag, clearTags or hasTag on the tags of a sketch or one of its entities, which change
+/// where they are: `self` given back (or the answer of hasTag).
+private Value changeTags(Interp it, ref string[] tags, string name, ref Args x, string what, Value self)
+{
+    import hackerscad.lang.builtins : tagNames, tagName, tagUnion, tagHint;
+    import std.algorithm : canFind, filter;
+    import std.array : array;
+    if (name == "clearTags")
+    {
+        tags = null;
+        return self;
+    }
+    if (name == "hasTag")
+        return Value.of(tags.canFind(tagName(x.get("tag"), x.spanOf("tag"))));
+    auto names = tagNames(x.get("tag"), x.spanOf("tag"));
+    if (name == "addTag")
+    {
+        tags = tagUnion(tags, names);
+        return self;
+    }
+    foreach (t; names)
+        if (!tags.canFind(t))
+            throw new HcadError(Code.type, format("%s is not tagged '%s'", what, t), x.spanOf("tag"), tagHint(t, tags, null));
+    tags = tags.filter!(t => !names.canFind(t)).array;
+    return self;
 }
 
 private Vec3 circumcentre(Vec3 a, Vec3 b, Vec3 c)
@@ -2259,10 +2415,36 @@ final class SketchEntityVal : ObjectVal
         }
     }
 
+    override BuiltinImpl method(string name)
+    {
+        switch (name)
+        {
+        case "addTag", "removeTag", "clearTags", "hasTag":
+            return (ref CallArgs a) {
+                // tagged, a point is a point of the profile made from the sketch, a circle or a line an axis
+                if (e.kind == EntityKind.spline && name == "addTag")
+                    throw new HcadError(Code.type, "a curve cannot be tagged yet: tag a point on it", a.span);
+                auto x = Args(owner.it, a, name, name == "clearTags" ? ["entity"] : ["entity", "tag"]);
+                if (owner.entityTags.length < owner.sk.entities.length)
+                    owner.entityTags.length = owner.sk.entities.length;
+                return changeTags(owner.it, owner.entityTags[id], name, x, "this " ~ typeName,
+                    Value.make(Kind.object_, this));
+            };
+        default:
+            return null;
+        }
+    }
+
     override bool property(string name, Span at, out Value result)
     {
         auto sk = owner.sk;
         Value len(double x) => Value.number(x, Dim.length);
+        if (name == "tags")
+        {
+            import hackerscad.lang.builtins : tagList;
+            result = tagList(id < owner.entityTags.length ? owner.entityTags[id] : null);
+            return true;
+        }
         Value point(size_t p) => owner.entity(p);
         Value vec2(Vec3 v) => Value.vector(v, 2, Dim.length);
         final switch (e.kind)

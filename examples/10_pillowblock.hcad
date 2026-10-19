@@ -94,7 +94,11 @@ Profile uprightSketch()
     auto tl = s.point(-topRadius, axisHeight + 4.mm);
 
     auto bottom = s.line(bl, br);
-    auto right = s.line(br, tr);
+
+    // the right flank and the shaft's centre named: the face swept
+    // from the line, and the point, keep the names in the block
+    auto right = s.line(br, tr).addTag("flank");
+    centre.addTag("shaft");
     auto top = s.arc(centre, tr, tl);
     auto left = s.line(tl, bl);
 
@@ -173,13 +177,10 @@ Solid pillowBlock()
     auto face = faces.from(upright)
         .filter(f => f.normal.y < -0.99);
     block = block.cut(seatSketch(),
-        on: block.frame(face,
-            origin: vec(0, 0, footHeight + axisHeight)),
+        on: block.frame(face, origin: block.point("shaft")),
         depth: bearingWidth + 0.2.mm);
 
     // 5. on the right flank, leaning: the label
-    auto flank = faces.from(upright)
-        .farthest(X);
     return block.cut(labelSketch(),
-        on: block.frame(flank), depth: 0.6.mm);
+        on: block.frame(faces.tagged("flank")), depth: 0.6.mm);
 }

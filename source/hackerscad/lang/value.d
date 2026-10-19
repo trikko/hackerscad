@@ -937,6 +937,25 @@ abstract class ObjectVal
     string[] memberNames() => null;
 }
 
+/// What a reference tagged on a solid is: where it reads as a point, an axis, a plane or a frame.
+enum AnchorKind : ubyte
+{
+    point,
+    axis,
+    plane,
+    frame,
+}
+
+/// A point, axis, plane or frame tagged on a solid (b.addTag("pivot", at: …), a sketch's point): it
+/// moves, turns and mirrors with the solid, in the solid's coordinates (a profile drawn on a face, in
+/// the face's). An axis is `o` along `z`, a plane `o` facing `z`.
+struct Anchor
+{
+    string tag;
+    AnchorKind kind;
+    Vec3 o, x = Vec3(1, 0, 0), y = Vec3(0, 1, 0), z = Vec3(0, 0, 1);
+}
+
 final class SolidVal
 {
     Brep brep;
@@ -944,6 +963,10 @@ final class SolidVal
     bool hasColor;
     Span origin;
     uint[] creators;   /// per face: the feature that created it (Interp.features), 0 if unknown
+    string[] tags;     /// the solid's own tags (addTag), not its faces'
+    string[][] faceTags;   /// per face, its tags (empty: none); handed on to the faces made from it
+    Anchor[] anchors;  /// the points, axes, planes and frames tagged on it
+    string[][] edgeTags;   /// a profile's, per edge: from its sketch's lines and circles, for the faces swept from them
     /// a surface lofted through closed paths: the paths and ruled, for thicken to fall back on
     Brep[] loftPaths;
     bool loftRuled;
@@ -967,6 +990,7 @@ struct SelectCtx
     const(EdgeInfo)[] edges;
     const(FaceInfo)[] faces;
     const(uint)[] creators;        /// per face (empty if unknown)
+    const(string[])[] faceTags;    /// per face (empty if none has any)
     const(int[2])[] edgeFaces;     /// per edge
     int[] delegate(SelectorVal) resolve;   /// nested selector on the same solid
     /// per face, the share of its area that overhangs more than `angle` (radians)
@@ -984,6 +1008,10 @@ final class SelectorVal
     /// filters applied in order: callable predicates and builtin tests
     Value[] predicates;
     SelectTest[] tests;
+    /// the solid it was taken from (b.faces.top), null for a selector on its own (faces.top)
+    SolidVal of;
+    /// the tags it looks for (faces.tagged): what an error lists when none matches
+    string[] tagged;
 }
 
 final class EdgeVal
