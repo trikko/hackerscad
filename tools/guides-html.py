@@ -26,8 +26,9 @@ for title,slug,desc in entries:
     # the pictures as files beside the page, loaded as they come into view
     h=re.sub(r'<img ([^>]*)src="(img/[^"]+)"',r'<img loading="lazy" \1src="\2"',h)
     h=re.sub(r'href="(\w+)\.md"',lambda m: f'href="#{m.group(1)}"',h)
+    h=h.replace('href="../TUTORIAL.md"','href="tutorial.html"').replace('href="TUTORIAL.md"','href="tutorial.html"')
+    h=re.sub(r'href="\.\./tutorial/([\w-]+)\.md"',r'href="tutorial.html#\1"',h)
     h=re.sub(r'href="\.\./(\w+)\.md"',r'href="https://github.com/trikko/hackerscad/blob/main/docs/\1.md"',h)
-    h=h.replace('href="TUTORIAL.md"','href="https://github.com/trikko/hackerscad/blob/main/docs/TUTORIAL.md"')
     hd=f'<div class="head" style="background-image:url({heads[slug]})"></div>' if slug in heads else ''
     h=h.replace('</h1>','</h1>'+hd,1)
     secs.append(f'<section id="{slug}" class="guide">{h}<p class="top"><a href="#index">↑ index</a></p></section>')
@@ -60,7 +61,49 @@ pre{{background:#f3f6fa;border:1px solid var(--line);border-left:4px solid var(-
 {css_code}
 </style></head><body>
 <nav><div class="brand">{logo}<span>hackerscad guides</span></div><ol>{''.join(nav)}</ol></nav>
-<main><header class="hero" id="index"><h1>Guides</h1><p>One page for each topic: what it does, shown on examples, every parameter, the usual mistakes and where it is in the application.</p></header>
+<main><header class="hero" id="index"><h1>Guides</h1><p>One page for each topic: what it does, shown on examples, every parameter, the usual mistakes and where it is in the application. New to hackerscad? Start with the <a href="tutorial.html">tutorial</a>.</p></header>
 <div class="cards">{cards}</div>{''.join(secs)}</main></body></html>'''
 import shutil; os.makedirs(os.path.join(base,'build','guides-site'),exist_ok=True); shutil.copytree(os.path.join(root,'guides','img'),os.path.join(base,'build','guides-site','img'),dirs_exist_ok=True); open(os.path.join(base,'build','guides-site','index.html'),'w').write(page)
 print(len(page)//1024,'KB')
+
+# ---- the tutorial, a page of its own beside the guides: tutorial.html, its pictures in tutorial-img/
+GH='https://github.com/trikko/hackerscad/blob/main/'
+tidx=open(f'{root}/TUTORIAL.md').read()
+chapters=re.findall(r'^\d+\. \[(.+?)\]\(tutorial/([\w-]+)\.md\)', tidx, re.M)
+slugs={c[1] for c in chapters}
+def tutorial_links(h):
+    # pictures beside the page; a chapter an anchor of this page, a guide one of the guides' page, the rest on GitHub
+    h=re.sub(r'<img ([^>]*)src="(?:tutorial/)?img/', r'<img loading="lazy" \1src="tutorial-img/', h)
+    h=re.sub(r'href="([\w-]+)\.md(#[\w-]*)?"', lambda m: f'href="#{m.group(1)}"' if m.group(1) in slugs else m.group(0), h)
+    h=re.sub(r'href="tutorial/([\w-]+)\.md"', r'href="#\1"', h)
+    h=h.replace('href="../TUTORIAL.md"','href="#index"').replace('href="TUTORIAL.md"','href="#index"')
+    h=h.replace('href="../GUIDES.md"','href="index.html"').replace('href="GUIDES.md"','href="index.html"')
+    h=re.sub(r'href="(?:\.\./)?guides/(\w+)\.md"', r'href="index.html#\1"', h)
+    h=re.sub(r'href="\.\./\.\./([^"]+)"', lambda m: f'href="{GH}{m.group(1)}"', h)
+    h=re.sub(r'href="\.\./([\w./-]+)"', lambda m: f'href="{GH}docs/{m.group(1)}"', h)
+    h=re.sub(r'href="([\w-]+\.(?:hcad|svg))"', lambda m: f'href="{GH}docs/tutorial/{m.group(1)}"', h)
+    h=re.sub(r'href="([A-Z][A-Z_]*\.md(?:#[\w-]*)?)"', lambda m: f'href="{GH}docs/{m.group(1)}"', h)
+    return h
+def md_html(t, prefix):
+    md=markdown.Markdown(extensions=ext, extension_configs={'codehilite':{'guess_lang':False,'css_class':'codehilite'},'toc':{'slugify':lambda v,s: prefix+'-'+re.sub(r'[^a-z0-9]+','-',v.lower()).strip('-')}})
+    return md.convert(t)
+intro=tidx[:tidx.index('## The pages')]
+intro=re.sub(r'^# .*\n','',intro)
+tsecs=[]; tnav=[]
+for title,slug in chapters:
+    t=open(f'{root}/tutorial/{slug}.md').read()
+    # the links to the chapters before and after, at the top and bottom of each: the page scrolls on instead
+    t='\n'.join(l for l in t.split('\n') if not l.startswith('[\u2190') and not (l.startswith('[') and '\u2192' in l and 'Contents' in l))
+    h=tutorial_links(md_html(t, slug))
+    tsecs.append(f'<section id="{slug}" class="guide">{h}<p class="top"><a href="#index">\u2191 contents</a></p></section>')
+    tnav.append(f'<li><a href="#{slug}">{html.escape(title)}</a></li>')
+contents=tutorial_links(md_html(tidx[tidx.index('## The pages'):], 'contents'))
+css=page[page.index('<style>'):page.index('</style>')+8]
+tpage=f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hackerscad \u2014 Tutorial</title>{css}</head><body>
+<nav><div class="brand">{logo}<span>hackerscad tutorial</span></div><ol>{''.join(tnav)}</ol><p style="margin-top:18px"><a href="index.html">Guides \u2192</a></p></nav>
+<main><header class="hero" id="index"><h1>Tutorial</h1>{tutorial_links(md_html(intro, 'intro'))}<p>The topics in depth: the <a href="index.html">guides</a>.</p></header>
+<section class="guide">{contents}</section>{''.join(tsecs)}</main></body></html>'''
+shutil.copytree(os.path.join(root,'tutorial','img'),os.path.join(base,'build','guides-site','tutorial-img'),dirs_exist_ok=True)
+open(os.path.join(base,'build','guides-site','tutorial.html'),'w').write(tpage)
+print(len(tpage)//1024,'KB tutorial')
