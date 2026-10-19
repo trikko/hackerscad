@@ -130,6 +130,11 @@
 #include <GCPnts_UniformAbscissa.hxx>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <TColStd_Array2OfReal.hxx>
+#include <NCollection_DataMap.hxx>
+#include <set>
+#include <OSD_Parallel.hxx>
 #include <cmath>
 #include <LocOpe_DPrism.hxx>
 #include <BRepOffsetAPI_DraftAngle.hxx>
@@ -162,6 +167,7 @@
 #include <Geom_TrimmedCurve.hxx>
 #include <Geom_OffsetCurve.hxx>
 #include <GeomConvert_ApproxCurve.hxx>
+#include <GeomConvert_ApproxSurface.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <Precision.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
@@ -222,6 +228,37 @@ static R guarded(R fail, F f)
 struct Origin {
     int input, index;
 };
+// HCAD_TIMING set: how long the parts of the slow operations take, on stderr (to find where to speed up)
+struct Stage {
+    const char *name;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    static bool on()
+    {
+        static const bool timing = getenv("HCAD_TIMING") != nullptr;
+        return timing;
+    }
+    explicit Stage(const char *n) : name(n) {}
+    ~Stage()
+    {
+        if (on())
+            fprintf(stderr, "[timing] %s %.1f ms\n", name,
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+};
+
+// HCAD_TIMING: the time since the previous lap, at each lap
+struct Laps {
+    std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+    void lap(const char *name)
+    {
+        if (!Stage::on())
+            return;
+        const auto now = std::chrono::steady_clock::now();
+        fprintf(stderr, "[timing]   %s %.1f ms\n", name, std::chrono::duration<double, std::milli>(now - last).count());
+        last = now;
+    }
+};
+
 static thread_local std::vector<Origin> g_history;
 // faces made of more than one face (two merged into one, the face two operands share): the
 // origins besides the first, by result face (its index from 0)
@@ -2022,28 +2059,49 @@ hc_shape *hc_cut_all(const hc_shape *a, const hc_shape *const *tools, int n)
 hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, int n, const hc_shape *region,
                    int mode, double minArea)
 {
+    Stage stage("tiles");
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
-        std::vector<TopoDS_Face> rfaces;
+        // the region's faces, each with a classifier in its own parameters made once (one made for every
+        // point took most of the time of a knurl's thousands of cells) and its box, to skip it at once
+        struct Area {
+            TopoDS_Face face;
+            Handle(Geom_Surface) surf;
+            std::unique_ptr<BRepTopAdaptor_FClass2d> in;
+            Bnd_Box box;
+        };
+        std::vector<Area> rfaces;
         if (region)
-            rfaces = faces_of(region->shape);
+            for (const TopoDS_Face &f : faces_of(region->shape)) {
+                Area a;
+                a.face = f;
+                a.surf = BRep_Tool::Surface(f);
+                a.in = std::make_unique<BRepTopAdaptor_FClass2d>(f, 1e-6);
+                BRepBndLib::Add(f, a.box);
+                a.box.Enlarge(1e-6);
+                rfaces.push_back(std::move(a));
+            }
         auto inside = [&](const gp_Pnt &p) {
-            for (const TopoDS_Face &f : rfaces) {
-                BRepClass_FaceClassifier c(f, p, 1e-6);
-                if (c.State() == TopAbs_IN)
+            for (const Area &a : rfaces) {
+                if (a.box.IsOut(p))
+                    continue;
+                GeomAPI_ProjectPointOnSurf on(p, a.surf);
+                if (on.NbPoints() == 0 || on.LowerDistance() > 1e-6)
+                    continue;
+                double u, v;
+                on.LowerDistanceParameters(u, v);
+                if (a.in->Perform(gp_Pnt2d(u, v)) == TopAbs_IN)
                     return true;
             }
             return false;
         };
-        // whether every point sampled round the face's edges lies inside the region
-        auto whollyInside = [&](const TopoDS_Shape &t) {
-            for (TopExp_Explorer e(t, TopAbs_EDGE); e.More(); e.Next()) {
+        // each motif's points round its edges (four an edge), sampled once
+        std::vector<std::vector<gp_Pnt>> samples(nm);
+        for (int m = 0; m < nm; m++)
+            for (TopExp_Explorer e(motifs[m]->shape, TopAbs_EDGE); e.More(); e.Next()) {
                 BRepAdaptor_Curve c(TopoDS::Edge(e.Current()));
                 for (int k = 0; k < 4; k++)
-                    if (!inside(c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * k / 4)))
-                        return false;
+                    samples[m].push_back(c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * k / 4));
             }
-            return true;
-        };
         std::vector<TopoDS_Shape> kept, border;
         for (int i = 0; i < n; i++) {
             const int m = (int)place[4 * i];
@@ -2053,12 +2111,22 @@ hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, i
             if (std::abs(place[4 * i + 3] - 1) > 1e-12)
                 sc.SetScale(gp_Pnt(0, 0, 0), place[4 * i + 3]);
             mv.SetTranslation(gp_Vec(place[4 * i + 1], place[4 * i + 2], 0));
-            const TopoDS_Shape t = BRepBuilderAPI_Transform(motifs[m]->shape, mv * sc, true).Shape();
-            if (mode == 0 || whollyInside(t))
-                kept.push_back(t);
-            else if (mode == 1)
-                border.push_back(t);
+            const gp_Trsf tr = mv * sc;
+            // whether every point sampled round its edges lies inside the region
+            bool whole = true;
+            if (mode != 0)
+                for (const gp_Pnt &q : samples[m])
+                    if (!inside(q.Transformed(tr))) {
+                        whole = false;
+                        break;
+                    }
+            if (!whole && mode != 1)
+                continue;
+            const TopoDS_Shape t = BRepBuilderAPI_Transform(motifs[m]->shape, tr, true).Shape();
+            (whole ? kept : border).push_back(t);
         }
+        Laps laps;
+        laps.lap("tiles: placed and sorted");
         if (!border.empty()) {
             BRepAlgoAPI_Common mk;
             TopTools_ListOfShape args, tools;
@@ -2079,6 +2147,7 @@ hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, i
                     kept.push_back(f);
             }
         }
+        laps.lap("tiles: border cells cut");
         if (kept.empty()) {
             set_error("no tile lies in the region (are the tiles larger than it?)");
             return nullptr;
@@ -2526,6 +2595,294 @@ struct WrapAsk {
     std::vector<int> *outside = nullptr;
     bool *classified = nullptr;
 };
+
+// The walls between the edges `top` (a loop, in order, on one face) and `bottom` (the same loop on
+// another), each a ruled face between an edge of one and its partner, the straight edges between them
+// (the rulings) made once and shared by the two walls they part: the walls come out joined to each other
+// and to the loops' faces, with nothing to sew. Each pair of curves is made into B-splines alike (degree,
+// knots: their parameters kept), the ruled surface's rows their poles, so a wall's edges lie exactly on
+// it (lines in its parameters). False, with nothing made, where that does not hold (rational curves,
+// curves of other parameters): then BRepFill::Face and sewing as before.
+static bool ruled_walls(const std::vector<TopoDS_Edge> &top, const std::vector<TopoDS_Edge> &bottom,
+                        std::vector<TopoDS_Shape> &out)
+{
+    const size_t n = top.size();
+    if (n == 0 || bottom.size() != n)
+        return false;
+    const double tol = 1e-7;
+    struct Pair {
+        Handle(Geom_BSplineCurve) t, b;
+        double f, l;
+    };
+    std::vector<Pair> pairs;
+    std::vector<TopoDS_Vertex> tv(n), bv(n);
+    for (size_t j = 0; j < n; j++) {
+        TopLoc_Location lt, lb;
+        double f, l, fb, lb_;
+        Handle(Geom_Curve) ct = BRep_Tool::Curve(top[j], lt, f, l), cb = BRep_Tool::Curve(bottom[j], lb, fb, lb_);
+        if (ct.IsNull() || cb.IsNull() || !lt.IsIdentity() || !lb.IsIdentity() || std::abs(f - fb) > 1e-9
+            || std::abs(l - lb_) > 1e-9 || !(l > f))
+            return false;
+        Handle(Geom_BSplineCurve) t = Handle(Geom_BSplineCurve)::DownCast(ct->Copy());
+        Handle(Geom_BSplineCurve) b = Handle(Geom_BSplineCurve)::DownCast(cb->Copy());
+        if (t.IsNull() || b.IsNull() || t->IsRational() != b->IsRational() || t->IsPeriodic() || b->IsPeriodic())
+            return false;
+        if (t->FirstParameter() > f + 1e-12 || t->LastParameter() < l - 1e-12 || b->FirstParameter() > f + 1e-12
+            || b->LastParameter() < l - 1e-12)
+            return false;
+        if (t->FirstParameter() < f - 1e-12 || t->LastParameter() > l + 1e-12)
+            t->Segment(f, l);
+        if (b->FirstParameter() < f - 1e-12 || b->LastParameter() > l + 1e-12)
+            b->Segment(f, l);
+        // alike: the higher degree, every knot of either
+        const int deg = std::max(t->Degree(), b->Degree());
+        t->IncreaseDegree(deg);
+        b->IncreaseDegree(deg);
+        for (int pass = 0; pass < 2; pass++) {
+            Handle(Geom_BSplineCurve) from = pass ? b : t, to = pass ? t : b;
+            for (int k = 1; k <= from->NbKnots(); k++)
+                to->InsertKnot(from->Knot(k), from->Multiplicity(k), 1e-12);
+        }
+        if (t->NbPoles() != b->NbPoles() || t->NbKnots() != b->NbKnots())
+            return false;
+        // rational (arcs: the same angle on two radii), only with the same weights: the wall's rulings then
+        // straight and even
+        if (t->IsRational())
+            for (int k = 1; k <= t->NbPoles(); k++)
+                if (std::abs(t->Weight(k) - b->Weight(k)) > 1e-12 * std::abs(t->Weight(k)))
+                    return false;
+        // the loop's corners: the end of one edge the start of the next, on both loops
+        TopoDS_Vertex t0, t1, b0, b1;
+        TopExp::Vertices(TopoDS::Edge(top[j].Oriented(TopAbs_FORWARD)), t0, t1);
+        TopExp::Vertices(TopoDS::Edge(bottom[j].Oriented(TopAbs_FORWARD)), b0, b1);
+        tv[j] = t0;
+        bv[j] = b0;
+        pairs.push_back({t, b, f, l});
+    }
+    for (size_t j = 0; j < n; j++) {
+        TopoDS_Vertex t0, t1, b0, b1;
+        TopExp::Vertices(TopoDS::Edge(top[j].Oriented(TopAbs_FORWARD)), t0, t1);
+        TopExp::Vertices(TopoDS::Edge(bottom[j].Oriented(TopAbs_FORWARD)), b0, b1);
+        if (!t1.IsSame(tv[(j + 1) % n]) || !b1.IsSame(bv[(j + 1) % n]))
+            return false;
+    }
+    BRep_Builder B;
+    // the rulings, from each corner of the top loop straight to its partner below, over [0, 1]
+    std::vector<TopoDS_Edge> ruling(n);
+    for (size_t j = 0; j < n; j++) {
+        const gp_Pnt P = BRep_Tool::Pnt(tv[j]), Q = BRep_Tool::Pnt(bv[j]);
+        if (P.Distance(Q) < 1e-9)
+            return false;
+        TColgp_Array1OfPnt poles(1, 2);
+        poles(1) = P;
+        poles(2) = Q;
+        TColStd_Array1OfReal knots(1, 2);
+        knots(1) = 0;
+        knots(2) = 1;
+        TColStd_Array1OfInteger mults(1, 2);
+        mults(1) = mults(2) = 2;
+        B.MakeEdge(ruling[j], new Geom_BSplineCurve(poles, knots, mults, 1), tol);
+        B.Add(ruling[j], TopoDS::Vertex(tv[j].Oriented(TopAbs_FORWARD)));
+        B.Add(ruling[j], TopoDS::Vertex(bv[j].Oriented(TopAbs_REVERSED)));
+        B.Range(ruling[j], 0, 1);
+    }
+    for (size_t j = 0; j < n; j++) {
+        const Pair &p = pairs[j];
+        const int nu = p.t->NbPoles();
+        TColgp_Array2OfPnt poles(1, nu, 1, 2);
+        for (int i = 1; i <= nu; i++) {
+            poles(i, 1) = p.t->Pole(i);
+            poles(i, 2) = p.b->Pole(i);
+        }
+        TColStd_Array1OfReal uk(1, p.t->NbKnots()), vk(1, 2);
+        TColStd_Array1OfInteger um(1, p.t->NbKnots()), vm(1, 2);
+        p.t->Knots(uk);
+        p.t->Multiplicities(um);
+        vk(1) = 0;
+        vk(2) = 1;
+        vm(1) = vm(2) = 2;
+        Handle(Geom_BSplineSurface) wall;
+        if (p.t->IsRational()) {
+            TColStd_Array2OfReal weights(1, nu, 1, 2);
+            for (int i = 1; i <= nu; i++)
+                weights(i, 1) = weights(i, 2) = p.t->Weight(i);
+            wall = new Geom_BSplineSurface(poles, weights, uk, vk, um, vm, p.t->Degree(), 1);
+        } else
+            wall = new Geom_BSplineSurface(poles, uk, vk, um, vm, p.t->Degree(), 1);
+        TopoDS_Face F;
+        B.MakeFace(F, wall, tol);
+        // the edges on it: the loops' along v = 0 and v = 1, the rulings along u = f and u = l
+        B.UpdateEdge(top[j], new Geom2d_Line(gp_Pnt2d(0, 0), gp_Dir2d(1, 0)), F, tol);
+        B.UpdateEdge(bottom[j], new Geom2d_Line(gp_Pnt2d(0, 1), gp_Dir2d(1, 0)), F, tol);
+        const TopoDS_Edge &r0 = ruling[j], &r1 = ruling[(j + 1) % n];
+        B.UpdateEdge(r0, new Geom2d_Line(gp_Pnt2d(p.f, 0), gp_Dir2d(0, 1)), F, tol);
+        B.UpdateEdge(r1, new Geom2d_Line(gp_Pnt2d(p.l, 0), gp_Dir2d(0, 1)), F, tol);
+        TopoDS_Wire W;
+        B.MakeWire(W);
+        B.Add(W, top[j].Oriented(TopAbs_FORWARD));
+        B.Add(W, r1.Oriented(TopAbs_FORWARD));
+        B.Add(W, bottom[j].Oriented(TopAbs_REVERSED));
+        B.Add(W, r0.Oriented(TopAbs_REVERSED));
+        W.Closed(Standard_True);
+        B.Add(F, W);
+        out.push_back(F);
+    }
+    for (auto &r : ruling) {
+        B.SameParameter(r, Standard_True);
+        B.SameRange(r, Standard_True);
+    }
+    return true;
+}
+
+// The piece of `surf` round the parameters `box` (a little more), when `surf` is a B-spline of many knots (a
+// lofted face) or an offset of one: a segment of it, with the same parameters and a few knots (of an offset, the
+// offset of that piece); null otherwise. OpenCascade, building a curve on a surface, first finds every crossing of
+// the curve with the surface's knot lines, most of a knurl's time on such a face; on the piece, a moment.
+static Handle(Geom_Surface) piece_of(const Handle(Geom_Surface) &surf, const Bnd_Box2d &box)
+{
+    Handle(Geom_BSplineSurface) bs = Handle(Geom_BSplineSurface)::DownCast(surf);
+    Handle(Geom_OffsetSurface) os = Handle(Geom_OffsetSurface)::DownCast(surf);
+    if (os)
+        bs = Handle(Geom_BSplineSurface)::DownCast(os->BasisSurface());
+    if (bs.IsNull() || bs->NbUKnots() * bs->NbVKnots() < 64 || box.IsVoid() || getenv("HCAD_WRAP_WHOLE"))
+        return nullptr;
+    double u0, v0, u1, v1;
+    box.Get(u0, v0, u1, v1);
+    double su0, su1, sv0, sv1;
+    bs->Bounds(su0, su1, sv0, sv1);
+    const double mu = 0.1 * (u1 - u0) + 1e-6 * (su1 - su0), mv = 0.1 * (v1 - v0) + 1e-6 * (sv1 - sv0);
+    u0 = std::max(su0, u0 - mu);
+    u1 = std::min(su1, u1 + mu);
+    v0 = std::max(sv0, v0 - mv);
+    v1 = std::min(sv1, v1 + mv);
+    try {
+        // the poles round the piece only, not the whole surface's copied for each
+        Handle(Geom_BSplineSurface) piece = Handle(Geom_BSplineSurface)::DownCast(bs->Copy());
+        piece->Segment(u0, u1, v0, v1);
+        if (os)
+            return new Geom_OffsetSurface(piece, os->Offset());
+        return piece;
+    } catch (const Standard_Failure &) {
+        return nullptr;
+    }
+}
+
+// An edge along `c` on `surf`, its 3D curve built to 1e-7 on `local` (the piece of `surf` round it, piece_of)
+// when there is one, the edge then given that curve and `c` on `surf`.
+static TopoDS_Edge edge_on_surface(const Handle(Geom2d_Curve) &c, const Handle(Geom_Surface) &surf,
+                                   const Handle(Geom_Surface) &local = nullptr)
+{
+    if (local.IsNull()) {
+        TopoDS_Edge e = BRepBuilderAPI_MakeEdge(c, surf).Edge();
+        BRepLib::BuildCurves3d(e, 1e-7);
+        return e;
+    }
+    TopoDS_Edge onPiece = BRepBuilderAPI_MakeEdge(c, local).Edge();
+    BRepLib::BuildCurves3d(onPiece, 1e-7);
+    double f, l;
+    Handle(Geom_Curve) c3 = BRep_Tool::Curve(onPiece, f, l);
+    if (c3.IsNull())
+        return edge_on_surface(c, surf);
+    // the same edge, its curve on the whole surface instead of the piece's
+    const double tol = BRep_Tool::Tolerance(onPiece);
+    TopoDS_Vertex v0, v1;
+    TopExp::Vertices(onPiece, v0, v1);
+    BRep_Builder B;
+    TopoDS_Edge e;
+    B.MakeEdge(e, c3, tol);
+    B.UpdateEdge(e, c, surf, TopLoc_Location(), tol);
+    // and on the piece too, for faces made on the piece (a floor, the piece a hole takes, quicker to integrate)
+    B.UpdateEdge(e, c, local, TopLoc_Location(), tol);
+    B.Add(e, v0);
+    B.Add(e, v1);
+    B.Range(e, f, l);
+    B.SameParameter(e, Standard_True);
+    B.SameRange(e, Standard_True);
+    return e;
+}
+
+// Whether no two of the closed outlines `polys` (points in a plane, in order) meet: neither crosses the other,
+// nor lies inside it. Only pairs whose boxes overlap are looked at, found through a grid of the boxes.
+static bool outlines_apart(const std::vector<std::vector<gp_Pnt2d>> &polys)
+{
+    const size_t n = polys.size();
+    if (n < 2)
+        return true;
+    std::vector<Bnd_Box2d> boxes(n);
+    Bnd_Box2d all;
+    for (size_t i = 0; i < n; i++) {
+        for (auto &p : polys[i])
+            boxes[i].Add(p);
+        all.Add(boxes[i]);
+    }
+    double x0, y0, x1, y1;
+    all.Get(x0, y0, x1, y1);
+    const int g = std::max(1, (int)std::sqrt((double)n));
+    const double cw = (x1 - x0) / g + 1e-12, ch = (y1 - y0) / g + 1e-12;
+    std::vector<std::vector<size_t>> cells(g * g);
+    auto cellsOf = [&](size_t i, auto &&f) {
+        double a0, b0, a1, b1;
+        boxes[i].Get(a0, b0, a1, b1);
+        const int i0 = std::clamp((int)((a0 - x0) / cw), 0, g - 1), i1 = std::clamp((int)((a1 - x0) / cw), 0, g - 1);
+        const int j0 = std::clamp((int)((b0 - y0) / ch), 0, g - 1), j1 = std::clamp((int)((b1 - y0) / ch), 0, g - 1);
+        for (int a = i0; a <= i1; a++)
+            for (int b = j0; b <= j1; b++)
+                f(a * g + b);
+    };
+    for (size_t i = 0; i < n; i++)
+        cellsOf(i, [&](int c) { cells[c].push_back(i); });
+    auto side = [](const gp_Pnt2d &a, const gp_Pnt2d &b, const gp_Pnt2d &c) {
+        return (b.X() - a.X()) * (c.Y() - a.Y()) - (b.Y() - a.Y()) * (c.X() - a.X());
+    };
+    auto inside = [](const gp_Pnt2d &p, const std::vector<gp_Pnt2d> &poly) {
+        bool in = false;
+        for (size_t k = 0, m = poly.size(); k < m; k++) {
+            const gp_Pnt2d &a = poly[k], &b = poly[(k + 1) % m];
+            if ((a.Y() > p.Y()) != (b.Y() > p.Y()) && p.X() < a.X() + (b.X() - a.X()) * (p.Y() - a.Y()) / (b.Y() - a.Y()))
+                in = !in;
+        }
+        return in;
+    };
+    auto meet = [&](size_t i, size_t j) {
+        const auto &A = polys[i], &B = polys[j];
+        for (size_t a = 0; a < A.size(); a++) {
+            const gp_Pnt2d &p = A[a], &q = A[(a + 1) % A.size()];
+            for (size_t b = 0; b < B.size(); b++) {
+                const gp_Pnt2d &r = B[b], &t = B[(b + 1) % B.size()];
+                // crossing, or touching: an end on the other segment (two on one line apart do not meet)
+                const double d1 = side(p, q, r), d2 = side(p, q, t), d3 = side(r, t, p), d4 = side(r, t, q);
+                if (d1 * d2 < 0 && d3 * d4 < 0)
+                    return true;
+                auto on = [](const gp_Pnt2d &a, const gp_Pnt2d &b, const gp_Pnt2d &c, double d) {
+                    return std::abs(d) <= 1e-12 * (1 + a.SquareDistance(b)) && c.X() >= std::min(a.X(), b.X())
+                        && c.X() <= std::max(a.X(), b.X()) && c.Y() >= std::min(a.Y(), b.Y()) && c.Y() <= std::max(a.Y(), b.Y());
+                };
+                if (on(p, q, r, d1) || on(p, q, t, d2) || on(r, t, p, d3) || on(r, t, q, d4))
+                    return true;
+            }
+        }
+        return inside(A[0], B) || inside(B[0], A);
+    };
+    std::set<std::pair<size_t, size_t>> seen;
+    for (auto &c : cells)
+        for (size_t a = 0; a < c.size(); a++)
+            for (size_t b = a + 1; b < c.size(); b++) {
+                const size_t i = std::min(c[a], c[b]), j = std::max(c[a], c[b]);
+                if (boxes[i].IsOut(boxes[j]) || !seen.insert({i, j}).second)
+                    continue;
+                if (meet(i, j)) {
+                    if (getenv("HCAD_WRAP_DEBUG")) {
+                        double a0, b0, a1, b1, c0, d0, c1, d1;
+                        boxes[i].Get(a0, b0, a1, b1);
+                        boxes[j].Get(c0, d0, c1, d1);
+                        fprintf(stderr, "wrap: holes %zu [%g %g, %g %g] and %zu [%g %g, %g %g] meet\n", i, a0, b0, a1, b1, j,
+                                c0, d0, c1, d1);
+                    }
+                    return false;
+                }
+            }
+    return true;
+}
 
 static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
                            const double *dir, double inner, double outer, bool direct, WrapAsk ask = WrapAsk())
@@ -2997,16 +3354,26 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
         };
         // a loop as a wire of edges on `surf`, its curves moved by `du` along u first
         auto wireOn = [&](const std::vector<Handle(Geom2d_Curve)> &loop, const Handle(Geom_Surface) &surf, double du,
-                          std::vector<TopoDS_Edge> *edges) {
+                          std::vector<TopoDS_Edge> *edges, Handle(Geom_Surface) *usedPiece = nullptr) {
             BRepBuilderAPI_MakeWire mw;
+            // the loop's curves, moved; the piece of the surface round them, made once for all of them
+            std::vector<Handle(Geom2d_Curve)> moved;
+            Bnd_Box2d box;
             for (auto &c2 : loop) {
                 Handle(Geom2d_Curve) c = c2;
                 if (du != 0) {
                     c = Handle(Geom2d_Curve)::DownCast(c2->Copy());
                     c->Translate(gp_Vec2d(du, 0));
                 }
-                TopoDS_Edge e = BRepBuilderAPI_MakeEdge(c, surf).Edge();
-                BRepLib::BuildCurves3d(e, 1e-7);
+                moved.push_back(c);
+                for (int k = 0; k <= 8; k++)
+                    box.Add(c->Value(c->FirstParameter() + (c->LastParameter() - c->FirstParameter()) * k / 8));
+            }
+            const Handle(Geom_Surface) local = piece_of(surf, box);
+            if (usedPiece)
+                *usedPiece = local;
+            for (auto &c : moved) {
+                TopoDS_Edge e = edge_on_surface(c, surf, local);
                 mw.Add(e);
                 if (!mw.IsDone())
                     throw Standard_Failure("the profile's outline does not close on the face");
@@ -3022,6 +3389,7 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             // along the normal (in for a pocket, out for a relief), the sides between, sewn to the
             // rest of the solid. Only for a region wholly inside the face; anything else, the caller
             // takes the boolean way
+            Laps laps;
             if (!faceLoc.IsIdentity())
                 throw Standard_Failure("direct: the face is placed by a location");
             int solids = 0;
@@ -3035,7 +3403,17 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             // what the segment from the face out to a floor crosses (built once: a classifier searched
             // the whole solid again for each point)
             IntCurvesFace_ShapeIntersector crossing;
-            crossing.Load(s->shape, 1e-7);
+            // (every face but the one the probes start on: they leave it at once, and a curve met against a
+            // large B-spline face, there, at each of thousands of probes, took most of a knurl's time)
+            {
+                TopoDS_Compound others;
+                BRep_Builder ob;
+                ob.MakeCompound(others);
+                for (TopExp_Explorer x(s->shape, TopAbs_FACE); x.More(); x.Next())
+                    if (!x.Current().IsSame(F))
+                        ob.Add(others, x.Current());
+                crossing.Load(others, 1e-7);
+            }
             const double period = Sface->IsUPeriodic() ? Sface->UPeriod()
                                   : S->IsUPeriodic()   ? S->UPeriod()
                                                        : 0;
@@ -3147,7 +3525,12 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 holedFar.Init(TopoDS::Face(farBase.Oriented(TopAbs_FORWARD)));
             std::vector<TopoDS_Shape> extra;
             std::vector<TopoDS_Face> patches, patchesFar;
+            // the holes' outlines in the face's parameters, sampled: the holed face is sound when no two meet
+            std::vector<std::vector<gp_Pnt2d>> holeOutlines;
             bool cellsShared = true;   // each region's faces sewn on their own, keeping the holes' edges
+            // the faces of each cell made joined (ruled walls), where they lie in `extra`
+            std::vector<std::pair<size_t, size_t>> joinedCells;
+            bool allJoined = true;
             double expected = 0;
             const auto regionFaces = faces_of(profile->shape);
             int regionIndex = -1;
@@ -3224,13 +3607,38 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 // all made of these edges, shared already, not left for the sewing to find and merge
                 std::vector<std::vector<TopoDS_Edge>> top(loops.size()), bottom(loops.size());
                 std::vector<TopoDS_Wire> topWires;
+                Handle(Geom_Surface) topPiece;
                 for (size_t i = 0; i < loops.size(); i++)
-                    topWires.push_back(wireOn(loops[i], holeSurf, du, &top[i]));
+                    topWires.push_back(wireOn(loops[i], holeSurf, du, &top[i], i == 0 ? &topPiece : nullptr));
                 // a sliver whose outline, carried onto the face, crosses itself would break the whole
                 // face it is a hole in: checked on its own first, and left out (counted) if broken
                 {
-                    BRepBuilderAPI_MakeFace alone(holeSurf, turned_(loops[0], topWires[0], true), Standard_True);
-                    if (!alone.IsDone() || !BRepCheck_Analyzer(alone.Face()).IsValid()) {
+                    // (the check is slow: only for an outline that crosses itself in the face's parameters, where
+                    // a sliver is; one that does not is sound on the face too)
+                    auto crosses = [&](const std::vector<Handle(Geom2d_Curve)> &loop) {
+                        std::vector<gp_Pnt2d> poly;
+                        for (auto &c2 : loop)
+                            for (int k = 0; k < 16; k++)
+                                poly.push_back(c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 16));
+                        const size_t m = poly.size();
+                        auto side = [](const gp_Pnt2d &a, const gp_Pnt2d &b, const gp_Pnt2d &c) {
+                            return (b.X() - a.X()) * (c.Y() - a.Y()) - (b.Y() - a.Y()) * (c.X() - a.X());
+                        };
+                        for (size_t i = 0; i < m; i++)
+                            for (size_t j = i + 2; j < m; j++) {
+                                if (i == 0 && j == m - 1)
+                                    continue;
+                                const gp_Pnt2d &a = poly[i], &b = poly[(i + 1) % m], &c = poly[j], &d = poly[(j + 1) % m];
+                                if (side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0)
+                                    return true;
+                            }
+                        return false;
+                    };
+                    // (made on the piece of the surface round it when there is one: only for the volume and
+                    // this check, quicker to integrate there)
+                    BRepBuilderAPI_MakeFace alone(topPiece.IsNull() ? holeSurf : topPiece,
+                                                  turned_(loops[0], topWires[0], true), Standard_True);
+                    if (!alone.IsDone() || (crosses(loops[0]) && !BRepCheck_Analyzer(alone.Face()).IsValid())) {
                         g_wrap_skipped++;
                         continue;
                     }
@@ -3238,6 +3646,15 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     patches.push_back(alone.Face());
                 }
                 holed.Add(turned_(loops[0], topWires[0], false));
+                {
+                    std::vector<gp_Pnt2d> poly;
+                    for (auto &c2 : loops[0])
+                        for (int k = 0; k < 16; k++) {
+                            const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 16);
+                            poly.emplace_back(q.X() + du, q.Y());
+                        }
+                    holeOutlines.push_back(poly);
+                }
                 // the region's own faces: its islands, its floor (or the far face's islands), its walls
                 std::vector<TopoDS_Shape> cell;
                 for (size_t i = 1; i < loops.size(); i++)
@@ -3252,23 +3669,47 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     for (size_t i = 1; i < loops.size(); i++)
                         cell.push_back(BRepBuilderAPI_MakeFace(farSurf, turned_(loops[i], farWires[i], true), Standard_True).Face());
                 } else {
+                    // the floor on the piece of its surface round it, when there is one and the islands lie on it
+                    // too (one piece for the whole floor: its outline's)
                     BRepBuilderAPI_MakeFace fl;
+                    Handle(Geom_Surface) floorPiece;
+                    std::vector<TopoDS_Wire> fw;
+                    for (size_t i = 0; i < loops.size(); i++)
+                        fw.push_back(wireOn(loops[i], floorSurf, 0, &bottom[i], i == 0 ? &floorPiece : nullptr));
+                    if (loops.size() > 1)
+                        floorPiece.Nullify();
                     for (size_t i = 0; i < loops.size(); i++) {
-                        const TopoDS_Wire w = turned_(loops[i], wireOn(loops[i], floorSurf, 0, &bottom[i]), i == 0);
+                        const TopoDS_Wire w = turned_(loops[i], fw[i], i == 0);
                         if (i == 0)
-                            fl.Init(floorSurf, Standard_False, 1e-7);
+                            fl.Init(floorPiece.IsNull() ? floorSurf : floorPiece, Standard_False, 1e-7);
                         fl.Add(w);
                     }
                     cell.push_back(fl.Face());
                 }
-                for (size_t i = 0; i < loops.size(); i++)
-                    for (size_t j = 0; j < top[i].size(); j++)
-                        cell.push_back(BRepFill::Face(top[i][j], bottom[i][j]));
+                // the walls: ruled faces sharing their straight edges, joined already (HCAD_WRAP_RULED=0: the old
+                // way, to compare), or each made on its own and the cell sewn below
+                bool joined = !getenv("HCAD_WRAP_RULED") || std::string(getenv("HCAD_WRAP_RULED")) != "0";
+                std::vector<TopoDS_Shape> walls;
+                for (size_t i = 0; i < loops.size() && joined; i++)
+                    joined = ruled_walls(top[i], bottom[i], walls);
+                if (joined)
+                    for (auto &w : walls)
+                        cell.push_back(w);
+                else
+                    for (size_t i = 0; i < loops.size(); i++)
+                        for (size_t j = 0; j < top[i].size(); j++)
+                            cell.push_back(BRepFill::Face(top[i][j], bottom[i][j]));
                 // sewn among themselves (the walls side by side meet along rulings each made its own),
                 // so that the whole needs no sewing: OpenCascade's puts thousands of faces into a shell in a
                 // time that grows with the square of their number. Only if the edges the holes are made
                 // of come through as they were (else the whole is sewn as before)
-                {
+                if (joined) {
+                    const size_t first = extra.size();
+                    for (auto &f : cell)
+                        extra.push_back(f);
+                    joinedCells.push_back({first, extra.size()});
+                } else {
+                    allJoined = false;
                     BRepBuilderAPI_Sewing local(1e-5);
                     for (auto &f : cell)
                         local.Add(f);
@@ -3299,11 +3740,61 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             if (through && !holedFar.IsDone())
                 throw Standard_Failure("direct: the holes could not be made in the far face");
             const TopoDS_Face holedNear = holed.Face(), holedFarFace = through ? holedFar.Face() : TopoDS_Face();
+            // each cell's faces turned the way the holed face's edges say, from its hole's rim inwards: a wall
+            // takes the hole's edge the other way round from the holed face, the floor and the neighbouring
+            // walls theirs from the walls (ShapeFix on the whole shell, thousands of faces, took seconds)
+            bool oriented = false;
+            if (allJoined && !through && !getenv("HCAD_WRAP_SHAPEFIX")) {
+                NCollection_DataMap<TopoDS_Shape, TopAbs_Orientation, TopTools_ShapeMapHasher> fixedEdges;
+                for (TopExp_Explorer e(holedNear, TopAbs_EDGE); e.More(); e.Next())
+                    fixedEdges.Bind(e.Current(), e.Current().Orientation());
+                oriented = true;
+                for (auto &range : joinedCells) {
+                    const size_t n = range.second - range.first;
+                    std::vector<int> state(n, 0);   // 0 not yet, 1 kept, -1 turned
+                    NCollection_DataMap<TopoDS_Shape, TopAbs_Orientation, TopTools_ShapeMapHasher> known;
+                    bool progress = true;
+                    size_t done = 0;
+                    while (progress && done < n) {
+                        progress = false;
+                        for (size_t i = 0; i < n; i++) {
+                            if (state[i])
+                                continue;
+                            const TopoDS_Shape &f = extra[range.first + i];
+                            for (TopExp_Explorer e(f, TopAbs_EDGE); e.More() && !state[i]; e.Next()) {
+                                const TopAbs_Orientation *o = fixedEdges.Seek(e.Current());
+                                if (!o)
+                                    o = known.Seek(e.Current());
+                                if (!o || BRep_Tool::Degenerated(TopoDS::Edge(e.Current())))
+                                    continue;
+                                // a shared edge runs one way in one face and the other way in the other
+                                state[i] = e.Current().Orientation() == *o ? -1 : 1;
+                            }
+                            if (!state[i])
+                                continue;
+                            if (state[i] < 0)
+                                extra[range.first + i].Reverse();
+                            for (TopExp_Explorer e(extra[range.first + i], TopAbs_EDGE); e.More(); e.Next())
+                                if (!fixedEdges.IsBound(e.Current()) && !known.IsBound(e.Current()))
+                                    known.Bind(e.Current(), e.Current().Orientation());
+                            done++;
+                            progress = true;
+                        }
+                    }
+                    if (done < n) {
+                        oriented = false;
+                        break;
+                    }
+                }
+                if (getenv("HCAD_WRAP_DEBUG"))
+                    fprintf(stderr, "wrap: cells turned on their own: %s\n", oriented ? "yes" : "no");
+            }
             std::vector<TopoDS_Shape> kept;
             for (int i = 1; i <= m.Extent(); i++)
                 if (i != face + 1 && i != farFace)
                     kept.push_back(m(i));
             TopoDS_Shell shell;
+            laps.lap("direct: cells (faces, curves, probes, local sewing)");
             // the faces put together as they are, every edge already between two of them: no sewing (a band
             // all round made again on the turned surface has edges of its own round it: then it is sewn)
             bool assembled = false;
@@ -3350,9 +3841,11 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             };
             // the new faces turned all one way with the rest (made on a surface whose normal points
             // into the material, a hole's wall, they come the other way round)
-            ShapeFix_Shell orient(shell);
-            orient.FixFaceOrientation(shell);
-            shell = orient.Shell();
+            if (!(oriented && assembled)) {
+                ShapeFix_Shell orient(shell);
+                orient.FixFaceOrientation(shell);
+                shell = orient.Shell();
+            }
             TopoDS_Solid solid = BRepBuilderAPI_MakeSolid(shell).Solid();
             // which way it faces, from a face of the solid it was made from, left as it was: its normal
             // there points out of the old solid, so it must out of the new one (OrientClosedSolid finds it
@@ -3391,6 +3884,7 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 if (!decided)
                     BRepLib::OrientClosedSolid(solid);
             }
+            laps.lap("direct: assembly");
             // as it should be: closed, sound, its volume changed by about the regions' area times the depth
             // its volume face by face, and of each holed face the whole face less the pieces the holes take
             // (an integral over a face with thousands of holes takes seconds; over each small face and
@@ -3411,16 +3905,24 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                         t -= face_volume_term(TopoDS::Face(p.Oriented(TopAbs_FORWARD)), apex);
                     return in.Orientation() == TopAbs_REVERSED ? -t : t;
                 };
-                for (TopExp_Explorer x(solid, TopAbs_FACE); x.More(); x.Next()) {
-                    const TopoDS_Face f = TopoDS::Face(x.Current());
+                // each face's term on its own (on every core), then their sum in order
+                std::vector<TopoDS_Face> fs;
+                for (TopExp_Explorer x(solid, TopAbs_FACE); x.More(); x.Next())
+                    fs.push_back(TopoDS::Face(x.Current()));
+                std::vector<double> terms(fs.size(), 0.0);
+                OSD_Parallel::For(0, (int)fs.size(), [&](int i) {
+                    const TopoDS_Face &f = fs[i];
                     if (f.IsSame(nearIn))
-                        after += holedTerm(f, base, patches);
+                        terms[i] = holedTerm(f, base, patches);
                     else if (through && f.IsSame(farIn))
-                        after += holedTerm(f, farBase, patchesFar);
+                        terms[i] = holedTerm(f, farBase, patchesFar);
                     else
-                        after += face_volume_term(f, apex);
-                }
+                        terms[i] = face_volume_term(f, apex);
+                }, fs.size() < 64);
+                for (double t : terms)
+                    after += t;
             }
+            laps.lap("direct: volume");
             // (within half the expected change either way)
             const double before = quick_volume(s->shape);
             const double change = inner < 0 ? before - after : after - before;
@@ -3431,12 +3933,35 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
             for (int i = 1; i <= ef.Extent(); i++)
                 if (!BRep_Tool::Degenerated(TopoDS::Edge(ef.FindKey(i))) && ef(i).Extent() != 2)
                     throw Standard_Failure("direct: the solid is not closed");
-            if (ef.Extent() <= 10000 && !BRepCheck_Analyzer(solid).IsValid()) {
-                throw Standard_Failure("direct: the solid came out broken");
+            // sound: every face checked on its own, on every core, but the holed one, which OpenCascade checks by
+            // meeting every hole's outline with every other's (seconds with hundreds of holes): there the
+            // holes' outlines, sampled, met only with those whose boxes overlap theirs (each lies inside the
+            // face already): seconds for a knurl of thousands of cells, where checking the whole solid took
+            // hours (HCAD_WRAP_CHECK: the whole solid checked by OpenCascade, to test the direct way)
+            if (getenv("HCAD_WRAP_CHECK")) {
+                if (!BRepCheck_Analyzer(solid, true, true).IsValid())
+                    throw Standard_Failure("direct: the solid came out broken");
+            } else {
+                const TopoDS_Shape nearIn = inResult(holedNear), farIn = through ? inResult(holedFarFace) : TopoDS_Shape();
+                std::vector<TopoDS_Face> others;
+                for (TopExp_Explorer x(solid, TopAbs_FACE); x.More(); x.Next())
+                    if (!x.Current().IsSame(nearIn) && !(through && x.Current().IsSame(farIn)))
+                        others.push_back(TopoDS::Face(x.Current()));
+                std::atomic<bool> sound{true};
+                OSD_Parallel::For(0, (int)others.size(), [&](int i) {
+                    if (sound && !BRepCheck_Analyzer(others[i], true).IsValid())
+                        sound = false;
+                }, others.size() < 64);
+                const bool apart = sound && outlines_apart(holeOutlines);
+                if (getenv("HCAD_WRAP_DEBUG"))
+                    fprintf(stderr, "wrap: faces sound %d, holes apart %d (%zu holes)\n", (int)sound.load(), (int)apart,
+                            holeOutlines.size());
+                if (!apart)
+                    throw Standard_Failure("direct: the solid came out broken");
             }
-            // valid as hc_is_valid would say: checked whole, or past 10 000 edges (where it only checks that
-            // the surface closes round a positive volume) closed with its volume as it should be; its
-            // volume known
+            laps.lap("direct: closed and valid");
+            // valid as hc_is_valid would say: its faces checked, its holes apart, closed with its volume as it
+            // should be; its volume known
             hc_shape *r = checked(primitive(solid));
             if (r)
                 r->volume = after;
@@ -4106,6 +4631,7 @@ double hc_area(const hc_shape *s)
 
 int hc_bbox(const hc_shape *s, double out[6])
 {
+    Stage stage("bbox");
     return guarded<>(-1, [&] {
         // WORKAROUND (OpenCascade 7.9.3, BRepBndLib::AddOptimal): exact and
         // fast, but on tori (the fillets between planes) it takes ~10 ms per
@@ -4170,11 +4696,17 @@ int hc_bbox(const hc_shape *s, double out[6])
                     into.Add(a.Value(q[0], q[1]));
             return true;
         };
+        // each face's box on its own (on every core: a knurl's thousands of faces), then all of them
+        std::vector<TopoDS_Face> faces;
         for (TopExp_Explorer f(s->shape, TopAbs_FACE); f.More(); f.Next())
-        {
-            const TopoDS_Face &face = TopoDS::Face(f.Current());
-            if (faceCount > 500 && sampled(face, b))
-                continue;
+            faces.push_back(TopoDS::Face(f.Current()));
+        std::vector<Bnd_Box> boxes(faces.size());
+        std::vector<TopoDS_Face> slowOf(faces.size());
+        auto boxFace = [&](int i) {
+            const TopoDS_Face &face = faces[i];
+            Bnd_Box &into = boxes[i];
+            if (faceCount > 500 && sampled(face, into))
+                return;
             const GeomAbs_SurfaceType type = BRepAdaptor_Surface(face, false).GetType();
             // a B-spline (or a surface offset from one) trimmed by a boundary that is not its four sides
             // (fill's plates, thickened): its
@@ -4195,11 +4727,11 @@ int hc_bbox(const hc_shape *s, double out[6])
                 if (wires > 1) {
                     BRepBuilderAPI_MakeFace outline(BRep_Tool::Surface(face), BRepTools::OuterWire(face), Standard_True);
                     if (outline.IsDone()) {
-                        slow.push_back(outline.Face());
-                        continue;
+                        slowOf[i] = outline.Face();
+                        return;
                     }
                 }
-                slow.push_back(face);
+                slowOf[i] = face;
             }
             else {
                 // its holes do not reach past its outline: boxed without them (AddOptimal works along every
@@ -4210,12 +4742,19 @@ int hc_bbox(const hc_shape *s, double out[6])
                 if (wires > 1) {
                     BRepBuilderAPI_MakeFace outline(BRep_Tool::Surface(face), BRepTools::OuterWire(face), Standard_True);
                     if (outline.IsDone()) {
-                        BRepBndLib::AddOptimal(outline.Face(), b, false, false);
-                        continue;
+                        BRepBndLib::AddOptimal(outline.Face(), into, false, false);
+                        return;
                     }
                 }
-                BRepBndLib::AddOptimal(face, b, false, false);
+                BRepBndLib::AddOptimal(face, into, false, false);
             }
+        };
+        OSD_Parallel::For(0, (int)faces.size(), boxFace, faces.size() < 64);
+        for (size_t i = 0; i < faces.size(); i++) {
+            if (!boxes[i].IsVoid())
+                b.Add(boxes[i]);
+            if (!slowOf[i].IsNull())
+                slow.push_back(slowOf[i]);
         }
         if (!slow.empty())
         {
