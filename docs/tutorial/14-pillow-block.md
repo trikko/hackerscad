@@ -206,6 +206,25 @@ The seat is 0.2 mm deeper than the bearing is wide, so the bearing does
 not stand out of it. Behind it, the smaller hole of the upright's sketch
 leaves room for the shaft.
 
+The seat's sketch has one more line, `s.fill(c)`. A profile fills what lies
+inside an odd number of loops, so where the notch crosses the circle the two
+loops would leave their overlap empty: two little blocks would stay in the
+seat, in the bearing's way. `s.fill` makes the area round the centre full,
+and the notch is cut all across.
+
+```d
+    s.circle(c, d: bearingD);
+    s.slot(bearingD + 6.mm, 3.mm, center: c);
+
+    // where the notch crosses the seat, cut too: two
+    // loops over each other leave their overlap empty
+    s.fill(c);
+```
+
+At the end of the model the bearing itself is a see-through part, not
+exported: it shows how it goes in, from the front, and a unittest checks
+that nothing is in its way.
+
 ## 5. A label, on the slanted flank
 
 The last sketch is a sunk panel with the letters left standing: a

@@ -726,7 +726,9 @@ unittest
         auto r = it.run(path);
         foreach (d; r.diagnostics)
             assert(d.severity != Severity.error && d.severity != Severity.warning, o.to!string ~ ": " ~ d.message);
-        assert(r.parts.length == 1 && kernel.isValid(r.parts[0].solid.brep), o.to!string);
+        // the block, and the bearing as a reference (its unittest: nothing in the bearing's way)
+        assert(r.parts.length == 2 && r.parts[0].name == "pillowBlock" && kernel.isValid(r.parts[0].solid.brep),
+            o.to!string);
     }
 }
 
