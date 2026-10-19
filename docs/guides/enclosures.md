@@ -208,60 +208,6 @@ Solid lid() => (hollow().halves(cut()).above
 
 The lid is drawn lifted to show the lip; to print it, turn it over (`.rotate(x: 180.deg)`), its flat top on the bed.
 
-## A case shaped round what it holds
-
-When what goes inside is not box-shaped, `hullCase` makes a case that follows it. It takes the convex hull of the parts (the smallest shape with no hollows that wraps them all, like cling film pulled tight), grows it by `clearance`, gives it walls `wall` thick, and cuts it into a base and a lid at the height `at` (halfway up unless given). A lip `lip` high rises from the base's wall into the lid, `play` narrower, so the two close on each other.
-
-<!-- render: enclosures-hull --from 1,-1.3,0.9 -->
-```d
-import carlo;
-import enclosures : hullCase;
-
-// a case round what it holds: Carlo, a battery and a
-// round sensor
-immutable things = [carlo(),
-    cylinder(d: 14.mm, h: 50.mm)
-        .rotate(y: 90)
-        .move(y: -22.mm, z: 7.mm),
-    cylinder(d: 18.mm, h: 6.mm).move(x: 45.mm)];
-
-immutable c = hullCase(things, wall: 2.mm, clearance: 0.6.mm);
-
-@part("Sky Pop")
-Solid base() => c.base;
-
-@part("Pink Pop")
-Solid lid() => c.lid.move(z: 25.mm);
-
-@part("slategray", alpha: 0.5, export: false)
-Solid contents() => things[0] + things[1] + things[2];
-
-unittest
-{
-    // nothing inside touches the walls; the lid sits
-    // on the base without overlapping it
-    assert((base & contents).volume == 0.mm ^^ 3,
-        "the contents touch the base");
-    assert((c.lid & contents).volume == 0.mm ^^ 3,
-        "the contents touch the lid");
-    assert((base & c.lid).volume < 0.01 * 1.mm ^^ 3,
-        "the lid overlaps the base");
-}
-```
-
-![A case following the hull of Carlo, a battery and a sensor, its lid lifted](img/enclosures-hull.png)
-
-| Parameter | What it does | Default |
-|---|---|---|
-| `inside` | the parts it holds, an array of solids | — |
-| `wall:` | the walls' thickness | `2.mm` |
-| `clearance:` | the room between the parts and the walls | `0.5.mm` |
-| `at:` | the height of the cut between base and lid | halfway up |
-| `lip:` | how high the lip rises into the lid | `3.mm` |
-| `play:` | how much narrower the lip is than its slot | `0.2.mm` |
-
-Print the base on its bottom and the lid upside down, on its top; a hull with a round top prints better cut lower, so the lid holds less overhang.
-
 ## Screw bosses
 
 A boss is a post that takes a screw, standing on the floor or a wall. The kind of hole decides its size; the [guide on holes](holes.md) explains each one:

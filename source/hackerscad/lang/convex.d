@@ -147,6 +147,43 @@ Brep hullOf(BrepKernel k, Brep[] items, bool allFlat, Span span, out bool flat)
     return placedPolygon(k, corners, origin, normal);
 }
 
+/// The convex hull of `pts` grown by `r` (> 0) all round, its edges and
+/// corners rounded: the hull of its corners each moved out in 42 directions
+/// spread over a sphere (a Minkowski sum with a ball of 42 corners, made a
+/// little bigger so that it is never nearer than `r`, 2% farther at most).
+/// No offset of a polyhedron of thousands of faces (which the kernel often
+/// cannot do), and no sharp corners shooting out where faces of the hull meet
+/// almost flat.
+Brep grownHullOf(BrepKernel k, Vec3[] pts, double r, Span span)
+{
+    import std.math : cos, sqrt;
+    Mesh m;
+    try
+        m = convexHull(pts);
+    catch (HullException e)
+        throw new HcadError(Code.type, e.msg, span);
+    // the directions: an icosahedron's 12 corners and its 30 edges' middles, on the sphere; between
+    // neighbours at most about 24° apart, so a point is within 12° of one: scaled by 1 / cos 12°
+    immutable t = (1 + sqrt(5.0)) / 2;
+    Vec3[] ico = [Vec3(-1, t, 0), Vec3(1, t, 0), Vec3(-1, -t, 0), Vec3(1, -t, 0), Vec3(0, -1, t), Vec3(0, 1, t),
+        Vec3(0, -1, -t), Vec3(0, 1, -t), Vec3(t, 0, -1), Vec3(t, 0, 1), Vec3(-t, 0, -1), Vec3(-t, 0, 1)];
+    Vec3[] dirs;
+    foreach (v; ico)
+        dirs ~= v.normalized;
+    immutable edge = (ico[0] - ico[1]).length;
+    foreach (i; 0 .. ico.length)
+        foreach (j; i + 1 .. ico.length)
+            if (abs((ico[i] - ico[j]).length - edge) < 1e-9)
+                dirs ~= (ico[i] + ico[j]).normalized;
+    immutable reach = r / cos(12.5 * PI / 180);
+    Vec3[] grown;
+    grown.reserve(m.vertexCount * dirs.length);
+    foreach (i; 0 .. m.vertexCount)
+        foreach (d; dirs)
+            grown ~= m.vertex(i) + d * reach;
+    return solidOf(k, grown, span);
+}
+
 /// Area of a polygon (positive counter-clockwise).
 double area2(const(double[2])[] p)
 {

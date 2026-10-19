@@ -248,12 +248,25 @@ final class Interp
         if (!onEvalThread)
         {
             EvalResult r;
+            Throwable failed;
             auto t = new Thread({
                 onEvalThread = true;
-                r = runSource(source, path);
+                try
+                    r = runSource(source, path);
+                catch (Throwable x)
+                    failed = x;
             }, evalStackSize);
             t.start();
-            t.join(true);   // rethrows what the thread threw
+            t.join();
+            // a model's error as it is; a bug of ours (an Error: a range, an assert) reported as one, not a crash
+            if (failed !is null)
+            {
+                if (cast(Exception) failed)
+                    throw failed;
+                import std.path : baseName;
+                throw new HcadError(Code.type, format("internal error (a bug in hackerscad, please report it): %s at %s:%d",
+                    failed.msg, baseName(failed.file), failed.line), Span(path, 1, 1));
+            }
             return r;
         }
         try
@@ -329,8 +342,13 @@ final class Interp
             }
             else if (v.kind == Kind.solid)
             {
+                // Solid.nothing returned: no part this time (a lid left out, `return lid ? cap() : Solid.nothing;`);
+                // empty otherwise (a cut that took it all, a union of none): a mistake, most likely
+                if (v.solid.brep is null && v.solid.none)
+                    continue;
                 if (v.solid.brep is null)
-                    throw new HcadError(Code.kernel, format("%s '%s' is empty (did a boolean remove everything?)", at, f.name), f.nameSpan);
+                    throw new HcadError(Code.kernel, format("%s '%s' is empty: did a cut take it all? (return "
+                        ~ "Solid.nothing to leave a part out on purpose)", at, f.name), f.nameSpan);
                 if (v.solid.path)
                     throw new HcadError(Code.type, format("%s '%s' returns a Path: sweep a profile along it", at, f.name), f.nameSpan);
                 if (v.solid.surface)

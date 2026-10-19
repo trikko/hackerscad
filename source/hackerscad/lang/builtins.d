@@ -113,7 +113,6 @@ void installPrelude(Interp it, Env env)
     constant("X", Value.vector(Vec3(1, 0, 0), 3, Dim.none));
     constant("Y", Value.vector(Vec3(0, 1, 0), 3, Dim.none));
     constant("Z", Value.vector(Vec3(0, 0, 1), 3, Dim.none));
-    constant("nothing", Value.of(new SolidVal(null, Span.init)));
     constant("XY", planeValue(Vec3(0, 0, 0), Vec3(0, 0, 1)));
     // its normal towards the front (-Y), as XY's is up and YZ's to the right: a sketch on it is seen as the
     // Front view sees it, x to the right and y up
@@ -1708,10 +1707,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
 
     // ---- convex hulls and Minkowski sums (lang/convex)
     def("hull", (ref CallArgs a) {
-        // hull(a, b, …) or hull([a, b, …]): the smallest convex shape around them
-        import hackerscad.lang.convex : hullOf;
-        if (a.named.length)
-            throw new HcadError(Code.unknownArg, "hull takes only the shapes: hull(a, b, …) or hull([a, b, …])", a.span);
+        // hull(a, b, …) or hull([a, b, …]): the smallest convex shape around them; grow: that much bigger all round
+        import hackerscad.lang.convex : hullOf, grownHullOf, pointsOf;
+        double grow = 0;
+        foreach (n; a.namedOrder)
+        {
+            if (n != "grow")
+                throw new HcadError(Code.unknownArg, "hull takes the shapes, hull(a, b, …) or hull([a, b, …]), and "
+                    ~ "grow:", *(n in a.namedSpans), Interp.suggest(n, ["grow"]));
+            auto g = *(n in a.named);
+            if (!g.isNum || (g.n.dim != Dim.length && g.n.dim != Dim.none) || g.n.value < 0)
+                throw new HcadError(Code.type, "grow: is a length, 0 or more (how much bigger all round)",
+                    *(n in a.namedSpans));
+            grow = g.n.value;
+        }
         SolidVal[] items;
         void add(Value v, Span span)
         {
@@ -1735,7 +1744,19 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             allFlat = allFlat && sv.flat;
         }
         bool flat;
-        auto r = primitive(it, hullOf(k, bs, allFlat, a.span, flat), "hull", a.span);
+        Brep made;
+        if (grow > 0)
+        {
+            if (allFlat)
+                throw new HcadError(Code.type, "grow: is for the hull of solids: grow a profile's with .offset", a.span);
+            Vec3[] pts;
+            foreach (b; bs)
+                pts ~= pointsOf(k, b);
+            made = grownHullOf(k, pts, grow, a.span);
+        }
+        else
+            made = hullOf(k, bs, allFlat, a.span, flat);
+        auto r = primitive(it, made, "hull", a.span);
         r.flat = flat;
         r.rgb = items[0].rgb;
         r.hasColor = items[0].hasColor;
@@ -3148,6 +3169,14 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
             }
         }
     case Kind.type:
+        // Solid.nothing: the empty solid, meant: returned by a @part, no part this time
+        if (name == "nothing" && obj.type.name == "Solid")
+        {
+            auto none = new SolidVal(null, span);
+            none.none = true;
+            result = Value.of(none);
+            return true;
+        }
         if (name == "init")
         {
             auto t = new TypeRef;

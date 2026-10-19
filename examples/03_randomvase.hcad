@@ -13,7 +13,8 @@
 //  - the lid is made for the mouth and placed on it with placeOn wherever
 //    the seed puts it; switch Lid on the bed to lay it beside the vase face
 //    down, to print it;
-//  - print it as it is, or in vase mode without the shell.
+//  - print it as it is, or switch Solid on and print it in vase mode
+//    (the printer makes the wall): then there is no lid.
 module randomvase;
 
 import std.shapes;
@@ -31,6 +32,9 @@ immutable fade = false;
 @param("The lid on the bed beside the vase, face down, to print it")
 immutable lidOnBed = false;
 
+@param("Solid, to print in vase mode (the printer makes the wall): no lid")
+immutable solid = false;
+
 @param("Seed: another one, another vase", min: 0, max: 9999, step: 1)
 immutable seed = 42;
 
@@ -46,9 +50,8 @@ immutable twist = 90.deg;
 @param("Ripple depth", min: 0.mm, max: 4.mm)
 immutable depth = 1.5.mm;
 
-// hollow with a wall this thick (false: solid, for vase mode), through
-// this many rings along the spine
-immutable hollow = true;
+// hollow with a wall this thick (unless Solid), through this many rings
+// along the spine
 immutable wall = 2.mm;
 immutable rings = 30;
 
@@ -127,7 +130,7 @@ Solid vase()
     // hollow: the inner wall through the same rings a wall smaller (as even
     // as the ripples, no offset to compute), a flat rim between the last
     // rings; solid, for vase mode
-    return hollow ? loft(outside, inside: inside) : loft(outside);
+    return solid ? loft(outside) : loft(outside, inside: inside);
 }
 
 // the lid: a cap with the mouth's outline, built on XY
@@ -138,6 +141,9 @@ Solid vase()
 @part("Pink Pop")
 Solid lid()
 {
+    // a solid vase has no mouth to close: no lid
+    if (solid)
+        return Solid.nothing;
     immutable onMouth = cap().placeOn(mouth()) + plug();
     if (lidOnBed)
         return onMouth.placeOn(World.at(x: vase().bbox.max.x + foot + flare + depth + 10.mm),
@@ -187,5 +193,6 @@ unittest
 {
     // on the mouth, the lid's plug stays clear of the vase's wall: it fits
     // without forcing, whatever the seed
-    assert(distance(vase(), plug()) > 0.1.mm, "the lid's plug touches the vase: make it narrower");
+    if (!solid)
+        assert(distance(vase(), plug()) > 0.1.mm, "the lid's plug touches the vase: make it narrower");
 }

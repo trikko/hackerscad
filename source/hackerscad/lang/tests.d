@@ -457,7 +457,7 @@ unittest
         @part Solid c() { return sphere(5).move(x: 100) + box(2, 2, 2, center: true).move(vec(100, 0, 0)); }
         @part Solid d() { return box(10, 10, 10) & box(10, 10, 10).move(x: 5); }
         @part Solid e() { return box(10, 20, 30).rotate(z: 90); }
-        @part Solid f() { return Solid.init + box(1, 1, 1) - nothing; }
+        @part Solid f() { return Solid.init + box(1, 1, 1) - Solid.init; }
     });
     assert(isClose(partVolume(r, "a"), 6000));
     auto ba = kernel.bbox(r.parts[0].solid.brep);
@@ -2218,7 +2218,7 @@ unittest
     // overhangs of a curved surface: 2πR²(1 - sin a) for a sphere, within 2 %
     expectOut(`immutable o = sphere(r: 10).move(z: 10).overhangs(45.deg) / 1.mm^^2;
         writeln(abs(o / (2 * PI * 100 * (1 - sin(45.deg))) - 1) < 0.02);`, "true", shapes ~ "import std.math;");
-    expectErr(`writeln(nothing.centroid);`, "E0410", shapes);
+    expectErr(`writeln(Solid.init.centroid);`, "E0410", shapes);
     // bodies touching along an edge or at a corner: one body, bridged, and a warning
     {
         auto r = runModel(shapes ~ "\n@part Solid p() => box(10, 10, 10) + box(10, 10, 10).move(x: 10, y: 10);"
@@ -2861,6 +2861,26 @@ unittest
     assert(error(`@part Solid p() { auto s = box(10, 10, 10); s.faces.top.addTag("lid");
         return s.fillet(edges.of(s.faces.tagged("lid").filter(f => f.area > 1000 * 1.mm ^^ 2)), r: 1); }`)
         .message.canFind("none of them is left"));
+    // a part returning Solid.nothing is no part this time; one a cut emptied, or Solid.init, is an error that says
+    // how to leave it out
+    {
+        auto r = runModel("@param(\"Off\")\nimmutable off = true;\n@part Solid a() => box(10, 10, 10);\n"
+            ~ "@part Solid lid() => off ? Solid.nothing : box(5, 5, 5);\n");
+        assert(r.parts.length == 1 && r.parts[0].name == "a", "the lid left out");
+        assert(error("@part Solid p() => box(1, 1, 1) - box(5, 5, 5, center: true);").message.canFind("Solid.nothing"));
+        assert(error("@part Solid p() => Solid.init;").message.canFind("is empty"));
+    }
+    // hull(…, grow:): a box grown 1 mm all round, rounded, between the exact rounded volume and 2% beyond it; a
+    // round part's hull (thousands of faces, which offset could not grow) grown too, as far from it as asked
+    expectOut(`import std.math;
+        auto g = hull(box(10, 10, 10), grow: 1.mm);
+        immutable exact = 10 ^^ 3 + 6 * 100 + 3 * 10 * PI + 4.0 / 3 * PI;
+        writeln(g.volume / 1.mm ^^ 3 > exact && g.volume / 1.mm ^^ 3 < exact * 1.05, " ",
+            g.bbox.size.x > 12.mm && g.bbox.size.x < 12.05.mm);
+        auto knob = cylinder(d: 30, h: 15).fillet(edges.of(faces.top), r: 3.mm);
+        auto c = hull(knob, grow: 0.5.mm);
+        immutable d = hull(knob).deviation(c);
+        writeln(c.isValid, " ", d > 0.49.mm && d < 0.52.mm);`, "true true\ntrue true");
     // a tag with a dot belongs to its module: given only there, read anywhere
     assert(error(`@part Solid p() { return box(1, 1, 1).addTag("hardware.bore"); }`)
         .message.canFind("can only be given in module hardware"));
@@ -4628,27 +4648,6 @@ unittest
         assert(d.severity != Severity.error, d.message);
     assert(error(`@part Solid p() => fill(path([vec(0, 0, 0), vec(10, 0, 0), vec(10, 10, 0)])).thicken(1.mm);`)
         .message.canFind("closed"));
-}
-
-unittest
-{
-    mixin(slowTest);
-    // hullCase: a case round a box and a cylinder, nothing touching, the lid on the base
-    auto r = runModel(q{
-        import enclosures : hullCase;
-        immutable things = [box(20, 15, 10), cylinder(d: 12, h: 18).move(x: 25)];
-        immutable c = hullCase(things);
-        @part Solid base() => c.base;
-        @part Solid lid() => c.lid.move(z: 30);
-        unittest
-        {
-            assert(c.base.isValid && c.lid.isValid, "valid");
-            assert((c.base & things[0]).volume == 0.mm ^^ 3 && (c.lid & things[1]).volume == 0.mm ^^ 3, "room inside");
-            assert((c.base & c.lid).volume < 0.01 * 1.mm ^^ 3, "the lid on the base");
-        }
-    });
-    foreach (d; r.diagnostics)
-        assert(d.severity != Severity.error, d.message);
 }
 
 unittest

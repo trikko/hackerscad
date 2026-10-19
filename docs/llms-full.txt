@@ -475,14 +475,14 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
 - **`unittest { assert(…); }`** blocks are design checks. They run after evaluation; a failure does not discard the geometry, but is reported in the GUI, the CLI and to agents. `hcad check`, `hcad render` and the exports run them every time; the window runs them when asked (F5, the bug button over the console, `hcad_gui_test` for agents) and before an export, not at every change.
 - **Solids and booleans:**
   - `a + b` union, `a - b` difference, `a & b` intersection; `s += x` inside functions.
-  - `hull(a, b, …)` or `hull([a, b, …])`: the smallest convex shape around solids and profiles (two spheres make a capsule, four cylinders a plate with round corners); profiles in one plane give a profile, `hull(circle(r: 4.mm), circle(r: 4.mm).move(x: 20.mm))` a slot. Curved surfaces become flat facets within 0.05 mm. Their flat faces the hull lies on keep their tags.
+  - `hull(a, b, …)` or `hull([a, b, …])`: the smallest convex shape around solids and profiles (two spheres make a capsule, four cylinders a plate with round corners); profiles in one plane give a profile, `hull(circle(r: 4.mm), circle(r: 4.mm).move(x: 20.mm))` a slot. Curved surfaces become flat facets within 0.05 mm. Their flat faces the hull lies on keep their tags. `hull(a, b, grow: 2.mm)` is the hull grown that much all round, its edges and corners rounded (at most 2% farther, never nearer): a case round what it holds, quicker and surer than `.offset` on a hull of thousands of faces.
   - `minkowski(a, b)`: `a` moved by every point of `b`. With a sphere (a circle for profiles) it rounds every edge and corner exactly, like `s.offset(r)`; with another convex shape (a box, a cylinder) it is made of flat facets, and one of the two shapes must be convex. Their flat faces, moved out, keep their tags.
   - `s.offset(d)` grows a solid by `d` (or shrinks it, `d` negative), round where it turns; `sharp: true` moves its faces and extends them until they meet, the edges staying sharp (a box stays a box).
 - **Printing:** `teardrop(d: 5.mm)` (in a sketch `s.teardrop(c, d: 5.mm)`) is a round hole with a 45° point towards +Y: cut on a wall (`carlo().cut(teardrop(d: 3.4.mm), on: faces.farthest(-Y), through: true)`) the point is up and the hole prints without supports (`angle:` another point, `flat: true` cuts it at the circle's top). `faces.overhanging()` selects the faces facing down more steeply than 45° from a wall (`faces.overhanging(60.deg)` another angle; faces resting on the bed are not counted), `s.overhangs(45.deg)` is their area and `s.thinWalls(0.8.mm)` the surface over walls thinner than that: `assert(part.thinWalls == 0.mm ^^ 2)` in a unittest keeps a model printable. The Printability check box of the display menu marks both on the model.
 - **Profiles from solids:** `s.section(XZ)` (any plane: `s.section(s.plane(faces.top).offset(-2.mm))`) is the cut of the solid by the plane, a profile lying in it; `s.projection` is the solid's shadow seen from above, a profile on XY, and `s.projection(XZ)` its shadow on any plane, cast along the plane's normal (curved surfaces within 0.02 mm; its outline read back as lines, arcs and circles, so that it extrudes and sweeps as fast as one drawn). Both can be extruded, offset, combined like any profile.
 - **Mass:** `s.centroid` is the centre of mass; `s.mass(density: 1.24)` the mass in grams for a density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85); `s.inertia(density: 1.24)` the principal moments of inertia about the centre of mass, ascending, in g·mm².
   - `a - [b, c, …]` takes every solid of the list away from `a` at once: much quicker than one at a time (400 holes in a plate: 0.7 s, against 16 s in a loop).
-  - `Solid.init` and `nothing` are the empty solid; `Solid all;` and `Profile all;` start empty, to add to in a loop. `solids.sum` and `fuse(…)` unite arrays.
+  - `Solid.init` is the empty solid; `Solid all;` and `Profile all;` start empty, to add to in a loop. `solids.sum` and `fuse(…)` unite arrays. A `@part` that returns `Solid.nothing` is no part this time (`return solid ? Solid.nothing : cap();`: a lid left out by a parameter); one left empty otherwise (a cut that took it all, a loop that added nothing) is an error, as it is most likely a mistake.
 - **Math** (with `import std.math`): `sqrt`, `abs`, `floor`, `ceil`, `round`, `sin`, `cos`, `tan` (angles; bare numbers are radians), `asin`, `acos`, `atan`, `atan2(y, x)`, `pow(x, y)` (as `x ^^ y`: a length squared is an area), `exp`, `log(x)` and `log(x, base)`, `log10`, `log2`, `hypot(a, b)`, `sign`, `min`, `max`, `clamp(v, lo, hi)`, `lerp(a, b, t)` (numbers, lengths or vectors), and `PI`, `E`.
 - **Primitives** stand on the XY plane, centred in X and Y; `center: true` centres them in Z too. Spheres are centred.
   - `box(x, y, z)`, `cylinder(r | d, h)`, `cone(r1 | d1, r2 | d2, h)`, `sphere(r | d)`, `torus(major, minor)` (round Z, centred on the origin: major to the middle of the tube, minor its radius).
@@ -583,7 +583,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - `gears`: `spurGear(m, teeth, thickness, bore: 0.mm, pressure: 20.deg, backlash: 0.1.mm, steps: 6)` (involute, centred, a tooth on +X), `gearProfile(m, teeth, …)`, `rack(m, teeth, thickness, base:, pressure: 20.deg, backlash: 0.1.mm)`, `pitchDiameter`, `outsideDiameter`, `rootDiameter`, `centerDistance(m, z1, z2)` (where to put two meshing gears; turn the second so a gap faces the first's tooth on +X: `rotate(z: 180.deg - 180.deg / z2)`, right for any number of teeth).
   - `hinges`: `hinge(length:, width:, thickness:, knuckles: 5, clearance: 0.4.mm)` returns `.fixed` and `.moving`, two leaves printed in place around an axis along X at z = thickness; `pinHinge(…, pin: 1.75.mm, clearance: 0.3.mm)` the same with the knuckles holed for a separate pin (filament, a nail, a screw), leaves printed apart; `snapHinge(length: 30.mm, …)` three knuckles, the outer two with cones that snap into sockets in the middle one; `livingHinge(length:, width:, thickness:, web: 0.5.mm, gap: 3.mm)` two plates joined by a thin web on their underside, for PETG, PP or TPU.
   - `snaps`: `snapHook(length:, thickness:, width:, overhang:, lead: 30.deg)` (a cantilever hook standing on z = 0, barb towards +X) and `snapSlot(…)` (the window to subtract from the mating wall where the hook stands: round the beam, with room for it to bend, the barb then resting on its +X edge).
-  - `enclosures`: `roundedBox(x, y, z, r)`, `tray(x, y, z, wall:, r:)` (open on top), `enclosure(vec(x, y, z), wall:, r:, lidHeight:, screw: M3)` returns `.base` and `.lid` (lid with a lip that fits inside, screw posts in the corners); `hullCase([a, b, c], wall:, clearance:, at:, lip:, play:)` a case shaped round what it holds (their convex hull grown by `clearance`, walls `wall` thick), cut at the height `at` (halfway up by default) into `.base` and `.lid`, a lip rising from the base into the lid.
+  - `enclosures`: `roundedBox(x, y, z, r)`, `tray(x, y, z, wall:, r:)` (open on top), `enclosure(vec(x, y, z), wall:, r:, lidHeight:, screw: M3)` returns `.base` and `.lid` (lid with a lip that fits inside, screw posts in the corners).
   - `carlo`: `carlo(teeth: 3, height: 15.mm, toothR:, gap:, jaw:, back:, lean: 17.deg, mouth: 1.5.deg, eye: true)`, Carlo the mascot, a bag clip lying on z = 0 (the constrained sketch of the tutorial's chapter 13, extruded; `lean` tilts the back and the tips, a positive `mouth` opens the slot towards the tips, a negative one closes it).
 - **Drawings** (technical sheets, exported as SVG, PDF or DXF; in the application **Export › Show the drawing**, a window with the sheet that follows the code, and its export): a function marked `@drawing` returns `drawing(size: "A4", title:, author:, material:, projection: "first" | "third", scale: 0 (fit), landscape: true)` after adding to it:
   - `d.standardViews(solid, iso: true, dimensions: true)`: front, top, side and an isometric view, laid out and scaled to fit, with overall dimensions and hole callouts (one per kind of hole seen end-on, with the count: `2× ⌀4.5, countersink ⌀9.26`, `⌀4.5, counterbore ⌀7.6 × 4.2`; bosses and round outlines are not holes);
@@ -1403,6 +1403,10 @@ Profile seatSketch()
     auto c = s.point(0, 0, fixed: true);
     s.circle(c, d: bearingD);
     s.slot(bearingD + 6.mm, 3.mm, center: c);
+
+    // where the notch crosses the seat, cut too: two
+    // loops over each other leave their overlap empty
+    s.fill(c);
     return s.profile;
 }
 
@@ -1462,6 +1466,23 @@ Solid pillowBlock()
     // 5. on the right flank, leaning: the label
     return block.cut(labelSketch(),
         on: block.frame(faces.tagged("flank")), depth: 0.6.mm);
+}
+
+// the bearing as a reference, in its seat: it goes in
+// from the front, 0.2 mm short of the bottom
+@part("goldenrod", alpha: 0.5, export: false)
+Solid bearing() => cylinder(d: bearingD, h: bearingWidth)
+    .rotate(x: -90.deg)
+    .move(pillowBlock().point("shaft") + vec(0.mm, 0.1.mm, 0.mm));
+
+unittest
+{
+    // a hair thinner than the bearing: nothing in its way
+    auto probe = cylinder(d: bearingD - 0.1.mm, h: bearingWidth)
+        .rotate(x: -90.deg)
+        .move(pillowBlock().point("shaft") + vec(0.mm, 0.1.mm, 0.mm));
+    assert((pillowBlock() & probe).volume < 0.01 * 1.mm ^^ 3,
+        "the bearing does not go into its seat");
 }
 ```
 
@@ -2269,45 +2290,6 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
     return Enclosure(base, lid);
 }
 
-/// A case shaped round what it holds: the convex hull of `inside` (the
-/// smallest shape with no hollows round them all) grown by `clearance`, its
-/// walls `wall` thick, cut at the height `at` (by default halfway up) into
-/// a base and a lid. A lip `lip` high rises from the base's wall into the
-/// lid, `play` narrower, so the two close on each other and stay put.
-Enclosure hullCase(Solid[] inside, Length wall = 2.mm, Length clearance = 0.5.mm, Length at = -1.mm,
-    Length lip = 3.mm, Length play = 0.2.mm)
-{
-    assert(inside.length > 0, "hullCase: give it the solids it holds");
-    assert(wall > 0.mm && clearance >= 0.mm, "hullCase: a wall thicker than 0, a clearance of 0 or more");
-    auto h = hull(inside);
-    immutable lo = h.bbox.min.z, hi = h.bbox.max.z;
-    immutable cut = at >= 0.mm ? at : (lo + hi) / 2;
-    assert(cut > lo && cut < hi, "hullCase: the cut (at) goes through what it holds, between its bottom and its top");
-    auto cavity = h.offset(clearance);
-    auto outer = h.offset(clearance + wall);
-    // a slab round the cut, as wide as the case, z0 to z1 (measured on the hull, a polyhedron: the
-    // box of the grown one, all rounds, takes much longer to find)
-    immutable hb = h.bbox, grow = clearance + wall;
-    immutable s = hb.size.x + hb.size.y + 4 * grow + 10.mm;
-    Solid slab(Length z0, Length z1) => box(s, s, z1 - z0).move(x: hb.center.x, y: hb.center.y, z: z0);
-    // the lip's offsets of only the band of the hull round the cut: within it they are the same
-    // as the whole hull's (no point of the band is nearer its cut ends than the offset), and the
-    // few faces of a band are much quicker to offset and combine than the whole hull's
-    immutable reach = clearance + wall + 1.mm;
-    auto band = h & slab(cut - reach, cut + lip + play + reach);
-    auto ring = band.offset(clearance + wall / 2 - play / 2) & slab(cut - 0.01.mm, cut + lip);
-    auto notch = band.offset(clearance + wall / 2 + play / 2) & slab(cut - 0.01.mm, cut + lip + play);
-    // the base: the outside below the cut and the lip, the inside taken out once
-    auto base = ((outer & slab(hb.min.z - grow - 1.mm, cut)) + ring) - cavity;
-    auto lid = (outer & slab(cut, hb.max.z + grow + 1.mm)) - cavity - notch;
-    // the rim: the base's wall at the cut, beside the lip; the lip itself
-    bool atCut(Face f) => abs(f.center.z - cut) < 0.001.mm && f.normal.z > 0.999;
-    if (base.faces.filter(f => atCut(f)).count > 0)
-        base.faces.filter(f => atCut(f)).addTag("enclosures.rim");
-    if (base.faces.filter(f => f.center.z > cut + 0.001.mm).count > 0)
-        base.faces.filter(f => f.center.z > cut + 0.001.mm).addTag("enclosures.lip");
-    return Enclosure(base, lid);
-}
 ```
 
 ## Library source: joints

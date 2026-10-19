@@ -159,7 +159,11 @@ Mesh convexHull(const(Vec3)[] points)
             foreach (k; 0 .. 3)
             {
                 immutable a = faces[vf].v[k], b = faces[vf].v[(k + 1) % 3];
-                immutable other = edgeFace[key(b, a)];
+                // (points so close together that the faces seen do not close: no hull of them here)
+                auto found = key(b, a) in edgeFace;
+                if (found is null)
+                    throw new HullException("some points are too close together to tell their hull");
+                immutable other = *found;
                 if (seen[other] == round)
                     continue;
                 // whether a face is seen depends on it alone: one judged

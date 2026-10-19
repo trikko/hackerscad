@@ -959,6 +959,8 @@ struct Anchor
 final class SolidVal
 {
     Brep brep;
+    /// Solid.nothing: empty on purpose, a @part that returns it is no part this time
+    bool none;
     uint rgb;
     bool hasColor;
     Span origin;

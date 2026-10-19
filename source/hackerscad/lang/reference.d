@@ -348,7 +348,7 @@ immutable Ref[] reference =
         "rect(10.mm, 2.mm).sweep(p, twist: t => 60.deg * sin(t * 720.deg)) // swinging"]),
     F("loft", "", ["profiles: Profile[]", "ruled: bool", "inside: Vec3[][]"], "Solid", "A solid through profiles placed in space; through paths (Path[]), a Surface; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane)."),
     F("hull", "", ["shapes…"], "Solid",
-        "The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile. Their flat faces it lies on keep their tags."),
+        "The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile. Their flat faces it lies on keep their tags. grow: 2.mm makes it that much bigger all round, rounded (2% farther at most, never nearer): quicker and surer than an offset of a hull."),
     F("minkowski", "", ["a", "b"], "Solid",
         "a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex. Their flat faces, moved out, keep their tags."),
     withForms(F("cut", "Solid", ["profile: Profile | Solid", "on: Frame | Faces | Plane", "at: Vec3", "depth: Length", "through: bool", "taper: Angle", "wrap: Faces", "project: Faces", "along: Vec3"], "Solid",
@@ -674,7 +674,7 @@ immutable Ref[] reference =
     C("World", "Frame", "The global frame."),
     C("PI", "number", "π."),
     C("E", "number", "e, the base of the natural logarithm."),
-    C("nothing", "Solid", "The empty solid (also Solid.init): start of a union built in a loop."),
+    C("Solid.nothing", "Solid", "The empty solid, meant so: returned by a @part, no part this time (a lid left out by a parameter). Solid.init is the empty solid to start a union built in a loop; a part left empty by it, or by a cut, is an error."),
     C("edges", "Edges", "The edges of the solid a feature applies to: edges.parallel(Z)."),
     C("faces", "Faces", "The faces of the solid a feature applies to: faces.top."),
     ]) ~
