@@ -384,7 +384,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 ## Keywords
 
 - `module` — Names the model: module box;
-- `import` — import hardware : M3;  import pizza;  import p = parts.bracket;
+- `import` — import std.hardware : M3;  import pizza;  import p = parts.bracket;
 - `immutable` — A constant: immutable width = 60.mm;
 - `auto` — A local variable: auto s = box(…);
 - `return` — Gives the result of a function.
@@ -471,6 +471,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `tray(x: Length, y: Length, z: Length, wall: Length = …, r: Length = …) → Solid` — An open box: walls `wall` thick, open on top.
 - `struct Enclosure(base: Solid, lid: Solid)` — A base and a lid that fit together, both standing on z = 0.
 - `enclosure(inner: Vec3, wall: Length = …, r: Length = …, lidHeight: Length = …, screw: Screw = …, clearance: Length = …) → Enclosure` — An enclosure with `inner` free space (x, y, z), a lid with a lip that fits inside the base, and a screw post in each corner.
+- `shadowCase(inside: Solid, on: Plane = …, wall: Length = …, clearance: Length = …, split: double = 0.5, close: string = "lip", lip: Length = …, play: Length = …) → Enclosure` — A case with upright walls round one part: the shadow it casts on the plane `on` (the ground, XY, unless given), its convex hull grown by `clearance`, walls `wall` thick standing square to the plane, so the part drops in along the plane's normal and lifts out. Base and lid meet at `split` of the part's height (halfway unless given): opened, the part stands out of the base, to take it. The base: a floor `wall` thick under the part, its walls, and a lip `lip` high rising from their inner half; the lid: its walls, `play` wider round the lip, and a top `wall` thick `clearance` over the part. close: "lip" holds the lid on by friction; "snap" adds a bead round the lip, halfway up it, that clicks into a groove inside the lid (its wall gives a little as it goes over).
 
 ## Library: import joints;
 

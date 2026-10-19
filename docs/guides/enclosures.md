@@ -208,6 +208,43 @@ Solid lid() => (hollow().halves(cut()).above
 
 The lid is drawn lifted to show the lip; to print it, turn it over (`.rotate(x: 180.deg)`), its flat top on the bed.
 
+## A case round one part
+
+`shadowCase` makes a case that fits one part: its outline is the part's shadow seen from above (smoothed into a shape with no hollows), a little wider, and its walls go straight up, so the part drops in and lifts out. Base and lid meet halfway up the part, so once the lid is off the part stands out of the base and is easy to take.
+
+<!-- render: enclosures-shadow --from 1,-1.3,0.9 -->
+```d
+import std.carlo;
+import std.enclosures;
+
+// a case for Carlo; snap: the lid clicks shut
+immutable c = shadowCase(carlo(), close: "snap");
+
+@part("Sky Pop")
+Solid base() => c.base;
+
+// the lid lifted, to see inside
+@part("Pink Pop")
+Solid lid() => c.lid.move(z: 25.mm);
+
+@part("slategray", alpha: 0.5, export: false)
+Solid clip() => carlo();
+```
+
+![A case with upright walls round Carlo, its lid lifted](img/enclosures-shadow.png)
+
+| Parameter | What it does | Default |
+|---|---|---|
+| `on:` | the plane the shadow falls on, and the walls stand square to | the ground, `XY` |
+| `wall:` | the walls' thickness | `2.mm` |
+| `clearance:` | the room between the part and the walls | `0.5.mm` |
+| `split:` | where base and lid meet, as a share of the part's height | `0.5`, halfway |
+| `close:` | `"lip"`, a lip that holds by friction, or `"snap"`, a bead on it that clicks into the lid | `"lip"` |
+| `lip:` | how high the lip rises into the lid | `3.mm` |
+| `play:` | how much narrower the lip is than the room for it | `0.2.mm` |
+
+To put the part in standing up, turn it before: `shadowCase(carlo().rotate(y: -90))` holds Carlo on its short side, in a tall narrow case. Print the lid on its flat top.
+
 ## Screw bosses
 
 A boss is a post that takes a screw, standing on the floor or a wall. The kind of hole decides its size; the [guide on holes](holes.md) explains each one:

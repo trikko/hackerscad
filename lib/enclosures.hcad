@@ -1,12 +1,12 @@
 module enclosures;
 
-import hardware : Screw, M3, hole;
+import std.hardware : Screw, M3, hole;
 
 /// Boxes with rounded corners and enclosures with lids.
 ///
 /// Tags: a tray's or a base's rim, where the lid rests, is tagged
-/// "enclosures.rim", its floor inside "enclosures.floor"; a lid's lip, the
-/// ring that goes into the base, "enclosures.lip".
+/// "enclosures.rim", its floor inside "enclosures.floor"; the lip, the ring
+/// between a base and its lid, "enclosures.lip".
 
 /// A box centred in X and Y on z = 0, with vertical edges rounded by `r`.
 Solid roundedBox(Length x, Length y, Length z, Length r = 3.mm)
@@ -91,3 +91,76 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
     return Enclosure(base, lid);
 }
 
+/// A case with upright walls round one part: the shadow it casts on the
+/// plane `on` (the ground, XY, unless given), its convex hull grown by
+/// `clearance`, walls `wall` thick standing square to the plane, so the part
+/// drops in along the plane's normal and lifts out. Base and lid meet at
+/// `split` of the part's height (halfway unless given): opened, the part
+/// stands out of the base, to take it. The base: a floor `wall` thick under
+/// the part, its walls, and a lip `lip` high rising from their inner half;
+/// the lid: its walls, `play` wider round the lip, and a top `wall` thick
+/// `clearance` over the part. close: "lip" holds the lid on by friction;
+/// "snap" adds a bead round the lip, halfway up it, that clicks into a groove
+/// inside the lid (its wall gives a little as it goes over).
+Enclosure shadowCase(Solid inside, Plane on = XY, Length wall = 2.mm, Length clearance = 0.5.mm,
+    double split = 0.5, string close = "lip", Length lip = 3.mm, Length play = 0.2.mm)
+{
+    assert(close == "lip" || close == "snap", "shadowCase: close is \"lip\" or \"snap\", not \"" ~ close ~ "\"");
+    assert(wall > 0.mm && clearance >= 0.mm && lip > 0.mm && play >= 0.mm && play < wall,
+        "shadowCase: a wall thicker than 0, a clearance and a play of 0 or more (the play thinner than the wall)");
+    assert(split > 0 && split < 1, "shadowCase: split is where base and lid meet, between 0 (the bottom) and "
+        ~ "1 (the top) of the part");
+    immutable n = on.normal, o = on.origin;
+    // how far the part reaches along the normal, from the plane (the corners of its box: exact for the
+    // planes of the axes)
+    immutable b = inside.bbox;
+    Length low = 1e9.mm, high = -1e9.mm;
+    foreach (x; [b.min.x, b.max.x])
+        foreach (y; [b.min.y, b.max.y])
+            foreach (z; [b.min.z, b.max.z])
+            {
+                immutable d = (vec(x, y, z) - o).dot(n);
+                low = min(low, d);
+                high = max(high, d);
+            }
+    immutable cut = low + split * (high - low), top = high + clearance;
+    assert(cut + lip + play < top, "shadowCase: the lip reaches the lid's top: a shorter lip, or split lower");
+    // the outline: the hull of the shadow, grown; the walls drawn as rings in the plane and extruded
+    // across it, from where they go
+    immutable shadow = hull(inside.projection(on));
+    Profile around(Length by) => by > 0.mm ? shadow.offset(by) : shadow;
+    Solid along(Profile p, Length from, Length height) => p.extrude(height).move(n * from);
+    immutable outer = around(clearance + wall), inner = around(clearance);
+    // the base: floor, walls up to the cut, the lip on their inner half
+    auto floor = along(outer, low - wall, wall);
+    floor.faces.normal(n).addTag("enclosures.floor");
+    auto side = along(outer - inner, low, cut - low);
+    side.faces.normal(n).addTag("enclosures.rim");
+    // the lid: the outer half of the wall round the lip (play wider), the whole wall above it, the top
+    auto walls = along(outer - inner, cut + lip + play, top - cut - lip - play);
+    auto cap = along(outer, top, wall);
+    // the lip and the lid's skirt round it, in layers: with snap, halfway up, a bead `bead` out from the
+    // lip and a groove as much (and play) into the skirt (a step that small prints without support)
+    immutable lipOut = clearance + wall / 2 - play / 2;
+    immutable bead = close == "snap" ? min(0.4.mm, wall / 4) : 0.mm;
+    immutable mid = cut + lip / 2, half = bead > 0.mm ? bead : 0.mm;
+    Solid lipLayer(Length out, Length from, Length to) => along(around(out) - inner, from, to - from);
+    Solid skirtLayer(Length in_, Length from, Length to) => along(outer - around(in_), from, to - from);
+    Solid ring, skirt;
+    if (bead > 0.mm)
+    {
+        ring = lipLayer(lipOut, cut, mid - half) + lipLayer(lipOut + bead, mid - half, mid + half)
+            + lipLayer(lipOut, mid + half, cut + lip);
+        skirt = skirtLayer(lipOut + play, cut, mid - half - play / 2)
+            + skirtLayer(lipOut + bead + play, mid - half - play / 2, mid + half + play / 2)
+            + skirtLayer(lipOut + play, mid + half + play / 2, cut + lip + play);
+    }
+    else
+    {
+        ring = lipLayer(lipOut, cut, cut + lip);
+        skirt = skirtLayer(lipOut + play, cut, cut + lip + play);
+    }
+    ring.addTag("enclosures.lip", recursive: true);
+    auto base = floor + side + ring, lid = skirt + walls + cap;
+    return Enclosure(base, lid);
+}

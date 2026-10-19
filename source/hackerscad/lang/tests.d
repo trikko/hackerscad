@@ -4661,6 +4661,36 @@ unittest
 unittest
 {
     mixin(slowTest);
+    // shadowCase: round Carlo lying and standing, with a lip and with a snap: nothing touching it, the lid on
+    // the base, base and lid meeting halfway up
+    auto r = runModel(q{
+        import std.carlo;
+        import std.enclosures;
+        immutable lying = shadowCase(carlo());
+        immutable standing = shadowCase(carlo().rotate(y: -90), close: "snap", split: 0.3);
+        @part Solid base() => lying.base;
+        unittest
+        {
+            foreach (k, c; [lying, standing])
+            {
+                auto clip = k == 0 ? carlo() : carlo().rotate(y: -90);
+                assert(c.base.isValid && c.lid.isValid, "valid");
+                assert((c.base & clip).volume == 0.mm ^^ 3 && (c.lid & clip).volume == 0.mm ^^ 3, "room inside");
+                assert((c.base & c.lid).volume < 0.01 * 1.mm ^^ 3, "the lid on the base");
+            }
+            // the lid comes down to halfway up Carlo (15 mm), the snap's to 30% of its 41.5 mm
+            assert(abs(lying.lid.bbox.min.z - 7.5.mm) < 0.01.mm, "halfway");
+            assert(abs(standing.lid.bbox.min.z - (standing.base.bbox.min.z + 2.mm + 0.3 * 41.5497.mm)) < 0.05.mm,
+                "the split");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
+
+unittest
+{
+    mixin(slowTest);
     // the faces a surface cuts keep where they came from: faces.from(the surface) finds them
     auto r = runModel(q{
         immutable wave = spline([vec(-25.mm, 0.mm), vec(-10.mm, 3.mm), vec(5.mm, -3.mm), vec(25.mm, 2.mm)])
