@@ -119,6 +119,9 @@ mixin template PlaneTools()
         try
         {
             import hackerscad.tool.codegen : sketchOnPlane;
+            // Cancel, once it shows, takes the new sketch away too
+            endSketchSession();
+            sketchPendingBefore = text();
             applyEdit(sketchOnPlane(text(), path, part, planeCodeFor(i, part)));
         }
         catch (CodegenException e)

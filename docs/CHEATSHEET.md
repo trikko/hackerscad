@@ -523,7 +523,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - **Double click on a flat face** — the view straight at that face
 - **Alt+1 … Alt+4** — a click picks whole parts, faces, edges or vertices
 - **A** — annotates the view: arrows, crosses, circles, text; Done or Esc goes back
-- **Esc** — closes what is shown over the model: a sketch, a step, Inspect, the marks
+- **Esc** — closes what is shown over the model: a sketch (asking first if it was changed), a step, Inspect, the marks
 - **Drag, in a sketch** — from a point, line or circle: moves it, its constraints kept; from nothing: a box
 - **X, in a sketch** — what is selected to construction geometry (dashed guides) or back; nothing selected: what you draw next
 - **Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E** — new, open, save, export

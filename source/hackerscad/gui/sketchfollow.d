@@ -417,7 +417,10 @@ mixin template SketchFollow()
         }
         if (at.index < 0)
         {
-            followDismissed = Span.init;
+            // out of every sketch: the one closed may be shown again, once the cursor has left its line (the
+            // code just rewritten, the sketches not yet evaluated, may not know the line is still in it)
+            if (line != followDismissedLine)
+                followDismissed = Span.init;
             if (!sketchFollowing)
                 return;
             auto runs = runsOf(followSpan);

@@ -1063,8 +1063,13 @@ JValue toolList()
             ~ "the bar instead (its button shows it; the user's right-click gives the others), and hcad_gui_pick clicks then draw, as "
             ~ "the user's: state's sketch.drawing gives what is clicked so far. delete: true (with select) takes "
             ~ "the selected entities out of the code, with what is drawn on them (a line on a point; a shape goes "
-            ~ "whole) and the constraints on them; a name still used elsewhere in the code stops it, and says where.",
+            ~ "whole) and the constraints on them; a name still used elsewhere in the code stops it, and says where. "
+            ~ "A sketch shown that can be edited is open for editing (state's sketch: editing, and changed when its "
+            ~ "code changed since it was opened; a new one from hcad_gui_feature sketch is open from before its code "
+            ~ "was written): close: done closes it keeping the changes (the mode bar's Done), cancel closes it and "
+            ~ "puts the code back as it was when it was opened (Cancel; the user's Esc asks first).",
             `"line": {"type": "integer"}, "to_line": {"type": "integer"}, "on": {"type": "boolean"}, `
+            ~ `"close": {"type": "string", "enum": ["done", "cancel"]}, `
             ~ `"follow": {"type": "boolean"}, "pin": {"type": "boolean"}, "align": {"type": "boolean"}, `
             ~ `"run": {"type": "integer"}, "select": {"type": "array", "items": {"type": "integer"}}, `
             ~ `"constrain": {"type": "string", "enum": ["coincident", "on", "horizontal", "vertical", "parallel", `

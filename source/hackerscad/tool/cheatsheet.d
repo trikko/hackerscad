@@ -136,7 +136,7 @@ immutable KeyLine[] keyLines = [
     KeyLine("Double click on a flat face", "the view straight at that face"),
     KeyLine("Alt+1 … Alt+4", "a click picks whole parts, faces, edges or vertices"),
     KeyLine("A", "annotates the view: arrows, crosses, circles, text; Done or Esc goes back"),
-    KeyLine("Esc", "closes what is shown over the model: a sketch, a step, Inspect, the marks"),
+    KeyLine("Esc", "closes what is shown over the model: a sketch (asking first if it was changed), a step, Inspect, the marks"),
     KeyLine("Drag, in a sketch", "from a point, line or circle: moves it, its constraints kept; from nothing: a box"),
     KeyLine("X, in a sketch", "what is selected to construction geometry (dashed guides) or back; nothing selected: what you draw next"),
     KeyLine("Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+E", "new, open, save, export"),

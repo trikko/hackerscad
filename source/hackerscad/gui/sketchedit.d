@@ -342,6 +342,9 @@ mixin template SketchEdit()
         immutable why = v is null ? "none" : sketchUneditable();
         immutable shown = v !is null && !frozen;
         sketchBar.setVisible(shown);
+        // an editable sketch open: what Cancel would bring back is the code now
+        if (shown && why is null)
+            beginSketchSession();
         // what the bar covers, for the view to frame the sketch beside it
         int least, natural, b0, b1;
         sketchBar.measure(Orientation.Horizontal, -1, least, natural, b0, b1);
@@ -868,6 +871,142 @@ mixin template SketchEdit()
         updateSketchBar();
         info(took.length ? format("%d selected in the sketch (%d by the box)", sketchSel.length, took.length)
             : "the box took nothing: drag over points and lines of the sketch");
+    }
+
+    // ---- the editing session: what Done keeps and Cancel takes back
+
+    string sketchBefore;        /// the code when the sketch was opened for editing (null: none open)
+    string sketchPendingBefore; /// a new sketch written, not shown yet: the code before it, for its session
+
+    /// The sketch drawn can be edited: from now on, Cancel brings the code back
+    /// to this (or to what it was before a new sketch's code was written).
+    void beginSketchSession()
+    {
+        if (sketchBefore !is null)
+            return;
+        sketchBefore = sketchPendingBefore !is null ? sketchPendingBefore : text();
+        sketchPendingBefore = null;
+        updateSketchButtons();
+    }
+
+    /// The session over, its changes kept.
+    void endSketchSession()
+    {
+        if (sketchBefore is null)
+            return;
+        sketchBefore = null;
+        updateSketchButtons();
+    }
+
+    /// The code changed since the sketch was opened.
+    bool sketchChanged() => sketchBefore !is null && text() != sketchBefore;
+
+    /// Done: the changes kept, the sketch closed.
+    void sketchDone()
+    {
+        endSketchSession();
+        // closed for good: what the bar wrote last, once evaluated, does not bring it back
+        sketchEditHold = false;
+        showFinal();
+    }
+
+    /// Cancel: the sketch closed, the code back to what it was when it was
+    /// opened (one step, which Ctrl+Z takes back), the cursor on its line.
+    void sketchCancel()
+    {
+        auto before = sketchBefore;
+        endSketchSession();
+        sketchEditHold = false;
+        immutable changed = before !is null && before != text();
+        // the sketch closed: not shown again from the cursor where it is left
+        immutable closing = followSpan;
+        if (changed)
+        {
+            TextIter it;
+            buffer.getIterAtMark(it, buffer.getInsert());
+            immutable line = it.getLine();
+            completion.quiet = true;
+            scope (exit)
+                completion.quiet = false;
+            // only what differs rewritten, between the start and the end they share: the rest of the code,
+            // and the editor's view of it, stay as they are
+            import std.conv : to;
+            immutable now = text().to!dstring, was = before.to!dstring;
+            size_t head, tail;
+            while (head < now.length && head < was.length && now[head] == was[head])
+                head++;
+            while (tail < now.length - head && tail < was.length - head
+                    && now[$ - 1 - tail] == was[$ - 1 - tail])
+                tail++;
+            TextIter a, b;
+            buffer.getIterAtOffset(a, cast(int) head);
+            buffer.getIterAtOffset(b, cast(int) (now.length - tail));
+            buffer.beginUserAction();
+            buffer.delete_(a, b);
+            buffer.getIterAtOffset(a, cast(int) head);
+            buffer.insert(a, was[head .. $ - tail].to!string);
+            buffer.endUserAction();
+            // where the cursor was, if the line is still there
+            if (!buffer.getIterAtLine(a, line))
+                buffer.getEndIter(a);
+            placeCursorQuietly(a);
+            // (the lines rewritten are measured again before the editor can scroll to them: to the mark, centred)
+            editor.scrollToMark(buffer.getInsert(), 0, true, 0, 0.3);
+        }
+        showFinal();
+        // (rewriting the code moved the cursor out of the sketch and back: closed on its line here, as Esc does)
+        TextIter at;
+        buffer.getIterAtMark(at, buffer.getInsert());
+        followDismissed = closing;
+        followDismissedLine = at.getLine() + 1;
+        info(changed ? "the sketch's changes taken back (Ctrl+Z brings them again)" : "");
+    }
+
+    /// Esc with nothing left to step back in the sketch: closed, after asking
+    /// when that would lose changes; nothing changed, closed at once.
+    void sketchCloseAsked()
+    {
+        if (!sketchChanged())
+            return sketchDone();
+        import adw.alert_dialog : AlertDialog;
+        import adw.types : ResponseAppearance;
+        auto d = new AlertDialog("Discard the changes to the sketch?",
+            "The code goes back to what it was when the sketch was opened. Done keeps them.");
+        d.addResponse("keep", "_Keep editing");
+        d.addResponse("done", "D_one");
+        d.addResponse("discard", "_Discard");
+        d.setResponseAppearance("discard", ResponseAppearance.Destructive);
+        d.setDefaultResponse("keep");
+        d.setCloseResponse("keep");
+        d.connectResponse(null, (string response) {
+            if (response == "discard")
+                sketchCancel();
+            else if (response == "done")
+                sketchDone();
+        });
+        d.present(window);
+    }
+
+    /// Esc at the end of its steps, or Show final model: a sketch being edited is
+    /// closed as sketchCloseAsked does, anything else shows the final model.
+    void closeShown()
+    {
+        if (sketchBefore !is null && drawnSketch() !is null)
+            return sketchCloseAsked();
+        endSketchSession();
+        showFinal();
+    }
+
+    /// The mode bar's buttons: Done and Cancel while a sketch is edited, Show final model otherwise.
+    void updateSketchButtons()
+    {
+        if (finalButton is null)
+            return;
+        immutable editing = sketchBefore !is null;
+        finalButton.setLabel(editing ? "Done" : "Show final model");
+        finalButton.setTooltipText(editing ? "Keep the changes to the sketch and close it"
+            : "Back to the parts as the model makes them (Esc)");
+        cancelSketchButton.setVisible(editing);
     }
 
     /// Esc in a sketch, a step at a time before leaving it: the clicks of a shape

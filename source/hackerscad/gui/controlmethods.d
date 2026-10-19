@@ -739,6 +739,24 @@ mixin template ControlMethods()
                         return true;
                     return false;
                 }
+                // {"close": "done"}: the sketch being edited closed, its changes kept (the mode bar's Done);
+                // {"close": "cancel"}: closed, the code back to what it was when it was opened (Cancel)
+                if (has("close"))
+                {
+                    immutable how = arg("close");
+                    if (how != "done" && how != "cancel")
+                        return reply(JValue.init, "close is done (keep the changes) or cancel (take them back)");
+                    whenIdle(() {
+                        if (sketchBefore is null)
+                            return reply(JValue.init, "no sketch is being edited");
+                        if (how == "done")
+                            sketchDone();
+                        else
+                            sketchCancel();
+                        reply(state(), null);
+                    });
+                    return;
+                }
                 // the sketch bar: select entities of the drawn sketch (ids from state's sketch.entities), and
                 // write a constraint on what is selected, as its buttons do
                 // drawing: tool chooses a tool of the bar (then hcad_gui_pick clicks draw, as the user's do);

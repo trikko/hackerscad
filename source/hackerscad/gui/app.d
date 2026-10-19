@@ -1154,7 +1154,7 @@ final class MainWindow
                 }
                 if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback || sketchIndices.length))
                 {
-                    showFinal();
+                    closeShown();
                     return true;
                 }
                 if ((key == KEY_Escape || key == KEY_space) && viewport.selection().length)
@@ -1403,7 +1403,7 @@ final class MainWindow
                     return true;
                 else if (key == KEY_Escape && (viewport.inInspect || viewport.inRollback || sketchIndices.length))
                 {
-                    showFinal();
+                    closeShown();
                     return true;
                 }
                 else if (key == KEY_Escape && viewport.selection().length)
@@ -4018,6 +4018,8 @@ private:
     Box modeBar;
     Label modeText;
     Button runButton;   /// Run 1 of 2: the next run of a sketch made again
+    Button finalButton;         /// Show final model; Done while a sketch is edited
+    Button cancelSketchButton;  /// Cancel, while a sketch is edited
 
     void buildModeBar()
     {
@@ -4045,12 +4047,24 @@ private:
                 showSketchRun((drawnRuns()[0] + 1) % sketchIndices.length);
         });
         modeBar.append(runButton);
-        auto back = new Button;
-        back.setLabel("Show final model");
-        back.setTooltipText("Back to the parts as the model makes them (Esc)");
-        back.addCssClass("suggested-action");
-        back.connectClicked(() => showFinal());
-        modeBar.append(back);
+        // editing a sketch: Cancel takes its changes back, Done keeps them; both close it
+        cancelSketchButton = new Button;
+        cancelSketchButton.setLabel("Cancel");
+        cancelSketchButton.setTooltipText("Take back the changes made since the sketch was opened, and close it");
+        cancelSketchButton.addCssClass("destructive-action");
+        cancelSketchButton.connectClicked(() => sketchCancel());
+        cancelSketchButton.setVisible(false);
+        modeBar.append(cancelSketchButton);
+        finalButton = new Button;
+        finalButton.addCssClass("suggested-action");
+        finalButton.connectClicked(() {
+            if (sketchBefore !is null)
+                sketchDone();
+            else
+                showFinal();
+        });
+        modeBar.append(finalButton);
+        updateSketchButtons();
         modeBar.setVisible(false);
     }
 
@@ -4365,6 +4379,9 @@ private:
             return;
         if (sketchIndices.length == 0 && sketchLines[0] == 0)
             return;
+        // closed by anything but Cancel: its changes stay
+        if (!sketchEditHold)
+            endSketchSession();
         followClosed();   // the sketch at the cursor: the camera goes back
         sketchLines = [0, 0];
         sketchIndices = null;
@@ -4464,6 +4481,12 @@ private:
             j["areas"] = areas;
             if (auto why = sketchUneditable())
                 j["not_editable"] = why;
+            // opened for editing: Done keeps the changes, Cancel takes them back (changed: there are some)
+            if (sketchBefore !is null)
+            {
+                j["editing"] = true;
+                j["changed"] = sketchChanged();
+            }
             // a drawing tool at work, and what it has clicked so far (on the sketch's plane)
             if (drawTool !is null)
             {
@@ -5278,6 +5301,9 @@ private:
             import hackerscad.tool.codegen : sketchOnFace;
             SolidVal sv;
             auto it = selectorInterp(part, sv);
+            // Cancel, once it shows, takes the new sketch away too
+            endSketchSession();
+            sketchPendingBefore = text();
             applyEdit(sketchOnFace(text(), path, part.fn, facesSelector(it, sv, [face])));
             viewport.setSelection(null);
             // the sketch shows as soon as the cursor, on its line, has it evaluated
