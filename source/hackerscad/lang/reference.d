@@ -348,9 +348,9 @@ immutable Ref[] reference =
         "rect(10.mm, 2.mm).sweep(p, twist: t => 60.deg * sin(t * 720.deg)) // swinging"]),
     F("loft", "", ["profiles: Profile[]", "ruled: bool", "inside: Vec3[][]"], "Solid", "A solid through profiles placed in space; through paths (Path[]), a Surface; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane)."),
     F("hull", "", ["shapes…"], "Solid",
-        "The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile."),
+        "The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile. Their flat faces it lies on keep their tags."),
     F("minkowski", "", ["a", "b"], "Solid",
-        "a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex."),
+        "a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex. Their flat faces, moved out, keep their tags."),
     withForms(F("cut", "Solid", ["profile: Profile | Solid", "on: Frame | Faces | Plane", "at: Vec3", "depth: Length", "through: bool", "taper: Angle", "wrap: Faces", "project: Faces", "along: Vec3"], "Solid",
         "Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm); body.extrude(p, on: …, depth:) raises it the same way. On a curved face (one face of any shape): wrap: rolls the profile onto it like a label, its lengths kept along the face (exact on cylinders, cones and extrusions, a little stretched on a sphere), its x across the face (round a cylinder) and y along it, read from outside; project: carries it onto the face along a direction (along:, else the face's normal), from the plane touching the face, as a light casts it (stretched where the face turns away). The profile's origin goes to the front of the face (the side facing -Y, halfway along), or to at: a point over it; depth goes along the face's normal."), [
         "body.cut(circle(d: 6.mm), on: faces.top, depth: 2.mm)",

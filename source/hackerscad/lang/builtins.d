@@ -1087,6 +1087,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             : k.extrude(base, h, taper), [p], "extrude", a.span);
         sv.flat = false;
         sv.placed = false;
+        // a tilted profile's references lie where it lies: brought onto XY with it, put back below
+        if (tilted && sv.anchors.length)
+            sv.anchors = mapAnchors(it, (Brep q) => fromPlace(k, tilt, q), sv.anchors, a.span);
         if (sym)
             sv = transformed(it, a.span, sv, b => k.translate(b, Vec3(-sx / 2, -sy / 2, -h / 2))).solid;
         // along X: the profile's x along Y and its y up Z, pushed towards +X (a turn of
@@ -1125,14 +1128,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             throw new HcadError(Code.type, "a revolve turns by more than 0° and at most 360° (either way)",
                 x.has("angle") ? x.spanOf("angle") : a.span);
         auto b = k.revolve(nonEmpty(p, a.span), o, d, max(-2 * PI, min(2 * PI, ang)));
-        if (upright)
-            b = k.rotate(b, Vec3(1, 0, 0), PI / 2);
-        if (p.placed)
-            b = toPlace(k, p.place, b);
         auto sv = derived(it, b, [p], "revolve", a.span);
         sv.flat = false;
         sv.placed = false;
-        return Value.of(sv);
+        // stood up and placed after: as a transform, so the faces keep the tags of the
+        // profile's lines they were turned from
+        if (!upright && !p.placed)
+            return Value.of(sv);
+        auto place = p.place;
+        immutable placed = p.placed;
+        return transformed(it, a.span, sv, (Brep s) {
+            if (upright)
+                s = k.rotate(s, Vec3(1, 0, 0), PI / 2);
+            return placed ? toPlace(k, place, s) : s;
+        });
     });
 
     // ---- paths, sweeps and lofts
@@ -1363,6 +1372,25 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         sv.placed = false;
         sv.path = false;
         sv.surface = open;
+        // the profile's references where it starts: at the path's start, across it, its +Y towards
+        // world +Z (+Y when the path starts vertical), up: or the guide's start, as the kernel places it
+        if (sv.anchors.length)
+        {
+            Vec3 o, t;
+            k.pathFrame(route.brep, false, o, t);
+            auto up = abs(t.z) > 0.999 ? Vec3(0, 1, 0) : Vec3(0, 0, 1);
+            if (x.has("up"))
+                up = x.dir("up");
+            else if (x.has("guide"))
+            {
+                Vec3 g, gt;
+                k.pathFrame(pathOf("guide").brep, false, g, gt);
+                up = g - o;
+            }
+            auto y = (up - t * up.dot(t)).normalized;
+            Vec3[4] start = [o, y.cross(t), y, t];
+            sv.anchors = mapAnchors(it, (Brep q) => toPlace(k, start, q), sv.anchors, a.span);
+        }
         return Value.of(sv);
     });
     def("loft", (ref CallArgs a) {
@@ -1519,6 +1547,15 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         import hackerscad.lang.convex : turnFromZ;
         auto b = nonEmpty(s, a.span);
         auto m = k.tessellate(b, 0.05, 0.3);
+        // the turns found, applied again at the end as one transform (its references follow)
+        Vec3[] turnAxes;
+        double[] turnAngles;
+        void turn(Vec3 axis, double angle)
+        {
+            b = k.rotate(b, axis, angle);
+            turnAxes ~= axis;
+            turnAngles ~= angle;
+        }
         // the face to lie on: the largest flat one, or across the direction the part is thinnest in
         Vec3 down;
         bool found;
@@ -1529,85 +1566,78 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 found = true;
                 break;
             }
-        // the triangles' centres, weighted by their areas
-        Vec3[] centres;
-        double[] weights;
-        void sample(const Mesh mm)
+        // how the surface's area spreads about its centre: each triangle's exact second moment (its
+        // centre alone would pull a box made of two triangles a face towards their diagonals)
+        double[3][3] spread(const Mesh mm)
         {
-            centres = null;
-            weights = null;
+            Vec3 first;
+            double total = 0;
+            double[3][3] second = 0;
             foreach (t; 0 .. mm.triangleCount)
             {
-                auto p0 = mm.vertex(mm.tris[3 * t]), p1 = mm.vertex(mm.tris[3 * t + 1]), p2 = mm.vertex(mm.tris[3 * t + 2]);
-                centres ~= (p0 + p1 + p2) / 3;
-                weights ~= (p1 - p0).cross(p2 - p0).length / 2;
-            }
-        }
-        if (!found)
-        {
-            sample(m);
-            Vec3 mean;
-            double total = 0;
-            foreach (i, c; centres)
-            {
-                mean = mean + c * weights[i];
-                total += weights[i];
-            }
-            mean = mean / total;
-            double[3][3] cov = 0;
-            foreach (i, c; centres)
-            {
-                auto d = c - mean;
-                immutable double[3] v = [d.x, d.y, d.z];
+                Vec3[3] v = [mm.vertex(mm.tris[3 * t]), mm.vertex(mm.tris[3 * t + 1]), mm.vertex(mm.tris[3 * t + 2])];
+                immutable area = (v[1] - v[0]).cross(v[2] - v[0]).length / 2;
+                auto sum = v[0] + v[1] + v[2];
+                first = first + sum * (area / 3);
+                total += area;
+                // ∫ p pᵀ dA over a triangle: area / 12 · (Σ vᵢ vᵢᵀ + (Σ vᵢ)(Σ vᵢ)ᵀ)
                 foreach (r; 0 .. 3)
                     foreach (q; 0 .. 3)
-                        cov[r][q] += weights[i] * v[r] * v[q];
+                    {
+                        double m = sum[r] * sum[q];
+                        foreach (i; 0 .. 3)
+                            m += v[i][r] * v[i][q];
+                        second[r][q] += area / 12 * m;
+                    }
             }
-            down = smallestEigenvector(cov);
+            auto mean = first / total;
+            foreach (r; 0 .. 3)
+                foreach (q; 0 .. 3)
+                    second[r][q] -= total * mean[r] * mean[q];
+            return second;
         }
+        if (!found)
+            down = smallestEigenvector(spread(m));
         // that direction turned to -Z
         Vec3 ax;
         double angle;
         turnFromZ(-down, ax, angle);
         if (angle > 1e-9)
-            b = k.rotate(b, ax, -angle);
+            turn(ax, -angle);
         // turned about Z: the main direction of what it covers along X
-        sample(k.tessellate(b, 0.05, 0.3));
         {
-            double sx = 0, sy = 0, total = 0;
-            foreach (i, c; centres)
-            {
-                sx += c.x * weights[i];
-                sy += c.y * weights[i];
-                total += weights[i];
-            }
-            sx /= total;
-            sy /= total;
-            double cxx = 0, cyy = 0, cxy = 0;
-            foreach (i, c; centres)
-            {
-                cxx += weights[i] * (c.x - sx) ^^ 2;
-                cyy += weights[i] * (c.y - sy) ^^ 2;
-                cxy += weights[i] * (c.x - sx) * (c.y - sy);
-            }
-            immutable theta = 0.5 * atan2(2 * cxy, cxx - cyy);
+            auto c = spread(k.tessellate(b, 0.05, 0.3));
+            immutable theta = 0.5 * atan2(2 * c[0][1], c[0][0] - c[1][1]);
             if (abs(theta) > 1e-9)
-                b = k.rotate(b, Vec3(0, 0, 1), -theta);
+                turn(Vec3(0, 0, 1), -theta);
         }
         // the spread of the area is seldom exactly along the part's sides (a bracket, a hole off
         // centre): its largest upright flat face, when it has one, is squared to X or Y
         foreach (f; analyse(k.tessellate(b, 0.05, 0.3)).features)
             if (f.kind == Surface.plane && abs(f.normal.z) < 1e-6)
             {
-                immutable phi = atan2(f.normal.y, f.normal.x);
+                // its exact normal: the solid's own face lying that way (the mesh's is a little off)
+                auto n = f.normal;
+                double best = 0;
+                foreach (g; k.faces(b))
+                    if (g.normal.dot(f.normal) > 0.9999 && g.area > best)
+                    {
+                        best = g.area;
+                        n = g.normal;
+                    }
+                immutable phi = atan2(n.y, n.x);
                 immutable off = phi - PI / 2 * round(phi / (PI / 2));
                 if (abs(off) > 1e-12 && abs(off) < PI / 18)
-                    b = k.rotate(b, Vec3(0, 0, 1), -off);
+                    turn(Vec3(0, 0, 1), -off);
                 break;
             }
         auto bb = k.bbox(b);
-        b = k.translate(b, Vec3(-bb.center.x, -bb.center.y, -bb.min.z));
-        return Value.of(derived(it, b, [s], "aligned", a.span));
+        immutable shift = Vec3(-bb.center.x, -bb.center.y, -bb.min.z);
+        return transformed(it, a.span, s, (Brep q) {
+            foreach (i, axis; turnAxes)
+                q = k.rotate(q, axis, turnAngles[i]);
+            return k.translate(q, shift);
+        }, "aligned", true);
     });
     def("deviation", (ref CallArgs a) {
         // clone.deviation(original): how far apart their surfaces are at most, both ways
@@ -1709,6 +1739,14 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         r.flat = flat;
         r.rgb = items[0].rgb;
         r.hasColor = items[0].hasColor;
+        // the flat faces of theirs the hull lies on keep their tags; their references stay where they are
+        if (!flat)
+        {
+            r.tags = items[0].tags;
+            foreach (sv; items)
+                r.anchors ~= sv.anchors;
+            tagsByPlane(it, r, items, (size_t, Vec3) => 0.0);
+        }
         return Value.of(r);
     });
     def("minkowski", (ref CallArgs a) {
@@ -1725,6 +1763,21 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         r.flat = sa.flat;
         r.rgb = sa.rgb;
         r.hasColor = sa.hasColor;
+        // a flat face of either moved out by how far the other reaches that way keeps its tags
+        if (!r.flat && (sa.faceTags.length || sb.faceTags.length))
+        {
+            r.tags = sa.tags;
+            auto ma = k.tessellate(sa.brep, 0.01, 0.1), mb = k.tessellate(sb.brep, 0.01, 0.1);
+            double reach(const Mesh m, Vec3 n)
+            {
+                double best = -double.infinity;
+                foreach (v; 0 .. m.vertexCount)
+                    best = max(best, m.vertex(v).dot(n));
+                return best;
+            }
+            // (the reach measured on a fine mesh: its points lie on the surface, a chord's sag inside)
+            tagsByPlane(it, r, [sa, sb], (size_t i, Vec3 n) => reach(i == 0 ? mb : ma, n), 0.02);
+        }
         return Value.of(r);
     });
 
@@ -3577,6 +3630,11 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
             string[] present;
             foreach (t; ctx.faceTags)
                 present = tagUnion(present, t);
+            // the tags there: the rest of the selector (a filter, a normal) left none of their faces
+            if (sel.tagged.all!(t => present.canFind(t)))
+                throw new HcadError(Code.kernel, format("faces tagged %-(%s, %) are there, but none of them is left by "
+                    ~ "the rest of the selector", sel.tagged.map!(t => "'" ~ t ~ "'")), span,
+                    "look at the filter or the direction that follows the tag");
             auto close = present.length ? Interp.suggest(sel.tagged[0], present) : null;
             throw new HcadError(Code.kernel, format("no face of this solid is tagged %-(%s, %)", sel.tagged.map!(t => "'" ~ t ~ "'")),
                 span, present.length ? (close ? close ~ " " : "") ~ format("(the tags on its faces: %-(%s, %))", present)
@@ -3939,15 +3997,18 @@ private double segmentDistance(Vec3 x, Vec3 p, Vec3 q)
 
 /// Applies an operation to one solid, keeping colour and face provenance;
 /// faces the operation creates are attributed to a new `kind` feature.
-Value transformed(Interp it, Span span, SolidVal s, Brep delegate(Brep) f, string kind = "transform")
+/// `rigid`: the operation only moves, turns, mirrors or scales (by default when `kind` is "transform").
+Value transformed(Interp it, Span span, SolidVal s, Brep delegate(Brep) f, string kind = "transform",
+    bool rigid = false)
 {
     if (s.brep is null)
         return Value.of(s);
+    rigid = rigid || kind == "transform";
     auto r = derived(it, f(s.brep), [s], kind, span);
     // moved, turned, mirrored, scaled: its references too, and a profile's tagged edges, in the same order
-    if (kind == "transform" && s.anchors.length)
+    if (rigid && s.anchors.length)
         r.anchors = mapAnchors(it, f, s.anchors, span);
-    if (kind == "transform" && s.edgeTags.length)
+    if (rigid && s.edgeTags.length)
         r.edgeTags = s.edgeTags;
     // moving what a feature has just made, in the same statement
     // (circle(…).move(…)): the feature shows where its solid ends up. A caller
@@ -4237,6 +4298,38 @@ private void inheritTags(Interp it, SolidVal r, Brep b, SolidVal[] inputs, const
         if (a.face >= 0 && a.face < r.faceTags.length && a.origin.input >= 0 && a.origin.input < inputs.length
             && inputs[a.origin.input] !is null && a.origin.index < inputs[a.origin.input].edgeTags.length)
             r.faceTags[a.face] = tagUnion(r.faceTags[a.face], inputs[a.origin.input].edgeTags[a.origin.index]);
+}
+
+/// For results built anew (a hull, a Minkowski sum): each flat face of an input that has tags hands them to
+/// the faces of `r` lying in its plane, facing the same way, moved `shift(input, normal)` along its normal
+/// (to within `tol` mm, when the shift is measured on a mesh).
+private void tagsByPlane(Interp it, SolidVal r, SolidVal[] inputs, double delegate(size_t, Vec3) shift,
+    double tol = 0)
+{
+    auto k = it.kernel;
+    FaceInfo[] made;
+    foreach (ii, sv; inputs)
+    {
+        if (sv is null || sv.brep is null || sv.flat || !sv.faceTags.length)
+            continue;
+        if (made is null)
+        {
+            made = k.faces(r.brep);
+            if (r.faceTags.length != made.length)
+                r.faceTags = new string[][made.length];
+        }
+        auto own = k.faces(sv.brep);
+        foreach (i, f; own)
+        {
+            if (i >= sv.faceTags.length || !sv.faceTags[i].length)
+                continue;
+            immutable off = f.center.dot(f.normal) + shift(ii, f.normal);
+            foreach (j, g; made)
+                if (g.normal.dot(f.normal) > 1 - 1e-9
+                    && abs(g.center.dot(f.normal) - off) < max(tol, 1e-6 * (1 + abs(off))))
+                    r.faceTags[j] = tagUnion(r.faceTags[j], sv.faceTags[i]);
+        }
+    }
 }
 
 /// `a` with the tags of `b` it does not have, in order.
@@ -5346,18 +5439,20 @@ Value threadFace(Interp it, ref CallArgs a)
                     sleeve = k.rotate(sleeve, Vec3(0, 0, 1), phase);
                     prism = k.rotate(prism, Vec3(0, 0, 1), phase);
                 }
-                auto holed = k.boolean(b, placed(prism), BoolOp.cut);
-                auto joined = k.joinCoincident(holed, placed(sleeve));
+                // each step derived from the one before: a face's origin is in the step's own inputs
+                auto holed = derived(it, k.boolean(b, placed(prism), BoolOp.cut), [body], "thread", a.span);
+                auto joined = derived(it, k.joinCoincident(holed.brep, placed(sleeve)), [holed], "thread", a.span);
                 // the opening countersunk at 45°, to start the screw
                 if (chamfer)
-                    joined = k.boolean(joined, placed(k.translate(k.cone(dd / 2 - h, dd / 2 + 0.01 + 0.01, h + 0.01),
-                        Vec3(0, 0, len - h))), BoolOp.cut);
+                    joined = derived(it, k.boolean(joined.brep, placed(k.translate(k.cone(dd / 2 - h,
+                        dd / 2 + 0.01 + 0.01, h + 0.01), Vec3(0, 0, len - h))), BoolOp.cut), [joined], "thread",
+                        a.span);
                 if (environment.get("HCAD_THREAD_DEBUG"))
                 {
                     import std.stdio : stderr;
                     stderr.writefln("sleeve: %s sides, length %s of %s", sides, len, faceLen);
                 }
-                return Value.of(derived(it, joined, [body], "thread", a.span));
+                return Value.of(joined);
             }
             catch (KernelException e)
             {
@@ -5377,7 +5472,15 @@ Value threadFace(Interp it, ref CallArgs a)
             throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
         inStep();
     }
-    auto sv = derived(it, placed(tool), [body], "thread", a.span);
+    // the thread and its helpers are built apart: none of their faces is one of the body's
+    SolidVal apart(Brep q)
+    {
+        auto r = derived(it, q, null, "thread", a.span);
+        r.rgb = body.rgb;
+        r.hasColor = body.hasColor;
+        return r;
+    }
+    auto sv = apart(placed(tool));
     sv.flat = false;
     if (!outside)
         return solidBoolean(it, body, sv, BoolOp.cut, a.span);
@@ -5385,7 +5488,7 @@ Value threadFace(Interp it, ref CallArgs a)
     // grooves out of it would lay the crests exactly on its surface, which booleans handle badly)
     SolidVal plain;
     try
-        plain = derived(it, placed(k.cylinder(c.radius + 0.02, len)), [body], "thread", a.span);
+        plain = apart(placed(k.cylinder(c.radius + 0.02, len)));
     catch (KernelException e)
         throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
     plain.flat = false;
@@ -5401,7 +5504,7 @@ Value threadFace(Interp it, ref CallArgs a)
         {
             immutable dd = t.major - 2 * clearance;
             auto core = k.translate(k.cylinder(dd / 2 - h - 0.02, sink + 0.02), Vec3(0, 0, -sink));
-            auto withCore = derived(it, placed(k.boolean(tool, core, BoolOp.fuse)), [body], "thread", a.span);
+            auto withCore = apart(placed(k.boolean(tool, core, BoolOp.fuse)));
             withCore.flat = false;
             return solidBoolean(it, bare.solid, withCore, BoolOp.fuse, a.span);
         }

@@ -3559,7 +3559,10 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                     for (auto &c2 : loop)
                         for (int k = 0; k < 24 && within; k++) {
                             const gp_Pnt2d q = c2->Value(c2->FirstParameter() + (c2->LastParameter() - c2->FirstParameter()) * k / 24);
-                            if (inside.Perform(gp_Pnt2d(q.X() + du, q.Y())) != TopAbs_IN
+                            // (on a closed face the classifier brings a point back into the period: one past the
+                            // seam would count as inside, the region crossing the seam's edge)
+                            if ((period > 0 && (q.X() + du <= fu0 || q.X() + du >= fu1))
+                                || inside.Perform(gp_Pnt2d(q.X() + du, q.Y())) != TopAbs_IN
                                 || (through && insideFar->Perform(q) != TopAbs_IN))
                                 within = false;
                         }
@@ -7030,11 +7033,30 @@ hc_shape *hc_join_coincident(const hc_shape *a, const hc_shape *b)
         for (int i = 1; i <= ef.Extent(); i++)
             if (!BRep_Tool::Degenerated(TopoDS::Edge(ef.FindKey(i))) && ef(i).Extent() != 2)
                 throw Standard_Failure("the joined solid is not closed");
+        // where each face came from: a's faces (those replaced, the face they replace), then b's
+        history_new(solid);
+        {
+            TopTools_IndexedMapOfShape res;
+            TopExp::MapShapes(solid, TopAbs_FACE, res);
+            auto record = [&](const TopoDS_Shape &f, Origin o) {
+                const TopoDS_Shape g = sew.IsModified(f) ? sew.Modified(f) : f;
+                for (TopExp_Explorer e(g, TopAbs_FACE); e.More(); e.Next())
+                    if (const int j = res.FindIndex(e.Current()); j > 0)
+                        history_from(j, o);
+            };
+            for (size_t i = 0; i < fa.size(); i++) {
+                if (!dropA[i])
+                    record(fa[i], Origin{0, (int)i});
+                for (auto &r : replaced[i])
+                    record(r, Origin{0, (int)i});
+            }
+            for (size_t j = 0; j < fb.size(); j++)
+                if (!dropB[j])
+                    record(fb[j], Origin{1, (int)j});
+        }
         // the faces of the two lying in one plane side by side (a sleeve's end and the part's face round it)
         // merged into one, as a boolean leaves them: faces.top finds one face
-        ShapeUpgrade_UnifySameDomain unify(solid, Standard_True, Standard_True, Standard_False);
-        unify.Build();
-        return primitive(unify.Shape());
+        return wrap(unify_history(solid));
     });
 }
 

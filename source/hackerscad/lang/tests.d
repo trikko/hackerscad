@@ -2801,6 +2801,7 @@ unittest
     assert(error(`@part Solid p() { auto b = box(10, 10, 10).addTag("pin", at: vec(1, 2, 3)); b.point("pn"); return b; }`)
         .suggestion.canFind("'pin'"));
     // a sketch's tagged lines and circles: the faces swept from them, extruded (moved after) or revolved
+    // (upright too: revolve() with no axis, stood up after)
     expectOut(`auto s = sketch();
         auto a = s.point(0, 0, fixed: true);
         auto b = s.point(100, 0);
@@ -2819,8 +2820,45 @@ unittest
         auto p = r.polyline([r.point(0, 0, fixed: true), r.point(20, 0), r.point(10, 30), r.point(0, 30)]);
         p[1].addTag("cone");
         writeln(d.faces.tagged("slope").count, " ", d.faces.tagged("bore").count, " ",
-            d.faces.tagged("slope").list[0].normal.y, " ", r.profile.revolve(axis: Y).faces.tagged("cone").count);`,
-        `1 1 0 1`);
+            d.faces.tagged("slope").list[0].normal.y, " ", r.profile.revolve(axis: Y).faces.tagged("cone").count,
+            " ", r.profile.revolve().faces.tagged("cone").count, " ",
+            r.profile.revolve().faces.tagged("cone").list[0].normal.z > 0);`,
+        `1 1 0 1 1 true`);
+    // aligned turns and moves a part as one transform: its tagged points go with it (on a corner, still on one)
+    expectOut(`auto b = box(10, 20, 30).addTag("pin", at: vec(5.mm, 10.mm, 30.mm));
+        auto al = b.rotate(x: 20, z: 10).aligned;
+        auto q = al.point("pin");
+        auto z = al.bbox.size;
+        writeln(abs(abs(q.x) - z.x / 2) < 1e-6.mm, " ", abs(abs(q.y) - z.y / 2) < 1e-6.mm, " ",
+            abs(q.z) < 1e-6.mm || abs(q.z - z.z) < 1e-6.mm);`,
+        `true true true`);
+    // a profile's tagged point: extruded from a tilted profile (once there, not twice), swept (where the
+    // profile starts on the path, across it)
+    expectOut(`auto r = sketch();
+        r.point(1, 2, fixed: true).addTag("pt");
+        r.rect(r.point(0, 0, fixed: true), r.point(6, 3, fixed: true));
+        writeln(r.profile.across(Y).extrude(5).point("pt"), " ", r.profile.rotate(x: 90).extrude(5).point("pt"));
+        writeln(r.profile.sweep(path([vec(0, 0, 0), vec(30, 0, 0)])).point("pt"), " ",
+            r.profile.sweep(path([vec(10, 0, 5), vec(10, 0, 30)])).point("pt"));`,
+        "[1 mm, 0 mm, 2 mm] [1 mm, 0 mm, 2 mm]\n[0 mm, 1 mm, 2 mm] [11 mm, 2 mm, 5 mm]");
+    // threaded, a hole's part and a shaft's part keep their faces' tags where they were (not on the thread's
+    // own faces, which are new: a rod's end threaded over is the thread's)
+    expectOut(`auto b = box(40, 40, 10);
+        b.faces.top.addTag("lid");
+        auto hb = b - cylinder(d: 17.5, h: 30, center: true).addTag("bore", recursive: true);
+        auto h = hb.thread(hb.faces.tagged("bore"), "M20");
+        auto s = box(30, 30, 5) + cylinder(d: 12, h: 20).move(z: 5).addTag("shaft", recursive: true);
+        s.faces.bottom.addTag("foot");
+        auto t = s.thread(s.faces.tagged("shaft").filter(f => f.area > 300 * 1.mm ^^ 2), "M12");
+        auto c = cylinder(d: 12, h: 20);
+        c.faces.bottom.addTag("end");
+        writeln(h.faces.tagged("lid").list[0].center, " ", t.faces.tagged("foot").list[0].center, " ",
+            c.thread(faces.largest, "M12").faces.tagged("end").count);`,
+        "[0 mm, 0 mm, 10 mm] [0 mm, 0 mm, 0 mm] 0");
+    // a tag there whose faces the rest of the selector leaves out: said so, not that the tag is missing
+    assert(error(`@part Solid p() { auto s = box(10, 10, 10); s.faces.top.addTag("lid");
+        return s.fillet(edges.of(s.faces.tagged("lid").filter(f => f.area > 1000 * 1.mm ^^ 2)), r: 1); }`)
+        .message.canFind("none of them is left"));
     // a tag with a dot belongs to its module: given only there, read anywhere
     assert(error(`@part Solid p() { return box(1, 1, 1).addTag("hardware.bore"); }`)
         .message.canFind("can only be given in module hardware"));
@@ -5045,4 +5083,164 @@ unittest
     auto sleeve = volumes("1"), boolean = volumes("0");
     foreach (i; 0 .. 6)
         assert(abs(sleeve[i] - boolean[i]) < 1e-3 * boolean[i], format("%s: %s %s", i, sleeve[i], boolean[i]));
+}
+
+unittest
+{
+    mixin(slowTest);
+    // tags through every operation on a box whose six sides are tagged: no tag on a face off its side's plane
+    // (where the operation moved it), none lost while its face is there; the check itself caught on a box
+    // moved and checked where it was
+    auto r = runModel(`import joints;
+import flex;
+import molds;
+import hardware : M3, hole;
+import threads;
+
+immutable string[] names = ["top", "bottom", "right", "left", "back", "front"];
+immutable ns = [vec(0, 0, 1), vec(0, 0, -1), vec(1, 0, 0), vec(-1, 0, 0), vec(0, 1, 0), vec(0, -1, 0)];
+immutable cs = [vec(0.mm, 0.mm, 20.mm), vec(0.mm, 0.mm, 0.mm), vec(20.mm, 0.mm, 10.mm),
+    vec(-20.mm, 0.mm, 10.mm), vec(0.mm, 15.mm, 10.mm), vec(0.mm, -15.mm, 10.mm)];
+
+/// A 40 × 30 × 20 box, each face tagged with its side.
+Solid tagged()
+{
+    auto b = box(40, 30, 20);
+    b.faces.top.addTag("top");
+    b.faces.bottom.addTag("bottom");
+    b.faces.right.addTag("right");
+    b.faces.left.addTag("left");
+    b.faces.back.addTag("back");
+    b.faces.front.addTag("front");
+    return b;
+}
+
+/// Prints what is wrong with the tags of r: a tagged face off its side's plane (moved by
+/// shift, its normal and point turned by the caller), a side's tag lost though not in gone.
+int check(Solid r, string op, string[] gone, string[] skip, Vec[] pts, Vec[] nrm)
+{
+    int bad = 0;
+    foreach (i, t; names)
+    {
+        if (skip.canFind(t))
+            continue;
+        auto n = r.faces.tagged(t).count;
+        if (n == 0 && !gone.canFind(t))
+        {
+            writeln(op, ": '", t, "' lost");
+            bad++;
+        }
+        if (n == 0)
+            continue;
+        foreach (f; r.faces.tagged(t))
+            if (abs(f.normal.dot(nrm[i]) - 1) > 1e-6 || abs((f.center - pts[i]).dot(nrm[i])) > 1e-3.mm)
+            {
+                writeln(op, ": '", t, "' on a wrong face at ", f.center, " normal ", f.normal);
+                bad++;
+                break;
+            }
+        if (gone.canFind(t))
+        {
+            writeln(op, ": '", t, "' expected gone, still on ", n);
+            bad++;
+        }
+    }
+    return bad;
+}
+
+int same(Solid r, string op, string[] gone = [], string[] skip = []) => check(r, op, gone, skip, cs, ns);
+
+@part
+Solid p() => box(1, 1, 1);
+
+unittest
+{
+    auto b = tagged();
+    auto Zp = plane(origin: vec(0, 0, 10), normal: Z);
+    auto Xp = plane(origin: vec(0, 0, 0), normal: X);
+    int bad = 0;
+    bad += same(b, "identity");
+    bad += same(b.fillet(edges.of(faces.tagged("top")), r: 2), "fillet top edges");
+    bad += same(b.fillet(edges.parallel(Z), r: 3), "fillet vertical edges");
+    bad += same(b.chamfer(edges.of(faces.tagged("top")), d: 2), "chamfer top edges");
+    bad += same(b.shell(open: faces.tagged("top"), thickness: 2), "shell (the rim keeps top)");
+    bad += same(b.draft(faces.tagged("front"), 5.deg), "draft front", [], ["front"]);
+    bad += same(b - cylinder(d: 10, h: 50, center: true), "hole through");
+    bad += same(b - cylinder(d: 10, h: 50).move(z: 5), "blind hole from top");
+    bad += same(b + box(10, 10, 10).move(z: 20), "union on top");
+    bad += same(b + box(10, 10, 10).move(x: 15, z: 5), "union through the right");
+    bad += same(b & box(30, 20, 40, center: true), "intersection", ["right", "left", "back", "front"]);
+    bad += same(b - box(10, 50, 50, center: true).move(x: 20), "notch across right", ["right"]);
+    bad += same(b.cut(circle(d: 5), on: b.frame(faces.tagged("top")), depth: 3), "cut on top");
+    bad += same(b.extrude(rect(10, 10), on: b.frame(faces.tagged("top")), depth: 3), "extrude on top");
+    bad += same(b.extrude(rect(10, 10), on: b.frame(faces.tagged("front")), depth: 3), "extrude on front");
+    auto sp = b.split(Zp);
+    bad += same(sp[0], "split lower", ["top"]);
+    bad += same(sp[1], "split upper", ["bottom"]);
+    bad += same(b.halves(Zp).above, "halves above", ["bottom"]);
+    bad += same(b.halves(Zp).below, "halves below", ["top"]);
+    bad += same(b.split(Xp)[0], "split left piece", ["right"]);
+    bad += same(b.knurl(faces.tagged("front")), "knurl front", [], ["front"]);
+    bad += same(kerf(b, box(10, 40, 40, center: true)), "kerf");
+
+    // faces moved: where each side is now
+    Vec[] up(Length d) => cs.map(c => c + vec(0.mm, 0.mm, d)).array;
+    bad += check(b.move(z: 5), "move", [], [], up(5.mm), ns);
+    bad += check(b.on(box(10, 10, 5)), "on", [], [], up(5.mm), ns);
+    bad += check(b.push(from: vec(0, 0, -100), by: 10.mm), "push", [], [], up(10.mm), ns);
+    bad += check(b.centered, "centered", [], [], up(-10.mm), ns);
+    bad += check(b.offset(1, sharp: true), "offset sharp", [], [],
+        iota(0, 6).map(i => cs[i] + ns[i] * 1.mm).array, ns);
+    bad += check(b.scale(2), "scale", [], [], cs.map(c => c * 2).array, ns);
+    bad += check(b.mirror(X), "mirror X", [], [], cs.map(c => vec(-c.x, c.y, c.z)).array,
+        ns.map(n => vec(-n.x, n.y, n.z)).array);
+    bad += check(b.rotate(z: 90), "rotate z 90", [], [], cs.map(c => vec(-c.y, c.x, c.z)).array,
+        ns.map(n => vec(-n.y, n.x, n.z)).array);
+    bad += check(b.extrude(faces.tagged("top"), depth: 5), "pull top face", [], [],
+        [vec(0.mm, 0.mm, 25.mm)] ~ cs[1 .. $], ns);
+    bad += check(b.cut(faces.tagged("top"), depth: 5), "push top face", [], [],
+        [vec(0.mm, 0.mm, 15.mm)] ~ cs[1 .. $], ns);
+
+    // the libraries
+    auto j = splitJoint(b, Xp);
+    bad += same(j.a, "splitJoint a", ["right"]) + same(j.b, "splitJoint b", ["left"]);
+    auto d = splitJoint(b, Xp, kind: "dowels");
+    bad += same(d.a, "dowels a", ["right"]) + same(d.b, "dowels b", ["left"]);
+
+    // the check itself: a box moved and checked where it was must fail
+    writeln("sanity caught ", check(b.move(z: 5), "sanity (expected wrong)", [], [], cs, ns));
+
+    bad += same(b.linearPattern(2, vec(100, 0, 0)), "linearPattern", [], ["right", "left"]);
+    bad += check(b.placeOn(box(60, 60, 10).frame(faces.top)), "placeOn", [], [], up(10.mm), ns);
+    bad += check(b.nextTo(box(10, 10, 10), X, gap: 5.mm), "nextTo", [], [],
+        cs.map(c => c + vec(30.mm, 0.mm, 0.mm)).array, ns);
+    bad += check(b.align(box(100, 100, 100), z: "max"), "align", [], [], up(80.mm), ns);
+    bad += check(b.pull(to: vec(0, 0, 100), by: 10.mm), "pull", [], [], up(10.mm), ns);
+    bad += check(b.offset(1), "offset round", [], [], iota(0, 6).map(i => cs[i] + ns[i] * 1.mm).array, ns);
+    bad += same(hull(b, sphere(r: 1).move(z: 30)), "hull", ["top"]);
+    bad += check(minkowski(b, sphere(r: 1)), "minkowski", [], [], iota(0, 6).map(i => cs[i] + ns[i] * 1.mm).array, ns);
+    bad += check(minkowski(b, box(2, 2, 2, center: true)), "minkowski box", [], [],
+        iota(0, 6).map(i => cs[i] + ns[i] * 1.mm).array, ns);
+
+    bad += same(b.cut(rect(10, 5), wrap: faces.tagged("front"), depth: 1), "wrap cut front");
+    bad += same(b.cut(rect(30, 20).tiles(kind: "hex", size: 6, gap: 1), on: b.frame(faces.tagged("top")), depth: 1),
+        "tiles on top");
+    bad += same(b - hole(M3, 10, "counterbore").move(z: 20), "hole() counterbore");
+    bad += same(b - tappedHole(8, 1.25, 10).move(z: 20), "tappedHole");
+    auto hb = b - cylinder(d: 10.2, h: 50, center: true).addTag("bore", recursive: true);
+    bad += same(hb.thread(hb.faces.tagged("bore"), "M12"), "thread in a hole");
+    auto sb = b + cylinder(d: 12, h: 15).move(z: 20).addTag("shaft", recursive: true);
+    bad += same(sb.thread(sb.faces.tagged("shaft").filter(f => f.area > 300 * 1.mm ^^ 2), "M12"), "thread on a shaft");
+    bad += same(threadedRod(8, 1.25, 30).move(z: 20) + b, "union with a threaded rod");
+    auto fl = splitFlat(b, Zp);
+    bad += same(fl.a, "splitFlat a", ["top"]) + same(fl.b, "splitFlat b", ["bottom"]);
+    auto jp = joinParts(b, box(10, 10, 10).move(z: 20), plane(origin: vec(0, 0, 20), normal: Z));
+    bad += same(jp.a, "joinParts a");
+    writeln("bad ", bad);
+}
+`);
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    auto log = r.log.map!(l => l.text).join("\n");
+    assert(log.canFind("sanity caught 2") && log.canFind("bad 0"), log);
 }
