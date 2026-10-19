@@ -5783,7 +5783,10 @@ private:
         buffer.getIterAtLineIndex(a, l0, i0);
         buffer.getIterAtLineIndex(b, l1, i1);
         buffer.selectRange(a, b);
-        editor.scrollToIter(a, 0.1, false, 0, 0);
+        // to the insert mark, not the iterator: the lines just written are not measured yet, and
+        // scrolling to an iterator in them goes by the old heights (it stays put); a mark is
+        // scrolled to once they are
+        editor.scrollToMark(buffer.getInsert(), 0.1, true, 0, 0.3);
         // the sketch bar wrote it: the keys stay with the view (Delete, Esc, X act on the sketch)
         if (!sketchEditHold)
             editor.grabFocus();
