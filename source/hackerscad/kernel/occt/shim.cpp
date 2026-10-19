@@ -3371,15 +3371,15 @@ hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, i
 }
 
 // Face `face` of `s` unrolled flat as wrap lays a profile on it (the same anchor, axes and lengths, at
-// its default place): its outline and holes as one face on XY; *round the length once round it when it
+// `at`, NaN its default place): its outline and holes as one face on XY; *round the length once round it when it
 // closes round on itself (the side of a vase, a loft through rings), else 0.
-hc_shape *hc_wrap_flat(const hc_shape *s, int face, double *round_, double *middle)
+hc_shape *hc_wrap_flat(const hc_shape *s, int face, const double *at, double *round_, double *middle)
 {
-    const double nan3[3] = {NAN, NAN, NAN}, zero3[3] = {0, 0, 0};
+    const double zero3[3] = {0, 0, 0};
     WrapAsk ask;
     ask.round = round_;
     ask.middle = middle;
-    return wrap_impl(s, face, nullptr, 0, nan3, zero3, 0, 0, false, ask);
+    return wrap_impl(s, face, nullptr, 0, at, zero3, 0, 0, false, ask);
 }
 
 // Which regions of `profile` (by their order among its faces) the direct wrap would find not wholly inside

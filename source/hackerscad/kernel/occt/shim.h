@@ -84,7 +84,7 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
 hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at, const double *dir, double floor);
 int hc_spots(const hc_shape *s, int n, double margin, double *out);
 int hc_wrap_skipped(void);
-hc_shape *hc_wrap_flat(const hc_shape *s, int face, double *round_, double *middle);
+hc_shape *hc_wrap_flat(const hc_shape *s, int face, const double *at, double *round_, double *middle);
 int hc_wrap_outside(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at, const double *dir, double floor, int *out, int max, int *regions);
 hc_shape *hc_profile_regions(const hc_shape *profile, const int *which, int n);
 hc_shape *hc_offset_solid(const hc_shape *s, double d, int sharp);

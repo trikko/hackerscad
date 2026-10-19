@@ -4270,7 +4270,7 @@ Value knurlOf(Interp it, ref CallArgs a)
         try
         {
             double r;
-            k.wrapFlat(body.brep, idx[0], r, middle);
+            k.wrapFlat(body.brep, idx[0], Vec3(double.nan, double.nan, double.nan), r, middle);
         }
         catch (KernelException)
         {
@@ -4284,7 +4284,13 @@ Value knurlOf(Interp it, ref CallArgs a)
     {
         Brep flat;
         try
-            flat = k.wrapFlat(body.brep, idx[0], round_, middle);
+        {
+            // unrolled where the knurl will be anchored: round a face that closes on itself the middle of its
+            // parameters (lengths along it are measured from there)
+            flat = k.wrapFlat(body.brep, idx[0], Vec3(double.nan, double.nan, double.nan), round_, middle);
+            if (round_ > 0 && middle == middle)
+                flat = k.wrapFlat(body.brep, idx[0], middle, round_, middle);
+        }
         catch (KernelException e)
             throw new HcadError(Code.kernel, "knurl: the face cannot be unrolled: " ~ e.msg, x.spanOf("face"));
         if (round_ > 0)
@@ -4337,15 +4343,17 @@ Value knurlOf(Interp it, ref CallArgs a)
             break;
         }
     }
-    // the cells over the region, a lattice from the anchor, cut at the region's edges
+    // the cells over the region, a lattice from the anchor, cut at the region's edges: every one that
+    // reaches into it, a slanted ridge from as far aside as it leans
     immutable reachJ = kind == "diamond" ? cast(long) ceil(max(abs(rb.min.y), abs(rb.max.y)) / (rise / 2)) + 2 : 0;
-    immutable reachI = cast(long) ceil(max(abs(rb.min.x), abs(rb.max.x)) / p) + reachJ / 2 + 4;
+    immutable aside = p + (kind == "diagonal" ? high * tan(slant) + abs(yc) * tan(slant) : 0.0);
+    immutable reachI = cast(long) ceil((max(abs(rb.min.x), abs(rb.max.x)) + aside) / p) + reachJ / 2 + 4;
     double[] place;
     foreach (i; -reachI .. reachI + 1)
         foreach (j; -reachJ .. reachJ + 1)
         {
             immutable px = i * step[0][0] + j * step[1][0], py = i * step[0][1] + j * step[1][1];
-            if (px < rb.min.x - p || px > rb.max.x + p)
+            if (px < rb.min.x - aside || px > rb.max.x + aside)
                 continue;
             place ~= [0.0, px, py, 1.0];
         }

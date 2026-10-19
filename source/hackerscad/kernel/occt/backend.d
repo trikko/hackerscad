@@ -256,10 +256,10 @@ final class OcctKernel : BrepKernel
 
     int wrapSkipped() => hc_wrap_skipped();
 
-    Brep wrapFlat(Brep s, int face, out double round, out Vec3 middle)
+    Brep wrapFlat(Brep s, int face, Vec3 at, out double round, out Vec3 middle)
     {
-        double[3] m;
-        auto r = wrap(hc_wrap_flat(h(s), face, &round, m.ptr), "wrap");
+        double[3] m, a = [at.x, at.y, at.z];
+        auto r = wrap(hc_wrap_flat(h(s), face, a.ptr, &round, m.ptr), "wrap");
         middle = Vec3(m[0], m[1], m[2]);
         return r;
     }
