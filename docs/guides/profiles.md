@@ -64,7 +64,7 @@ Solid rounded() => (sq() + disc()).round(4.mm)
 
 ![Union, difference, intersection, offset and round of a square and a disc](img/profiles-combine.png)
 
-A profile can be read: `.area`, `.outer` (without its holes), `.holes`, `.pieces`, `p.contains(point)`. When the outline has more than three shapes, or sizes worked out by hand to make them meet, draw it as a sketch instead: it keeps its tangents when a size changes.
+A profile can be read: `.area`, `.outer` (without its holes), `.holes`, `.pieces`, `p.contains(point)`. When the outline has more than three shapes, or sizes worked out by hand to make them meet, draw it as a sketch instead ([Drawing an outline](outlines.md)): it keeps its tangents when a size changes.
 
 ## Extruding
 
@@ -236,7 +236,7 @@ Solid tag()
 
 ![A luggage tag](img/profiles-ex2.png)
 
-A profile drawn in a sketch on the face (`body.sketch(faces.top)`) already knows where it is: `body.cut(s.profile, depth:)`, no `on:`. Use a sketch when the feature has several shapes or relations, or is measured from the face's edges; a plain profile when it is one shape at a place you know.
+A profile drawn in a sketch on the face (`body.sketch(faces.top)`, see [Sketches in depth](sketches.md)) already knows where it is: `body.cut(s.profile, depth:)`, no `on:`. Use a sketch when the feature has several shapes or relations, or is measured from the face's edges; a plain profile when it is one shape at a place you know.
 
 ## On a curved face
 

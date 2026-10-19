@@ -2,17 +2,17 @@
 
 One page for each topic: what it does, shown on examples, every parameter, the usual mistakes and where it is in the application. The [tutorial](TUTORIAL.md) goes step by step through a first model; the [language reference](LANGUAGE.md) lists everything in brief.
 
-### [Constrained sketches](guides/sketches.md)
-
-[<img src="guides/img/sketches-flange.png" width="420" alt="Constrained sketches">](guides/sketches.md)
-
-A sketch is a flat outline drawn from points, lines, arcs, circles, ellipses, splines and ready-made shapes, held in place by constraints (rules such as "this line is level" or "these two points are 30 mm apart"), then extruded (pushed up into a solid), revolved (turned round an axis) or cut into a part. This guide covers `sketch()`, every constraint, construction geometry, degrees of freedom and their warning, reading the solved sketch back, sketches on the faces of a solid, where a sketch beats shapes added together, and the sketch bar of the application.
-
 ### [From profile to solid](guides/profiles.md)
 
 [<img src="guides/img/profiles-extrude.png" width="420" alt="From profile to solid">](guides/profiles.md)
 
 A profile is a flat outline; a solid is made from it by extruding it (pushing it up into a block of the same outline), revolving it (turning it round an axis, as on a lathe) or adding and cutting it on a face of another solid. This guide covers the profile shapes (rectangles, circles, polygons, slots, teardrops, text, SVG and DXF drawings), how they combine (`+ - &`, offset, round), extruding them (taper, twist, shear, along X or Y, symmetric), revolving them, standing them up with `across`, adding or cutting them on a face of a solid, and pushing or sinking the faces themselves.
+
+### [Drawing an outline](guides/outlines.md)
+
+[<img src="guides/img/outlines-window.png" width="420" alt="Drawing an outline">](guides/outlines.md)
+
+Many parts are a flat outline made thick: a bracket, a wedge, a tag, a plate with holes. When the outline is more than a rectangle or a circle, you draw it: a few points joined by lines, and rules that hold them, "this side level", "these two corners 100 mm apart". Change a size later and the outline follows, keeping its rules. This guide shows how, on two small parts.
 
 ### [Paths, sweeps and lofts](guides/sweeps.md)
 
@@ -37,6 +37,12 @@ Where things go. A plane is a flat surface without end, given by a point and the
 [<img src="guides/img/features-four.png" width="420" alt="Selectors and features">](guides/features.md)
 
 Rounding, bevelling, hollowing and tapering a solid: `fillet`, `chamfer`, `shell` and `draft`, and the selectors that say which edges and faces they work on (`edges.parallel(Z)`, `faces.top`, `edges.between(…)`, `faces.from(tool)`). How to pick edges so that they stay the right ones when a parameter changes, in which order to apply the features, what their errors mean, and how to do the same with the mouse in the 3D view.
+
+### [Sketches in depth](guides/sketches.md)
+
+[<img src="guides/img/sketches-flange.png" width="420" alt="Sketches in depth">](guides/sketches.md)
+
+A sketch is a flat outline drawn from points, lines, arcs, circles, ellipses, splines and ready-made shapes, held in place by constraints (rules such as "this line is level" or "these two points are 30 mm apart"), then extruded (pushed up into a solid), revolved (turned round an axis) or cut into a part. This guide is the whole of it and covers `sketch()`, every constraint, construction geometry, degrees of freedom and their warning, reading the solved sketch back, sketches on the faces of a solid, where a sketch beats shapes added together, and the sketch bar of the application.
 
 ### [Patterns, textures and noise](guides/patterns.md)
 
