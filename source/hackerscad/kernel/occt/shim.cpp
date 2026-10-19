@@ -131,6 +131,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <BRepCheck_Result.hxx>
+#include <unordered_map>
+#include <Geom_Line.hxx>
 #include <TColStd_Array2OfReal.hxx>
 #include <NCollection_DataMap.hxx>
 #include <set>
@@ -4705,6 +4708,28 @@ int hc_bbox(const hc_shape *s, double out[6])
         auto boxFace = [&](int i) {
             const TopoDS_Face &face = faces[i];
             Bnd_Box &into = boxes[i];
+            // a flat face with straight edges (a mesh's triangles, a polygon's sides): its corners are its box
+            TopLoc_Location fl;
+            const Handle(Geom_Surface) &fs = BRep_Tool::Surface(face, fl);
+            if (!fs.IsNull() && fs->IsKind(STANDARD_TYPE(Geom_Plane))) {
+                bool straight = true;
+                for (TopExp_Explorer e(face, TopAbs_EDGE); e.More() && straight; e.Next()) {
+                    const TopoDS_Edge &ed = TopoDS::Edge(e.Current());
+                    if (BRep_Tool::Degenerated(ed))
+                        continue;
+                    TopLoc_Location el;
+                    double f, l;
+                    Handle(Geom_Curve) c = BRep_Tool::Curve(ed, el, f, l);
+                    if (!c.IsNull() && c->IsKind(STANDARD_TYPE(Geom_TrimmedCurve)))
+                        c = Handle(Geom_TrimmedCurve)::DownCast(c)->BasisCurve();
+                    straight = !c.IsNull() && c->IsKind(STANDARD_TYPE(Geom_Line));
+                }
+                if (straight) {
+                    for (TopExp_Explorer v(face, TopAbs_VERTEX); v.More(); v.Next())
+                        into.Add(BRep_Tool::Pnt(TopoDS::Vertex(v.Current())));
+                    return;
+                }
+            }
             if (faceCount > 500 && sampled(face, into))
                 return;
             const GeomAbs_SurfaceType type = BRepAdaptor_Surface(face, false).GetType();
@@ -5122,6 +5147,280 @@ static TopoDS_Shape shell_from_mesh(const float *verts, int nverts, const int *t
     return shell;
 }
 
+// The shell straight from a welded mesh with its flat regions as faces: the triangles that meet edge to edge in
+// one plane grouped (within `tolerance`), each group a face bounded by its outline, the outline's straight runs
+// one edge each where they part the same two groups (no corner of a third there), every edge shared by its two
+// faces and given its line on each. What building it a triangle at a time and then merging the triangles
+// (ShapeUpgrade_UnifySameDomain) gives, in a fraction of the time; null when the mesh is not a clean closed
+// 2-manifold or an outline does not close into loops (then the caller does it that way).
+static TopoDS_Shape grouped_shell_from_mesh(const float *verts, int nverts, const int *tris, int ntris, double tolerance)
+{
+    auto P = [&](int i) { return gp_Pnt(verts[3 * i], verts[3 * i + 1], verts[3 * i + 2]); };
+    // (HCAD_MESH_DEBUG: where it gave up)
+    auto fail = [](int where) {
+        if (getenv("HCAD_MESH_DEBUG"))
+            fprintf(stderr, "mesh: grouped shell given up at %d\n", where);
+        return TopoDS_Shape();
+    };
+    // each undirected edge: its two triangles, the one using it low to high first
+    std::unordered_map<uint64_t, std::array<int, 2>> uses;
+    uses.reserve(3 * (size_t)ntris);
+    auto key = [](int a, int b) { return ((uint64_t)std::min(a, b) << 32) | (uint32_t)std::max(a, b); };
+    std::vector<gp_Vec> normal(ntris);
+    for (int t = 0; t < ntris; t++) {
+        const int a = tris[3 * t], b = tris[3 * t + 1], c = tris[3 * t + 2];
+        if (a == b || b == c || a == c)
+            return fail(1);
+        gp_Vec n = gp_Vec(P(a), P(b)).Crossed(gp_Vec(P(a), P(c)));
+        if (n.Magnitude() < 1e-12)
+            return fail(2);
+        normal[t] = n.Normalized();
+        const int v[3] = {a, b, c};
+        for (int k = 0; k < 3; k++) {
+            const int p = v[k], q = v[(k + 1) % 3];
+            auto it = uses.emplace(key(p, q), std::array<int, 2>{-1, -1}).first;
+            int &slot = it->second[p < q ? 0 : 1];
+            if (slot >= 0)
+                return fail(3);   // used twice the same way: not a clean 2-manifold
+            slot = t;
+        }
+    }
+    for (auto &u : uses)
+        if (u.second[0] < 0 || u.second[1] < 0)
+            return fail(4);
+    // the groups: neighbours in one plane joined
+    std::vector<int> parent(ntris);
+    for (int t = 0; t < ntris; t++)
+        parent[t] = t;
+    std::function<int(int)> find = [&](int x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        return x;
+    };
+    auto coplanar = [&](int t, int u) {
+        if (normal[t].Dot(normal[u]) < 1 - 1e-10)
+            return false;
+        const gp_Pnt o = P(tris[3 * t]);
+        for (int k = 0; k < 3; k++)
+            if (std::abs(gp_Vec(o, P(tris[3 * u + k])).Dot(normal[t])) > tolerance)
+                return false;
+        return true;
+    };
+    for (auto &u : uses)
+        if (coplanar(u.second[0], u.second[1])) {
+            const int x = find(u.second[0]), y = find(u.second[1]);
+            if (x != y)
+                parent[x] = y;
+        }
+    std::vector<int> group(ntris);
+    for (int t = 0; t < ntris; t++)
+        group[t] = find(t);
+    // the groups round each vertex, to know the corners where a third group meets two
+    std::vector<std::vector<int>> around(nverts);
+    for (int t = 0; t < ntris; t++)
+        for (int k = 0; k < 3; k++) {
+            auto &g = around[tris[3 * t + k]];
+            if (std::find(g.begin(), g.end(), group[t]) == g.end())
+                g.push_back(group[t]);
+        }
+    // each group's outline: its triangles' edges that part it from another group, from vertex to vertex
+    struct Directed {
+        int from, to, other;
+    };
+    std::unordered_map<int, std::vector<Directed>> outline;
+    for (int t = 0; t < ntris; t++)
+        for (int k = 0; k < 3; k++) {
+            const int p = tris[3 * t + k], q = tris[3 * t + (k + 1) % 3];
+            const auto &u = uses[key(p, q)];
+            const int across = u[0] == t ? u[1] : u[0];
+            if (group[across] != group[t])
+                outline[group[t]].push_back({p, q, group[across]});
+        }
+    // built once; the groups whose faces OpenCascade does not take (a region touching itself, a hole
+    // within the tolerance of its outline: a few of thousands) found then are built again as their triangles,
+    // the groups round them keeping every vertex of theirs, so that the edges they share are the triangles'
+    BRep_Builder bb;
+    auto build = [&](const std::vector<bool> &bad, std::vector<int> *newBad) -> TopoDS_Shape {
+    std::vector<bool> nearBad(nverts, false);
+    bool anyBad = false;
+    for (int t = 0; t < ntris; t++)
+        if (bad[group[t]]) {
+            anyBad = true;
+            for (int k = 0; k < 3; k++)
+                nearBad[tris[3 * t + k]] = true;
+        }
+    std::vector<TopoDS_Vertex> vs(nverts);
+    auto vertex = [&](int i) -> const TopoDS_Vertex & {
+        if (vs[i].IsNull())
+            bb.MakeVertex(vs[i], P(i), tolerance);
+        return vs[i];
+    };
+    // the straight runs, one edge each, shared: by their ends (low, high)
+    std::unordered_map<uint64_t, TopoDS_Edge> runs;
+    TopoDS_Shell shell;
+    bb.MakeShell(shell);
+    // a run between the corners a and b, from the lower one through `next` (the vertex after it on the way)
+    auto runEdge = [&](int a, int b, int next) -> TopoDS_Edge {
+        const uint64_t k = key(std::min(a, b), next);
+        auto it = runs.find(k);
+        if (it == runs.end()) {
+            const int lo = std::min(a, b), hi = std::max(a, b);
+            it = runs.emplace(k, TopoDS_Edge(BRepBuilderAPI_MakeEdge(vertex(lo), vertex(hi)))).first;
+        }
+        return it->second;
+    };
+    // the triangles of the groups built that way, each a face
+    for (int t = 0; t < ntris; t++) {
+        if (!bad[group[t]])
+            continue;
+        const int v[3] = {tris[3 * t], tris[3 * t + 1], tris[3 * t + 2]};
+        BRepBuilderAPI_MakeWire mw;
+        for (int k = 0; k < 3; k++) {
+            const TopoDS_Edge e = runEdge(v[k], v[(k + 1) % 3], std::max(v[k], v[(k + 1) % 3]));
+            mw.Add(v[k] < v[(k + 1) % 3] ? e : TopoDS::Edge(e.Reversed()));
+        }
+        if (!mw.IsDone())
+            return fail(11);
+        BRepBuilderAPI_MakeFace f(gp_Pln(P(v[0]), gp_Dir(normal[t])), mw.Wire(), Standard_True);
+        if (!f.IsDone())
+            return fail(11);
+        bb.Add(shell, f.Face());
+    }
+    for (auto &[g, edges] : outline) {
+        if (bad[g])
+            continue;
+        // loops: from each vertex its edges out (two or more where the region touches itself at a vertex)
+        std::unordered_map<int, std::vector<int>> out;
+        for (size_t i = 0; i < edges.size(); i++)
+            out[edges[i].from].push_back((int)i);
+        // the group's plane, from its first triangle
+        int t0 = -1;
+        for (int t = 0; t < ntris && t0 < 0; t++)
+            if (group[t] == g)
+                t0 = t;
+        const gp_Pln pln(P(tris[3 * t0]), gp_Dir(normal[t0]));
+        Handle(Geom_Plane) plane = new Geom_Plane(pln);
+        TopoDS_Face face;
+        bb.MakeFace(face, plane, tolerance);
+        std::vector<bool> used(edges.size(), false);
+        for (size_t start = 0; start < edges.size(); start++) {
+            if (used[start])
+                continue;
+            // the loop's vertices and, for each step, the group across it
+            std::vector<int> loop, across;
+            int i = (int)start;
+            while (!used[i]) {
+                used[i] = true;
+                loop.push_back(edges[i].from);
+                across.push_back(edges[i].other);
+                auto next = out.find(edges[i].to);
+                if (next == out.end())
+                    return fail(6);
+                // of several ways on, the one turning least clockwise from where it came from: the region's
+                // own corner there, which keeps each loop on its side of the vertex
+                int best = -1;
+                double bestAngle = 1e9;
+                const gp_Vec back(P(edges[i].to), P(edges[i].from));
+                for (int j : next->second) {
+                    if (used[j] && j != (int)start)
+                        continue;
+                    const gp_Vec on(P(edges[j].from), P(edges[j].to));
+                    // the angle from `back` to `on`, clockwise round the plane's normal
+                    double angle = -std::atan2(back.Crossed(on).Dot(normal[t0]), back.Dot(on));
+                    if (angle <= 0)
+                        angle += 2 * M_PI;
+                    if (angle < bestAngle) {
+                        bestAngle = angle;
+                        best = j;
+                    }
+                }
+                if (best < 0)
+                    return fail(6);
+                i = best;
+            }
+            if (loop.size() < 3 || i != (int)start)
+                return fail(7);
+            // its corners: where the group across changes, a third group meets, or the outline turns
+            const size_t m = loop.size();
+            std::vector<int> corners;
+            for (size_t i = 0; i < m; i++) {
+                const int prev = (int)((i + m - 1) % m);
+                const int v = loop[i];
+                const gp_Vec din(P(loop[prev]), P(v)), dout(P(v), P(loop[(i + 1) % m]));
+                const bool straight = din.Crossed(dout).Magnitude() <= 1e-9 * din.Magnitude() * dout.Magnitude()
+                    && din.Dot(dout) > 0;
+                // (and where the region touches itself: the other loop passes there too)
+                if (across[prev] != across[i] || around[v].size() != 2 || !straight || out[v].size() > 1 || nearBad[v])
+                    corners.push_back((int)i);
+            }
+            if (corners.size() < 3)
+                return fail(8);
+            TopoDS_Wire wire;
+            bb.MakeWire(wire);
+            for (size_t c = 0; c < corners.size(); c++) {
+                const int ca = corners[c], cb = corners[(c + 1) % corners.size()];
+                const int a = loop[ca], b = loop[cb];
+                // the run known by its lower end and the vertex next to that end along it: the face across finds
+                // the same, and two runs between the same corners by different ways are two
+                const int nearA = loop[(ca + 1) % m], nearB = loop[(cb + m - 1) % m];
+                const TopoDS_Edge e = runEdge(a, b, a < b ? nearA : nearB);
+                // its line on this face: the plane's parameters are lengths, so the line's are the edge's
+                auto uv = [&](int i) {
+                    double u, v;
+                    ElSLib::Parameters(pln, P(i), u, v);
+                    return gp_Pnt2d(u, v);
+                };
+                const gp_Pnt2d p0 = uv(std::min(a, b)), p1 = uv(std::max(a, b));
+                if (p0.Distance(p1) < 1e-12)
+                    return fail(9);
+                bb.UpdateEdge(e, new Geom2d_Line(p0, gp_Dir2d(gp_Vec2d(p0, p1))), face, tolerance);
+                bb.Add(wire, a < b ? e : TopoDS::Edge(e.Reversed()));
+            }
+            wire.Closed(Standard_True);
+            bb.Add(face, wire);
+        }
+        // a face of several loops checked (and one whose region touches itself): not taken, its group is built
+        // again as its triangles
+        int nw = 0;
+        for (TopoDS_Iterator w(face); w.More(); w.Next())
+            nw++;
+        // (any but a plain triangle or quad: as unified_valid checks them)
+        int ne = 0;
+        for (TopExp_Explorer e(face, TopAbs_EDGE); e.More() && ne <= 4; e.Next())
+            ne++;
+        // (on a pass after the first only those beside a group built as triangles: the rest are as they were)
+        bool touches = !anyBad;
+        for (auto &o : out)
+            touches = touches || nearBad[o.first];
+        if ((nw > 1 || ne > 4) && touches && !BRepCheck_Analyzer(face).IsValid()) {
+            if (!newBad)
+                return fail(10);
+            newBad->push_back(g);
+            continue;
+        }
+        bb.Add(shell, face);
+    }
+    if (newBad && !newBad->empty())
+        return TopoDS_Shape();
+    shell.Closed(Standard_True);
+    return shell;
+    };
+    std::vector<bool> bad(ntris, false);
+    for (int pass = 0; pass < 3; pass++) {
+        std::vector<int> found;
+        TopoDS_Shape shell = build(bad, &found);
+        if (!shell.IsNull() || found.empty())
+            return shell;
+        if (getenv("HCAD_MESH_DEBUG"))
+            fprintf(stderr, "mesh: %zu groups more built as their triangles\n", found.size());
+        for (int g : found)
+            bad[g] = true;
+    }
+    return fail(12);
+}
+
 hc_shape *hc_from_mesh(const float *verts, int nverts, const int *tris, int ntris, double tolerance)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -5130,7 +5429,72 @@ hc_shape *hc_from_mesh(const float *verts, int nverts, const int *tris, int ntri
                 set_error("triangle index out of range");
                 return nullptr;
             }
+        Laps laps;
+        // the flat regions as faces at once; else a triangle at a time, merged after
+        if (!getenv("HCAD_MESH_UNIFY")) {
+            const TopoDS_Shape grouped = grouped_shell_from_mesh(verts, nverts, tris, ntris, tolerance);
+            laps.lap("mesh: grouped shell");
+            if (!grouped.IsNull()) {
+                BRepBuilderAPI_MakeSolid mk(TopoDS::Shell(grouped));
+                TopoDS_Shape solid = mk.Solid();
+                double volume = 0;
+                for (int t = 0; t < ntris; t++) {
+                    const float *p = verts + 3 * tris[3 * t], *q = verts + 3 * tris[3 * t + 1], *r = verts + 3 * tris[3 * t + 2];
+                    volume += (double)p[0] * ((double)q[1] * r[2] - (double)q[2] * r[1])
+                            - (double)p[1] * ((double)q[0] * r[2] - (double)q[2] * r[0])
+                            + (double)p[2] * ((double)q[0] * r[1] - (double)q[1] * r[0]);
+                }
+                if (volume < 0)
+                    solid.Reverse();
+                // its faces checked as they were made: the shell closed and turned one way, every edge in two faces,
+                // once each way (BRepCheck_Shell takes seconds over thousands of faces)
+                NCollection_DataMap<TopoDS_Shape, int, TopTools_ShapeMapHasher> uses;
+                for (TopExp_Explorer f(solid, TopAbs_FACE); f.More(); f.Next())
+                    for (TopExp_Explorer e(f.Current(), TopAbs_EDGE); e.More(); e.Next()) {
+                        const int way = e.Current().Orientation() == TopAbs_FORWARD ? 1 : e.Current().Orientation() == TopAbs_REVERSED ? 16 : 256;
+                        if (int *n = uses.ChangeSeek(e.Current()))
+                            *n += way;
+                        else
+                            uses.Bind(e.Current(), way);
+                    }
+                bool ok = true;
+                std::map<int, int> tally;
+                for (NCollection_DataMap<TopoDS_Shape, int, TopTools_ShapeMapHasher>::Iterator it(uses); it.More(); it.Next()) {
+                    ok = ok && it.Value() == 17;
+                    tally[it.Value()]++;
+                }
+                if (getenv("HCAD_MESH_DEBUG"))
+                    for (auto &[k, n] : tally)
+                        fprintf(stderr, "mesh: edges used %d: %d\n", k, n);
+                laps.lap("mesh: grouped checked");
+                if (!ok && getenv("HCAD_MESH_DEBUG")) {
+                    int bad = 0, faces = 0;
+                    for (TopExp_Explorer f(solid, TopAbs_FACE); f.More(); f.Next(), faces++) {
+                        BRepCheck_Analyzer an(f.Current());
+                        if (!an.IsValid() && bad++ < 3) {
+                            Handle(BRepCheck_Result) r = an.Result(f.Current());
+                            fprintf(stderr, "mesh: face %d invalid:", faces);
+                            if (!r.IsNull())
+                                for (auto st : r->Status())
+                                    fprintf(stderr, " %d", (int)st);
+                            int wires = 0;
+                            for (TopExp_Explorer w(f.Current(), TopAbs_WIRE); w.More(); w.Next())
+                                wires++;
+                            fprintf(stderr, " (%d wires)\n", wires);
+                        }
+                    }
+                    for (TopExp_Explorer sh(solid, TopAbs_SHELL); sh.More(); sh.Next()) {
+                        BRepCheck_Shell check(TopoDS::Shell(sh.Current()));
+                        fprintf(stderr, "mesh: %d faces, %d bad; shell closed %d, oriented %d\n", faces, bad,
+                                (int)check.Closed(), (int)check.Orientation());
+                    }
+                }
+                if (ok)
+                    return primitive(solid);
+            }
+        }
         TopoDS_Shape sewn = shell_from_mesh(verts, nverts, tris, ntris, tolerance);
+        laps.lap("mesh: shell");
         const bool direct = !sewn.IsNull();
         if (!direct) {
             BRepBuilderAPI_Sewing sew(tolerance);
@@ -5180,11 +5544,15 @@ hc_shape *hc_from_mesh(const float *verts, int nverts, const int *tris, int ntri
         // merge coplanar triangles into faces, so selectors see real faces; on
         // dense scanned or exported meshes this can break the solid, and then
         // the triangles are kept as they are
+        laps.lap("mesh: solid");
         ShapeUpgrade_UnifySameDomain unify(solid, Standard_True, Standard_True, Standard_False);
         unify.Build();
+        laps.lap("mesh: unified");
         // (a shell built directly from a clean mesh is valid by construction:
         // checking it costs seconds on large meshes)
-        if (!unified_valid(unify.Shape()) && (direct || BRepCheck_Analyzer(solid).IsValid()))
+        const bool unifiedValid = unified_valid(unify.Shape());
+        laps.lap("mesh: unified checked");
+        if (!unifiedValid && (direct || BRepCheck_Analyzer(solid).IsValid()))
             return primitive(solid);
         return primitive(unify.Shape());
     });
