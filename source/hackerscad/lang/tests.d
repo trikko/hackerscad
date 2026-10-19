@@ -4578,6 +4578,14 @@ unittest
             assert((squareNut(M3).move(z: -squareNutHeight(M3) / 2) & squareNutSlot(M3, 10.mm)).volume
                 > 0.9 * squareNut(M3).volume, "the nut in its slot");
             assert(abs(headOf(M4, "flat").d - 8.96.mm) < 0.01.mm, "ISO 10642 head");
+            // grub screws: as long as asked, the socket end on z = 0, each point, in a tapped hole's room
+            foreach (pt; ["cup", "flat", "cone", "dog"])
+            {
+                auto g = setScrew(M3, 6.mm, point: pt);
+                assert(g.isValid && abs(g.bbox.max.z / 1.mm) < 1e-6 && abs(g.bbox.min.z / 1.mm + 6) < 1e-6, pt);
+                assert(g.volume < cylinder(d: 3, h: 6).volume, pt ~ ": its socket and point take away");
+            }
+            assert(setKey(M3) == 1.5.mm && setKey(M8) == 4.mm, "ISO 4029 keys");
         }
     });
     foreach (d; r.diagnostics)

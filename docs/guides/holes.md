@@ -155,6 +155,8 @@ Solid hardware() => half(nut(M3)
 
 `screw(M3, 10.mm)` and `nut(M3)` are the hardware itself, as see-through reference parts: they show at once whether the screw is long enough to go through the nut. `screw()` has the underside of its head on z = 0 and the shank going down, so it drops into a hole the way `hole()` is placed; `threaded: true` models the thread (slower), `socket: false` leaves out the hex socket. `nut(M3, threaded: true)` and `washer(M3)` stand on z = 0.
 
+A grub screw (a set screw) has no head: it goes all the way into its hole, to lock a knob on a shaft or to set a depth that is tuned with a hex key. `setScrew(M3, 6.mm)` draws one, its socket end on z = 0 and the rest going down like `screw()`; `point:` gives its end, `"cup"` (the common one, a ring that bites into a shaft), `"flat"`, `"cone"` or `"dog"` (a short pin, into a hole in the shaft); `setKey(M3)` is the key it takes, 1.5 mm for an M3.
+
 A nut can also slide in from the side, into a pocket deep in the part: `nutTrap` for the hexagon, a `box` the width of the nut across the flats for the channel.
 
 <!-- render: holes-side-trap --from 1,-0.6,0.8 -->

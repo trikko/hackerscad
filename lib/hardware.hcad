@@ -154,6 +154,56 @@ private Solid withHead(Screw s, Solid shank, bool socket, string head)
     return top + shank;
 }
 
+/// The hex key of a set screw (a grub screw) of size s: ISO 4026-4029,
+/// smaller than the socket head's.
+Length setKey(Screw s) => s.d <= 2.mm ? 0.9.mm : s.d <= 2.5.mm ? 1.3.mm : s.d <= 3.mm ? 1.5.mm
+    : s.d <= 4.mm ? 2.mm : s.d <= 5.mm ? 2.5.mm : s.d <= 6.mm ? 3.mm : s.d <= 8.mm ? 4.mm
+    : s.d <= 10.mm ? 5.mm : 6.mm;
+
+/// A set screw (a grub screw): threaded all along, no head, a hex socket in
+/// its top. point: "cup" (ISO 4029, the common one: a ring that bites into a
+/// shaft), "flat" (ISO 4026, to leave a mark), "cone" (ISO 4027, into a
+/// dimple) or "dog" (ISO 4028, a pin into a hole). Its socket end lies on
+/// z = 0 and the rest goes down, `length` long, point and all, so it drops
+/// into a hole the way hole() is placed. threaded: true models the thread.
+Solid setScrew(Screw s, Length length, string point = "cup", bool threaded = false)
+{
+    immutable d = s.d;
+    auto shank = cylinder(d: d, h: length).move(z: -length);
+    auto r = shank.chamfer(edges.filter(e => e.isCircle && e.mid.z > -0.01.mm), d: d * 0.08);
+    immutable tip = -length;
+    switch (point)
+    {
+    case "cup":
+        // a cone-shaped hollow half the diameter wide, the rim chamfered
+        r = r.chamfer(edges.filter(e => e.isCircle && e.mid.z < tip + 0.01.mm), d: d * 0.12);
+        r -= cone(d1: d * 0.5, d2: 0.mm, h: d * 0.15).move(z: tip - 0.001.mm);
+        break;
+    case "flat":
+        r = r.chamfer(edges.filter(e => e.isCircle && e.mid.z < tip + 0.01.mm), d: d * 0.2);
+        break;
+    case "cone":
+        // a 90° point, just blunt
+        r = r & cone(d1: d * 0.1, d2: d * 0.1 + 2 * length, h: length).move(z: tip);
+        break;
+    case "dog":
+        // a pin 0.65 of the diameter, 0.4 of it long, the step chamfered
+        immutable pin = d * 0.4;
+        r = r & (cylinder(d: d * 0.65, h: pin).move(z: tip)
+            + cone(d1: d * 0.65, d2: d * 1.65, h: d * 0.5).move(z: tip + pin)
+            + cylinder(d: d * 2, h: length).move(z: tip + pin + d * 0.5));
+        break;
+    default:
+        assert(false, "point must be cup, flat, cone or dog, not " ~ point);
+    }
+    // the socket: about 0.6 of the diameter deep, less in a short one
+    immutable depth = min(d * 0.6, length * 0.5);
+    r -= hexPrism(setKey(s), depth + 0.01.mm).move(z: -depth);
+    if (threaded)
+        r = threadShank(r, shank, s);
+    return r.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
+}
+
 /// Hex nut standing on z = 0, with the corners chamfered on both faces.
 /// threaded: true threads the hole (the ISO thread for metric sizes, with no
 /// play: the nut of a real screw).
