@@ -387,6 +387,11 @@ interface BrepKernel
     Brep fromMesh(const Mesh m);
 
     /// One STEP file, each part a separate, named body.
-    void writeStep(Brep[] parts, string[] names, string path);
+    /// `faceNames`, if given: per part, a name per face (empty for none), kept on the faces in the
+    /// file; `system`: the program named in its header, `note` its description.
+    void writeStep(Brep[] parts, string[] names, string path, string[][] faceNames = null, string system = null,
+        string note = null);
     Brep readStep(string path);
+    /// The names a STEP file gave the faces of what was read from it (empty for none; none at all: empty).
+    string[] faceNames(Brep s);
 }

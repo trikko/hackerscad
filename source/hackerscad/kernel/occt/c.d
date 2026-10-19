@@ -146,5 +146,8 @@ int hc_hlr(const(hc_shape)* s, double dx, double dy, double dz, double ux, doubl
     double** out_);
 int hc_face_loops(const(hc_shape)* s, int face, double deflection, double** out_);
 void hc_free(void* p);
-int hc_write_step(const(hc_shape*)* shapes, const(char*)* names, int n, const(char)* path);
+int hc_write_step(const(hc_shape*)* shapes, const(char*)* names, int n, const(char)* path,
+    const(char*)* faceNames, const(char)* system, const(char)* note);
+int hc_face_names_size();
+const(char)* hc_face_name(int i);
 hc_shape* hc_read_step(const(char)* path);

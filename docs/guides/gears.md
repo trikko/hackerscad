@@ -96,6 +96,8 @@ Their parameters:
 
 The rack's teeth are thinned by its own `backlash:` too: with the gear's, the play is the two added.
 
+A gear carries its axis, tagged `gears.axis`, and its bore's wall `gears.bore`; a rack its pitch line, `gears.pitch`. Turned and moved, the gear takes them along: `g.axis("gears.axis")` is where it turns now, to place a shaft on, and `faces.tagged("gears.bore")` the face for a set screw's hole. See [Selectors and features](features.md).
+
 ## Meshing two gears
 
 Two gears **mesh** when the teeth of one go into the gaps of the other. That needs the same module and pressure angle, the centres `centerDistance(m, z1, z2)` apart, and a tooth of one facing a gap of the other. `spurGear` has a tooth on +X; put the second gear on +X of the first and turn it by `180.deg - 180.deg / z2`, which puts a gap where the first gear's tooth is, whether `z2` is odd or even. For a rack, its gaps are centred at `x = k · π · m` from its start, its teeth halfway between; a gear over it sits with its centre `pitchDiameter / 2` above the pitch line.

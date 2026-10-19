@@ -203,7 +203,8 @@ final class Run
         import hackerscad.tool.exporter : ExportException, ExportPart, exportParts;
         ExportPart[] parts;
         foreach (i; kept)
-            parts ~= ExportPart(result.parts[i].label, ms[i], result.parts[i].rgb, result.parts[i].solid.brep);
+            parts ~= ExportPart(result.parts[i].label, ms[i], result.parts[i].rgb, result.parts[i].solid.brep,
+                result.parts[i].solid.tags, result.parts[i].solid.faceTags);
         try
         {
             import std.path : baseName, stripExtension;

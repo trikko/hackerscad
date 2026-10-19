@@ -1,16 +1,31 @@
 module joints;
 
+/// Tags: on both pieces, the faces left by the cut (in its plane) are tagged
+/// "joints.cut", and the plane itself "joints.plane" (piece.plane("joints.plane")).
+
+/// `s` with its faces lying in the plane `p` tagged "joints.cut", and the plane "joints.plane".
+private Solid cutTagged(Solid s, Plane p)
+{
+    bool on(Face f) => abs(dot(f.center - p.origin, p.normal)) < 0.001.mm && abs(dot(f.normal, p.normal)) > 0.999;
+    // (a joint can leave no face whole in the plane: a finger joint's cut is all fingers)
+    if (s.faces.filter(f => on(f)).count > 0)
+        s.faces.filter(f => on(f)).addTag("joints.cut");
+    return s.addTag("joints.plane", at: p);
+}
+
 /// The two pieces of a solid cut along a plane with a joint between them,
 /// and the loose parts that lock it (a wedge), if any.
 struct Joint
 {
     Solid a;        /// the piece behind the plane (against its normal)
     Solid b;        /// the piece in front of it (where the normal points)
-    Solid[] loose;  /// a wedge or pins to print apart, in place
+    Solid[] loose;  /// a wedge or dowels to print apart, in place
+    Solid[] print;  /// the same lying flat on z = 0 in a row beside the body, to print
 }
 
 /// The kinds of joint splitJoint() knows.
-immutable string[] jointKinds = ["tenon", "dovetail", "pins", "fingers", "lap", "kama", "kanawa", "koshikake", "barbed"];
+immutable string[] jointKinds = ["tenon", "dovetail", "pins", "fingers", "lap", "kama", "kanawa", "koshikake", "barbed",
+    "dowels"];
 
 /// What a joint pushes across the plane, in the plane's own frame (x and y
 /// in the plane, z along its normal), `s` its size and `g` added all round
@@ -152,10 +167,72 @@ private Keys keys(string kind, Length s, Length len, Length g, int count)
                 shape = shape - rect(0.3 * w, 0.6 * len).move(y: len - 0.3 * len + 0.01.mm);
             return Keys(shape.extrude(2 * far, along: Y).move(y: -far), none);
         }
+    case "dowels":
+        // loose: the dowels and their sockets are made by dowels(), the pieces push nothing
+        return Keys(none, none);
     default:
-        assert(false, "the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, koshikake, barbed, not "
-            ~ kind);
+        assert(false, "the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, koshikake, barbed, "
+            ~ "dowels, not " ~ kind);
     }
+}
+
+/// Loose dowels of a "dowels" joint and their sockets, in the joint's frame (x across, y the dowel's
+/// thickness, z along the normal, the plane at z = 0).
+private struct Dowels
+{
+    Solid[] pins;
+    Solid[] sockets;
+}
+
+/// `count` dowels in a row along x, each `2 len` long across the plane: a round rod with two flats
+/// (it prints lying on one), each end split down its middle and pointed; `grip` thicker than its
+/// socket across the split, so the halves press on the socket's wall. The sockets: plain round holes
+/// `g` larger than the dowel's diameter, a little deeper than it goes, chamfered at the mouth.
+private Dowels dowels(Length s, Length len, Length g, int count, Length grip = 0.2.mm)
+{
+    immutable n = max(1, count);
+    immutable d = min(0.3 * s, 0.85 * s / (1.6 * n)), t = 0.75 * d;
+    immutable step = n > 1 ? max(0.55 * s / (n - 1), 1.6 * d) : 0.mm;
+    immutable rod = d + g + grip, point = 0.15 * d;
+    // the rod along z, its flats facing ±y, pointed at both ends
+    auto pin = (cylinder(d: rod, h: 2 * len, center: true)
+            & box(rod, t, 2 * len + 1.mm).move(z: -len - 0.5.mm))
+        .chamfer(edges.filter(e => abs(e.mid.z) > len - 0.01.mm), d: point);
+    // the splits, through the flats, from each tip to 0.4 of the way back
+    immutable sw = max(0.25 * d, 0.6.mm), sl = 0.6 * len;
+    auto split = box(sw, 2 * t, sl + 0.01.mm).move(z: len - sl);
+    pin = pin - split - split.mirror(Z);
+    // the socket: round, the dowel's diameter and the play, 0.3 mm deeper, its mouth chamfered
+    immutable hole = d + g, lip = 0.4.mm;
+    auto socket = cylinder(d: hole, h: 2 * (len + 0.3.mm), center: true)
+        + cone(d1: hole + 2 * lip, d2: hole, h: lip)
+        + cone(d1: hole + 2 * lip, d2: hole, h: lip).mirror(Z);
+    Dowels r;
+    foreach (i; 0 .. n)
+    {
+        immutable x = (i - (n - 1) / 2.0) * step;
+        r.pins ~= pin.move(x: x);
+        r.sockets ~= socket.move(x: x);
+    }
+    return r;
+}
+
+/// The loose parts of a joint (in place) laid flat on z = 0, in a row along x beyond `body`'s box.
+private Solid[] flatRow(Solid[] loose, Solid body)
+{
+    Solid[] r;
+    auto bb = body.bbox;
+    Length x = bb.max.x + 10.mm;
+    foreach (p; loose)
+    {
+        // on its largest face (of the two alike, a flat part has, the first), then along the row
+        auto down = p.faces.largest.list[0].normal;
+        auto laid = p.placeOn(World, from: faces.normal(down).largest);
+        auto lb = laid.bbox;
+        r ~= laid.move(x: x - lb.min.x, y: bb.center.y - lb.center.y);
+        x += lb.size.x + 5.mm;
+    }
+    return r;
 }
 
 /// How far to turn a joint in the frame of plane `here` so it lies along the
@@ -193,6 +270,10 @@ private Angle alongLonger(Profile section, Plane here, string kind)
 ///   (koshikake ari tsugi), which carries a load without bending open;
 /// - "barbed": a tenon with barbs, split down its middle, driven in: it goes
 ///   in and does not come out.
+/// - "dowels": `count` loose dowels, the printed kind of wooden ones: a rod
+///   with two flats, each end split, half into a round hole of a and half
+///   into one of b, held by friction (the split halves press on the walls);
+///   they print lying on a flat (`print`), and the holes are plain round ones.
 Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
     Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
 {
@@ -208,8 +289,8 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
     auto exact = keys(kind, s, len, 0.mm, count);
     auto room = keys(kind, s, len, clearance, count);
     auto sides = body.halves(here);
-    auto a = (sides.below - placed(room.down)) + (body & placed(exact.up));
-    auto b = (sides.above - placed(room.up)) + (body & placed(exact.down));
+    auto a = (cutTagged(sides.below, here) - placed(room.down)) + (body & placed(exact.up));
+    auto b = (cutTagged(sides.above, here) - placed(room.up)) + (body & placed(exact.down));
     Solid[] loose;
     if (kind == "kanawa")
     {
@@ -234,7 +315,14 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
         b -= placed(hole);
         loose ~= placed(wedge);
     }
-    return Joint(a, b, loose);
+    if (kind == "dowels")
+    {
+        auto d = dowels(s, len, clearance, count);
+        a -= d.sockets.map(k => placed(k));
+        b -= d.sockets.map(k => placed(k));
+        loose ~= d.pins.map(k => placed(k));
+    }
+    return Joint(a, b, loose, flatRow(loose, body));
 }
 
 /// The two halves of a solid cut flat along a plane, each to print lying on
@@ -322,8 +410,8 @@ FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", 
         flat ~= key.move(x: bb.max.x + 10.mm + len / 2 + i * (len + 5.mm), y: bb.center.y);
     }
     auto sides = body.halves(at);
-    auto a = sides.below - pockets;
-    auto b = sides.above - pockets;
+    auto a = cutTagged(sides.below, at) - pockets;
+    auto b = cutTagged(sides.above, at) - pockets;
 
     // each half on its cut face: the face lying in the plane, facing out of the half
     bool cutFace(Face f, Vec3 n) =>
@@ -340,8 +428,8 @@ FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", 
 /// `a`'s far side stops flush with it (a through tenon). Kinds: "tenon",
 /// "dovetail" (a sliding dovetail, its housing running out of `a` the way it
 /// slides in), "pins", "fingers" (a corner of a box), "lap", "kama" (its
-/// housing too runs out of `a`). Gives the two parts changed: `.a` with the hollows,
-/// `.b` with what fits in them.
+/// housing too runs out of `a`), "dowels" (holes in both, the dowels in `.loose` and, lying flat,
+/// in `.print`). Gives the two parts changed: `.a` with the hollows, `.b` with what fits in them.
 Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
     Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
 {
@@ -375,6 +463,13 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
     auto housing = slides ? placed(room.up) : placed(room.up) & footprint.offset(clearance, sharp: true);
     auto na = a - housing + (b & placed(exact.down) & footprint);
     auto nb = b + (a & placed(exact.up) & footprint) - placed(room.down);
-    Solid[] none;
-    return Joint(na, nb, none);
+    Solid[] loose;
+    if (kind == "dowels")
+    {
+        auto d = dowels(s, len, clearance, count);
+        na -= d.sockets.map(k => placed(k));
+        nb -= d.sockets.map(k => placed(k));
+        loose ~= d.pins.map(k => placed(k));
+    }
+    return Joint(cutTagged(na, at), cutTagged(nb, at), loose, flatRow(loose, a + b));
 }

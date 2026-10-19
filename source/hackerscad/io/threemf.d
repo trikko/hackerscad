@@ -2,7 +2,8 @@
 /// separate bodies instead of a single merged mesh.
 module hackerscad.io.threemf;
 
-import std.array : appender;
+import std.algorithm : canFind;
+import std.array : appender, join;
 import std.format : formattedWrite;
 import std.zip : ArchiveMember, ZipArchive, CompressionMethod;
 import std.file : write;
@@ -15,6 +16,8 @@ struct Part
     string name;
     Mesh mesh;   /// should be welded and closed
     uint rgb = defaultPartColor;   /// 0xTTRRGGBB, see hexColor
+    string[] tags;         /// the part's own: the object's metadata
+    string[][] faceTags;   /// per face of mesh.faceStart: its triangles a named set per tag
 }
 
 /// With `assembly` (a name), the parts are the pieces of one object of
@@ -54,7 +57,12 @@ private string modelXml(const Part[] parts, string assembly)
 {
     auto o = appender!string;
     o ~= `<?xml version="1.0" encoding="UTF-8"?>` ~ "\n";
-    o ~= `<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">` ~ "\n";
+    import hackerscad.about : madeWith, appWebsite;
+    // the triangle sets extension: the faces' tags as named sets of triangles
+    o ~= `<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"`
+        ~ ` xmlns:t="http://schemas.microsoft.com/3dmanufacturing/trianglesets/2021/07"`
+        ~ ` xmlns:hackerscad="` ~ appWebsite ~ `">` ~ "\n";
+    o ~= " <metadata name=\"Application\">" ~ xmlEscape(madeWith) ~ "</metadata>\n";
     o ~= " <resources>\n  <basematerials id=\"1\">\n";
     foreach (p; parts)
         o.formattedWrite("   <base name=\"%s\" displaycolor=\"%s\"/>\n", xmlEscape(p.name), hexColor(p.rgb));
@@ -70,7 +78,13 @@ private string modelXml(const Part[] parts, string assembly)
         foreach (t; 0 .. p.mesh.triangleCount)
             o.formattedWrite("     <triangle v1=\"%d\" v2=\"%d\" v3=\"%d\"/>\n",
                 p.mesh.tris[t * 3], p.mesh.tris[t * 3 + 1], p.mesh.tris[t * 3 + 2]);
-        o ~= "    </triangles>\n   </mesh>\n  </object>\n";
+        o ~= "    </triangles>\n";
+        sets(o, p);
+        o ~= "   </mesh>\n";
+        if (p.tags.length)
+            o.formattedWrite("   <metadatagroup>\n    <metadata name=\"hackerscad:tags\">%s</metadata>\n   </metadatagroup>\n",
+                xmlEscape(p.tags.join("; ")));
+        o ~= "  </object>\n";
     }
     if (assembly.length)
     {
@@ -92,6 +106,32 @@ private string modelXml(const Part[] parts, string assembly)
     return o[];
 }
 
+/// The triangles of each tag of the part's faces, a set named by it (ranges of the faces' runs).
+private void sets(ref typeof(appender!string()) o, const Part p)
+{
+    immutable n = p.faceTags.length;
+    if (n == 0 || p.mesh.faceStart.length != n + 1)
+        return;
+    string[] tags;
+    foreach (t; p.faceTags)
+        foreach (x; t)
+            if (!tags.canFind(x))
+                tags ~= x;
+    if (tags.length == 0)
+        return;
+    o ~= "    <t:trianglesets>\n";
+    foreach (k, tag; tags)
+    {
+        o.formattedWrite("     <t:triangleset name=\"%s\" identifier=\"tag%d\">\n", xmlEscape(tag), k);
+        foreach (f; 0 .. n)
+            if (p.faceTags[f].canFind(tag) && p.mesh.faceStart[f + 1] > p.mesh.faceStart[f])
+                o.formattedWrite("      <t:refrange startindex=\"%d\" endindex=\"%d\"/>\n", p.mesh.faceStart[f],
+                    p.mesh.faceStart[f + 1] - 1);
+        o ~= "     </t:triangleset>\n";
+    }
+    o ~= "    </t:trianglesets>\n";
+}
+
 private string xmlEscape(string s)
 {
     import std.array : replace;
@@ -109,6 +149,17 @@ unittest
     assert("3D/3dmodel.model" in zip.directory);
     auto model = cast(string) zip.expand(zip.directory["3D/3dmodel.model"]);
     assert(model.canFind(`name="a&lt;b"`));
+    assert(model.canFind(`<metadata name="Application">hackerscad</metadata>`));
+
+    // the faces' tags as named sets of their triangles, the part's own in its metadata
+    Mesh two;
+    two.verts = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+    two.tris = [0, 1, 2, 0, 1, 3, 0, 2, 3];
+    two.faceStart = [0, 1, 3];
+    auto tagged = cast(string) new ZipArchive(to3mf([Part("p", two, 0, ["body"], [["lid"], ["lid", "wall"]])]))
+        .expand(new ZipArchive(to3mf([Part("p", two, 0, ["body"], [["lid"], ["lid", "wall"]])])).directory["3D/3dmodel.model"]);
+    assert(tagged.canFind(`<t:triangleset name="lid" identifier="tag0">`) && tagged.canFind(`startindex="1" endindex="2"`));
+    assert(tagged.canFind(`<t:triangleset name="wall"`) && tagged.canFind(`<metadata name="hackerscad:tags">body</metadata>`));
     assert(model.canFind(`displaycolor="#FF8800"`));
 
     // one object of two pieces: the build holds the assembly only

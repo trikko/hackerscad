@@ -26,6 +26,8 @@ struct ExportPart
     Mesh mesh;     /// welded and closed
     uint rgb;
     Brep brep;
+    string[] tags;          /// the part's own (addTag)
+    string[][] faceTags;    /// per face of brep (the mesh's faceStart follows the same faces)
 }
 
 /// The extensions export takes for solids (PNG and drawings are written
@@ -79,7 +81,7 @@ string[] exportParts(string file, ExportPart[] parts, BrepKernel kernel, string 
     switch (extension(file).toLower)
     {
     case ".3mf":
-        write3mf(parts.map!(p => Part(p.name, p.mesh, p.rgb)).array, file, assembly);
+        write3mf(parts.map!(p => Part(p.name, p.mesh, p.rgb, p.tags, p.faceTags)).array, file, assembly);
         break;
     case ".stl":
         if (parts.length > 1)
@@ -91,7 +93,14 @@ string[] exportParts(string file, ExportPart[] parts, BrepKernel kernel, string 
         write(file, stlZip(parts));
         break;
     case ".step", ".stp":
-        kernel.writeStep(parts.map!(p => p.brep).array, parts.map!(p => p.name).array, file);
+        {
+            // each face its tags, as its name
+            import hackerscad.about : madeWith, madeWithNote;
+            string[][] names;
+            foreach (p; parts)
+                names ~= p.faceTags.map!(t => t.join(";")).array;
+            kernel.writeStep(parts.map!(p => p.brep).array, parts.map!(p => p.name).array, file, names, madeWith, madeWithNote);
+        }
         break;
     default:
         throw new ExportException(format("unsupported output format '%s' (use %s)", extension(file),
@@ -105,7 +114,9 @@ ubyte[] stlZip(const ExportPart[] parts)
 {
     import std.datetime.systime : Clock;
     import std.zip : ArchiveMember, CompressionMethod, ZipArchive;
+    import hackerscad.about : madeWithNote;
     auto zip = new ZipArchive;
+    zip.comment = madeWithNote;
     immutable now = Clock.currTime;
     foreach (i, name; fileNames(parts.map!(p => p.name).array))
     {

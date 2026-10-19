@@ -1993,7 +1993,7 @@ private Value[] sketchPaths(SketchVal sv, Span at)
 /// where they are: `self` given back (or the answer of hasTag).
 private Value changeTags(Interp it, ref string[] tags, string name, ref Args x, string what, Value self)
 {
-    import hackerscad.lang.builtins : tagNames, tagName, tagUnion, tagHint;
+    import hackerscad.lang.builtins : tagNames, tagName, tagUnion, tagHint, ownTags;
     import std.algorithm : canFind, filter;
     import std.array : array;
     if (name == "clearTags")
@@ -2006,6 +2006,7 @@ private Value changeTags(Interp it, ref string[] tags, string name, ref Args x, 
     auto names = tagNames(x.get("tag"), x.spanOf("tag"));
     if (name == "addTag")
     {
+        ownTags(names, x.raw.caller, x.spanOf("tag"));
         tags = tagUnion(tags, names);
         return self;
     }

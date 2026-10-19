@@ -110,6 +110,8 @@ Solid clip()
 
 The depth is Carlo's whole height, so the holes go all the way through.
 
+The faces a `hole()` leaves in the part keep a name, a tag: `hardware.bore` for its wall, `hardware.seat` for a counterbore's or countersink's, where the head sits. Rounding or chamfering the holes' rims later finds them by it, wherever the part was turned: `.chamfer(edges.between(faces.tagged("hardware.bore"), faces.top), d: 0.4.mm)`. A hole, screw, nut and washer also carry their axis, `hardware.axis`. See [Selectors and features](features.md).
+
 ## Nut traps
 
 `nutTrap(screw, depth, clearance: 0.2.mm)` is a *nut trap*: a hexagonal pocket (a hollow cut into the part) that holds a nut so it cannot turn, its top at z = 0 going down, flats parallel to X, `clearance` added on each side so a printed hexagon takes the nut. Cut it under the clearance hole, from the face the nut goes in by. To cut it from the bottom face, flip it with `.mirror(Z)` so it goes up:

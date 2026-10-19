@@ -2,6 +2,11 @@ module hardware;
 
 /// Metric screw sizes (ISO 4762 socket head cap screws, ISO 4032 nuts,
 /// ISO 7089 washers) with the holes to print or drill for them.
+///
+/// Tags: a hole's faces are tagged "hardware.bore" (the counterbore's and
+/// the countersink's, where the head sits, "hardware.seat"), and stay so in
+/// the part it is cut from; holes, screws, nuts and washers carry the axis
+/// "hardware.axis" (body.axis("hardware.axis"), with one of them in it).
 struct Screw
 {
     string name;
@@ -103,7 +108,8 @@ Solid screw(Screw s, Length length, bool socket = true, bool threaded = false, s
         : cylinder(d: s.d, h: length)
             .chamfer(edges.filter(e => e.isCircle && e.mid.z < 1.mm), d: s.d * 0.1)
             .move(z: -length);
-    return threaded ? threadShank(withHead(s, shank, socket, head), shank, s) : withHead(s, shank, socket, head);
+    auto r = threaded ? threadShank(withHead(s, shank, socket, head), shank, s) : withHead(s, shank, socket, head);
+    return r.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
 }
 
 /// The thread on a screw's shank, cut on its side: built straight from its faces, quicker than a threaded
@@ -163,15 +169,19 @@ Solid nut(Screw s, bool threaded = false)
         auto bore = cylinder(d: s.tap, h: 3 * s.nutHeight, center: true);
         auto wall = faces.from(bore);
         auto drilled = body - bore;
-        return s.name.length > 0 && s.name[0 .. 1] == "M"
+        auto threadedNut = s.name.length > 0 && s.name[0 .. 1] == "M"
             ? drilled.thread(wall, s.name, chamfer: false, clearance: 0.mm)
             : drilled.thread(wall, pitch: s.pitch, chamfer: false, clearance: 0.mm);
+        return threadedNut.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
     }
-    return body - cylinder(d: s.d, h: 3 * s.nutHeight, center: true);
+    return (body - cylinder(d: s.d, h: 3 * s.nutHeight, center: true)
+            .addTag("hardware.bore", recursive: true))
+        .addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
 }
 
 /// Flat washer standing on z = 0.
-Solid washer(Screw s) => cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.clearance, h: s.d, center: true);
+Solid washer(Screw s) => (cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.clearance, h: s.d, center: true))
+    .addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
 
 /// A hole to subtract, with its top on z = 0 going down `depth`:
 /// "clearance" (the screw passes), "tap" (pilot hole for the thread),
@@ -189,7 +199,11 @@ Solid washer(Screw s) => cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.cle
 /// and a countersink have their own).
 Solid hole(Screw s, Length depth, string kind = "clearance", string head = "socket", Length chamfer = -1.mm)
 {
-    auto shape = holeShape(s, depth, kind, head);
+    // its faces the hole's wall in the part (the seat, tagged so in holeShape, keeps its own tag too);
+    // its axis down from the mouth
+    auto shape = holeShape(s, depth, kind, head)
+        .addTag("hardware.bore", recursive: true)
+        .addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
     immutable c = chamfer >= 0.mm ? chamfer : kind == "ribs" ? 0.5.mm : 0.mm;
     if (c <= 0.mm || kind == "counterbore" || kind == "countersink")
         return shape;
@@ -216,6 +230,7 @@ private Solid holeShape(Screw s, Length depth, string kind, string head)
             immutable hd = headOf(s, head);
             immutable wide = head == "hex" ? hd.d * 1.155 : hd.d;
             return cylinder(d: wide + 0.6.mm, h: hd.h + 0.2.mm).move(z: -hd.h - 0.2.mm)
+                    .addTag("hardware.seat", recursive: true)
                 + cylinder(d: s.clearance, h: depth).move(z: -depth);
         }
     case "ribs":
@@ -235,7 +250,8 @@ private Solid holeShape(Screw s, Length depth, string kind, string head)
     case "countersink":
         // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
         return cone(d1: s.clearance, d2: 2.24 * s.d + 0.3.mm, h: (2.24 * s.d + 0.3.mm - s.clearance) / 2)
-            .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
+                .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
+                .addTag("hardware.seat", recursive: true)
             + cylinder(d: s.clearance, h: depth).move(z: -depth);
     default:
         assert(false, "hole kind must be clearance, tap, insert, counterbore, countersink or ribs, not " ~ kind);

@@ -39,6 +39,8 @@ Solid lid() => enclosure(vec(40.mm, 30.mm, 20.mm))
 
 `roundedBox(x, y, z, r)` is a box centred in X and Y, standing on z = 0, its four vertical edges rounded by `r` (3 mm unless given). `tray(x, y, z, wall:, r:)` is that box hollowed from the top: the outside measures `x × y × z`, the walls and the floor are `wall` thick (2 mm unless given), and the inside corners are rounded by `r - wall`.
 
+The faces you are likely to come back to carry a name, a *tag*: a tray's or a base's rim, where the lid rests, `enclosures.rim`, its floor inside `enclosures.floor`, a lid's lip `enclosures.lip`. A boss on the floor, a chamfer round the rim, find them by it: `.chamfer(edges.of(faces.tagged("enclosures.rim")), d: 0.4.mm)`. See [Selectors and features](features.md).
+
 | Parameter | What it does | Default |
 |---|---|---|
 | `x`, `y`, `z` | the outside size | — |

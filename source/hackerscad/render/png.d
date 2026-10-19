@@ -7,6 +7,7 @@ import std.zlib : compress;
 /// Encodes 8-bit RGB pixels (row-major, 3 bytes per pixel) as PNG.
 ubyte[] encodePng(const(ubyte)[] rgb, uint width, uint height)
 {
+    import hackerscad.about : madeWith, madeWithNote;
     assert(rgb.length == cast(size_t) width * height * 3);
 
     ubyte[] chunk(string type, const(ubyte)[] data)
@@ -27,7 +28,9 @@ ubyte[] encodePng(const(ubyte)[] rgb, uint width, uint height)
     }
 
     return cast(ubyte[])[0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n']
-        ~ chunk("IHDR", ihdr) ~ chunk("IDAT", cast(ubyte[]) compress(raw, 9)) ~ chunk("IEND", null);
+        ~ chunk("IHDR", ihdr) ~ chunk("tEXt", cast(const(ubyte)[]) ("Software\0" ~ madeWith))
+        ~ chunk("tEXt", cast(const(ubyte)[]) ("Comment\0" ~ madeWithNote))
+        ~ chunk("IDAT", cast(ubyte[]) compress(raw, 9)) ~ chunk("IEND", null);
 }
 
 unittest

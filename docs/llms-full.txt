@@ -73,6 +73,10 @@ dimensions and pictures, compare them with the request, fix, then export.
   where it is; tag only what a later step uses, and in a library the faces
   its users need. A tag not found: the error lists the tags there are; fix
   the name rather than switching to a selector by position.
+  The libraries tag what you come back to (hardware.bore, gears.axis,
+  hinges.pin, enclosures.rim…: the list is in hcad docs): use them rather
+  than selecting those faces again; two of a kind in one part: tag each
+  whole with a name of yours and chain, faces.tagged("left").tagged("hinges.pin").
 - Cut with planes: body.halves(body.plane(faces.top).offset(-10.mm)) gives
   .above and .below; body.split(plane) the pieces on both sides; s.pieces
   lists separate bodies, ordered along X, Y, Z.
@@ -183,7 +187,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   centerDistance); import hinges (hinge(…).fixed/.moving, print in place);
   import snaps (snapHook, snapSlot); import enclosures (roundedBox, tray,
   enclosure(vec(x, y, z)).base/.lid); import joints (splitJoint(body,
-  plane, kind: "dovetail"|…).a/.b for a part longer than the bed, splitFlat
+  plane, kind: "dovetail"|"dowels"|…).a/.b for a part longer than the bed,
+  .loose/.print the wedge or dowels in place and laid flat; splitFlat
   for two halves printed on their cut faces, joinParts(a, b, plane)); import
   molds (mold(part, plane).aPrint/.bPrint); import flex (kerf(body, zone)
   to make it bend; hinges also has pinHinge, snapHinge, livingHinge).
@@ -568,9 +573,9 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - edge properties: `start`, `end`, `mid`, `direction`, `length`, `isLine`, `isCircle`, `isParallel(axis)`, `isPerpendicular(axis)`, and for circles `center`, `axis`, `radius` (e.g. `edges.filter(e => e.isCircle && e.radius == 3.mm)`);
   - face properties: `center`, `normal`, `area`.
   - selectors combine: `edges.parallel(Z) - edges.of(faces.top)`, `faces.top + faces.bottom`, `a & b` (in both).
-- **Tags:** names given to faces and to whole solids, which follow them wherever they go. `b.faces.top.addTag("lid")` tags the faces selected on `b` (`b.faces` and `b.edges` are the solid's own, to select from); `b.addTag("body")` tags the solid as an object, `recursive: true` its faces as well. `removeTag(tag)`, `clearTags()` and, read only, `tags` and `hasTag(tag)`, on a solid or its faces (`b.faces.top.tags`); a tag is a text, or a list of them to add several. Like a method of a D struct, `addTag` changes the variable it is called on (`b`, or `parts[2]`) and gives the solid back, so it also works in a chain: `auto b = box(…).faces.top.addTag("lid");`. A face keeps its tags through what changes it: moved, turned, mirrored, scaled, split, trimmed by a cut, filleted, drafted, offset, pushed (`extrude(faces…)`), textured (`knurl`, wrap): its pieces all keep them, two faces merged into one (blocks side by side) have the tags of both, faces made new (a fillet's round, a hole's wall) have none, except the walls a tagged tool leaves (`body - drill`, the drill tagged `recursive: true`: its wall is tagged). A solid made from others keeps the first one's own tags (`a - b` is still `a`); a profile's go to what is extruded or revolved from it. `faces.tagged("lid")` finds the faces later, wherever the solid was turned since (`faces.top` would find another face); `b.faces.tagged("lid").count` and `.list` (or `foreach (f; b.faces.top)`) read them. Mistakes: a tag found on no face says which tags there are; a tag added to a solid in no variable or in an immutable one is lost, an error. Edges have no tags yet: tag the faces on either side, `edges.between(faces.tagged("a"), faces.tagged("b"))`. Points, axes, planes and frames can be tagged on a solid too, as references that move, turn, mirror and scale with it and stay through cuts and joins: `b.addTag("pin", at: vec(15.mm, 10.mm, 8.mm))` (or `at:` an `axis(…)`, a `plane(…)`, a frame), read back where the solid now is with `b.point("pin")`, `b.axis("hinge")`, `b.plane("mid")`, `b.frame("seat")` (a frame on whatever was tagged: `part.placeOn(body.frame("seat"))`). In a sketch, `s.addTag("plate")` tags its profile and paths, and an entity's tag (`c.addTag("pivot")` on a point, `s.circle(c, d: 6.mm).addTag("bore")`, construction ones too) becomes a reference of the profile and of what is made from it: a point where it is, a circle's or arc's centre an axis across the sketch, a line an axis along it. A tagged line, circle or arc also tags the face extruded or revolved from it: `sides[1].addTag("slope")`, then `faces.tagged("slope")` on the solid, the side swept from that line (a circle: the hole's wall). This holds for a profile extruded (straight) or revolved as the sketch gives it, moved or turned first if need be; joined with another profile first, tapered or swept, the faces are not tagged (yet).
+- **Tags:** names given to faces and to whole solids, which follow them wherever they go. `b.faces.top.addTag("lid")` tags the faces selected on `b` (`b.faces` and `b.edges` are the solid's own, to select from); `b.addTag("body")` tags the solid as an object, `recursive: true` its faces as well. `removeTag(tag)`, `clearTags()` and, read only, `tags` and `hasTag(tag)`, on a solid or its faces (`b.faces.top.tags`); a tag is a text, or a list of them to add several. Like a method of a D struct, `addTag` changes the variable it is called on (`b`, or `parts[2]`) and gives the solid back, so it also works in a chain: `auto b = box(…).faces.top.addTag("lid");`. A face keeps its tags through what changes it: moved, turned, mirrored, scaled, split, trimmed by a cut, filleted, drafted, offset, pushed (`extrude(faces…)`), textured (`knurl`, wrap): its pieces all keep them, two faces merged into one (blocks side by side) have the tags of both, faces made new (a fillet's round, a hole's wall) have none, except the walls a tagged tool leaves (`body - drill`, the drill tagged `recursive: true`: its wall is tagged). A solid made from others keeps the first one's own tags (`a - b` is still `a`); a profile's go to what is extruded or revolved from it. `faces.tagged("lid")` finds the faces later, wherever the solid was turned since (`faces.top` would find another face); `b.faces.tagged("lid").count` and `.list` (or `foreach (f; b.faces.top)`) read them. Mistakes: a tag found on no face says which tags there are; a tag added to a solid in no variable or in an immutable one is lost, an error. Edges have no tags yet: tag the faces on either side, `edges.between(faces.tagged("a"), faces.tagged("b"))`. Exported, the faces' tags name the faces of a STEP file (`lid;seat`) and named sets of triangles in a 3MF (the part's own tags in its object's metadata); `load("part.step")` gives a STEP file's face names back as tags. `faces.tagged("a").tagged("b")` takes the faces with both tags, a list those with either. A tag with a dot belongs to a module: `"hinges.pin"` can only be given in module `hinges` (read anywhere), so libraries tag what they make without colliding with the model's tags: `hardware.bore` and `hardware.seat` (a `hole()`'s faces, on the wall it leaves), `hardware.axis` (holes, screws, nuts, washers), `gears.axis`, `gears.bore`, `gears.pitch` (a rack), `hinges.axis`, `hinges.pin`, `enclosures.rim`, `enclosures.floor`, `enclosures.lip`, `joints.cut`, `joints.plane`, `molds.cavity`, `molds.parting`, `molds.sprue`. Points, axes, planes and frames can be tagged on a solid too, as references that move, turn, mirror and scale with it and stay through cuts and joins: `b.addTag("pin", at: vec(15.mm, 10.mm, 8.mm))` (or `at:` an `axis(…)`, a `plane(…)`, a frame), read back where the solid now is with `b.point("pin")`, `b.axis("hinge")`, `b.plane("mid")`, `b.frame("seat")` (a frame on whatever was tagged: `part.placeOn(body.frame("seat"))`). In a sketch, `s.addTag("plate")` tags its profile and paths, and an entity's tag (`c.addTag("pivot")` on a point, `s.circle(c, d: 6.mm).addTag("bore")`, construction ones too) becomes a reference of the profile and of what is made from it: a point where it is, a circle's or arc's centre an axis across the sketch, a line an axis along it. A tagged line, circle or arc also tags the face extruded or revolved from it: `sides[1].addTag("slope")`, then `faces.tagged("slope")` on the solid, the side swept from that line (a circle: the hole's wall). This holds for a profile extruded (straight) or revolved as the sketch gives it, moved or turned first if need be; joined with another profile first, tapered or swept, the faces are not tagged (yet).
 - **Built-in libraries** (`import gears;` or `import std.gears;`, selective imports work too):
-  - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa" | "koshikake" | "barbed", clearance: 0.2.mm, size:, length:, turn:, count:)` cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi), a dovetail over a seat (koshikake ari tsugi), a barbed tenon split down its middle, driven in for good; it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it) and `.loose` (the wedge), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says; `jointKinds` lists the kinds. For a part longer than the printer's bed. `splitFlat(body, plane, keys: 2, kind: "bowtie" | "disc", size:, depth:, clearance: 0.15.mm, wall: 1.6.mm)` cuts it into two halves with flat faces, each to print lying on its cut face, joined by flat keys (butterflies, chigiri) in pockets cut in both faces, placed where the cut has room, as far apart as they can be: a `FlatSplit` with `.a`, `.b`, `.keys` (in place), and laid for printing `.aPrint`, `.bPrint` (on their cut faces, on z = 0) and `.print` (the keys flat in a row). `joinParts(a, b, plane, kind:)` joins two separate parts where `b` ends on a face of `a` (the plane, its normal into `b`): the same joints, from `b` into `a`, sized by `b`'s end, a tenon longer than `a` is thick flush on the far side; joints lie along the cut's longer side unless `turn:` says. `profile.spots(n, margin:)` gives the points it uses: up to n inside a profile in any plane, at least margin from its edges, far apart.
+  - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa" | "koshikake" | "barbed" | "dowels", clearance: 0.2.mm, size:, length:, turn:, count:)` cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi), a dovetail over a seat (koshikake ari tsugi), a barbed tenon split down its middle, driven in for good, loose printed dowels (rods with two flats, split at the ends, `count:` of them) held by friction in plain round holes; it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it), `.loose` (the wedge or the dowels, in place) and `.print` (those lying flat in a row, to print), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says; `jointKinds` lists the kinds. For a part longer than the printer's bed. `splitFlat(body, plane, keys: 2, kind: "bowtie" | "disc", size:, depth:, clearance: 0.15.mm, wall: 1.6.mm)` cuts it into two halves with flat faces, each to print lying on its cut face, joined by flat keys (butterflies, chigiri) in pockets cut in both faces, placed where the cut has room, as far apart as they can be: a `FlatSplit` with `.a`, `.b`, `.keys` (in place), and laid for printing `.aPrint`, `.bPrint` (on their cut faces, on z = 0) and `.print` (the keys flat in a row). `joinParts(a, b, plane, kind:)` joins two separate parts where `b` ends on a face of `a` (the plane, its normal into `b`): the same joints, from `b` into `a`, sized by `b`'s end, a tenon longer than `a` is thick flush on the far side; joints lie along the cut's longer side unless `turn:` says. `profile.spots(n, margin:)` gives the points it uses: up to n inside a profile in any plane, at least margin from its edges, far apart.
   - `molds`: `mold(part, plane, wall: 10.mm, keys: 4, sprue: 6.mm, vents: 2, seal: 0.8.mm, clearance: 0.15.mm, pry: true)` a two-part mold to cast the part in (silicone, resin, plaster): a block round it cut along the parting plane (where the part is widest), the part hollow inside, cone keys on one half's parting face and sockets in the other, a seal ridge round the cavity and its groove, a pour hole with a funnel and vents up through the half in front of the plane, notches on two sides to pry it open; a `Mold` with `.a`, `.b` and, laid on their outer faces with the parting face up, `.aPrint`, `.bPrint`.
   - `flex`: `kerf(body, zone, width: 0.8.mm, bridge: 2.mm, pitch: 2.5.mm, length:, along:)` makes the body bend inside the zone (any solid): rows of slots through its thinnest way, each row shifted half a slot, running across the body's length (or `along:` X, Y or Z), so a plate bends end to end and a tube bows.
   - `hardware`: `Screw` sizes `M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8`, `M10`, `M12`, unified inch `UNC4_40`, `UNC6_32`, `UNC8_32`, `UNC10_24`, `UNC1_4_20` (cameras and tripods), and self-tapping screws for plastic `ST2_2`, `ST2_9`, `ST3_5`, `ST4_2` (their `tap` is the hole they cut their thread in), with `d`, `pitch`, `tap`, `clearance`, `head`, `headHeight`, `key`, `nut`, `nutHeight`, `washer`, `insert`, `insertDepth`; `screw(M3, 20.mm, threaded: false, head: "socket" | "button" | "flat" | "hex" | "pan")` (ISO 4762, 7380, 10642, 4017, 7049; underside of the head on z = 0, a flat head's top), `headOf(M3, "button")` its `d`, `h`, `key`, `nut(M3, threaded: false)`, `washer(M3)`, `hexPrism(acrossFlats, h)`, `squareNut(M3)` (DIN 562, `squareNutSize`, `squareNutHeight`); tools to subtract, top on z = 0 going down: `hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" | "countersink" | "ribs", head: "socket", chamfer:)` (a counterbore sized for that head; `chamfer:` widens the mouth at 45°, 0.5 mm for ribs unless given; `"ribs"` a hole the screw passes with three ribs along it, 120° apart and one towards -Y, the bottom one on a wall, that the screw cuts its thread into), `nutTrap(M3, depth)`, `squareNutSlot(M3, reach, clearance: 0.2.mm)` (centred on the axis, its middle on z = 0, open towards +X `reach` long, for the nut to slide in from the side); aluminium extrusions of the 20 and 30 series (2020, 3030, B-type slot, typical sizes): `extrusion(20, length)` (standing along Z, centred: a reference part), `extrusionSeries(20)` its sizes (`size`, `slot`, `lip`, `cavity`, `depth`, `bore`, `screw`), `tNut(20, length: 10.mm)` (a T-nut as it sits in a slot facing +Z, the face on z = 0, a tap hole for M5 or M6) and `slotKey(20, length)` (a key under a printed part, down from z = 0 into a slot, to keep it square to the extrusion).
@@ -1467,6 +1472,11 @@ module hardware;
 
 /// Metric screw sizes (ISO 4762 socket head cap screws, ISO 4032 nuts,
 /// ISO 7089 washers) with the holes to print or drill for them.
+///
+/// Tags: a hole's faces are tagged "hardware.bore" (the counterbore's and
+/// the countersink's, where the head sits, "hardware.seat"), and stay so in
+/// the part it is cut from; holes, screws, nuts and washers carry the axis
+/// "hardware.axis" (body.axis("hardware.axis"), with one of them in it).
 struct Screw
 {
     string name;
@@ -1568,7 +1578,8 @@ Solid screw(Screw s, Length length, bool socket = true, bool threaded = false, s
         : cylinder(d: s.d, h: length)
             .chamfer(edges.filter(e => e.isCircle && e.mid.z < 1.mm), d: s.d * 0.1)
             .move(z: -length);
-    return threaded ? threadShank(withHead(s, shank, socket, head), shank, s) : withHead(s, shank, socket, head);
+    auto r = threaded ? threadShank(withHead(s, shank, socket, head), shank, s) : withHead(s, shank, socket, head);
+    return r.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
 }
 
 /// The thread on a screw's shank, cut on its side: built straight from its faces, quicker than a threaded
@@ -1628,15 +1639,19 @@ Solid nut(Screw s, bool threaded = false)
         auto bore = cylinder(d: s.tap, h: 3 * s.nutHeight, center: true);
         auto wall = faces.from(bore);
         auto drilled = body - bore;
-        return s.name.length > 0 && s.name[0 .. 1] == "M"
+        auto threadedNut = s.name.length > 0 && s.name[0 .. 1] == "M"
             ? drilled.thread(wall, s.name, chamfer: false, clearance: 0.mm)
             : drilled.thread(wall, pitch: s.pitch, chamfer: false, clearance: 0.mm);
+        return threadedNut.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
     }
-    return body - cylinder(d: s.d, h: 3 * s.nutHeight, center: true);
+    return (body - cylinder(d: s.d, h: 3 * s.nutHeight, center: true)
+            .addTag("hardware.bore", recursive: true))
+        .addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
 }
 
 /// Flat washer standing on z = 0.
-Solid washer(Screw s) => cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.clearance, h: s.d, center: true);
+Solid washer(Screw s) => (cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.clearance, h: s.d, center: true))
+    .addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
 
 /// A hole to subtract, with its top on z = 0 going down `depth`:
 /// "clearance" (the screw passes), "tap" (pilot hole for the thread),
@@ -1654,7 +1669,11 @@ Solid washer(Screw s) => cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.cle
 /// and a countersink have their own).
 Solid hole(Screw s, Length depth, string kind = "clearance", string head = "socket", Length chamfer = -1.mm)
 {
-    auto shape = holeShape(s, depth, kind, head);
+    // its faces the hole's wall in the part (the seat, tagged so in holeShape, keeps its own tag too);
+    // its axis down from the mouth
+    auto shape = holeShape(s, depth, kind, head)
+        .addTag("hardware.bore", recursive: true)
+        .addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
     immutable c = chamfer >= 0.mm ? chamfer : kind == "ribs" ? 0.5.mm : 0.mm;
     if (c <= 0.mm || kind == "counterbore" || kind == "countersink")
         return shape;
@@ -1681,6 +1700,7 @@ private Solid holeShape(Screw s, Length depth, string kind, string head)
             immutable hd = headOf(s, head);
             immutable wide = head == "hex" ? hd.d * 1.155 : hd.d;
             return cylinder(d: wide + 0.6.mm, h: hd.h + 0.2.mm).move(z: -hd.h - 0.2.mm)
+                    .addTag("hardware.seat", recursive: true)
                 + cylinder(d: s.clearance, h: depth).move(z: -depth);
         }
     case "ribs":
@@ -1700,7 +1720,8 @@ private Solid holeShape(Screw s, Length depth, string kind, string head)
     case "countersink":
         // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
         return cone(d1: s.clearance, d2: 2.24 * s.d + 0.3.mm, h: (2.24 * s.d + 0.3.mm - s.clearance) / 2)
-            .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
+                .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
+                .addTag("hardware.seat", recursive: true)
             + cylinder(d: s.clearance, h: depth).move(z: -depth);
     default:
         assert(false, "hole kind must be clearance, tap, insert, counterbore, countersink or ribs, not " ~ kind);
@@ -1894,19 +1915,22 @@ Profile gearProfile(Length m, int teeth, Angle pressure = 20.deg, Length backlas
 }
 
 /// A spur gear standing on z = 0, with an optional bore; `steps` points on
-/// each flank (more: smoother teeth, slower).
+/// each flank (more: smoother teeth, slower). Tags: the axis "gears.axis",
+/// the bore's wall "gears.bore".
 Solid spurGear(Length m, int teeth, Length thickness, Length bore = 0.mm, Angle pressure = 20.deg,
     Length backlash = 0.1.mm, int steps = 6)
 {
     assert(bore < rootDiameter(m, teeth) - 2 * m, "spurGear: the bore must be smaller than the gear's root circle, with a module of material left");
     auto g = gearProfile(m, teeth, pressure, backlash, steps).extrude(thickness);
     if (bore > 0.mm)
-        g -= cylinder(d: bore, h: 3 * thickness, center: true);
-    return g;
+        g -= cylinder(d: bore, h: 3 * thickness, center: true)
+            .addTag("gears.bore", recursive: true);
+    return g.addTag("gears.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
 }
 
 /// A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0;
-/// backlash thins the teeth on the pitch line, as on a gear.
+/// backlash thins the teeth on the pitch line, as on a gear. Tag: the pitch
+/// line "gears.pitch" (an axis along it, on the rack's bottom face).
 Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pressure = 20.deg,
     Length backlash = 0.1.mm)
 {
@@ -1924,7 +1948,9 @@ Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pres
                 vec(x0 + 3 * p / 4 - m * t - e, m), vec(x0 + 3 * p / 4 + 1.25 * m * t - e, -1.25 * m)];
     }
     pts ~= [vec(teeth * p, -1.25 * m), vec(teeth * p, -1.25 * m - b)];
-    return polygon(pts).extrude(thickness);
+    return polygon(pts)
+        .extrude(thickness)
+        .addTag("gears.pitch", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: X));
 }
 ```
 
@@ -1934,7 +1960,9 @@ Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pres
 module hinges;
 
 /// The two leaves of a hinge, printed in place: they come out of the
-/// printer already joined and turn around the X axis.
+/// printer already joined and turn around the X axis. Tags: both leaves
+/// carry the axis they turn round, "hinges.axis"; pinHinge's holes for the
+/// pin are tagged "hinges.pin".
 struct Hinge
 {
     Solid fixed;    /// the leaf on -Y, with the pin
@@ -1976,7 +2004,14 @@ Hinge hinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3.mm
     foreach (i; 0 .. knuckles)
         if (i % 2 == 1)
             b -= cylinder(d: pin + 2 * clearance, h: length).rotate(y: 90).move(x: -length / 2, z: thickness);
-    return Hinge(a, b);
+    return leaves(a, b, thickness);
+}
+
+/// The two leaves, each with the axis they turn round (along X at z = thickness).
+private Hinge leaves(Solid a, Solid b, Length thickness)
+{
+    auto turn = axis(origin: vec(0.mm, 0.mm, thickness), direction: X);
+    return Hinge(a.addTag("hinges.axis", at: turn), b.addTag("hinges.axis", at: turn));
 }
 
 /// A living hinge: two plates `width` wide each, lying flat side by side
@@ -2025,9 +2060,11 @@ Hinge pinHinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3
         else
             b += knuckleOf(i, 1, length, thickness, knuckles, clearance);
     }
-    auto bore = cylinder(d: pin + 2 * clearance, h: length + 2.mm).rotate(y: 90).move(x: -length / 2 - 1.mm,
-        z: thickness);
-    return Hinge(a - bore, b - bore);
+    auto bore = cylinder(d: pin + 2 * clearance, h: length + 2.mm)
+        .rotate(y: 90)
+        .move(x: -length / 2 - 1.mm, z: thickness)
+        .addTag("hinges.pin", recursive: true);
+    return leaves(a - bore, b - bore, thickness);
 }
 
 /// A hinge that snaps together: three knuckles, the two outer ones on the
@@ -2051,7 +2088,7 @@ Hinge snapHinge(Length length = 30.mm, Length width = 15.mm, Length thickness = 
     a = a + cone1.move(x: inner0, z: thickness) + cone1.mirror(X).move(x: inner1, z: thickness);
     auto socket = cone(d1: cd + 2 * clearance, d2: cd - 2 * ch + 2 * clearance, h: ch + clearance).rotate(y: 90);
     b = b - socket.move(x: inner0 - 0.01.mm, z: thickness) - socket.mirror(X).move(x: inner1 + 0.01.mm, z: thickness);
-    return Hinge(a, b);
+    return leaves(a, b, thickness);
 }
 ```
 
@@ -2094,6 +2131,10 @@ module enclosures;
 import hardware : Screw, M3, hole;
 
 /// Boxes with rounded corners and enclosures with lids.
+///
+/// Tags: a tray's or a base's rim, where the lid rests, is tagged
+/// "enclosures.rim", its floor inside "enclosures.floor"; a lid's lip, the
+/// ring that goes into the base, "enclosures.lip".
 
 /// A box centred in X and Y on z = 0, with vertical edges rounded by `r`.
 Solid roundedBox(Length x, Length y, Length z, Length r = 3.mm)
@@ -2109,7 +2150,10 @@ Solid tray(Length x, Length y, Length z, Length wall = 2.mm, Length r = 3.mm)
     // a wall as thick as the corners' radius leaves the inside corners a radius of nothing
     assert(abs(wall - r) > 0.05.mm, "tray: a wall as thick as r leaves sharp inside corners that cannot be built: "
         ~ "make r larger than the wall (or the wall thicker than r)");
-    return roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+    auto t = roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+    t.faces.top.addTag("enclosures.rim");
+    t.faces.normal(Z).filter(f => abs(f.center.z - wall) < 0.001.mm).addTag("enclosures.floor");
+    return t;
 }
 
 /// A base and a lid that fit together, both standing on z = 0.
@@ -2132,7 +2176,7 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
     immutable lx = inner.x - 2 * clearance, ly = inner.y - 2 * clearance;
     auto lip = roundedBox(lx, ly, lidHeight, max(r - wall, 0.5.mm)) - roundedBox(lx - 2 * wall, ly - 2 * wall, lidHeight * 3,
         max(r - 2 * wall, 0.5.mm)).move(z: -lidHeight);
-    lid += lip.move(z: wall);
+    lid += lip.move(z: wall).addTag("enclosures.lip", recursive: true);
 
     // posts: tapped for the screw in the base, clearance holes in the lid.
     // The screw's axis is as near the corner as it can be: its hole keeps
@@ -2206,6 +2250,12 @@ Enclosure hullCase(Solid[] inside, Length wall = 2.mm, Length clearance = 0.5.mm
     // the base: the outside below the cut and the lip, the inside taken out once
     auto base = ((outer & slab(hb.min.z - grow - 1.mm, cut)) + ring) - cavity;
     auto lid = (outer & slab(cut, hb.max.z + grow + 1.mm)) - cavity - notch;
+    // the rim: the base's wall at the cut, beside the lip; the lip itself
+    bool atCut(Face f) => abs(f.center.z - cut) < 0.001.mm && f.normal.z > 0.999;
+    if (base.faces.filter(f => atCut(f)).count > 0)
+        base.faces.filter(f => atCut(f)).addTag("enclosures.rim");
+    if (base.faces.filter(f => f.center.z > cut + 0.001.mm).count > 0)
+        base.faces.filter(f => f.center.z > cut + 0.001.mm).addTag("enclosures.lip");
     return Enclosure(base, lid);
 }
 ```
@@ -2215,17 +2265,32 @@ Enclosure hullCase(Solid[] inside, Length wall = 2.mm, Length clearance = 0.5.mm
 ```d
 module joints;
 
+/// Tags: on both pieces, the faces left by the cut (in its plane) are tagged
+/// "joints.cut", and the plane itself "joints.plane" (piece.plane("joints.plane")).
+
+/// `s` with its faces lying in the plane `p` tagged "joints.cut", and the plane "joints.plane".
+private Solid cutTagged(Solid s, Plane p)
+{
+    bool on(Face f) => abs(dot(f.center - p.origin, p.normal)) < 0.001.mm && abs(dot(f.normal, p.normal)) > 0.999;
+    // (a joint can leave no face whole in the plane: a finger joint's cut is all fingers)
+    if (s.faces.filter(f => on(f)).count > 0)
+        s.faces.filter(f => on(f)).addTag("joints.cut");
+    return s.addTag("joints.plane", at: p);
+}
+
 /// The two pieces of a solid cut along a plane with a joint between them,
 /// and the loose parts that lock it (a wedge), if any.
 struct Joint
 {
     Solid a;        /// the piece behind the plane (against its normal)
     Solid b;        /// the piece in front of it (where the normal points)
-    Solid[] loose;  /// a wedge or pins to print apart, in place
+    Solid[] loose;  /// a wedge or dowels to print apart, in place
+    Solid[] print;  /// the same lying flat on z = 0 in a row beside the body, to print
 }
 
 /// The kinds of joint splitJoint() knows.
-immutable string[] jointKinds = ["tenon", "dovetail", "pins", "fingers", "lap", "kama", "kanawa", "koshikake", "barbed"];
+immutable string[] jointKinds = ["tenon", "dovetail", "pins", "fingers", "lap", "kama", "kanawa", "koshikake", "barbed",
+    "dowels"];
 
 /// What a joint pushes across the plane, in the plane's own frame (x and y
 /// in the plane, z along its normal), `s` its size and `g` added all round
@@ -2367,10 +2432,72 @@ private Keys keys(string kind, Length s, Length len, Length g, int count)
                 shape = shape - rect(0.3 * w, 0.6 * len).move(y: len - 0.3 * len + 0.01.mm);
             return Keys(shape.extrude(2 * far, along: Y).move(y: -far), none);
         }
+    case "dowels":
+        // loose: the dowels and their sockets are made by dowels(), the pieces push nothing
+        return Keys(none, none);
     default:
-        assert(false, "the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, koshikake, barbed, not "
-            ~ kind);
+        assert(false, "the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, koshikake, barbed, "
+            ~ "dowels, not " ~ kind);
     }
+}
+
+/// Loose dowels of a "dowels" joint and their sockets, in the joint's frame (x across, y the dowel's
+/// thickness, z along the normal, the plane at z = 0).
+private struct Dowels
+{
+    Solid[] pins;
+    Solid[] sockets;
+}
+
+/// `count` dowels in a row along x, each `2 len` long across the plane: a round rod with two flats
+/// (it prints lying on one), each end split down its middle and pointed; `grip` thicker than its
+/// socket across the split, so the halves press on the socket's wall. The sockets: plain round holes
+/// `g` larger than the dowel's diameter, a little deeper than it goes, chamfered at the mouth.
+private Dowels dowels(Length s, Length len, Length g, int count, Length grip = 0.2.mm)
+{
+    immutable n = max(1, count);
+    immutable d = min(0.3 * s, 0.85 * s / (1.6 * n)), t = 0.75 * d;
+    immutable step = n > 1 ? max(0.55 * s / (n - 1), 1.6 * d) : 0.mm;
+    immutable rod = d + g + grip, point = 0.15 * d;
+    // the rod along z, its flats facing ±y, pointed at both ends
+    auto pin = (cylinder(d: rod, h: 2 * len, center: true)
+            & box(rod, t, 2 * len + 1.mm).move(z: -len - 0.5.mm))
+        .chamfer(edges.filter(e => abs(e.mid.z) > len - 0.01.mm), d: point);
+    // the splits, through the flats, from each tip to 0.4 of the way back
+    immutable sw = max(0.25 * d, 0.6.mm), sl = 0.6 * len;
+    auto split = box(sw, 2 * t, sl + 0.01.mm).move(z: len - sl);
+    pin = pin - split - split.mirror(Z);
+    // the socket: round, the dowel's diameter and the play, 0.3 mm deeper, its mouth chamfered
+    immutable hole = d + g, lip = 0.4.mm;
+    auto socket = cylinder(d: hole, h: 2 * (len + 0.3.mm), center: true)
+        + cone(d1: hole + 2 * lip, d2: hole, h: lip)
+        + cone(d1: hole + 2 * lip, d2: hole, h: lip).mirror(Z);
+    Dowels r;
+    foreach (i; 0 .. n)
+    {
+        immutable x = (i - (n - 1) / 2.0) * step;
+        r.pins ~= pin.move(x: x);
+        r.sockets ~= socket.move(x: x);
+    }
+    return r;
+}
+
+/// The loose parts of a joint (in place) laid flat on z = 0, in a row along x beyond `body`'s box.
+private Solid[] flatRow(Solid[] loose, Solid body)
+{
+    Solid[] r;
+    auto bb = body.bbox;
+    Length x = bb.max.x + 10.mm;
+    foreach (p; loose)
+    {
+        // on its largest face (of the two alike, a flat part has, the first), then along the row
+        auto down = p.faces.largest.list[0].normal;
+        auto laid = p.placeOn(World, from: faces.normal(down).largest);
+        auto lb = laid.bbox;
+        r ~= laid.move(x: x - lb.min.x, y: bb.center.y - lb.center.y);
+        x += lb.size.x + 5.mm;
+    }
+    return r;
 }
 
 /// How far to turn a joint in the frame of plane `here` so it lies along the
@@ -2408,6 +2535,10 @@ private Angle alongLonger(Profile section, Plane here, string kind)
 ///   (koshikake ari tsugi), which carries a load without bending open;
 /// - "barbed": a tenon with barbs, split down its middle, driven in: it goes
 ///   in and does not come out.
+/// - "dowels": `count` loose dowels, the printed kind of wooden ones: a rod
+///   with two flats, each end split, half into a round hole of a and half
+///   into one of b, held by friction (the split halves press on the walls);
+///   they print lying on a flat (`print`), and the holes are plain round ones.
 Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
     Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
 {
@@ -2423,8 +2554,8 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
     auto exact = keys(kind, s, len, 0.mm, count);
     auto room = keys(kind, s, len, clearance, count);
     auto sides = body.halves(here);
-    auto a = (sides.below - placed(room.down)) + (body & placed(exact.up));
-    auto b = (sides.above - placed(room.up)) + (body & placed(exact.down));
+    auto a = (cutTagged(sides.below, here) - placed(room.down)) + (body & placed(exact.up));
+    auto b = (cutTagged(sides.above, here) - placed(room.up)) + (body & placed(exact.down));
     Solid[] loose;
     if (kind == "kanawa")
     {
@@ -2449,7 +2580,14 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
         b -= placed(hole);
         loose ~= placed(wedge);
     }
-    return Joint(a, b, loose);
+    if (kind == "dowels")
+    {
+        auto d = dowels(s, len, clearance, count);
+        a -= d.sockets.map(k => placed(k));
+        b -= d.sockets.map(k => placed(k));
+        loose ~= d.pins.map(k => placed(k));
+    }
+    return Joint(a, b, loose, flatRow(loose, body));
 }
 
 /// The two halves of a solid cut flat along a plane, each to print lying on
@@ -2537,8 +2675,8 @@ FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", 
         flat ~= key.move(x: bb.max.x + 10.mm + len / 2 + i * (len + 5.mm), y: bb.center.y);
     }
     auto sides = body.halves(at);
-    auto a = sides.below - pockets;
-    auto b = sides.above - pockets;
+    auto a = cutTagged(sides.below, at) - pockets;
+    auto b = cutTagged(sides.above, at) - pockets;
 
     // each half on its cut face: the face lying in the plane, facing out of the half
     bool cutFace(Face f, Vec3 n) =>
@@ -2555,8 +2693,8 @@ FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", 
 /// `a`'s far side stops flush with it (a through tenon). Kinds: "tenon",
 /// "dovetail" (a sliding dovetail, its housing running out of `a` the way it
 /// slides in), "pins", "fingers" (a corner of a box), "lap", "kama" (its
-/// housing too runs out of `a`). Gives the two parts changed: `.a` with the hollows,
-/// `.b` with what fits in them.
+/// housing too runs out of `a`), "dowels" (holes in both, the dowels in `.loose` and, lying flat,
+/// in `.print`). Gives the two parts changed: `.a` with the hollows, `.b` with what fits in them.
 Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
     Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
 {
@@ -2590,8 +2728,15 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
     auto housing = slides ? placed(room.up) : placed(room.up) & footprint.offset(clearance, sharp: true);
     auto na = a - housing + (b & placed(exact.down) & footprint);
     auto nb = b + (a & placed(exact.up) & footprint) - placed(room.down);
-    Solid[] none;
-    return Joint(na, nb, none);
+    Solid[] loose;
+    if (kind == "dowels")
+    {
+        auto d = dowels(s, len, clearance, count);
+        na -= d.sockets.map(k => placed(k));
+        nb -= d.sockets.map(k => placed(k));
+        loose ~= d.pins.map(k => placed(k));
+    }
+    return Joint(cutTagged(na, at), cutTagged(nb, at), loose, flatRow(loose, a + b));
 }
 ```
 
@@ -2601,6 +2746,10 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
 module molds;
 
 /// The two halves of a mold, where they go and laid for printing.
+///
+/// Tags: the faces of the hollow the object leaves are "molds.cavity", the
+/// halves' faces along the parting plane "molds.parting", the pour hole's
+/// "molds.sprue".
 struct Mold
 {
     Solid a;        /// the half behind the parting plane (against its normal), with the keys and the seal
@@ -2674,8 +2823,13 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
         .move(x: (hi(xd) + lo(xd)) / 2, y: (hi(yd) + lo(yd)) / 2, z: lo(n) - wall)
         .fillet(edges.parallel(Z), r: wall / 2)
         .placeOn(centre);
-    auto sides = (block - object).halves(at);
+    auto sides = (block - object.addTag("molds.cavity", recursive: true)).halves(at);
     Solid a = sides.below, b = sides.above;
+    bool parting(Face f) => abs(dot(f.center - at.origin, n)) < 0.001.mm && abs(dot(f.normal, n)) > 0.999;
+    if (a.faces.filter(f => parting(f)).count > 0)
+        a.faces.filter(f => parting(f)).addTag("molds.parting");
+    if (b.faces.filter(f => parting(f)).count > 0)
+        b.faces.filter(f => parting(f)).addTag("molds.parting");
 
     // the keys: truncated cones, half as high as they are wide at the foot, on the parting face round
     // the cavity, clear of the edges and of the seal
@@ -2726,7 +2880,8 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
         if (i == 0)
             b = b - (cylinder(d: sprue, h: length)
                 + cone(d1: sprue, d2: 2 * sprue, h: sprue / 2 + 0.01.mm).move(z: wall + 0.5.mm - sprue / 2))
-                .placeOn(here);
+                .placeOn(here)
+                .addTag("molds.sprue", recursive: true);
         else
             b = b - cylinder(d: 2.mm, h: length).placeOn(here);
     }

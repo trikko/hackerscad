@@ -85,6 +85,10 @@ dimensions and pictures, compare them with the request, fix, then export.
   where it is; tag only what a later step uses, and in a library the faces
   its users need. A tag not found: the error lists the tags there are; fix
   the name rather than switching to a selector by position.
+  The libraries tag what you come back to (hardware.bore, gears.axis,
+  hinges.pin, enclosures.rim…: the list is in hcad docs): use them rather
+  than selecting those faces again; two of a kind in one part: tag each
+  whole with a name of yours and chain, faces.tagged("left").tagged("hinges.pin").
 - Cut with planes: body.halves(body.plane(faces.top).offset(-10.mm)) gives
   .above and .below; body.split(plane) the pieces on both sides; s.pieces
   lists separate bodies, ordered along X, Y, Z.
@@ -195,7 +199,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   centerDistance); import hinges (hinge(…).fixed/.moving, print in place);
   import snaps (snapHook, snapSlot); import enclosures (roundedBox, tray,
   enclosure(vec(x, y, z)).base/.lid); import joints (splitJoint(body,
-  plane, kind: "dovetail"|…).a/.b for a part longer than the bed, splitFlat
+  plane, kind: "dovetail"|"dowels"|…).a/.b for a part longer than the bed,
+  .loose/.print the wedge or dowels in place and laid flat; splitFlat
   for two halves printed on their cut faces, joinParts(a, b, plane)); import
   molds (mold(part, plane).aPrint/.bPrint); import flex (kerf(body, zone)
   to make it bend; hinges also has pinHinge, snapHinge, livingHinge).

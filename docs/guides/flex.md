@@ -76,7 +76,7 @@ Solid snapMoving() => snapHinge().moving.move(x: 105.mm);
 | `snapHinge()` | three knuckles, the outer two with cones that click into sockets in the middle one | the leaves apart, flat; the outer knuckles sprung apart to fit | yes |
 | `livingHinge()` | two plates joined by a thin web on their underside | flat, the web on the bed, its layers across the fold; PETG, PP or TPU | no, one piece |
 
-Every hinge returns its leaves laid round an axis along X at the height of their thickness (the living hinge: one piece, the fold along X): place the leaves on the parts they join, or join them to the parts with `+`.
+Every hinge returns its leaves laid round an axis along X at the height of their thickness (the living hinge: one piece, the fold along X): place the leaves on the parts they join, or join them to the parts with `+`. Both leaves carry that axis, tagged `hinges.axis`, wherever they are placed (`leaf.axis("hinges.axis")`: to turn one about it), and a pin hinge's holes are tagged `hinges.pin`.
 
 - A print-in-place hinge needs the play (`clearance:`) your printer can leave open: print one before a whole box.
 - A pin of filament holds well when its hole is 0.2 to 0.3 mm larger; melt its ends a little with a soldering iron to keep it in.

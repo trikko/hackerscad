@@ -1,6 +1,6 @@
 # Joints between parts
 
-A part too long for the printer's bed cut in two pieces that lock together with no screws and no glue, or two parts joined where they meet, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck, the wedged scarf and the seated dovetail of Japanese carpentry, and a barbed tenon driven in for good. Or a part cut into two halves with flat faces, each printed lying on its cut face, joined by flat keys. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
+A part too long for the printer's bed cut in two pieces that lock together with no screws and no glue, or two parts joined where they meet, as joiners join timber: tenons, dovetails, pins, finger joints, half laps, the gooseneck, the wedged scarf and the seated dovetail of Japanese carpentry, a barbed tenon driven in for good, and printed dowels in plain holes. Or a part cut into two halves with flat faces, each printed lying on its cut face, joined by flat keys. The `joints` library cuts a solid along a plane and shapes both sides of the cut.
 
 <!-- render: joints-kinds --from 0.6,-1,0.5 -->
 ```d
@@ -60,7 +60,8 @@ Solid barbed() => shown(8);
 
 - `.a`, the piece behind the plane (against its normal), with what pushes into the other;
 - `.b`, the piece in front of it, with the hollow it fits in;
-- `.loose`, the parts printed apart that lock it: the wedge of a `"kanawa"`.
+- `.loose`, the parts printed apart that lock it, where they go: the wedge of a `"kanawa"`, the dowels of `"dowels"`;
+- `.print`, the same parts lying flat on z = 0 in a row beside the body, ready to print.
 
 The joint sits in the middle of the cut. Its size follows the cut: by default it is the square root of the section's area, the width of a square beam, so the same call suits a thin rod and a thick post. The hollows are `clearance` larger all round (0.2 mm unless given), so the pieces go together without forcing: see [Fits and printing](fits.md) to choose it for your printer.
 
@@ -75,6 +76,7 @@ The joint sits in the middle of the cut. Its size follows the cut: by default it
 | `"kanawa"` | a half lap with a hook at each end, locked by a wedge (kanawa tsugi) | laid on, then the wedge driven through | pulling, bending and twisting |
 | `"koshikake"` | a dovetail over a seat the other piece rests on (koshikake ari tsugi) | dropped in from the side | pulling apart, and bending: the seat carries the load |
 | `"barbed"` | a tenon with barbs, split down its middle (the barbs close as it goes in) | driven in | pulling out: it does not come out again |
+| `"dowels"` | loose printed dowels (`count:` of them), rods with two flats and split ends, in plain round holes of both pieces | the dowels pushed into one piece, then the other piece onto them | bending and twisting; pulling, by friction |
 
 | Argument | What it does |
 |---|---|
@@ -83,7 +85,7 @@ The joint sits in the middle of the cut. Its size follows the cut: by default it
 | `size:` | the joint's scale, instead of the square root of the section's area |
 | `length:` | how far it reaches across the cut, 0.6 of the size unless given |
 | `turn:` | turns it about the plane's normal (it lies along the cut's longer side unless turned): which way a dovetail or a gooseneck slides in |
-| `count:` | the number of pins (thinner the more there are) or fingers |
+| `count:` | the number of pins or dowels (thinner the more there are) or fingers |
 
 ## A rail longer than the bed
 
@@ -149,9 +151,42 @@ Solid wedge() => scarf().loose[0].move(y: -25.mm, z: 6.mm);
 
 ![A post joined with a wedged scarf, the wedge beside it](img/joints-kanawa.png)
 
+## Dowels, printed
+
+Woodworkers join two pieces with round wooden dowels glued into holes. `"dowels"` makes printed ones: a rod with two flats, so it prints lying on one (a pin printed standing snaps along a layer), each end split down its middle and pointed, and a plain round hole for it in each piece. The rod is a little thicker than its hole across the split: pushed in, the two halves of each end close up and press on the hole's wall, and the friction of the printed wall holds them, with no glue. `count:` sets how many dowels, side by side along the cut's longer side.
+
+<!-- render: joints-dowels -->
+```d
+// a bar cut in two, joined by two dowels:
+// the pieces apart, the dowels between them, and
+// the dowels again lying flat, as they print
+
+import joints;
+
+Joint cut() => splitJoint(box(120.mm, 30.mm, 12.mm),
+    plane(origin: vec(0.mm, 0.mm, 0.mm), normal: X),
+    kind: "dowels", count: 2);
+
+@part("Sky Pop", alpha: 0.4)
+Solid left() => cut().a.move(x: -25.mm);
+
+@part("Pink Pop", alpha: 0.4)
+Solid right() => cut().b.move(x: 25.mm);
+
+@part("gold")
+Solid dowels() => fuse(cut().loose);
+
+@part("gold")
+Solid toPrint() => fuse(cut().print).move(x: -60.mm, y: 40.mm);
+```
+
+![A bar cut in two, two split dowels between the pieces, and the same dowels lying flat](img/joints-dowels.png)
+
+Push the dowels into one piece, then the other piece onto them. They hold by friction, so the pieces come apart again with a firm pull. Print a sample first: if the dowels go in too hard, a larger `clearance`; if they hold too little, a smaller one (the holes keep the play, the dowels stay 0.2 mm thicker than them).
+
 ## Two parts that meet
 
-`joinParts(a, b, plane)` joins two separate parts where one ends on the other: a shelf on an upright, a rail on a post, the sides of a box. `b` is the part that ends on the plane (a face of `a`, the plane's normal pointing into `b`), and the joint goes from `b` into `a`, centred on `b`'s end and sized by it. A tenon longer than `a` is thick comes out flush on the far side, a through tenon, as the frames of Japanese cabinets (sashimono) show them. The kinds are those of `splitJoint` but the wedged scarf; `.a` comes back with the hollows, `.b` with what fits in them.
+`joinParts(a, b, plane)` joins two separate parts where one ends on the other: a shelf on an upright, a rail on a post, the sides of a box. `b` is the part that ends on the plane (a face of `a`, the plane's normal pointing into `b`), and the joint goes from `b` into `a`, centred on `b`'s end and sized by it. A tenon longer than `a` is thick comes out flush on the far side, a through tenon, as the frames of Japanese cabinets (sashimono) show them. The kinds are those of `splitJoint` but the wedged scarf; `.a` comes back with the hollows, `.b` with what fits in them (with `"dowels"`, both with holes, and the dowels in `.loose` and `.print`).
 
 <!-- render: joints-parts --from -0.5,1,0.6 -->
 ```d
@@ -287,7 +322,7 @@ To choose the places yourself, `profile.spots(n, margin:)` gives the points `spl
 
 | Message | What to do |
 |---|---|
-| *the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, koshikake, barbed* | a kind from the list |
+| *the joint kind is one of tenon, dovetail, pins, fingers, lap, kama, kanawa, koshikake, barbed, dowels* | a kind from the list |
 | one piece comes out in two bodies | the plane cuts through two separate parts of the solid (both jaws of a clip): cut where the section is one piece |
 | the joint is too big for a flat part | the size follows the section's area: give `size:` (and `length:`) |
 | the pieces do not go together | the joint slides the wrong way for how you want to assemble them: `turn: 90.deg` |

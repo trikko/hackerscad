@@ -57,6 +57,7 @@ The **parting plane** decides whether the cast comes out: it must cross the part
 - **The seal** keeps the liquid from creeping out between the halves: a ridge round the cavity (round its convex hull, so it stays one smooth loop past notches) on `a`, `seal` high (0.8 mm unless given), pressing into a groove in `b`. `seal: 0.mm` leaves it out.
 - **Notches** across the parting line on two opposite sides take a flat screwdriver to open the mold without marring its faces; `pry: false` leaves them out.
 - **The pour hole** goes up through `b` from just under the cavity's top, along the plane's normal, `sprue` wide (6 mm unless given) and opening into a funnel at the block's face; `vents:` thinner channels (2 unless given) let the air out from other high points. Pour with `b` on top.
+- **Tags** name the faces you may want to work on: `molds.cavity` the hollow (a draft, a texture), `molds.parting` the faces on the parting plane, `molds.sprue` the pour hole. See [Selectors and features](features.md).
 
 Each half prints on its outer face, the parting face up: the keys and the seal stand up, the sockets, the groove and the cavity open upwards, and nothing needs supports.
 

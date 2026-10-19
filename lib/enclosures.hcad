@@ -3,6 +3,10 @@ module enclosures;
 import hardware : Screw, M3, hole;
 
 /// Boxes with rounded corners and enclosures with lids.
+///
+/// Tags: a tray's or a base's rim, where the lid rests, is tagged
+/// "enclosures.rim", its floor inside "enclosures.floor"; a lid's lip, the
+/// ring that goes into the base, "enclosures.lip".
 
 /// A box centred in X and Y on z = 0, with vertical edges rounded by `r`.
 Solid roundedBox(Length x, Length y, Length z, Length r = 3.mm)
@@ -18,7 +22,10 @@ Solid tray(Length x, Length y, Length z, Length wall = 2.mm, Length r = 3.mm)
     // a wall as thick as the corners' radius leaves the inside corners a radius of nothing
     assert(abs(wall - r) > 0.05.mm, "tray: a wall as thick as r leaves sharp inside corners that cannot be built: "
         ~ "make r larger than the wall (or the wall thicker than r)");
-    return roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+    auto t = roundedBox(x, y, z, r).shell(open: faces.top, thickness: wall);
+    t.faces.top.addTag("enclosures.rim");
+    t.faces.normal(Z).filter(f => abs(f.center.z - wall) < 0.001.mm).addTag("enclosures.floor");
+    return t;
 }
 
 /// A base and a lid that fit together, both standing on z = 0.
@@ -41,7 +48,7 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
     immutable lx = inner.x - 2 * clearance, ly = inner.y - 2 * clearance;
     auto lip = roundedBox(lx, ly, lidHeight, max(r - wall, 0.5.mm)) - roundedBox(lx - 2 * wall, ly - 2 * wall, lidHeight * 3,
         max(r - 2 * wall, 0.5.mm)).move(z: -lidHeight);
-    lid += lip.move(z: wall);
+    lid += lip.move(z: wall).addTag("enclosures.lip", recursive: true);
 
     // posts: tapped for the screw in the base, clearance holes in the lid.
     // The screw's axis is as near the corner as it can be: its hole keeps
@@ -115,5 +122,11 @@ Enclosure hullCase(Solid[] inside, Length wall = 2.mm, Length clearance = 0.5.mm
     // the base: the outside below the cut and the lip, the inside taken out once
     auto base = ((outer & slab(hb.min.z - grow - 1.mm, cut)) + ring) - cavity;
     auto lid = (outer & slab(cut, hb.max.z + grow + 1.mm)) - cavity - notch;
+    // the rim: the base's wall at the cut, beside the lip; the lip itself
+    bool atCut(Face f) => abs(f.center.z - cut) < 0.001.mm && f.normal.z > 0.999;
+    if (base.faces.filter(f => atCut(f)).count > 0)
+        base.faces.filter(f => atCut(f)).addTag("enclosures.rim");
+    if (base.faces.filter(f => f.center.z > cut + 0.001.mm).count > 0)
+        base.faces.filter(f => f.center.z > cut + 0.001.mm).addTag("enclosures.lip");
     return Enclosure(base, lid);
 }

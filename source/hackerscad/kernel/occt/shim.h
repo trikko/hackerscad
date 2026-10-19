@@ -213,7 +213,10 @@ int hc_face_loops(const hc_shape *s, int face, double deflection, double **out);
 void hc_free(void *p);
 
 /* one product per shape, named; n >= 1 */
-int hc_write_step(const hc_shape *const *shapes, const char *const *names, int n, const char *path);
+int hc_write_step(const hc_shape *const *shapes, const char *const *names, int n, const char *path,
+                  const char *const *face_names, const char *system, const char *note);
+int hc_face_names_size(void);
+const char *hc_face_name(int i);
 hc_shape *hc_read_step(const char *path);
 
 #ifdef __cplusplus

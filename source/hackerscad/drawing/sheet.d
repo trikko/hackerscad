@@ -102,8 +102,10 @@ double penWidth(Pen p)
 string toSvg(const Sheet s)
 {
     auto o = appender!string;
+    import hackerscad.about : madeWithNote;
     o ~= format(`<svg xmlns="http://www.w3.org/2000/svg" width="%smm" height="%smm" viewBox="0 0 %s %s">` ~ "\n",
         n(s.width), n(s.height), n(s.width), n(s.height));
+    o ~= "<!-- " ~ madeWithNote ~ " -->\n";
     o ~= `<rect width="100%" height="100%" fill="white"/>` ~ "\n";
     o ~= `<g fill="none" stroke="black" stroke-linecap="round">` ~ "\n";
     foreach (pen; [Pen.thin, Pen.center, Pen.hidden, Pen.visible, Pen.border])
@@ -188,6 +190,7 @@ ubyte[] toPdf(const Sheet s)
     }
     auto content = c[];
 
+    import hackerscad.about : madeWith, madeWithNote;
     string[] objects = [
         "<< /Type /Catalog /Pages 2 0 R >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -195,6 +198,8 @@ ubyte[] toPdf(const Sheet s)
             n(s.width * k), n(s.height * k)),
         format("<< /Length %d >>\nstream\n%sendstream", content.length, content),
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+        // the document's information: the program that made it
+        "<< /Producer (" ~ latin1(madeWithNote) ~ ") /Creator (" ~ latin1(madeWith) ~ ") >>",
     ];
     auto pdf = appender!string;
     pdf ~= "%PDF-1.4\n";
@@ -208,7 +213,8 @@ ubyte[] toPdf(const Sheet s)
     pdf ~= format("xref\n0 %d\n0000000000 65535 f \n", objects.length + 1);
     foreach (o; offsets)
         pdf ~= format("%010d 00000 n \n", o);
-    pdf ~= format("trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", objects.length + 1, xref);
+    pdf ~= format("trailer\n<< /Size %d /Root 1 0 R /Info %d 0 R >>\nstartxref\n%d\n%%%%EOF\n", objects.length + 1,
+        objects.length, xref);
     return cast(ubyte[]) pdf[].dup;
 }
 
@@ -242,6 +248,8 @@ string toDxf(const Sheet s)
         o ~= format("%d\n%s\n", code, value);
     }
 
+    import hackerscad.about : madeWithNote;
+    g(999, madeWithNote);
     g(0, "SECTION");
     g(2, "HEADER");
     g(9, "$INSUNITS");

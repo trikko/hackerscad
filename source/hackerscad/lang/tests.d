@@ -2821,6 +2821,9 @@ unittest
         writeln(d.faces.tagged("slope").count, " ", d.faces.tagged("bore").count, " ",
             d.faces.tagged("slope").list[0].normal.y, " ", r.profile.revolve(axis: Y).faces.tagged("cone").count);`,
         `1 1 0 1`);
+    // a tag with a dot belongs to its module: given only there, read anywhere
+    assert(error(`@part Solid p() { return box(1, 1, 1).addTag("hardware.bore"); }`)
+        .message.canFind("can only be given in module hardware"));
     // the mistakes: a tag not there, an empty one, one lost, edges, faces of no solid
     auto d = error(`@part Solid p() { auto b = box(10, 10, 10); b.faces.top.addTag("lid");
         return b.fillet(edges.of(faces.tagged("lidd")), 1); }`);
@@ -2837,6 +2840,32 @@ unittest
         .message.canFind("edges have no tags"));
     assert(error(`@part Solid p() { auto b = box(10, 10, 10); faces.top.addTag("x"); return b; }`)
         .message.canFind("of which solid"));
+}
+
+unittest
+{
+    mixin(slowTest);
+    // the libraries' tags: holes, gears, hinges, enclosures, joints and molds name their faces and axes
+    expectOut(`auto p = box(40, 20, 6) - hole(M3, 6.mm, "counterbore").move(x: -10, z: 6)
+            - hole(M4, 6.mm).move(x: 10, z: 6);
+        auto g = spurGear(2.mm, 20, 8.mm, bore: 5.mm).rotate(x: 90);
+        auto h = pinHinge();
+        auto e = enclosure(vec(60.mm, 40.mm, 25.mm));
+        auto j = splitJoint(box(100, 20, 10), plane(origin: vec(0, 0, 0), normal: X), "dovetail");
+        auto m = mold(sphere(r: 15), plane(origin: vec(0, 0, 0), normal: Z));
+        auto dw = splitJoint(box(120, 30, 12), plane(origin: vec(0, 0, 0), normal: X), "dowels", count: 2);
+        auto jp = joinParts(box(10, 60, 60), box(80, 40, 12).move(x: 45, z: 20), plane(origin: vec(5, 0, 0), normal: X),
+            "dowels");
+        writeln(dw.loose.length, " ", dw.print.length, " ", dw.print[0].bbox.min.z, " ", jp.loose.length > 0, " ",
+            dw.print[0].bbox.size.z < dw.print[0].bbox.size.y);
+        writeln(p.faces.tagged("hardware.bore").count, " ", p.faces.tagged("hardware.seat").count, " ",
+            g.axis("gears.axis").direction, " ", g.faces.tagged("gears.bore").count, " ",
+            h.moving.axis("hinges.axis").direction, " ", h.fixed.faces.tagged("hinges.pin").count, " ",
+            e.base.faces.tagged("enclosures.rim").count, " ", e.lid.faces.tagged("enclosures.lip").count > 0, " ",
+            j.a.faces.tagged("joints.cut").count > 0, " ", j.b.plane("joints.plane").normal, " ",
+            m.a.faces.tagged("molds.cavity").count, " ", m.b.faces.tagged("molds.sprue").count > 0);`,
+        "2 2 0 mm true true\n4 2 [0, -1, 0] 1 [1, 0, 0] 3 1 true true [1, 0, 0] 1 true",
+        "import hardware; import gears; import hinges; import enclosures; import joints; import molds;");
 }
 
 unittest

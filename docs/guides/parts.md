@@ -163,6 +163,8 @@ hcad render box.hcad -o box.3mf --one-object
 hcad render box.hcad -o big.3mf -D play=1.mm
 ```
 
+The names given to faces with `addTag` ([Selectors and features](features.md)) go into the files too: in a STEP file each face is named by its tags (`lid;seat`), and `load("part.step")` gives them back as tags, so a part made here, exported and loaded again, keeps its names. A 3MF holds them as named sets of the triangles of those faces (its *triangle sets* extension), and a part's own tags in the object's metadata; slicers that do not know them simply ignore them. Every file says it was made with hackerscad: 3MF and STEP in their fields for it, STL, zip, PNG, SVG, PDF and DXF in a comment.
+
 Every export runs the model's `unittest`s first. `-D name=value` and `--preset name` change parameters; `--part` (repeated for more) picks parts; without it, every part but the reference ones. `--printability` adds, per part, the overhangs that need supports and the walls too thin to print.
 
 ## Technical drawings

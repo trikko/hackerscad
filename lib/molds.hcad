@@ -1,6 +1,10 @@
 module molds;
 
 /// The two halves of a mold, where they go and laid for printing.
+///
+/// Tags: the faces of the hollow the object leaves are "molds.cavity", the
+/// halves' faces along the parting plane "molds.parting", the pour hole's
+/// "molds.sprue".
 struct Mold
 {
     Solid a;        /// the half behind the parting plane (against its normal), with the keys and the seal
@@ -74,8 +78,13 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
         .move(x: (hi(xd) + lo(xd)) / 2, y: (hi(yd) + lo(yd)) / 2, z: lo(n) - wall)
         .fillet(edges.parallel(Z), r: wall / 2)
         .placeOn(centre);
-    auto sides = (block - object).halves(at);
+    auto sides = (block - object.addTag("molds.cavity", recursive: true)).halves(at);
     Solid a = sides.below, b = sides.above;
+    bool parting(Face f) => abs(dot(f.center - at.origin, n)) < 0.001.mm && abs(dot(f.normal, n)) > 0.999;
+    if (a.faces.filter(f => parting(f)).count > 0)
+        a.faces.filter(f => parting(f)).addTag("molds.parting");
+    if (b.faces.filter(f => parting(f)).count > 0)
+        b.faces.filter(f => parting(f)).addTag("molds.parting");
 
     // the keys: truncated cones, half as high as they are wide at the foot, on the parting face round
     // the cavity, clear of the edges and of the seal
@@ -126,7 +135,8 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
         if (i == 0)
             b = b - (cylinder(d: sprue, h: length)
                 + cone(d1: sprue, d2: 2 * sprue, h: sprue / 2 + 0.01.mm).move(z: wall + 0.5.mm - sprue / 2))
-                .placeOn(here);
+                .placeOn(here)
+                .addTag("molds.sprue", recursive: true);
         else
             b = b - cylinder(d: 2.mm, h: length).placeOn(here);
     }

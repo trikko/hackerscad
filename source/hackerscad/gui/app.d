@@ -7013,7 +7013,8 @@ private:
         default:
         {
             import std.path : stripExtension;
-            return exportParts(out_, parts.map!(p => ExportPart(p.label, p.welded, p.rgb, p.brep)).array, parts[0].kernel,
+            return exportParts(out_, parts.map!(p => ExportPart(p.label, p.welded, p.rgb, p.brep, p.tags, p.faceTags)).array,
+                parts[0].kernel,
                 oneObject ? baseName(stripExtension(path)) : null);
         }
         }

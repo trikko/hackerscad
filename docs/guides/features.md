@@ -184,6 +184,29 @@ Solid bracket()
 - A face can have several tags (`addTag(["lid", "seat"])`); `removeTag("seat")` and `clearTags()` take them off; `b.faces.top.tags` lists them.
 - Name a face for what it does (`wall`, `shelf`, `seat`, `grip`), not for where it is: `top` would be wrong as soon as the part lies on its side.
 
+Several tags at once: `faces.tagged("lid").tagged("left")` is the faces that have both, `faces.tagged(["lid", "seat"])` those with either.
+
+### The libraries' tags
+
+The libraries tag what you are likely to come back to. Their tags start with the library's name and a dot, `hardware.bore`: a tag with a dot can only be given in the module of that name, so a library's tags and yours never mix (in a module of your own, `module hook;`, yours can be `hook.end`).
+
+| Library | Faces | Points and axes |
+|---|---|---|
+| `hardware` | `hardware.bore` every face of a `hole()`, which stays on the hole's wall in the part; `hardware.seat` a counterbore's or countersink's, where the head sits | `hardware.axis` the axis of a hole, screw, nut or washer |
+| `gears` | `gears.bore` the bore's wall | `gears.axis`; a rack's pitch line `gears.pitch` |
+| `hinges` | `hinges.pin` the holes for a `pinHinge`'s pin | `hinges.axis` on both leaves, the axis they turn round |
+| `enclosures` | `enclosures.rim` where the lid rests, `enclosures.floor` the inside bottom, `enclosures.lip` the lid's lip | |
+| `joints` | `joints.cut` the faces left in the cut's plane, on each piece | `joints.plane` the plane of the cut |
+| `molds` | `molds.cavity` the hollow, `molds.parting` the faces on the parting plane, `molds.sprue` the pour hole | |
+
+```d
+// the rims of the holes on the top, chamfered, the counterbores left as they are
+plate = plate.chamfer(edges.between(faces.tagged("hardware.bore")
+    - faces.tagged("hardware.seat"), faces.top), d: 0.4.mm);
+```
+
+Two parts from the same library have the same tags. Tag each whole with a name of yours before joining them, and look for both: `auto left = pinHinge().fixed.addTag("left", recursive: true);`, then `faces.tagged("left").tagged("hinges.pin")`. With two holes or two gears in one part, `body.axis("hardware.axis")` finds two and says so: take it from the hole before you cut it, `hole(M3, 5.mm).move(…).axis("hardware.axis")`.
+
 Points, axes and planes can be tagged too, and follow the part the same way: see [Planes, frames and placement](planes.md). In a sketch, a line or circle tagged gives its tag to the face made from it: see [Sketches in depth](sketches.md).
 
 ## The order of operations

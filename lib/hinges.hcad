@@ -1,7 +1,9 @@
 module hinges;
 
 /// The two leaves of a hinge, printed in place: they come out of the
-/// printer already joined and turn around the X axis.
+/// printer already joined and turn around the X axis. Tags: both leaves
+/// carry the axis they turn round, "hinges.axis"; pinHinge's holes for the
+/// pin are tagged "hinges.pin".
 struct Hinge
 {
     Solid fixed;    /// the leaf on -Y, with the pin
@@ -43,7 +45,14 @@ Hinge hinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3.mm
     foreach (i; 0 .. knuckles)
         if (i % 2 == 1)
             b -= cylinder(d: pin + 2 * clearance, h: length).rotate(y: 90).move(x: -length / 2, z: thickness);
-    return Hinge(a, b);
+    return leaves(a, b, thickness);
+}
+
+/// The two leaves, each with the axis they turn round (along X at z = thickness).
+private Hinge leaves(Solid a, Solid b, Length thickness)
+{
+    auto turn = axis(origin: vec(0.mm, 0.mm, thickness), direction: X);
+    return Hinge(a.addTag("hinges.axis", at: turn), b.addTag("hinges.axis", at: turn));
 }
 
 /// A living hinge: two plates `width` wide each, lying flat side by side
@@ -92,9 +101,11 @@ Hinge pinHinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3
         else
             b += knuckleOf(i, 1, length, thickness, knuckles, clearance);
     }
-    auto bore = cylinder(d: pin + 2 * clearance, h: length + 2.mm).rotate(y: 90).move(x: -length / 2 - 1.mm,
-        z: thickness);
-    return Hinge(a - bore, b - bore);
+    auto bore = cylinder(d: pin + 2 * clearance, h: length + 2.mm)
+        .rotate(y: 90)
+        .move(x: -length / 2 - 1.mm, z: thickness)
+        .addTag("hinges.pin", recursive: true);
+    return leaves(a - bore, b - bore, thickness);
 }
 
 /// A hinge that snaps together: three knuckles, the two outer ones on the
@@ -118,5 +129,5 @@ Hinge snapHinge(Length length = 30.mm, Length width = 15.mm, Length thickness = 
     a = a + cone1.move(x: inner0, z: thickness) + cone1.mirror(X).move(x: inner1, z: thickness);
     auto socket = cone(d1: cd + 2 * clearance, d2: cd - 2 * ch + 2 * clearance, h: ch + clearance).rotate(y: 90);
     b = b - socket.move(x: inner0 - 0.01.mm, z: thickness) - socket.mirror(X).move(x: inner1 + 0.01.mm, z: thickness);
-    return Hinge(a, b);
+    return leaves(a, b, thickness);
 }

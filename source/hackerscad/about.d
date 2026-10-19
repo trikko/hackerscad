@@ -4,6 +4,10 @@ module hackerscad.about;
 
 enum string appName = "hackerscad";
 enum string appVersion = "0.3.1";
+/// What the files hackerscad writes say made them: the program (a 3MF's Application, a STEP's
+/// originating system, a PNG's Software), and a line with where to find it (comments, descriptions)
+enum string madeWith = appName;
+enum string madeWithNote = "made with " ~ appName ~ ", " ~ appWebsite;
 enum string appSummary = "the hacker's CAD: solid models written as code, edited with the mouse too";
 enum string appWebsite = "https://github.com/trikko/hackerscad";
 enum string appIssues = "https://github.com/trikko/hackerscad/issues";

@@ -926,6 +926,17 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 loadCache.clear();
             loadCache[cacheKey] = b;
         }
+        // a STEP file's names of its faces (what hackerscad writes: their tags, ";" between)
+        string[][] named;
+        foreach (i, n; k.faceNames(b))
+        {
+            import std.string : split, strip;
+            if (named.length == 0)
+                named = new string[][k.faceNames(b).length];
+            foreach (t; n.split(";"))
+                if (t.strip.length)
+                    named[i] = tagUnion(named[i], [t.strip]);
+        }
         if (x.has("scale"))
         {
             immutable f = x.num("scale");
@@ -934,6 +945,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             b = k.scale(b, f);
         }
         auto r = primitive(it, b, "load", a.span);
+        if (named.length == k.faceCount(b))
+            r.faceTags = named;
         r.flat = ext == ".svg" || ext == ".dxf";
         return Value.of(r);
     });
@@ -3126,6 +3139,8 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
                         ? ["solid", "tag", "recursive", "at"] : ["solid", "tag", "recursive"]);
                     immutable all = x.flag("recursive", false);
                     auto names = clear ? null : tagNames(x.get("tag"), x.spanOf("tag"));
+                    if (name == "addTag")
+                        ownTags(names, a.caller, x.spanOf("tag"));
                     if (x.has("at"))
                     {
                         // a point, axis, plane or frame tagged on the solid, to follow it
@@ -3369,6 +3384,24 @@ string tagName(Value v, Span span)
         throw new HcadError(Code.type, format("a tag is a text, such as \"lid\", not %s", v.kind == Kind.str ? "an empty one"
             : v.typeName), span);
     return v.s;
+}
+
+/// A tag with a dot belongs to a module, the one its name starts with ("hinges.pin" to the hinges
+/// library): given only there, so that a library's tags and a model's never collide.
+void ownTags(const(string)[] tags, ModuleVal caller, Span span)
+{
+    import std.string : indexOf;
+    foreach (t; tags)
+    {
+        if (t.indexOf('.') < 0)
+            continue;
+        immutable mine = caller is null ? null : caller.name;
+        if (mine.length && t.length > mine.length + 1 && t[0 .. mine.length] == mine && t[mine.length] == '.')
+            continue;
+        throw new HcadError(Code.type, format("a tag with a dot belongs to a module: '%s' can only be given in module %s",
+            t, t[0 .. t.indexOf('.')]), span, mine.length ? format("here, in module %s: '%s' without the dot, or '%s.%s'",
+            mine, t[t.indexOf('.') + 1 .. $], mine, t[t.indexOf('.') + 1 .. $]) : null);
+    }
 }
 
 /// Tags given as one text or a list of them.
@@ -5645,6 +5678,8 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
             immutable clear = name == "clearTags";
             auto x = Args(it, a, name, clear ? ["selector"] : ["selector", "tag"]);
             auto names = clear ? null : tagNames(x.get("tag"), x.spanOf("tag"));
+            if (name == "addTag")
+                ownTags(names, a.caller, x.spanOf("tag"));
             auto idx = selectedOf(it, sel, name, a.span);
             auto s = sel.of;
             auto tags = facesTagsOf(it, s).dup;

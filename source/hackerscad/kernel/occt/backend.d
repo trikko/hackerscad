@@ -12,6 +12,7 @@ final class OcctBrep : Brep
     private FaceOrigin[] origins;
     private FaceAlso[] also;
     private FaceAlso[] fromEdges;
+    private string[] names;   // a STEP file's names of its faces
 
     private this(hc_shape* h)
     {
@@ -25,6 +26,13 @@ final class OcctBrep : Brep
             origins = new FaceOrigin[n];
             foreach (i; 0 .. n)
                 origins[i] = FaceOrigin(input[i], index[i]);
+            if (immutable m = hc_face_names_size())
+            {
+                import std.conv : to;
+                names = new string[m];
+                foreach (i; 0 .. m)
+                    names[i] = hc_face_name(i).fromStringz.idup;
+            }
             if (immutable m = hc_history_edges_size())
             {
                 auto face = new int[m], ai = new int[m], ax = new int[m];
@@ -574,17 +582,30 @@ final class OcctKernel : BrepKernel
         wrap(hc_from_mesh(m.verts.ptr, cast(int) m.vertexCount, cast(const(int)*) m.tris.ptr, cast(int) m.triangleCount, 1e-5),
             "mesh import");
 
-    void writeStep(Brep[] parts, string[] names, string path)
+    void writeStep(Brep[] parts, string[] names, string path, string[][] faceNames = null, string system = null,
+        string note = null)
     {
         assert(parts.length > 0 && parts.length == names.length);
         hc_shape*[] ps;
-        const(char)*[] ns;
+        const(char)*[] ns, fs;
         foreach (i, p; parts)
         {
             ps ~= h(p);
             ns ~= names[i].toStringz;
+            // a name for every face of the part, in its order
+            if (faceNames.length)
+                foreach (f; 0 .. faceCount(p))
+                    fs ~= i < faceNames.length && f < faceNames[i].length ? faceNames[i][f].toStringz : "".ptr;
         }
-        check(hc_write_step(ps.ptr, ns.ptr, cast(int) ps.length, path.toStringz) == 0, "STEP export");
+        check(hc_write_step(ps.ptr, ns.ptr, cast(int) ps.length, path.toStringz, fs.length ? fs.ptr : null,
+            system.toStringz, note.toStringz) == 0, "STEP export");
+    }
+
+    string[] faceNames(Brep s)
+    {
+        auto o = cast(OcctBrep) s;
+        h(s);
+        return o.names;
     }
 
     Brep readStep(string path) => wrap(hc_read_step(path.toStringz), "STEP import");
@@ -681,6 +702,18 @@ unittest
         remove(path);
     k.writeStep([s], ["s"], path);
     assert(isClose(k.volume(k.readStep(path)), k.volume(s), 1e-6));
+    assert(k.faceNames(k.readStep(path)).length == 0);
+    // the faces' names and the program, kept in the file
+    auto named = new string[][1];
+    named[0] = new string[k.faceCount(s)];
+    named[0][2] = "lid;seat";
+    k.writeStep([s], ["s"], path, named, "hackerscad test");
+    import std.file : readText;
+    import std.algorithm : canFind;
+    assert(readText(path).canFind("'hackerscad test'"));
+    auto back = k.readStep(path);
+    auto names = k.faceNames(back);
+    assert(names.length == k.faceCount(back) && names.canFind("lid;seat"));
 
     import std.exception : assertThrown;
     assertThrown!KernelException(k.fillet(s, [0], 1000));

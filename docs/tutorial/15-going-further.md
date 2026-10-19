@@ -421,7 +421,7 @@ Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);
   `enclosures`: hinges (printed in place, on a pin, snapped together or a
   thin web that bends), snap-fit hooks, boxes with lids.
 - `joints`: a part too long for the bed cut in two pieces that lock
-  together (a dovetail, pins, Japanese joints), or two parts joined where
+  together (a dovetail, pins, Japanese joints, printed dowels), or two parts joined where
   they meet; `flex`: rows of slots that make a stiff part bend; `molds`: a
   two-part mold to cast copies of a part.
   [examples/09_library.hcad](../../examples/09_library.hcad) shows them all,

@@ -63,6 +63,16 @@
 #include <Interface_Static.hxx>
 #include <StepData_StepModel.hxx>
 #include <StepBasic_Product.hxx>
+#include <StepRepr_RepresentationItem.hxx>
+#include <StepShape_Face.hxx>
+#include <APIHeaderSection_MakeHeader.hxx>
+#include <XSControl_WorkSession.hxx>
+#include <XSControl_TransferWriter.hxx>
+#include <XSControl_TransferReader.hxx>
+#include <Transfer_FinderProcess.hxx>
+#include <Transfer_TransientProcess.hxx>
+#include <TransferBRep.hxx>
+#include <TransferBRep_ShapeMapper.hxx>
 #include <TCollection_HAsciiString.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Ax1.hxx>
@@ -223,6 +233,8 @@ static thread_local std::vector<Also> g_also;
 // faces swept from an edge of an input (the side of an extrusion from a line of the profile): by
 // result face, the input and the edge's index there (in its edge map)
 static thread_local std::vector<Also> g_from_edge;
+// the names of the faces of the shape a STEP file was read into (empty: none), by face
+static thread_local std::vector<std::string> g_face_names;
 
 // Every face of `result` is new: primitives and unknown operations.
 static void history_new(const TopoDS_Shape &result)
@@ -232,6 +244,7 @@ static void history_new(const TopoDS_Shape &result)
     g_history.assign(res.Extent(), Origin{-1, -1});
     g_also.clear();
     g_from_edge.clear();
+    g_face_names.clear();
 }
 
 // The faces of `result` that `mk` generated from the edges of `input` (input 0): recorded.
@@ -4638,11 +4651,13 @@ hc_shape *hc_from_mesh(const float *verts, int nverts, const int *tris, int ntri
     });
 }
 
-int hc_write_step(const hc_shape *const *shapes, const char *const *names, int n, const char *path)
+int hc_write_step(const hc_shape *const *shapes, const char *const *names, int n, const char *path,
+                  const char *const *face_names, const char *system, const char *note)
 {
     return guarded<>(-1, [&]() -> int {
         STEPControl_Writer w;
         Interface_Static::SetCVal("write.step.unit", "MM");
+
         // each part a product of its own: other CAD programs see separate
         // bodies, named like the parts
         for (int i = 0; i < n; i++)
@@ -4659,6 +4674,38 @@ int hc_write_step(const hc_shape *const *shapes, const char *const *names, int n
             Handle(TCollection_HAsciiString) name = new TCollection_HAsciiString(names[k++]);
             product->SetId(name);
             product->SetName(name);
+        }
+        // the faces' names (their tags), on the faces' own entities: face_names holds, part after
+        // part, one name per face of it (empty for none)
+        if (face_names) {
+            Handle(Transfer_FinderProcess) fp = w.WS()->TransferWriter()->FinderProcess();
+            int at = 0;
+            for (int i = 0; i < n; i++) {
+                const auto &faces = map_of(shapes[i], TopAbs_FACE);
+                for (int f = 1; f <= faces.Extent(); f++, at++) {
+                    if (!face_names[at] || !*face_names[at])
+                        continue;
+                    Handle(TransferBRep_ShapeMapper) mapper = TransferBRep::ShapeMapper(fp, faces(f));
+                    Handle(StepRepr_RepresentationItem) item =
+                        Handle(StepRepr_RepresentationItem)::DownCast(fp->FindTransient(mapper));
+                    if (!item.IsNull())
+                        item->SetName(new TCollection_HAsciiString(face_names[at]));
+                }
+            }
+        }
+        // the program that made it, in the file's header (set last: the transfer writes its own)
+        if (system && *system) {
+            APIHeaderSection_MakeHeader header(Handle(StepData_StepModel)::DownCast(w.Model()));
+            if (header.IsDone()) {
+                header.SetName(new TCollection_HAsciiString(names[0]));
+                header.SetOriginatingSystem(new TCollection_HAsciiString(system));
+                header.SetPreprocessorVersion(new TCollection_HAsciiString(system));
+                header.SetAuthorisation(new TCollection_HAsciiString(""));
+                header.SetAuthorValue(1, new TCollection_HAsciiString(""));
+                header.SetOrganizationValue(1, new TCollection_HAsciiString(""));
+                if (note && *note)
+                    header.SetDescriptionValue(1, new TCollection_HAsciiString(note));
+            }
         }
         if (w.Write(path) != IFSelect_RetDone) {
             set_error("STEP write failed");
@@ -4677,10 +4724,40 @@ hc_shape *hc_read_step(const char *path)
             return nullptr;
         }
         r.TransferRoots();
-        history_new(r.OneShape());
-        return wrap(r.OneShape());
+        const TopoDS_Shape shape = r.OneShape();
+        history_new(shape);
+        // the faces' names, from the faces' entities (what hc_write_step writes: their tags)
+        TopTools_IndexedMapOfShape faces;
+        TopExp::MapShapes(shape, TopAbs_FACE, faces);
+        std::vector<std::string> names(faces.Extent());
+        bool any = false;
+        Handle(Transfer_TransientProcess) tp = r.WS()->TransferReader()->TransientProcess();
+        Handle(Interface_InterfaceModel) model = r.Model();
+        for (int e = 1; e <= model->NbEntities(); e++) {
+            Handle(StepShape_Face) face = Handle(StepShape_Face)::DownCast(model->Value(e));
+            if (face.IsNull() || face->Name().IsNull() || face->Name()->Length() == 0)
+                continue;
+            const std::string name = face->Name()->ToCString();
+            if (name == "NONE")
+                continue;
+            const TopoDS_Shape f = TransferBRep::ShapeResult(tp, face);
+            if (f.IsNull())
+                continue;
+            if (const int j = faces.FindIndex(f); j > 0) {
+                names[j - 1] = name;
+                any = true;
+            }
+        }
+        hc_shape *h = wrap(shape);
+        if (any)
+            g_face_names = names;
+        return h;
     });
 }
+
+int hc_face_names_size(void) { return (int)g_face_names.size(); }
+
+const char *hc_face_name(int i) { return i >= 0 && i < (int)g_face_names.size() ? g_face_names[i].c_str() : ""; }
 
 } // extern "C"
 

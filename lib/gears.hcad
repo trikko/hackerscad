@@ -57,19 +57,22 @@ Profile gearProfile(Length m, int teeth, Angle pressure = 20.deg, Length backlas
 }
 
 /// A spur gear standing on z = 0, with an optional bore; `steps` points on
-/// each flank (more: smoother teeth, slower).
+/// each flank (more: smoother teeth, slower). Tags: the axis "gears.axis",
+/// the bore's wall "gears.bore".
 Solid spurGear(Length m, int teeth, Length thickness, Length bore = 0.mm, Angle pressure = 20.deg,
     Length backlash = 0.1.mm, int steps = 6)
 {
     assert(bore < rootDiameter(m, teeth) - 2 * m, "spurGear: the bore must be smaller than the gear's root circle, with a module of material left");
     auto g = gearProfile(m, teeth, pressure, backlash, steps).extrude(thickness);
     if (bore > 0.mm)
-        g -= cylinder(d: bore, h: 3 * thickness, center: true);
-    return g;
+        g -= cylinder(d: bore, h: 3 * thickness, center: true)
+            .addTag("gears.bore", recursive: true);
+    return g.addTag("gears.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
 }
 
 /// A straight rack along +X starting at x = 0, teeth up, pitch line at y = 0;
-/// backlash thins the teeth on the pitch line, as on a gear.
+/// backlash thins the teeth on the pitch line, as on a gear. Tag: the pitch
+/// line "gears.pitch" (an axis along it, on the rack's bottom face).
 Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pressure = 20.deg,
     Length backlash = 0.1.mm)
 {
@@ -87,5 +90,7 @@ Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pres
                 vec(x0 + 3 * p / 4 - m * t - e, m), vec(x0 + 3 * p / 4 + 1.25 * m * t - e, -1.25 * m)];
     }
     pts ~= [vec(teeth * p, -1.25 * m), vec(teeth * p, -1.25 * m - b)];
-    return polygon(pts).extrude(thickness);
+    return polygon(pts)
+        .extrude(thickness)
+        .addTag("gears.pitch", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: X));
 }
