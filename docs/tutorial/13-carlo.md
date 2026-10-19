@@ -4,7 +4,7 @@
 
 The clip hackerscad starts with is Carlo, the mascot: a bag clip whose
 toothed slot and keyring hole make a little crocodile. A new model takes it
-ready-made from a library, `import carlo;` and then `carlo()`; the first of
+ready-made from a library, `import std.carlo;` and then `carlo()`; the first of
 the examples shows that library's code, with its numbers as parameters. This
 page draws it the same way, with a **constrained sketch**: you say what the
 outline is like ("the top is level, the back leans 17°, the teeth are all

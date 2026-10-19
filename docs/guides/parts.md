@@ -25,7 +25,7 @@ A tray, its lid, and Carlo, the mascot clip, inside as a reference part: an obje
 
 <!-- render: parts-box -->
 ```d
-import carlo;
+import std.carlo;
 
 // a box for Carlo: a tray, its lid beside it, and Carlo
 // inside as a reference part, to check the fit
@@ -101,7 +101,7 @@ Three Carlos, each a part in its own colour:
 
 <!-- render: parts-colours --from top -->
 ```d
-import carlo;
+import std.carlo;
 
 // three Carlos side by side, a part each, each in its
 // own colour: a 3MF keeps the colours
@@ -126,7 +126,7 @@ A `@part` that returns several separate bodies is one part, one object in a 3MF.
 
 <!-- render: parts-pieces --from top -->
 ```d
-import carlo;
+import std.carlo;
 
 // Carlo cut in two across its teeth, the halves pushed
 // apart: each separate body is a part of its own
@@ -173,7 +173,7 @@ A technical drawing is the part on paper: flat views from the front, the top and
 
 <!-- render: parts-ex1 -->
 ```d
-import hardware : M4, hole;
+import std.hardware : M4, hole;
 
 // a bracket and its drawing: three views, an iso, and a
 // section through the boss

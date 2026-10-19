@@ -1,8 +1,8 @@
 module fixings;
 
 import std.shapes;
-import hardware;
-import gears : spurGear;
+import std.hardware;
+import std.gears : spurGear;
 
 @part
 Solid lid()

@@ -7,7 +7,7 @@ Parts that bend where they should: a rigid plate made to bend in a band by rows 
 // a plate made to bend in a band across its middle, and
 // a tube made to bow in a band round it
 
-import flex;
+import std.flex;
 
 @part("Sky Pop")
 Solid plate() => kerf(box(120.mm, 40.mm, 3.mm),
@@ -49,7 +49,7 @@ A strip with four bands folds into the walls of a box: half a wall, then wall an
 // that snaps together; the print-in-place hinge() is the
 // fourth kind
 
-import hinges;
+import std.hinges;
 
 @part("Sky Pop")
 Solid living() => livingHinge();
@@ -90,4 +90,4 @@ Every hinge returns its leaves laid round an axis along X at the height of their
 | *kerf: the zone does not meet the body* | move the zone onto the part |
 | *kerf: the slots cannot run along the way they go through* | `along:` one of the other two axes |
 | the part bends the wrong way | `along:` the other axis in its plane |
-| *undefined identifier 'kerf'* | `import flex;` |
+| *undefined identifier 'kerf'* | `import std.flex;` |

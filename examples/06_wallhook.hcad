@@ -5,7 +5,7 @@
 module wallhook;
 
 import std.shapes;
-import hardware : M4, hole;
+import std.hardware : M4, hole;
 
 @param("Width", min: 10.mm, max: 60.mm)
 @preset("towel", 30.mm) @preset("key", 12.mm)

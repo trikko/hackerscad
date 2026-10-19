@@ -9,7 +9,7 @@ A printed part held by a screw needs a hole on each side of the joint: one the s
 ## The library
 
 ```d
-import hardware : M3, hole, nutTrap, screw, nut, washer;
+import std.hardware : M3, hole, nutTrap, screw, nut, washer;
 ```
 
 `M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8`, `M10` and `M12` are `Screw` values: the sizes of an ISO 4762 socket head cap screw, its ISO 4032 nut and ISO 7089 washer, and the holes to print for them. Inch sizes and self-tapping screws for plastic are further down. Use them by name in your own geometry: `M3.clearance`, `M3.head`, `M3.nut`.
@@ -34,7 +34,7 @@ All in millimetres; `nut` is across the flats (the spanner size). The other fiel
 
 <!-- render: holes-plate -->
 ```d
-import hardware : M3, hole;
+import std.hardware : M3, hole;
 
 // an M3 clearance hole through a plate 5 mm thick
 @part("Sky Pop")
@@ -49,7 +49,7 @@ Solid plate() => box(40.mm, 20.mm, 5.mm)
 // the five kinds of hole() for an M4, cut in half
 // to show them
 
-import hardware : M4, hole;
+import std.hardware : M4, hole;
 
 immutable kinds = ["clearance", "tap", "insert",
     "counterbore", "countersink"];
@@ -90,8 +90,8 @@ Carlo, the mascot clip, with a wider lower jaw (`jaw: 10.mm`) and two countersun
 // Carlo with a wider lower jaw and two countersunk
 // M3 holes down through it, to screw it to a shelf
 
-import carlo;
-import hardware : M3, hole;
+import std.carlo;
+import std.hardware : M3, hole;
 
 immutable height = 15.mm;
 
@@ -121,7 +121,7 @@ The faces a `hole()` leaves in the part keep a name, a tag: `hardware.bore` for 
 // two plates clamped by an M3: the head sunk in the top,
 // the nut held in a trap underneath
 
-import hardware : M3, hole, nutTrap, screw, nut;
+import std.hardware : M3, hole, nutTrap, screw, nut;
 
 immutable plate = 6.mm;
 
@@ -163,7 +163,7 @@ A nut can also slide in from the side, into a pocket deep in the part: `nutTrap`
 ```d
 // an M3 nut slid in from the side, 4 mm above the bottom
 
-import hardware : M3, hole, nutTrap;
+import std.hardware : M3, hole, nutTrap;
 
 immutable slot = M3.nutHeight + 0.4.mm;
 
@@ -198,7 +198,7 @@ A screw's head can be of five kinds. `screw(size, length, head: …)` draws it, 
 
 <!-- render: holes-heads --from 1,-1.6,0.8 -->
 ```d
-import hardware;
+import std.hardware;
 
 // the same M4 screw with four heads, then a
 // self-tapping one
@@ -218,7 +218,7 @@ A square nut (DIN 562) is thin and slides into a slot from the side: the slot ca
 
 <!-- render: holes-square-nut --from 1,-1.4,1 -->
 ```d
-import hardware;
+import std.hardware;
 
 // a block with a slot for an M3 square nut, open
 // on the right, and the screw's hole through it
@@ -254,7 +254,7 @@ A self-tapping screw cuts its own thread in a plain hole: no nut, no insert. It 
 
 <!-- render: holes-self-tapping --from 1,-1.2,1.2 -->
 ```d
-import hardware;
+import std.hardware;
 
 // a boss for an ST2.9 self-tapping screw, and the
 // screw above it
@@ -281,7 +281,7 @@ One rib points to −Y. In a wall, cut with `on:` a face (whose frame has y goin
 // an M3 hole with ribs across a wall, printed lying
 // down: one rib at the bottom, two above it
 
-import hardware : M3, hole;
+import std.hardware : M3, hole;
 
 @part("Sky Pop")
 Solid wall()
@@ -308,7 +308,7 @@ The sizes are the typical ones of the B-type slot; makers differ by a few tenths
 
 <!-- render: holes-extrusion --from 0.5,-1.6,0.25 -->
 ```d
-import hardware;
+import std.hardware;
 
 // a printed bracket on a 2020 extrusion: a key in
 // the slot, an M5 screw into a T-nut
@@ -368,7 +368,7 @@ A base for a small board with M2.5 holes 58 × 49 mm apart: four posts with heat
 // inserts for its M2.5 screws, and two countersunk M3
 // holes to screw the base to a shelf
 
-import hardware : M2_5, M3, hole;
+import std.hardware : M2_5, M3, hole;
 
 @param("Hole spacing along X", min: 20.mm, max: 120.mm)
 immutable spanX = 58.mm;
@@ -429,7 +429,7 @@ Each post is 7 mm across for a 3.6 mm insert: leave at least 1.5 mm of wall roun
 |---|---|
 | *hole kind must be clearance, tap, insert, counterbore or countersink, not through* | one of those five; for a through hole, a depth equal to the wall |
 | *module 'hardware' has no public symbol 'M10'* | the sizes are M2, M2_5, M3, M4, M5, M6, M8; for others write a `cylinder` |
-| *undefined identifier 'hole'* | add it to the import: `import hardware : M3, hole;` |
+| *undefined identifier 'hole'* | add it to the import: `import std.hardware : M3, hole;` |
 | *the point's angle is from the vertical: between 3° and 90°* | a teardrop's `angle:` out of range |
 | the hole is missing, no error | `hole()` goes down from z = 0: it was not moved up to the face (`.move(z: thickness)`) |
 | the nut trap is on the wrong side | `nutTrap` goes down from z = 0: flip it with `.mirror(Z)` to cut from the bottom |
@@ -440,7 +440,7 @@ Right-click a face in the 3D view: **Hole at point** opens six groups, **Clearan
 
 <!-- render: holes-menu-clearance --from 1,-1,1.4 -->
 ```d
-import carlo;
+import std.carlo;
 
 // what the menu writes on Carlo's top
 @part("Sky Pop")
@@ -453,11 +453,11 @@ Solid clip() => carlo()
 
 ![An M3 clearance hole on Carlo's top, as the menu writes it](img/holes-menu-clearance.png)
 
-The other three write a `hole()` of the hardware library, placed on the face, and add `import hardware : hole, M3;` at the top when the model lacks it:
+The other three write a `hole()` of the hardware library, placed on the face, and add `import std.hardware : hole, M3;` at the top when the model lacks it:
 
 <!-- render: holes-menu-counterbore --from 1,-1,1.4 -->
 ```d
-import hardware : hole, M3;
+import std.hardware : hole, M3;
 
 // a counterbore on a block's top, as the menu writes it
 @part("Sky Pop")

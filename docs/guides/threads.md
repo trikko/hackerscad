@@ -209,7 +209,7 @@ Every thread is at the same angle at its free end, so a shaft and a hole threade
 // an M8 rod 40 mm long, and an M8 thread cut 12 mm
 // into a block
 
-import threads;
+import std.threads;
 
 @part("Sky Pop")
 Solid rod() => threadedRod(8.mm, 1.25.mm, 40.mm);

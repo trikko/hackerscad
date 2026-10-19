@@ -12,7 +12,7 @@ A pattern gives **one solid** with all the copies. Add it to a part to put pegs 
 ```d
 // a row, a ring, a grid and a mirror
 
-import carlo;
+import std.carlo;
 
 @part("Sky Pop")
 Solid row() => box(50.mm, 10.mm, 3.mm)
@@ -69,7 +69,7 @@ When the copies change from one to the next, or only some places get one, write 
 // Carlos in a row, one more tooth each time, each
 // placed 8 mm after the one before
 
-import carlo;
+import std.carlo;
 
 @part("Sky Pop")
 Solid row()
@@ -322,7 +322,7 @@ A *tiling* covers an area with cells that fit together, like the tiles of a floo
 // Voronoi pockets in a coaster, studs with slanted
 // sides on a tile
 
-import carlo;
+import std.carlo;
 
 @part("Sky Pop")
 Solid honeycomb()

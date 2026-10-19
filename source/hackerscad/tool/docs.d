@@ -193,16 +193,16 @@ dimensions and pictures, compare them with the request, fix, then export.
   and put requirements in unittest blocks:
   unittest { assert(body.bbox.size.z <= 40.mm, "must fit in the drawer"); }
 - Use the libraries instead of modelling common parts by hand:
-  import hardware : M3, screw, nut, hole; then M3.clearance, M3.tap,
+  import std.hardware : M3, screw, nut, hole; then M3.clearance, M3.tap,
   screw(M3, 20.mm), nut(M3), hole(M3, 5.mm, "counterbore"|"insert"|…);
-  import threads (threadedRod, tappedHole); import gears (spurGear, rack,
-  centerDistance); import hinges (hinge(…).fixed/.moving, print in place);
-  import snaps (snapHook, snapSlot); import enclosures (roundedBox, tray,
-  enclosure(vec(x, y, z)).base/.lid); import joints (splitJoint(body,
+  import std.threads (threadedRod, tappedHole); import std.gears (spurGear, rack,
+  centerDistance); import std.hinges (hinge(…).fixed/.moving, print in place);
+  import std.snaps (snapHook, snapSlot); import std.enclosures (roundedBox, tray,
+  enclosure(vec(x, y, z)).base/.lid); import std.joints (splitJoint(body,
   plane, kind: "dovetail"|"dowels"|…).a/.b for a part longer than the bed,
   .loose/.print the wedge or dowels in place and laid flat; splitFlat
   for two halves printed on their cut faces, joinParts(a, b, plane)); import
-  molds (mold(part, plane).aPrint/.bPrint); import flex (kerf(body, zone)
+  std.molds (mold(part, plane).aPrint/.bPrint); import std.flex (kerf(body, zone)
   to make it bend; hinges also has pinHinge, snapHinge, livingHinge).
   Built in: region.tiles(kind: "hex"|"voronoi"|…) fills a profile with
   cells, body.knurl(face) raises a grip, body.cut(profile, wrap: face,
@@ -232,7 +232,7 @@ dimensions and pictures, compare them with the request, fix, then export.
   (not right after { or another comment); comments say why.
 - For an example, a trial or an explanation that needs some object to work
   on (to move, cut, place, measure), use Carlo, the mascot clip: import
-  carlo; then carlo(), and call it Carlo (always the same, recognisable,
+  std.carlo; then carlo(), and call it Carlo (always the same, recognisable,
   small and quick to evaluate). Not instead of an object the
   request names (the phone, the shaft): model that one.
 

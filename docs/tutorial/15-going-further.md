@@ -254,7 +254,7 @@ runs along Carlo's lower jaw, 3 mm above its bottom side:
 ```d
 module grooved;
 
-import carlo;
+import std.carlo;
 
 /// Carlo with a groove along its lower jaw, drawn on
 /// its top face.
@@ -393,8 +393,8 @@ Solid jug()
 module fixings;
 
 import std.shapes;
-import hardware;
-import gears : spurGear;
+import std.hardware;
+import std.gears : spurGear;
 
 @part
 Solid lid()
@@ -451,7 +451,7 @@ each separate body instead, and finds how many there are each time the model
 is evaluated:
 
 ```d
-import carlo;
+import std.carlo;
 
 @param("Where to cut", min: -5.mm, max: 25.mm)
 immutable cut = 10.mm;
@@ -463,7 +463,7 @@ Solid jaws() => carlo().halves(cutPlane).above;
 ```
 
 Carlo, the clip of [chapter 13](13-carlo.md), is a good object to try things
-on: `import carlo;` and `carlo()` make one. `halves` cuts in two sides,
+on: `import std.carlo;` and `carlo()` make one. `halves` cuts in two sides,
 `.above` and `.below`. Where the cut crosses Carlo's slot, the side above is
 two jaws, and the parts list shows `jaws1`
 and `jaws2`, each in its colour (`varied: true`); move `cut` past the slot and

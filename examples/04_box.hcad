@@ -20,7 +20,7 @@
 module box;
 
 import std.shapes;
-import hardware : M3, Screw;
+import std.hardware : M3, Screw;
 
 // Each parameter lists its own presets: @preset("name", value).
 @param("Inner width", min: 30.mm, max: 200.mm)

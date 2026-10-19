@@ -24,7 +24,8 @@ immutable string[] stdModules = [
 ];
 
 /// Built-in .hcad library sources.
-/// Built-in libraries (lib/*.hcad), imported as `import gears;` or `import std.gears;`.
+/// Built-in libraries (lib/*.hcad), imported as `import std.gears;` (the old `import gears;` works too, with a
+/// warning: a module of the project of that name comes first).
 immutable string[string] librarySources;
 
 shared static this()

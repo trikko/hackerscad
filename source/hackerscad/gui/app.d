@@ -119,7 +119,7 @@ enum startModel = import("00_carlo.hcad");
 enum newModelTemplate = `// Delete this and write your own model in its place.
 
 import std.shapes;
-import carlo;
+import std.carlo;
 
 @part
 Solid body()

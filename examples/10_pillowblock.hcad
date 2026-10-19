@@ -7,7 +7,7 @@
 module pillowblock;
 
 import std.shapes;
-import hardware : M5;
+import std.hardware : M5;
 
 @param("Foot length", min: 80.mm, max: 140.mm)
 immutable footLength = 90.mm;

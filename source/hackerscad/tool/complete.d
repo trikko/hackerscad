@@ -523,7 +523,7 @@ private Completion[] moduleNames(ref Context ctx)
     import hackerscad.lang.builtins : librarySources, stdModules;
     Completion[] r;
     foreach (name; librarySources.keys.sort)
-        r ~= Completion(name, name, "module", "built-in library", "");
+        r ~= Completion("std." ~ name, "std." ~ name, "module", "built-in library", "");
     foreach (name; stdModules)
         r ~= Completion(name, name, "module", "standard module", "");
     foreach (base; [ctx.root] ~ ctx.libraryDirs)
@@ -771,10 +771,10 @@ unittest
     assert(r.items.length && r.items[0].label == "parallel");
 
     // a library: functions after import, struct fields after a constant
-    src = "module m;\nimport hardware;\n@part Solid a() => ho";
+    src = "module m;\nimport std.hardware;\n@part Solid a() => ho";
     r = complete(src, src.length, "", null);
     assert(r.items.canFind!(c => c.label == "hole"), "hole");
-    src = "module m;\nimport hardware : M3;\nimmutable d = M3.cl";
+    src = "module m;\nimport std.hardware : M3;\nimmutable d = M3.cl";
     r = complete(src, src.length, "", null);
     assert(r.items.length && r.items[0].label == "clearance");
 
@@ -797,14 +797,14 @@ unittest
     assert(r.items.length == 3 && r.items[0].label == "part" && r.items.canFind!(c => c.label == "parts"));
 
     // hover: a built-in, a method after a dot, a library function
-    src = "module m;\nimport hardware;\n@part Solid a() => box(1, 2, 3).fillet(edges.parallel(Z), r: 1) - hole(M3, 2);";
+    src = "module m;\nimport std.hardware;\n@part Solid a() => box(1, 2, 3).fillet(edges.parallel(Z), r: 1) - hole(M3, 2);";
     assert(describeAt(src, src.indexOf("box") + 1, "", null)[0].startsWith("box("));
     assert(describeAt(src, src.indexOf("fillet") + 2, "", null)[0].startsWith("fillet("));
     assert(describeAt(src, src.indexOf("parallel") + 2, "", null)[0].startsWith("parallel("));
     assert(describeAt(src, src.indexOf("hole") + 1, "", null)[0].startsWith("hole(s: Screw"));
 
     // the library's signature inside its call
-    src = "module m;\nimport hardware;\n@part Solid a() => hole(M3, ";
+    src = "module m;\nimport std.hardware;\n@part Solid a() => hole(M3, ";
     r = complete(src, src.length, "", null);
     assert(r.signature.startsWith("hole(s: Screw") && r.activeParam == 1, r.signature);
 }

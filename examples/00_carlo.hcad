@@ -7,7 +7,7 @@
 
     carlo() below makes one: it is the function of
     the carlo library, which comes with hackerscad
-    (`import carlo;` gives it to any model). Its
+    (`import std.carlo;` gives it to any model). Its
     sizes are the parameters, to change in
     Parameters while the view follows.
 */

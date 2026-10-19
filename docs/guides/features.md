@@ -49,7 +49,7 @@ Features work on any shape, not only on boxes. Carlo, the mascot clip, with the 
 
 <!-- render: features-carlo --from 1,-1,0.8 -->
 ```d
-import carlo;
+import std.carlo;
 
 // the top rim rounded, the bottom rim bevelled
 @part("Sky Pop")

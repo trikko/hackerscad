@@ -58,7 +58,7 @@ A plane has `origin` and `normal`. The midplane follows the part: when the part 
 // Carlo cut halfway through its height, the halves
 // pushed apart: a plane between two faces
 
-import carlo;
+import std.carlo;
 
 immutable middle = carlo()
     .plane(faces.top, faces.bottom);
@@ -103,7 +103,7 @@ Placing parts relative to each other, rather than by coordinates worked out by h
 <!-- render: planes-ex1 -->
 ```d
 // a peg on Carlo's top, 12 mm left of the face's centre
-import carlo;
+import std.carlo;
 
 @part
 Solid pegged()
@@ -123,7 +123,7 @@ Solid pegged()
 // Carlo laid on the slope of a stand, its bottom face
 // against it, turned a quarter on the slope
 
-import carlo;
+import std.carlo;
 
 @part("White Pop")
 Solid stand() => polygon([vec(-30.mm, 0.mm),
@@ -155,7 +155,7 @@ For parts side by side, the bounding boxes are enough:
 ```d
 // parts placed by each other, not by coordinates
 
-import carlo;
+import std.carlo;
 
 Solid base() => box(50, 34, 6);
 

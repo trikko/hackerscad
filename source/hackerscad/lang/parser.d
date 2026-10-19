@@ -1024,7 +1024,7 @@ unittest
         @unit(inch) module test;
         import std.shapes;
         import c = lib.hinges;
-        import hardware : M3, M4;
+        import std.hardware : M3, M4;
 
         @param("Width", min: 20.mm) @preset("wide", 90.mm) immutable width = 60.mm;
         immutable xs = [1, 2, 3];

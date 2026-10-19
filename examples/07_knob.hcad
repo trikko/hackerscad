@@ -10,7 +10,7 @@
 module knob;
 
 import std.shapes;
-import hardware : M3, hole;
+import std.hardware : M3, hole;
 
 // @param puts a field in the Parameters panel; @preset groups values under a name
 @param("Diameter", min: 16.mm, max: 50.mm)

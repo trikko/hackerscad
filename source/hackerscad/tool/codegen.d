@@ -2112,7 +2112,7 @@ unittest
 }
 
 /// Edit `e` of `source` made together with an import of `names` from `mod`
-/// (`import hardware : hole, M3;`), when the model does not import them yet:
+/// (`import std.hardware : hole, M3;`), when the model does not import them yet:
 /// one edit, from the import to `e`'s end, its selection kept on `e`'s.
 Edit withImport(string source, Edit e, string mod, string[] names)
 {
@@ -2156,7 +2156,7 @@ Edit withImport(string source, Edit e, string mod, string[] names)
             line = end;
         }
         at = after > source.length ? source.length : after;
-        add = "import " ~ mod ~ " : " ~ names.join(", ") ~ ";\n";
+        add = "import std." ~ mod ~ " : " ~ names.join(", ") ~ ";\n";
     }
     if (at > e.offset)
         throw new CodegenException("the import goes after the edit");
@@ -2180,12 +2180,12 @@ unittest
     auto src = "module m;\n\n@part\nSolid p() => box(10, 10, 10);\n";
     auto e = appendToPart(src, "m.hcad", "p", ".cut(hole(M3, 5.mm, \"insert\"), on: faces.top)");
     auto out1 = withImport(src, e, "hardware", ["hole", "M3"]).apply(src);
-    assert(out1.canFind("module m;\nimport hardware : hole, M3;\n") && out1.canFind("hole(M3"), out1);
+    assert(out1.canFind("module m;\nimport std.hardware : hole, M3;\n") && out1.canFind("hole(M3"), out1);
     // a selective import gets what it lacks; a whole import nothing
-    auto src2 = "module m;\nimport hardware : M3;\n\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto src2 = "module m;\nimport std.hardware : M3;\n\n@part\nSolid p() => box(10, 10, 10);\n";
     auto out2 = withImport(src2, appendToPart(src2, "m.hcad", "p", ".x()"), "hardware", ["hole", "M3"]).apply(src2);
-    assert(out2.canFind("import hardware : M3, hole;"), out2);
-    auto src3 = "import hardware;\n@part\nSolid p() => box(10, 10, 10);\n";
+    assert(out2.canFind("import std.hardware : M3, hole;"), out2);
+    auto src3 = "import std.hardware;\n@part\nSolid p() => box(10, 10, 10);\n";
     auto e3 = appendToPart(src3, "m.hcad", "p", ".x()");
     assert(withImport(src3, e3, "hardware", ["hole"]) == e3);
 }

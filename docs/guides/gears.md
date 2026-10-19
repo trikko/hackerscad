@@ -22,7 +22,7 @@ The same pitch diameter, 30 mm, with modules 1, 1.5 and 3: more, smaller teeth, 
 ```d
 // one pitch diameter, 30 mm: modules 1, 1.5 and 3
 
-import gears;
+import std.gears;
 
 @part("Sky Pop")
 Solid fine() => spurGear(1.mm, 30, 5.mm, bore: 5.mm);
@@ -44,7 +44,7 @@ The pressure angle changes the flanks: at 14.5° they are nearly straight, at 25
 ```d
 // 16 teeth of module 3 at 14.5°, 20° and 25°
 
-import gears;
+import std.gears;
 
 @part("Sky Pop")
 Solid old() => spurGear(3.mm, 16, 5.mm, pressure: 14.5.deg);
@@ -73,7 +73,7 @@ The sizes of a gear of `z` teeth follow from the module:
 
 ## The library
 
-`import gears;` gives:
+`import std.gears;` gives:
 
 | Function | What it makes |
 |---|---|
@@ -106,7 +106,7 @@ Two gears **mesh** when the teeth of one go into the gaps of the other. That nee
 ```d
 // a 30-tooth gear driving a 12-tooth pinion, and a rack
 
-import gears;
+import std.gears;
 
 @param("Module", min: 1.mm, max: 3.mm)
 immutable m = 1.5.mm;
@@ -148,7 +148,7 @@ The `unittest` above is the check: `(a & b).volume` is the material two parts sh
 // check a pair through one tooth of turning, not only
 // where it was drawn
 
-import gears;
+import std.gears;
 
 immutable m = 1.mm;
 
@@ -194,7 +194,7 @@ For a gear of your own shape (spokes, windows, a cam on it), start from `gearPro
 ```d
 // a big wheel made lighter by six windows
 
-import gears;
+import std.gears;
 
 @part("Sky Pop")
 Solid wheel()
@@ -224,8 +224,8 @@ Keep what you cut inside `rootDiameter`, with a few millimetres of rim under the
 // a gear for a 5 mm motor shaft with a flat (a D shaft),
 // held by an M3 set screw in a heat-set insert
 
-import gears;
-import hardware : M3, hole;
+import std.gears;
+import std.hardware : M3, hole;
 
 @param("Shaft diameter", min: 3.mm, max: 8.mm)
 immutable shaft = 5.mm;
@@ -279,4 +279,4 @@ The first three messages point at the line of the library that checks them, not 
 
 ## In the application
 
-There is no gear menu: gears are written in the code. The cheatsheet (**Cheatsheet** in the main menu, or F1) lists every function of the `gears` library with its arguments, and the editor completes them after `import gears;`. Make the module and the numbers of teeth `@param`s to change them from the **Parameters** panel and see the gears follow; the `unittest` with `(a & b).volume` reports a collision in the console when the tests run (F5).
+There is no gear menu: gears are written in the code. The cheatsheet (**Cheatsheet** in the main menu, or F1) lists every function of the `gears` library with its arguments, and the editor completes them after `import std.gears;`. Make the module and the numbers of teeth `@param`s to change them from the **Parameters** panel and see the gears follow; the `unittest` with `(a & b).volume` reports a collision in the console when the tests run (F5).

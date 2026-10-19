@@ -65,7 +65,7 @@ A *sketch* is a flat drawing made of points, lines and arcs held in place by dim
 
 <!-- render: sweeps-groove -->
 ```d
-import carlo;
+import std.carlo;
 
 // a groove all round Carlo's top rim, slot included
 Solid body() => carlo();
@@ -232,7 +232,7 @@ Any profile can be a section of a loft, a solid's outline too. `carlo().projecti
 
 <!-- render: sweeps-carlo-loft --from 1,-1,0.6 -->
 ```d
-import carlo;
+import std.carlo;
 
 // Carlo's outline seen from above, lofted up into a
 // smaller copy of itself

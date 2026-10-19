@@ -689,7 +689,21 @@ final class Interp
     {
         auto name = d.path.join(".");
         ModuleVal mod;
-        if (auto src = name in embedded)
+        // a built-in library by its old name, without std.: a module of the project's or the personal library's
+        // with that name comes first (it was hidden before); else the library, with a word about its name
+        string own;
+        if (!name.startsWith("std.") && (name in embedded) !is null)
+        {
+            try
+                own = findModule(d);
+            catch (HcadError)
+                own = null;
+            if (own is null)
+                diagnostics ~= Diagnostic(Severity.warning, Code.import_, format("the built-in libraries are "
+                    ~ "imported as std.%s now (a module of yours may be called %s)", name, name), d.span,
+                    format("import std.%s", name));
+        }
+        if (own is null && (name in embedded) !is null)
         {
             // one module per library, whatever name imported it
             auto canonical = name.startsWith("std.") ? name[4 .. $] : name;
@@ -715,7 +729,7 @@ final class Interp
         }
         else
         {
-            auto file = findModule(d);
+            auto file = own !is null ? own : findModule(d);
             mod = loadModule(readText(file), file, name);
         }
 

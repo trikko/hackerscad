@@ -6,14 +6,14 @@
 module library_tour;
 
 import std.shapes;
-import hardware;
-import gears;
-import hinges : hinge, livingHinge;
-import snaps;
-import enclosures;
-import joints;
-import flex;
-import molds;
+import std.hardware;
+import std.gears;
+import std.hinges : hinge, livingHinge;
+import std.snaps;
+import std.enclosures;
+import std.joints;
+import std.flex;
+import std.molds;
 
 // the grid: columns along X, rows along -Y
 immutable col = 55.mm;

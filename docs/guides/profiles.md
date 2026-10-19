@@ -191,7 +191,7 @@ A boss (a raised stud), a rib (a thin wall that stiffens), a pocket (a hollow th
 // on Carlo's faces: a peg grown from the top, a hole
 // through the front that prints standing, point up
 
-import carlo;
+import std.carlo;
 
 @part
 Solid clip()
@@ -251,7 +251,7 @@ The profile's origin lands on the front of the face (the side facing −Y, halfw
 ```d
 // a name round a mug, Carlo stamped on a ball
 
-import carlo;
+import std.carlo;
 
 @part("Sky Pop")
 Solid mug()

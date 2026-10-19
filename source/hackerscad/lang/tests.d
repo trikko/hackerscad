@@ -381,11 +381,11 @@ unittest
 
 unittest
 {
-    expectOut("writeln(M3.d, \" \", M3.tap);", "3 mm 2.5 mm", "import hardware : M3;");
-    expectOut("writeln(hw.M4.clearance);", "4.5 mm", "import hw = hardware;");
+    expectOut("writeln(M3.d, \" \", M3.tap);", "3 mm 2.5 mm", "import std.hardware : M3;");
+    expectOut("writeln(hw.M4.clearance);", "4.5 mm", "import hw = std.hardware;");
     expectOut("writeln(PI > 3);", "true", "import std.math; import std.algorithm;");
     assert(error("import std.nope;").code == Code.import_);
-    assert(error("import hardware : M99;").code == Code.import_);
+    assert(error("import std.hardware : M99;").code == Code.import_);
     assert(error("import lib.missing;").code == Code.import_);
 
     // project modules, with private symbols
@@ -754,7 +754,7 @@ unittest
 {
     // hardware library: a screw and a nut are valid, non-empty solids
     auto r = runModel(q{
-        import hardware : M3, M8, screw, nut;
+        import std.hardware : M3, M8, screw, nut;
         @part Solid s() => screw(M3, 50.mm);
         @part Solid n() => nut(M8);
     });
@@ -1742,12 +1742,12 @@ unittest
     mixin(slowTest);
     // built-in libraries
     auto r = runModel(q{
-        import hardware;
+        import std.hardware;
         import std.threads : threadedRod;
-        import gears;
-        import hinges : hinge;
-        import snaps : snapHook;
-        import enclosures : enclosure, roundedBox;
+        import std.gears;
+        import std.hinges : hinge;
+        import std.snaps : snapHook;
+        import std.enclosures : enclosure, roundedBox;
 
         @part Solid rod() => threadedRod(6.mm, 1.mm, 8.mm);
         @part Solid leftRod() => threadedRod(6.mm, 1.mm, 8.mm, left: true);
@@ -2237,7 +2237,7 @@ unittest
     expectOut(`writeln(format("%.3f", circle(r: 3).extrude(5.mm, taper: 30.deg).volume / 1.mm^^3));`,
         format("%.3f", PI * 5 / 3 * (9 + 3 * (3 - 5 / sqrt(3.0)) + (3 - 5 / sqrt(3.0)) ^^ 2)),
         shapes ~ "import std.format;");
-    expectErr(`writeln(spurGear(1.mm, 20, 5.mm, backlash: 5.mm));`, "E0600", "import gears;");
+    expectErr(`writeln(spurGear(1.mm, 20, 5.mm, backlash: 5.mm));`, "E0600", "import std.gears;");
 }
 
 unittest
@@ -2881,6 +2881,14 @@ unittest
         auto c = hull(knob, grow: 0.5.mm);
         immutable d = hull(knob).deviation(c);
         writeln(c.isValid, " ", d > 0.49.mm && d < 0.52.mm);`, "true true\ntrue true");
+    // the built-in libraries are std.gears…: the old name works with a warning that says so
+    {
+        auto r = runModel("import gears;\n@part Solid p() => spurGear(1.mm, 12, 3.mm);\n");
+        assert(r.parts.length == 1 && r.diagnostics.canFind!(d => d.severity == Severity.warning
+            && d.message.canFind("std.gears")), "the old name, warned");
+        auto q = runModel("import std.gears;\n@part Solid p() => spurGear(1.mm, 12, 3.mm);\n");
+        assert(q.parts.length == 1 && !q.diagnostics.canFind!(d => d.severity == Severity.warning), "the new name");
+    }
     // a tag with a dot belongs to its module: given only there, read anywhere
     assert(error(`@part Solid p() { return box(1, 1, 1).addTag("hardware.bore"); }`)
         .message.canFind("can only be given in module hardware"));
@@ -2925,7 +2933,7 @@ unittest
             j.a.faces.tagged("joints.cut").count > 0, " ", j.b.plane("joints.plane").normal, " ",
             m.a.faces.tagged("molds.cavity").count, " ", m.b.faces.tagged("molds.sprue").count > 0);`,
         "2 2 0 mm true true\n4 2 [0, -1, 0] 1 [1, 0, 0] 3 1 true true [1, 0, 0] 1 true",
-        "import hardware; import gears; import hinges; import enclosures; import joints; import molds;");
+        "import std.hardware; import std.gears; import std.hinges; import std.enclosures; import std.joints; import std.molds;");
 }
 
 unittest
@@ -3096,7 +3104,7 @@ unittest
         rmdirRecurse(dir);
     immutable model = buildPath(dir, "trap.hcad");
     write(model, q{
-        import hardware : hexPrism;
+        import std.hardware : hexPrism;
         @part Solid copy() => box(20, 20, 10) - hexPrism(5.45, 9).move(z: 2);
         @part Solid original() => box(20, 20, 10) - hexPrism(5.45, 9).move(z: 2)
             - hexPrism(5.6, 4).move(z: 7) - hexPrism(5.75, 3).move(z: 8.5);
@@ -4312,7 +4320,7 @@ unittest
         auto nut = cylinder(d: 14.mm, h: 6.mm) - tappedHole(8.mm, p, 7 * p, clearance: 0.1.mm).move(z: 6 * p);
         writeln(format("%.3f", (nut & threadedRod(8.mm, p, 6.mm, chamfer: false)).volume / 1.mm ^^ 3));
         writeln((nut & threadedRod(8.mm, p, 6.mm, chamfer: false, left: true)).volume > 10 * 1.mm ^^ 3);`,
-        "1.0000\n0.000\ntrue", "import std.math;\nimport threads;");
+        "1.0000\n0.000\ntrue", "import std.math;\nimport std.threads;");
 }
 
 unittest
@@ -4373,7 +4381,7 @@ unittest
 {
     mixin(slowTest);
     // a surface that misses a solid, or ends inside it, is refused, not a piece silently lost
-    assert(error(`import carlo;
+    assert(error(`import std.carlo;
         immutable sheet = spline([vec(-12, 0), vec(0, 3), vec(12, -3), vec(24, 3), vec(36, 0)])
             .sweep(path([vec(0, -15, 7.5), vec(0, 20, 7.5)]));
         @part Solid p() => carlo().split(sheet)[0];`).message.canFind("reach across it"));
@@ -4413,7 +4421,7 @@ unittest
     import hackerscad.lang.drawingval : DrawingVal;
     import hackerscad.drawing.sheet : toSvg;
     auto r = runModel(q{
-        import hardware : M4, hole;
+        import std.hardware : M4, hole;
         @part Solid plate() => box(60, 30, 6)
             + cylinder(d: 16, h: 14).move(x: 18)
             - hole(M4, 6.mm, "countersink").move(x: -22, y: -7, z: 6)
@@ -4474,7 +4482,7 @@ unittest
 {
     // a solid tool cut on a face: placed with its z = 0 on the face and +Z out of it
     auto r = runModel(q{
-        import hardware : hole, M3;
+        import std.hardware : hole, M3;
         @part Solid p() => box(30, 20, 10)
             .cut(hole(M3, 6.mm, "counterbore"), on: faces.top, at: vec(5.mm, 3.mm, 0.mm))
             .cut(hole(M3, 6.mm, "countersink"), on: faces.farthest(X), at: vec(15.mm, 0.mm, 5.mm));
@@ -4487,7 +4495,7 @@ unittest
     });
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
-    assert(error(`import hardware : hole, M3; @part Solid p() => box(30, 20, 10).cut(hole(M3, 6.mm), on: faces.top, depth: 2.mm);`)
+    assert(error(`import std.hardware : hole, M3; @part Solid p() => box(30, 20, 10).cut(hole(M3, 6.mm), on: faces.top, depth: 2.mm);`)
         .message.canFind("a solid tool is cut as it is"));
 }
 
@@ -4563,12 +4571,12 @@ unittest
 {
     // Carlo grown by 0.3 mm (faces meeting tangentially): the offset works, and without its workaround fails
     import hackerscad.kernel.occt.c;
-    immutable src = "import carlo;\n@part Solid x() => carlo().offset(0.3.mm);";
+    immutable src = "import std.carlo;\n@part Solid x() => carlo().offset(0.3.mm);";
     assert(!fails(src), "Carlo grows by 0.3 mm");
     hc_workaround(HC_WORKAROUND_OFFSET_TOLERANCE, 0);
     scope (exit)
         hc_workaround(HC_WORKAROUND_OFFSET_TOLERANCE, 1);
-    stillBroken(fails("import carlo;\n@part Solid x() => carlo().offset(0.31.mm);"),
+    stillBroken(fails("import std.carlo;\n@part Solid x() => carlo().offset(0.31.mm);"),
         "MakeOffsetShape at 1e-6 on tangent faces (shim.cpp, hc_offset_solid)");
 }
 
@@ -4577,7 +4585,7 @@ unittest
     mixin(slowTest);
     // the hardware library's heads, larger and inch sizes, square nuts and extrusions with their T-nuts
     auto r = runModel(q{
-        import hardware;
+        import std.hardware;
         @part Solid heads() => screw(M4, 12.mm, head: "button") + screw(M4, 12.mm, head: "flat").move(x: 12)
             + screw(M4, 12.mm, head: "hex").move(x: 24) + screw(ST2_9, 10.mm, head: "pan").move(x: 36)
             + screw(M12, 20.mm).move(x: 52) + screw(UNC1_4_20, 15.mm).move(x: 72);
@@ -4612,7 +4620,7 @@ unittest
     });
     foreach (d; r.diagnostics)
         assert(d.severity != Severity.error, d.message);
-    assert(error("import hardware; @part Solid p() => box(10, 10, 10) - hole(ST2_9, 5.mm, \"insert\");")
+    assert(error("import std.hardware; @part Solid p() => box(10, 10, 10) - hole(ST2_9, 5.mm, \"insert\");")
         .message.canFind("no heat-set insert"));
 }
 
@@ -4855,12 +4863,12 @@ unittest
 {
     // a hole with ribs: wider than the tap hole, narrower than the screw's wall; a rib towards -Y
     // (none opposite it), and none in the lead at the top
-    expectOut("import hardware; auto h = hole(M3, 10.mm, \"ribs\"); "
+    expectOut("import std.hardware; auto h = hole(M3, 10.mm, \"ribs\"); "
         ~ "writeln(h.volume > PI * 1.25 ^^ 2 * 10 * 1.mm ^^ 3 && h.volume < PI * 1.65 ^^ 2 * 10 * 1.mm ^^ 3, \" \", "
         ~ "h.contains(vec(0.mm, -1.4.mm, -5.mm)), \" \", h.contains(vec(0.mm, 1.4.mm, -5.mm)), \" \", "
         ~ "h.contains(vec(0.mm, -1.4.mm, -0.3.mm)));", "true false true true");
     // the mouth chamfered 0.5 mm for ribs unless told otherwise; any kind takes chamfer:
-    expectOut("import hardware; writeln(hole(M3, 10.mm, \"ribs\").contains(vec(1.9.mm, 0.mm, -0.1.mm)), \" \", "
+    expectOut("import std.hardware; writeln(hole(M3, 10.mm, \"ribs\").contains(vec(1.9.mm, 0.mm, -0.1.mm)), \" \", "
         ~ "hole(M3, 10.mm, \"ribs\", chamfer: 0.mm).contains(vec(1.9.mm, 0.mm, -0.1.mm)), \" \", "
         ~ "hole(M3, 10.mm, chamfer: 0.4.mm).contains(vec(1.95.mm, 0.mm, -0.1.mm)), \" \", "
         ~ "hole(M3, 10.mm).contains(vec(1.95.mm, 0.mm, -0.1.mm)));", "true false true false");
@@ -4921,7 +4929,7 @@ unittest
     mixin(slowTest);
     // every joint: the two pieces apart from each other, one body each, and together the solid less
     // the play; the wedge of the scarf a body of its own
-    auto r = runModel("import joints;\n"
+    auto r = runModel("import std.joints;\n"
         ~ "unittest { auto beam = box(20.mm, 20.mm, 120.mm); auto p = plane(origin: vec(0.mm, 0.mm, 60.mm), normal: Z);\n"
         ~ "foreach (kind; jointKinds) { auto j = splitJoint(beam, p, kind: kind, count: 3);\n"
         ~ "assert((j.a & j.b).volume < 0.001 * 1.mm ^^ 3, kind ~ \": the pieces overlap\");\n"
@@ -4939,7 +4947,7 @@ unittest
     mixin(slowTest);
     // halves cut flat with keys: apart from each other and from the keys, the keys in both pockets,
     // each half laid on its cut face on z = 0; spots far apart and away from the edges
-    auto r = runModel("import joints;\n"
+    auto r = runModel("import std.joints;\n"
         ~ "unittest { auto egg = sphere(30.mm).scale(z: 1.5).move(z: 45.mm);\n"
         ~ "auto h = splitFlat(egg, plane(origin: vec(0.mm, 0.mm, 45.mm), normal: Y), keys: 2);\n"
         ~ "assert(h.keys.length == 2 && h.print.length == 2);\n"
@@ -4961,7 +4969,7 @@ unittest
     mixin(slowTest);
     // a mold: the halves apart, the cavity the part's volume, keys on a fitting sockets in b, the
     // pour hole open from the cavity to the outside, both laid on z = 0
-    auto r = runModel("import carlo; import molds;\n"
+    auto r = runModel("import std.carlo; import std.molds;\n"
         ~ "unittest { auto c = carlo(eye: false); auto m = mold(c, plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z));\n"
         ~ "assert((m.a & m.b).volume < 0.001 * 1.mm ^^ 3, \"the halves overlap\");\n"
         ~ "assert((m.a & c).volume < 0.001 * 1.mm ^^ 3 && (m.b & c).volume < 0.001 * 1.mm ^^ 3, \"the cavity is filled\");\n"
@@ -4980,7 +4988,7 @@ unittest
     mixin(slowTest);
     // two parts joined where one meets the other: apart, the tenon inside the upright's room and not
     // past its far side, nothing pushed outside the shelf's end
-    auto r = runModel("import joints;\n"
+    auto r = runModel("import std.joints;\n"
         ~ "unittest { auto up = box(12.mm, 60.mm, 100.mm).move(x: -6.mm); auto sh = box(60.mm, 50.mm, 12.mm).move(x: 30.mm, z: 40.mm);\n"
         ~ "foreach (kind; [\"tenon\", \"dovetail\", \"pins\", \"lap\", \"kama\"]) {\n"
         ~ "auto j = joinParts(up, sh, plane(origin: vec(0.mm, 0.mm, 46.mm), normal: X), kind: kind);\n"
@@ -4996,7 +5004,7 @@ unittest
     mixin(slowTest);
     // kerf: slots through a plate in the zone only, running across its length (along Y here), the
     // plate one piece; along: turns them
-    auto r = runModel("import flex;\n"
+    auto r = runModel("import std.flex;\n"
         ~ "unittest { auto plate = box(120.mm, 40.mm, 3.mm); auto zone = box(40.mm, 50.mm, 10.mm, center: true);\n"
         ~ "auto k = kerf(plate, zone); assert(k.volume < plate.volume && k.pieces.length == 1);\n"
         ~ "auto mid = k.section(plane(origin: vec(0.mm, 0.mm, 1.5.mm), normal: Z));\n"
@@ -5033,7 +5041,7 @@ unittest
 {
     mixin(slowTest);
     // the hinges: leaves apart, the pin's bore through every knuckle, the snap's cones in its sockets
-    auto r = runModel("import hinges;\n"
+    auto r = runModel("import std.hinges;\n"
         ~ "unittest { auto p = pinHinge(); assert((p.fixed & p.moving).volume < 0.001 * 1.mm ^^ 3);\n"
         ~ "assert(!p.fixed.contains(vec(-19.mm, 0.mm, 3.mm)) && !p.moving.contains(vec(0.mm, 0.mm, 3.mm)), \"no bore\");\n"
         ~ "auto s = snapHinge(); assert((s.fixed & s.moving).volume < 0.001 * 1.mm ^^ 3);\n"
@@ -5100,11 +5108,11 @@ unittest
     // tags through every operation on a box whose six sides are tagged: no tag on a face off its side's plane
     // (where the operation moved it), none lost while its face is there; the check itself caught on a box
     // moved and checked where it was
-    auto r = runModel(`import joints;
-import flex;
-import molds;
-import hardware : M3, hole;
-import threads;
+    auto r = runModel(`import std.joints;
+import std.flex;
+import std.molds;
+import std.hardware : M3, hole;
+import std.threads;
 
 immutable string[] names = ["top", "bottom", "right", "left", "back", "front"];
 immutable ns = [vec(0, 0, 1), vec(0, 0, -1), vec(1, 0, 0), vec(-1, 0, 0), vec(0, 1, 0), vec(0, -1, 0)];
