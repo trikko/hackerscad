@@ -1432,8 +1432,6 @@ Solid pillowBlock()
 ```d
 module hardware;
 
-import threads : threadedRod;
-
 /// Metric screw sizes (ISO 4762 socket head cap screws, ISO 4032 nuts,
 /// ISO 7089 washers) with the holes to print or drill for them.
 struct Screw
@@ -1527,15 +1525,32 @@ Solid hexPrism(Length acrossFlats, Length h)
 /// self-tapping ST sizes). The underside of the head lies on z = 0 (for a
 /// flat head, its top: it sinks into its countersink): the head grows
 /// upwards and the shank downwards, so the screw drops into a hole.
-/// threaded: true models the ISO thread (slower); otherwise the shank is
-/// plain; socket: false leaves out the hex socket.
+/// threaded: true models the thread (the ISO one for metric sizes), built on
+/// the shank's side; otherwise the shank is plain; socket: false leaves out
+/// the hex socket.
 Solid screw(Screw s, Length length, bool socket = true, bool threaded = false, string head = "socket")
 {
     auto shank = threaded
-        ? threadedRod(s.d, s.pitch, length).move(z: -length)
+        ? cylinder(d: s.d, h: length).move(z: -length)
         : cylinder(d: s.d, h: length)
             .chamfer(edges.filter(e => e.isCircle && e.mid.z < 1.mm), d: s.d * 0.1)
             .move(z: -length);
+    return threaded ? threadShank(withHead(s, shank, socket, head), shank, s) : withHead(s, shank, socket, head);
+}
+
+/// The thread on a screw's shank, cut on its side: built straight from its faces, quicker than a threaded
+/// rod joined with a boolean. Metric sizes by their name, the others (inch, self-tapping) by their pitch.
+private Solid threadShank(Solid screw, Solid shank, Screw s)
+{
+    auto side = faces.from(shank).filter(f => abs(f.normal.z) < 0.5);
+    return s.name.length > 0 && s.name[0 .. 1] == "M"
+        ? screw.thread(side, s.name)
+        : screw.thread(side, pitch: s.pitch);
+}
+
+/// The head on top of the shank.
+private Solid withHead(Screw s, Solid shank, bool socket, string head)
+{
     immutable hd = headOf(s, head);
     Solid top;
     switch (head)
@@ -1566,7 +1581,8 @@ Solid screw(Screw s, Length length, bool socket = true, bool threaded = false, s
 }
 
 /// Hex nut standing on z = 0, with the corners chamfered on both faces.
-/// threaded: true cuts the ISO thread in the hole.
+/// threaded: true threads the hole (the ISO thread for metric sizes, with no
+/// play: the nut of a real screw).
 Solid nut(Screw s, bool threaded = false)
 {
     // a cone narrow at the face and wider than the corners at mid height
@@ -1574,7 +1590,15 @@ Solid nut(Screw s, bool threaded = false)
     auto upper = lower.mirror(Z).move(z: s.nutHeight);
     auto body = hexPrism(s.nut, s.nutHeight) & (lower + upper);
     if (threaded)
-        return body - threadedRod(s.d, s.pitch, s.nutHeight + 2 * s.pitch, chamfer: false).move(z: -s.pitch);
+    {
+        // the hole at the tap drill, its wall threaded (a sleeve sewn in, quicker than a boolean)
+        auto bore = cylinder(d: s.tap, h: 3 * s.nutHeight, center: true);
+        auto wall = faces.from(bore);
+        auto drilled = body - bore;
+        return s.name.length > 0 && s.name[0 .. 1] == "M"
+            ? drilled.thread(wall, s.name, chamfer: false, clearance: 0.mm)
+            : drilled.thread(wall, pitch: s.pitch, chamfer: false, clearance: 0.mm);
+    }
     return body - cylinder(d: s.d, h: 3 * s.nutHeight, center: true);
 }
 

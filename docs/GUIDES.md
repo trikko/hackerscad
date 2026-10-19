@@ -104,9 +104,3 @@ The sizes you may want to change, made parameters with `@param` (limits, steps, 
 
 What becomes a separate object when a model is exported: `@part` and its options (colour, see-through, reference parts, names), `@parts` for the pieces of a cut, colours, the export formats (3MF, STL, zip, STEP, PNG) and what each holds, technical drawings with `@drawing`, and the Export menu of the application.
 
-### [Working with an AI agent](guides/agents.md)
-
-[<img src="guides/img/agents-annotations.png" width="420" alt="Working with an AI agent">](guides/agents.md)
-
-How to design with Claude Code, Codex or another agent and hackerscad together: installing the skill and the MCP server, what the agent asks before it starts and why, how it works in your windows without overwriting your files, pointing at things with annotations both ways, the loop it follows to check its work, the command line when there is no server, and the guides it reads.
-

@@ -44,7 +44,8 @@ without supports.
    yes-or-no parameter with `if`, a check that warns.
 10. [Print it](tutorial/10-print-it.md): export, slice, put it together.
 11. [Let an AI agent help](tutorial/11-ai-agents.md): ask an agent, and watch
-    it work in the window.
+    it work in the window; a part rebuilt from a file or a photo, a part made
+    round a real object, pointing at places.
 
 ### Drawing with sketches
 

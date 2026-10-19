@@ -602,7 +602,6 @@ static immutable Guide[] guides = [
     Guide("flex", "Flexible parts and hinges", import("guides/flex.md")),
     Guide("parameters", "Parameters, presets and checks", import("guides/parameters.md")),
     Guide("parts", "Parts, export and drawings", import("guides/parts.md")),
-    Guide("agents", "Working with an AI agent", import("guides/agents.md")),
 ];
 
 /// The guide named `slug`, or null.
