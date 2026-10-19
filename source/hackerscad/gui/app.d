@@ -67,6 +67,7 @@ import hackerscad.kernel.brep : EdgeKind, tangentChain;
 import hackerscad.examples : examples, exampleNames;
 import hackerscad.tool.codegen : transformPart;
 import hackerscad.lang.errors;
+import hackerscad.lang.lexer : codeFingerprints;
 import hackerscad.io.stl;
 import hackerscad.lang.threading : ThreadSpec, allThreads, fits;
 import hackerscad.io.threemf;
@@ -598,6 +599,9 @@ final class MainWindow
     ulong savedHash;   /// codeHash of the text as saved, opened or made new
     bool hasSaved;     /// false while no text was saved (an imported mesh's model)
     uint debounce;
+    /// Where the tokens of the code last sent to be evaluated stand (codeFingerprints' layout): text
+    /// changed to code with the same is not evaluated again (a comment's words, spaces at a line's end).
+    ulong requestedLayout;
     bool firstResult = true;
     bool fitNext;   /// frame the next result from where the view looks now (the socket's set)
     Outcome last;
@@ -1351,6 +1355,13 @@ final class MainWindow
             modified = !hasSaved || codeHash(text()) != savedHash;
             updateTitle();
             sketchLinesMoved();
+            // only a comment or spaces changed, every token where it was: the model on screen is this
+            // code's, its lines and columns right; nothing to evaluate (an evaluation already waiting, a
+            // value changed, still runs)
+            ulong meaning, layout;
+            codeFingerprints(text(), meaning, layout);
+            if (layout != 0 && layout == requestedLayout)
+                return;
             scheduleEvaluation(250);
         });
         // the sketch at the cursor
@@ -1839,6 +1850,8 @@ private:
             startProgress();
             Request r;
             r.source = text();
+            ulong meaning;
+            codeFingerprints(r.source, meaning, requestedLayout);
             r.path = path;
             r.overrides = params.overrides.dup;
             r.preset = params.preset;
@@ -6617,7 +6630,7 @@ private:
 
     /// Every field the state can have, for hcad_gui_state's only.
     static immutable string[] stateFields = ["path", "status", "window", "version", "outdated", "revision",
-        "user_changed", "evaluating", "stage", "seconds", "modified", "source_hash", "preset", "overrides", "parts",
+        "user_changed", "evaluating", "stage", "seconds", "modified", "source_hash", "model_hash", "preset", "overrides", "parts",
         "params", "presets", "inspect", "sketch", "sketch_follow", "planes", "annotations", "annotate_mode", "annotated_view",
         "cursor", "camera", "printability", "graphics", "problems", "log", "source", "steps"];
 
@@ -6642,6 +6655,12 @@ private:
         }
         j["modified"] = modified;
         j["source_hash"] = format("%016x", codeHash(text()));
+        {
+            // the code's meaning: unchanged by spaces and comments
+            ulong meaning, layout;
+            codeFingerprints(text(), meaning, layout);
+            j["model_hash"] = format("%016x", meaning);
+        }
         j["preset"] = params.preset;
         j["overrides"] = JValue(params.overrides);
         JValue parts = JSAB();

@@ -419,3 +419,54 @@ unittest
     assert(lex("1e3 0x1F 2.5", "t").length == 4);
     assertThrown!HcadError(lex(`"open`, "t"));
 }
+
+/// Fingerprints of the code as the interpreter reads it, from its tokens: `meaning` from what they are
+/// alone (spaces and comments left out: the same for code that can only do the same), `layout` from where
+/// each one stands too (the same, and every line and column the model reports still right). Both 0 when the
+/// code does not even split into tokens (an unterminated string): then nothing can be told from them.
+void codeFingerprints(string source, out ulong meaning, out ulong layout)
+{
+    import std.bitmanip : littleEndianToNative;
+    import std.digest.murmurhash : MurmurHash3;
+    Token[] toks;
+    try
+        toks = lex(source, "<fingerprint>");
+    catch (HcadError)
+        return;
+    MurmurHash3!(128, 64) what, where;
+    foreach (t; toks)
+    {
+        immutable uint[1] kind = [cast(uint) t.kind];
+        immutable uint[3] at = [cast(uint) t.kind, t.span.line, t.span.col];
+        immutable uint[1] size = [cast(uint) t.text.length];
+        what.put(cast(const(ubyte)[]) kind[]);
+        what.put(cast(const(ubyte)[]) size[]);
+        what.put(cast(const(ubyte)[]) t.text);
+        where.put(cast(const(ubyte)[]) at[]);
+        where.put(cast(const(ubyte)[]) size[]);
+        where.put(cast(const(ubyte)[]) t.text);
+    }
+    meaning = littleEndianToNative!ulong(what.finish()[0 .. 8]);
+    layout = littleEndianToNative!ulong(where.finish()[0 .. 8]);
+    // 0 says "unknown"
+    if (meaning == 0)
+        meaning = 1;
+    if (layout == 0)
+        layout = 1;
+}
+
+unittest
+{
+    ulong m1, l1, m2, l2, m3, l3, m4, l4;
+    codeFingerprints("auto a = box(1, 2, 3); // a box\n", m1, l1);
+    codeFingerprints("auto a = box(1, 2, 3); // a crate\n", m2, l2);
+    codeFingerprints("// a box\nauto a = box(1, 2, 3);\n", m3, l3);
+    codeFingerprints("auto a = box(1, 2, 4);\n", m4, l4);
+    // a comment's words: neither changes; moving the code a line down: only where; the code: both
+    assert(m1 == m2 && l1 == l2);
+    assert(m1 == m3 && l1 != l3);
+    assert(m1 != m4);
+    ulong m5, l5;
+    codeFingerprints("auto s = \"unterminated;\n", m5, l5);
+    assert(m5 == 0 && l5 == 0);
+}
