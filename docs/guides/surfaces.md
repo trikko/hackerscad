@@ -2,7 +2,7 @@
 
 Open sheets with no inside: how to make one (an open curve swept along a path, a loft through paths), and what to do with it: split a solid along a curved cut, thicken it into a shell, sew several into a closed solid, push the pieces apart. Typical workflows, the limits, and the errors.
 
-![A bent tube split lengthwise by a surface: the surface, a ribbon, in pink, the tube's two halves, see-through, pushed apart from it](img/surfaces-tube-halves.png)
+![A bent tube split lengthwise by a surface: the surface, a ribbon, in pink, the tube's two halves, grey and see-through, pushed apart from it](img/surfaces-tube-halves.png)
 
 ## What a surface is
 
@@ -81,8 +81,8 @@ Solid tube() => (circle(d: 16.mm) - circle(d: 12.mm))
 Surface ribbon() => path([vec(-10, 0), vec(10, 0)])
     .sweep(route);
 
-// (see-through here, so that the ribbon shows)
-@parts(varied: true, alpha: 0.35)
+// (grey and see-through here, so that the ribbon shows)
+@parts("Gray Pop", alpha: 0.35)
 Solid[] halves() => tube()
     .split(ribbon())
     .push(from: ribbon(), by: 4.mm);
@@ -93,7 +93,7 @@ Solid[] halves() => tube()
 Solid sheet() => ribbon().thicken(0.05.mm);
 ```
 
-![A bent tube split lengthwise by a ribbon swept along its path: the ribbon in pink, the two halves, see-through, pushed apart from it](img/surfaces-tube-halves.png)
+![A bent tube split lengthwise by a ribbon swept along its path: the ribbon in pink, the two halves, grey and see-through, pushed apart from it](img/surfaces-tube-halves.png)
 
 ## Thickening
 
