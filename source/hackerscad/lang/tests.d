@@ -2972,6 +2972,23 @@ unittest
 
 unittest
 {
+    // a coarse thread in a hole: its teeth go out from the axis, so a Tr24x8 nut's ⌀16 hole takes it,
+    // while a ⌀16 shaft is still refused it
+    auto r = runModel(q{
+        import std.math;
+        @part Solid nut() => (cylinder(d: 40, h: 10)
+            - cylinder(d: 16, h: 10).addTag("bore", recursive: true))
+            .thread(faces.tagged("bore"), "Tr24x8");
+        unittest { assert(nut.isValid && nut.volume < PI * (20.mm ^^ 2 - 8.mm ^^ 2) * 10.mm, "threaded"); }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    assert(error(`@part Solid p() => cylinder(d: 16, h: 10).thread(faces.largest, pitch: 8.mm);`)
+        .message.canFind("reach the axis"));
+}
+
+unittest
+{
     mixin(slowTest);
     // taper: any thread made conical; NPT's own taper turned off; too much of it refused
     auto r = runModel(q{

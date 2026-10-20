@@ -6027,7 +6027,8 @@ Value threadFace(Interp it, ref CallArgs a)
     // every start is a sweep of its own: more take minutes and no thread has them
     if (starts > 12)
         throw new HcadError(Code.limit, format("%s starts: a thread has at most 12", starts), x.spanOf("starts"));
-    if (h >= 0.45 * c.radius)
+    // a shaft's teeth go in towards the axis, a hole's out from it: only a shaft's can reach it
+    if (outside && h >= 0.45 * c.radius)
         throw new HcadError(Code.type, format("a pitch of %g mm is too coarse for ⌀%g mm: its teeth would reach the axis",
             pitch, 2 * c.radius), x.spanOf(x.has("pitch") ? "pitch" : "size"));
     immutable left = x.flag("left", false);
