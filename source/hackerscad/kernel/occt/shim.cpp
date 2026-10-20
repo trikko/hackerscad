@@ -3607,7 +3607,9 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 }
             auto interpolate = [&](const std::vector<gp_Pnt2d> &xy, bool periodic) -> Handle(Geom2d_Curve) {
                 if (xy.size() == 2 && !periodic)
-                    return GCE2d_MakeSegment(mapped(xy[0].X(), xy[0].Y()), mapped(xy[1].X(), xy[1].Y())).Value();
+                    // (the handles made the base's by hand: the GCC of Ubuntu 24.04 does not, from a const one)
+                    return Handle(Geom2d_Curve)(
+                        GCE2d_MakeSegment(mapped(xy[0].X(), xy[0].Y()), mapped(xy[1].X(), xy[1].Y())).Value());
                 Handle(TColgp_HArray1OfPnt2d) pts = new TColgp_HArray1OfPnt2d(1, (int)xy.size());
                 for (size_t i = 0; i < xy.size(); i++)
                     pts->SetValue((int)i + 1, mapped(xy[i].X(), xy[i].Y()));
@@ -3615,7 +3617,7 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 interp.Perform();
                 if (!interp.IsDone())
                     throw Standard_Failure("an outline of the profile could not be laid on the face");
-                return interp.Curve();
+                return Handle(Geom2d_Curve)(interp.Curve());
             };
             std::vector<Handle(Geom2d_Curve)> out;
             if (start == m) {
