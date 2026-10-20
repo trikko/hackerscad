@@ -40,10 +40,19 @@ class ExportException : Exception
     this(string msg) { super(msg); }
 }
 
-/// Edges where a welded mesh is not a plain surface: shared by more than two
-/// triangles, as where two bodies of a part touch only along an edge or at a
-/// corner. Slicers often mend such a mesh wrongly.
-size_t nonManifoldEdges(const Mesh m)
+/// Edges where a welded mesh is not a closed, plain surface: `open`, with a
+/// triangle on one side only (a crack between triangles, which slicers report
+/// as open edges); `crowded`, shared by more than two triangles, as where two
+/// bodies of a part touch only along an edge or at a corner. Slicers often mend
+/// either wrongly.
+struct EdgeFaults
+{
+    size_t open;
+    size_t crowded;
+}
+
+/// ditto
+EdgeFaults edgeFaults(const Mesh m)
 {
     uint[ulong] uses;
     foreach (t; 0 .. m.tris.length / 3)
@@ -58,10 +67,13 @@ size_t nonManifoldEdges(const Mesh m)
             }
             uses[(cast(ulong) a << 32) | b]++;
         }
-    size_t n;
+    EdgeFaults f;
     foreach (c; uses)
-        n += c > 2;
-    return n;
+    {
+        f.open += c == 1;
+        f.crowded += c > 2;
+    }
+    return f;
 }
 
 /// Writes `parts` (at least one) to `file`. With `assembly` (a name), a
@@ -74,10 +86,21 @@ string[] exportParts(string file, ExportPart[] parts, BrepKernel kernel, string 
     string[] warnings;
     if ([".3mf", ".stl", ".zip"].canFind(extension(file).toLower))
         foreach (p; parts)
-            if (immutable n = nonManifoldEdges(p.mesh))
+        {
+            immutable f = edgeFaults(p.mesh);
+            if (immutable n = f.crowded)
                 warnings ~= format("part '%s' has %d edge%s shared by more than two faces: bodies touching only along an "
                     ~ "edge or at a corner; overlap them a little (or keep them apart) so the mesh prints as meant",
                     p.name, n, n > 1 ? "s" : "");
+            // the solid is closed, its triangles are not: a fault of the meshing, not of the model
+            if (immutable n = f.open)
+            {
+                import hackerscad.about : appIssues;
+                warnings ~= format("part '%s' was written with %d open edge%s, cracks between its triangles: the solid "
+                    ~ "is closed, hackerscad's meshing is at fault; a slicer may mend them wrongly. Please report it, "
+                    ~ "with the model, at %s", p.name, n, n > 1 ? "s" : "", appIssues);
+            }
+        }
     switch (extension(file).toLower)
     {
     case ".3mf":
@@ -164,4 +187,19 @@ unittest
     auto zip = new ZipArchive(stlZip([ExportPart("tank", m), ExportPart("pot", m)]));
     assert("tank.stl" in zip.directory && "pot.stl" in zip.directory);
     assert(zip.expand(zip.directory["pot.stl"]).length == 84 + 4 * 50);
+}
+
+unittest
+{
+    // a closed tetrahedron, then one with a face missing: three open edges; and a fin on one of its edges
+    Mesh m;
+    m.verts = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1];
+    m.tris = [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3];
+    assert(edgeFaults(m) == EdgeFaults(0, 0));
+    auto cracked = m;
+    cracked.tris = m.tris[0 .. 9];
+    assert(edgeFaults(cracked) == EdgeFaults(3, 0));
+    auto fin = m;
+    fin.tris = m.tris ~ [0u, 1u, 4u];
+    assert(edgeFaults(fin) == EdgeFaults(2, 1));
 }
