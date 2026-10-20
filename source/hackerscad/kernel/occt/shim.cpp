@@ -1452,7 +1452,8 @@ static TopoDS_Shape lofted(const TopoDS_Face &face, double height, double taper_
             rad.Normalize();
             return sd.ccw ? gp_XY(-rad.Y(), rad.X()) : gp_XY(rad.Y(), -rad.X());
         };
-        auto meet = [&](const Side &p, const Side &q, gp_XY near, gp_XY &out) -> bool {
+        // (guess, not "near": a macro in the Windows headers)
+        auto meet = [&](const Side &p, const Side &q, gp_XY guess, gp_XY &out) -> bool {
             std::vector<gp_XY> pts;
             auto lineCircle = [&](gp_XY a, gp_XY d, gp_XY c, double r) {
                 const gp_XY f = a - c;
@@ -1491,7 +1492,7 @@ static TopoDS_Shape lofted(const TopoDS_Face &face, double height, double taper_
                 return false;
             out = pts[0];
             for (const gp_XY &x : pts)
-                if ((x - near).SquareModulus() < (out - near).SquareModulus())
+                if ((x - guess).SquareModulus() < (out - guess).SquareModulus())
                     out = x;
             return true;
         };
@@ -9104,21 +9105,21 @@ int hc_normal_at(const hc_shape *s, const double p[3], double out[6])
         // the nearest face (the nearest point may be on an edge: a face's side)
         const TopoDS_Vertex at = BRepBuilderAPI_MakeVertex(gp_Pnt(p[0], p[1], p[2])).Vertex();
         TopoDS_Face best;
-        gp_Pnt near;
+        gp_Pnt foot;   // not "near": a macro in the Windows headers
         double dist = Precision::Infinite();
         for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
             BRepExtrema_DistShapeShape d(at, ex.Current());
             if (d.IsDone() && d.NbSolution() > 0 && d.Value() < dist) {
                 dist = d.Value();
                 best = TopoDS::Face(ex.Current());
-                near = d.PointOnShape2(1);
+                foot = d.PointOnShape2(1);
             }
         }
         if (best.IsNull())
             return 0;
         Handle(Geom_Surface) surf = BRep_Tool::Surface(best);
         ShapeAnalysis_Surface sas(surf);
-        const gp_Pnt2d uv = sas.ValueOfUV(near, 1e-7);
+        const gp_Pnt2d uv = sas.ValueOfUV(foot, 1e-7);
         gp_Pnt q;
         gp_Vec du, dv;
         surf->D1(uv.X(), uv.Y(), q, du, dv);
@@ -9128,7 +9129,7 @@ int hc_normal_at(const hc_shape *s, const double p[3], double out[6])
         n.Normalize();
         if (best.Orientation() == TopAbs_REVERSED)
             n.Reverse();
-        const double r[6] = {near.X(), near.Y(), near.Z(), n.X(), n.Y(), n.Z()};
+        const double r[6] = {foot.X(), foot.Y(), foot.Z(), n.X(), n.Y(), n.Z()};
         std::copy(r, r + 6, out);
         return 1;
     });
