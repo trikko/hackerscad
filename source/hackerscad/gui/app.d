@@ -1331,6 +1331,7 @@ final class MainWindow
                 inspectToggle.setActive(!inspectToggle.getActive());
         });
         action(app, "about", [], &showAbout);
+        action(app, "ai-agents", [], &showAi);
         action(app, "run-tests", ["F5"], &runTests);
         action(app, "build", ["<Primary>b"], () => build());
         action(app, "auto-rebuild", ["<Primary><Shift>b"], () => rebuildToggle.setActive(!rebuildToggle.getActive()));
@@ -1589,6 +1590,7 @@ private:
         auto look = new Menu;
         look.appendSubmenu("Style", style);
         auto app = new Menu;
+        app.append("AI Agents…", "win.ai-agents");
         app.append("About hackerscad", "win.about");
         app.append("Quit", "app.quit");
         auto menu = new Menu;
@@ -1705,6 +1707,11 @@ private:
     import hackerscad.gui.aboutwindow : AboutWindow;
     AboutWindow aboutDialog;
 
+    /// The AI Agents window while it is open, and what it shows: the requests agents sent this window.
+    import hackerscad.gui.aiwindow : AiWindow, AgentCall, AgentLog;
+    AiWindow aiWin;
+    AgentLog agentLog;
+
     /// The window of the model's @drawing sheets while it is open.
     import hackerscad.gui.drawingwindow : DrawingWindow;
     DrawingWindow drawingWin;
@@ -1791,6 +1798,16 @@ private:
         case ".dxf": write(out_, toDxf(sheet)); break;
         default: throw new Exception("a drawing is written as .pdf, .svg or .dxf");
         }
+    }
+
+    /// Opens (or brings forward) the AI Agents window: how to connect an agent, which one drives this window.
+    void showAi()
+    {
+        if (aiWin !is null)
+            return aiWin.present();
+        aiWin = new AiWindow(window, control ? control.name : "", () => &agentLog);
+        aiWin.onClosed = () { aiWin = null; };
+        aiWin.present();
     }
 
     void showAbout()
@@ -6538,8 +6555,17 @@ private:
     JValue userChange;
     ulong revision;     /// goes up at every change of the code
 
-    void handleControl(string method, JValue p, void delegate(JValue, string) reply)
+    void handleControl(string method, JValue p, string client, void delegate(JValue, string) reply)
     {
+        import std.datetime.systime : Clock;
+        agentLog.add(AgentCall(Clock.currTime, client, method));
+        immutable logged = agentLog.calls.length - 1;
+        auto plainReply = reply;
+        reply = (JValue r, string e) {
+            if (e.length && logged < agentLog.calls.length)
+                agentLog.calls[logged].error = e;
+            plainReply(r, e);
+        };
         if (agentText !is null)
             userChange = changedLines(agentText, text());
         // only: of the state a reply carries, the fields named (the rest of the reply stays), as state's own only

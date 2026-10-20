@@ -12,12 +12,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text has the docs stamp `54b93da3`. Before the first
+This text has the docs stamp `83b73278`. Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `54b93da3`:** this text is up to date.
+- **It prints `83b73278`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -60,7 +60,12 @@ format stamp):
   hcad_gui_* tools drive it (open, edit the code, set parameters, move the
   view, pick faces, select and measure, context menu, section plane, rollback,
   inspect (the solids and 2D profiles a line or function makes), save,
-  screenshot, state), so they see what you do. Points can be given in
+  screenshot, state), so they see what you do. Only these tools drive the
+  window: never through the screen (clicks and keys, computer use), its file
+  or its socket. If they are missing or fail, stop and tell the user to add
+  hackerscad's MCP server (the window's menu, AI Agents…, gives the command
+  for their agent and shows whether one is connected); hcad_gui_ai tells
+  which agents the window has seen. Points can be given in
   model millimetres (hcad_gui_project converts them). Each window has a name
   in its header bar; with several open, hcad_gui_windows lists them and the
   user may tell you which one ("work in blue-otter"). With none open, or to

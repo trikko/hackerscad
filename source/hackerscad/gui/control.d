@@ -17,8 +17,10 @@ import glib.types : PRIORITY_DEFAULT;
 import hackerscad.tool.guiclient : socketPath, controlDir, controlSocket, windowAlive, normalizeWindowName,
     randomWindowName, removeStaleChannels;
 
-/// Called on the main thread; must eventually call `reply` exactly once.
-alias Handler = void delegate(string method, JValue params, void delegate(JValue result, string error) reply);
+/// Called on the main thread; must eventually call `reply` exactly once. `client` is who sent the
+/// request, as its MCP server tells (the agent's name and version, "codex 0.48"), empty when not said.
+alias Handler = void delegate(string method, JValue params, string client,
+    void delegate(JValue result, string error) reply);
 
 /// The control channel of one window, under a name agents use to tell the
 /// windows apart: random at start, the user can change it.
@@ -219,6 +221,7 @@ final class ControlServer
             auto req = parseJSONComplete(buf[0 .. buf.indexOf('\n')]);
             auto method = req["method"].get!string;
             auto params = req.has("params") ? req["params"] : JSOB();
+            auto sender = req.has("client") ? req["client"].get!string : "";
 
             // run on the GTK thread and wait for the answer
             auto done = new Semaphore(0);
@@ -226,7 +229,7 @@ final class ControlServer
             string error;
             idleAdd(PRIORITY_DEFAULT, () {
                 try
-                    handler(method, params, (JValue r, string e) {
+                    handler(method, params, sender, (JValue r, string e) {
                         result = r;
                         error = e;
                         done.notify();

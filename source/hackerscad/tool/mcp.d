@@ -31,8 +31,10 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "Call hcad_docs with format: agents first: its rules avoid most mistakes (format: cheatsheet lists the "
     ~ "functions only, not the rules). Then iterate with hcad_render (it returns "
     ~ "dimensions, problems and pictures) until the model matches the request, then hcad_export. If the user "
-    ~ "has hackerscad open, hcad_gui_* tools show your work in their window: change its code with "
-    ~ "hcad_gui_edit, never by writing its file; with several windows, ask which one (never assume the most "
+    ~ "has hackerscad open, hcad_gui_* tools show your work in their window, and only they drive it: never "
+    ~ "through the screen (clicks, keys, computer use), its file or its socket; change its code with "
+    ~ "hcad_gui_edit. If these tools are missing or fail, stop and tell the user to connect hackerscad's MCP "
+    ~ "server (its menu, AI Agents…, gives the command). With several windows, ask which one (never assume the most "
     ~ "recent). With a window open, at the start of every turn, before thinking or editing: hcad_gui_state with "
     ~ "only [\"source_hash\", \"user_changed\"]; if the code changed, read it again (source: true) and work on "
     ~ "it, never on your earlier copy: the user may have edited it. To show an example in a window of its own, hcad_gui_launch it with code (or copy: a file), not "
@@ -72,6 +74,11 @@ void serve()
     {
         environment.remove("HCAD_MCP_RESTARTED");
         environment.remove("HCAD_MCP_REPLAY");
+        {
+            import hackerscad.tool.guiclient : guiClient;
+            guiClient = environment.get("HCAD_MCP_CLIENT", "");
+            environment.remove("HCAD_MCP_CLIENT");
+        }
         sendLine(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`);
     }
     version (Posix)
@@ -138,6 +145,11 @@ private void restart(string line, Worker worker)
         worker.stop();
         environment["HCAD_MCP_RESTARTED"] = "1";
         environment["HCAD_MCP_REPLAY"] = line;
+        // who the client is: it said so once, at the start, to the server before
+        {
+            import hackerscad.tool.guiclient : guiClient;
+            environment["HCAD_MCP_CLIENT"] = guiClient;
+        }
         stdout.flush();
         const(char)*[3] argv = [exePath.toStringz, "mcp".toStringz, null];
         execv(argv[0], argv.ptr);
@@ -246,6 +258,13 @@ JValue handle(JValue msg)
         case "initialize":
             {
                 auto requested = params.has("protocolVersion") ? params["protocolVersion"].get!string : "2025-06-18";
+                // who the agent is, told to the windows it drives (their AI menu shows it)
+                {
+                    import hackerscad.tool.guiclient : guiClient;
+                    auto name = params.safe!string("clientInfo", "name").or("");
+                    auto ver = params.safe!string("clientInfo", "version").or("");
+                    guiClient = (name.length ? name : "an MCP client") ~ (ver.length ? " " ~ ver : "");
+                }
                 JValue r = JSOB("protocolVersion", requested);
                 // the tools change when the program is rebuilt or updated (see restart)
                 r["capabilities"] = JSOB("tools", JSOB("listChanged", true));
@@ -1181,12 +1200,17 @@ JValue toolList()
             ~ "closes it; debug: true returns the debug information its Copy button copies (versions, system, screen, "
             ~ "renderer, frame times, fonts, model size) without opening it.",
             `"close": {"type": "boolean"}, "debug": {"type": "boolean"}`),
+        gui("hcad_gui_ai", "Which agents have driven the user's window through these tools (each as its MCP client "
+            ~ "named itself: you show there too), its latest requests with their errors, and the commands that "
+            ~ "connect each agent (MCP server and skill) on this installation; open: true opens the window's AI "
+            ~ "Agents window (where the user sees the same; asked to call this tool, an agent shows there by its name, which is how the user checks it is connected), close: true closes it.",
+            `"open": {"type": "boolean"}, "close": {"type": "boolean"}`),
         gui("hcad_gui_screenshot", "Picture of the user's hackerscad window, after the current evaluation finishes; "
             ~ "target cheatsheet pictures the cheatsheet window instead (open it with hcad_gui_cheatsheet), colour "
             ~ "the colour wheel (open it with hcad_gui_colour, wheel: true), about the About window (hcad_gui_about), "
-            ~ "drawing the model's @drawing in its window (Export › Show the drawing; opened if it is not, on "
+            ~ "ai the AI Agents window (hcad_gui_ai, open: true), drawing the model's @drawing in its window (Export › Show the drawing; opened if it is not, on "
             ~ "'drawing' by name).",
-            `"target": {"type": "string", "enum": ["window", "cheatsheet", "colour", "about", "drawing"]}, "drawing": {"type": "string"}`, `[]`),
+            `"target": {"type": "string", "enum": ["window", "cheatsheet", "colour", "about", "ai", "drawing"]}, "drawing": {"type": "string"}`, `[]`),
         gui("hcad_gui_state", "State of the user's window: file, parameters, parts, camera, problems, version; "
             ~ "annotations lists the marks drawn on the locked 3D view, the user's (by: user) and yours, each with "
             ~ "its colour's name and what lies under its key points (part, face, point in mm, selector; on the "
@@ -1681,7 +1705,7 @@ JValue callTool(string name, JValue args)
             break;
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
-            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_test", "hcad_gui_find", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
+            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_ai", "hcad_gui_test", "hcad_gui_find", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
             "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet",
             "hcad_gui_transform", "hcad_gui_colour", "hcad_gui_split", "hcad_gui_annotate":
         {

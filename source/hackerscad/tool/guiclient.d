@@ -167,6 +167,10 @@ string randomWindowName()
     return choice(adjectives) ~ "-" ~ choice(nouns);
 }
 
+/// Who sends the requests, told to the window with each (its AI menu shows it): the agent's name and
+/// version as it gave them to the MCP server ("codex 0.48"), set there; empty for the command line.
+__gshared string guiClient;
+
 /// Sends {"method": …, "params": …} to a window and returns the "result"
 /// member. Without a name, the only open window; with several, an error
 /// that lists them.
@@ -202,6 +206,8 @@ JValue guiRequest(string window, string method, JValue params)
 
     JValue req = JSOB("method", method);
     req["params"] = params;
+    if (guiClient.length)
+        req["client"] = guiClient;
     auto line = req.toJSON() ~ "\n";
     sock.send(line);
 

@@ -216,7 +216,13 @@ The folder for each agent:
 
 #### 3. Add the MCP server, too
 
-One command, for all your projects; then restart the agent. Name it `hcad`,
+One command, for all your projects; then restart the agent. In the
+application, the main menu's **AI Agents…** gives these commands with the path
+of your installation, shows which agent drives the window and what it asked,
+and what to ask your agent to check it is connected (it then shows there by its
+own name): an agent working on the window that never shows there
+is not using hackerscad's tools (it may be clicking through the screen, as
+Codex's computer use does on macOS). Name it `hcad`,
 as below: the skill tells the agent its tools (hcad_check, hcad_render…), and
 one server is enough (two, under different names, give the agent every tool
 twice).

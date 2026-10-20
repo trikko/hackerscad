@@ -467,7 +467,12 @@ format stamp):
   hcad_gui_* tools drive it (open, edit the code, set parameters, move the
   view, pick faces, select and measure, context menu, section plane, rollback,
   inspect (the solids and 2D profiles a line or function makes), save,
-  screenshot, state), so they see what you do. Points can be given in
+  screenshot, state), so they see what you do. Only these tools drive the
+  window: never through the screen (clicks and keys, computer use), its file
+  or its socket. If they are missing or fail, stop and tell the user to add
+  hackerscad's MCP server (the window's menu, AI Agents…, gives the command
+  for their agent and shows whether one is connected); hcad_gui_ai tells
+  which agents the window has seen. Points can be given in
   model millimetres (hcad_gui_project converts them). Each window has a name
   in its header bar; with several open, hcad_gui_windows lists them and the
   user may tell you which one ("work in blue-otter"). With none open, or to

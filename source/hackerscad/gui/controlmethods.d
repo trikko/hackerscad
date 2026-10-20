@@ -1543,6 +1543,37 @@ mixin template ControlMethods()
             showAbout();
             reply(JSOB("opened", true), null);
             return;
+        case "ai":
+            {
+                // the agents that sent this window requests, the latest ones, and how to connect one;
+                // {"open": true} opens the AI Agents window, {"close": true} closes it
+                import hackerscad.gui.aiwindow : agents, clientLabel, mcpCommand, skillCommands;
+                if (p.safe!bool("open").or(false))
+                    showAi();
+                if (p.safe!bool("close").or(false) && aiWin !is null)
+                    aiWin.close();
+                auto r = JSOB("window", control ? control.name : "");
+                JValue who = JSAB();
+                foreach (c; agentLog.clients)
+                    who ~= JValue(clientLabel(c));
+                r["agents"] = who;
+                JValue calls = JSAB();
+                foreach (c; agentLog.calls)
+                {
+                    auto j = JSOB("time", c.when.toISOExtString(0), "client", c.client, "method", c.method);
+                    if (c.error.length)
+                        j["error"] = c.error;
+                    calls ~= j;
+                }
+                r["calls"] = calls;
+                JValue connect = JSOB();
+                foreach (a; agents)
+                    connect[a.name] = JSOB("mcp", mcpCommand(a), "skill", skillCommands(a));
+                r["connect"] = connect;
+                r["ai_window_open"] = aiWin !is null;
+                reply(r, null);
+                return;
+            }
         case "annotate":
             {
                 // marks on the locked 3D view, a whiteboard shared with the user (see
@@ -1667,6 +1698,8 @@ mixin template ControlMethods()
                 // the About window, when open
                 if (arg("target") == "about" && aboutDialog is null)
                     return reply(JValue.init, "the About window is not open: open it with the about method first");
+                if (arg("target") == "ai" && aiWin is null)
+                    return reply(JValue.init, "the AI Agents window is not open: open it with the ai method, open: true");
                 // the drawing window: opened (on `drawing`, if given) when it is not
                 if (arg("target") == "drawing")
                 {
@@ -1676,6 +1709,7 @@ mixin template ControlMethods()
                 }
                 imported!"gtk.window".Window other = arg("target") == "cheatsheet" ? cheatsheet.widget
                     : arg("target") == "colour" ? colourWheel.win : arg("target") == "about" ? aboutDialog.window
+                    : arg("target") == "ai" ? aiWin.window
                     : arg("target") == "drawing" ? drawingWin.window : null;
                 // after a change GTK draws the window at its next frame, which
                 // the compositor holds back while the window is hidden or
