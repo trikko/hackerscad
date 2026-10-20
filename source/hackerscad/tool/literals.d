@@ -89,7 +89,7 @@ string literalsReport(string file, string original = null)
         import hackerscad.geom.meshfeatures : analyse, Surface, plausible;
         import hackerscad.tool.features : meshOf;
         immutable ext = original.extension.toLower;
-        auto mesh = [".stl", ".obj", ".3mf", ".step", ".stp"].canFind(ext) ? meshOf(original) : meshOf(file, original);
+        auto mesh = [".stl", ".obj", ".ply", ".3mf", ".glb", ".gltf", ".step", ".stp"].canFind(ext) ? meshOf(original) : meshOf(file, original);
         void add(double v, string what, bool place = false)
         {
             sizes ~= place ? plausible(v) : plausible(abs(v));

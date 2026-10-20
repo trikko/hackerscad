@@ -873,7 +873,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
 
     // ---- files: parts made elsewhere, inside the project directory only
     def("load", (ref CallArgs a) {
-        // load("part.stl", scale: 1): STL, OBJ and 3MF (mesh; STL and OBJ in mm) or STEP (exact B-rep);
+        // load("part.stl", scale: 1): STL, OBJ, PLY, 3MF and glTF (mesh; STL, OBJ and PLY in mm, glTF from metres, Z up)
+        // or STEP (exact B-rep);
         // load("logo.svg") and load("plate.dxf"): the drawing's closed outlines, a profile on XY
         import std.file : exists, read, readText, isFile;
         import std.path : buildNormalizedPath, absolutePath, extension, dirName;
@@ -925,18 +926,31 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                         throw new HcadError(Code.import_, e.msg, x.spanOf("path"));
                     break;
                 }
-            case ".stl", ".obj", ".3mf":
+            case ".stl", ".obj", ".ply", ".3mf", ".glb", ".gltf":
                 {
+                    // a glTF's buffers in files of their own: next to it, inside the project too
+                    const(ubyte)[] beside(string uri)
+                    {
+                        import std.uri : decodeComponent;
+                        auto f = buildNormalizedPath(absolutePath(decodeComponent(uri), dirName(file)));
+                        if (!f.startsWith(root ~ "/") || !exists(f) || !isFile(f))
+                            throw new MeshFormatException("the glTF buffer " ~ uri ~ " is not a file inside the project");
+                        return cast(const(ubyte)[]) read(f);
+                    }
                     auto mesh = ext == ".stl" ? readStl(cast(ubyte[]) read(file))
-                        : ext == ".obj" ? readObj(readText(file)) : read3mf(cast(ubyte[]) read(file));
+                        : ext == ".obj" ? readObj(readText(file))
+                        : ext == ".ply" ? readPly(cast(ubyte[]) read(file))
+                        : ext == ".glb" ? readGlb(cast(ubyte[]) read(file), &beside)
+                        : ext == ".gltf" ? readGltf(readText(file), null, &beside) : read3mf(cast(ubyte[]) read(file));
                     if (!mesh.isClosed)
-                        throw new HcadError(Code.kernel, "the mesh in " ~ p.s ~ " is not closed (it has holes or loose edges)",
-                            x.spanOf("path"));
+                        throw new HcadError(Code.kernel, "the mesh in " ~ p.s ~ " is not a closed solid: " ~ openness(mesh),
+                            x.spanOf("path"), "repair it first (in MeshLab or Blender: merge by distance, remove "
+                            ~ "duplicate faces, make it manifold)");
                     b = k.fromMesh(mesh);
                     break;
                 }
             default:
-                throw new HcadError(Code.import_, format("unsupported file type '%s' (use .stl, .obj, .3mf, .step, .stp, .svg or .dxf)", ext),
+                throw new HcadError(Code.import_, format("unsupported file type '%s' (use .stl, .obj, .ply, .3mf, .glb, .gltf, .step, .stp, .svg or .dxf)", ext),
                     x.spanOf("path"));
             }
         }

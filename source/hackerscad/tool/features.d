@@ -13,7 +13,7 @@ import hackerscad.geom.mesh;
 import hackerscad.geom.meshfeatures;
 import hackerscad.geom.vec;
 
-/// The triangles of `file`: a mesh (.stl, .obj, .3mf), a STEP file, or a
+/// The triangles of `file`: a mesh (.stl, .obj, .ply, .3mf, .glb, .gltf), a STEP file, or a
 /// model (.hcad: its part `part`, or all of them). Throws with a message
 /// for the user.
 Mesh meshOf(string file, string part = null)
@@ -26,7 +26,15 @@ Mesh meshOf(string file, string part = null)
     {
     case ".stl": return readStl(cast(const(ubyte)[]) read(file));
     case ".obj": return readObj(readText(file));
+    case ".ply": return readPly(cast(const(ubyte)[]) read(file));
     case ".3mf": return read3mf(cast(const(ubyte)[]) read(file));
+    case ".glb", ".gltf":
+        {
+            import std.path : dirName, buildPath;
+            const(ubyte)[] beside(string uri) => cast(const(ubyte)[]) read(buildPath(dirName(file), uri));
+            return ext == ".glb" ? readGlb(cast(const(ubyte)[]) read(file), &beside)
+                : readGltf(readText(file), null, &beside);
+        }
     case ".step", ".stp":
         {
             import hackerscad.kernel.occt.backend : OcctKernel;
@@ -57,7 +65,7 @@ Mesh meshOf(string file, string part = null)
             return all;
         }
     default:
-        throw new Exception(format("cannot read '%s': use .stl, .obj, .3mf, .step or .hcad", ext));
+        throw new Exception(format("cannot read '%s': use .stl, .obj, .ply, .3mf, .glb, .gltf, .step or .hcad", ext));
     }
 }
 

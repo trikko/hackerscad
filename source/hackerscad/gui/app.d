@@ -6352,7 +6352,7 @@ private:
         models.addSuffix("hcad");
         filters.append(models);
         auto meshes = new FileFilter;
-        meshes.setName("Meshes, CAD files and drawings, to use with load() in a model (*.stl, *.obj, *.3mf, *.step, *.svg, *.dxf)");
+        meshes.setName("Meshes, CAD files and drawings, to use with load() in a model (*.stl, *.obj, *.ply, *.3mf, *.glb, *.gltf, *.step, *.svg, *.dxf)");
         foreach (ext; importable)
             meshes.addSuffix(ext[1 .. $]);
         filters.append(meshes);
@@ -6376,7 +6376,7 @@ private:
     }
 
     /// Files a model can use with load(), not open as a model.
-    static immutable importable = [".stl", ".obj", ".3mf", ".step", ".stp", ".svg", ".dxf"];
+    static immutable importable = [".stl", ".obj", ".ply", ".3mf", ".glb", ".gltf", ".step", ".stp", ".svg", ".dxf"];
 
     /// Why `file` is not a model hackerscad can open (null if it is one).
     static string notAModel(string file)

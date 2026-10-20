@@ -710,7 +710,7 @@ JValue toolList()
         tool("hcad_features", "What a part given as a mesh is made of, to remodel it exactly: flat faces (normal, "
             ~ "offset), holes and shafts (diameter, axis, length, ISO clearance or tap drill they match), cones "
             ~ "(countersinks), spheres, roundings (radius, angle), and holes repeated on a circle or in a row, with "
-            ~ "plausible rounded sizes and the measured ones. 'path' is an .stl, .obj, .3mf or .step file (or an "
+            ~ "plausible rounded sizes and the measured ones. 'path' is an .stl, .obj, .ply, .3mf, .glb, .gltf or .step file (or an "
             ~ ".hcad model, 'part' one of its parts). Load the mesh as a see-through reference part "
             ~ "(@part(\"slategray\", alpha: 0.35, export: false) Solid original() => load(\"x.stl\");) to compare.",
             `"path": {"type": "string"}, "part": {"type": "string"}, `
@@ -733,7 +733,7 @@ JValue toolList()
             ~ "file), which sizes of it each one is: a hole's diameter or radius, where an axis or a flat face is. The "
             ~ "last step of a copy that matches: name the measures that matter (@param, immutable) and use the names.",
             `"path": {"type": "string"}, "original": {"type": "string"}`, `["path"]`),
-        tool("hcad_section", "The section of a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and "
+        tool("hcad_section", "The section of a part given as a mesh (.stl, .obj, .ply, .3mf, .glb, .gltf, .step; or an .hcad model and "
             ~ "its 'part') by a plane xy, xz or yz at 'at' mm along z, y or x: its closed outlines as straight lines, "
             ~ "arcs and whole circles with their sizes (fitted to the cut, plausibly rounded), and the same as a "
             ~ "hackerscad sketch ready to paste and extrude. For parts that are extrusions, cut them across. "
@@ -763,7 +763,7 @@ JValue toolList()
             ~ `"views": {"type": "integer"}, "view": {"type": "object"}, `
             ~ `"focus": {"type": ["integer", "array"], "items": {"type": "integer"}, "description": "entry numbers of the `
             ~ `report to look at closely: a close-up of each, from where it is in sight"}`, `["a", "b"]`),
-        tool("hcad_scan", "Cut a part given as a mesh (.stl, .obj, .3mf, .step; or an .hcad model and its 'part') "
+        tool("hcad_scan", "Cut a part given as a mesh (.stl, .obj, .ply, .3mf, .glb, .gltf, .step; or an .hcad model and its 'part') "
             ~ "all along an axis, every 'step' mm: each hole and pocket met with its shape (circle, rectangle, rounded "
             ~ "rectangle, hexagon (a nut trap), teardrop with the direction of its point, slot, D) and where it starts "
             ~ "and ends (found to a hundredth of a mm), and where the outside keeps one size. Scan along x, y and z "

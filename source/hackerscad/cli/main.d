@@ -39,7 +39,7 @@ usage:
       llms.txt; --stamp which docs this build has: an installed skill that
       shows another is out of date
   hcad features FILE [--part NAME] [--json]
-      what a mesh (.stl .obj .3mf), a STEP file or a model is made of, to
+      what a mesh (.stl .obj .ply .3mf .glb), a STEP file or a model is made of, to
       remodel it: flat faces, holes and shafts, cones, spheres, roundings,
       chamfers, surfaces turned round an axis, patterns of holes, with
       plausible sizes
