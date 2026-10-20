@@ -194,7 +194,6 @@ private string esc(string s) => s.replace("&", "&amp;").replace("<", "&lt;").rep
 /// colours of the logo.
 string cheatsheetHtml(string logoSvg = null)
 {
-    import hackerscad.about : appVersion;
     auto o = appender!string;
     o ~= `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>hackerscad cheatsheet</title>
@@ -214,9 +213,9 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 </style></head><body>
 <header>`;
     o ~= logoSvg;
-    o.formattedWrite(`<div><h1>hackerscad cheatsheet</h1><p>version %s · s is a Solid, p a Profile, f a Frame · values never change: operations give new ones</p></div></header>
+    o ~= `<div><h1>hackerscad cheatsheet</h1><p>s is a Solid, p a Profile, f a Frame · values never change: operations give new ones</p></div></header>
 <main>
-`, appVersion);
+`;
     o ~= "<section><h2>How do I…</h2><dl>\n";
     foreach (r; recipes)
         o.formattedWrite("<dt>%s</dt><dd>%s</dd>\n", esc(r.code), esc(r.task));

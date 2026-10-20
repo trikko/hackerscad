@@ -8,7 +8,6 @@ import std.string : lineSplitter, strip, startsWith;
 import std.uni : toLower;
 
 import hackerscad.lang.builtins : librarySources;
-import hackerscad.about : appVersion;
 
 enum agentGuide = `# hackerscad for agents
 
@@ -420,7 +419,7 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad @VERSION@ (docs stamp `@STAMP@`). Before the first
+This text has the docs stamp `@STAMP@`. Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
@@ -561,7 +560,7 @@ INTRO";
 string agentsText()
 {
     import std.array : replace;
-    return agentsBody.replace("@VERSION@", appVersion).replace("@STAMP@", docsStamp());
+    return agentsBody.replace("@STAMP@", docsStamp());
 }
 
 private string agentsBody()
@@ -572,19 +571,18 @@ private string agentsBody()
 }
 
 /// What the agents' documentation of this build is (`hcad docs --stamp`):
-/// the version and a checksum of the texts, so that an installed skill can
-/// tell whether it was made by the hcad it runs with. Builds whose texts are
-/// the same share it.
+/// a checksum of the texts, so that an installed skill can tell whether it
+/// was made by the hcad it runs with. Builds whose texts are the same share
+/// it, whatever their version.
 string docsStamp()
 {
     import std.digest.crc : crc32Of;
     import std.digest : toHexString;
-    import std.format : format;
     string all = agentsBody ~ reference();
     foreach (g; guides)
         all ~= g.text;
     auto sum = crc32Of(all);
-    return format("%s-%s", appVersion, toHexString(sum)).toLower;
+    return toHexString(sum).idup.toLower;
 }
 
 /// SKILL.md: AGENTS.md with the front matter of an installable skill (`hcad docs --skill`).

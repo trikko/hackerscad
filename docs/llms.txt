@@ -12,7 +12,7 @@ reference first and follow the rules in AGENTS.md.
 
 ## Setup and updates
 
-This text was made by hcad @VERSION@ (docs stamp `@STAMP@`). Before the first
+This text has the docs stamp `@STAMP@`. Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):

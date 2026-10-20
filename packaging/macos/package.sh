@@ -7,7 +7,7 @@
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 brew="$(brew --prefix)"
-version="${VERSION:-$(sed -n 's/.*appVersion = "\(.*\)";/\1/p' "$root/source/hackerscad/about.d")}"
+version="${VERSION:-nightly}"
 arch="$(uname -m)"
 cd "$root"
 dub build -b release --compiler=ldc2

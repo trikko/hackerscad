@@ -355,7 +355,7 @@ version (Windows)
         if (!hasMesa)
             Viewport.glHelp = "This computer's OpenGL is too old for the 3D view: it happens in virtual "
                 ~ "machines without 3D acceleration, and without a graphics driver.\n\n"
-                ~ "Download hackerscad-" ~ appVersion ~ "-windows-mesa.zip from the page of hackerscad's "
+                ~ "Download hackerscad-windows-mesa.zip from the page of hackerscad's "
                 ~ "releases and unzip it into the folder that holds hackerscad.exe, then start hackerscad "
                 ~ "again: it draws with a software OpenGL.\n\n"
                 ~ "Or install the graphics driver, or turn on 3D acceleration in the virtual machine.";
@@ -2221,7 +2221,7 @@ private:
         import gdk.display : Display;
         import gdk.rectangle : Rectangle;
         import gtk.settings : Settings;
-        string[] r = [format("%s %s", appName, appBuild), "system: " ~ systemText(),
+        string[] r = [format("%s %s", appName, appVersion), "system: " ~ systemText(),
             format("GTK %s.%s.%s, libadwaita %s.%s.%s", imported!"gtk.global".getMajorVersion(),
                 imported!"gtk.global".getMinorVersion(), imported!"gtk.global".getMicroVersion(),
                 imported!"adw.global".getMajorVersion(), imported!"adw.global".getMinorVersion(),
@@ -6806,7 +6806,7 @@ private:
     {
         JValue j = JSOB("path", path, "status", statusText);
         j["window"] = control ? control.name : null;
-        j["version"] = appBuild;
+        j["version"] = appVersion;
         if (exeChanged())
             j["outdated"] = "hackerscad was rebuilt or updated after this window started: ask the user to restart it "
                 ~ "to get the newest tools";

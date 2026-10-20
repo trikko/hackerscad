@@ -2,7 +2,7 @@
 # Runs inside the AppImage container: builds a clean copy of /src and packs
 # it with linuxdeploy (and its GTK plugin) into /dist.
 set -e
-version="${VERSION:-$(sed -n 's/.*appVersion = "\(.*\)";/\1/p' /src/source/hackerscad/about.d)}"
+version="${VERSION:-nightly}"
 
 # a clean copy: the host's build/ holds objects for another system (the CI
 # builds them in this same image: KEEP_NATIVE=1 keeps the shim)

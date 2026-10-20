@@ -165,7 +165,7 @@ int main(string[] args)
     if (args.length >= 2 && (args[1] == "--version" || args[1] == "version"))
     {
         import hackerscad.about;
-        writeln(appName, " ", appBuild, " - ", appSummary);
+        writeln(appName, " ", appVersion, " - ", appSummary);
         writeln(appCopyright, " - ", appWebsite);
         writeln("license: ", appLicense);
         writeln("\nbuilt with:");

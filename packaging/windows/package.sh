@@ -6,7 +6,7 @@
 # Wine: wine dist/hackerscad/bin/hackerscad.exe).
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-version="${VERSION:-$(sed -n 's/.*appVersion = "\(.*\)";/\1/p' "$root/source/hackerscad/about.d")}"
+version="${VERSION:-nightly}"
 cd "$root"
 
 case "$(uname -s)" in
@@ -98,7 +98,8 @@ done
 # hcadSoftwareGl in gui/app.d), in a zip of its own (few need it, it weighs
 # 180 MB): unzipped into the same folder, it lands in bin\mesa with what only
 # it needs, never next to the program, where it would replace the graphics
-# card's OpenGL
+# card's OpenGL. Its name has no version, so that the program's help can name it;
+# it is made again with each package, from the same MSYS2 whose DLLs it shares
 mesa="$root/dist/mesa/hackerscad/bin/mesa"
 rm -rf "$root/dist/mesa"
 mkdir -p "$mesa"
@@ -132,4 +133,4 @@ pack() {   # pack ZIP DIR: the hackerscad folder inside DIR
     echo "dist/$1"
 }
 pack "hackerscad-$version-windows-x86_64.zip" "$root/dist"
-pack "hackerscad-$version-windows-mesa.zip" "$root/dist/mesa"
+pack "hackerscad-windows-mesa.zip" "$root/dist/mesa"

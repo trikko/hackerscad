@@ -82,7 +82,7 @@ private:
         name.addCssClass("title-2");
         name.setXalign(0);
         titles.append(name);
-        auto ver = new Label("Version " ~ appBuild);
+        auto ver = new Label("Version " ~ appVersion);
         ver.setXalign(0);
         titles.append(ver);
         auto by = new Label(appCopyright);
