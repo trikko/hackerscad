@@ -111,12 +111,14 @@ else
     enum shortcutKey = "Ctrl";
 }
 
-/// What the window opens on when there is no file: a small model that
-/// shows the main ideas.
-enum startModel = import("00_carlo.hcad");
-
-/// What New starts with: Carlo, to replace with one's own model.
-enum newModelTemplate = `// Delete this and write your own model in its place.
+/// What a new window and New start with: Carlo, with who he is and where
+/// to go from there, to replace with one's own model.
+enum newModelTemplate = `// Carlo is hackerscad's mascot: a little crocodile that
+// keeps bags of biscuits closed. To see how he is made,
+// open the example: Examples › Carlo. Ready to print on
+// Printables: https://www.printables.com/model/345684-bag-clip
+//
+// Delete this and write your own model in its place.
 
 import std.shapes;
 import std.carlo;
@@ -124,6 +126,8 @@ import std.carlo;
 @part
 Solid body()
 {
+    // carlo() takes parameters to change him: teeth,
+    // height, gap for the bag... e.g. carlo(teeth: 4)
     return carlo();
 }
 `;
@@ -1366,7 +1370,7 @@ final class MainWindow
             startText = null;
         }
         else
-            buffer.setText(exists(path) ? readText(path) : startModel);
+            buffer.setText(exists(path) ? readText(path) : newModelTemplate);
         markSaved();
         buffer.connectChanged(() {
             revision++;

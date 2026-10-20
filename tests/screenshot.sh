@@ -1,5 +1,5 @@
 #!/bin/bash
-# Used by the CI: starts the application on the startup example and, once it
+# Used by the CI: starts the application on the Carlo example and, once it
 # is drawn, captures the whole screen.
 # Usage: tests/screenshot.sh <name> <hackerscad command…>
 #   -> window-<name>.png (from hackerscad) and screen-<name>.png (from the OS)
@@ -11,7 +11,8 @@ work="$(mktemp -d)"
 # On Windows the runner's console would cover our window
 case "$(uname -s)" in Linux|Darwin) ;; *) powershell -NoProfile -Command "(New-Object -ComObject Shell.Application).MinimizeAll()"; sleep 1 ;; esac
 
-HCAD_SCREENSHOT_WAIT=4 "$@" --screenshot="$PWD/window-$name.png" "$work/new.hcad" &
+cp "$(dirname "$0")/../examples/00_carlo.hcad" "$work/carlo.hcad"
+HCAD_SCREENSHOT_WAIT=4 "$@" --screenshot="$PWD/window-$name.png" "$work/carlo.hcad" &
 pid=$!
 
 # hackerscad saves its screenshot after the first evaluation, then stays open for 4 more seconds
