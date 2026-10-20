@@ -61,7 +61,7 @@ hc_shape *hc_rect(double w, double h);
 hc_shape *hc_circle(double r);
 hc_shape *hc_ellipse(double rx, double ry);
 hc_shape *hc_polygon(const double *xy, int n);
-hc_shape *hc_text(const char *utf8, double size, const char *font);
+hc_shape *hc_text(const char *utf8, double size, const char *font, int aspect, double spacing, double line_spacing);
 /* Rounds every corner of the profile; corners that cannot be rounded stay. */
 hc_shape *hc_profile_round(const hc_shape *s, double r);
 /* Grows (d > 0) or shrinks (d < 0) the profile, with rounded outer corners. */
@@ -154,7 +154,9 @@ hc_shape *hc_from_mesh(const float *verts, int nverts, const int *tris, int ntri
 hc_shape *hc_polyline(const double *xyz, int n, int closed);
 hc_shape *hc_spline(const double *xyz, int n, int closed);
 hc_shape *hc_spline_poles(const double *xyz, int n);
-int hc_font_known(const char *font);
+int hc_font_known(const char *font, int style);
+const char *hc_font_family(const char *font);
+const char *hc_font_families();
 hc_shape *hc_helix(double r, double pitch, double height, int left);
 hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, double taper);
 /* a right-handed ISO metric thread on z = 0 .. length, built from its boundary; ends chamfered by `chamfer` */

@@ -193,10 +193,19 @@ interface BrepKernel
     Brep polygon(const(double)[] xy);
     /// A smooth closed curve through the points on XY, filled.
     Brep splineProfile(const(double)[] xy);
-    Brep text(string s, double size, string font);
-    /// Whether a font of that name (or an alias of one, "Sans") is installed, as text() looks for it;
-    /// if not, `similar` gets a few installed ones whose names share a word with it.
-    bool fontKnown(string font, out string[] similar);
+    /// A text's outline in a font (a family, or a font file's path) and style (0 regular, 1 bold,
+    /// 2 italic, 3 bold italic), its letters `spacing` mm further apart than the font sets them and its
+    /// lines `lineSpacing` times as far.
+    Brep text(string s, double size, string font, int style, double spacing, double lineSpacing);
+    /// Whether a font of that name (or an alias of one, "Sans") is installed, as text() looks for it: 1,
+    /// 2 without that style; if not, 0, and `similar` gets a few installed ones whose names share a word
+    /// with it.
+    int fontKnown(string font, int style, out string[] similar);
+    /// The installed family a font name means (an alias, "Sans", turned into its font); empty if none.
+    string fontFamily(string font);
+    /// Every installed family, with the styles it has as bits (1 regular, 2 bold, 4 italic, 8 bold
+    /// italic); other weights are families of their own ("JetBrains Mono Light").
+    string[] fontFamilies(out int[] styles);
     /// Rounds the corners of a profile.
     Brep profileRound(Brep s, double r);
     /// Grows (d > 0) or shrinks (d < 0) a profile.

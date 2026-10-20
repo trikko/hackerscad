@@ -6374,3 +6374,21 @@ unittest
         writeln(t.profile.area, " ", t.profile.bbox.max);
     }, "400\n86\n200 mm^2\n100 mm^2 [10 mm, 10 mm, 0 mm]");
 }
+
+unittest
+{
+    // text's weight and style: bold, a style said in the font's name, a weight given by name; letters and
+    // lines spaced
+    expectOut(q{
+        auto plain = text("BASIL", size: 9.mm, font: "Sans").area;
+        writeln(text("BASIL", size: 9.mm, font: "Sans", bold: true).area > plain * 1.2);
+        writeln(text("BASIL", size: 9.mm, font: "Sans Bold").area == text("BASIL", size: 9.mm, bold: true).area);
+        auto w = text("BASIL", size: 9.mm).bbox.size.x;
+        writeln(round((text("BASIL", size: 9.mm, spacing: 2.mm).bbox.size.x - w).to!double));
+        auto h = text("A\nB", size: 9.mm);
+        auto h2 = text("A\nB", size: 9.mm, lineSpacing: 2);
+        writeln(h2.bbox.size.y > h.bbox.size.y + 5.mm);
+    }, "true\ntrue\n8\ntrue");
+    assert(error(`unittest { text("x", weight: "fat"); }`).message.canFind("no font weight is called 'fat'"));
+    assert(error(`unittest { text("x", weight: 700, bold: true); }`).message.canFind("not both"));
+}

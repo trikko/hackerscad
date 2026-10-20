@@ -17,7 +17,7 @@ Most printed parts are flat outlines made thick, turned round an axis, or cut in
 | polygon through points | `polygon([vec(0, 0), vec(30, 0), vec(0, 20)])`; `smooth: true` a smooth closed curve through them |
 | slot | `slot(30.mm, 6.mm)` (end to end along X), `slot(p, q, w: 6.mm)` (round two centres) |
 | teardrop | `teardrop(d: 5.mm)`, a round hole with a 45° point towards +Y, to print sideways; `flat: true` cuts the point |
-| text | `text("LABEL", size: 8.mm, font: "Sans")`, starting at the origin on the baseline; `.centered` centres it |
+| text | `text("LABEL", size: 8.mm, font: "Sans")`, starting at the origin on the baseline; `.centered` centres it; `weight: "light"` (thin … black, or 100 … 900), `bold: true`, `italic: true`, `spacing: 1.mm` between the letters, `lineSpacing: 1.5` between the lines |
 | a drawing | `load("logo.svg")`, `load("plate.dxf")`: their closed outlines, sizes from the file |
 
 ```d

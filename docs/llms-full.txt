@@ -52,7 +52,7 @@ dimensions and pictures, compare them with the request, fix, then export.
   faces.from(foot)) follows the @params, a filter on e.mid.z does not.
   faces.top is the highest face (after an upright with a round top is
   added, that top, no longer the foot's); faces.normal(Z) also takes
-  curved faces whose normal at their centre points up; faces.from(foot)
+  curved faces facing up on the whole (a dome); faces.from(foot)
   has neither problem, and a frame can be taken on the solid before
   (foot.frame(faces.top)). edges.chain(edges.…) takes a curved outline
   made of many pieces whole (the edges running on without a corner),
@@ -406,7 +406,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
 ## What stays the same as D
 - **Lexical:** identifiers; numbers (`42`, `1_000`, `2.5`, `0xFF`, `2.5e3`); strings `"…"`, `` `…` ``, `r"…"` (the last two WYSIWYG as in D); comments `//`, `/* */` and nested `/+ +/`.
 - **Declarations:** `immutable`, `const`, `auto`, typed variables, `struct` (fields, defaults, methods), functions (with `{ … }` or `=> expr;` bodies), `import`, `unittest`, UDAs.
-- **Statements:** `if`/`else`, `foreach` (`foreach (i, x; arr)`, `foreach (i; 0 .. n)`, `foreach_reverse`), `for`, `while`, `break`, `continue`, `return`, `assert`, `switch` (with `case a, b:` and `default:`).
+- **Statements:** `if`/`else`, `foreach` (`foreach (i, x; arr)`, `foreach (i; 0 .. n)`, `foreach_reverse`), `for`, `while`, `break`, `continue`, `return`, `assert`, `switch` (with `case a, b:` and `default:`). A condition (of `if`, `while`, `&&`, `!`, `?:`, a `filter` or `any` predicate) is a `bool`, or an integer as in D (0 is false); a length, a solid or a text there is an error: compare it (`e.length > 2.mm`).
 - **Assignments:** `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `~=`, `++`, `--`.
 - **Expressions:**
   - D precedence, including `^^`; ternary `?:`.
@@ -432,6 +432,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - Declared types (`Length h`, `Solid f()`) are checked on calls, returns and assignments, with clear errors.
   - There are no templates: functions are passed as normal arguments (`xs.filter(x => x > 0)`). `!` is only used for type conversions (`to!string`).
 - **Value semantics.** Arrays, associative arrays and structs behave as values: `b = a; b[0] = 9;` does not change `a`.
+- **An array literal holds one type**, as in D: `[1, "a"]` or `[1.mm, 2.deg]` is an error naming the two elements; whole and fractional numbers mix, and bare numbers with Lengths (`[1.mm, 2]`, the bare number in mm, as in `vec`).
 - **Purity.**
   - Locals inside functions are mutable.
   - Module-level declarations (`immutable`, and even `auto`) are read-only and evaluated lazily, in any order. Constants use `immutable`; `enum` is reserved for enumerations.
@@ -443,18 +444,18 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - Imports cannot leave the project directory or the library folder they were found in.
   - There is no file, network or process access.
   - Evaluation steps, recursion depth and array sizes are limited.
-- **`writeln`** writes to hackerscad's console (and to the JSON output for agents), not to stdout.
+- **`writeln`** writes to hackerscad's console (and to the JSON output for agents), not to stdout. A shape is written as a short summary (`Solid 30 × 20 × 10 mm, volume 6000 mm³`, `Profile 30 × 20 mm, area 600 mm²`, `Path 82.3 mm long, open`), a selection taken from a solid with how many it selects (`faces (3)`).
 
 ## hackerscad additions
 - **Units** are UFCS functions: `60.mm`, `2.5.cm`, `1.m`, `1.inch`, `45.deg`, `0.5.rad`.
-  - Values carry a dimension (`Length`, `Angle`, `Area`, `Volume`), and arithmetic checks it: `Length * Length` is an `Area`, while `60.mm + 45.deg` is an error.
+  - Values carry a dimension (`Length`, `Angle`, `Area`, `Volume`), and arithmetic checks it: `Length * Length` is an `Area`, while `60.mm + 45.deg` is an error. An angle multiplied with a length, or a length divided by an angle, counts in radians as the plain ratio it is (an arc over its radius): `r * 90.deg` is the length of a quarter of a circle of radius r, a `Length`, and `arc / 90.deg` is the radius of that arc, a `Length` too (`arc / r` is a plain number, the angle in radians).
   - **Bare numbers** passed where a length is expected use the file's default unit: `mm`, or the unit set with `@unit(inch) module name;`. Values keep their unit, so libraries written with different default units combine correctly.
   - Mixing bare and dimensioned numbers in arithmetic (`60.mm + 5`) is an error. Scaling is fine (`2 * 60.mm`).
   - A dimensioned number as a bare one: `d.to!double` is the bare number that means it in this file, a length in the file's unit (millimetres, as `d / 1.mm`, or inches under `@unit(inch)`; squared for an area, cubed for a volume), an angle in degrees (as `a / 1.deg`); `d.to!int` the same when it is whole. To mix it with bare numbers: `c.y + d.to!double / 2`, or give the other side its unit: `vec(6.25.mm, 31.5.mm)`.
   - Bare angles passed to features (`rotate(z: 45)`) are degrees. `sin`/`cos` take radians for bare numbers, as in D.
 - **Vectors:** `vec(10.mm, 5.mm)`, `vec(x, y, z)`, with `.x .y .z .xy .length .normalized`, `dot`, `cross`, `distance`. Vectors compare with a small tolerance.
 - **Directions:** `X`, `Y`, `Z`, `-X`…
-- **`@param("description", min:, max:, step:, choices:)`** above **`immutable name = default;`** declares a parameter. It can be overridden from the GUI, from the CLI (`-D name=80.mm`, or `-D name=80` in the model unit) and by agents, and is checked against its limits.
+- **`@param("description", min:, max:, step:, choices:)`** above **`immutable name = default;`** declares a parameter. It can be overridden from the GUI, from the CLI (`-D name=80.mm`, or `-D name=80` in the model unit; for a string, `-D style=square` is the word itself when it names nothing, else quote it: `-D style='"square"'`) and by agents, and is checked against its limits.
 - **`@preset("name", value)`** on a parameter gives its value in a named preset (`--preset name`, or the preset menu in the GUI). A preset is the set of values declared under its name; parameters without a value for it keep their default.
   - Parameters never change during an evaluation: their value is decided beforehand, from default, then preset, then explicit override.
   - Like a configuration table: every parameter is a column, every preset a row.
@@ -476,8 +477,8 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
 - **Solids and booleans:**
   - `a + b` union, `a - b` difference, `a & b` intersection; `s += x` inside functions.
   - `hull(a, b, …)` or `hull([a, b, …])`: the smallest convex shape around solids and profiles (two spheres make a capsule, four cylinders a plate with round corners); profiles in one plane give a profile, `hull(circle(r: 4.mm), circle(r: 4.mm).move(x: 20.mm))` a slot. Curved surfaces become flat facets within 0.05 mm. Their flat faces the hull lies on keep their tags. `hull(a, b, grow: 2.mm)` is the hull grown that much all round, its edges and corners rounded (at most 2% farther, never nearer): a case round what it holds, quicker and surer than `.offset` on a hull of thousands of faces.
-  - `minkowski(a, b)`: `a` moved by every point of `b`. With a sphere (a circle for profiles) it rounds every edge and corner exactly, like `s.offset(r)`; with another convex shape (a box, a cylinder) it is made of flat facets, and one of the two shapes must be convex. Their flat faces, moved out, keep their tags.
-  - `s.offset(d)` grows a solid by `d` (or shrinks it, `d` negative), round where it turns; `sharp: true` moves its faces and extends them until they meet, the edges staying sharp (a box stays a box).
+  - `minkowski(a, b)`: `a` moved by every point of `b`. With a sphere (a circle for profiles) it rounds every edge and corner exactly, like `s.offset(r)`; with another convex shape (a box, a cylinder) it is made of flat facets, and one of the two shapes must be convex. Their flat faces, moved out, keep their tags; `a`'s own tags and references stay.
+  - `s.offset(d)` grows a solid by `d` (or shrinks it, `d` negative), round where it turns; `sharp: true` moves its faces and extends them until they meet, the edges staying sharp (a box stays a box). Holes it grows over (a hole's radius or more) close up: they are filled first.
 - **Printing:** `teardrop(d: 5.mm)` (in a sketch `s.teardrop(c, d: 5.mm)`) is a round hole with a 45° point towards +Y: cut on a wall (`carlo().cut(teardrop(d: 3.4.mm), on: faces.farthest(-Y), through: true)`) the point is up and the hole prints without supports (`angle:` another point, `flat: true` cuts it at the circle's top). `faces.overhanging()` selects the faces facing down more steeply than 45° from a wall (`faces.overhanging(60.deg)` another angle; faces resting on the bed are not counted), `s.overhangs(45.deg)` is their area and `s.thinWalls(0.8.mm)` the surface over walls thinner than that: `assert(part.thinWalls == 0.mm ^^ 2)` in a unittest keeps a model printable. The Printability check box of the display menu marks both on the model.
 - **Profiles from solids:** `s.section(XZ)` (any plane: `s.section(s.plane(faces.top).offset(-2.mm))`) is the cut of the solid by the plane, a profile lying in it; `s.projection` is the solid's shadow seen from above, a profile on XY, and `s.projection(XZ)` its shadow on any plane, cast along the plane's normal (curved surfaces within 0.02 mm; its outline read back as lines, arcs and circles, so that it extrudes and sweeps as fast as one drawn). Both can be extruded, offset, combined like any profile.
 - **Mass:** `s.centroid` is the centre of mass; `s.mass(density: 1.24)` the mass in grams for a density in g/cm³ (PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85); `s.inertia(density: 1.24)` the principal moments of inertia about the centre of mass, ascending, in g·mm².
@@ -488,26 +489,26 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - `box(x, y, z)`, `cylinder(r | d, h)`, `cone(r1 | d1, r2 | d2, h)`, `sphere(r | d)`, `torus(major, minor)` (round Z, centred on the origin: major to the middle of the tube, minor its radius).
 - **Profiles** (2D shapes on the XY plane, type `Profile`):
   - The shapes are those of a sketch (below), with the same names and arguments: a profile's shape is a one-shape sketch with everything given, centred on the origin unless a point is given (a vector, `vec(10, 5)` or `[10, 5]`). `rect(w, h)` (`rect(20.mm)`, a square), `rect(p, q)` (two opposite corners), `rect(p, w:, h:)` (from its lower left corner) or `rect(center: c, w:, h:)`, with `angle: 30.deg` (rotated about its centre, its first side that far from X: a slanted rectangle anywhere is `rect(center: vec(15.4, 3.3), w: 5.6.mm, h: 14.mm, angle: 45.deg)`) and `corner: 3.mm` (the four corners rounded); `circle(r | d)` or `circle(c, r | d)`; `ellipse(rx, ry)` or `ellipse(c, rx:, ry:)`, with `angle:`; `polygon(6, d: 10.mm)` or `polygon(c, 6, d: 10.mm)`, regular (d/r through the corners; `fit: "sides"`: the circle the sides touch, `d` across the flats; `angle:` the direction of its first corner, else its first side lies at the bottom, horizontal); `slot(length, w)` (a stadium, length end to end along X; `angle:` turned, `center:` elsewhere) or `slot(p, q, w:)` (round two centres); `teardrop(r | d, angle:, flat:)` or `teardrop(c, r | d, …)` (see Printing).
-  - Not sketch shapes: `polygon([vec(0, 0), vec(30, 0), vec(0, 20)])` (through the points; `smooth: true`, a smooth closed curve through them), `text("text", size: 10.mm, font: "Sans")` (starting at the origin on the baseline) and `load("outline.svg")` (see Importing parts).
-  - `s.contains(p)`: whether point `p` lies inside a solid (on its surface: no), or inside a profile's area (`p` taken onto its plane); e.g. to choose the half of a cut that holds a point.
+  - Not sketch shapes: `polygon([vec(0, 0), vec(30, 0), vec(0, 20)])` (through the points; `smooth: true`, a smooth closed curve through them), `text("text", size: 10.mm, font: "Sans")` (starting at the origin on the baseline; `weight: "light"`, thin … black or 100 … 900, the nearest the font has installed; `bold: true`, `italic: true`, a style at the end of the font's name counting too, `"Sans Bold"`; `spacing: 1.mm` more between the letters, `lineSpacing: 1.5` times between the lines) and `load("outline.svg")` (see Importing parts).
+  - `s.contains(p)`: whether point `p` lies inside a solid (on its surface: no), or inside a profile's area (`p`, a world point, taken onto the profile's plane); e.g. to choose the half of a cut that holds a point. A profile drawn on a face or lying in another plane gives its `bbox`, `spots` and `outline` where it lies, in world coordinates, as `contains` reads them.
   - A profile's parts: `p.outer` (the outline without its holes), `p.holes` (each hole filled, a Profile each), `p.pieces` (its separate regions, each with its holes).
-  - Combine with `+ - &`: profiles overlap, add up and cut each other, where a sketch draws one outline; a sketch's `s.profile` is a Profile too, so the two mix (`s.profile - circle(d: 5.mm)`). Profiles move, turn, scale and mirror like solids: `p.move(x: 10.mm, y: 5.mm)`, `p.rotate(30.deg)` or `p.rotate(z: 30)` (in its plane, about the origin; `around: q` about a point), `p.scale(2)` or `p.scale(x: 2, y: 3)`, `p.mirror(X)` (across the line through the origin with that normal). `.round(r)` rounds the corners; `.offset(d)` grows (d > 0) or shrinks it; `.area`. `p.across(X)` stands it up across X as `extrude(along: X)` does (its x along Y, its y up Z; `across(Y)`: its x along X): `loft([a.across(X), b.across(X).move(x: 20.mm)])` lofts along X.
-  - `.extrude(h)` makes a solid along +Z (negative h goes down); options `shear: vec(dx, dy)` (the top moved that much sideways from the bottom, the sides leaning straight: an oblique prism), `taper: 3.deg` (the sides lean in going away from the profile, whichever way the solid goes: up, down with a negative height, along X or Y; staying flat and meeting at sharp edges: the outline narrows and the holes widen; a negative taper the other way; `h` is still the height along the axis, and an edge or hole of the profile that would close up before the top is an error), `symmetric: true`, `twist: 90.deg` (the profile turns around Z as it rises, evenly: twisted vases, spiral columns; `twist: 2 * 360.deg` two turns; not with `taper`). `along: Y` stands the profile up across Y (its x along X, its y up Z) and pushes it towards +Y, `along: X` across X (its x along Y, its y up Z) towards +X; a negative height goes the other way: a prism along X or Y without turning anything. A profile lying in another plane, a section (`body.section(XZ.offset(10.mm)).extrude(2.mm)`), one turned or moved whole, or one drawn on a face, is extruded across its own plane, along its normal, from where it lies.
-  - `.revolve()`: turned around the axis, standing up: the profile's x is the radius and its y the height along Z (pots, bottles, knobs). `.revolve(axis: X, angle: 180.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`), without standing up; `angle:` turns less than all the way.
-  - On a face or plane, add or remove material in one step: `carlo().extrude(circle(d: 6.mm), on: frame, depth: 5.mm)` grows outwards along the frame's Z; `carlo().cut(circle(d: 6.mm), on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. Both accept `taper:`; `on:` also takes a face selector (`on: faces.top`) or a plane, and `at: vec(…)` a point, brought onto the face, where the profile's origin goes (`body.cut(circle(d: 3.mm), on: faces.top, at: vec(5.mm, 2.mm, 0.mm), depth: 2.mm)`); a solid in place of the profile is placed as it is, its z = 0 on the face and +Z out of it, no depth: `body.cut(hole(M3, 6.mm, "counterbore"), on: faces.top, at: vec(…))`.
+  - Combine with `+ - &`: profiles overlap, add up and cut each other, where a sketch draws one outline; a sketch's `s.profile` is a Profile too, so the two mix (`s.profile - circle(d: 5.mm)`). Profiles move, turn, scale and mirror like solids: `p.move(x: 10.mm, y: 5.mm)`, `p.rotate(30.deg)` or `p.rotate(z: 30)` (in its plane, about the origin; `around: q` about a point), `p.scale(2)` or `p.scale(x: 2, y: 3)`, `p.mirror(X)` (across the line through the origin with that normal). `.round(r)` rounds the corners; `.offset(d)` grows (d > 0) or shrinks it (shrunk to nothing, an empty profile); `.area`. A difference that takes all of a profile is an empty profile too (`isEmpty`), still a Profile; extruding one is an error that says so. `p.across(X)` stands it up across X as `extrude(along: X)` does (its x along Y, its y up Z; `across(Y)`: its x along X): `loft([a.across(X), b.across(X).move(x: 20.mm)])` lofts along X.
+  - `.extrude(h)` makes a solid along +Z (negative h goes down); options `shear: vec(dx, dy)` (the top moved that much sideways from the bottom, the sides leaning straight: an oblique prism), `taper: 3.deg` (the sides lean in going away from the profile, whichever way the solid goes: up, down with a negative height, along X or Y; staying flat and meeting at sharp edges: the outline narrows and the holes widen; a negative taper the other way; `h` is still the height along the axis, and an edge or hole of the profile that would close up before the top is an error), `symmetric: true` (half the height each side of the profile, which is the middle of the solid: a taper narrows both ways from it, a twist turns half each way), `twist: 90.deg` (the profile turns around Z as it rises, evenly: twisted vases, spiral columns; `twist: 2 * 360.deg` two turns; not with `taper`). `along: Y` stands the profile up across Y (its x along X, its y up Z) and pushes it towards +Y, `along: X` across X (its x along Y, its y up Z) towards +X; a negative height goes the other way: a prism along X or Y without turning anything. A profile lying in another plane, a section (`body.section(XZ.offset(10.mm)).extrude(2.mm)`), one turned or moved whole, or one drawn on a face, is extruded across its own plane, along its normal, from where it lies.
+  - `.revolve()`: turned around the axis, standing up: the profile's x is the radius and its y the height along Z (pots, bottles, knobs). `.revolve(axis: X, angle: 180.deg)`: around an axis in the profile's plane (a direction through the origin or an `Axis`), without standing up; `angle:` turns less than all the way. A profile drawn on a face or plane, or lying in one (a section, one turned), turns where it lies, and its axis is a world one, as everything else in that plane (a direction through the plane's origin, an `Axis` anywhere): the half section of a lathe part drawn on XZ, as the Front view shows it, turns round Z with `revolve(axis: Z)`, or `revolve()`, which turns a profile standing upright round its own y axis.
+  - On a face or plane, add or remove material in one step: `carlo().extrude(circle(d: 6.mm), on: frame, depth: 5.mm)` grows outwards along the frame's Z; `carlo().cut(circle(d: 6.mm), on: frame, depth: 2.mm)` digs in, `through: true` cuts all the way. The depth is always positive, the call saying which way (a negative one is an error: use the other call). Both accept `taper:`; `on:` also takes a face selector (`on: faces.top`) or a plane, and `at: vec(…)` a point, brought onto the face, where the profile's origin goes (`body.cut(circle(d: 3.mm), on: faces.top, at: vec(5.mm, 2.mm, 0.mm), depth: 2.mm)`); a solid in place of the profile is placed as it is, its z = 0 on the face and +Z out of it, no depth: `body.cut(hole(M3, 6.mm, "counterbore"), on: faces.top, at: vec(…))`.
   - Threads: `body.thread(face, "M8")` cuts a thread on a cylindrical face: on the outside of a shaft (made at the thread's nominal diameter, ⌀8) the grooves, on the wall of a hole (made at the tap drill, about ⌀6.8 for M8) the thread a screw fits. The size names the standard: ISO metric `"M8"` (coarse) or `"M8x1"` (fine), unified inch `"1/4-20 UNC"`, `"1/4 UNF"`, `"#10-32"`, trapezoidal for lead screws `"Tr12x3"`, ACME `"1/2-10 ACME"`, buttress `"S20x4"` (DIN 513), BSP pipe threads `"G1/2"` (parallel) and `"R1/2"` (tapered), `"1/2 NPT"` (tapered; the shaft is the pipe's outside diameter), Edison lamp bases `"E27"`, `"E14"`, bottle and jar necks `"28-400"` (SPI/GPI 400, 410, 415 from 13 to 120 mm), PET bottles `"PCO 1881"`, `"PCO 1810"`, and the garden hose `"3/4 GHT"`; which to use, and how to recognise one, under Threads: choosing one, recognising one. Tapered threads have their nominal size at the fixed end and narrow by 1 in 16 on the diameter towards the tip of a shaft, or into a hole. `taper: 1.79.deg` makes any thread conical the same way, the angle each side leans from the axis (R and NPT have 1.79°, 1 in 16; `taper: 0.deg` makes them parallel): a tapered metric plug, a conical thread that tightens as it goes in. `pitch: 1.mm` alone puts a 60° thread of that pitch on the cylinder's own diameter. The thread covers the whole face, or `length: 10.mm` or `turns: 8` from the free end (the tip of a shaft, the opening of a hole; `flip: true` the other end). `starts: 2` for multi-start threads, `left: true` left-handed (every thread is at the same angle at its free end: a shaft and a hole threaded from the same free end mesh, whatever their lengths, so a nut cut out of a tube threaded over a bolt's tip runs on it; the Examples menu's dual-thread bolt does so), `clearance: 0.2.mm` the play for printed parts (0.15 mm by default in holes, none on shafts), `chamfer: false` without the 45° bevel at the free end. In the 3D view, right-click a cylinder: **Thread** lists the sizes that fit it. Every thread is built exactly from its boundary (each corner of the profile on its own helix, on a cone for tapered ones, a ruled face between two of them; the profile repeated in a lead for more starts) and cut to the face: a second or less for an M8 × 25. The `threads` library (`threadedRod`, `tappedHole`) makes loose rods and tools to cut.
 - Extrude and cut faces: `carlo().extrude(faces.top, depth: 5.mm)` sweeps flat faces of the body outwards along their normals and adds the material, `carlo().cut(faces.top, depth: 2.mm)` sinks them (a negative depth to extrude does the same). `along: vec(1, 0, 1)` sweeps them in another direction, slanted sides: material is added when the direction leaves the face, removed when it enters. In the 3D view: right-click a face, Extrude face… or Cut face….
 - **Paths, sweeps and lofts:**
-  - Paths (type `Path`): `path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)])` (straight segments, mitred corners; `closed: true`), `spline([…])` (a smooth curve through the points), `helix(r | d, pitch:, height:, left: false)` (around +Z, starting at (r, 0, 0)). Paths move, rotate and mirror like solids.
+  - Paths (type `Path`): `path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)])` (straight segments, mitred corners; `closed: true`), `spline([…])` (a smooth curve through the points), `helix(r | d, pitch:, height:, left: false)` (around +Z, starting at (r, 0, 0)). Paths move, rotate and mirror like solids; `p.length` is how long one is, along it.
   - `path([…], bend: 5.mm)` rounds every corner with an arc of that radius, as a bent tube or wire: straight stretches and arcs of a known radius (unlike `spline`, curved all along); a corner whose sides are too short for its arc is an error naming it.
   - From a sketch: `s.path` is what the sketch draws (its lines, arcs, curves and circles that are not construction) as one path, open or closed, where the sketch lies; drawn with its constraints, so it follows them. A sketch drawing several separate chains gives them all in `s.paths` (in the order they are drawn), and `s.path` is then an error. Mind that `s.polyline` closes unless `closed: false`.
   - From a solid's edges: `body.path(edges.loop(faces.top))` joins the selected edges end to end (a bead along a rim, a groove round a lid); they must make one chain.
   - From two views: `path(top.path, front.path)` is the curve in space that, seen across the first path's plane, is the first, and across the second's, the second: draw a handle or a bent rod from above and from the front, each in its own sketch, and sweep along the result. The two must cover the same stretch along the line they share.
   - `profile.sweep(path)`: the profile, drawn on XY around the origin, starts at the beginning of the path, normal to it, with its +Y kept towards world +Z (towards +Y when the path starts vertically). `frenet: true` follows the curvature (use it for helices: springs, threads). `twist: 360.deg` turns the profile once around the path on the way, evenly along it (twisted ribbons, ropes; not with `frenet`). Holes in the profile give tubes.
-  - How the profile turns about the path (its roll; it always stays across the path): by itself as little as it can, which after many bends in space leaves its +Y wherever it ends up. To decide it, give one of: `twist: t => 60.deg * sin(t * 720.deg)`, a function of how far along the path (0 at the start, 1 at the end) giving how far it has turned there (counted from the start: `t => …` at 0 is the profile as placed); `up: Z`, its +Y as close to that way as it can be all along (a road or a rail that does not bank; an error, with where, if the path runs that way somewhere, as a vertical stretch does for `up: Z`); `guide: rail`, another path, its +Y towards the point of the rail as far along it (halfway along the path, halfway along the rail): it works where `up` cannot, a path going up and over.
+  - How the profile turns about the path (its roll; it always stays across the path): by itself as little as it can, which after many bends in space leaves its +Y wherever it ends up. To decide it, give one of: `twist: t => 60.deg * sin(t * 720.deg)`, a function of how far along the path (0 at the start, 1 at the end) giving how far it has turned there (counted from the start: `t => …` at 0 is the profile as placed); `up: Z`, its +Y as close to that way as it can be all along (a road or a rail that does not bank; an error, with where, if the path runs that way somewhere, as a vertical stretch does for `up: Z`); `guide: rail`, another path, its +Y towards the point of the rail as far along it (halfway along the path, halfway along the rail): it works where `up` cannot, a path going up and over. Along a helix the profile keeps to its axis by itself (a square wire coils with its sides along the axis, over any number of turns), and a twist is counted from there. On a path with sharp corners (`path` without `bend:`) these work too: each stretch between corners is swept with its roll, and the stretches meet in the planes that halve the corners, mitred. A path that turns right back on itself cannot be swept along: an error says where.
   - `loft([circle(r: 20), rect(30).move(z: 40), circle(r: 10).move(z: 80)])`: a smooth solid through profiles placed in space; `ruled: true` gives flat sides. Profiles with holes are lofted as tubes when every profile has the same number of holes.
 - **Constrained sketches** (2D, on XY or on a face): `auto s = sketch();` then add geometry and constraints and take `s.profile`.
-  - Areas: the profile fills what lies inside an odd number of loops: a loop inside another is a hole, and where two loops overlap (two circles crossing) the overlap is a hole too. `s.fill(at)` makes the area holding `at` full whatever the loops say, `s.fill(at, full: false)` empty (`at` a vector, or a point of the sketch, which keeps it in its area as the constraints move it; such a point, used by nothing else, does not count among the degrees of freedom; the last fill in an area counts). In the window the full areas are tinted, and the sketch bar's ◩ turns an area full or empty with a click inside it.
+  - Areas: the profile fills what lies inside an odd number of loops: a loop inside another is a hole, and where two loops overlap (two circles crossing) the overlap is a hole too. Where more than two lines or arcs meet at a point (a line across a rectangle from side to side, an arc from one corner to another; a line or arc ending on another between its ends splits it there), there are no simple loops: every area they close is full. `s.fill(at)` makes the area holding `at` full whatever the loops say, `s.fill(at, full: false)` empty (`at` a vector, or a point of the sketch, which keeps it in its area as the constraints move it; such a point, used by nothing else, does not count among the degrees of freedom; the last fill in an area counts). In the window the full areas are tinted, and the sketch bar's ◩ turns an area full or empty with a click inside it.
   - Construction geometry: `construction: true` on any geometry call or shape (`s.line(p, q, construction: true)`, `s.rect(…, construction: true)`) makes guides to constrain to, drawn dashed in the window, never part of the profile.
   - Geometry: `s.point(x, y)` (where it starts: constraints move it; `fixed: true` pins it there), `s.line(p, q)`, `s.arc(center, start, end)` (counter-clockwise; their points sketch points or vectors, which become new points: to join two lines, give the second the first one's `.end`), `s.circle(center, r: | d:)` (without r/d the radius is left to the constraints), `s.polyline([p1, p2, vec(…)], closed: true)` (returns the lines; vectors become new points), `s.ellipse(center, rx:, ry:, angle:)` (rx along its own x axis, `angle` from X, ry across; what is not given is left to the constraints, the turn too: `s.ellipse(c, rx: 20.mm, ry: 12.mm)` with c fixed leaves 1 degree of freedom), `s.spline([p1, p2, vec(…)], closed: false)` (a smooth curve through the points, in order, vectors becoming new points: open, its two ends join lines and arcs as theirs do; `closed: true` goes round back to the first point, a loop of its own; it bends evenly, as a thin strip bent through the points would, and its points move it: constrain them; `.points`, `.start`, `.end`, `.closed`, `.length` along the curve). `construction: true` geometry helps constraining but is not part of the outline.
   - Shapes, made of the geometry above with their constraints, the same shapes and arguments as the profiles above (the points they need are new; a vector where a point goes, here and in `s.circle` and `s.ellipse`, becomes a new point starting there; without the centre, `s.circle(d: 10.mm)`, `s.rect(40.mm, 20.mm)`, `s.polygon(6, d: 10.mm)`, `s.slot(30.mm, 6.mm)`, `s.teardrop(d: 5.mm)`, it is a new point at the origin, free to move): `s.rect(p, q)` (opposite corners), `s.rect(p, w:, h:)` (one corner, p the lower left) or `s.rect(center: c, w:, h:)` returns its 4 lines p → (q.x, p.y) → q → (p.x, q.y), that is bottom, right, top, left when p is the lower left corner; they are horizontal and vertical, so a rectangle of new corners has 4 degrees of freedom, 0 with w, h and a fixed centre (a construction diagonal holds the centre in its middle); `angle: 30.deg` turns it (its first side that far from X: the sides are then square to each other and parallel in pairs instead of horizontal and vertical), `angle: "free"` leaves the turn to the constraints (`s.parallel(r[0], line)` lays it along a slanted line); `corner: r` rounds the four corners. `s.polygon(center, n, r: | d:, fit:, angle:)` returns the n lines of a regular polygon, its corners on a construction circle of that radius (`fit: "corners"`, the default), or its sides touching it with `fit: "sides"` (`d` across the flats: a nut's spanner size); `angle` is the direction of the first corner from the centre, else the turn is left free (1 degree of freedom: `s.horizontal(lines[0])` takes it; it starts with the first side at the bottom, horizontal, where the profile has it); `s.polygon([p, q, vec(0, 20)])` is the closed polyline through the points. `s.slot(p, q, w:)` returns `[line, arc round q, line, arc round p]`: two half circles joined by lines tangent to them, 0 degrees of freedom with p, q fixed and w given; `s.slot(length, w, center: c, angle:)` the same by its length end to end, along X unless turned (a construction line joins the two centres, c in its middle). `s.teardrop(c, r: | d:, angle:, flat:)` returns `[arc, line, line]`: an arc round c and two lines tangent to it meeting above it, `angle` (45° unless given) from the vertical; `flat: true` cuts the point with a line touching the circle's top (`[arc, line, flat, line]`); 0 degrees of freedom with c fixed and r given. Sizes given (w, h, r, d, rx, ry, angle, corner: one dimension for the four corners) are dimensions, shown and editable in the sketch view (a slot's length is not: the dimension would be between its centres).
@@ -517,11 +518,11 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - Reading back: `p.x`, `p.y`, `p.pos`, `line.start`, `line.end`, `line.length`, `line.mid`, `c.center`, `c.radius`, `e.center`, `e.rx`, `e.ry`, `e.angle`, `s.dof` (degrees of freedom left; conflicting constraints are an error naming them), `s.solved`.
   - `s.profile` solves and returns the closed loops of non-construction lines, arcs, circles and ellipses as a `Profile` (inner loops are holes). Lines, arcs and curves with a free end (open) stay in the sketch, drawn, but out of the profile, with a warning naming them. Under-constrained sketches still work, with a warning listing the lines of the free points; conflicting constraints are an error pointing at them.
   - **On a face:** `auto s = carlo().sketch(faces.top);` draws on that flat face, with the axes of `carlo().frame(faces.top)` (origin at the face's centre; on a wall x to the right and y up seen from outside; `origin:` and `x:` as frame takes them). The face's edges are in the sketch from the start, as references: fixed construction geometry, no degree of freedom, shown in the sketch view. `s.edges` lists them, each loop from its lowest edge counter-clockwise like a rect's sides (bottom, right, top, left), the outside first; `s.origin` is the origin as a fixed point; `s.project(edges.…)` flattens other edges of the solid onto the plane as references (a hole's rim under the face; a circle seen aslant becomes an ellipse). Constrain to them as to any geometry: `s.distance(c.center, s.edges[0], 5.mm)`, `s.concentric(c, s.project(edges.filter(…))[0])`. `sketch(frame)` and `sketch(plane)` draw on a frame or plane, with `s.origin` and no edges.
-  - The profile of such a sketch lies where it was drawn: `carlo().cut(s.profile, depth: 2.mm)` and `carlo().extrude(s.profile, depth: 1.mm)` need no `on:`, `s.profile.extrude(3.mm)` stands on the face, `revolve` turns it there and `loft` goes through profiles drawn on different planes. Moved, offset or combined with a profile of no place it stays in its plane (in the sketch's coordinates); two profiles drawn on different faces do not combine.
+  - The profile of such a sketch lies where it was drawn: `carlo().cut(s.profile, depth: 2.mm)` and `carlo().extrude(s.profile, depth: 1.mm)` need no `on:`, `s.profile.extrude(3.mm)` stands on the face, `revolve` turns it there and `loft` goes through profiles drawn on different planes. Moved, offset, tiled, hulled or combined with a profile of no place it stays in its plane (in the sketch's coordinates); profiles lying in one plane (a sketch's, a section, one moved up) combine, two in different planes are an error.
 - **Transforms:** `move(v | x:, y:, z:)`, `rotate(x:, y:, z:)` or `rotate(angle, axis:)` (a direction through the origin, or an `Axis` anywhere), `scale(k)` or `scale(x: 2, y: 0.5, z: 1)` (a factor each: an ellipsoid from a sphere; the faces become freeform; `around: p` keeps point p where it is instead of the origin), `mirror(X)` (plane through the origin with that normal) or `mirror(plane)` (any plane), `color(c)`.
-- **Placement:** `a.nextTo(b, X, gap: 10.mm)`, `a.on(b)`, `a.align(b, x: "center", z: "min")` (each axis `"min"`, `"center"` or `"max"` of the bounding boxes).
+- **Placement:** `a.nextTo(b, X, gap: 10.mm)` (beside `b` that way, only its x changing; an oblique direction like `vec(1, 2, 0)` puts its centre on the line from `b`'s centre that way, the boxes touching, `gap` further along it), `a.on(b)`, `a.align(b, x: "center", z: "min")` (each axis `"min"`, `"center"` or `"max"` of the bounding boxes).
 - **Patterns:** `hole.linearPattern(4, step: vec(10, 0, 0))`, `peg.circularPattern(6, axis: Z, angle: 360.deg)` give one solid with all the copies (subtract it to cut them all).
-- **Axes:** `axis(origin: vec(10, 0, 0), direction: Z)`, `axis(p1, p2)` (through two points), `carlo().axis(edges.filter(…))` (the line of a straight edge, or the centre and normal of a circular one such as a hole rim), `frame.axis(X)` (an axis of a frame). Fields: `origin`, `direction`. Use them with `rotate(angle, axis: a)` and `circularPattern(n, axis: a)`.
+- **Axes:** `axis(origin: vec(10, 0, 0), direction: Z)`, `axis(p1, p2)` (through two points), `carlo().axis(edges.filter(…))` (the line of a straight edge, or the centre and normal of a circular one such as a hole rim), `shaft.axis(faces.largest)` (the axis of a cylinder's, a cone's or a turned face), `frame.axis(X)` (an axis of a frame). Fields: `origin`, `direction`. Use them with `rotate(angle, axis: a)` and `circularPattern(n, axis: a)`.
 - **Surfaces** (type `Surface`: faces with an edge open, no inside):
   - Made by sweeping a curve instead of a profile: `path([vec(-8.mm, 0), vec(8.mm, 0)]).sweep(route)` (the curve drawn on XY around the origin, as a profile is, placed across the path in the same way: a ribbon through the middle of anything swept along that path), or by lofting through paths: `loft([path1, path2])` (`ruled: true` for flat strips).
   - `body.split(surface)`: the pieces the surface cuts the solid into (it must reach across it), sorted as `split(plane)` sorts them; `pieces.push(from: surface, by: 3.mm)` moves each away from the surface, across it where it is nearest. A tube split lengthwise and opened: `tube.split(ribbon).push(from: ribbon, by: 3.mm)`, the ribbon swept along the tube's own path.
@@ -555,7 +556,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   ```
 - **Profiles on curved faces:** `body.cut(profile, wrap: faces.largest, depth: 1.mm)` and `body.extrude(profile, wrap: …, depth:)` lay a flat profile on one face of any shape, rolled onto it like a label on a bottle: lengths are kept along the face, exactly on cylinders, cones and extrusions, nearly on lofts and revolved shapes (stretched a little where the face swells away from the line through the anchor), stretched on a sphere. The profile's x runs across the face (round a cylinder), its y along it, read from outside (on a hole's wall, from inside it); its origin goes to the front of the face (the side facing -Y, halfway along) or to `at:`, a point over it. `project: faces.…` carries it along a direction instead (`along:`, else the face's normal at that point), from the plane touching the face there, as a light casts it: stretched where the face turns away, for a logo on the front of a ball. The edges are curves on the face, not a mesh; text, tilings and sketches all work. Except on a cylinder (where everything is carried exactly), a curve shorter than 0.6 mm, a small rounding, is laid as its chord. Pockets and reliefs wholly inside the face are built at once, the face holed and the floors sewn in, with no boolean: a hundred regions on a vase in a second or two; so are cuts through a wall whose other side is the face moved in (a shelled cup, a tube: both faces holed, the sides between). Regions crossing the face's edges (a tiling's cells cut at its rim, a letter over it), or cuts into other faces, take the boolean way, slower on curved freeform faces (seconds for dozens of regions); only those: the regions wholly inside are still built at once.
 - **Knurling:** `body.knurl(faces.largest, kind: "diamond" | "straight" | "diagonal", pitch: 1.6.mm, depth: 0.5.mm, angle: 30.deg, margin: 0.5.mm)` raises a grip on a face of any shape (a knob, a handle, a slider's pad, the side of a lofted grip), laid on it as `wrap:` lays a profile: diamonds, ridges along the face or leaning ones, `margin` in from its edges; round a face that closes on itself (a cylinder, a loft through rings) a whole number round, so it closes too; built on the face with no boolean.
-- **Tilings:** `region.tiles(kind: "hex", size: 10.mm, gap: 2.mm)` fills a profile with cells `gap` apart, as one profile: subtract it for a grille (`plate - region.tiles(…)`), or cut or extrude it on a face for pockets or reliefs (`body.extrude(r.tiles(…), on: faces.top, depth: 1.mm, taper: 30.deg)`, slanted sides). Kinds: `"square"`, `"hex"`, `"triangle"`, `"brick"`, `"octagon"` (with small squares between), `"diamond"`, `size` the distance between neighbouring cells' centres; `"voronoi"`, cells round points scattered about `size` apart (`jitter:` 0, hexagons, to 1, the default; `relax:` passes that even them out; `seed:`), or round `points:` of your own. Your own tile: `tile:` a profile or a list of them (a sketch's profile, say), repeated by `step: [a, b]`; the copies (shrunk by the gap) must not overlap, and an error says which two do. Cells crossing the region's border are cut there, `whole: true` keeps only those wholly inside. `round:` rounds each cell, `angle:` turns the tiling, `origin:` puts a cell there (else at the region's centre). `scale:` a factor for each cell and `keep:` which cells stay, as functions of the cell's centre: `scale: (Vec2 c) => 1 - c.length / 80.mm` grades the holes, `keep: (Vec2 c) => noise(c.x / 20, c.y / 20) > 0` leaves some out. A region on a curved surface takes a noise texture instead (`kind: "edges"`).
+- **Tilings:** `region.tiles(kind: "hex", size: 10.mm, gap: 2.mm)` fills a profile with cells `gap` apart, as one profile: subtract it for a grille (`plate - region.tiles(…)`), or cut or extrude it on a face for pockets or reliefs (`body.extrude(r.tiles(…), on: faces.top, depth: 1.mm, taper: 30.deg)`, slanted sides). Kinds: `"square"`, `"hex"`, `"triangle"`, `"brick"`, `"octagon"` (with small squares between), `"diamond"`, `size` the distance between neighbouring cells' centres; `"voronoi"`, cells round points scattered about `size` apart (`jitter:` 0, hexagons, to 1, the default; `relax:` passes that even them out; `seed:`), or round `points:` of your own. Your own tile: `tile:` a profile or a list of them (a sketch's profile, say), repeated by `step: [a, b]`; the copies (shrunk by the gap) must not overlap, and an error says which two do. Cells crossing the region's border are cut there, `whole: true` keeps only those wholly inside. With no gap (the default) the cells touch, and are joined into one area. A region drawn on a face or lying in another plane (a section) is tiled in that plane, and the tiles stay there (`body.cut(cells, depth: 1.mm)` needs no `on:`). `round:` rounds each cell, `angle:` turns the tiling, `origin:` puts a cell there (else at the region's centre). `scale:` a factor for each cell and `keep:` which cells stay, as functions of the cell's centre: `scale: (Vec2 c) => 1 - c.length / 80.mm` grades the holes, `keep: (Vec2 c) => noise(c.x / 20, c.y / 20) > 0` leaves some out. A region on a curved surface takes a noise texture instead (`kind: "edges"`).
 - **Separate bodies:** `s.pieces` lists the disconnected bodies of a solid (e.g. after a cut through it), ordered by position along X, then Y, then Z; pick one with `[i]` or sort them (`s.pieces.sort((a, b) => a.volume > b.volume)`). A list of solids also says which are where: `.above(plane)` and `.below(plane)` (by centre of mass, so the pieces of a split, which touch the plane, count), `.crossing(plane)` (those it cuts through), `.nearest(point)`, `.largest`, `.smallest`, and `.top`, `.bottom`, `.left`, `.right`, `.front`, `.back` (the highest, lowest…): `carlo().split(cutPlane).below(cutPlane).largest`. To make parts of them, see `@parts`.
 - **Push and pull:** `s.push(from: ref, by: 5.mm)` moves a solid away from a point, a Plane or an Axis, `s.pull(to: ref, by: 5.mm)` towards it, along the line from the reference to the solid's centre of mass (from a plane along its normal, from an axis square to it). On a list each solid goes its own way, so the pieces of a cut spread apart, an exploded view: `carlo().split(cutPlane).push(from: cutPlane, by: 4.mm)`. A solid whose centre is on the reference stays, with a warning.
 - **Importing parts:** `load("part.stl")`, `load("part.obj")`, `load("part.3mf")`, `load("part.step")`, with `scale:` (STL and OBJ are read in mm; 3MF uses its own unit and build transforms). Meshes become solids (coplanar triangles merged into faces, closed meshes only), STEP files keep their exact geometry; both can be cut, filleted, measured and selected like any other solid. Paths are relative to the model file and must stay inside the project directory. To remodel a mesh exactly, set it straight first if it came tilted (`load("part.stl").aligned` lies on its largest flat face, longest along X, centred in X and Y and resting on z = 0); `writeln(load("part.stl").features)` lists what it is made of (flat faces, holes and shafts with the ISO size they match, cones, spheres, roundings, chamfers with their size, surfaces turned round an axis, patterns of holes, with plausible sizes; `hcad features part.stl` on the command line, `hcad_features` for agents); load it as a see-through reference part to compare. `hcad section part.stl --plane xy --at 3` (`hcad_section` for agents) gives a cut across it as lines, arcs and circles with their sizes, and as a sketch ready to paste and extrude. `clone.deviation(original)` is how far apart the two surfaces are at most (`assert(clone.deviation(original) < 0.2.mm)` in a unittest); `hcad compare model.hcad --a clone --b original -o map.png` (`hcad_compare`) also gives the mean, the share within a tolerance, a picture of the clone coloured green where it matches, yellow at the tolerance, red beyond, and the patches of each surface the other does not follow (area, offset, facing: a missing chamfer or countersink shows there). `hcad diff` lists the pieces of material to add or cut, the thin differences apart, and the section that shows each piece; `hcad scan file.stl --axis z` the holes and pockets met along an axis with their shapes and depths; `hcad section … --compare` draws two sections on each other and `--projection` reads a shadow's outline; `hcad fit model.hcad --a clone --b original --param width` tunes @param lengths until the two match (and says when the shape, not the sizes, differs); `hcad match` matches the operations of the two one by one (a nut trap cut in steps is one hole); `hcad section … --region u0,v0,u1,v1` keeps the outlines inside a rectangle of the plane (a lettering); `hcad literals model.hcad --original original` lists the numbers the model repeats and which sizes of the original they are, to name them as @params once the copy matches. `hcad review model.hcad --a clone --b original -o review.png` (`hcad_review`) runs the whole comparison round in one: distances both ways, material, drawings outside and of the voids, and close-ups of the first entries of each, framed where they are in sight; `--look x,y,z` adds a close-up of what is at that point. The reports of compare, diff, lines and match are numbered: `--focus 2 -o close.png` (`focus: 2`) draws a close-up of entry 2, from where it is in sight (what lies in front cut away when nothing is); `hcad render … --from right --look-at 1,2,13 --size 14 --opaque -o detail.png` (`view`, `opaque` for agents) takes a picture from anywhere, close on a detail, and compare and lines take the same `--from`, `--look-at`, `--size`, `--cut`. Drawings become profiles on XY: `load("logo.svg")` and `load("plate.dxf")` give their closed outlines (an outline inside another is a hole, inside a hole an island), ready to extrude; SVG sizes come from the drawing's width and height in mm, cm, in or pt (plain numbers are mm), DXF from its $INSUNITS (mm when unset); curves within 0.05 mm. Open lines, text and images are left out.
@@ -566,30 +567,30 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
 - **Face provenance:** every face remembers the feature that created it (primitive, fillet, shell, split…). Clicking a face in the GUI highlights it and jumps to that line.
 - **Topological selectors** are resolved against the solid the feature is applied to:
   - predicates: `edges.filter(e => e.isParallel(Z))`, `faces.filter(f => f.normal == Z)`;
-  - shortcuts: `edges.parallel(Z)`, `edges.perpendicular(Z)`, `edges.lines`, `edges.circles`, `faces.top/bottom/left/right/front/back`, `faces.normal(X)`, `faces.largest`, `faces.farthest(Z)` (the face whose centre lies farthest that way, whichever way it faces: a tilted top);
+  - shortcuts: `edges.parallel(Z)`, `edges.perpendicular(Z)`, `edges.lines`, `edges.circles`, `faces.top/bottom/left/right/front/back` (facing that way the most: on a part turned a little, the faces within half a degree of the most; a curved face by its normal over the whole face, a dome's up, a cylinder's whole side and a sphere none), `faces.normal(X)`, `faces.largest`, `faces.farthest(Z)` (the face whose centre lies farthest that way, whichever way it faces: a tilted top);
   - by tag: `faces.tagged("lid")` (the faces given that tag, a list of tags for any of them; see Tags below);
   - by provenance: `faces.from(tool)` (faces created by a tool or feature, e.g. the walls of the holes cut with it; a list, those of any of them), `edges.from(tool)` (edges between two such faces);
   - by adjacency: `edges.loop(faces.top)` (the outer loop of each face, not the edges round its holes), `edges.chain(edges.between(faces.top, faces.right))` (those edges and every edge running on from them without a corner, tangent within `angle:`, 2° unless given: a curved outline made of many pieces, taken whole; in the window, right-click a selected edge: **Select the chain**), `edges.of(faces.top)` (edges touching those faces), `edges.between(faces.from(holes), faces.top)` (the rim of the holes on the top face);
   - edge properties: `start`, `end`, `mid`, `direction`, `length`, `isLine`, `isCircle`, `isParallel(axis)`, `isPerpendicular(axis)`, and for circles `center`, `axis`, `radius` (e.g. `edges.filter(e => e.isCircle && e.radius == 3.mm)`);
   - face properties: `center`, `normal`, `area`.
   - selectors combine: `edges.parallel(Z) - edges.of(faces.top)`, `faces.top + faces.bottom`, `a & b` (in both).
-- **Tags:** names given to faces and to whole solids, which follow them wherever they go. `b.faces.top.addTag("lid")` tags the faces selected on `b` (`b.faces` and `b.edges` are the solid's own, to select from); `b.addTag("body")` tags the solid as an object, `recursive: true` its faces as well. `removeTag(tag)`, `clearTags()` and, read only, `tags` and `hasTag(tag)`, on a solid or its faces (`b.faces.top.tags`); a tag is a text, or a list of them to add several. Like a method of a D struct, `addTag` changes the variable it is called on (`b`, or `parts[2]`) and gives the solid back, so it also works in a chain: `auto b = box(…).faces.top.addTag("lid");`. A face keeps its tags through what changes it: moved, turned, mirrored, scaled, split, trimmed by a cut, filleted, drafted, offset, pushed (`extrude(faces…)`), textured (`knurl`, wrap): its pieces all keep them, two faces merged into one (blocks side by side) have the tags of both, faces made new (a fillet's round, a hole's wall, a thread's flanks: a rod's end threaded over is new too) have none, except the walls a tagged tool leaves (`body - drill`, the drill tagged `recursive: true`: its wall is tagged). A hull or a Minkowski sum keeps the tags of the flat faces it lies on (for a Minkowski sum, moved out by how far the other shape reaches). A solid made from others keeps the first one's own tags (`a - b` is still `a`); a profile's go to what is extruded or revolved from it. `faces.tagged("lid")` finds the faces later, wherever the solid was turned since (`faces.top` would find another face); `b.faces.tagged("lid").count` and `.list` (or `foreach (f; b.faces.top)`) read them. Mistakes: a tag found on no face says which tags there are; a tag added to a solid in no variable or in an immutable one is lost, an error. Edges have no tags yet: tag the faces on either side, `edges.between(faces.tagged("a"), faces.tagged("b"))`. Exported, the faces' tags name the faces of a STEP file (`lid;seat`) and named sets of triangles in a 3MF (the part's own tags in its object's metadata); `load("part.step")` gives a STEP file's face names back as tags. `faces.tagged("a").tagged("b")` takes the faces with both tags, a list those with either. A tag with a dot belongs to a module: `"hinges.pin"` can only be given in module `hinges` (read anywhere), so libraries tag what they make without colliding with the model's tags: `hardware.bore` and `hardware.seat` (a `hole()`'s faces, on the wall it leaves), `hardware.axis` (holes, screws, nuts, washers), `gears.axis`, `gears.bore`, `gears.pitch` (a rack), `hinges.axis`, `hinges.pin`, `enclosures.rim`, `enclosures.floor`, `enclosures.lip`, `joints.cut`, `joints.plane`, `molds.cavity`, `molds.parting`, `molds.sprue`. Points, axes, planes and frames can be tagged on a solid too, as references that move, turn, mirror and scale with it and stay through cuts and joins: `b.addTag("pin", at: vec(15.mm, 10.mm, 8.mm))` (or `at:` an `axis(…)`, a `plane(…)`, a frame), read back where the solid now is with `b.point("pin")`, `b.axis("hinge")`, `b.plane("mid")`, `b.frame("seat")` (a frame on whatever was tagged: `part.placeOn(body.frame("seat"))`). In a sketch, `s.addTag("plate")` tags its profile and paths, and an entity's tag (`c.addTag("pivot")` on a point, `s.circle(c, d: 6.mm).addTag("bore")`, construction ones too) becomes a reference of the profile and of what is made from it (swept, where the profile starts on the path): a point where it is, a circle's or arc's centre an axis across the sketch, a line an axis along it. A tagged line, circle or arc also tags the face extruded or revolved from it: `sides[1].addTag("slope")`, then `faces.tagged("slope")` on the solid, the side swept from that line (a circle: the hole's wall). This holds for a profile extruded (straight) or revolved as the sketch gives it, moved or turned first if need be; joined with another profile first, tapered or swept, the faces are not tagged (yet).
+- **Tags:** names given to faces and to whole solids, which follow them wherever they go. `b.faces.top.addTag("lid")` tags the faces selected on `b` (`b.faces` and `b.edges` are the solid's own, to select from); `b.addTag("body")` tags the solid as an object, `recursive: true` its faces as well. `removeTag(tag)`, `clearTags()` and, read only, `tags` and `hasTag(tag)`, on a solid or its faces (`b.faces.top.tags`); a tag is a text, or a list of them to add several. Like a method of a D struct, `addTag` changes the variable it is called on (`b`, or `parts[2]`) and gives the solid back, so it also works in a chain: `auto b = box(…).faces.top.addTag("lid");`. A face keeps its tags through what changes it: moved, turned, mirrored, scaled, split, trimmed by a cut, filleted, drafted, offset, pushed (`extrude(faces…)`), textured (`knurl`, wrap): its pieces all keep them, two faces merged into one (blocks side by side) have the tags of both, faces made new (a fillet's round, a hole's wall, a thread's flanks: a rod's end threaded over is new too) have none, except the walls a tagged tool leaves (`body - drill`, the drill tagged `recursive: true`: its wall is tagged). A hull or a Minkowski sum keeps the tags of the flat faces it lies on (for a Minkowski sum, moved out by how far the other shape reaches). A solid made from others keeps the first one's own tags (`a - b` is still `a`); a profile's go to what is extruded or revolved from it. `faces.tagged("lid")` finds the faces later, wherever the solid was turned since (`faces.top` would find another face); `b.faces.tagged("lid").count` and `.list` (or `foreach (f; b.faces.top)`) read them. Mistakes: a tag found on no face says which tags there are; a tag added to a solid in no variable or in an immutable one is lost, an error. Edges have no tags yet: tag the faces on either side, `edges.between(faces.tagged("a"), faces.tagged("b"))`. Exported, the faces' tags name the faces of a STEP file (`lid;seat`) and named sets of triangles in a 3MF (the part's own tags in its object's metadata); `load("part.step")` gives a STEP file's face names back as tags. `faces.tagged("a").tagged("b")` takes the faces with both tags, a list those with either. A tag with a dot belongs to a module: `"hinges.pin"` can only be given in module `hinges` (read anywhere), so libraries tag what they make without colliding with the model's tags: `hardware.bore` and `hardware.seat` (a `hole()`'s faces, on the wall it leaves), `hardware.axis` (holes, screws, nuts, washers), `gears.axis`, `gears.bore`, `gears.pitch` (a rack), `hinges.axis`, `hinges.pin`, `enclosures.rim`, `enclosures.floor`, `enclosures.lip`, `joints.cut`, `joints.plane`, `molds.cavity`, `molds.parting`, `molds.sprue`. Points, axes, planes and frames can be tagged on a solid too, as references that move, turn, mirror and scale with it and stay through cuts and joins: `b.addTag("pin", at: vec(15.mm, 10.mm, 8.mm))` (or `at:` an `axis(…)`, a `plane(…)`, a frame), read back where the solid now is with `b.point("pin")`, `b.axis("hinge")`, `b.plane("mid")`, `b.frame("seat")` (a frame on whatever was tagged: `part.placeOn(body.frame("seat"))`; on an axis or a plane its X is the one `plane(…).frame()` and `frame(faces…)` give, however the solid was turned). Tagged again, the new reference replaces the old one. A copy joined to itself (two halves joined again, a face pushed or pulled, `b + b`) holds each reference once; copies in different places joined together hold one each, and reading the tag then is an error: tag the copies apart, or tag the joined solid again. Split (`split`, `halves`, `pieces`, the libraries' joints), each piece has the references lying in it or on its surface (one on the cut, both pieces), one lying in none (a hole's axis) the nearest piece; an intersection drops those in the part it cuts away; a pattern (`linearPattern`, `circularPattern`) keeps its first copy's; `minkowski(a, b)` keeps `a`'s; a union with an empty solid (`Solid.nothing`) keeps the empty one's references (not its own tags). In a sketch, `s.addTag("plate")` tags its profile and paths, and an entity's tag (`c.addTag("pivot")` on a point, `s.circle(c, d: 6.mm).addTag("bore")`, construction ones too) becomes a reference of the profile and of what is made from it (swept, where the profile starts on the path): a point where it is, a circle's or arc's centre an axis across the sketch, a line an axis along it. A tagged line, circle or arc also tags the face extruded or revolved from it: `sides[1].addTag("slope")`, then `faces.tagged("slope")` on the solid, the side swept from that line (a circle: the hole's wall). This holds for a profile extruded (straight, tapered, sheared, twisted or symmetric) or revolved, moved, turned, scaled or mirrored first, offset (a line gives the parallel side, a circle the one round the same centre), rounded, cut into `pieces`, or joined with, less or intersected with another profile (the edges left of it keep the tag); a hull of the profile, a sweep or a loft loses the faces' names (not the points'), and looking for a face so tagged says which step lost it. A tag is a name: not blank, without `;` (a STEP file joins a face's tags with it); a dot goes only between a module's name and a name. `foreach (s; parts) s.addTag("x");` tags copies and is an error: tag `parts[i]`.
 - **Built-in libraries** (`import std.gears;` or `import std.gears;`, selective imports work too):
-  - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa" | "koshikake" | "barbed" | "dowels", clearance: 0.2.mm, size:, length:, turn:, count:)` cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi), a dovetail over a seat (koshikake ari tsugi), a barbed tenon split down its middle, driven in for good, loose printed dowels (rods with two flats, split at the ends, `count:` of them) held by friction in plain round holes; it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it), `.loose` (the wedge or the dowels, in place) and `.print` (those lying flat in a row, to print), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says; `jointKinds` lists the kinds. For a part longer than the printer's bed. `splitFlat(body, plane, keys: 2, kind: "bowtie" | "disc", size:, depth:, clearance: 0.15.mm, wall: 1.6.mm)` cuts it into two halves with flat faces, each to print lying on its cut face, joined by flat keys (butterflies, chigiri) in pockets cut in both faces, placed where the cut has room, as far apart as they can be: a `FlatSplit` with `.a`, `.b`, `.keys` (in place), and laid for printing `.aPrint`, `.bPrint` (on their cut faces, on z = 0) and `.print` (the keys flat in a row). `joinParts(a, b, plane, kind:)` joins two separate parts where `b` ends on a face of `a` (the plane, its normal into `b`): the same joints, from `b` into `a`, sized by `b`'s end, a tenon longer than `a` is thick flush on the far side; joints lie along the cut's longer side unless `turn:` says. `profile.spots(n, margin:)` gives the points it uses: up to n inside a profile in any plane, at least margin from its edges, far apart.
-  - `molds`: `mold(part, plane, wall: 10.mm, keys: 4, sprue: 6.mm, vents: 2, seal: 0.8.mm, clearance: 0.15.mm, pry: true)` a two-part mold to cast the part in (silicone, resin, plaster): a block round it cut along the parting plane (where the part is widest), the part hollow inside, cone keys on one half's parting face and sockets in the other, a seal ridge round the cavity and its groove, a pour hole with a funnel and vents up through the half in front of the plane, notches on two sides to pry it open; a `Mold` with `.a`, `.b` and, laid on their outer faces with the parting face up, `.aPrint`, `.bPrint`.
-  - `flex`: `kerf(body, zone, width: 0.8.mm, bridge: 2.mm, pitch: 2.5.mm, length:, along:)` makes the body bend inside the zone (any solid): rows of slots through its thinnest way, each row shifted half a slot, running across the body's length (or `along:` X, Y or Z), so a plate bends end to end and a tube bows.
-  - `hardware`: `Screw` sizes `M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8`, `M10`, `M12`, unified inch `UNC4_40`, `UNC6_32`, `UNC8_32`, `UNC10_24`, `UNC1_4_20` (cameras and tripods), and self-tapping screws for plastic `ST2_2`, `ST2_9`, `ST3_5`, `ST4_2` (their `tap` is the hole they cut their thread in), with `d`, `pitch`, `tap`, `clearance`, `head`, `headHeight`, `key`, `nut`, `nutHeight`, `washer`, `insert`, `insertDepth`; `screw(M3, 20.mm, threaded: false, head: "socket" | "button" | "flat" | "hex" | "pan")` (ISO 4762, 7380, 10642, 4017, 7049; underside of the head on z = 0, a flat head's top), `headOf(M3, "button")` its `d`, `h`, `key`, `setScrew(M3, 6.mm, point: "cup" | "flat" | "cone" | "dog", threaded: false)` (a grub screw, ISO 4029, 4026, 4027, 4028: no head, its socket end on z = 0, the rest going down) with `setKey(M3)` its hex key, `nut(M3, threaded: false)`, `washer(M3)`, `hexPrism(acrossFlats, h)`, `squareNut(M3)` (DIN 562, `squareNutSize`, `squareNutHeight`); tools to subtract, top on z = 0 going down: `hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" | "countersink" | "ribs", head: "socket", chamfer:)` (a counterbore sized for that head; `chamfer:` widens the mouth at 45°, 0.5 mm for ribs unless given; `"ribs"` a hole the screw passes with three ribs along it, 120° apart and one towards -Y, the bottom one on a wall, that the screw cuts its thread into), `nutTrap(M3, depth)`, `squareNutSlot(M3, reach, clearance: 0.2.mm)` (centred on the axis, its middle on z = 0, open towards +X `reach` long, for the nut to slide in from the side); aluminium extrusions of the 20 and 30 series (2020, 3030, B-type slot, typical sizes): `extrusion(20, length)` (standing along Z, centred: a reference part), `extrusionSeries(20)` its sizes (`size`, `slot`, `lip`, `cavity`, `depth`, `bore`, `screw`), `tNut(20, length: 10.mm)` (a T-nut as it sits in a slot facing +Z, the face on z = 0, a tap hole for M5 or M6) and `slotKey(20, length)` (a key under a printed part, down from z = 0 into a slot, to keep it square to the extrusion).
-  - `threads`: `threadedRod(d, pitch, length, chamfer: true, left: false)` (ISO metric profile, real geometry), `tappedHole(d, pitch, depth, clearance: 0.15.mm)` (a tool to subtract for an internal thread), `toothHeight(pitch)`. They are made with `isoThread(d:, pitch:, length:, chamfer:)`, a thread built exactly from its boundary (each corner of the profile on its own helix, a ruled face between two of them, one a turn) and cut to length: no sweep, no core to fuse; an M8 × 60 rod in about a second.
-  - `gears`: `spurGear(m, teeth, thickness, bore: 0.mm, pressure: 20.deg, backlash: 0.1.mm, steps: 6)` (involute, centred, a tooth on +X), `gearProfile(m, teeth, …)`, `rack(m, teeth, thickness, base:, pressure: 20.deg, backlash: 0.1.mm)`, `pitchDiameter`, `outsideDiameter`, `rootDiameter`, `centerDistance(m, z1, z2)` (where to put two meshing gears; turn the second so a gap faces the first's tooth on +X: `rotate(z: 180.deg - 180.deg / z2)`, right for any number of teeth).
+  - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa" | "koshikake" | "barbed" | "dowels", clearance: 0.2.mm, size:, length:, turn:, count:)` (`keys:` the same as `count:`) cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi), a dovetail over a seat (koshikake ari tsugi), a barbed tenon split down its middle, driven in for good, loose printed dowels (rods with two flats, split at the ends, `count:` of them) held by friction in plain round holes; it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it), `.loose` (the wedge or the dowels, in place) and `.print` (those lying flat in a row, to print), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says (fingers share the section's width; pins and dowels go on the material round a hollow middle, a tube's, a tenon there is an error); `jointKinds` lists the kinds. For a part longer than the printer's bed. `splitFlat(body, plane, keys: 2, kind: "bowtie" | "disc", size:, depth:, clearance: 0.15.mm, wall: 1.6.mm)` (`count:` the same as `keys:`) cuts it into two halves with flat faces, each to print lying on its cut face, joined by flat keys (butterflies, chigiri) in pockets cut in both faces, placed where the cut has room, as far apart as they can be: a `FlatSplit` with `.a`, `.b`, `.keys` (in place), and laid for printing `.aPrint`, `.bPrint` (on their cut faces, on z = 0) and `.print` (the keys flat in a row). `joinParts(a, b, plane, kind:)` joins two separate parts where `b` ends on a face of `a` (the plane, its normal into `b`): the same joints but `"kanawa"` (a sliding dovetail's, a gooseneck's and a seated dovetail's housing running out of `a`), from `b` into `a`, sized by `b`'s end, a tenon longer than `a` is thick flush on the far side; joints lie along the cut's longer side unless `turn:` says. `profile.spots(n, margin:)` gives the points it uses: up to n inside a profile in any plane, at least margin from its edges, far apart.
+  - `molds`: `mold(part, plane, wall: 10.mm, keys: 4, sprue: 6.mm, vents: 2, seal: 0.8.mm, clearance: 0.15.mm, pry: true)` (`count:` the same as `keys:`) a two-part mold to cast the part in (silicone, resin, plaster): a block round it cut along the parting plane (where the part is widest), the part hollow inside, cone keys on one half's parting face and sockets in the other, a seal ridge round the cavity and its groove, a pour hole with a funnel and vents up through the half in front of the plane, notches on two sides to pry it open; a `Mold` with `.a`, `.b` and, laid on their outer faces with the parting face up, `.aPrint`, `.bPrint`.
+  - `flex`: `kerf(body, zone, width: 0.8.mm, bridge: 2.mm, pitch: 2.5.mm, length:, along:)` makes the body bend inside the zone (any solid): rows of slots through its thinnest way, each row shifted half a slot, running across the body's length (or `along:` X, Y or Z), so a plate bends end to end and a tube bows; the slots `length:` long, six pitches unless given, shorter on a narrow strap (its width less a bridge); slots that cut the part apart are an error. They run along X, Y or Z only: bend a part before turning it at an angle.
+  - `hardware`: `Screw` sizes `M2`, `M2_5`, `M3`, `M4`, `M5`, `M6`, `M8`, `M10`, `M12`, unified inch `UNC4_40`, `UNC6_32`, `UNC8_32`, `UNC10_24`, `UNC1_4_20` (cameras and tripods), and self-tapping screws for plastic `ST2_2`, `ST2_9`, `ST3_5`, `ST4_2` (their `tap` is the hole they cut their thread in), with `d`, `pitch`, `tap`, `clearance`, `head`, `headHeight`, `key`, `nut`, `nutHeight`, `washer`, `insert`, `insertDepth`; `screw(M3, 20.mm, threaded: false, head: "socket" | "button" | "flat" | "hex" | "pan")` (ISO 4762, 7380, 10642, 4017, 7049; underside of the head on z = 0, a flat head's top), `headOf(M3, "button")` its `d`, `h`, `key`, `setScrew(M3, 6.mm, point: "cup" | "flat" | "cone" | "dog", threaded: false)` (a grub screw, ISO 4029, 4026, 4027, 4028: no head, its socket end on z = 0, the rest going down) with `setKey(M3)` its hex key, `nut(M3, threaded: false)` (its hole's wall tagged `hardware.bore`, threaded or not; none for the self-tapping sizes), `washer(M3)`, `hexPrism(acrossFlats, h)`, `squareNut(M3)` (DIN 562, `squareNutSize`, `squareNutHeight`); tools to subtract, top on z = 0 going down: `hole(M3, depth, "clearance" | "tap" | "insert" | "counterbore" | "countersink" | "ribs", head: "socket", chamfer:)` (the whole hole within `depth`: an insert, a counterbore's or a countersink's seat deeper is an error; a counterbore sized for that head; `chamfer:` widens the mouth at 45°, a counterbore's round the head, 0.5 mm for ribs unless given, none for a countersink; `"ribs"` a hole the screw passes with three ribs along it, 120° apart and one towards -Y, the bottom one on a wall, that the screw cuts its thread into), `nutTrap(M3, depth)`, `squareNutSlot(M3, reach, clearance: 0.2.mm)` (centred on the axis, its middle on z = 0, open towards +X `reach` long, for the nut to slide in from the side); aluminium extrusions of the 20 and 30 series (2020, 3030, B-type slot, typical sizes): `extrusion(20, length)` (standing along Z, centred: a reference part), `extrusionSeries(20)` its sizes (`size`, `slot`, `lip`, `cavity`, `depth`, `bore`, `screw`), `tNut(20, length: 10.mm)` (a T-nut as it sits in a slot facing +Z, the face on z = 0, a tap hole for M5 or M6) and `slotKey(20, length)` (a key under a printed part, down from z = 0 into a slot, to keep it square to the extrusion).
+  - `threads`: `threadedRod(d, pitch, length, chamfer: true, left: false)` (ISO metric profile, real geometry), `tappedHole(d, pitch, depth, clearance: 0.15.mm, left: false)` (a tool to subtract for an internal thread), `toothHeight(pitch)`. They are made with `isoThread(d:, pitch:, length:, chamfer:)`, a thread built exactly from its boundary (each corner of the profile on its own helix, a ruled face between two of them, one a turn) and cut to length: no sweep, no core to fuse; an M8 × 60 rod in about a second.
+  - `gears`: `spurGear(m, teeth, thickness, bore: 0.mm, pressure: 20.deg, backlash: 0.1.mm, steps: 6)` (involute, as a rack cuts it: undercut under about 21 teeth, so small pinions mesh; centred, a tooth on +X; pressure from above 0° to 30°), `gearProfile(m, teeth, …)`, `rack(m, teeth, thickness, base:, pressure: 20.deg, backlash: 0.1.mm)`, `pitchDiameter`, `outsideDiameter`, `rootDiameter`, `centerDistance(m, z1, z2)` (where to put two meshing gears; turn the second so a gap faces the first's tooth on +X: `rotate(z: 180.deg - 180.deg / z2)`, right for any number of teeth).
   - `hinges`: `hinge(length:, width:, thickness:, knuckles: 5, clearance: 0.4.mm)` returns `.fixed` and `.moving`, two leaves printed in place around an axis along X at z = thickness; `pinHinge(…, pin: 1.75.mm, clearance: 0.3.mm)` the same with the knuckles holed for a separate pin (filament, a nail, a screw), leaves printed apart; `snapHinge(length: 30.mm, …)` three knuckles, the outer two with cones that snap into sockets in the middle one; `livingHinge(length:, width:, thickness:, web: 0.5.mm, gap: 3.mm)` two plates joined by a thin web on their underside, for PETG, PP or TPU.
-  - `snaps`: `snapHook(length:, thickness:, width:, overhang:, lead: 30.deg)` (a cantilever hook standing on z = 0, barb towards +X) and `snapSlot(…)` (the window to subtract from the mating wall where the hook stands: round the beam, with room for it to bend, the barb then resting on its +X edge).
-  - `enclosures`: `roundedBox(x, y, z, r)`, `tray(x, y, z, wall:, r:)` (open on top), `enclosure(vec(x, y, z), wall:, r:, lidHeight:, screw: M3)` returns `.base` and `.lid` (lid with a lip that fits inside, screw posts in the corners); `shadowCase(part, on: XY, wall:, clearance:, split: 0.5, close: "lip" | "snap", lip:, play:)` a case round one part, its walls upright round the convex hull of its shadow on the plane `on` (so it drops in and lifts out), base and lid meeting at `split` of its height, `.base` and `.lid`.
+  - `snaps`: `snapHook(length:, thickness:, width:, overhang:, lead: 30.deg)` (lead from 5° to 85°; a cantilever hook standing on z = 0, barb towards +X) and `snapSlot(…)` (the window to subtract from the mating wall where the hook stands: round the beam, with room for it to bend, the barb then resting on its +X edge).
+  - `enclosures`: `roundedBox(x, y, z, r)`, `tray(x, y, z, wall:, r:)` (open on top), `enclosure(vec(x, y, z), wall:, r:, lidHeight:, screw: M3)` returns `.base` and `.lid` (lid with a lip that fits inside, screw posts in the corners); `shadowCase(part, on: XY, wall:, clearance:, split: 0.5, close: "lip" | "snap", lip:, play:)` a case round one part, its walls upright round the convex hull of its shadow on the plane `on` (so it drops in and lifts out), base and lid meeting at `split` of its height, `.base` and `.lid`; the lip, on the base, 3 mm high unless `lip:` says, lower on a flat part; the base's tags `enclosures.floor`, `enclosures.rim`, `enclosures.lip`, the lid none.
   - `carlo`: `carlo(teeth: 3, height: 15.mm, toothR:, gap:, jaw:, back:, lean: 17.deg, mouth: 1.5.deg, eye: true)`, Carlo the mascot, a bag clip lying on z = 0 (the constrained sketch of the tutorial's chapter 13, extruded; `lean` tilts the back and the tips, a positive `mouth` opens the slot towards the tips, a negative one closes it).
 - **Drawings** (technical sheets, exported as SVG, PDF or DXF; in the application **Export › Show the drawing**, a window with the sheet that follows the code, and its export): a function marked `@drawing` returns `drawing(size: "A4", title:, author:, material:, projection: "first" | "third", scale: 0 (fit), landscape: true)` after adding to it:
   - `d.standardViews(solid, iso: true, dimensions: true)`: front, top, side and an isometric view, laid out and scaled to fit, with overall dimensions and hole callouts (one per kind of hole seen end-on, with the count: `2× ⌀4.5, countersink ⌀9.26`, `⌀4.5, counterbore ⌀7.6 × 4.2`; bosses and round outlines are not holes);
-  - `d.view(solid, "front" | "back" | "top" | "bottom" | "right" | "left" | "iso", at: vec(x, y), scale:)` (without `at:` the layout places it; `at:` is in paper mm from the bottom-left corner);
-  - `d.section(solid, plane, label: "A")`: the solid cut by the plane, seen from the side the normal points to, cut faces hatched;
-  - `d.dimension(view, from: vec(…), to: vec(…), offset: 8.mm, text:)` between two model points, on a view returned by `view`/`standardViews`; `d.note("text", at: vec(x, y), size: 3.5.mm)`.
+  - `d.view(solid, "front" | "back" | "top" | "bottom" | "right" | "left" | "iso", at: vec(x, y), scale:, dimensions: true)` (without `at:` the layout places it; `at:` is in paper mm from the bottom-left corner); like `standardViews`, a view other than iso gets its overall width (below it) and height (on its left) and its hole callouts by itself: `dimensions: false` leaves them out, and an overall one is left out where a `d.dimension` of yours measures the same span;
+  - `d.section(solid, plane, label: "A")`: the solid cut by the plane, seen from the side the normal points to, cut faces hatched; a plane that misses the solid is an error;
+  - `d.dimension(view, from: vec(…), to: vec(…), offset: 8.mm, text:)` between two model points, on a view returned by `view`/`standardViews`, `offset` paper mm away from the part (a negative one towards its middle); `d.note("text", at: vec(x, y), size: 3.5.mm)`.
   - `hcad render model.hcad -o sheet.pdf` exports the first drawing, `--drawing name` another one.
 - **Standard algorithms** (eager, Phobos names, functions as normal arguments): `map`, `filter`, `fold`, `sum`, `any`, `all`, `count`, `canFind`, `sort`, `reverse`, `iota`, `cartesianProduct`, `zip`, `enumerate`, `join`, `min`, `max`, `minElement`, `maxElement`, `clamp`, `to!T`, `format`.
 
@@ -1496,7 +1497,8 @@ module hardware;
 ///
 /// Tags: a hole's faces are tagged "hardware.bore" (the counterbore's and
 /// the countersink's, where the head sits, "hardware.seat"), and stay so in
-/// the part it is cut from; holes, screws, nuts and washers carry the axis
+/// the part it is cut from; a nut's hole is "hardware.bore" too, threaded or
+/// not; holes, screws, nuts and washers carry the axis
 /// "hardware.axis" (body.axis("hardware.axis"), with one of them in it).
 struct Screw
 {
@@ -1594,13 +1596,22 @@ Solid hexPrism(Length acrossFlats, Length h)
 /// the hex socket.
 Solid screw(Screw s, Length length, bool socket = true, bool threaded = false, string head = "socket")
 {
+    checkLength("screw", s, length);
     auto shank = threaded
         ? cylinder(d: s.d, h: length).move(z: -length)
         : cylinder(d: s.d, h: length)
-            .chamfer(edges.filter(e => e.isCircle && e.mid.z < 1.mm), d: s.d * 0.1)
+            .chamfer(edges.filter(e => e.isCircle && e.mid.z < length / 2), d: s.d * 0.1)
             .move(z: -length);
     auto r = threaded ? threadShank(withHead(s, shank, socket, head), shank, s) : withHead(s, shank, socket, head);
     return r.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
+}
+
+/// A screw or a set screw at least half its diameter long: shorter, its
+/// chamfers and point leave nothing.
+private void checkLength(string what, Screw s, Length length)
+{
+    assert(length >= s.d / 2, what ~ ": an " ~ s.name ~ " screw is $(s.d / 2) long at least (half its "
+        ~ "diameter), not $(length)");
 }
 
 /// The thread on a screw's shank, cut on its side: built straight from its faces, quicker than a threaded
@@ -1659,6 +1670,7 @@ Length setKey(Screw s) => s.d <= 2.mm ? 0.9.mm : s.d <= 2.5.mm ? 1.3.mm : s.d <=
 /// into a hole the way hole() is placed. threaded: true models the thread.
 Solid setScrew(Screw s, Length length, string point = "cup", bool threaded = false)
 {
+    checkLength("setScrew", s, length);
     immutable d = s.d;
     auto shank = cylinder(d: d, h: length).move(z: -length);
     auto r = shank.chamfer(edges.filter(e => e.isCircle && e.mid.z > -0.01.mm), d: d * 0.08);
@@ -1700,6 +1712,8 @@ Solid setScrew(Screw s, Length length, string point = "cup", bool threaded = fal
 /// play: the nut of a real screw).
 Solid nut(Screw s, bool threaded = false)
 {
+    checkNut(s);
+
     // a cone narrow at the face and wider than the corners at mid height
     auto lower = cone(d1: s.nut * 0.95, d2: s.nut * 1.4, h: s.nutHeight / 2);
     auto upper = lower.mirror(Z).move(z: s.nutHeight);
@@ -1709,10 +1723,17 @@ Solid nut(Screw s, bool threaded = false)
         // the hole at the tap drill, its wall threaded (a sleeve sewn in, quicker than a boolean)
         auto bore = cylinder(d: s.tap, h: 3 * s.nutHeight, center: true);
         auto wall = faces.from(bore);
+
+        // the outside's faces marked for a moment, so that the thread's (new, untagged) are the others
+        body.faces.addTag("hardware.outside");
         auto drilled = body - bore;
         auto threadedNut = s.name.length > 0 && s.name[0 .. 1] == "M"
             ? drilled.thread(wall, s.name, chamfer: false, clearance: 0.mm)
             : drilled.thread(wall, pitch: s.pitch, chamfer: false, clearance: 0.mm);
+
+        // the thread's faces, the hole's wall as in the plain nut
+        threadedNut.faces.addTag("hardware.bore");
+        threadedNut.faces.tagged("hardware.outside").removeTag(["hardware.bore", "hardware.outside"]);
         return threadedNut.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
     }
     return (body - cylinder(d: s.d, h: 3 * s.nutHeight, center: true)
@@ -1734,10 +1755,14 @@ Solid washer(Screw s) => (cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.cl
 /// One rib points to -Y: on a wall (where a face's frame has y up) it is the
 /// bottom one, which prints best; the ribs start 0.6 mm in, a lead for the tip.
 ///
-/// `chamfer` widens the mouth at 45° by that much all round: it guides the
-/// screw in, and takes up the first layers' spread when the hole opens on the
-/// bed. 0.5 mm for "ribs" unless given, none for the others (a counterbore
-/// and a countersink have their own).
+/// The whole hole lies within `depth`: an insert, a counterbore or a
+/// countersink deeper than that is an error.
+///
+/// `chamfer` widens the mouth at 45° by that much all round (a counterbore's
+/// round the head): it guides the screw in, and takes up the first layers'
+/// spread when the hole opens on the bed. 0.5 mm for "ribs" unless given,
+/// none for the others; a countersink's cone is a chamfer already (one given
+/// to it is an error).
 Solid hole(Screw s, Length depth, string kind = "clearance", string head = "socket", Length chamfer = -1.mm)
 {
     // its faces the hole's wall in the part (the seat, tagged so in holeShape, keeps its own tag too);
@@ -1745,12 +1770,22 @@ Solid hole(Screw s, Length depth, string kind = "clearance", string head = "sock
     auto shape = holeShape(s, depth, kind, head)
         .addTag("hardware.bore", recursive: true)
         .addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
+    assert(kind != "countersink" || chamfer <= 0.mm, "hole: a countersink's cone is a chamfer already: "
+        ~ "leave chamfer: out");
     immutable c = chamfer >= 0.mm ? chamfer : kind == "ribs" ? 0.5.mm : 0.mm;
-    if (c <= 0.mm || kind == "counterbore" || kind == "countersink")
+    if (c <= 0.mm)
         return shape;
     immutable mouth = kind == "tap" ? s.tap : kind == "insert" ? s.insert : kind == "ribs" ? s.d + 0.3.mm
-        : s.clearance;
+        : kind == "counterbore" ? counterboreWidth(s, head) : s.clearance;
     return shape + cone(d1: mouth, d2: mouth + 2 * c, h: c + 0.01.mm).move(z: -c);
+}
+
+/// A counterbore's width: room for the head given (a hex head's corners,
+/// 1.155 times across its flats), and 0.6 mm.
+private Length counterboreWidth(Screw s, string head)
+{
+    immutable hd = headOf(s, head);
+    return (head == "hex" ? hd.d * 1.155 : hd.d) + 0.6.mm;
 }
 
 private Solid holeShape(Screw s, Length depth, string kind, string head)
@@ -1763,14 +1798,18 @@ private Solid holeShape(Screw s, Length depth, string kind, string head)
         return cylinder(d: s.tap, h: depth + 0.01.mm).move(z: -depth);
     case "insert":
         assert(s.insert > 0.mm, s.name ~ " has no heat-set insert: a tap hole for a self-tapping screw");
-        return cylinder(d: s.insert, h: s.insertDepth).move(z: -s.insertDepth)
+
+        // the whole hole within depth: an insert longer than that would come out of the part's other side
+        assert(s.insertDepth <= depth, "hole: the " ~ s.name ~ " insert is $(s.insertDepth) long, deeper than "
+            ~ "the hole's $(depth): a depth of $(s.insertDepth) at least, or a cylinder of the insert you have");
+        return cylinder(d: s.insert, h: s.insertDepth + 0.01.mm).move(z: -s.insertDepth)
             + cylinder(d: s.tap, h: depth).move(z: -depth);
     case "counterbore":
         {
-            // room for the head given (a hex head's corners, 1.155 times across its flats)
-            immutable hd = headOf(s, head);
-            immutable wide = head == "hex" ? hd.d * 1.155 : hd.d;
-            return cylinder(d: wide + 0.6.mm, h: hd.h + 0.2.mm).move(z: -hd.h - 0.2.mm)
+            immutable seat = headOf(s, head).h + 0.2.mm;
+            assert(seat <= depth, "hole: the counterbore for the " ~ s.name ~ " head is $(seat) deep, deeper than "
+                ~ "the hole's $(depth): a depth of $(seat) at least, or a thicker part");
+            return cylinder(d: counterboreWidth(s, head), h: seat + 0.01.mm).move(z: -seat)
                     .addTag("hardware.seat", recursive: true)
                 + cylinder(d: s.clearance, h: depth).move(z: -depth);
         }
@@ -1789,34 +1828,59 @@ private Solid holeShape(Screw s, Length depth, string kind, string head)
                 - ribs;
         }
     case "countersink":
-        // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
-        return cone(d1: s.clearance, d2: 2.24 * s.d + 0.3.mm, h: (2.24 * s.d + 0.3.mm - s.clearance) / 2)
-                .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
-                .addTag("hardware.seat", recursive: true)
-            + cylinder(d: s.clearance, h: depth).move(z: -depth);
+        {
+            // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
+            immutable top = 2.24 * s.d + 0.3.mm, sink = (top - s.clearance) / 2;
+            assert(sink <= depth, "hole: the countersink for the " ~ s.name ~ " head is $(sink) deep, "
+                ~ "deeper than the hole's $(depth): a depth of $(sink) at least, or a thicker part");
+            return cone(d1: s.clearance, d2: top, h: sink)
+                    .move(z: -sink)
+                    .addTag("hardware.seat", recursive: true)
+                + cylinder(d: s.clearance, h: depth).move(z: -depth);
+        }
     default:
         assert(false, "hole kind must be clearance, tap, insert, counterbore, countersink or ribs, not " ~ kind);
     }
 }
 
 /// A pocket to trap a nut, from z = 0 going down `depth` (with a little clearance).
-Solid nutTrap(Screw s, Length depth, Length clearance = 0.2.mm) =>
-    hexPrism(s.nut + 2 * clearance, depth + 0.01.mm).move(z: -depth);
+Solid nutTrap(Screw s, Length depth, Length clearance = 0.2.mm)
+{
+    checkNut(s);
+    return hexPrism(s.nut + 2 * clearance, depth + 0.01.mm).move(z: -depth);
+}
+
+/// The self-tapping sizes have no nut.
+private void checkNut(Screw s)
+{
+    assert(s.nut > 0.mm, s.name ~ " is a self-tapping screw: it cuts its own thread in a tap hole, "
+        ~ "with no nut");
+}
 
 /// Square nuts (DIN 562, thin): across the flats and height. They slide
 /// into a slot from the side, where a hex nut needs a pocket from above.
-Length squareNutSize(Screw s) => s.d <= 2.mm ? 4.mm : s.d <= 2.5.mm ? 5.mm : s.d <= 3.mm ? 5.5.mm
-    : s.d <= 4.mm ? 7.mm : s.d <= 5.mm ? 8.mm : s.d <= 6.mm ? 10.mm : 13.mm;
-Length squareNutHeight(Screw s) => s.d <= 2.mm ? 1.2.mm : s.d <= 2.5.mm ? 1.6.mm : s.d <= 3.mm ? 1.8.mm
-    : s.d <= 4.mm ? 2.2.mm : s.d <= 5.mm ? 2.7.mm : s.d <= 6.mm ? 3.2.mm : 4.mm;
+Length squareNutSize(Screw s)
+{
+    checkSquareNut(s);
+    return s.d <= 2.mm ? 4.mm : s.d <= 2.5.mm ? 5.mm : s.d <= 3.mm ? 5.5.mm
+        : s.d <= 4.mm ? 7.mm : s.d <= 5.mm ? 8.mm : s.d <= 6.mm ? 10.mm : 13.mm;
+}
+
+Length squareNutHeight(Screw s)
+{
+    checkSquareNut(s);
+    return s.d <= 2.mm ? 1.2.mm : s.d <= 2.5.mm ? 1.6.mm : s.d <= 3.mm ? 1.8.mm
+        : s.d <= 4.mm ? 2.2.mm : s.d <= 5.mm ? 2.7.mm : s.d <= 6.mm ? 3.2.mm : 4.mm;
+}
+
+private void checkSquareNut(Screw s)
+{
+    assert(s.d <= 8.mm, "square nuts (DIN 562) go from M2 to M8, not " ~ s.name);
+}
 
 /// A square nut standing on z = 0, centred, its hole plain.
-Solid squareNut(Screw s)
-{
-    assert(s.d <= 8.mm, "square nuts (DIN 562) go from M2 to M8");
-    return box(squareNutSize(s), squareNutSize(s), squareNutHeight(s))
-        - cylinder(d: s.d, h: 3 * squareNutHeight(s), center: true);
-}
+Solid squareNut(Screw s) => box(squareNutSize(s), squareNutSize(s), squareNutHeight(s))
+    - cylinder(d: s.d, h: 3 * squareNutHeight(s), center: true);
 
 /// The slot a square nut slides into, to subtract: centred on the screw's
 /// axis at the origin, its middle on z = 0, open towards +X for `reach`
@@ -1919,9 +1983,10 @@ Solid threadedRod(Length d, Length pitch, Length length, bool chamfer = true, bo
 }
 
 /// A tool to subtract for an internal thread that a `d` screw fits, from
-/// z = 0 going down `depth`. `clearance` widens it for printed parts.
-Solid tappedHole(Length d, Length pitch, Length depth, Length clearance = 0.15.mm) =>
-    threadedRod(d + 2 * clearance, pitch, depth + pitch, chamfer: false).move(z: -depth);
+/// z = 0 going down `depth`. `clearance` widens it for printed parts; left:
+/// true for a left-handed screw.
+Solid tappedHole(Length d, Length pitch, Length depth, Length clearance = 0.15.mm, bool left = false) =>
+    threadedRod(d + 2 * clearance, pitch, depth + pitch, chamfer: false, left: left).move(z: -depth);
 ```
 
 ## Library source: gears
@@ -1947,47 +2012,82 @@ double involute(Length rb, Length r)
 
 /// The outline of a spur gear centred on the origin, a tooth on +X.
 /// backlash thins the teeth (measured on the pitch circle) so that printed
-/// gears do not bind.
+/// gears do not bind. The teeth are those a rack cuts (generated): under
+/// about 21 teeth the rack's tip undercuts the flanks' roots, room for the
+/// tips of the gear they mesh with.
 Profile gearProfile(Length m, int teeth, Angle pressure = 20.deg, Length backlash = 0.1.mm, int steps = 6)
 {
     assert(teeth >= 6, "a gear needs at least 6 teeth");
+    checkPressure(pressure);
+    assert(backlash >= 0.mm, "the backlash cannot be negative");
     immutable r = m * teeth / 2;
     immutable rb = r * cos(pressure);
     immutable ra = r + m;
     immutable rf = r - 1.25 * m;
-    // half the tooth thickness on the pitch circle, as an angle, plus the involute offset
-    assert(backlash >= 0.mm, "the backlash cannot be negative");
-    assert(backlash < PI * m / 2, "the backlash would thin the teeth to nothing: keep it below half the tooth (π·m/2)");
+
+    // half the tooth thickness on the pitch circle, as an angle, plus the involute offset; the tip keeps
+    // some thickness up to the backlash `most`
     immutable half = PI / (2 * teeth) - backlash / (2 * r) + involute(rb, r);
-    immutable start = max(rb, rf);
+    immutable most = 2 * r * (PI / (2 * teeth) + involute(rb, r) - involute(rb, ra));
+    assert(backlash < most, "the backlash would thin the teeth to nothing: keep it below $(most) "
+        ~ "for this gear");
+
+    // the rack that cuts the gear, its teeth 1.25 m high and sharp (the deepest undercut): the corner
+    // of its tip beside a flank, along the pitch line from the tooth's centre. Its straight flank cuts
+    // the involute down to `low`, its tip's corner the trochoid below, which undercuts the involute
+    // of a gear with few teeth
+    immutable u = backlash / 2 - PI * m / 4 - 1.25 * m * tan(pressure);
+    immutable reach = 1.25 * m / sin(pressure), along = r * sin(pressure);
+    immutable low = reach < along ? hypot(rb, along - reach) : rb;
+
+    // the flank at radius rr, as an angle from the tooth's centre line (negative): as near to the
+    // centre line as the involute or the corner's trochoid cuts
+    double side(Length rr)
+    {
+        immutable s = rr > rf ? sqrt(rr ^^ 2 - rf ^^ 2) : 0.mm;
+        auto a = max(atan2(s, rf) / 1.rad - (s - u) / r, atan2(-s, rf) / 1.rad - (-s - u) / r);
+        return rr >= low ? max(a, involute(rb, max(rr, rb)) - half) : a;
+    }
+
+    // a flank from the root to the tip: steps points on the trochoid, steps on the involute
+    Length[] radii;
+    if (low > rf + 0.001.mm)
+        foreach (i; 0 .. steps)
+            radii ~= rf + (low - rf) * i / steps;
+    foreach (i; 0 .. steps + 1)
+        radii ~= low + (ra - low) * i / steps;
+    double[] sides;
+    foreach (rr; radii)
+    {
+        sides ~= side(rr);
+        assert(sides[$ - 1] < 0, "the backlash would thin the teeth to nothing: keep it below $(most) "
+            ~ "for this gear");
+    }
     Vec2[] pts;
     foreach (k; 0 .. teeth)
     {
         immutable c = 2 * PI * k / teeth;
-        Vec2[] flank;    // from the root to the tip, on the side of negative angles
-        if (rf < rb)
-            flank ~= vec(rf * cos(c - half), rf * sin(c - half));
-        foreach (i; 0 .. steps + 1)
-        {
-            immutable rr = start + (ra - start) * i / steps;
-            immutable a = c - half + involute(rb, rr);
-            flank ~= vec(rr * cos(a), rr * sin(a));
-        }
-        pts ~= flank;
-        // the other flank, mirrored around the tooth's centre line, from the tip to the root
-        foreach_reverse (p; flank)
-        {
-            immutable a = 2 * c - atan2(p.y, p.x) / 1.rad;
-            immutable rr = sqrt(p.x ^^ 2 + p.y ^^ 2);
-            pts ~= vec(rr * cos(a), rr * sin(a));
-        }
+
+        // the side of negative angles from the root to the tip, the other back down
+        foreach (i, rr; radii)
+            pts ~= vec(rr * cos(c + sides[i]), rr * sin(c + sides[i]));
+        foreach_reverse (i, rr; radii)
+            pts ~= vec(rr * cos(c - sides[i]), rr * sin(c - sides[i]));
     }
     return polygon(pts);
 }
 
+/// The pressure angles that give teeth: from above 0° to 30° (14.5°, 20°
+/// and 25° are the usual ones).
+private void checkPressure(Angle pressure)
+{
+    assert(pressure > 0.deg && pressure <= 30.deg, "the pressure angle goes from above 0° to 30° (20° is the "
+        ~ "standard, 14.5° and 25° the others): not $(pressure)");
+}
+
 /// A spur gear standing on z = 0, with an optional bore; `steps` points on
-/// each flank (more: smoother teeth, slower). Tags: the axis "gears.axis",
-/// the bore's wall "gears.bore".
+/// each flank's involute and as many on its root (more: smoother teeth,
+/// slower). Tags: the axis "gears.axis", the bore's wall "gears.bore".
 Solid spurGear(Length m, int teeth, Length thickness, Length bore = 0.mm, Angle pressure = 20.deg,
     Length backlash = 0.1.mm, int steps = 6)
 {
@@ -2006,11 +2106,16 @@ Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pres
     Length backlash = 0.1.mm)
 {
     assert(teeth >= 1, "a rack needs at least 1 tooth");
-    assert(backlash >= 0.mm && backlash < PI * m / 2, "rack: the backlash goes from 0 to under half the tooth (π·m/2)");
+    checkPressure(pressure);
     immutable e = backlash / 2;
     immutable p = PI * m;
     immutable b = base > 0.mm ? base : 2 * m;
     immutable t = tan(pressure);
+
+    // the tooth's top keeps some width
+    immutable most = p / 2 - 2 * m * t;
+    assert(backlash >= 0.mm && backlash < most, "rack: the backlash goes from 0 to under $(most) (the width "
+        ~ "of the teeth's tops)");
     Vec2[] pts = [vec(0.mm, -1.25 * m - b)];
     foreach (k; 0 .. teeth)
     {
@@ -2176,6 +2281,8 @@ module snaps;
 Solid snapHook(Length length = 10.mm, Length thickness = 1.5.mm, Length width = 5.mm, Length overhang = 1.mm,
     Angle lead = 30.deg)
 {
+    assert(lead >= 5.deg && lead <= 85.deg, "snapHook: the lead is the slope of the barb's face, from 5° (long "
+        ~ "and gentle) to 85° (short and steep): not $(lead)");
     immutable barb = overhang / tan(lead);     // height of the sloped face
     auto profile = polygon([vec(0.mm, 0.mm), vec(thickness, 0.mm), vec(thickness, length),
                             vec(thickness + overhang, length), vec(thickness, length + barb),
@@ -2300,64 +2407,72 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
 /// the lid: its walls, `play` wider round the lip, and a top `wall` thick
 /// `clearance` over the part. close: "lip" holds the lid on by friction;
 /// "snap" adds a bead round the lip, halfway up it, that clicks into a groove
-/// inside the lid (its wall gives a little as it goes over).
+/// inside the lid (its wall gives a little as it goes over). The lip is 3 mm
+/// high unless given, lower on a flat part (a card, a coin, a board) where
+/// that does not fit under the lid's top.
+///
+/// Tags: the base's floor inside is "enclosures.floor", the top of its walls,
+/// where the lid rests, "enclosures.rim", the lip (on the base) "enclosures.lip";
+/// the lid has none.
 Enclosure shadowCase(Solid inside, Plane on = XY, Length wall = 2.mm, Length clearance = 0.5.mm,
-    double split = 0.5, string close = "lip", Length lip = 3.mm, Length play = 0.2.mm)
+    double split = 0.5, string close = "lip", Length lip = 0.mm, Length play = 0.2.mm)
 {
     assert(close == "lip" || close == "snap", "shadowCase: close is \"lip\" or \"snap\", not \"" ~ close ~ "\"");
-    assert(wall > 0.mm && clearance >= 0.mm && lip > 0.mm && play >= 0.mm && play < wall,
-        "shadowCase: a wall thicker than 0, a clearance and a play of 0 or more (the play thinner than the wall)");
+    assert(wall > 0.mm && clearance >= 0.mm && lip >= 0.mm && play >= 0.mm && play < wall,
+        "shadowCase: a wall and a lip thicker than 0, a clearance and a play of 0 or more (the play thinner "
+        ~ "than the wall)");
     assert(split > 0 && split < 1, "shadowCase: split is where base and lid meet, between 0 (the bottom) and "
         ~ "1 (the top) of the part");
     immutable n = on.normal, o = on.origin;
-    // how far the part reaches along the normal, from the plane (the corners of its box: exact for the
-    // planes of the axes)
-    immutable b = inside.bbox;
-    Length low = 1e9.mm, high = -1e9.mm;
-    foreach (x; [b.min.x, b.max.x])
-        foreach (y; [b.min.y, b.max.y])
-            foreach (z; [b.min.z, b.max.z])
-            {
-                immutable d = (vec(x, y, z) - o).dot(n);
-                low = min(low, d);
-                high = max(high, d);
-            }
+
+    // how far the part reaches along the normal, from the plane: its box once turned so the normal is Z
+    immutable square = abs(n.z) > 0.999999;
+    immutable b = square ? inside.bbox
+        : inside
+            .rotate(acos(n.z), axis: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: cross(n, Z).normalized))
+            .bbox;
+    immutable low = (square && n.z < 0 ? -b.max.z : b.min.z) - dot(o, n);
+    immutable high = (square && n.z < 0 ? -b.min.z : b.max.z) - dot(o, n);
     immutable cut = low + split * (high - low), top = high + clearance;
-    assert(cut + lip + play < top, "shadowCase: the lip reaches the lid's top: a shorter lip, or split lower");
-    // the outline: the hull of the shadow, grown; the walls drawn as rings in the plane and extruded
-    // across it, from where they go
-    immutable shadow = hull(inside.projection(on));
+
+    // the lip as high as asked, or 3 mm where that leaves the lid's walls half the room above it
+    immutable room = top - cut - play;
+    immutable h = lip > 0.mm ? lip : min(3.mm, room / 2);
+    assert(cut + h + play < top, "shadowCase: the lip reaches the lid's top: a shorter lip, or split lower");
+    immutable bead = close == "snap" ? min(0.4.mm, wall / 4) : 0.mm;
+    assert(h > 2 * bead + play, "shadowCase: the lip is too low for a snap's bead: close: \"lip\", or split lower");
+
+    // the outline: the shadow grown, its convex hull where it is not convex; the walls drawn as rings in
+    // the plane and extruded across it, from where they go
+    immutable projected = inside.projection(on), hullOf = hull(projected);
+    immutable shadow = hullOf.area - projected.outer.area < 1e-6 * hullOf.area ? projected.outer : hullOf;
     Profile around(Length by) => by > 0.mm ? shadow.offset(by) : shadow;
     Solid along(Profile p, Length from, Length height) => p.extrude(height).move(n * from);
     immutable outer = around(clearance + wall), inner = around(clearance);
-    // the base: floor, walls up to the cut, the lip on their inner half
+
+    // the layers below overlap where they are joined: faces that meet on a slanted plane are not
+    // exactly on each other, and joining them is slow and comes out broken.
+    // The base: floor, walls up to the cut (from the floor's bottom), the lip on their inner half
     auto floor = along(outer, low - wall, wall);
     floor.faces.normal(n).addTag("enclosures.floor");
-    auto side = along(outer - inner, low, cut - low);
+    auto side = along(outer - inner, low - wall, cut - low + wall);
     side.faces.normal(n).addTag("enclosures.rim");
+
     // the lid: the outer half of the wall round the lip (play wider), the whole wall above it, the top
-    auto walls = along(outer - inner, cut + lip + play, top - cut - lip - play);
+    immutable over = top - cut - h - play;
+    auto walls = along(outer - inner, cut + h + play, over + wall / 2);
     auto cap = along(outer, top, wall);
-    // the lip and the lid's skirt round it, in layers: with snap, halfway up, a bead `bead` out from the
-    // lip and a groove as much (and play) into the skirt (a step that small prints without support)
+
+    // the lip and the lid's skirt round it: with snap, halfway up, a bead `bead` out from the lip and a
+    // groove as much (and play) into the skirt (a step that small prints without support)
     immutable lipOut = clearance + wall / 2 - play / 2;
-    immutable bead = close == "snap" ? min(0.4.mm, wall / 4) : 0.mm;
-    immutable mid = cut + lip / 2, half = bead > 0.mm ? bead : 0.mm;
-    Solid lipLayer(Length out, Length from, Length to) => along(around(out) - inner, from, to - from);
-    Solid skirtLayer(Length in_, Length from, Length to) => along(outer - around(in_), from, to - from);
-    Solid ring, skirt;
+    immutable mid = cut + h / 2;
+    auto ring = along(around(lipOut) - inner, cut - (cut - low) / 2, h + (cut - low) / 2);
+    auto skirt = along(outer - around(lipOut + play), cut, h + play + over / 2);
     if (bead > 0.mm)
     {
-        ring = lipLayer(lipOut, cut, mid - half) + lipLayer(lipOut + bead, mid - half, mid + half)
-            + lipLayer(lipOut, mid + half, cut + lip);
-        skirt = skirtLayer(lipOut + play, cut, mid - half - play / 2)
-            + skirtLayer(lipOut + bead + play, mid - half - play / 2, mid + half + play / 2)
-            + skirtLayer(lipOut + play, mid + half + play / 2, cut + lip + play);
-    }
-    else
-    {
-        ring = lipLayer(lipOut, cut, cut + lip);
-        skirt = skirtLayer(lipOut + play, cut, cut + lip + play);
+        ring += along(around(lipOut + bead) - around((clearance + lipOut) / 2), mid - bead, 2 * bead);
+        skirt -= along(around(lipOut + bead + play) - around(lipOut), mid - bead - play / 2, 2 * bead + play);
     }
     ring.addTag("enclosures.lip", recursive: true);
     auto base = floor + side + ring, lid = skirt + walls + cap;
@@ -2416,7 +2531,8 @@ private Solid span(Length x0, Length x1, Length y0, Length y1, Length z0, Length
 private Solid acrossY(Vec2[] xz, Length reach) =>
     polygon(xz).extrude(2 * reach, along: Y).move(y: -reach);
 
-private Keys keys(string kind, Length s, Length len, Length g, int count)
+/// `across`: how wide the section is along x, which the fingers share.
+private Keys jointKeys(string kind, Length s, Length len, Length g, int count, Length across)
 {
     // far enough to cross the whole section, whatever its shape
     immutable far = 4 * s;
@@ -2464,12 +2580,15 @@ private Keys keys(string kind, Length s, Length len, Length g, int count)
         }
     case "fingers":
         {
-            // `count` fingers across x, a's and b's in turn, as long as len
-            immutable n = max(count, 3), w = s / n;
+            // `count` fingers across the section's width along x, b's and a's in turn, as long as len.
+            // The width, not the size, and nothing past it: on a plane aslant the part's sides, what
+            // lies beyond the outer fingers stays with the piece it is on, where a finger there would
+            // take a sliver of it, loose
+            immutable n = max(count, 3), w = across / n;
             Solid[] ups, downs;
-            foreach (i; 0 .. n + 2)
+            foreach (i; 1 .. n + 1)
             {
-                immutable x0 = -s / 2 - w + i * w;
+                immutable x0 = -across / 2 - w + i * w;
                 if (i % 2 == 0)
                     ups ~= span(x0, x0 + w, -far, far, -0.01.mm, len, g);
                 else
@@ -2626,7 +2745,11 @@ private Angle alongLonger(Profile section, Plane here, string kind)
 /// about the plane's normal; `size` sets its scale
 /// (by default the square root of the section's area: the width of a square
 /// beam) and `length` how far it reaches across the plane (0.6 of the size).
-/// `count` is the number of fingers or pins (pins thinner the more there are).
+/// `count` (or `keys`, as in splitFlat and mold) is the number of fingers,
+/// pins or dowels (pins thinner the more there are). The fingers share the
+/// section's width; pins and dowels go in a row across its middle or, where
+/// that is hollow (a tube), on the material round it, as thick as it has
+/// room for; a tenon there is an error.
 ///
 /// - "tenon": a tenon on a, its mortise in b (hozo);
 /// - "dovetail": a tail across the piece, sliding in sideways (ari);
@@ -2645,8 +2768,9 @@ private Angle alongLonger(Profile section, Plane here, string kind)
 ///   into one of b, held by friction (the split halves press on the walls);
 ///   they print lying on a flat (`print`), and the holes are plain round ones.
 Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
-    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
+    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2, int keys = -1)
 {
+    immutable many = keys >= 0 ? keys : count;
     auto section = body.section(at);
     immutable s = size > 0.mm ? size : sqrt(section.area);
     immutable len = length > 0.mm ? length : 0.6 * s;
@@ -2656,12 +2780,38 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
     immutable spin = turn + alongLonger(section, here, kind);
     Solid placed(Solid k) => k.rotate(z: spin).placeOn(here);
 
-    auto exact = keys(kind, s, len, 0.mm, count);
-    auto room = keys(kind, s, len, clearance, count);
-    auto sides = body.halves(here);
-    auto a = (cutTagged(sides.below, here) - placed(room.down)) + (body & placed(exact.up));
-    auto b = (cutTagged(sides.above, here) - placed(room.up)) + (body & placed(exact.down));
-    Solid[] loose;
+    immutable wide = widthAlong(section, here, spin);
+    auto exact = jointKeys(kind, s, len, 0.mm, many, wide);
+    auto room = jointKeys(kind, s, len, clearance, many, wide);
+    auto up = placed(exact.up), down = placed(exact.down);
+    auto upRoom = placed(room.up), downRoom = placed(room.down);
+
+    // what goes through both pieces (a wedge's hole, the dowels' sockets), and the loose parts
+    Solid[] holes, loose;
+
+    // a tenon or a row of pins must stand on material where it crosses the plane (its foot, half a
+    // millimetre each side): in the middle of a hollow part (a tube) or a narrow one, a tenon goes
+    // nowhere, and the pins go on the material round it instead
+    auto slab = box(8 * s, 8 * s, 1.mm).move(z: -0.5.mm).placeOn(here);
+    bool onMaterial(Solid k) => (body & k & slab).volume >= 0.99 * (k & slab).volume;
+    assert(kind != "tenon" || onMaterial(up), "splitJoint: the part is hollow or narrow in the middle of the "
+        ~ "cut, where the tenon goes: kind: \"pins\" or \"dowels\" (they go where the material is), or a "
+        ~ "smaller size:");
+    if (kind == "pins" && !onMaterial(up))
+    {
+        auto p = spotsFor(section, many, s, clearance, true);
+        auto one = jointKeys("pins", p.size, len, 0.mm, 1, wide);
+        auto oneRoom = jointKeys("pins", p.size, len, clearance, 1, wide);
+        Solid[] pins, rooms;
+        foreach (q; p.at)
+        {
+            auto there = plane(origin: q, normal: at.normal);
+            pins ~= one.up.rotate(z: spin).placeOn(there);
+            rooms ~= oneRoom.up.rotate(z: spin).placeOn(there);
+        }
+        up = fuse(pins);
+        upRoom = fuse(rooms);
+    }
     if (kind == "kanawa")
     {
         // the wedge: square, tapering 1 in 20, through both halves in the
@@ -2671,28 +2821,83 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
         // the piece's side, the wide end stands out 3 mm to tap it home and
         // pull it out
         immutable w = 0.18 * s, reach = 2 * s, taper = reach / 20;
+
         // the piece's thickness the way the wedge goes through
-        auto ky = box(0.001.mm, 10.mm, 0.001.mm).rotate(z: spin).placeOn(here).bbox.size / 10.mm;
-        immutable through = dot(section.bbox.size, ky), head = 3.mm;
-        Length wide(Length z) => w + taper * (z + reach / 2) / reach;
-        auto wedge = loft([rect(wide(-through / 2), wide(-through / 2)).move(z: -through / 2),
-                rect(wide(through / 2 + head), wide(through / 2 + head)).move(z: through / 2 + head)])
+        immutable through = widthAlong(section, here, spin + 90.deg), head = 3.mm;
+        Length thick(Length z) => w + taper * (z + reach / 2) / reach;
+        auto wedge = loft([rect(thick(-through / 2), thick(-through / 2)).move(z: -through / 2),
+                rect(thick(through / 2 + head), thick(through / 2 + head)).move(z: through / 2 + head)])
             .rotate(x: -90);
         auto hole = loft([rect(w + 2 * clearance, w + 2 * clearance).move(z: -reach / 2),
                 rect(w + taper + 2 * clearance, w + taper + 2 * clearance).move(z: reach / 2)])
             .rotate(x: -90);
-        a -= placed(hole);
-        b -= placed(hole);
+        holes ~= placed(hole);
         loose ~= placed(wedge);
     }
     if (kind == "dowels")
     {
-        auto d = dowels(s, len, clearance, count);
-        a -= d.sockets.map(k => placed(k));
-        b -= d.sockets.map(k => placed(k));
-        loose ~= d.pins.map(k => placed(k));
+        auto d = dowels(s, len, clearance, many);
+        if (onMaterial(fuse(d.sockets.map(k => placed(k)))))
+        {
+            holes ~= d.sockets.map(k => placed(k));
+            loose ~= d.pins.map(k => placed(k));
+        }
+        else
+        {
+            // the row would leave the material: one dowel on each spot of it, as thick as it has room for
+            auto p = spotsFor(section, many, s, clearance, false);
+            auto one = dowels(p.size, length > 0.mm ? len : 0.6 * p.size, clearance, 1);
+            foreach (q; p.at)
+            {
+                auto there = plane(origin: q, normal: at.normal);
+                holes ~= one.sockets[0].rotate(z: spin).placeOn(there);
+                loose ~= one.pins[0].rotate(z: spin).placeOn(there);
+            }
+        }
     }
+    auto sides = body.halves(here);
+
+    // WORKAROUND (OpenCascade 7.9, boolean cut): a kanawa's wedge hole cut from a piece of a tube once
+    // its parts are joined fails (AcquiredSelfIntersection); cut from each part before, it does not.
+    // tests.d tries the joined cut, on splitJoint(tube, …, kind: "kanawa")
+    Solid drilled(Solid piece) => holes.length > 0 ? piece - holes : piece;
+    auto a = drilled(cutTagged(sides.below, here) - downRoom) + drilled(body & up);
+    auto b = drilled(cutTagged(sides.above, here) - upRoom) + drilled(body & down);
     return Joint(a, b, loose, flatRow(loose, body));
+}
+
+/// How wide the section is along the joint's x, turned by `spin` in the plane `here`: its box's reach
+/// that way (a little more than the section's own where it lies aslant).
+private Length widthAlong(Profile section, Plane here, Angle spin)
+{
+    auto kx = box(10.mm, 0.001.mm, 0.001.mm).rotate(z: spin).placeOn(here).bbox.size / 10.mm;
+    return dot(section.bbox.size, kx);
+}
+
+/// Where pins or dowels go, and the size each is made for (0.3 of it across).
+private struct Spots
+{
+    Vec3[] at;
+    Length size;
+}
+
+/// Where `n` pins or dowels go on a section whose middle would leave them in the air (a tube's): on
+/// its material, as far apart as they can be, each made for the size `s`, smaller until they find
+/// room, the flared foot of a pin (the chamfered mouth of a dowel's socket) and 0.4 mm of wall round
+/// them.
+private Spots spotsFor(Profile section, int n, Length s, Length g, bool pin)
+{
+    Length margin(Length size) => (pin ? 0.24 * size + g : 0.15 * size + g / 2 + 0.4.mm) + 0.4.mm;
+    Length size = s;
+    auto at = section.spots(max(1, n), margin: margin(size));
+    while (at.length < max(1, n) && size > 5.mm)
+    {
+        size = max(5.mm, 0.85 * size);
+        at = section.spots(max(1, n), margin: margin(size));
+    }
+    assert(at.length > 0, "splitJoint: the part's walls are too thin at the cut for " ~ (pin ? "pins" : "dowels")
+        ~ ": kind: \"lap\" or \"fingers\"");
+    return Spots(at, size);
 }
 
 /// The two halves of a solid cut flat along a plane, each to print lying on
@@ -2729,9 +2934,10 @@ private Profile keyOutline(string kind, Length len)
 
 /// `body` cut flat along the plane `at` into two halves, each printed lying
 /// on its cut face (nothing stands out of it, so it lies flat on the bed),
-/// joined by `keys` flat keys: a pocket in each half's cut face, half the
-/// key in each. The keys print lying flat too, and fit their pockets
-/// `clearance` apart; glue them in, or leave them dry to take apart.
+/// joined by `keys` flat keys (or `count`, as in splitJoint): a pocket in
+/// each half's cut face, half the key in each. The keys print lying flat
+/// too, and fit their pockets `clearance` apart; glue them in, or leave them
+/// dry to take apart.
 ///
 /// The keys go where the cut has room for them, at least `wall` from its
 /// edges, as far apart as they can be. "bowtie" keys (butterflies, chigiri)
@@ -2741,20 +2947,21 @@ private Profile keyOutline(string kind, Length len)
 /// The pockets open with a 0.4 mm chamfer: the first layers spread a little
 /// on the bed, and the pocket's mouth is on the bed.
 FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", Length size = 0.mm,
-    Length depth = 0.mm, Length clearance = 0.15.mm, Length wall = 1.6.mm)
+    Length depth = 0.mm, Length clearance = 0.15.mm, Length wall = 1.6.mm, int count = -1)
 {
-    assert(keys >= 1, "splitFlat needs one key at least");
+    immutable many = count >= 0 ? count : keys;
+    assert(many >= 1, "splitFlat needs one key at least");
     auto section = body.section(at);
 
     // the keys' length: given, or from the section's size, smaller until they find room in it
     // (half their length, half their width for a disc, and the wall, from its edges)
     Length len = size > 0.mm ? size : clamp(0.3 * sqrt(section.area), 8.mm, 30.mm);
     Length room(Length l) => (kind == "disc" ? 0.3 : 0.5) * l + wall;
-    auto spots = section.spots(keys, margin: room(len));
+    auto spots = section.spots(many, margin: room(len));
     while (spots.length == 0 && size == 0.mm && len > 4.mm)
     {
         len = max(4.mm, 0.8 * len);
-        spots = section.spots(keys, margin: room(len));
+        spots = section.spots(many, margin: room(len));
     }
     assert(spots.length > 0, "splitFlat: the cut has no room for a key $(len) long $(wall) from its edges: "
         ~ "a smaller size: or wall:");
@@ -2798,16 +3005,21 @@ FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", 
 /// `a`'s far side stops flush with it (a through tenon). Kinds: "tenon",
 /// "dovetail" (a sliding dovetail, its housing running out of `a` the way it
 /// slides in), "pins", "fingers" (a corner of a box), "lap", "kama" (its
-/// housing too runs out of `a`), "dowels" (holes in both, the dowels in `.loose` and, lying flat,
-/// in `.print`). Gives the two parts changed: `.a` with the hollows, `.b` with what fits in them.
+/// housing too runs out of `a`), "koshikake" (a sliding dovetail over a
+/// seat, its housing running out of `a` too), "barbed" (driven in for good),
+/// "dowels" (holes in both, the dowels in `.loose` and, lying flat, in
+/// `.print`); not "kanawa", which joins two ends: splitJoint. `count` (or
+/// `keys`) as in splitJoint. Gives the two parts changed: `.a` with the
+/// hollows, `.b` with what fits in them.
 Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
-    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
+    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2, int keys = -1)
 {
     assert(kind != "kanawa", "joinParts joins two parts that meet; a wedged scarf joins two ends: splitJoint");
+    immutable many = keys >= 0 ? keys : count;
     // b's end, a hair inside it
     auto end = b.section(plane(origin: at.origin + at.normal * 0.01.mm, normal: at.normal));
     immutable s = size > 0.mm ? size : sqrt(end.area);
-    immutable slides = kind == "dovetail" || kind == "kama";
+    immutable slides = kind == "dovetail" || kind == "kama" || kind == "koshikake";
 
     // a's depth behind the plane: a housing that runs out of a the way it slides must stop short
     // of a's far side, or it cuts a in two
@@ -2825,8 +3037,10 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
     auto here = plane(origin: end.bbox.center - at.normal * 0.01.mm, normal: -at.normal);
     immutable spin = turn + alongLonger(end, here, kind);
     Solid placed(Solid k) => k.rotate(z: spin).placeOn(here);
-    auto exact = keys(kind, s, len, 0.mm, count);
-    auto room = keys(kind, s, len, clearance, count);
+    immutable wide = widthAlong(end, here, spin);
+    auto exact = jointKeys(kind, s, len, 0.mm, many, wide);
+    auto room = jointKeys(kind, s, len, clearance, many, wide);
+
     // what one pushes into the other stays within b's end, carried across the plane both ways
     auto footprint = end.extrude(2 * (len + 1.mm), symmetric: true);
     // a dovetail's or a gooseneck's housing runs on along the way it slides, out of a, so b goes in
@@ -2836,7 +3050,7 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
     Solid[] loose;
     if (kind == "dowels")
     {
-        auto d = dowels(s, len, clearance, count);
+        auto d = dowels(s, len, clearance, many);
         na -= d.sockets.map(k => placed(k));
         nb -= d.sockets.map(k => placed(k));
         loose ~= d.pins.map(k => placed(k));
@@ -2868,9 +3082,9 @@ struct Mold
 /// shape hollow inside. The plane should cross the object where it is widest,
 /// so each half lets go of the cast.
 ///
-/// - `keys` cones on a's parting face and their sockets in b's line the halves
-///   up (where the face has room, as far apart as they can be), `clearance`
-///   apart;
+/// - `keys` (or `count`, as in splitJoint) cones on a's parting face and
+///   their sockets in b's line the halves up (where the face has room, as
+///   far apart as they can be), `clearance` apart;
 /// - a seal round the cavity (its convex hull), a ridge `seal` high on a and its groove in b,
 ///   keeps the liquid from creeping out between the halves (0.mm: none);
 /// - a pour hole `sprue` wide with a funnel, and `vents` thin channels for the
@@ -2884,8 +3098,9 @@ struct Mold
 /// (`aPrint`, `bPrint`): the keys and the seal stand up, the sockets and the
 /// groove open upwards, with no supports.
 Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length sprue = 6.mm, int vents = 2,
-    Length seal = 0.8.mm, Length clearance = 0.15.mm, bool pry = true)
+    Length seal = 0.8.mm, Length clearance = 0.15.mm, bool pry = true, int count = -1)
 {
+    immutable many = count >= 0 ? count : keys;
     immutable n = at.normal;
     auto bb = object.bbox;
 
@@ -2948,7 +3163,7 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
     auto face = block.section(at) - (seal > 0.mm ? rim.offset(1.5.mm + seal + clearance) : rim);
     immutable clear = kd / 2 + 1.5.mm;
     Solid[] knobs, holes;
-    auto spots = face.spots(keys, margin: clear);
+    auto spots = face.spots(many, margin: clear);
     assert(spots.length > 0, "mold: no room for the keys on the parting face: a thicker wall:");
     foreach (p; spots)
     {
@@ -2990,13 +3205,14 @@ Mold mold(Solid object, Plane at, Length wall = 10.mm, int keys = 4, Length spru
         else
             b = b - cylinder(d: 2.mm, h: length).placeOn(here);
     }
-    // the notches to pry it open: half-round, across the parting line, in the middle of two opposite sides
+    // the notches to pry it open: half-round, across the parting line, in the middle of two opposite
+    // sides of the block (those facing X, or across the normal and Z), where the block reaches
     if (pry)
     {
-        auto across = abs(n.z) > 0.9 ? X : cross(n, Z).normalized;
-        auto mid = bb.center - n * dot(bb.center - at.origin, n);
-        immutable half = (abs(across.x) * bb.size.x + abs(across.y) * bb.size.y + abs(across.z) * bb.size.z) / 2
-            + wall;
+        auto way = abs(n.z) > 0.9 ? X : cross(n, Z).normalized;
+        auto across = abs(dot(way, xd)) >= abs(dot(way, yd)) ? xd : yd;
+        auto mid = centre.origin + xd * ((hx + lx) / 2) + yd * ((hy + ly) / 2);
+        immutable half = (across == xd ? hx - lx : hy - ly) / 2 + wall;
         immutable notch = clamp(0.6 * wall, 4.mm, 8.mm);
         Solid[] notches;
         foreach (side; [1, -1])
@@ -3021,14 +3237,18 @@ module flex;
 /// bars that twist and bend (kerf bending, as in laser-cut plywood). The slots
 /// go through the part's thinnest way inside the zone, and run across the
 /// body's length (along its shorter side), so it bends along its length.
-/// `along:` (X, Y or Z) sets the way they run instead.
+/// `along:` (X, Y or Z) sets the way they run instead. The slots run along
+/// the axes X, Y and Z only, and go through along one of them: make a part
+/// that lies turned at an angle bend before turning it.
 ///
 /// - `width`: how wide each slot is (0.8 mm: two lines of a 0.4 mm nozzle
 ///   leave it open);
 /// - `bridge`: the material between two slots of a row: the narrower, the
 ///   softer it bends;
 /// - `pitch`: from one row to the next: the closer, the tighter it bends;
-/// - `length`: of each slot (six times the pitch unless given).
+/// - `length`: of each slot (six times the pitch unless given, shorter on a
+///   narrow part: its width less a bridge, so there is material at its
+///   ends). Slots that cut the part apart are an error.
 ///
 /// In PLA a few degrees per row; PETG and TPU bend much further. Print the part
 /// lying flat, the slots upright.
@@ -3060,7 +3280,13 @@ Solid kerf(Solid body, Solid zone, Length width = 0.8.mm, Length bridge = 2.mm, 
     auto dims = [size.x / 1.mm, size.y / 1.mm, size.z / 1.mm];
     immutable across = 3 - thin - run;
     immutable longSide = dims[run] * 1.mm, wide = dims[across] * 1.mm, deep = dims[thin] * 1.mm;
-    immutable len = length > 0.mm ? length : 6 * pitch;
+
+    // six pitches, or on a narrow part (a strap) the part's width less a bridge: in every other row a
+    // slot in the middle, half a bridge of material at each end, and in the rows between two from the
+    // edges with a bridge between them
+    immutable len = length > 0.mm ? length : min(6 * pitch, longSide - bridge);
+    assert(len > 2 * width, "kerf: the zone is too narrow along the slots for slots and bridges: a wider "
+        ~ "zone, or narrower bridges (bridge:)");
 
     // the slots as a profile: x along them, y across, then stood on the plane square to `through`
     auto region = rect(longSide + 2 * len, wide);
@@ -3075,7 +3301,10 @@ Solid kerf(Solid body, Solid zone, Length width = 0.8.mm, Length bridge = 2.mm, 
     auto cutter = thin == 2 ? turned.extrude(h).move(z: -h / 2)
         : thin == 1 ? turned.extrude(h, along: Y).move(y: -h / 2)
         : turned.extrude(h, along: X).move(x: -h / 2);
-    return body - (cutter.move(x: bb.center.x, y: bb.center.y, z: bb.center.z) & zone);
+    auto r = body - (cutter.move(x: bb.center.x, y: bb.center.y, z: bb.center.z) & zone);
+    assert(r.pieces.length <= body.pieces.length, "kerf: the slots cut the part apart: shorter slots "
+        ~ "(length:) or wider bridges (bridge:)");
+    return r;
 }
 ```
 

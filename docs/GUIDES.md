@@ -60,7 +60,7 @@ A real helical thread on a shaft or in a hole: ISO metric, inch, trapezoidal and
 
 [<img src="guides/img/holes-kinds.png" width="420" alt="Holes and hardware">](guides/holes.md)
 
-Holes for metric screws from M2 to M8, from the `hardware` library: clearance, tapping, heat-set insert, counterbore and countersink holes with `hole()`, nut traps, the screws, nuts and washers themselves, teardrop holes that print sideways, and the Hole entry of the 3D view's right-click menu.
+Holes for metric screws from M2 to M12, from the `hardware` library: clearance, tapping, heat-set insert, counterbore and countersink holes with `hole()`, nut traps, the screws, nuts and washers themselves, teardrop holes that print sideways, and the Hole entry of the 3D view's right-click menu.
 
 ### [Fits and printing](guides/fits.md)
 

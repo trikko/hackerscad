@@ -64,8 +64,11 @@ final class CachingKernel : BrepKernel
     Brep ellipse(double rx, double ry) => op(key("ellipse", rx, ry), inner.ellipse(rx, ry));
     Brep polygon(const(double)[] xy) => op(key("polygon", xy), inner.polygon(xy));
     Brep splineProfile(const(double)[] xy) => op(key("splineProfile", xy), inner.splineProfile(xy));
-    Brep text(string t, double size, string font) => op(key("text", t, size, font), inner.text(t, size, font));
-    bool fontKnown(string font, out string[] similar) => inner.fontKnown(font, similar);
+    Brep text(string t, double size, string font, int style, double spacing, double lineSpacing) =>
+        op(key("text", t, size, font, style, spacing, lineSpacing), inner.text(t, size, font, style, spacing, lineSpacing));
+    int fontKnown(string font, int style, out string[] similar) => inner.fontKnown(font, style, similar);
+    string fontFamily(string font) => inner.fontFamily(font);
+    string[] fontFamilies(out int[] styles) => inner.fontFamilies(styles);
     Brep profileRound(Brep s, double r) => op(key("round", s, r), inner.profileRound(s, r));
     Brep profileOffset(Brep s, double d) => op(key("offset", s, d), inner.profileOffset(s, d));
     Brep extrude(Brep p, double h, double taper) => op(key("extrude", p, h, taper), inner.extrude(p, h, taper));

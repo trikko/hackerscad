@@ -660,26 +660,57 @@ hc_shape *hc_spline_profile(const double *xy, int n)
     });
 }
 
-hc_shape *hc_text(const char *utf8, double size, const char *font)
+hc_shape *hc_text(const char *utf8, double size, const char *font, int aspect, double spacing, double line_spacing)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         // loading a font takes tens of ms, and it caches the outlines of its
-        // glyphs: keep one per font and size (per thread: evaluations run on
-        // more than one)
-        thread_local std::map<std::pair<std::string, double>, Handle(StdPrs_BRepFont)> fonts;
-        Handle(StdPrs_BRepFont) &f = fonts[std::make_pair(std::string(font), size)];
+        // glyphs: keep one per font, style and size (per thread: evaluations
+        // run on more than one)
+        thread_local std::map<std::tuple<std::string, int, double>, Handle(StdPrs_BRepFont)> fonts;
+        Handle(StdPrs_BRepFont) &f = fonts[std::make_tuple(std::string(font), aspect, size)];
         if (f.IsNull()) {
             Handle(StdPrs_BRepFont) loaded = new StdPrs_BRepFont();
             bool ok = std::strchr(font, '/') ? loaded->Init(NCollection_String(font), size, 0)
-                                             : loaded->FindAndInit(TCollection_AsciiString(font), Font_FontAspect_Regular, size);
+                                             : loaded->FindAndInit(TCollection_AsciiString(font), (Font_FontAspect)aspect, size);
             if (!ok) {
                 set_error("font not found");
                 return nullptr;
             }
             f = loaded;
         }
-        StdPrs_BRepTextBuilder builder;
-        TopoDS_Shape shape = builder.Perform(*f, NCollection_String(utf8));
+        TopoDS_Shape shape;
+        if (spacing == 0 && line_spacing == 1) {
+            StdPrs_BRepTextBuilder builder;
+            shape = builder.Perform(*f, NCollection_String(utf8));
+        } else {
+            // letters spaced or lines apart: laid out one by one, each by its advance (with the
+            // font's kerning) and the spacing; lines as the text builder lays them, the last on
+            // the baseline
+            std::vector<std::vector<Standard_Utf32Char>> lines(1);
+            for (NCollection_Utf8Iter it(utf8); *it != 0; ++it)
+                if (*it == '\n')
+                    lines.emplace_back();
+                else
+                    lines.back().push_back(*it);
+            BRep_Builder b;
+            TopoDS_Compound c;
+            b.MakeCompound(c);
+            for (size_t l = 0; l < lines.size(); l++) {
+                const double y = (lines.size() - 1 - l) * f->LineSpacing() * line_spacing;
+                double x = 0;
+                for (size_t i = 0; i < lines[l].size(); i++) {
+                    const Standard_Utf32Char ch = lines[l][i], next = i + 1 < lines[l].size() ? lines[l][i + 1] : 0;
+                    TopoDS_Shape glyph = f->RenderGlyph(ch);
+                    if (!glyph.IsNull()) {
+                        gp_Trsf t;
+                        t.SetTranslation(gp_Vec(x, y, 0));
+                        b.Add(c, glyph.Moved(TopLoc_Location(t)));
+                    }
+                    x += f->AdvanceX(ch, next) + spacing;
+                }
+            }
+            shape = c;
+        }
         if (shape.IsNull() || faces_of(shape).empty()) {
             set_error("the text produced no outline");
             return nullptr;
@@ -688,16 +719,60 @@ hc_shape *hc_text(const char *utf8, double size, const char *font)
     });
 }
 
+// The family a font name means, an alias ("Sans", "Serif") turned into the installed font it stands
+// for; empty when none is installed.
+const char *hc_font_family(const char *font)
+{
+    thread_local std::string name;
+    name.clear();
+    guarded<>(0, [&]() -> int {
+        Font_FontAspect aspect = Font_FontAspect_Regular;
+        Handle(Font_SystemFont) f = Font_FontMgr::GetInstance()->FindFont(TCollection_AsciiString(font),
+                                                                           Font_StrictLevel_Aliases, aspect);
+        if (!f.IsNull())
+            name = f->FontName().ToCString();
+        return 0;
+    });
+    return name.c_str();
+}
+
+// Every installed family, a line each: its name, a tab, and the styles it has as bits (1 regular,
+// 2 bold, 4 italic, 8 bold italic). Other weights (Light, SemiBold…) are families of their own:
+// "JetBrains Mono Light".
+const char *hc_font_families()
+{
+    thread_local std::string list;
+    list.clear();
+    guarded<>(0, [&]() -> int {
+        Handle(Font_FontMgr) mgr = Font_FontMgr::GetInstance();
+        TColStd_SequenceOfHAsciiString names;
+        mgr->GetAvailableFontsNames(names);
+        for (int i = 1; i <= names.Length(); i++) {
+            Font_FontAspect aspect = Font_FontAspect_Regular;
+            Handle(Font_SystemFont) f = mgr->FindFont(names.Value(i)->String(), Font_StrictLevel_Strict, aspect);
+            if (f.IsNull())
+                continue;
+            int styles = 0;
+            for (int a = 0; a < Font_FontAspect_NB; a++)
+                styles |= f->HasFontAspect((Font_FontAspect)a) ? 1 << a : 0;
+            list += std::string(names.Value(i)->ToCString()) + "\t" + std::to_string(styles) + "\n";
+        }
+        return 0;
+    });
+    return list.c_str();
+}
+
 // Whether a font of that name (or an alias of one: "Sans", "Serif") is installed, with no fall-back
-// to another; if not, the last error lists (a line each) up to four installed fonts whose names share
+// to another: 1, 2 when it has not that style (Font_FontAspect: bold, italic); if not, 0, and the last error lists (a line each) up to four installed fonts whose names share
 // a word with it, for a suggestion.
-int hc_font_known(const char *font)
+int hc_font_known(const char *font, int style)
 {
     return guarded<>(0, [&]() -> int {
         Handle(Font_FontMgr) mgr = Font_FontMgr::GetInstance();
-        Font_FontAspect aspect = Font_FontAspect_Regular;
-        if (!mgr->FindFont(TCollection_AsciiString(font), Font_StrictLevel_Aliases, aspect).IsNull())
-            return 1;
+        Font_FontAspect aspect = (Font_FontAspect)style;
+        Handle(Font_SystemFont) found = mgr->FindFont(TCollection_AsciiString(font), Font_StrictLevel_Aliases, aspect);
+        if (!found.IsNull())
+            return found->HasFontAspect((Font_FontAspect)style) ? 1 : 2;
         // the words of its name that say which font it is ("Sans", "Bold" or "Font" say little)
         static const std::set<std::string> plain = {"font", "sans", "serif", "mono", "regular", "bold", "italic",
                                                     "light", "medium", "black", "thin", "condensed", "the"};

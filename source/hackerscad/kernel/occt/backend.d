@@ -104,14 +104,30 @@ final class OcctKernel : BrepKernel
             throw new KernelException(what ~ " failed: a closed curve needs at least 3 different points");
         return splinePoles(kept, true);
     }
-    Brep text(string s, double size, string font) => wrap(hc_text(s.toStringz, size, font.toStringz), "text");
-    bool fontKnown(string font, out string[] similar)
+    Brep text(string s, double size, string font, int style, double spacing, double lineSpacing) =>
+        wrap(hc_text(s.toStringz, size, font.toStringz, style, spacing, lineSpacing), "text");
+    string fontFamily(string font) => hc_font_family(font.toStringz).fromStringz.idup;
+    string[] fontFamilies(out int[] styles)
+    {
+        import std.algorithm : findSplit;
+        import std.conv : to;
+        import std.string : splitLines;
+        string[] names;
+        foreach (line; hc_font_families().fromStringz.idup.splitLines)
+            if (auto p = line.findSplit("\t"))
+            {
+                names ~= p[0];
+                styles ~= p[2].to!int;
+            }
+        return names;
+    }
+    int fontKnown(string font, int style, out string[] similar)
     {
         import std.string : splitLines;
-        if (hc_font_known(font.toStringz))
-            return true;
+        if (auto known = hc_font_known(font.toStringz, style))
+            return known;
         similar = hc_last_error().fromStringz.idup.splitLines;
-        return false;
+        return 0;
     }
     Brep profileRound(Brep s, double r) => wrap(hc_profile_round(h(s), r), "round");
     Brep profileOffset(Brep s, double d) => wrap(hc_profile_offset(h(s), d), "offset");

@@ -1035,7 +1035,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (a.positional.length > 1 || (a.positional.length == 1 && a.positional[0].kind != Kind.str))
             throw new HcadError(Code.type, "text(\"…\", size:, font:) makes a 2D text profile; to build strings use "
                 ~ "\"… $(value) …\" or ~", a.span);
-        auto x = Args(it, a, "text", ["text", "size", "font"]);
+        auto x = Args(it, a, "text", ["text", "size", "font", "weight", "bold", "italic", "spacing", "lineSpacing"]);
         auto t = x.get("text");
         if (t.kind != Kind.str || t.s.length == 0)
             throw new HcadError(Code.type, "text needs a non-empty string", x.spanOf("text"));
@@ -1045,17 +1045,29 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (!(size >= 0.01))
             throw new HcadError(Code.type, format("the text size must be at least 0.01 mm, not %g mm", size),
                 x.has("size") ? x.spanOf("size") : a.span);
-        // a font not installed: another is used in its place (the model still builds elsewhere), said once
-        string[] similar;
-        if (x.has("font") && !font.canFind('/') && !font.canFind('\\') && !k.fontKnown(font, similar))
+        immutable spacing = x.lenOr("spacing", 0);
+        immutable lineSpacing = x.has("lineSpacing") ? x.num("lineSpacing") : 1.0;
+        if (!(lineSpacing > 0))
+            throw new HcadError(Code.type, format("lineSpacing is how many times the font's own distance "
+                ~ "between lines: more than 0, not %g", lineSpacing), x.spanOf("lineSpacing"));
+        // the weight: weight: "light" or 300, bold: true; a style said in the font's name ("Sans Bold")
+        // counts as well
+        int weight = 0;
+        if (x.has("weight"))
+            weight = fontWeight(x.get("weight"), x.spanOf("weight"));
+        if (x.has("bold"))
         {
-            immutable msg = format("no font '%s' is installed: the text uses another one", font);
-            if (!it.diagnostics.canFind!(d => d.message == msg))
-                it.diagnostics ~= Diagnostic(Severity.warning, Code.type, msg, x.spanOf("font"), similar.length
-                    ? format("installed fonts like it: %-(%s, %)", similar)
-                    : "give a font that is installed (fc-list lists them), or the path of a font file");
+            if (weight)
+                throw new HcadError(Code.type, "give bold: or weight:, not both (bold: true is weight: \"bold\")",
+                    x.spanOf("bold"));
+            weight = x.flag("bold", false) ? 700 : 400;
         }
-        return flat(k.text(t.s, size, font), "text", a.span);
+        bool italic = x.flag("italic", false);
+        auto fontSpan = x.has("font") ? x.spanOf("font") : a.span;
+        if (font.canFind('/') || font.canFind('\\'))
+            return flat(k.text(t.s, size, font, 0, spacing, lineSpacing), "text", a.span);
+        auto f = textFont(it, font, weight, italic, fontSpan);
+        return flat(k.text(t.s, size, f.family, f.style, spacing, lineSpacing), "text", a.span);
     });
     def("round", (ref CallArgs a) {
         auto x = Args(it, a, "round", ["profile", "r"]);
@@ -7123,3 +7135,136 @@ StructDef bboxDef()
 
 import std.algorithm : fold;
 
+
+/// The weights of fonts by name (with their other spellings), 100 to 900.
+private immutable string[][int] weightNames;
+
+shared static this()
+{
+    weightNames = [100: ["Thin", "Hairline"], 200: ["ExtraLight", "UltraLight"], 300: ["Light"],
+        400: ["Regular", "Normal", "Book"], 500: ["Medium"], 600: ["SemiBold", "DemiBold"], 700: ["Bold"],
+        800: ["ExtraBold", "UltraBold"], 900: ["Black", "Heavy"]];
+}
+
+/// A weight: a name ("light", "semi-bold", any case) or a number from 100 to 900.
+private int fontWeight(Value v, Span span)
+{
+    import std.string : replace;
+    if (v.kind == Kind.str)
+    {
+        immutable name = v.s.toLower.replace("-", "").replace(" ", "");
+        foreach (w, names; weightNames)
+            foreach (n; names)
+                if (n.toLower == name)
+                    return w;
+        throw new HcadError(Code.type, format("no font weight is called '%s'", v.s), span,
+            "thin, extralight, light, regular, medium, semibold, bold, extrabold, black, or 100 … 900");
+    }
+    if (v.isNum && v.n.dim == Dim.none && v.n.value >= 100 && v.n.value <= 900)
+        return cast(int) (round(v.n.value / 100) * 100);
+    throw new HcadError(Code.type, "weight: a name (\"light\", \"bold\"…) or a number from 100 to 900", span);
+}
+
+/// The font a text uses: its family and style (0 regular, 1 bold, 2 italic, 3 bold italic) for the name
+/// given (an alias, "Sans", or a family, a style perhaps said at its end: "Sans Bold Italic"), the weight
+/// (0: the name's, else regular) and italic asked; a weight the family has not: the nearest it has, and
+/// what is missing said as a warning, once.
+private auto textFont(Interp it, string font, int weight, bool italic, Span span)
+{
+    import std.string : split, strip;
+    import std.typecons : tuple;
+    auto k = it.kernel;
+    void warn(string msg, string hint)
+    {
+        if (!it.diagnostics.canFind!(d => d.message == msg))
+            it.diagnostics ~= Diagnostic(Severity.warning, Code.type, msg, span, hint);
+    }
+    // a style at the end of a name that is no family itself: "Sans Bold", "DejaVu Serif Light Italic"
+    string family = k.fontFamily(font);
+    if (family.length == 0)
+    {
+        auto words = font.split(" ");
+        int named;
+        bool slanted;
+        while (words.length > 1)
+        {
+            immutable last = words[$ - 1].toLower;
+            if (last == "italic" || last == "oblique")
+                slanted = true;
+            else if (auto w = fontWeight(last))
+                named = named ? named : w;
+            else
+                break;
+            words = words[0 .. $ - 1];
+            if (auto found = k.fontFamily(words.join(" ")))
+            {
+                family = found;
+                if (!weight)
+                    weight = named;
+                italic = italic || slanted;
+                break;
+            }
+        }
+    }
+    if (family.length == 0)
+    {
+        string[] similar;
+        k.fontKnown(font, 0, similar);
+        warn(format("no font '%s' is installed: the text uses another one", font), similar.length
+            ? format("installed fonts like it: %-(%s, %)", similar)
+            : "give a font that is installed (fc-list lists them), or the path of a font file");
+        return tuple!("family", "style")(font, italic ? 2 : 0);
+    }
+    if (!weight)
+        weight = 400;
+    // the weights of the family: regular and bold its own styles, the others families named after it
+    int[] masks;
+    auto names = k.fontFamilies(masks);
+    int[string] stylesOf;
+    foreach (i, n; names)
+        stylesOf[n] = masks[i];
+    struct Choice { int weight; string family; bool bold; }
+    Choice[] have;
+    immutable own = stylesOf.get(family, 1);
+    if (own & 5)
+        have ~= Choice(400, family, false);
+    if (own & 10)
+        have ~= Choice(700, family, true);
+    foreach (w, spellings; weightNames)
+        foreach (n; spellings)
+            if (auto st = (family ~ " " ~ n) in stylesOf)
+                if (!have.canFind!(c => c.weight == w))
+                    have ~= Choice(w, family ~ " " ~ n, false);
+    if (have.length == 0)
+        have ~= Choice(400, family, false);
+    have.sort!((p, q) => p.weight < q.weight);
+    auto best = have[0];
+    foreach (c; have)
+        if (abs(c.weight - weight) < abs(best.weight - weight) || (abs(c.weight - weight) == abs(best.weight - weight)
+            && c.weight > best.weight && weight > 400))
+            best = c;
+    string nameOf(int w) => weightNames[w][0];
+    if (best.weight != weight)
+        warn(format("'%s' has no %s weight installed: the text uses %s", family, nameOf(weight), nameOf(best.weight)),
+            format("its weights: %-(%s, %)", have.map!(c => nameOf(c.weight))));
+    immutable styles = stylesOf.get(best.family, 1);
+    int want = best.bold ? (italic ? 3 : 1) : (italic ? 2 : 0);
+    if (!(styles & (1 << want)))
+    {
+        if (italic)
+            warn(format("'%s' has no italic installed: the text stands upright", best.family),
+                "give a font that has one, or its file's path");
+        return tuple!("family", "style")(best.family, best.bold ? 1 : 0);
+    }
+    return tuple!("family", "style")(best.family, want);
+}
+
+/// A weight's name ("Light", any case) as a number; 0 for a word that is none.
+private int fontWeight(string name)
+{
+    foreach (w, names; weightNames)
+        foreach (n; names)
+            if (n.toLower == name.toLower)
+                return w;
+    return 0;
+}

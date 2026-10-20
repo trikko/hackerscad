@@ -325,7 +325,11 @@ immutable Ref[] reference =
         "plate - rect(90.mm, 50.mm).tiles(kind: \"voronoi\", size: 8.mm, gap: 1.5.mm, round: 0.6.mm, relax: 2)",
         "r.tiles(tile: circle(d: 5.mm), step: [vec(7.mm, 0.mm), vec(3.5.mm, 6.mm)], scale: (Vec2 c) => 1 - c.length / 80.mm)",
         "body.extrude(r.tiles(kind: \"square\", size: 6.mm, gap: 1.mm), on: faces.top, depth: 1.mm, taper: 30.deg)"]),
-    F("text", "", ["text: string", "size: Length", "font: string"], "Profile", "A text outline starting at the origin on the baseline; font: an installed font's name (a warning, naming similar ones, when it is not installed and another is used) or a font file's path."),
+    withForms(F("text", "", ["text: string", "size: Length", "font: string", "weight: string | int", "bold: bool", "italic: bool", "spacing: Length", "lineSpacing: number"], "Profile", "A text outline starting at the origin on the baseline (lines below one another, the last on it); font: an installed font's name, \"Sans\", \"Serif\", \"Monospace\" or a family (a warning, naming similar ones, when it is not installed and another is used), a style at its end counting (\"Sans Bold Italic\"), or a font file's path; weight: \"thin\", \"extralight\", \"light\", \"regular\", \"medium\", \"semibold\", \"bold\", \"extrabold\", \"black\" or 100 … 900 (one the font has not installed: the nearest, with a warning), bold: true for \"bold\", italic: true; spacing: 1.mm sets the letters that much further apart (negative: closer), lineSpacing: 1.5 the lines 1.5 times as far as the font has them. A narrower or wider font is a family of its own: \"DejaVu Sans Condensed\"."), [
+        "text(\"BASIL\", size: 9.mm, font: \"Sans\", bold: true)",
+        "text(\"Label\", size: 6.mm, font: \"DejaVu Serif\", weight: \"light\", italic: true)",
+        "text(\"W I D E\", size: 8.mm, spacing: 1.5.mm)",
+        "text(\"two\\nlines\", size: 5.mm, lineSpacing: 1.4)"]),
     F("round", "Profile", ["r: Length"], "Profile", "Rounds every corner, outward and inward, holes too; an error names a corner r is too large for."),
     F("offset", "Profile", ["distance: Length"], "Profile", "Grows (d > 0) or shrinks the outline (shrunk to nothing: an empty profile, isEmpty); on a plane, the parallel plane."),
     F("spots", "Profile", ["n: int", "margin: Length"], "Vec3[]", "Up to n points inside the profile (in any plane), at least margin from its edges, as far apart as they can be: where to put keys, pins or feet; one point: the middle; none when nothing is that far from the edges."),

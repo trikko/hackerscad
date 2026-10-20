@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text was made by hcad 0.3.1 (docs stamp `0.3.1-de262bd6`). Before the first
+This text was made by hcad 0.3.1 (docs stamp `0.3.1-fe0dd5a4`). Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `0.3.1-de262bd6`:** this text is up to date.
+- **It prints `0.3.1-fe0dd5a4`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -200,7 +200,7 @@ format stamp):
   faces.from(foot)) follows the @params, a filter on e.mid.z does not.
   faces.top is the highest face (after an upright with a round top is
   added, that top, no longer the foot's); faces.normal(Z) also takes
-  curved faces whose normal at their centre points up; faces.from(foot)
+  curved faces facing up on the whole (a dome); faces.from(foot)
   has neither problem, and a frame can be taken on the solid before
   (foot.frame(faces.top)). edges.chain(edges.…) takes a curved outline
   made of many pieces whole (the edges running on without a corner),
