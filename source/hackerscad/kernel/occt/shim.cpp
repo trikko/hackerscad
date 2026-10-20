@@ -105,6 +105,7 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepFilletAPI_MakeFillet2d.hxx>
 #include <ChFi2d_FilletAPI.hxx>
+#include <ChFi2d_FilletAlgo.hxx>
 #include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
@@ -924,9 +925,14 @@ static TopoDS_Wire rounded_loop(const TopoDS_Wire &w, double r)
             continue;
         const gp_Pnt p = BRep_Tool::Pnt(v);
         ChFi2d_FilletAPI fillet(edges[i], edges[j], plane);
-        if (!fillet.Perform(r) || fillet.NbResults(p) < 1)
-            throw too_large(&v);
-        arcs[i] = fillet.Result(p, edges[i], edges[j]);
+        if (fillet.Perform(r) && fillet.NbResults(p) >= 1)
+            arcs[i] = fillet.Result(p, edges[i], edges[j]);
+        // the general algorithm where that fails (two lines square to each other, in DejaVu Sans's e)
+        if (arcs[i].IsNull()) {
+            ChFi2d_FilletAlgo general(edges[i], edges[j], plane);
+            if (general.Perform(r) && general.NbResults(p) >= 1)
+                arcs[i] = general.Result(p, edges[i], edges[j]);
+        }
         if (arcs[i].IsNull())
             throw too_large(&v);
         any = true;

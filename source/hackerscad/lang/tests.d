@@ -3268,6 +3268,9 @@ unittest
             immutable label = text("Hello", size: 10.mm);
             immutable soft = label.round(0.15.mm);
             assert(abs(soft.area / mm2 - label.area / mm2) > 1e-3 && soft.extrude(1).isValid, "text");
+            // DejaVu Sans (the default font on many Linux systems; another where it is not installed)
+            immutable dejavu = text("Hello", size: 10.mm, font: "DejaVu Sans").round(0.15.mm);
+            assert(dejavu.extrude(1).isValid, "DejaVu Sans");
             assert(abs(rect(10, 10).round(5).area / mm2 - 25 * PI) < 1e-6, "a circle");
         }
     });
