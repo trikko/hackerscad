@@ -6912,6 +6912,7 @@ private:
         auto cam = viewport.camera();
         JValue jc = JSOB("yaw", cam.yaw, "pitch", cam.pitch, "distance", cam.distance);
         jc["target"] = toJSON([cam.target.x, cam.target.y, cam.target.z]);
+        jc["up"] = toJSON([cam.up.x, cam.up.y, cam.up.z]);
         jc["projection"] = cam.orthographic ? "orthographic" : "perspective";
         jc["grid"] = viewport.showGrid;
         jc["axes"] = viewport.showAxes;

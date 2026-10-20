@@ -205,9 +205,11 @@ final class Viewport
     /// Split: the section plane covers this part only, and has a ✓ too.
     public int sectionPart = -1;
 
-    // camera: orbit around target, Z up
+    // camera: orbit around target, turned freely: no up kept, no pole to
+    // stop at (yaw and pitch are only what camera() reports)
     private Vec3 target;
-    private double distance = 150, yaw = -PI / 3, pitch = PI / 6;
+    private double distance = 150;
+    private Vec3 eyeDir, viewUp;   /// from the target towards the eye, and the view's up: unit, square
     private bool firstModel = true;   // the window's first model is seen from a little higher
     private double fitRoom = 1;       // the next fit this much farther (the first model's)
     /// Pixels at the left of the view a bar covers (the sketch bar): fit frames the model in the rest
@@ -219,16 +221,17 @@ final class Viewport
     private bool dragging, dragPan, dragBox, dragGrab;
     private double boxX, boxY;   /// where a box being dragged has its other corner
     private uint dragButton;
-    private double startYaw, startPitch, startX, startY;
+    private double startX, startY, lastDx, lastDy;
     private Vec3 startTarget;
     // a rotation turns the view about this point: the part under the pointer
     // where the drag began, else the middle of what is drawn (never a target
     // that zooming has carried far off), with the view's axes as they were then
-    private Vec3 orbitPivot, startRight, startUp, startForward;
+    private Vec3 orbitPivot;
     private double panScale = 1;   /// mm per pixel of a pan: at the depth of what was grabbed
 
     this()
     {
+        aim(-PI / 3, PI / 6);
         area = new GLArea;
         area.setHasDepthBuffer(true);
         area.setHasStencilBuffer(true);   // section caps
@@ -271,8 +274,7 @@ final class Viewport
             if (dragGrab)
                 dragBox = false;
             startShift = shift;
-            startYaw = yaw;
-            startPitch = pitch;
+            lastDx = lastDy = 0;
             startTarget = target;
             if (dragPan)
             {
@@ -292,10 +294,6 @@ final class Viewport
                 auto under = pick(x, y);
                 Vec3 lo, hi;
                 orbitPivot = under.part >= 0 ? under.point : drawnBox(lo, hi) ? (lo + hi) * 0.5 : target;
-                auto b0 = basis();
-                startRight = b0.right;
-                startUp = b0.up;
-                startForward = b0.forward;
             }
             area.grabFocus();
         });
@@ -346,13 +344,11 @@ final class Viewport
             }
             else
             {
-                yaw = startYaw - dx * 0.008;
-                pitch = max(-PI / 2 + 0.01, min(PI / 2 - 0.01, startPitch + dy * 0.008));
-                // the target goes round the pivot with the view: what was at
-                // the pivot stays there on screen
-                auto v = startTarget - orbitPivot;
-                auto b1 = basis();
-                target = orbitPivot + b1.right * v.dot(startRight) + b1.up * v.dot(startUp) + b1.forward * v.dot(startForward);
+                // each step turns about the view's axes as they are now, so
+                // the model always follows the pointer, upside down too
+                turn(dx - lastDx, dy - lastDy, orbitPivot);
+                lastDx = dx;
+                lastDy = dy;
             }
             moved();
             redraw();
@@ -556,8 +552,7 @@ final class Viewport
         // window shows from a little higher than Iso, into Carlo's slot
         if (fitView && firstModel)
         {
-            yaw = -PI / 3;
-            pitch = PI / 4;
+            aim(-PI / 3, PI / 4);
             fitRoom = 1.25;   // and with room around it
             fit();
         }
@@ -2833,8 +2828,10 @@ final class Viewport
         import std.math : atan2, asin;
         n = n.normalized;
         // straight up or down: X to the right, as the top view has it (a sketch on a flat face reads so)
-        yaw = abs(n.z) > 1 - 1e-6 ? -PI / 2 : atan2(n.y, n.x);
-        pitch = max(-PI / 2 + 0.001, min(PI / 2 - 0.001, asin(n.z)));
+        if (abs(n.z) > 1 - 1e-6)
+            aim(-PI / 2, n.z > 0 ? PI / 2 : -PI / 2);
+        else
+            aim(atan2(n.y, n.x), asin(n.z));
         fit();
     }
 
@@ -2844,10 +2841,10 @@ final class Viewport
             return;
         final switch (v)
         {
-        case ViewPreset.iso: yaw = -PI / 3; pitch = PI / 6; break;
-        case ViewPreset.front: yaw = -PI / 2; pitch = 0; break;
-        case ViewPreset.top: yaw = -PI / 2; pitch = PI / 2 - 0.001; break;
-        case ViewPreset.right: yaw = 0; pitch = 0; break;
+        case ViewPreset.iso: aim(-PI / 3, PI / 6); break;
+        case ViewPreset.front: aim(-PI / 2, 0); break;
+        case ViewPreset.top: aim(-PI / 2, PI / 2); break;
+        case ViewPreset.right: aim(0, 0); break;
         }
         fit();
     }
@@ -2861,15 +2858,45 @@ final class Viewport
         redraw();
     }
 
-    /// Turns the camera around what it looks at, like a drag: yaw around
-    /// the vertical, pitch up or down (degrees).
+    /// Turns the camera around what it looks at, like a drag right and
+    /// down: about the view's up, then its right (degrees), past the poles too.
     void orbit(double yawDeg, double pitchDeg)
     {
         if (locked)
             return;
-        yaw -= yawDeg * PI / 180;
-        pitch = max(-PI / 2 + 0.01, min(PI / 2 - 0.01, pitch + pitchDeg * PI / 180));
+        turn(yawDeg / dragTurn * PI / 180, pitchDeg / dragTurn * PI / 180, target);
         redraw();
+    }
+
+    private enum dragTurn = 0.008;   /// radians per pixel of a drag
+
+    /// Looks from yaw around Z and pitch above the XY plane, Z up on
+    /// screen (straight down or up: Y up, as the top view has it).
+    private void aim(double yaw, double pitch)
+    {
+        eyeDir = Vec3(cos(pitch) * cos(yaw), cos(pitch) * sin(yaw), sin(pitch));
+        // the up Z would give, also at the poles: towards Z, away from the yaw
+        viewUp = Vec3(-sin(pitch) * cos(yaw), -sin(pitch) * sin(yaw), cos(pitch));
+    }
+
+    /// Turns the view as a drag of (dx, dy) pixels does: about its up for
+    /// dx, its right for dy, round `pivot`, which stays where it is on screen.
+    private void turn(double dx, double dy, Vec3 pivot)
+    {
+        auto b = basis();
+        immutable a = -dx * dragTurn, c = -dy * dragTurn;
+        Vec3 round(Vec3 v) => rotated(rotated(v, b.up, a), b.right, c);
+        eyeDir = round(eyeDir).normalized;
+        viewUp = round(viewUp);
+        // square again, against drift over many steps
+        viewUp = (viewUp - eyeDir * viewUp.dot(eyeDir)).normalized;
+        target = pivot + round(target - pivot);
+    }
+
+    /// v turned by angle a about unit axis k (Rodrigues).
+    private static Vec3 rotated(Vec3 v, Vec3 k, double a)
+    {
+        return v * cos(a) + k.cross(v) * sin(a) + k * (k.dot(v) * (1 - cos(a)));
     }
 
     /// Moves the model on screen by fractions of the view's size, like a
@@ -2927,15 +2954,32 @@ final class Viewport
         return true;
     }
 
-    /// The camera: angles in degrees, distance and target in mm.
+    /// The camera: angles in degrees, distance and target in mm; up the
+    /// view's up (none: Z up, as yaw and pitch give it).
     struct Camera
     {
         double yaw, pitch, distance;
         Vec3 target;
         bool orthographic;
+        Vec3 up;
     }
 
-    Camera camera() => Camera(yaw * 180 / PI, pitch * 180 / PI, distance, target, orthographic);
+    Camera camera()
+    {
+        import std.math : atan2, asin;
+        return Camera(atan2(eyeDir.y, eyeDir.x) * 180 / PI, asin(clamp(eyeDir.z, -1.0, 1.0)) * 180 / PI, distance,
+            target, orthographic, viewUp);
+    }
+
+    /// Points the view as camera c says.
+    private void aimAs(Camera c)
+    {
+        aim(c.yaw * PI / 180, c.pitch * PI / 180);
+        // its own up, if square to the direction (the poles' yaw is lost otherwise)
+        auto u = c.up - eyeDir * c.up.dot(eyeDir);
+        if (u.length > 1e-6)
+            viewUp = u.normalized;
+    }
 
     // ---- the locked scene (Annotate): the camera cannot move, and the view
     // goes on showing what it showed when locked (the style, the hidden
@@ -3012,8 +3056,7 @@ final class Viewport
         auto keepHidden = hidden;
         showAs(lockedShown);
         // the camera as locked: nothing could move it, but be sure
-        yaw = lockedCamera.yaw * PI / 180;
-        pitch = lockedCamera.pitch * PI / 180;
+        aimAs(lockedCamera);
         distance = lockedCamera.distance;
         target = lockedCamera.target;
         orthographic = lockedCamera.orthographic;
@@ -3074,8 +3117,7 @@ final class Viewport
         if (locked)
             return;
         fitPending = false;
-        yaw = c.yaw * PI / 180;
-        pitch = c.pitch * PI / 180;
+        aimAs(c);
         distance = c.distance;
         target = c.target;
         orthographic = c.orthographic;
@@ -3149,9 +3191,9 @@ private:
     Basis basis()
     {
         Basis b;
-        b.eye = target + Vec3(cos(pitch) * cos(yaw), cos(pitch) * sin(yaw), sin(pitch)) * eyeDistance();
-        b.forward = (target - b.eye).normalized;
-        b.right = b.forward.cross(Vec3(0, 0, 1)).normalized;
+        b.eye = target + eyeDir * eyeDistance();
+        b.forward = -eyeDir;
+        b.right = b.forward.cross(viewUp).normalized;
         b.up = b.right.cross(b.forward);
         return b;
     }
@@ -3863,7 +3905,7 @@ private:
         immutable halfH = distance * tan(fovy / 2);
         auto proj = orthographic ? orthographicMatrix(halfH * aspect, halfH, eyeDist * 0.01, eyeDist * 2)
             : perspective(fovy, aspect, distance * 0.01, distance * 100);
-        auto view = lookAt(b.eye, target, Vec3(0, 0, 1));
+        auto view = lookAt(b.eye, target, b.up);
         auto mvp = multiply(proj, view);
 
         glUseProgram(program);

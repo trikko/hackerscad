@@ -850,7 +850,7 @@ JValue toolList()
         gui("hcad_gui_view", "Move the user's 3D view as they do with the mouse, in this order: preset (iso, front, "
             ~ "top, right: framed on the model; fit: frame it from where it is now), look_at [x, y, z] (a model point in mm "
             ~ "to centre) and size (mm across the view), orbit [yaw, pitch] in degrees (like "
-            ~ "dragging right and down), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
+            ~ "dragging right and down: about the view's up and right, past the poles too), pan [x, y] in fractions of the view (the model moves right and down), zoom (2 = "
             ~ "twice as far, 0.5 closer) around the centre, or around at [x, y] like the wheel there (what is under it "
             ~ "stays still); look_at_face ({x, y} fractions of the view, or {point: [x, y, z]} in mm) turns the view "
             ~ "straight at the flat face there, from outside, as the user's double click on a face or Look at face in "
