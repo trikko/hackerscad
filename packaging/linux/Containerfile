@@ -21,10 +21,13 @@ RUN curl -fsSL https://github.com/ldc-developers/ldc/releases/download/v${LDC_VE
         | tar -xJ -C /opt && ln -s /opt/ldc2-${LDC_VERSION}-linux-x86_64 /opt/ldc
 ENV PATH=/opt/ldc/bin:$PATH
 
-# OpenCascade: only the modules hackerscad uses (no Draw, no OpenGL driver)
+# OpenCascade: only the modules hackerscad uses (no Draw, no OpenGL driver);
+# its checks kept in a release build, as Arch and Homebrew keep them: without
+# them a failed construction gives back nothing instead of raising, and code
+# that counts on the exception goes on with a null curve
 RUN git clone --depth 1 --branch ${OCCT_TAG} https://github.com/Open-Cascade-SAS/OCCT.git /tmp/occt \
     && cmake -S /tmp/occt -B /tmp/occt-build -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release -DINSTALL_DIR=/opt/occt \
+        -DCMAKE_BUILD_TYPE=Release -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF -DINSTALL_DIR=/opt/occt \
         -DBUILD_LIBRARY_TYPE=Shared -DBUILD_DOC_Overview=OFF \
         -DBUILD_MODULE_ApplicationFramework=OFF -DBUILD_MODULE_Draw=OFF \
         -DBUILD_MODULE_DataExchange=ON -DBUILD_MODULE_Visualization=ON \
