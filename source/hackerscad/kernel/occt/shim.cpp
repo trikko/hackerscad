@@ -2034,11 +2034,11 @@ static double rough_volume(const TopoDS_Shape &s)
 }
 
 // A boolean's result, checked: OpenCascade's errors stop it; its warnings
-// say the result may be wrong (a body or a piece left out without an
+// may say the result is wrong (a body or a piece left out without an
 // error: an argument that runs into itself, faces nearly on each other),
-// so then the volume of a solids' result must be one the operation can
-// give, or the result is refused. `retry` builds it again with some
-// fuzziness (for faces that nearly coincide), once.
+// and some wrong results come with none, so the volume of a solids' result
+// must be one the operation can give, or the result is refused (hc_boolean
+// then builds it again: with some fuzziness, or the other way round).
 static void check_boolean(BRepAlgoAPI_BooleanOperation &mk, const TopoDS_Shape &a, const TopoDS_Shape &b, int op)
 {
     auto list = [](const std::vector<std::string> &names) {
@@ -2049,10 +2049,8 @@ static void check_boolean(BRepAlgoAPI_BooleanOperation &mk, const TopoDS_Shape &
     };
     if (mk.HasErrors() || !mk.IsDone())
         throw Standard_Failure(("the boolean operation failed (" + list(boolean_alerts(mk, Message_Fail)) + ")").c_str());
-    if (!mk.HasWarnings())
-        return;
-    const auto warnings = boolean_alerts(mk, Message_Warning);
     const bool solids = TopExp_Explorer(a, TopAbs_SOLID).More() && TopExp_Explorer(b, TopAbs_SOLID).More();
+    const auto warnings = boolean_alerts(mk, Message_Warning);
     // these say the topology broke: pieces dropped without a word (a fuzzier try hides them, it does not
     // mend them); the others (edges too small, edges a face did not use) can come with a right result:
     // its volume tells
@@ -2063,20 +2061,31 @@ static void check_boolean(BRepAlgoAPI_BooleanOperation &mk, const TopoDS_Shape &
                                     "warns: " + list(warnings) + "; a solid through rings or a sweep that folds on "
                                     "itself, or faces nearly on each other?)").c_str());
         }
+    // without a warning too: two threads of different pitches, one length of them only, came out
+    // disjoint, their intersection and union empty, with none
     if (!solids)
         return;
-    const double va = solid_volume(a), vb = solid_volume(b), vr = solid_volume(mk.Shape());
+    // (to 1e-3 relative: exact to a few parts in a million, and quick enough for every boolean)
+    const double va = quick_volume(a), vb = quick_volume(b), vr = quick_volume(mk.Shape());
     const double tol = 1e-4 * (va + vb) + 1e-3;
+    // their union fits in the box round both (a little larger than they are)
+    Bnd_Box bounds;
+    BRepBndLib::Add(a, bounds);
+    BRepBndLib::Add(b, bounds);
+    double x0, y0, z0, x1, y1, z1;
+    bounds.Get(x0, y0, z0, x1, y1, z1);
+    const double box = (x1 - x0) * (y1 - y0) * (z1 - z0);
     double lo = 0, hi = 0;
     switch (op) {
-    case HC_FUSE: lo = std::max(va, vb); hi = va + vb; break;
-    case HC_CUT: lo = std::max(0.0, va - vb); hi = va; break;
-    default: lo = 0; hi = std::min(va, vb); break;
+    case HC_FUSE: lo = std::max(va, vb); hi = std::min(va + vb, box); break;
+    case HC_CUT: lo = std::max(0.0, va - vb); hi = std::min(va, box - vb); break;
+    default: lo = std::max(0.0, va + vb - box); hi = std::min(va, vb); break;
     }
     if (vr < lo - tol || vr > hi + tol)
         throw Standard_Failure(("the boolean operation gave a wrong result (volume " + std::to_string(vr) +
                                 " mm³, it can only be between " + std::to_string(lo) + " and " + std::to_string(hi) +
-                                "; OpenCascade warns: " + list(warnings) + ")").c_str());
+                                (warnings.empty() ? std::string() : "; OpenCascade warns: " + list(warnings)) +
+                                ")").c_str());
 }
 
 hc_shape *hc_boolean_merged(const hc_shape *a, const hc_shape *b, int op)
@@ -2148,10 +2157,10 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
         };
         // on every core: the intersections of the faces of one with the other
         // go in parallel (the random vase example: 1.56 s → 1.23 s)
-        auto parallel = [&](BRepAlgoAPI_BooleanOperation &&mk, double fuzzy) -> hc_shape * {
+        auto parallel = [&](BRepAlgoAPI_BooleanOperation &&mk, double fuzzy, bool swap) -> hc_shape * {
             TopTools_ListOfShape args, tools;
-            args.Append(a->shape);
-            tools.Append(tool);
+            args.Append(swap ? tool : a->shape);
+            tools.Append(swap ? a->shape : tool);
             mk.SetArguments(args);
             mk.SetTools(tools);
             mk.SetRunParallel(Standard_True);
@@ -2161,11 +2170,11 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
             check_boolean(mk, a->shape, tool, op);
             return run(std::move(mk));
         };
-        auto make = [&](double fuzzy) -> hc_shape * {
+        auto make = [&](double fuzzy, bool swap = false) -> hc_shape * {
             switch (op) {
-            case HC_FUSE: return parallel(BRepAlgoAPI_Fuse(), fuzzy);
-            case HC_CUT: return parallel(BRepAlgoAPI_Cut(), fuzzy);
-            case HC_COMMON: return parallel(BRepAlgoAPI_Common(), fuzzy);
+            case HC_FUSE: return parallel(BRepAlgoAPI_Fuse(), fuzzy, swap);
+            case HC_CUT: return parallel(BRepAlgoAPI_Cut(), fuzzy, swap);
+            case HC_COMMON: return parallel(BRepAlgoAPI_Common(), fuzzy, swap);
             default: throw Standard_Failure("invalid boolean operation");
             }
         };
@@ -2179,8 +2188,40 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
             try {
                 return make(1e-5);
             } catch (const Standard_Failure &) {
-                throw first;
             }
+            // a union or an intersection the other way round: the same, and where one solid's
+            // faces were all taken for outside the other (two threads), the other's may not be
+            if (op != HC_CUT && !flat)
+                try {
+                    return make(0, true);
+                } catch (const Standard_Failure &) {
+                }
+            // a cut: what of it lies in the solid, taken that way round, then cut away (the faces the
+            // cut leaves lose where they came from)
+            if (op == HC_CUT && !flat)
+                try {
+                    TopTools_ListOfShape args, tools;
+                    args.Append(tool);
+                    tools.Append(a->shape);
+                    BRepAlgoAPI_Common inside;
+                    inside.SetArguments(args);
+                    inside.SetTools(tools);
+                    inside.SetRunParallel(Standard_True);
+                    inside.Build();
+                    check_boolean(inside, tool, a->shape, HC_COMMON);
+                    TopTools_ListOfShape from, by;
+                    from.Append(a->shape);
+                    by.Append(inside.Shape());
+                    BRepAlgoAPI_Cut mk;
+                    mk.SetArguments(from);
+                    mk.SetTools(by);
+                    mk.SetRunParallel(Standard_True);
+                    mk.Build();
+                    check_boolean(mk, a->shape, tool, HC_CUT);
+                    return run(std::move(mk));
+                } catch (const Standard_Failure &) {
+                }
+            throw first;
         }
     });
 }
