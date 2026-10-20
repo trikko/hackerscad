@@ -1719,7 +1719,13 @@ unittest
         assert(kernel.isValid(p.solid.brep), p.name);
     // a fillet of r 1 takes (1 - π/4) mm² along each mm of edge: about 30 mm³ round the pebble, 35 round the wave
     immutable pebbleCut = vol("flat") - vol("round"), waveCut = vol("block") - vol("soft");
-    assert(pebbleCut > 20 && pebbleCut < 40, format("%s", pebbleCut));
+    // (what the fillet made, told when it is wrong: it once took 476 mm³ on macOS alone)
+    string made(string name)
+    {
+        auto b = r.parts.filter!(p => p.name == name).front.solid.brep;
+        return format("%s: %s mm³, %s faces, %s", name, kernel.volume(b), kernel.faces(b).length, kernel.bbox(b));
+    }
+    assert(pebbleCut > 20 && pebbleCut < 40, format("%s; %s; %s", pebbleCut, made("flat"), made("round")));
     assert(waveCut > 25 && waveCut < 45, format("%s", waveCut));
     // the view draws the spline as the profile has it: one segment of kind 4, through its points
     // (each call of wave() makes its sketch again: the last one)
