@@ -225,7 +225,7 @@ Solid block() => (box(20.mm, 20.mm, 15.mm)
 
 ![An M8 rod 40 mm long, and an M8 thread cut 12 mm into a block](img/threads-ex1.png)
 
-`isoThread(d:, pitch:, length:, chamfer:)` is the builtin underneath, an exact ISO thread. For anything that is not an ISO metric thread, or for starts and tapers, use `thread()` on a cylinder.
+`tappedHole(d, pitch, depth, clearance:, left: true)` is the hole for a left-handed screw, as `threadedRod(…, left: true)` is the screw. `isoThread(d:, pitch:, length:, chamfer:)` is the builtin underneath, an exact ISO thread. For anything that is not an ISO metric thread, or for starts and tapers, use `thread()` on a cylinder.
 
 ## Keeping it quick
 

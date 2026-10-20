@@ -108,7 +108,7 @@ unittest
 | `wall` | walls, floor and lid plate | `2.mm` |
 | `r` | radius of the vertical edges outside | `3.mm` |
 | `lidHeight` | how far the lip goes down into the base | `4.mm` |
-| `screw` | the screw size, from the `hardware` library (`M2` to `M8`) | `M3` |
+| `screw` | the screw size, from the `hardware` library (`M2` to `M12`, the inch and the self-tapping sizes) | `M3` |
 | `clearance` | play between the lip and the walls, and round the posts | `0.2.mm` |
 
 To pass a screw size, import it too: `import std.hardware : M3;` (or `M2_5`, `M4`…); the [guide on holes](holes.md) lists the sizes and what each hole is for.
@@ -240,8 +240,12 @@ Solid clip() => carlo();
 | `clearance:` | the room between the part and the walls | `0.5.mm` |
 | `split:` | where base and lid meet, as a share of the part's height | `0.5`, halfway |
 | `close:` | `"lip"`, a lip that holds by friction, or `"snap"`, a bead on it that clicks into the lid | `"lip"` |
-| `lip:` | how high the lip rises into the lid | `3.mm` |
+| `lip:` | how high the lip rises into the lid | `3.mm`, lower on a flat part |
 | `play:` | how much narrower the lip is than the room for it | `0.2.mm` |
+
+On a flat part (a card, a coin, a board) a 3 mm lip would reach the lid's top: unless `lip:` is given, the lip is lower there, half the room over the cut. A `lip:` given that does not fit is an error.
+
+The lip stands on the base, its inner face in line with the walls inside, and the lid's walls come down round it. The base's faces carry tags, as a tray's do: `enclosures.floor` the floor inside, `enclosures.rim` the top of the walls round the lip, where the lid rests, `enclosures.lip` the lip; the lid has none (`faces.top` of the lid turned over is its outside).
 
 To put the part in standing up, turn it before: `shadowCase(carlo().rotate(y: -90))` holds Carlo on its short side, in a tall narrow case. Print the lid on its flat top.
 
@@ -380,8 +384,9 @@ immutable holeInset = 3.5.mm;
 
 // the tallest part on top, and the height of the
 // standoffs, which leaves room for the pins underneath
+// and for the M3 inserts (5.7 mm long)
 immutable above = 14.mm;
-immutable standoff = 5.mm;
+immutable standoff = 6.mm;
 
 // room round the board, for the posts and the cables
 @param("Room round the board", min: 2.mm, max: 20.mm)
@@ -505,11 +510,12 @@ What to measure on a real board, with calipers:
 | *roundedBox: r must be more than 0 and less than half the shorter side* | a smaller radius |
 | *tray: a wall as thick as r leaves sharp inside corners that cannot be built…* | a larger `r` (or a thicker wall) |
 | *enclosure: the lid's lip (lidHeight) must be lower than the inside (inner.z)* | a shorter lip or a taller box |
+| *shadowCase: the lip reaches the lid's top: a shorter lip, or split lower* | the `lip:` given is too high for the part: a lower one, or leave it out |
 | *undefined identifier 'M3'* | import the size: `import std.hardware : M3;` |
 
 ## In the application
 
 - **Examples › Box with lid** opens a box with a lid to choose (snap, lip, screws, flush) and its parameters: a good start to change.
 - In the 3D view, pick faces (Alt+2) and right-click: **Shell, opening this face…** (or *opening N faces*) writes `.shell(open: …, thickness: 2.mm)` with the selected faces. Fillet the edges first (**Fillet face edges…**).
-- Right-click a face, at the point where it goes: **Hole at point** › *Clearance* or *Tapping* › M2 to M8 writes a `.cut(circle(d: …), on: …, at: …, depth: 5.mm)`, *Heat-set insert*, *Counterbore*, *Countersink* or *Ribs* a `.cut(hole(M3, 5.mm, "insert"), on: …, at: …)`; **Boss at point…** an `.extrude(circle(d: 6.mm), …)`; **Pocket at point…** a rectangular pocket. Change the sizes in the code.
+- Right-click a face, at the point where it goes: **Hole at point** › *Clearance* or *Tapping* › M2 to M12 writes a `.cut(circle(d: …), on: …, at: …, depth: 5.mm)`, *Heat-set insert*, *Counterbore*, *Countersink* or *Ribs* a `.cut(hole(M3, 6.mm, "insert"), on: …, at: …)` (5 mm deep, or as deep as an insert or a head's seat needs); **Boss at point…** an `.extrude(circle(d: 6.mm), …)`; **Pocket at point…** a rectangular pocket. Change the sizes in the code.
 - The `@param`s of the case (the board's size, the room, the play) are sliders in the Parameters panel: the case follows.

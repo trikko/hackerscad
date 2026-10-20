@@ -91,7 +91,7 @@ Their parameters:
 | `bore:` | a round hole through the centre, that diameter; `0.mm` none | `0.mm` |
 | `pressure:` | the pressure angle | `20.deg` |
 | `backlash:` | the play between the teeth: thins each tooth by that much on the pitch circle (a rack's on its pitch line), so printed gears do not bind | `0.1.mm` |
-| `steps:` | points on each flank of the outline (`gearProfile` and `spurGear`) | `6` |
+| `steps:` | points on the involute of each flank of the outline, and as many on its root (`gearProfile` and `spurGear`) | `6` |
 | `base:` | the height of the rack's solid strip under the teeth' roots | `2 · m` |
 
 The rack's teeth are thinned by its own `backlash:` too: with the gear's, the play is the two added.
@@ -184,7 +184,7 @@ unittest
 
 ![Check a pair through one tooth of turning, not only where it was drawn](img/gears-ex1.png)
 
-Below 8 teeth the library's teeth are not undercut, and the tips of a large gear dig into the roots of the small one as they turn: this check finds it (a 6-tooth pinion against a 40-tooth wheel collides; 8 teeth or more do not).
+The library cuts the teeth as a rack cuts them: under about 21 teeth (at 20°) the rack's tip takes material from the roots of the flanks, an *undercut*, where the tips of a large gear pass as they turn. So a pinion of 6 teeth meshes with a wheel of 40, or with a rack, with no backlash at all, though its teeth are thinner at the root, and weaker. This check finds a collision anyway, whatever caused it.
 
 ## Your own shape: gearProfile
 
@@ -258,7 +258,7 @@ A round bore on a round shaft slips under load: press-fit it (see the guide on [
 
 - **Module.** On an FDM printer (one that lays down melted plastic through a nozzle) with a 0.4 mm nozzle, module 1 is the smallest that prints cleanly; 1.5 to 2 is comfortable, and stronger. Under 1, print in resin.
 - **Backlash.** The default 0.1 mm on each gear suits a well tuned printer. Raise it to 0.15–0.25 mm if the gears bind; a wider play is noisier but never jams. Print two small test gears before a big train.
-- **Teeth.** 12 or more on the smallest gear turn smoothly; under 8 the teeth collide (see above). For a large ratio, use two stages rather than one tiny pinion.
+- **Teeth.** 12 or more on the smallest gear turn smoothly; fewer mesh, but their undercut roots are weaker (see above). For a large ratio, use two stages rather than one tiny pinion.
 - **Thickness.** About 5 to 10 times the module. Wider teeth carry more, but need the shafts truly parallel.
 - **Orientation.** Print gears flat, the teeth standing: the teeth come out with their exact shape and their layers across the load. The first layer squashes out (elephant's foot) and can make the bottom of the teeth rub: compensate in the slicer, the program that turns the model into the printer's paths.
 - **Material.** PLA is fine for toys and models; PETG or nylon for gears that run for hours. A gear and a pinion of different materials wear less.
@@ -269,13 +269,15 @@ A round bore on a round shaft slips under load: press-fit it (see the guide on [
 | Message or symptom | What to do |
 |---|---|
 | *a gear needs at least 6 teeth* | more teeth; for a smaller gear, a smaller module |
-| *the backlash would thin the teeth to nothing: keep it below half the tooth (π·m/2)* | a backlash of tenths of a millimetre, not millimetres |
+| *the backlash would thin the teeth to nothing: keep it below …* | a backlash of tenths of a millimetre, not millimetres; the limit is where the tips come to a point |
+| *the pressure angle goes from above 0° to 30°…* | 20°, the standard, or 14.5° or 25° |
+| *rack: the backlash goes from 0 to under …* | a smaller backlash: the teeth's tops would vanish |
 | *a rack needs at least 1 tooth* | `teeth` of 1 or more |
 | *unknown argument 'hub' for spurGear(m, teeth, thickness, bore, pressure, backlash)* | the library has no hub: add a cylinder, as above |
 | *spurGear: the bore must be smaller than the gear's root circle…* | a smaller bore: within `rootDiameter` less a module each side |
 | the two gears overlap (`(a & b).volume` is not zero) | the same module and pressure angle on both; the second turned by `180.deg - 180.deg / z2`; centres `centerDistance` apart |
 
-The first three messages point at the line of the library that checks them, not at your call: look for the `spurGear` or `rack` call in your model.
+The messages of the checks point at the line of the library that checks them, not at your call: look for the `spurGear` or `rack` call in your model.
 
 ## In the application
 

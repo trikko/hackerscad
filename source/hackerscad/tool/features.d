@@ -563,7 +563,7 @@ ubyte[] sectionOverlay(string file, string a, string b, string plane, double at,
 /// The outline of the part's shadow on a plane (seen along its normal), as
 /// lines, arcs and circles with their sizes and as a sketch: for parts made
 /// by extruding an outline.
-string projectionReport(string file, string part, string plane)
+string projectionReport(string file, string part, string plane, bool withSketch = true)
 {
     import std.algorithm : max;
     import std.math : abs;
@@ -593,7 +593,7 @@ string projectionReport(string file, string part, string plane)
         fitted ~= withoutSlivers(fit(l, 1.5 * pixel, true));
     immutable axes = plane == "xy" ? "x, y" : plane == "xz" ? "x, z" : "y, z";
     return format("the shadow on %s (coordinates %s):\n", plane, axes) ~ describe(fitted)
-        ~ "\n// as a sketch:\n" ~ sketchCode(fitted, "shadow");
+        ~ (withSketch ? "\n// as a sketch:\n" ~ sketchCode(fitted, "shadow") : "");
 }
 
 /// The operations of two parts of a model matched one by one: the surfaces

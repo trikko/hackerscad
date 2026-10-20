@@ -141,7 +141,10 @@
 #include <cmath>
 #include <LocOpe_DPrism.hxx>
 #include <BRepOffsetAPI_DraftAngle.hxx>
+#include <Font_FontMgr.hxx>
 #include <StdPrs_BRepFont.hxx>
+#include <TColStd_SequenceOfHAsciiString.hxx>
+#include <cctype>
 #include <StdPrs_BRepTextBuilder.hxx>
 #include <gp_Circ.hxx>
 #include <TopoDS_Compound.hxx>
@@ -627,23 +630,21 @@ hc_shape *hc_polygon(const double *xy, int n)
 
 // A smooth closed curve through the points (x, y pairs) on XY, filled: a
 // profile with curved sides, as the polygon with straight ones.
+static Handle(Geom_BSplineCurve) closed_bezier_curve(const std::vector<gp_Pnt> &poles);
+
+// A smooth closed outline through cubic Bézier pieces (their poles x y each, three a piece and then
+// the first again: a closed spline as a sketch's, the same whichever point it starts at).
 hc_shape *hc_spline_profile(const double *xy, int n)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
-        if (n < 3) {
+        if (n < 10 || (n - 1) % 3 != 0) {
             set_error("a smooth outline needs at least 3 points");
             return nullptr;
         }
-        Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, n);
+        std::vector<gp_Pnt> poles;
         for (int i = 0; i < n; i++)
-            pts->SetValue(i + 1, gp_Pnt(xy[2 * i], xy[2 * i + 1], 0));
-        GeomAPI_Interpolate interp(pts, Standard_True, 1e-7);
-        interp.Perform();
-        if (!interp.IsDone()) {
-            set_error("cannot fit a smooth outline through these points (repeated points?)");
-            return nullptr;
-        }
-        BRepBuilderAPI_MakeWire wire(BRepBuilderAPI_MakeEdge(interp.Curve()).Edge());
+            poles.emplace_back(xy[2 * i], xy[2 * i + 1], 0);
+        BRepBuilderAPI_MakeWire wire(BRepBuilderAPI_MakeEdge(closed_bezier_curve(poles)).Edge());
         BRepBuilderAPI_MakeFace f(wire.Wire(), Standard_True);
         if (!f.IsDone()) {
             set_error("the smooth outline is not a valid planar outline");
@@ -684,6 +685,57 @@ hc_shape *hc_text(const char *utf8, double size, const char *font)
             return nullptr;
         }
         return primitive(shape);
+    });
+}
+
+// Whether a font of that name (or an alias of one: "Sans", "Serif") is installed, with no fall-back
+// to another; if not, the last error lists (a line each) up to four installed fonts whose names share
+// a word with it, for a suggestion.
+int hc_font_known(const char *font)
+{
+    return guarded<>(0, [&]() -> int {
+        Handle(Font_FontMgr) mgr = Font_FontMgr::GetInstance();
+        Font_FontAspect aspect = Font_FontAspect_Regular;
+        if (!mgr->FindFont(TCollection_AsciiString(font), Font_StrictLevel_Aliases, aspect).IsNull())
+            return 1;
+        // the words of its name that say which font it is ("Sans", "Bold" or "Font" say little)
+        static const std::set<std::string> plain = {"font", "sans", "serif", "mono", "regular", "bold", "italic",
+                                                    "light", "medium", "black", "thin", "condensed", "the"};
+        std::vector<std::string> words;
+        std::string w;
+        for (const char *c = font;; c++) {
+            if (*c && std::isalnum((unsigned char)*c))
+                w += (char)std::tolower((unsigned char)*c);
+            else {
+                if (w.size() > 2 && !plain.count(w))
+                    words.push_back(w);
+                w.clear();
+                if (!*c)
+                    break;
+            }
+        }
+        // the installed ones with most of those words (or a word starting so: "Dejavu" for "DejaVuSans")
+        TColStd_SequenceOfHAsciiString names;
+        mgr->GetAvailableFontsNames(names);
+        std::vector<std::pair<int, std::string>> ranked;
+        for (int i = 1; i <= names.Length(); i++) {
+            std::string name = names.Value(i)->ToCString(), lower;
+            for (char c : name)
+                lower += (char)std::tolower((unsigned char)c);
+            int shared = 0;
+            for (const std::string &word : words)
+                if (lower.find(word) != std::string::npos)
+                    shared++;
+            if (shared)
+                ranked.emplace_back(-shared, name);
+        }
+        std::stable_sort(ranked.begin(), ranked.end(),
+                         [](const auto &a, const auto &b) { return a.first < b.first; });
+        std::string similar;
+        for (size_t i = 0; i < ranked.size() && i < 4; i++)
+            similar += ranked[i].second + "\n";
+        set_error(similar.c_str());
+        return 0;
     });
 }
 
@@ -998,6 +1050,43 @@ static std::vector<TopoDS_Wire> offset_loop(const TopoDS_Wire &w, double d)
     return loops;
 }
 
+// Whether no point of `face` lies farther than `depth` inside its outer loop (an inward offset that
+// far leaves nothing): a grid of points over it against points close together round the loop, so up
+// to a grid step out either way.
+static bool shallower_than(const TopoDS_Face &face, double depth)
+{
+    Bnd_Box box;
+    BRepBndLib::Add(face, box);
+    double x0, y0, z0, x1, y1, z1;
+    box.Get(x0, y0, z0, x1, y1, z1);
+    const int g = 40;
+    const double step = std::max(x1 - x0, y1 - y0) / g;
+    std::vector<gp_Pnt> rim;
+    for (TopExp_Explorer e(BRepTools::OuterWire(face), TopAbs_EDGE); e.More(); e.Next()) {
+        BRepAdaptor_Curve c(TopoDS::Edge(e.Current()));
+        const int k = std::max(2, (int)std::ceil(GCPnts_AbscissaPoint::Length(c) / (step / 4)));
+        for (int i = 0; i <= k; i++)
+            rim.push_back(c.Value(c.FirstParameter() + (c.LastParameter() - c.FirstParameter()) * i / k));
+    }
+    double u0, u1, v0, v1;
+    BRepTools::UVBounds(face, u0, u1, v0, v1);
+    BRepTopAdaptor_FClass2d inside(face, 1e-7);
+    BRepAdaptor_Surface surf(face);
+    double deepest = 0;
+    for (int i = 0; i <= g; i++)
+        for (int j = 0; j <= g; j++) {
+            const gp_Pnt2d q(u0 + (u1 - u0) * i / g, v0 + (v1 - v0) * j / g);
+            if (inside.Perform(q) != TopAbs_IN)
+                continue;
+            const gp_Pnt p = surf.Value(q.X(), q.Y());
+            double nearest = 1e300;
+            for (const gp_Pnt &r : rim)
+                nearest = std::min(nearest, p.SquareDistance(r));
+            deepest = std::max(deepest, std::sqrt(nearest));
+        }
+    return deepest <= depth + step;
+}
+
 hc_shape *hc_profile_offset(const hc_shape *s, double d)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -1008,9 +1097,20 @@ hc_shape *hc_profile_offset(const hc_shape *s, double d)
             // face with its holes reads the holes' way from the face's orientation, and a face turned over
             // (an outline drawn clockwise, or mirrored) grew its holes, or left nothing
             const TopoDS_Wire outer = BRepTools::OuterWire(face);
-            const std::vector<TopoDS_Wire> grown = offset_loop(outer, d);
+            // shrunk to nothing (or to a line, of no area): the face is gone, the profile maybe all of it
+            GProp_GProps before;
+            BRepGProp::SurfaceProperties(face, before);
+            std::vector<TopoDS_Wire> grown;
+            try {
+                grown = offset_loop(outer, d);
+            } catch (Standard_Failure &) {
+                if (d > 0)
+                    throw;
+            }
             if (grown.empty()) {
-                set_error("offset failed (the profile would vanish?)");
+                if (d < 0 && shallower_than(face, -d))
+                    continue;
+                set_error("OpenCascade could not offset this outline");
                 return nullptr;
             }
             TopoDS_Shape region = faces_from_loops(grown);
@@ -1024,12 +1124,15 @@ hc_shape *hc_profile_offset(const hc_shape *s, double d)
             }
             ShapeUpgrade_UnifySameDomain unify(region, Standard_True, Standard_True, Standard_False);
             unify.Build();
-            if (faces_of(unify.Shape()).empty()) {
-                set_error("offset left nothing");
-                return nullptr;
-            }
+            GProp_GProps after;
+            BRepGProp::SurfaceProperties(unify.Shape(), after);
+            if (faces_of(unify.Shape()).empty() || std::abs(after.Mass()) <= 1e-9 * std::abs(before.Mass()))
+                continue;
             out.push_back(unify.Shape());
         }
+        // all of it shrunk away: an empty profile
+        if (out.empty())
+            return primitive(compound_of({}));
         // separate regions grown into each other become one
         return primitive(fused(out));
     });
@@ -2058,11 +2161,14 @@ hc_shape *hc_cut_all(const hc_shape *a, const hc_shape *const *tools, int n)
 // (which motif, dx, dy, a scale about the motif's origin), gathered into one
 // compound. mode 1 cuts them to `region` (only those crossing its border go
 // through the boolean, the pieces smaller than minArea left out), mode 2 keeps
-// only those wholly inside it.
+// only those wholly inside it. Plus 4: the cells touch one another (no gap
+// between them), joined into one face per area they cover.
 hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, int n, const hc_shape *region,
-                   int mode, double minArea)
+                   int flags, double minArea)
 {
     Stage stage("tiles");
+    const int mode = flags & 3;
+    const bool merge = flags & 4;
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         // the region's faces, each with a classifier in its own parameters made once (one made for every
         // point took most of the time of a knurl's thousands of cells) and its box, to skip it at once
@@ -2154,6 +2260,25 @@ hc_shape *hc_tiles(const hc_shape *const *motifs, int nm, const double *place, i
         if (kept.empty()) {
             set_error("no tile lies in the region (are the tiles larger than it?)");
             return nullptr;
+        }
+        // cells sharing their sides would make a profile that overlaps itself along them: a fuse of
+        // all of them (each one argument, so that they meet), then one face per area
+        if (merge && kept.size() > 1) {
+            TopTools_ListOfShape args, tools;
+            args.Append(kept[0]);
+            for (size_t i = 1; i < kept.size(); i++)
+                tools.Append(kept[i]);
+            BRepAlgoAPI_Fuse fuse;
+            fuse.SetArguments(args);
+            fuse.SetTools(tools);
+            fuse.SetRunParallel(Standard_True);
+            fuse.Build();
+            if (!fuse.IsDone() || fuse.HasErrors())
+                throw Standard_Failure("the touching tiles could not be joined");
+            ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_True, Standard_True, Standard_False);
+            unify.Build();
+            laps.lap("tiles: touching cells joined");
+            return primitive(unify.Shape());
         }
         return primitive(compound_of(kept));
     });
@@ -2473,6 +2598,31 @@ int hc_point_inside(const hc_shape *s, double x, double y, double z)
     });
 }
 
+// The axis of a face turned round one (a cylinder, a cone, a torus, a surface of revolution): a point
+// on it and its direction; 0 for any other face.
+int hc_face_axis(const hc_shape *s, int index, double out[6])
+{
+    return guarded<>(-1, [&]() -> int {
+        const auto &m = map_of(s, TopAbs_FACE);
+        if (index < 0 || index >= m.Extent())
+            throw Standard_Failure("no such face");
+        BRepAdaptor_Surface surf(TopoDS::Face(m(index + 1)));
+        gp_Ax1 ax;
+        switch (surf.GetType()) {
+        case GeomAbs_Cylinder: ax = surf.Cylinder().Axis(); break;
+        case GeomAbs_Cone: ax = surf.Cone().Axis(); break;
+        case GeomAbs_Torus: ax = surf.Torus().Axis(); break;
+        case GeomAbs_SurfaceOfRevolution: ax = surf.AxeOfRevolution(); break;
+        default: return 0;
+        }
+        const double v[6] = {ax.Location().X(), ax.Location().Y(), ax.Location().Z(), ax.Direction().X(),
+            ax.Direction().Y(), ax.Direction().Z()};
+        for (int i = 0; i < 6; i++)
+            out[i] = v[i];
+        return 1;
+    });
+}
+
 int hc_face_cylinder(const hc_shape *s, int index, double out[11])
 {
     return guarded<>(-1, [&]() -> int {
@@ -2505,7 +2655,33 @@ int hc_face_cylinder(const hc_shape *s, int index, double out[11])
     });
 }
 
-int hc_face_info(const hc_shape *s, int index, double out[7])
+// The vector area of a face, its normal integrated over it (∫n dA): half the sum of p × dp round its
+// boundary, the wires sampled finely enough, each edge the way the face runs it (holes the other way,
+// a seam there and back cancelling). Zero for a face that closes round on itself (a cylinder's whole
+// side, a sphere): it faces no way.
+static gp_Vec face_vector_area(const TopoDS_Face &f)
+{
+    gp_Vec sum(0, 0, 0);
+    for (TopExp_Explorer e(f, TopAbs_EDGE); e.More(); e.Next()) {
+        const TopoDS_Edge &edge = TopoDS::Edge(e.Current());
+        if (BRep_Tool::Degenerated(edge))
+            continue;
+        BRepAdaptor_Curve c(edge);
+        const double a = c.FirstParameter(), b = c.LastParameter();
+        const int n = c.GetType() == GeomAbs_Line ? 1 : 64;
+        const bool reversed = edge.Orientation() == TopAbs_REVERSED;
+        gp_Pnt prev = c.Value(reversed ? b : a);
+        for (int i = 1; i <= n; i++) {
+            const double t = reversed ? b - (b - a) * i / n : a + (b - a) * i / n;
+            const gp_Pnt q = c.Value(t);
+            sum += gp_Vec(prev.XYZ()).Crossed(gp_Vec(q.XYZ())) * 0.5;
+            prev = q;
+        }
+    }
+    return sum;
+}
+
+int hc_face_info(const hc_shape *s, int index, double out[8])
 {
     return guarded<>(-1, [&]() -> int {
         const auto &m = map_of(s, TopAbs_FACE);
@@ -2525,9 +2701,21 @@ int hc_face_info(const hc_shape *s, int index, double out[7])
         gp_Dir n = lp.IsNormalDefined() ? lp.Normal() : gp_Dir(0, 0, 1);
         if (f.Orientation() == TopAbs_REVERSED)
             n.Reverse();
+        // a curved face faces the way its normal points on the whole (a dome up), not the way it
+        // points at the middle of its parameters (anywhere round a cylinder's side); one closing
+        // round on itself faces no way (out[7] = 0)
+        double facing = 1;
+        if (surf.GetType() != GeomAbs_Plane) {
+            const gp_Vec va = face_vector_area(f);
+            const double area = props.Mass();
+            if (area > 0 && va.Magnitude() > 1e-3 * area)
+                n = gp_Dir(va);
+            else
+                facing = 0;
+        }
 
-        double vals[7] = {c.X(), c.Y(), c.Z(), n.X(), n.Y(), n.Z(), props.Mass()};
-        for (int i = 0; i < 7; i++)
+        double vals[8] = {c.X(), c.Y(), c.Z(), n.X(), n.Y(), n.Z(), props.Mass(), facing};
+        for (int i = 0; i < 8; i++)
             out[i] = vals[i];
         return 0;
     });
@@ -4206,6 +4394,102 @@ int hc_spots(const hc_shape *s, int n, double margin, double *out)
     });
 }
 
+// The volume solid `s` sweeps moving along v (in a straight line, not turning): `s` and every face of
+// it looking towards v swept along v (a point of the sweep leaves `s` through such a face), joined; a
+// cylinder split first where it turns from facing v to facing away, a face along v (a plane, a
+// cylinder round v) sweeping nothing. Planes and cylinders only (input 0 is `s`): other faces fail.
+hc_shape *hc_sweep_solid(const hc_shape *s, double vx, double vy, double vz)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const gp_Vec v(vx, vy, vz);
+        const double len = v.Magnitude();
+        if (len < 1e-9) {
+            set_error("no direction to sweep along");
+            return nullptr;
+        }
+        const gp_Dir dir(v);
+        Bnd_Box box;
+        BRepBndLib::Add(s->shape, box);
+        const double reach = std::sqrt(box.SquareExtent()) + len + 1;
+        std::vector<TopoDS_Shape> prisms;
+        auto sweep = [&](const TopoDS_Face &f) {
+            BRepPrimAPI_MakePrism p(f, v);
+            if (!p.IsDone())
+                throw Standard_Failure("a face could not be swept");
+            prisms.push_back(p.Shape());
+        };
+        // whether a face (or a piece of one) looks towards v, by its normal at its middle
+        auto ahead = [&](const TopoDS_Face &f) {
+            double u0, u1, v0, v1;
+            BRepTools::UVBounds(f, u0, u1, v0, v1);
+            BRepAdaptor_Surface a(f);
+            BRepLProp_SLProps lp(a, (u0 + u1) / 2, (v0 + v1) / 2, 1, 1e-6);
+            if (!lp.IsNormalDefined())
+                return false;
+            gp_Dir n = lp.Normal();
+            if (f.Orientation() == TopAbs_REVERSED)
+                n.Reverse();
+            return n.Dot(dir) > 1e-9;
+        };
+        for (TopExp_Explorer e(s->shape, TopAbs_FACE); e.More(); e.Next()) {
+            const TopoDS_Face &f = TopoDS::Face(e.Current());
+            BRepAdaptor_Surface surf(f);
+            if (surf.GetType() == GeomAbs_Plane) {
+                gp_Dir n = surf.Plane().Axis().Direction();
+                if (f.Orientation() == TopAbs_REVERSED)
+                    n.Reverse();
+                if (n.Dot(dir) > 1e-9)
+                    sweep(f);
+                continue;
+            }
+            if (surf.GetType() != GeomAbs_Cylinder)
+                throw Standard_Failure("only flat and cylindrical faces are swept");
+            const gp_Ax1 ax = surf.Cylinder().Axis();
+            const gp_Vec along(ax.Direction());
+            const gp_Vec across = v - along * v.Dot(along);
+            if (across.Magnitude() < 1e-9 * len)
+                continue;   // round v: it sweeps along itself
+            // split where it turns from facing v to facing away: the plane through its axis across v
+            const TopoDS_Face cut = BRepBuilderAPI_MakeFace(gp_Pln(ax.Location(), gp_Dir(across)), -reach, reach,
+                                                            -reach, reach);
+            BRepAlgoAPI_Splitter sp;
+            TopTools_ListOfShape args, tools;
+            args.Append(f);
+            tools.Append(cut);
+            sp.SetArguments(args);
+            sp.SetTools(tools);
+            sp.Build();
+            if (!sp.IsDone())
+                throw Standard_Failure("a curved face could not be split");
+            for (TopExp_Explorer p(sp.Shape(), TopAbs_FACE); p.More(); p.Next())
+                if (ahead(TopoDS::Face(p.Current())))
+                    sweep(TopoDS::Face(p.Current()));
+        }
+        if (prisms.empty()) {
+            history_new(s->shape);
+            for (size_t i = 0; i < g_history.size(); i++)
+                g_history[i] = Origin{0, (int)i};
+            return wrap(s->shape);
+        }
+        TopTools_ListOfShape args, tools;
+        args.Append(s->shape);
+        std::vector<const TopoDS_Shape *> inputs{&s->shape};
+        for (const auto &p : prisms) {
+            tools.Append(p);
+            inputs.push_back(&p);
+        }
+        BRepAlgoAPI_Fuse fuse;
+        fuse.SetArguments(args);
+        fuse.SetTools(tools);
+        fuse.SetRunParallel(Standard_True);
+        fuse.Build();
+        if (!fuse.IsDone() || fuse.HasErrors())
+            throw Standard_Failure("joining the swept faces failed");
+        history_record(fuse, inputs, fuse.Shape());
+        return wrap(unify_history(fuse.Shape()));
+    });
+}
+
 hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, double vz)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
@@ -4424,6 +4708,11 @@ int hc_edge_faces(const hc_shape *s, int *out)
                 if (j > 0 && (n == 0 || pair[0] != j - 1))
                     pair[n++] = j - 1;
             }
+            // a seam, where one curved face closes on itself (a cylinder's side), or a sphere's pole
+            // (an edge of no length): -2, no edge to round
+            const TopoDS_Edge &edge = TopoDS::Edge(edges(e));
+            if (n == 1 && (BRep_Tool::Degenerated(edge) || BRep_Tool::IsClosed(edge, TopoDS::Face(faces(pair[0] + 1)))))
+                pair[1] = -2;
         }
         return edges.Extent();
     });
@@ -4745,6 +5034,20 @@ int hc_bbox(const hc_shape *s, double out[6])
                 for (TopExp_Explorer e(BRepTools::OuterWire(face), TopAbs_EDGE); e.More(); e.Next())
                     edges++;
                 trimmed = edges != 4;
+                // four sides that are not lines of its parameters (fill's plate through a closed path of
+                // four points): the box of the parameters round them takes in surface beyond them too
+                for (TopExp_Explorer e(BRepTools::OuterWire(face), TopAbs_EDGE); e.More() && !trimmed; e.Next()) {
+                    double f, l;
+                    const Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(TopoDS::Edge(e.Current()), face, f, l);
+                    if (pc.IsNull())
+                        continue;
+                    // along one parameter, the other constant: its ends and middle tell
+                    const gp_Pnt2d p0 = pc->Value(f), p1 = pc->Value((f + l) / 2), p2 = pc->Value(l);
+                    const double tol = 1e-9 * (1 + p0.Distance(p2));
+                    const bool alongU = std::abs(p1.Y() - p0.Y()) < tol && std::abs(p2.Y() - p0.Y()) < tol;
+                    const bool alongV = std::abs(p1.X() - p0.X()) < tol && std::abs(p2.X() - p0.X()) < tol;
+                    trimmed = !alongU && !alongV;
+                }
             }
             if (type == GeomAbs_Torus || trimmed) {
                 // its holes do not reach past its outline: meshed without them (a face with hundreds of
@@ -4811,6 +5114,22 @@ int hc_bbox(const hc_shape *s, double out[6])
         if (!TopExp_Explorer(s->shape, TopAbs_FACE).More())
             BRepBndLib::AddOptimal(s->shape, b, false, false);   // wires, vertices
         b.Get(out[0], out[1], out[2], out[3], out[4], out[5]);
+        // the box of a curve or surface found by search comes out a hair (1e-7, the kernel's precision)
+        // past where it ends: a side ending at a corner ends there, so a part made on z = 0 has its
+        // bottom at 0, not -1e-7, and exact comparisons hold
+        Bnd_Box corners;
+        for (TopExp_Explorer v(s->shape, TopAbs_VERTEX); v.More(); v.Next())
+            corners.Add(BRep_Tool::Pnt(TopoDS::Vertex(v.Current())));
+        if (!corners.IsVoid()) {
+            double c[6];
+            corners.Get(c[0], c[1], c[2], c[3], c[4], c[5]);
+            for (int i = 0; i < 3; i++) {
+                if (out[i] < c[i] && c[i] - out[i] < 1e-6)
+                    out[i] = c[i];
+                if (out[i + 3] > c[i + 3] && out[i + 3] - c[i + 3] < 1e-6)
+                    out[i + 3] = c[i + 3];
+            }
+        }
         return 0;
     });
 }
@@ -5674,12 +5993,18 @@ const char *hc_face_name(int i) { return i >= 0 && i < (int)g_face_names.size() 
 // ---------------------------------------------------------------- paths, sweep, loft, outlines
 
 // Loops → planar profile faces: loops inside an odd number of others are holes.
+// (defined below, where the outline's functions are, in C linkage)
+extern "C" {
+static bool loops_meet(const std::vector<TopoDS_Wire> &loops);
+}
+
 static TopoDS_Shape faces_from_loops(const std::vector<TopoDS_Wire> &loops)
 {
     struct Loop {
         TopoDS_Face face;
         double area;
         gp_Pnt probe;
+        Bnd_Box box;
     };
     std::vector<Loop> ls;
     for (auto &w : loops) {
@@ -5694,16 +6019,54 @@ static TopoDS_Shape faces_from_loops(const std::vector<TopoDS_Wire> &loops)
         GProp_GProps p;
         BRepGProp::SurfaceProperties(f.Face(), p);
         TopExp_Explorer v(w, TopAbs_VERTEX);
-        ls.push_back({upward(f.Face()), std::abs(p.Mass()), BRep_Tool::Pnt(TopoDS::Vertex(v.Current()))});
+        ls.push_back({upward(f.Face()), std::abs(p.Mass()), BRep_Tool::Pnt(TopoDS::Vertex(v.Current())), Bnd_Box()});
+        BRepBndLib::Add(w, ls.back().box);
     }
     std::sort(ls.begin(), ls.end(), [](const Loop &a, const Loop &b) { return a.area > b.area; });
+    // a loop lies in those before it (larger) that hold its first point: none whose box is apart
+    auto holds = [&](size_t j, size_t i) {
+        return !ls[j].box.IsOut(ls[i].box) && BRepClass_FaceClassifier(ls[j].face, ls[i].probe, 1e-6).State() == TopAbs_IN;
+    };
+    if (ls.size() > 2 && !loops_meet(loops)) {
+        // loops apart, nested or not: each area at an even depth less the loops right inside it, in one
+        // cut each (one boolean a loop, on a face with more holes each time, took seconds for hundreds)
+        std::vector<int> parent(ls.size(), -1), depth(ls.size(), 0);
+        for (size_t i = 0; i < ls.size(); i++)
+            for (size_t j = 0; j < i; j++)
+                if (holds(j, i))
+                    parent[i] = (int)j;   // later ones are smaller: the last is the nearest
+        std::vector<TopoDS_Shape> regions;
+        for (size_t i = 0; i < ls.size(); i++) {
+            depth[i] = parent[i] < 0 ? 0 : depth[parent[i]] + 1;
+            if (depth[i] % 2)
+                continue;
+            TopTools_ListOfShape children;
+            for (size_t j = i + 1; j < ls.size(); j++)
+                if (parent[j] == (int)i)
+                    children.Append(ls[j].face);
+            if (children.IsEmpty()) {
+                regions.push_back(ls[i].face);
+                continue;
+            }
+            TopTools_ListOfShape args;
+            args.Append(ls[i].face);
+            BRepAlgoAPI_Cut cut;
+            cut.SetArguments(args);
+            cut.SetTools(children);
+            cut.Build();
+            if (!cut.IsDone())
+                throw Standard_Failure("cannot cut the holes out of the outline");
+            regions.push_back(cut.Shape());
+        }
+        ShapeUpgrade_UnifySameDomain unify(compound_of(regions), Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        return unify.Shape();
+    }
     TopoDS_Shape result;
     for (size_t i = 0; i < ls.size(); i++) {
         int depth = 0;
-        for (size_t j = 0; j < i; j++) {
-            BRepClass_FaceClassifier c(ls[j].face, ls[i].probe, 1e-6);
-            depth += c.State() == TopAbs_IN;
-        }
+        for (size_t j = 0; j < i; j++)
+            depth += holds(j, i);
         if (result.IsNull())
             result = ls[i].face;
         else if (depth % 2 == 0)
@@ -6142,16 +6505,59 @@ hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, doub
         // strays from it (0.003 mm after 40 turns of an M8 thread's root,
         // 9.6 mm after 80) while the edge keeps a tolerance of 1e-5 mm, as if
         // it were exact: sweeps along it follow the wrong curve, or fail.
-        // With a few pieces per turn the curve stays within 1e-6 mm. The
+        // With 8 pieces per turn the curve stays within 1e-6 mm (with 4 its
+        // tangent still wavered by 7e-4 over 30 turns: a sweep along it came
+        // out 0.3 % thin, or failed). The
         // "known bugs" unittest in lang/tests.d builds it the default way
         // (HC_WORKAROUND_HELIX_PIECES) and fails once the curve is right;
         // then the plain BuildCurves3d(e) will do.
         if (workaround(HC_WORKAROUND_HELIX_PIECES)) {
-            const int segments = std::max(30, (int)std::ceil(turns * 4));
+            const int segments = std::max(30, (int)std::ceil(turns * 8));
             BRepLib::BuildCurves3d(e, 1e-6, GeomAbs_C2, 9, segments);
         } else
             BRepLib::BuildCurves3d(e);
         return primitive(BRepBuilderAPI_MakeWire(e).Wire());
+    });
+}
+
+// Cubic Bézier pieces joined round on themselves (three poles each, then the
+// first again) as one cubic B-spline: knots three deep where they meet, then
+// taken out (the curve is smooth there to its second derivative), periodic.
+static Handle(Geom_BSplineCurve) closed_bezier_curve(const std::vector<gp_Pnt> &poles)
+{
+    const int m = (int)poles.size(), pieces = (m - 1) / 3;
+    TColgp_Array1OfPnt pp(1, m);
+    for (int k = 0; k < m; k++)
+        pp.SetValue(k + 1, poles[k]);
+    TColStd_Array1OfReal knots(1, pieces + 1);
+    TColStd_Array1OfInteger mults(1, pieces + 1);
+    for (int k = 0; k <= pieces; k++) {
+        knots.SetValue(k + 1, k);
+        mults.SetValue(k + 1, k == 0 || k == pieces ? 4 : 3);
+    }
+    Handle(Geom_BSplineCurve) curve = new Geom_BSplineCurve(pp, knots, mults, 3);
+    for (int k = pieces; k >= 2; k--)
+        curve->RemoveKnot(k, 1, 1e-9);
+    try {
+        curve->SetPeriodic();
+    } catch (Standard_Failure &) {
+    }
+    return curve;
+}
+
+// A closed path through cubic Bézier pieces in space (the poles x y z each,
+// three a piece and then the first again): a closed spline as a sketch's.
+hc_shape *hc_spline_poles(const double *xyz, int n)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        if (n < 4 || (n - 1) % 3 != 0) {
+            set_error("a closed spline has a wrong number of poles");
+            return nullptr;
+        }
+        std::vector<gp_Pnt> poles;
+        for (int i = 0; i < n; i++)
+            poles.emplace_back(xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]);
+        return primitive(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(closed_bezier_curve(poles)).Edge()).Wire());
     });
 }
 
@@ -6224,24 +6630,7 @@ static void parse_outline(const double *data, int n, std::vector<TopoDS_Wire> &l
                 const int pieces = (m - 1) / 3;
                 Handle(Geom_BSplineCurve) curve;
                 if (poles.front().Distance(poles.back()) < Precision::Confusion()) {
-                    // round on itself: the pieces as one cubic B-spline (knots three deep where they meet,
-                    // then taken out: the curve is smooth there to its second derivative), periodic
-                    TColgp_Array1OfPnt pp(1, m);
-                    for (int k = 0; k < m; k++)
-                        pp.SetValue(k + 1, poles[k]);
-                    TColStd_Array1OfReal knots(1, pieces + 1);
-                    TColStd_Array1OfInteger mults(1, pieces + 1);
-                    for (int k = 0; k <= pieces; k++) {
-                        knots.SetValue(k + 1, k);
-                        mults.SetValue(k + 1, k == 0 || k == pieces ? 4 : 3);
-                    }
-                    curve = new Geom_BSplineCurve(pp, knots, mults, 3);
-                    for (int k = pieces; k >= 2; k--)
-                        curve->RemoveKnot(k, 1, 1e-9);
-                    try {
-                        curve->SetPeriodic();
-                    } catch (Standard_Failure &) {
-                    }
+                    curve = closed_bezier_curve(poles);
                 } else {
                     // open: OpenCascade's own cubic through the pieces' ends, their steps as its parameters
                     // and the pieces' tangents at its two ends (a cubic through given points and end
@@ -7715,13 +8104,80 @@ static double roll_at(const double *angles, int n, double f)
     return angles[k] + (angles[k + 1] - angles[k]) * (x - k);
 }
 
+// The reference a roll is counted from, carried along the path one place to
+// the next (t the unit tangent there): kept normal to the path without
+// turning about it; or, along a helix (its `axis` given), at a fixed angle
+// from the axis seen across the path, as a sweep along a helix keeps its
+// profile. A null vector where it cannot be carried on.
+struct RollReference {
+    const gp_Vec *axis = nullptr;
+    double angle = 0;
+    bool started = false;
+    gp_Vec next(gp_Vec ref, const gp_Vec &t)
+    {
+        if (axis == nullptr) {
+            ref = ref - t * ref.Dot(t);
+            return ref.Magnitude() < 1e-9 ? gp_Vec(0, 0, 0) : ref.Normalized();
+        }
+        gp_Vec y = *axis - t * axis->Dot(t);
+        if (y.Magnitude() < 1e-9)
+            return gp_Vec(0, 0, 0);
+        y.Normalize();
+        const gp_Vec x = y.Crossed(t);
+        if (!started) {
+            angle = std::atan2(ref.Dot(y), ref.Dot(x));
+            started = true;
+        }
+        return x * std::cos(angle) + y * std::sin(angle);
+    }
+};
+
+// The axis of a path that is a helix (its tangent at one angle to a fixed
+// direction all along, not in a plane), or false.
+static bool helix_axis(const TopoDS_Wire &spine, gp_Vec &axis)
+{
+    BRepAdaptor_CompCurve c(spine);
+    GCPnts_UniformAbscissa ua(c, 97);
+    if (!ua.IsDone() || ua.NbPoints() != 97)
+        return false;
+    std::vector<gp_Vec> ts;
+    for (int i = 1; i <= ua.NbPoints(); i++) {
+        gp_Pnt p;
+        gp_Vec t;
+        c.D1(ua.Parameter(i), p, t);
+        if (t.Magnitude() < 1e-12)
+            return false;
+        ts.push_back(t.Normalized());
+    }
+    // the tangents lie on a cone round the axis: across any three in a row, all
+    // of them summed (an approximated helix wavers a little)
+    gp_Vec a(0, 0, 0);
+    for (size_t i = 0; i + 2 < ts.size(); i++) {
+        const gp_Vec n = (ts[i + 1] - ts[i]).Crossed(ts[i + 2] - ts[i + 1]);
+        a += a.Dot(n) < 0 ? -n : n;
+    }
+    if (a.Magnitude() < 1e-12)
+        return false;
+    a.Normalize();
+    const double slope = ts[0].Dot(a);
+    if (std::abs(slope) < 1e-6)
+        return false;   // in a plane: carried as any path is
+    for (const auto &t : ts)
+        if (std::abs(t.Dot(a) - slope) > 1e-6)
+            return false;
+    axis = a;
+    return true;
+}
+
 // The roll along the path (n angles evenly along it, from 0) that keeps the
 // profile's +Y towards `towards(fraction, point, tangent)`, from a profile
 // placed with its +X along `start`: against the reference carried along the
-// path without turning, as twist_guide carries it.
+// path (RollReference), as twist_guide carries it.
 static std::vector<double> roll_towards(const TopoDS_Wire &spine, gp_Dir start, int n,
-                                        const std::function<gp_Vec(double, const gp_Pnt &, const gp_Vec &)> &towards)
+                                        const std::function<gp_Vec(double, const gp_Pnt &, const gp_Vec &)> &towards,
+                                        const gp_Vec *axis = nullptr)
 {
+    RollReference carry{axis};
     BRepAdaptor_CompCurve c(spine);
     GCPnts_UniformAbscissa ua(c, n);
     if (!ua.IsDone() || ua.NbPoints() != n)
@@ -7736,10 +8192,9 @@ static std::vector<double> roll_towards(const TopoDS_Wire &spine, gp_Dir start, 
         if (t.Magnitude() < 1e-12)
             throw Standard_Failure("the path stops along the way");
         t.Normalize();
-        ref = ref - t * ref.Dot(t);
+        ref = carry.next(ref, t);
         if (ref.Magnitude() < 1e-9)
             throw Standard_Failure("the path turns too sharply");
-        ref.Normalize();
         const gp_Vec refY = t.Crossed(ref);
         gp_Vec d = towards((i - 1.0) / (n - 1.0), p, t);
         d = d - t * d.Dot(t);
@@ -7758,8 +8213,10 @@ static std::vector<double> roll_towards(const TopoDS_Wire &spine, gp_Dir start, 
     return r;
 }
 
-static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, const double *angles, int nAngles, double radius)
+static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, const double *angles, int nAngles, double radius,
+                               const gp_Vec *axis = nullptr)
 {
+    RollReference carry{axis};
     BRepAdaptor_CompCurve c(spine);
     // how the path bends: the guide keeps well inside its tightest bend (a
     // plane normal to the path would cut it twice there), and gets more
@@ -7790,6 +8247,25 @@ static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, const dou
     GCPnts_UniformAbscissa ua(c, n + 1);
     if (!ua.IsDone() || ua.NbPoints() < 3)
         throw Standard_Failure("the path is too short to twist along");
+    // and well inside where the path passes near itself again (the next turn of a
+    // helix): a plane across the path would cut the guide's other turns there too
+    {
+        std::vector<gp_Pnt> at;
+        for (int i = 1; i <= ua.NbPoints(); i++)
+            at.push_back(c.Value(ua.Parameter(i)));
+        const double length = GCPnts_AbscissaPoint::Length(c), step = length / (at.size() - 1);
+        const bool closed = at.front().Distance(at.back()) < 1e-7;
+        double clearance = Precision::Infinite();
+        for (size_t i = 0; i < at.size(); i++)
+            for (size_t j = i + 2; j < at.size(); j++) {
+                const double d = at[i].Distance(at[j]);
+                // how far apart along the path (either way round a closed one)
+                const double along = closed ? std::min((j - i) * step, length - (j - i) * step) : (j - i) * step;
+                if (along > 2 * d)
+                    clearance = std::min(clearance, d);
+            }
+        radius = std::min(radius, 0.25 * clearance);
+    }
     Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, ua.NbPoints());
     gp_Vec ref(start);
     for (int i = 1; i <= ua.NbPoints(); i++) {
@@ -7800,10 +8276,9 @@ static TopoDS_Wire twist_guide(const TopoDS_Wire &spine, gp_Dir start, const dou
             throw Standard_Failure("the path stops along the way: it cannot be twisted along");
         t.Normalize();
         // the reference carried along, kept normal to the path
-        ref = ref - t * ref.Dot(t);
+        ref = carry.next(ref, t);
         if (ref.Magnitude() < 1e-9)
             throw Standard_Failure("the path turns too sharply to twist along");
-        ref.Normalize();
         const double f = (i - 1.0) / (ua.NbPoints() - 1.0);
         const gp_Vec turned = ref.Rotated(gp_Ax1(gp::Origin(), gp_Dir(t)), roll_at(angles, nAngles, f));
         pts->SetValue(i, p.Translated(turned * radius));
@@ -7827,6 +8302,258 @@ hc_shape *hc_sweep_twisted(const hc_shape *profile, const hc_shape *path, int fr
     return hc_sweep_ex(profile, path, frenet, angles, twist != 0 ? 2 : 0, none, nullptr);
 }
 
+// A path cut where it turns sharply (the mitred corners of a polyline): the
+// smooth runs between the corners, each with where it lies along the path
+// (fractions of its length) and its unit tangents at both ends.
+struct PathRun {
+    TopoDS_Wire wire;
+    double from = 0, to = 1;
+    gp_Pnt start, end;
+    gp_Vec t0, t1;
+};
+
+static std::string point_text(const gp_Pnt &p)
+{
+    auto tidy = [](double v) { return std::abs(v) < 1e-9 ? 0.0 : v; };
+    char b[128];
+    std::snprintf(b, sizeof b, "(%g, %g, %g)", tidy(p.X()), tidy(p.Y()), tidy(p.Z()));
+    return b;
+}
+
+// The runs of `spine`; `closingCorner` tells whether a closed path has a
+// corner where it closes too. A path that turns right back on itself cannot
+// be swept along: said here, with where.
+static std::vector<PathRun> smooth_runs(const TopoDS_Wire &spine, bool &closingCorner)
+{
+    struct Piece {
+        TopoDS_Edge e;
+        gp_Pnt a, b;
+        gp_Vec ta, tb;
+        double len;
+    };
+    std::vector<Piece> ps;
+    double total = 0;
+    for (BRepTools_WireExplorer ex(spine); ex.More(); ex.Next()) {
+        const TopoDS_Edge &e = ex.Current();
+        if (BRep_Tool::Degenerated(e))
+            continue;
+        BRepAdaptor_Curve c(e);
+        const double len = GCPnts_AbscissaPoint::Length(c);
+        if (len < 1e-9)
+            continue;
+        Piece p{e, {}, {}, {}, {}, len};
+        const double u0 = c.FirstParameter(), u1 = c.LastParameter(), du = (u1 - u0) * 1e-6;
+        c.D1(u0, p.a, p.ta);
+        c.D1(u1, p.b, p.tb);
+        // a tangent that vanishes at an end: the way to a point just inside
+        if (p.ta.Magnitude() < 1e-12)
+            p.ta = gp_Vec(p.a, c.Value(u0 + du));
+        if (p.tb.Magnitude() < 1e-12)
+            p.tb = gp_Vec(c.Value(u1 - du), p.b);
+        if (e.Orientation() == TopAbs_REVERSED) {
+            std::swap(p.a, p.b);
+            std::swap(p.ta, p.tb);
+            p.ta.Reverse();
+            p.tb.Reverse();
+        }
+        p.ta.Normalize();
+        p.tb.Normalize();
+        ps.push_back(p);
+        total += len;
+    }
+    if (ps.empty())
+        throw Standard_Failure("the path has no length");
+    auto corner = [&](const gp_Vec &before, const gp_Vec &after, const gp_Pnt &at) {
+        const double c = before.Dot(after);
+        if (c < -1 + 1e-6)
+            throw Standard_Failure(("the path turns right back on itself at " + point_text(at) +
+                                    " mm: nothing can be swept along it there; let it turn aside instead").c_str());
+        return c < std::cos(1e-3);
+    };
+    std::vector<PathRun> runs;
+    BRepBuilderAPI_MakeWire mk;
+    double done = 0;
+    for (size_t i = 0; i < ps.size(); i++) {
+        const bool turns = i > 0 && corner(ps[i - 1].tb, ps[i].ta, ps[i].a);
+        if (turns) {
+            runs.back().wire = mk.Wire();
+            mk = BRepBuilderAPI_MakeWire();
+        }
+        if (i == 0 || turns) {
+            PathRun r;
+            r.from = done / total;
+            r.start = ps[i].a;
+            r.t0 = ps[i].ta;
+            runs.push_back(r);
+        }
+        mk.Add(ps[i].e);
+        done += ps[i].len;
+        runs.back().to = done / total;
+        runs.back().end = ps[i].b;
+        runs.back().t1 = ps[i].tb;
+    }
+    runs.back().wire = mk.Wire();
+    const bool closed = ps.front().a.Distance(ps.back().b) < 1e-7;
+    closingCorner = closed && corner(ps.back().tb, ps.front().ta, ps.front().a);
+    return runs;
+}
+
+// A run cut in two halves by length: a closed path swept with a roll (a
+// winding guide does not close on itself; two halves of one do).
+static std::vector<PathRun> halves(const PathRun &r)
+{
+    BRepAdaptor_CompCurve cc(r.wire);
+    GCPnts_AbscissaPoint ap(cc, GCPnts_AbscissaPoint::Length(cc) / 2, cc.FirstParameter());
+    if (!ap.IsDone())
+        return {r};
+    TopoDS_Edge at;
+    double u;
+    cc.Edge(ap.Parameter(), at, u);   // the edge cut, and where along its own curve
+    BRepBuilderAPI_MakeWire a, b;
+    bool past = false;
+    for (BRepTools_WireExplorer ex(r.wire); ex.More(); ex.Next()) {
+        const TopoDS_Edge &e = ex.Current();
+        if (past || !e.IsSame(at)) {
+            if (past)
+                b.Add(e);
+            else
+                a.Add(e);
+            continue;
+        }
+        past = true;
+        double f, l;
+        Handle(Geom_Curve) g = BRep_Tool::Curve(e, f, l);
+        const double eps = 1e-9 * (l - f);
+        if (g.IsNull() || u - f < eps || l - u < eps) {
+            // cut at one of its ends: whole on the side it lies
+            if ((e.Orientation() == TopAbs_REVERSED) == (u - f < eps))
+                a.Add(e);
+            else
+                b.Add(e);
+            continue;
+        }
+        TopoDS_Edge lo = BRepBuilderAPI_MakeEdge(g, f, u).Edge(), hi = BRepBuilderAPI_MakeEdge(g, u, l).Edge();
+        if (e.Orientation() == TopAbs_REVERSED) {
+            lo.Reverse();
+            hi.Reverse();
+            std::swap(lo, hi);
+        }
+        a.Add(lo);
+        b.Add(hi);
+    }
+    if (!a.IsDone() || !b.IsDone())
+        return {r};
+    PathRun first = r, second = r;
+    first.wire = a.Wire();
+    second.wire = b.Wire();
+    first.to = second.from = (r.from + r.to) / 2;
+    gp_Pnt mid;
+    gp_Vec t;
+    cc.D1(ap.Parameter(), mid, t);
+    if (t.Magnitude() < 1e-12)
+        return {r};
+    first.end = second.start = mid;
+    first.t1 = second.t0 = t.Normalized();
+    return {first, second};
+}
+
+// `ref`, normal to the path at the start of `run`, carried to its end
+// without turning about the path (as twist_guide carries it).
+static gp_Vec carry_along(const TopoDS_Wire &run, gp_Vec ref, const gp_Vec *axis)
+{
+    RollReference carry{axis};
+    BRepAdaptor_CompCurve c(run);
+    GCPnts_UniformAbscissa ua(c, 401);
+    if (!ua.IsDone())
+        throw Standard_Failure("the path is too short to sweep along");
+    for (int i = 1; i <= ua.NbPoints(); i++) {
+        gp_Pnt p;
+        gp_Vec t;
+        c.D1(ua.Parameter(i), p, t);
+        if (t.Magnitude() < 1e-12)
+            continue;
+        t.Normalize();
+        ref = carry.next(ref, t);
+        if (ref.Magnitude() < 1e-9)
+            throw Standard_Failure("the path turns too sharply");
+    }
+    return ref;
+}
+
+// How many whole turns a path makes (its curvature along its length, over 2 pi).
+static double turns_of(const TopoDS_Wire &w)
+{
+    BRepAdaptor_CompCurve c(w);
+    const int probes = 400;
+    const double u0 = c.FirstParameter(), u1 = c.LastParameter();
+    double turning = 0;
+    for (int i = 0; i < probes; i++) {
+        gp_Pnt p;
+        gp_Vec d1, d2;
+        c.D2(u0 + (u1 - u0) * (i + 0.5) / probes, p, d1, d2);
+        const double speed = d1.Magnitude();
+        if (speed > 1e-12)
+            turning += d1.Crossed(d2).Magnitude() / (speed * speed) * (u1 - u0) / probes;
+    }
+    return turning / (2 * M_PI);
+}
+
+// The turn that carries a direction across a corner from `before` to
+// `after`, about the corner itself: a mitre's (each side's section is the
+// other's mirrored in the mitre plane).
+static gp_Trsf across_corner(const gp_Pnt &at, const gp_Vec &before, const gp_Vec &after)
+{
+    gp_Trsf r;
+    const gp_Vec axis = before.Crossed(after);
+    if (axis.Magnitude() > 1e-12)
+        r.SetRotation(gp_Ax1(at, gp_Dir(axis)), before.Angle(after));
+    return r;
+}
+
+static TopoDS_Wire wire_in(const TopoDS_Shape &s)
+{
+    if (s.ShapeType() == TopAbs_WIRE)
+        return TopoDS::Wire(s);
+    if (s.ShapeType() == TopAbs_FACE)
+        return BRepTools::OuterWire(TopoDS::Face(s));
+    TopExp_Explorer ex(s, TopAbs_WIRE);
+    if (!ex.More())
+        throw Standard_Failure("the sweep has no end");
+    return TopoDS::Wire(ex.Current());
+}
+
+// A solid swept along one run of a path with corners, made to meet its
+// neighbours in the mitre planes of the corners: carried on straight past
+// each corner (its end section pushed out) and cut back to the plane that
+// halves the corner. `reach` is how far the profile gets from the path.
+static TopoDS_Shape mitre_ends(TopoDS_Shape s, const TopoDS_Wire &first, const TopoDS_Wire &last, const PathRun &r,
+                               const gp_Vec *before, const gp_Vec *after, double reach)
+{
+    auto cut_at = [&](const TopoDS_Wire &section, const gp_Pnt &c, const gp_Vec &out, const gp_Vec &other) {
+        // out: the way past the corner, along this run; other: the next run's way from the corner
+        const gp_Vec m = out + other;   // the mitre plane's normal, towards the side cut away
+        if (m.Magnitude() < 1e-9)
+            return;
+        const double half = out.Angle(other) / 2;   // half the turn
+        if (half < 1e-6)
+            return;   // no corner: the runs meet across the path already
+        const double ext = reach * std::tan(std::min(half, 1.55)) * 1.05 + 1e-3;
+        const double w = 4 * (reach + ext) + 1;
+        TopoDS_Face f = BRepBuilderAPI_MakeFace(section, Standard_True).Face();
+        TopoDS_Shape prism = BRepPrimAPI_MakePrism(f, out.Normalized() * ext).Shape();
+        s = BRepAlgoAPI_Fuse(s, prism).Shape();
+        gp_Ax2 ax(c, gp_Dir(m));
+        gp_Pnt o = c.Translated(-w * gp_Vec(ax.XDirection()) - w * gp_Vec(ax.YDirection()));
+        TopoDS_Shape box = BRepPrimAPI_MakeBox(gp_Ax2(o, gp_Dir(m), ax.XDirection()), 2 * w, 2 * w, w).Shape();
+        s = BRepAlgoAPI_Cut(s, box).Shape();
+    };
+    if (before != nullptr)
+        cut_at(first, r.start, -r.t0, -*before);
+    if (after != nullptr)
+        cut_at(last, r.end, r.t1, *after);
+    return s;
+}
+
 // The sweep, its roll about the path decided one way: frenet (the
 // curvature), `angles` (n of them evenly along it, turned from where it
 // would be), `up` (its +Y kept towards that direction) or `guide` (its +Y
@@ -7836,11 +8563,13 @@ hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet,
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         TopoDS_Wire spine = single_wire(path->shape);
+        bool closingCorner = false;
+        std::vector<PathRun> runs = smooth_runs(spine, closingCorner);
         BRepAdaptor_CompCurve c(spine);
         gp_Pnt p;
         gp_Vec t;
         c.D1(c.FirstParameter(), p, t);
-        gp_Dir tz(t);
+        gp_Dir tz(runs.front().t0);
         const gp_Vec fixedUp(up_[0], up_[1], up_[2]);
         const bool upMode = fixedUp.Magnitude() > 1e-12;
         // the profile is drawn on XY around the origin: carry it to the start of
@@ -7865,7 +8594,7 @@ hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet,
             return gp_Vec(q, on);
         };
         if (upMode || guide_ != nullptr) {
-            up = towards(0, p, gp_Vec(tz));
+            up = upMode ? fixedUp : towards(0, p, gp_Vec(tz));
             if ((up - gp_Vec(tz) * up.Dot(gp_Vec(tz))).Magnitude() < 1e-9)
                 throw Standard_Failure(upMode ? "the path starts along up: there the profile's +Y cannot point up"
                                               : up.Magnitude() < 1e-9
@@ -7874,10 +8603,31 @@ hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet,
                                                   : "the guide starts straight ahead of the path (or behind it): it "
                                                     "must run beside it, where the profile's +Y should point");
         }
+        if (upMode) {
+            // the path must never run along up (said here with where along the whole path; the
+            // roll is worked out a stretch at a time)
+            const gp_Dir u(fixedUp);
+            GCPnts_UniformAbscissa ua(c, 257);
+            for (int i = 1; ua.IsDone() && i <= ua.NbPoints(); i++) {
+                gp_Pnt q;
+                gp_Vec d;
+                c.D1(ua.Parameter(i), q, d);
+                if (d.Magnitude() > 1e-12 && d.Normalized().Crossed(gp_Vec(u)).Magnitude() < 1e-6)
+                    throw Standard_Failure(("at " + std::to_string((int)std::lround(100.0 * (i - 1) / (ua.NbPoints() - 1))) +
+                                            "% of its way the path runs along up: there the profile's +Y cannot point "
+                                            "up; give a guide instead").c_str());
+            }
+            for (const auto &r : runs)
+                if (r.t0.Crossed(gp_Vec(u)).Magnitude() < 1e-6 || r.t1.Crossed(gp_Vec(u)).Magnitude() < 1e-6)
+                    throw Standard_Failure(("at " + point_text(r.t0.Crossed(gp_Vec(u)).Magnitude() < 1e-6 ? r.start
+                                                                                                         : r.end) +
+                                            " the path runs along up: there the profile's +Y cannot point up; give a "
+                                            "guide instead").c_str());
+        }
         gp_Dir y(up - gp_Vec(tz) * up.Dot(gp_Vec(tz)));
         gp_Dir x = y.Crossed(tz);
         gp_Trsf place;
-        place.SetTransformation(gp_Ax3(p, tz, x), gp_Ax3(gp::XOY()));
+        place.SetTransformation(gp_Ax3(runs.front().start, tz, x), gp_Ax3(gp::XOY()));
         TopoDS_Shape moved = BRepBuilderAPI_Transform(profile->shape, place, true).Shape();
         // a curve, not an area: swept, it makes a surface
         const bool open = faces_of(moved).empty();
@@ -7886,54 +8636,157 @@ hc_shape *hc_sweep_ex(const hc_shape *profile, const hc_shape *path, int frenet,
             loops.outer = single_wire(moved);
         else
             loops = loops_of(moved);
-        // the roll: given, or towards up or the guide, made by a guide winding round the path
-        std::vector<double> rolls(angles, angles + nAngles);
-        if (upMode || guide_ != nullptr) {
-            try {
-                rolls = roll_towards(spine, x, 257, towards);
-            } catch (Standard_Failure &e) {
-                const std::string where = e.GetMessageString();
-                if (where.rfind("at ", 0) != 0)
-                    throw;
-                throw Standard_Failure((upMode ? where + " the path runs along up: there the profile's +Y cannot point "
-                                                         "up; give a guide instead"
-                                               : where + " the guide lies straight ahead of the path: it must run "
-                                                         "beside it").c_str());
-            }
-        }
-        TopoDS_Wire guide;
-        if (!rolls.empty()) {
-            Bnd_Box bb;
-            BRepBndLib::Add(moved, bb);
-            const double radius = std::max(1.0, std::sqrt(bb.SquareExtent()));
-            guide = twist_guide(spine, x, rolls.data(), (int)rolls.size(), radius);
-        }
-        auto pipe = [&](const TopoDS_Wire &w) {
-            BRepOffsetAPI_MakePipeShell mk(spine);
-            // the roll's guide winds round the path, in the planes across it
-            if (!guide.IsNull())
-                mk.SetMode(guide, Standard_False);
-            else if (frenet)
-                mk.SetMode(Standard_True);
-            mk.SetTransitionMode(BRepBuilderAPI_RightCorner);   // mitred corners on polylines
-            mk.Add(w);
+        Bnd_Box bb;
+        BRepBndLib::Add(moved, bb);
+        const double radius = std::max(1.0, std::sqrt(bb.SquareExtent()));
+        auto solid_of = [&](BRepOffsetAPI_MakePipeShell &mk) {
             mk.Build();
             if (!mk.IsDone())
-                throw Standard_Failure("sweep failed (does the path bend tighter than the profile?)");
+                throw Standard_Failure("it could not be built along this path");
             if (open)
                 return mk.Shape();
             mk.MakeSolid();
             TopoDS_Shape r = mk.Shape();
-            GProp_GProps g;
-            BRepGProp::VolumeProperties(r, g);
-            if (g.Mass() < 0)
+            GProp_GProps gp;
+            BRepGProp::VolumeProperties(r, gp);
+            if (gp.Mass() < 0)
                 r.Reverse();
             return r;
         };
-        TopoDS_Shape result = pipe(loops.outer);
+        // the roll given (twist) or towards the guide, along one run of the path from
+        // `ref` (the reference carried along, not turned): made by a guide winding round it.
+        // `already` is how far the profile has turned from ref where the run starts: the
+        // roll goes from there to what is asked, along the run
+        // along a helix the roll is counted from its axis (as a sweep without one keeps it)
+        gp_Vec axis;
+        const bool helical = runs.size() == 1 && !closingCorner && helix_axis(spine, axis);
+        auto rolls_along = [&](const PathRun &r, const gp_Vec &ref, double already) {
+            std::vector<double> rk;
+            const int m = 257;
+            if (upMode || guide_ != nullptr) {
+                try {
+                    rk = roll_towards(r.wire, gp_Dir(ref), m, [&](double f, const gp_Pnt &q, const gp_Vec &d) {
+                        return towards(r.from + (r.to - r.from) * f, q, d);
+                    }, helical ? &axis : nullptr);
+                } catch (Standard_Failure &e) {
+                    const std::string where = e.GetMessageString();
+                    if (where.rfind("at ", 0) != 0)
+                        throw;
+                    throw Standard_Failure((upMode ? where + " the path runs along up: there the profile's +Y cannot "
+                                                             "point up; give a guide instead"
+                                                   : where + " the guide lies straight ahead of the path: it must run "
+                                                             "beside it").c_str());
+                }
+            } else if (nAngles > 0)
+                for (int j = 0; j < m; j++)
+                    rk.push_back(roll_at(angles, nAngles, r.from + (r.to - r.from) * j / (m - 1.0)) - angles[0]);
+            else
+                rk.assign(m, 0.0);   // along a helix, no roll from its axis
+            const double off = already - rk[0];
+            for (int j = 0; j < m; j++)
+                rk[j] += off * (1 - j / (m - 1.0));
+            return rk;
+        };
+        // along a helix, even without a roll asked, the profile keeps to its axis: the least
+        // turning (OpenCascade's) drifts from it over many turns, a circle comes out off size or fails
+        const bool rolled = nAngles > 0 || guide_ != nullptr || upMode || (helical && !frenet);
+        if (rolled) {
+            // a closed path, and one turning many times (a long helix), swept a stretch at a
+            // time: a winding guide does not close on itself, and one too long fails
+            std::vector<PathRun> cut;
+            std::function<void(const PathRun &, bool)> add = [&](const PathRun &r, bool loop) {
+                if (loop || turns_of(r.wire) > 8) {
+                    auto two = halves(r);
+                    if (two.size() == 2) {
+                        add(two[0], false);
+                        add(two[1], false);
+                        return;
+                    }
+                }
+                cut.push_back(r);
+            };
+            for (const auto &r : runs)
+                add(r, runs.size() == 1 && r.start.Distance(r.end) < 1e-7);
+            runs = cut;
+        }
+        if (!rolled || (runs.size() == 1 && !closingCorner)) {
+            TopoDS_Wire guide;
+            if (rolled) {
+                const auto rk = rolls_along(runs.front(), gp_Vec(x), 0);
+                guide = twist_guide(spine, x, rk.data(), (int)rk.size(), radius, helical ? &axis : nullptr);
+            }
+            auto pipe = [&](const TopoDS_Wire &w) {
+                BRepOffsetAPI_MakePipeShell mk(spine);
+                // the roll's guide winds round the path, in the planes across it
+                if (!guide.IsNull())
+                    mk.SetMode(guide, Standard_False);
+                else if (frenet)
+                    mk.SetMode(Standard_True);
+                mk.SetTransitionMode(BRepBuilderAPI_RightCorner);   // mitred corners on polylines
+                mk.Add(w);
+                return solid_of(mk);
+            };
+            TopoDS_Shape result = pipe(loops.outer);
+            for (auto &h : loops.holes)
+                result = BRepAlgoAPI_Cut(result, pipe(h)).Shape();
+            return primitive(result);
+        }
+        // a roll along a path with sharp corners: a winding guide cannot turn a corner,
+        // so each run between them is swept on its own, the profile carried across each
+        // corner as a mitre does, and the runs joined in the mitre planes
+        if (open)
+            throw Standard_Failure("a curve cannot be swept with a roll along a path with sharp corners: round "
+                                   "them (path(…, bend: 2.mm))");
+        double reach = 0;
+        if (!bb.IsVoid()) {
+            double x0, y0, z0, x1, y1, z1;
+            bb.Get(x0, y0, z0, x1, y1, z1);
+            for (int i = 0; i < 8; i++)
+                reach = std::max(reach, runs.front().start.Distance(
+                                            gp_Pnt(i & 1 ? x1 : x0, i & 2 ? y1 : y0, i & 4 ? z1 : z0)));
+        }
+        std::vector<TopoDS_Wire> sections{loops.outer};
         for (auto &h : loops.holes)
-            result = BRepAlgoAPI_Cut(result, pipe(h)).Shape();
-        return primitive(result);
+            sections.push_back(h);
+        gp_Vec ref(x);
+        double already = 0;
+        TopoDS_Shape result;
+        for (size_t k = 0; k < runs.size(); k++) {
+            const PathRun &r = runs[k];
+            const auto rk = rolls_along(r, ref, already);
+            const TopoDS_Wire guide =
+                twist_guide(r.wire, gp_Dir(ref), rk.data(), (int)rk.size(), radius, helical ? &axis : nullptr);
+            const gp_Vec *before = k > 0 ? &runs[k - 1].t1 : closingCorner ? &runs.back().t1 : nullptr;
+            const gp_Vec *after = k + 1 < runs.size() ? &runs[k + 1].t0 : closingCorner ? &runs.front().t0 : nullptr;
+            TopoDS_Shape body;
+            std::vector<TopoDS_Wire> ends;
+            for (size_t i = 0; i < sections.size(); i++) {
+                BRepOffsetAPI_MakePipeShell mk(r.wire);
+                mk.SetMode(guide, Standard_False);
+                mk.Add(sections[i]);
+                TopoDS_Shape s = solid_of(mk);
+                const TopoDS_Wire last = wire_in(mk.LastShape());
+                ends.push_back(last);
+                s = mitre_ends(s, sections[i], last, r, before, after, reach);
+                body = i == 0 ? s : BRepAlgoAPI_Cut(body, s).Shape();
+            }
+            result = result.IsNull() ? body : BRepAlgoAPI_Fuse(result, body).Shape();
+            if (solid_volume(result) <= 0)
+                throw Standard_Failure("its stretches could not be joined: does the sweep run into itself (turns "
+                                       "of a helix touching, a profile wider than the pitch)?");
+            if (k + 1 < runs.size()) {
+                // the next run starts from this one's end sections, turned across the corner
+                const gp_Trsf turn = across_corner(r.end, r.t1, runs[k + 1].t0);
+                sections.clear();
+                for (auto &e : ends)
+                    sections.push_back(TopoDS::Wire(BRepBuilderAPI_Transform(e, turn, true).Shape()));
+                ref = carry_along(r.wire, ref, helical ? &axis : nullptr).Transformed(turn);
+                already = rk.back();
+            }
+        }
+        ShapeUpgrade_UnifySameDomain unify(result, Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        return primitive(unify.Shape());
     });
 }
 

@@ -80,8 +80,22 @@ string render(const Diagnostic d, string source)
     string head = format("%s[%s]: %s\n  --> %s\n", d.severity, d.code, d.message, d.span);
     immutable num = d.span.line.to!string;
     immutable pad = " ".replicate(num.length);
-    auto r = head ~ format("%s |\n%s | %s\n%s | %s%s", pad, num, lines[d.span.line - 1], pad,
-        " ".replicate(d.span.col - 1), "^".replicate(d.span.length ? d.span.length : 1));
+    // under the column (characters, not bytes), a tab of the line for each of its tabs: the
+    // caret then lines up however wide a tab shows
+    auto line = lines[d.span.line - 1];
+    string lead;
+    uint at = 1;
+    foreach (dchar c; line)
+    {
+        if (at >= d.span.col)
+            break;
+        lead ~= c == '\t' ? '\t' : ' ';
+        at++;
+    }
+    if (at < d.span.col)
+        lead ~= " ".replicate(d.span.col - at);
+    auto r = head ~ format("%s |\n%s | %s\n%s | %s%s", pad, num, line, pad, lead,
+        "^".replicate(d.span.length ? d.span.length : 1));
     if (d.suggestion.length)
         r ~= " " ~ d.suggestion;
     return r ~ "\n";

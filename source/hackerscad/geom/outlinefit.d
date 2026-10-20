@@ -183,8 +183,11 @@ Element[] withoutSlivers(Element[] loop)
 }
 
 /// A closed outline as lines and arcs within `tol` of its points: from each
-/// point, the longest piece (line or arc) that stays within it.
-Element[] fit(const P2[] input, double tol, bool traced = false)
+/// point, the longest piece (line or arc) that stays within it. `facet`: how
+/// far a curve may stand off the chord between two of its points (the
+/// deflection of the mesh they come from), when known: a few points far apart
+/// lying on a circle (a trapezoid's four corners do) are then corners, not an arc.
+Element[] fit(const P2[] input, double tol, bool traced = false, double facet = double.infinity)
 {
     if (traced)
         return fitTraced(input, tol);
@@ -262,7 +265,7 @@ Element[] fit(const P2[] input, double tol, bool traced = false)
             foreach (k; 0 .. pts.length - 1)
             {
                 immutable l = dist(pts[k], pts[k + 1]);
-                if (l > 0.77 * r)
+                if (l > 0.77 * r || r - sqrt(max(0.0, r * r - l * l / 4)) > facet)
                     ok = false;
                 lens ~= l;
             }

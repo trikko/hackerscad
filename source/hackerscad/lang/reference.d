@@ -193,7 +193,7 @@ immutable Ref[] reference =
     F("map", "list", ["f: x => …"], "list", "xs.map(x => x * 2)."),
     F("filter", "list", ["f: x => bool"], "list", "xs.filter(x => x > 0)."),
     F("fold", "list", ["f: (acc, x) => …", "seed"], "", "xs.fold((acc, x) => acc + x)."),
-    F("sum", "list", [], "", "The sum; of solids, their union."),
+    F("sum", "list", [], "", "The sum; of solids, their union (of an empty Solid[], an empty solid)."),
     F("fuse", "", ["solids: Solid[]"], "Solid", "The union of a list of solids."),
     F("any", "list", ["f: x => bool"], "bool", "Whether some element satisfies f."),
     F("all", "list", ["f: x => bool"], "bool", "Whether every element satisfies f."),
@@ -227,7 +227,7 @@ immutable Ref[] reference =
     withForms(F("sphere", "", ["r: Length", "d: Length"], "Solid", "A sphere centred on the origin."), [
         "sphere(5.mm)        // radius",
         "sphere(d: 10.mm)    // diameter"]),
-    F("load", "", ["path: string", "scale: number"], "Solid", "A part from an STL, OBJ, 3MF or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm)."),
+    F("load", "", ["path: string", "scale: number"], "Solid", "A part from an STL, OBJ, 3MF or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm), whole circles and ellipses as true curves."),
     ]) ~
     group("Transforms", [
     withForms(F("move", "Shape", ["v: Vec", "x: Length", "y: Length", "z: Length"], "", "Moves: move(x: 10.mm) or move(vec(…))."), [
@@ -261,12 +261,12 @@ immutable Ref[] reference =
         "Tapers faces so the part leaves a mould."),
     ]) ~
     group("Placement and copies", [
-    F("nextTo", "Solid", ["other: Solid", "dir: Direction", "gap: Length"], "Solid", "Beside another solid: a.nextTo(b, X, gap: 10.mm)."),
+    F("nextTo", "Solid", ["other: Solid", "dir: Direction", "gap: Length"], "Solid", "Beside another solid: a.nextTo(b, X, gap: 10.mm), its box just past b's that way (only its x changes); an oblique direction (vec(1, 2, 0)) puts its centre on the line from b's centre that way, the boxes touching, gap further along it."),
     F("on", "Solid", ["other: Solid", "gap: Length"], "Solid", "On top of another solid."),
     F("align", "Solid", ["other: Solid", "x: string", "y: string", "z: string"], "Solid",
         "Aligns bounding boxes per axis: \"min\", \"center\" or \"max\"."),
-    F("linearPattern", "Solid", ["n: int", "step: Vec"], "Solid", "n copies, step apart, as one solid."),
-    F("circularPattern", "Solid", ["n: int", "axis: Axis", "angle: Angle"], "Solid", "n copies around an axis, as one solid."),
+    F("linearPattern", "Solid", ["n: int", "step: Vec"], "Solid", "n copies, step apart, as one solid (its tagged references: the first copy's)."),
+    F("circularPattern", "Solid", ["n: int", "axis: Axis", "angle: Angle"], "Solid", "n copies around an axis, as one solid (its tagged references: the first copy's)."),
     F("placeOn", "Solid", ["frame: Frame", "from: Faces", "at: Vec"], "Solid",
         "A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin)."),
     withForms(F("split", "Solid", ["plane: Plane | Surface | Solid"], "Solid[]", "Cuts with a plane (or a surface, or another solid's skin) into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…"), [
@@ -299,7 +299,7 @@ immutable Ref[] reference =
         "ellipse(15.mm, 8.mm)                   // rx, ry",
         "ellipse(vec(10, 0), rx: 15.mm, ry: 8.mm, angle: 30.deg)  // round a point, turned"]),
     withForms(F("polygon", "", ["points: Vec[]", "smooth: bool", "n: int", "r | d: Length", "fit: string", "angle: Angle", "center: Vec"], "Profile",
-        "A polygon through the points (smooth: true, a smooth closed curve through them instead); or a regular one of n sides, centred on the origin or round a point: d/r the circle through its corners, or with fit: \"sides\" the circle its sides touch; angle: the direction of its first corner, else its first side lies at the bottom, horizontal. s.polygon with everything given."), [
+        "A polygon through the points (smooth: true, a smooth closed curve through them instead, the same as a sketch's closed spline: whichever point it starts at); or a regular one of n sides, centred on the origin or round a point: d/r the circle through its corners, or with fit: \"sides\" the circle its sides touch; angle: the direction of its first corner, else its first side lies at the bottom, horizontal. s.polygon with everything given."), [
         "polygon([vec(0, 0), vec(30, 0), vec(0, 20)])  // through the points",
         "polygon(6, d: 10.mm)                  // regular: corners 10 mm apart across the middle",
         "polygon(6, d: 13.mm, fit: \"sides\")    // 13 mm across the flats: an M8 nut",
@@ -320,26 +320,26 @@ immutable Ref[] reference =
         "handle.knurl(faces.largest, kind: \"straight\", pitch: 2.mm, depth: 0.6.mm)",
         "box(30.mm, 18.mm, 6.mm).knurl(faces.top, margin: 2.mm)            // a flat pad"]),
     withForms(F("tiles", "Profile", ["kind: string", "size: Length", "gap: Length", "round: Length", "angle: Angle", "tile: Profile | Profile[]", "step: Vec[2]", "origin: Vec", "whole: bool", "scale: number | (Vec2 centre) => number", "keep: (Vec2 centre) => bool", "seed: int", "jitter: number", "relax: int", "points: Vec[]"], "Profile",
-        "The region filled with cells, gap apart (each shrunk by gap/2), cut at its border (whole: true keeps only the cells wholly inside): subtract it for a grille, cut or extrude it on a face for a pattern of pockets or reliefs (taper: slants their sides). kind: \"square\", \"hex\", \"triangle\", \"brick\", \"octagon\" (with small squares), \"diamond\", size the distance between neighbouring cells' centres; \"voronoi\", cells round points about size apart, jitter: 0 (hexagons) to 1 (the default), relax: smoothing passes for evener cells, seed:, or points: your own. Or your own tile: one profile or several (a sketch's), repeated by step: [a, b]; the copies must not overlap, an error says which do. round: rounds each cell, angle: turns the tiling, origin: where a cell sits (the region's centre); scale: a factor for each cell, keep: which cells stay, both functions of its centre."), [
+        "The region filled with cells, gap apart (each shrunk by gap/2), cut at its border (whole: true keeps only the cells wholly inside): subtract it for a grille, cut or extrude it on a face for a pattern of pockets or reliefs (taper: slants their sides). kind: \"square\", \"hex\", \"triangle\", \"brick\", \"octagon\" (with small squares), \"diamond\", size the distance between neighbouring cells' centres; \"voronoi\", cells round points about size apart, jitter: 0 (hexagons) to 1 (the default), relax: smoothing passes for evener cells, seed:, or points: your own. Or your own tile: one profile or several (a sketch's), repeated by step: [a, b]; the copies must not overlap, an error says which do. round: rounds each cell, angle: turns the tiling, origin: where a cell sits (the region's centre); scale: a factor for each cell, keep: which cells stay, both functions of its centre. With no gap (the default) the cells touch: they are joined into one area. A region drawn on a face or lying in another plane (a section) is tiled there, in that plane's coordinates, and its tiles stay there."), [
         "rect(100.mm, 60.mm).tiles(kind: \"hex\", size: 10.mm, gap: 2.mm)        // a honeycomb",
         "plate - rect(90.mm, 50.mm).tiles(kind: \"voronoi\", size: 8.mm, gap: 1.5.mm, round: 0.6.mm, relax: 2)",
         "r.tiles(tile: circle(d: 5.mm), step: [vec(7.mm, 0.mm), vec(3.5.mm, 6.mm)], scale: (Vec2 c) => 1 - c.length / 80.mm)",
         "body.extrude(r.tiles(kind: \"square\", size: 6.mm, gap: 1.mm), on: faces.top, depth: 1.mm, taper: 30.deg)"]),
-    F("text", "", ["text: string", "size: Length", "font: string"], "Profile", "A text outline starting at the origin on the baseline."),
+    F("text", "", ["text: string", "size: Length", "font: string"], "Profile", "A text outline starting at the origin on the baseline; font: an installed font's name (a warning, naming similar ones, when it is not installed and another is used) or a font file's path."),
     F("round", "Profile", ["r: Length"], "Profile", "Rounds every corner, outward and inward, holes too; an error names a corner r is too large for."),
-    F("offset", "Profile", ["distance: Length"], "Profile", "Grows (d > 0) or shrinks the outline; on a plane, the parallel plane."),
+    F("offset", "Profile", ["distance: Length"], "Profile", "Grows (d > 0) or shrinks the outline (shrunk to nothing: an empty profile, isEmpty); on a plane, the parallel plane."),
     F("spots", "Profile", ["n: int", "margin: Length"], "Vec3[]", "Up to n points inside the profile (in any plane), at least margin from its edges, as far apart as they can be: where to put keys, pins or feet; one point: the middle; none when nothing is that far from the edges."),
     F("across", "Profile", ["axis: X | Y"], "Profile", "The profile stood up across X or Y, as extrude(along:) stands it (across X: its x along Y, its y up Z), at the origin: move it along the axis and loft through several, or extrude it where it is."),
-    F("offset", "Solid", ["distance: Length", "sharp: bool"], "Solid", "Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened); sharp: true its faces moved and extended until they meet, edges staying sharp."),
+    F("offset", "Solid", ["distance: Length", "sharp: bool"], "Solid", "Grows (d > 0) or shrinks the solid, round where it turns (its walls thickened); sharp: true its faces moved and extended until they meet, edges staying sharp. Holes it grows over close up (filled)."),
     withForms(F("extrude", "Profile", ["height: Length", "taper: Angle", "symmetric: bool", "twist: Angle", "along: X | Y", "shear: Vec"], "Solid",
-        "A solid along +Z from the profile (a negative height: down, towards -Z); taper: 3.deg leans its sides in going away from the profile, whichever way the solid goes (the outline narrows, holes widen; a negative taper widens); twist: 90.deg turns it around Z as it rises, evenly; shear: vec(dx, dy) moves its top that much sideways (in the profile's own x and y) from its bottom, the sides leaning straight: an oblique prism (a blade's bevel, a leaning slot). along: X stands the profile up across X (its x along Y, its y up Z) and pushes it towards +X, along: Y (its x along X) towards +Y; a negative height towards -X or -Y. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is."), [
+        "A solid along +Z from the profile (a negative height: down, towards -Z; not zero); taper: 3.deg leans its sides in going away from the profile, whichever way the solid goes (the outline narrows, holes widen; a negative taper widens); twist: 90.deg turns it around Z as it rises, evenly; shear: vec(dx, dy) moves its top that much sideways (in the profile's own x and y) from its bottom, the sides leaning straight: an oblique prism (a blade's bevel, a leaning slot). symmetric: true puts half the height each side of the profile, which is then the middle of the solid (a taper narrows both ways from it, a twist turns half each way). along: X stands the profile up across X (its x along Y, its y up Z) and pushes it towards +X, along: Y (its x along X) towards +Y; a negative height towards -X or -Y. A profile lying in another plane (a section, one turned or drawn on a face) is extruded across its own plane, from where it is."), [
         "rect(40.mm, 20.mm).extrude(5.mm)   // z 0 .. 5",
         "rect(40.mm, 20.mm).extrude(5.mm, along: Y)   // its x along X, y up Z: y 0 .. 5",
         "rect(40.mm, 20.mm).extrude(5.mm, along: X)   // its x along Y, y up Z: x 0 .. 5",
         "body.section(XZ.offset(10.mm)).extrude(2.mm)   // from the cut, along its normal",
         "rect(40.mm, 20.mm).extrude(5.mm, shear: vec(3.mm, 0.mm))   // leaning: the top 3 mm to the right"]),
     F("revolve", "Profile", ["axis: Axis", "angle: Angle"], "Solid",
-        "Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z."),
+        "Turns the profile around an axis in its plane, on one side of it (touching it at most), by an angle up to 360°; without one, x is the radius and y the height along Z. A profile drawn on a face or plane, or lying in one (a section), turns where it lies: its axis a world one (X, Y, Z through the plane's origin, or an Axis anywhere), as everything else in that plane; without one, round its own y axis (one drawn on XZ: round Z), stood up when its y is not upright."),
     withForms(F("sweep", "Profile", ["path: Path", "frenet: bool", "twist: Angle | (t) => Angle", "up: Direction", "guide: Path"], "Solid",
         "Moves the profile along a path, across it (a curve, a Path on XY, instead: a Surface); how it turns about the path: as little as it can, or one of frenet: true (with the curvature: helices), twist: 360.deg (once, evenly; t => angle: by that much at t, 0 at the start to 1 at the end), up: Z (its +Y towards that way all along; an error where the path runs that way), guide: rail (its +Y towards the point as far along that path)."), [
         "circle(d: 4.mm).sweep(p)                                // turning as little as it can",
@@ -348,11 +348,11 @@ immutable Ref[] reference =
         "rect(10.mm, 2.mm).sweep(p, twist: t => 60.deg * sin(t * 720.deg)) // swinging"]),
     F("loft", "", ["profiles: Profile[]", "ruled: bool", "inside: Vec3[][]"], "Solid", "A solid through profiles placed in space; through paths (Path[]), a Surface; or through rings of points (Vec3[][], the same count each): one smooth surface closed round them, much faster for many rings; inside: rings for an inner wall, hollow with a floor, open between the last rings (which lie in one plane)."),
     F("hull", "", ["shapes…"], "Solid",
-        "The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile. Their flat faces it lies on keep their tags. grow: 2.mm makes it that much bigger all round, rounded (2% farther at most, never nearer): quicker and surer than an offset of a hull."),
+        "The smallest convex shape around solids and profiles: hull(a, b) or hull([a, b]); profiles in one plane give a profile, lying there (one of no place taken into it); in different planes, a solid. Their flat faces it lies on keep their tags. grow: 2.mm makes it that much bigger all round, rounded (2% farther at most, never nearer): quicker and surer than an offset of a hull."),
     F("minkowski", "", ["a", "b"], "Solid",
-        "a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex. Their flat faces, moved out, keep their tags."),
+        "a moved by every point of b: minkowski(box(…), sphere(2.mm)) rounds the box; one of the two must be convex. Their flat faces, moved out, keep their tags; a's own tags and references stay."),
     withForms(F("cut", "Solid", ["profile: Profile | Solid", "on: Frame | Faces | Plane", "at: Vec3", "depth: Length", "through: bool", "taper: Angle", "wrap: Faces", "project: Faces", "along: Vec3"], "Solid",
-        "Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm); body.extrude(p, on: …, depth:) raises it the same way. On a curved face (one face of any shape): wrap: rolls the profile onto it like a label, its lengths kept along the face (exact on cylinders, cones and extrusions, a little stretched on a sphere), its x across the face (round a cylinder) and y along it, read from outside; project: carries it onto the face along a direction (along:, else the face's normal), from the plane touching the face, as a light casts it (stretched where the face turns away). The profile's origin goes to the front of the face (the side facing -Y, halfway along), or to at: a point over it; depth goes along the face's normal."), [
+        "Digs a profile into a face: body.cut(p, on: frame, depth: 2.mm); body.extrude(p, on: …, depth:) raises it the same way. On a curved face (one face of any shape): wrap: rolls the profile onto it like a label, its lengths kept along the face (exact on cylinders, cones and extrusions, a little stretched on a sphere), its x across the face (round a cylinder) and y along it, read from outside; project: carries it onto the face along a direction (along:, else the face's normal), from the plane touching the face, as a light casts it (stretched where the face turns away). The profile's origin goes to the front of the face (the side facing -Y, halfway along), or to at: a point over it; depth goes along the face's normal. depth is always positive: cut digs in, extrude raises (a negative depth is an error: use the other one)."), [
         "body.cut(circle(d: 6.mm), on: faces.top, depth: 2.mm)",
         "mug.extrude(text(\"CARLO\", size: 8.mm).centered, wrap: faces.largest, depth: 0.6.mm)   // round the side",
         "pot.cut(rect(120.mm, 40.mm).tiles(kind: \"hex\", size: 6.mm, gap: 1.mm), wrap: faces.largest, depth: 1.mm)",
@@ -370,7 +370,7 @@ immutable Ref[] reference =
         "path([vec(0, 0, 0), vec(0, 0, 20), vec(30, 0, 20)], bend: 5.mm) // bent round",
         "body.path(edges.loop(faces.top))                               // along a solid's edges",
         "path(top.path, front.path)                                     // from two views"]),
-    F("spline", "", ["points: Vec[]", "closed: bool"], "Path", "A smooth curve through the points."),
+    F("spline", "", ["points: Vec[]", "closed: bool"], "Path", "A smooth curve through the points; closed: true, round through the first again, the same curve whichever point it starts at."),
     F("isoThread", "", ["d: Length", "pitch: Length", "length: Length", "chamfer: Length"], "Solid",
         "A right-handed ISO metric thread (basic profile) standing on z = 0, its ends chamfered by chamfer: (0, square), built exactly from its helices: what the threads library's threadedRod and tappedHole are made of (use those)."),
     withForms(F("helix", "", ["r: Length", "d: Length", "pitch: Length", "height: Length", "left: bool"], "Path", "A helix around +Z."), [
@@ -384,10 +384,11 @@ immutable Ref[] reference =
         "plane(p1, p2, p3)                        // through three points",
         "body.plane(faces.top)                    // the plane of a face",
         "body.plane(faces.top, faces.bottom)      // halfway between two parallel faces"]),
-    withForms(F("axis", "", ["origin: Vec", "direction: Direction"], "Axis", "axis(origin:, direction:), axis(p1, p2), or body.axis(edges…)."), [
+    withForms(F("axis", "", ["origin: Vec", "direction: Direction"], "Axis", "axis(origin:, direction:), axis(p1, p2), body.axis(edges…) (a straight edge's line, a circle's centre and normal) or body.axis(faces…) (a cylinder's, a cone's or a turned face's axis)."), [
         "axis(origin: p, direction: Z)   // a point and a direction",
         "axis(p1, p2)                    // through two points",
-        "body.axis(edges.of(faces.top))  // along an edge"]),
+        "body.axis(edges.of(faces.top))  // along an edge",
+        "shaft.axis(faces.largest)       // a cylinder's axis"]),
     F("frame", "Solid", ["face: Faces", "origin: Vec", "x: Direction"], "Frame", "A frame on a face: origin at its centre, Z outwards."),
     F("at", "Frame", ["x: Length", "y: Length", "z: Length"], "Frame", "The frame with its origin moved, in local coordinates."),
     F("turn", "Frame", ["angle: Angle"], "Frame", "The frame turned around its Z."),
@@ -395,17 +396,17 @@ immutable Ref[] reference =
     ]) ~
     group("Tags", [
     withForms(F("addTag", "Solid", ["tag: string | string[]", "recursive: bool"], "Solid",
-        "Tags the solid (a profile, a path, a surface) as an object: b.addTag(\"body\"). recursive: true tags each of its faces as well, which keep it when the solid is joined to or cut from another. Changes the variable it is called on and gives the solid back, for a chain."), [
+        "Tags the solid (a profile, a path, a surface) as an object: b.addTag(\"body\"). A tag is a name, not blank and without ';'; one with a dot belongs to the module named before its last dot (\"hinges.pin\"), given only there. recursive: true tags each of its faces as well, which keep it when the solid is joined to or cut from another. Changes the variable it is called on and gives the solid back, for a chain."), [
         "b.addTag(\"body\")",
         "auto bore = cylinder(d: 5.mm, h: 20.mm).addTag(\"bore\", recursive: true)   // the hole's wall, tagged"]),
     withForms(F("addTag", "Solid", ["tag: string | string[]", "at: Vec3 | Axis | Plane | Frame"], "Solid",
-        "Tags a point, an axis, a plane or a frame on the solid: it moves, turns, mirrors and scales with it, and stays through cuts and joins. Read it back with b.point(tag), b.axis(tag), b.plane(tag), b.frame(tag)."), [
+        "Tags a point, an axis, a plane or a frame on the solid: it moves, turns, mirrors and scales with it, and stays through cuts and joins (a copy joined to itself holds it once). Split (split, halves, pieces), each piece has the references lying in it or on it, one on the cut both, one in none (a hole's axis) the nearest; an intersection drops those in what it cuts away; a pattern keeps its first copy's; minkowski(a, b) a's. Given again, the tag's new reference replaces the old. Read it back with b.point(tag), b.axis(tag), b.plane(tag), b.frame(tag)."), [
         "b.addTag(\"pin\", at: vec(15.mm, 10.mm, 8.mm))",
         "b.addTag(\"hinge\", at: axis(origin: vec(-30.mm, 0.mm, 4.mm), direction: Y))"]),
     F("point", "Solid", ["tag: string"], "Vec3", "Where the reference tagged so is now (a point, or the origin of an axis, plane or frame): b.point(\"pin\")."),
     F("axis", "Solid", ["tag: string"], "Axis", "The axis tagged so (also a plane's normal or a frame's Z through its origin); a circle or arc tagged in the sketch: its centre, across the sketch."),
     F("plane", "Solid", ["tag: string"], "Plane", "The plane tagged so (also an axis's or a frame's, across it)."),
-    F("frame", "Solid", ["tag: string"], "Frame", "The frame tagged so, or one on the point, axis or plane tagged so: to place a part there with placeOn."),
+    F("frame", "Solid", ["tag: string"], "Frame", "The frame tagged so, or one on the point, axis or plane tagged so (its X as plane(…).frame() has it): to place a part there with placeOn."),
     F("removeTag", "Solid", ["tag: string | string[]", "recursive: bool"], "Solid", "Takes a tag off the solid (and the references tagged so); recursive: true off its faces too."),
     F("clearTags", "Solid", ["recursive: bool"], "Solid", "Takes every tag off the solid; recursive: true off its faces too."),
     F("hasTag", "Solid", ["tag: string"], "bool", "Whether the solid itself is tagged so."),
@@ -428,8 +429,9 @@ immutable Ref[] reference =
     P("list", "Faces", "Face[]", "Taken from a solid: the faces selected, as Face values (foreach over b.faces.top does the same). Edges likewise, as Edge values."),
     ]) ~
     group("Measuring", [
-    P("bbox", "Solid", "BBox", "The bounding box: min, max, size, center."),
+    P("bbox", "Solid", "BBox", "The bounding box: min, max, size, center; of a profile drawn on a face, where it lies."),
     P("volume", "Solid", "Volume", "The volume."),
+    P("length", "Path", "Length", "How long the path is, along it (round a closed one, once)."),
     P("centroid", "Solid", "Vec3", "The centre of mass (of a uniform solid)."),
     F("section", "Solid", ["plane: Plane"], "Profile", "The cut of the solid by a plane: a profile in that plane."),
     F("projection", "Solid", ["plane: Plane"], "Profile", "The solid's shadow on a plane, cast along its normal: a profile lying in it. Without a plane, seen from above onto XY."),
@@ -446,9 +448,9 @@ immutable Ref[] reference =
     F("mass", "Solid", ["density: number"], "number", "Grams, for a density in g/cm³: PLA 1.24, PETG 1.27, ABS 1.04, aluminium 2.70, steel 7.85."),
     F("inertia", "Solid", ["density: number"], "Vec3", "The principal moments of inertia about the centre of mass, ascending, in g·mm²."),
     P("area", "Shape", "Area", "The surface area (of a profile: its area)."),
-    P("isEmpty", "Solid", "bool", "Whether nothing is left."),
+    P("isEmpty", "Solid", "bool", "Whether nothing is left (a profile less one over all of it is an empty profile)."),
     P("isValid", "Solid", "bool", "Whether the solid is a valid closed solid."),
-    withForms(F("contains", "Solid", ["point: Vec"], "bool", "Whether a point lies inside the solid (on its surface: no); of a profile, inside its area, the point taken onto its plane."), [
+    withForms(F("contains", "Solid", ["point: Vec"], "bool", "Whether a point lies inside the solid (on its surface: no); of a profile, inside its area, the point (a world one, vec(x, y) at z = 0) taken onto the profile's plane."), [
         "assert(body.contains(vec(10.mm, 5.mm, 2.mm)), \"the boss is solid there\")",
         "sides.above.contains(vec(30.mm, 15.mm, 2.mm)) ? sides.above : sides.below   // the half a point is in"]),
     P("pieces", "Solid", "Solid[]", "The separate bodies, ordered along X, then Y, then Z; of a profile, its separate regions, each with its holes."),
@@ -456,8 +458,8 @@ immutable Ref[] reference =
         "section.outer.extrude(4.mm)   // the outside of a section, its holes filled"]),
     withForms(P("holes", "Profile", "Profile[]", "Each hole of the profile, filled: a profile of its own."), [
         "plate.cut(p.holes[0], on: f, depth: 2.mm)   // one hole as a pocket"]),
-    F("frames", "Path", ["n: int"], "Frame[]", "n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft."),
-    F("outline", "Profile", ["n: int", "round: Length"], "OutlinePoint[]", "n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1)."),
+    F("frames", "Path", ["n: int"], "Frame[]", "n frames evenly along a path, Z along it, turning as little as they can (a profile placed on them does not twist): place rings on them and loft. Ends included; on a closed path n frames a length/n apart, the start not repeated."),
+    F("outline", "Profile", ["n: int", "round: Length"], "OutlinePoint[]", "n points evenly round a profile's outline, counter-clockwise: .at, .normal (outward, turning round corners as on a fillet `round` big), .around (0…1); of a profile lying in another plane (drawn on a face, a section), .at and .normal are 3D, where it lies."),
     F("above", "list", ["plane: Plane"], "Solid[]", "Of a list of solids, those on the normal's side (by centre of mass): s.pieces.above(p)."),
     withForms(F("push", "Solid", ["from: Vec3 | Plane | Axis | Surface", "by: Length"], "Solid",
         "Moved away from a point, a plane or an axis, along the line from it to the centre of mass; from a surface, across it where it is nearest, to the side the solid lies on; on a list of solids each goes its own way (an exploded view)."), [
@@ -490,14 +492,14 @@ immutable Ref[] reference =
     P("direction", "Axis", "Direction", "The direction."),
     ]) ~
     group("Selectors", [
-    P("top", "Faces", "Faces", "The face(s) facing +Z the most."),
+    P("top", "Faces", "Faces", "The face(s) facing +Z the most (exactly, the outermost; on a part turned a little, those within half a degree of the most); a curved face by its normal over the whole face (a dome's up; a cylinder's whole side, a sphere none)."),
     P("bottom", "Faces", "Faces", "The face(s) facing -Z."),
     P("front", "Faces", "Faces", "The face(s) facing -Y."),
     P("back", "Faces", "Faces", "The face(s) facing +Y."),
     P("left", "Faces", "Faces", "The face(s) facing -X."),
     P("right", "Faces", "Faces", "The face(s) facing +X."),
     P("largest", "Faces", "Faces", "The largest face."),
-    F("normal", "Faces", ["dir: Direction"], "Faces", "The faces with that normal: faces.normal(X)."),
+    F("normal", "Faces", ["dir: Direction"], "Faces", "The faces with that normal: faces.normal(X); a curved face by its normal over the whole face (a dome's up, a cylinder's whole side none)."),
     F("farthest", "Faces", ["dir: Direction"], "Faces", "The face whose centre lies farthest that way, whichever way it faces: faces.farthest(Z), a tilted top."),
     F("overhanging", "Faces", ["angle: Angle"], "Faces",
         "The faces (or parts of them) facing down more steeply than the angle from a wall (45° by default), off the bed: where a printer needs supports."),
@@ -532,37 +534,37 @@ immutable Ref[] reference =
     withForms(P("edges", "Sketch", "Entity[]", "A sketch on a face: the face's edges as references (fixed construction lines, arcs, circles), each loop from its lowest edge counter-clockwise, as a rect's sides: bottom, right, top, left; the outside first."), [
         "s.distance(c.center, s.edges[0], 5.mm)   // 5 mm from the bottom edge",
         "s.coincident(p, s.edges[1].end)   // on a corner"]),
-    P("origin", "Sketch", "Point", "A sketch on a face or plane: its origin (the face's centre) as a fixed reference point."),
+    P("origin", "Sketch", "SketchPoint", "A sketch on a face or plane: its origin (the face's centre) as a fixed reference point."),
     withForms(F("project", "Sketch", ["edges: Edges"], "Entity[]", "Edges of the solid the sketch is on, flattened onto its plane as references: a circle seen aslant is an ellipse, other curves lines along them."), [
         "s.concentric(c, s.project(edges.filter(e => e.isCircle && e.center.z < 5.mm))[0])   // over a hole below"]),
-    F("point", "Sketch", ["x: Length", "y: Length", "fixed: bool", "construction: bool"], "Point", "A point where it starts; constraints move it."),
+    F("point", "Sketch", ["x: Length", "y: Length", "fixed: bool", "construction: bool"], "SketchPoint", "A point where it starts; constraints move it."),
     withForms(F("addTag", "Sketch", ["tag: string | string[]"], "Sketch", "Tags the sketch: its profile and paths have the tag. removeTag, clearTags, hasTag and tags as on a solid."), [
         "s.addTag(\"plate\")"]),
     withForms(F("addTag", "Entity", ["tag: string | string[]"], "Entity",
-        "Tags a point, line, circle, arc or ellipse of the sketch (construction ones too): the profile and paths made from it, and what is extruded or revolved from them, have a reference so tagged, a point where the point is, an axis through a circle's centre across the sketch or along a line; it follows them wherever they are moved. A line, circle or arc also tags the face extruded or revolved from it (a side, a hole's wall), once the profile is extruded or revolved straight away (moved or turned first is fine; joined to another profile, tapered or swept, not yet). Gives the entity back: s.circle(c, d: 6.mm).addTag(\"bore\"). removeTag, clearTags, hasTag and tags as on a solid."), [
+        "Tags a point, line, circle, arc or ellipse of the sketch (construction ones too): the profile and paths made from it, and what is extruded or revolved from them, have a reference so tagged, a point where the point is, an axis through a circle's centre across the sketch or along a line; it follows them wherever they are moved. A line, circle or arc also tags the face extruded or revolved from it (a side, a hole's wall): extruded straight, tapered, sheared, twisted or symmetric, or revolved, the profile moved, turned, scaled or mirrored first, offset (the parallel side), rounded, cut into pieces, or joined with, less or intersected with another profile (the edges left on it). A hull of the profile, a sweep or a loft loses the faces' names (not the points'): looking for one then says so. Gives the entity back: s.circle(c, d: 6.mm).addTag(\"bore\"). removeTag, clearTags, hasTag and tags as on a solid."), [
         "auto c = s.point(20, 15).addTag(\"pivot\")",
         "part.point(\"pivot\")   // later, where the part is"]),
-    withForms(F("line", "Sketch", ["p: Point | Vec2", "q: Point | Vec2", "construction: bool"], "Line", "A line between two points (a vector makes a new point); "
+    withForms(F("line", "Sketch", ["p: SketchPoint | Vec2", "q: SketchPoint | Vec2", "construction: bool"], "SketchLine", "A line between two points (a vector makes a new point); "
         ~ "construction: true (on every geometry call and shape) makes a guide to constrain to, drawn dashed, never "
         ~ "part of the profile."), [
         "s.line(p, q, construction: true)   // a centre line, say"]),
-    F("arc", "Sketch", ["center: Point | Vec2", "start: Point | Vec2", "end: Point | Vec2", "construction: bool"], "Arc", "An arc, counter-clockwise (a vector makes a new point)."),
-    F("polyline", "Sketch", ["points", "closed: bool", "construction: bool"], "Line[]", "Lines through points (vectors become new points)."),
+    F("arc", "Sketch", ["center: SketchPoint | Vec2", "start: SketchPoint | Vec2", "end: SketchPoint | Vec2", "construction: bool"], "SketchArc", "An arc, counter-clockwise (a vector makes a new point)."),
+    F("polyline", "Sketch", ["points", "closed: bool", "construction: bool"], "SketchLine[]", "Lines through points (vectors become new points)."),
     F("spline", "Sketch", ["points", "closed: bool"], "SketchSpline", "A smooth curve through points (vectors become "
         ~ "new points): open, its ends join lines and arcs as theirs do; closed: true, a loop of its own. Its points "
         ~ "move it: constrain them."),
-    withForms(F("circle", "Sketch", ["center: Point", "r: Length", "d: Length"], "Circle",
+    withForms(F("circle", "Sketch", ["center: SketchPoint", "r: Length", "d: Length"], "SketchCircle",
         "A circle round a point (a new one at the origin without it); without r/d the radius is left to the constraints. The same shape as the profile circle(…)."), [
         "s.circle(c, d: 10.mm)   // 0 dof once c is fixed",
         "s.circle(c)   // the radius left free: 1 dof",
         "s.circle(d: 10.mm)   // round a new point at the origin: 2 dof"]),
-    withForms(F("ellipse", "Sketch", ["center: Point", "rx: Length", "ry: Length", "angle: Angle"], "Ellipse",
+    withForms(F("ellipse", "Sketch", ["center: SketchPoint", "rx: Length", "ry: Length", "angle: Angle"], "SketchEllipse",
         "An ellipse: rx along its own x axis, angle from X, ry across; what is not given is left to the constraints. The same shape as the profile ellipse(…)."), [
         "s.ellipse(c, rx: 20.mm, ry: 12.mm, angle: 0.deg)   // 0 dof once c is fixed",
         "s.ellipse(c, rx: 20.mm, ry: 12.mm)   // the turn left free: 1 dof",
         "s.ellipse(c)   // rx, ry and the turn left free: 3 dof"]),
-    withForms(F("rect", "Sketch", ["p: Point", "q: Point", "center: Point", "w: Length", "h: Length", "angle: Angle | \"free\"", "corner: Length"],
-        "Line[]", "A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), \"free\" leaves the turn to the constraints; corner: rounds them. The same shape as the profile rect(…)."), [
+    withForms(F("rect", "Sketch", ["p: SketchPoint", "q: SketchPoint", "center: SketchPoint", "w: Length", "h: Length", "angle: Angle | \"free\"", "corner: Length"],
+        "SketchLine[]", "A rectangle: its 4 lines (bottom, right, top, left), horizontal and vertical; angle: turns it (its first side from X), \"free\" leaves the turn to the constraints; corner: rounds them; w: alone, a square. The same shape as the profile rect(…)."), [
         "s.rect(p, q)   // opposite corners: 4 dof with new corners, 0 with fixed ones",
         "s.rect(center: c, w: 40.mm, h: 20.mm)   // 0 dof once c is fixed",
         "s.rect(p, w: 40.mm, h: 20.mm)   // from one corner: p the lower left, 0 dof once p is fixed",
@@ -570,58 +572,58 @@ immutable Ref[] reference =
         "s.rect(center: c, w: 40.mm, h: 20.mm, corner: 3.mm)",
         "s.rect(center: c, w: 40.mm, h: 20.mm, angle: 30.deg)   // turned",
         "s.parallel(s.rect(center: c, w: 40.mm, h: 20.mm, angle: \"free\")[0], line)   // along a slanted line"]),
-    withForms(F("polygon", "Sketch", ["center: Point", "n: int", "r: Length", "d: Length", "fit: string", "angle: Angle"], "Line[]",
+    withForms(F("polygon", "Sketch", ["center: SketchPoint", "n: int", "r: Length", "d: Length", "fit: string", "angle: Angle"], "SketchLine[]",
         "A regular polygon: its n lines, corners on a construction circle of the size given; fit: \"sides\" makes its sides touch it instead; angle: the direction of the first corner, else the turn is left free (starting with the first side at the bottom, horizontal). s.polygon([p1, p2, p3]): the closed polyline through the points. The same shapes as the profile polygon(…)."), [
         "s.polygon(c, 6, r: 10.mm)   // the turn left free: 1 dof once c is fixed",
         "s.polygon(c, 6, d: 13.mm, fit: \"sides\")   // 13 mm across the flats",
         "s.polygon(c, 6, d: 20.mm, angle: 90.deg)   // 0 dof",
         "s.horizontal(s.polygon(c, 6, r: 10.mm)[0])   // first side flat: 0 dof",
         "s.polygon([p, q, vec(0, 20)])   // through points: a closed polyline"]),
-    withForms(F("slot", "Sketch", ["p: Point", "q: Point", "w: Length", "length: Length", "center: Point", "angle: Angle"], "[Line, Arc, Line, Arc]",
+    withForms(F("slot", "Sketch", ["p: SketchPoint", "q: SketchPoint", "w: Length", "length: Length", "center: SketchPoint", "angle: Angle"], "[SketchLine, SketchArc, SketchLine, SketchArc]",
         "Two half circles round p and q joined by tangent lines: [line, arc round q, line, arc round p]; or by its length end to end, along X (angle: turned) round center: or a new point at the origin. The same shape as the profile slot(…)."), [
         "s.slot(p, q, w: 6.mm)   // 0 dof once p and q are fixed; without w: 1",
         "s.slot(30.mm, 6.mm, center: c)   // 30 long along X: 0 dof once c is fixed",
         "s.slot(30.mm, 6.mm, center: c, angle: 30.deg)   // turned"]),
-    withForms(F("teardrop", "Sketch", ["center: Point", "r | d: Length", "angle: Angle", "flat: bool"], "[Arc, Line, Line]",
+    withForms(F("teardrop", "Sketch", ["center: SketchPoint", "r | d: Length", "angle: Angle", "flat: bool"], "[SketchArc, SketchLine, SketchLine]",
         "A hole that prints sideways: an arc round the centre and two lines tangent to it meeting above it, angle (45° unless given) from the vertical; flat: true cuts the point with a line on the circle's top ([arc, line, flat, line]). The same shape as the profile teardrop(…)."), [
         "s.teardrop(c, d: 5.mm)   // 0 dof once c is fixed",
         "s.teardrop(c, d: 5.mm, angle: 30.deg, flat: true)   // sharper, the point cut flat"]),
-    withForms(F("fill", "Sketch", ["at: Point | Vec", "full: bool"], "", "The area of the profile holding `at` full "
+    withForms(F("fill", "Sketch", ["at: SketchPoint | Vec", "full: bool"], "", "The area of the profile holding `at` full "
         ~ "(or full: false, empty), whatever the loops round it say: by default an area is full inside an odd number "
-        ~ "of loops (a loop in a loop is a hole; where two loops overlap, so is the overlap). A point of the sketch "
-        ~ "keeps it in its area as the constraints move it; the last fill in an area counts."), [
+        ~ "of loops (a loop in a loop is a hole; where two loops overlap, so is the overlap); where more than two lines or arcs meet at a point (a line across a rectangle, ending on its sides), every area they close is full. A point of the sketch "
+        ~ "keeps it in its area as the constraints move it; the last fill in an area counts; one in no area (outside every loop) fills nothing, with a warning."), [
         "s.fill(vec(6, 0))   // where two circles overlap: full too",
         "s.fill(vec(0, 0), full: false)   // that area left empty",
         "s.fill(c)   // the area holding point c, wherever it goes"]),
-    F("coincident", "Sketch", ["p: Point", "q: Point"], "", "Two points in the same place."),
-    F("length", "Sketch", ["line: Line", "v: Length"], "", "Sets the length of a line."),
-    withForms(F("distance", "Sketch", ["a: Point", "b: Point | Line", "v: Length", "along: X | Y"], "", "Sets how far a point is from another point (along: X or Y only across or up), or from a line."), [
+    F("coincident", "Sketch", ["p: SketchPoint", "q: SketchPoint"], "", "Two points in the same place."),
+    F("length", "Sketch", ["line: SketchLine", "v: Length"], "", "Sets the length of a line."),
+    withForms(F("distance", "Sketch", ["a: SketchPoint", "b: SketchPoint | SketchLine", "v: Length", "along: X | Y"], "", "Sets how far a point is from another point (along: X or Y only across or up), or from a line."), [
         "s.distance(p, q, 10.mm)",
         "s.distance(p, q, 10.mm, along: X)",
         "s.distance(p, line, 4.mm)"]),
-    F("parallel", "Sketch", ["a: Line", "b: Line"], "", "Two parallel lines."),
-    F("perpendicular", "Sketch", ["a: Line", "b: Line"], "", "Two lines at right angles."),
-    F("fillet", "Sketch", ["p: Point", "r: Length"], "", "Rounds the corner where two lines meet at p."),
-    F("fix", "Sketch", ["p: Point"], "", "Pins a point."),
-    F("horizontal", "Sketch", ["line: Line"], "", "A horizontal line (or two points at the same height, or an ellipse's x axis along X)."),
-    F("vertical", "Sketch", ["line: Line"], "", "A vertical line."),
+    F("parallel", "Sketch", ["a: SketchLine", "b: SketchLine"], "", "Two parallel lines."),
+    F("perpendicular", "Sketch", ["a: SketchLine", "b: SketchLine"], "", "Two lines at right angles."),
+    F("fillet", "Sketch", ["p: SketchPoint", "r: Length"], "", "Rounds the corner where two lines meet at p (an error on any other point: a circle's centre, a free end)."),
+    F("fix", "Sketch", ["p: SketchPoint"], "", "Pins a point."),
+    F("horizontal", "Sketch", ["line: SketchLine"], "", "A horizontal line (or two points at the same height, or an ellipse's x axis along X)."),
+    F("vertical", "Sketch", ["line: SketchLine"], "", "A vertical line."),
     withForms(F("equal", "Sketch", ["a", "b"], "", "Equal lengths or radii; s.equal(e): an ellipse as wide as tall."), [
         "s.equal(a, b)   // two lines, or two circles or arcs",
         "s.equal(e)   // an ellipse made round: a circle"]),
-    withForms(F("on", "Sketch", ["p: Point", "curve"], "", "A point on a line, circle, arc or ellipse; a shape's lines (s.rect, s.polygon, s.polyline) on a circle or ellipse: every corner on it, the shape inscribed."), [
+    withForms(F("on", "Sketch", ["p: SketchPoint", "curve"], "", "A point on a line, circle, arc or ellipse; a shape's lines (s.rect, s.polygon, s.polyline) on a circle or ellipse: every corner on it, the shape inscribed."), [
         "s.on(p, circ)                 // the point on the circle",
         "s.on(s.polygon(c, 6), circ)   // a hexagon in the circle, its corners on it"]),
     F("concentric", "Sketch", ["a", "b"], "", "Circles, arcs or ellipses (or a point) round the same centre."),
     withForms(F("tangent", "Sketch", ["a", "b"], "", "Tangent line and circle, arc or ellipse, or two circles; a shape's lines and a circle or ellipse: every side touching it, the shape round it."), [
         "s.tangent(line, circ)                  // the line touches the circle",
         "s.tangent(s.rect(center: c), circ)     // a square round the circle"]),
-    F("midpoint", "Sketch", ["p: Point", "line: Line"], "", "A point in the middle of a line."),
-    F("symmetric", "Sketch", ["p: Point", "q: Point", "line: Line"], "", "Two points symmetric about a line."),
-    withForms(F("radius", "Sketch", ["c: Circle", "v: Length", "rx: Length", "ry: Length"], "", "Sets a radius (an ellipse's: rx, ry)."), [
+    F("midpoint", "Sketch", ["p: SketchPoint", "line: SketchLine"], "", "A point in the middle of a line."),
+    F("symmetric", "Sketch", ["p: SketchPoint", "q: SketchPoint", "line: SketchLine"], "", "Two points symmetric about a line."),
+    withForms(F("radius", "Sketch", ["c: SketchCircle", "v: Length", "rx: Length", "ry: Length"], "", "Sets a radius (an ellipse's: rx, ry)."), [
         "s.radius(c, 5.mm)",
         "s.radius(e, rx: 20.mm, ry: 12.mm)   // an ellipse, either or both"]),
-    F("diameter", "Sketch", ["c: Circle", "v: Length"], "", "Sets a diameter."),
-    withForms(F("angle", "Sketch", ["a: Line", "b: Line", "v: Angle"], "", "The angle between two lines, or of one line or an ellipse from X."), [
+    F("diameter", "Sketch", ["c: SketchCircle", "v: Length"], "", "Sets a diameter."),
+    withForms(F("angle", "Sketch", ["a: SketchLine", "b: SketchLine", "v: Angle"], "", "The angle between two lines, or of one line or an ellipse from X."), [
         "s.angle(a, b, 30.deg)   // between the directions of two lines",
         "s.angle(line, 30.deg)   // of a line, start → end, from X",
         "s.angle(e, 30.deg)   // of an ellipse's x axis"]),
@@ -651,9 +653,9 @@ immutable Ref[] reference =
     F("drawing", "", ["size: string", "title: string", "author: string", "material: string", "projection: string",
         "scale: number", "landscape: bool"], "Drawing", "A technical sheet, returned by a @drawing function."),
     F("standardViews", "Drawing", ["solid: Solid", "iso: bool", "dimensions: bool"], "", "Front, top, side and iso views, laid out."),
-    F("view", "Drawing", ["solid: Solid", "name: string", "at: Vec", "scale: number"], "View", "One view: \"front\", \"top\", \"iso\"…"),
-    F("section", "Drawing", ["solid: Solid", "plane: Plane", "label: string"], "View", "A hatched section."),
-    F("dimension", "Drawing", ["view: View", "from: Vec", "to: Vec", "offset: Length", "text: string"], "", "A dimension between two points."),
+    F("view", "Drawing", ["solid: Solid", "name: string", "at: Vec", "scale: number", "dimensions: bool"], "View", "One view: \"front\", \"top\", \"iso\"…; with its overall width and height and its hole callouts unless dimensions: false (an overall one your own dimension repeats is left out)."),
+    F("section", "Drawing", ["solid: Solid", "plane: Plane", "label: string"], "View", "A hatched section (the plane must cut the solid)."),
+    F("dimension", "Drawing", ["view: View", "from: Vec", "to: Vec", "offset: Length", "text: string"], "", "A dimension between two points, offset paper mm away from the part (negative: towards its middle)."),
     F("note", "Drawing", ["text: string", "at: Vec", "size: Length"], "", "A note on the sheet."),
     ]) ~
     group("Units", [

@@ -251,7 +251,8 @@ Solid pin()
 
 - On a solid: `b.addTag("pin", at: vec(15.mm, 10.mm, 8.mm))` tags a point; `at:` an `axis(…)`, a `plane(…)` or a frame tags those.
 - In a sketch: a point, line, circle or arc tagged (`c.addTag("pivot")`) gives the profile, and the solid made from it, a reference of that name: a point where the point is, the axis through a circle's centre across the sketch, the axis along a line.
-- `b.frame("pivot")` is a frame on whatever was tagged, its Z along the axis: what `placeOn` needs to put another part there.
+- `b.frame("pivot")` is a frame on whatever was tagged, its Z along the axis (its X as `plane(…).frame()` has it): what `placeOn` needs to put another part there.
+- Cut in pieces (`split`, `halves`, a joint), each piece keeps the references that lie in it or on it; a point on the cut goes with both, and the pieces joined again have it once. Tagging the same name again moves it.
 
 ## Sketching on a plane
 

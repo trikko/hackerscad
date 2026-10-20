@@ -5,7 +5,8 @@ module hardware;
 ///
 /// Tags: a hole's faces are tagged "hardware.bore" (the counterbore's and
 /// the countersink's, where the head sits, "hardware.seat"), and stay so in
-/// the part it is cut from; holes, screws, nuts and washers carry the axis
+/// the part it is cut from; a nut's hole is "hardware.bore" too, threaded or
+/// not; holes, screws, nuts and washers carry the axis
 /// "hardware.axis" (body.axis("hardware.axis"), with one of them in it).
 struct Screw
 {
@@ -103,13 +104,22 @@ Solid hexPrism(Length acrossFlats, Length h)
 /// the hex socket.
 Solid screw(Screw s, Length length, bool socket = true, bool threaded = false, string head = "socket")
 {
+    checkLength("screw", s, length);
     auto shank = threaded
         ? cylinder(d: s.d, h: length).move(z: -length)
         : cylinder(d: s.d, h: length)
-            .chamfer(edges.filter(e => e.isCircle && e.mid.z < 1.mm), d: s.d * 0.1)
+            .chamfer(edges.filter(e => e.isCircle && e.mid.z < length / 2), d: s.d * 0.1)
             .move(z: -length);
     auto r = threaded ? threadShank(withHead(s, shank, socket, head), shank, s) : withHead(s, shank, socket, head);
     return r.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
+}
+
+/// A screw or a set screw at least half its diameter long: shorter, its
+/// chamfers and point leave nothing.
+private void checkLength(string what, Screw s, Length length)
+{
+    assert(length >= s.d / 2, what ~ ": an " ~ s.name ~ " screw is $(s.d / 2) long at least (half its "
+        ~ "diameter), not $(length)");
 }
 
 /// The thread on a screw's shank, cut on its side: built straight from its faces, quicker than a threaded
@@ -168,6 +178,7 @@ Length setKey(Screw s) => s.d <= 2.mm ? 0.9.mm : s.d <= 2.5.mm ? 1.3.mm : s.d <=
 /// into a hole the way hole() is placed. threaded: true models the thread.
 Solid setScrew(Screw s, Length length, string point = "cup", bool threaded = false)
 {
+    checkLength("setScrew", s, length);
     immutable d = s.d;
     auto shank = cylinder(d: d, h: length).move(z: -length);
     auto r = shank.chamfer(edges.filter(e => e.isCircle && e.mid.z > -0.01.mm), d: d * 0.08);
@@ -209,6 +220,8 @@ Solid setScrew(Screw s, Length length, string point = "cup", bool threaded = fal
 /// play: the nut of a real screw).
 Solid nut(Screw s, bool threaded = false)
 {
+    checkNut(s);
+
     // a cone narrow at the face and wider than the corners at mid height
     auto lower = cone(d1: s.nut * 0.95, d2: s.nut * 1.4, h: s.nutHeight / 2);
     auto upper = lower.mirror(Z).move(z: s.nutHeight);
@@ -218,10 +231,17 @@ Solid nut(Screw s, bool threaded = false)
         // the hole at the tap drill, its wall threaded (a sleeve sewn in, quicker than a boolean)
         auto bore = cylinder(d: s.tap, h: 3 * s.nutHeight, center: true);
         auto wall = faces.from(bore);
+
+        // the outside's faces marked for a moment, so that the thread's (new, untagged) are the others
+        body.faces.addTag("hardware.outside");
         auto drilled = body - bore;
         auto threadedNut = s.name.length > 0 && s.name[0 .. 1] == "M"
             ? drilled.thread(wall, s.name, chamfer: false, clearance: 0.mm)
             : drilled.thread(wall, pitch: s.pitch, chamfer: false, clearance: 0.mm);
+
+        // the thread's faces, the hole's wall as in the plain nut
+        threadedNut.faces.addTag("hardware.bore");
+        threadedNut.faces.tagged("hardware.outside").removeTag(["hardware.bore", "hardware.outside"]);
         return threadedNut.addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
     }
     return (body - cylinder(d: s.d, h: 3 * s.nutHeight, center: true)
@@ -243,10 +263,14 @@ Solid washer(Screw s) => (cylinder(d: s.washer, h: s.d * 0.2) - cylinder(d: s.cl
 /// One rib points to -Y: on a wall (where a face's frame has y up) it is the
 /// bottom one, which prints best; the ribs start 0.6 mm in, a lead for the tip.
 ///
-/// `chamfer` widens the mouth at 45° by that much all round: it guides the
-/// screw in, and takes up the first layers' spread when the hole opens on the
-/// bed. 0.5 mm for "ribs" unless given, none for the others (a counterbore
-/// and a countersink have their own).
+/// The whole hole lies within `depth`: an insert, a counterbore or a
+/// countersink deeper than that is an error.
+///
+/// `chamfer` widens the mouth at 45° by that much all round (a counterbore's
+/// round the head): it guides the screw in, and takes up the first layers'
+/// spread when the hole opens on the bed. 0.5 mm for "ribs" unless given,
+/// none for the others; a countersink's cone is a chamfer already (one given
+/// to it is an error).
 Solid hole(Screw s, Length depth, string kind = "clearance", string head = "socket", Length chamfer = -1.mm)
 {
     // its faces the hole's wall in the part (the seat, tagged so in holeShape, keeps its own tag too);
@@ -254,12 +278,22 @@ Solid hole(Screw s, Length depth, string kind = "clearance", string head = "sock
     auto shape = holeShape(s, depth, kind, head)
         .addTag("hardware.bore", recursive: true)
         .addTag("hardware.axis", at: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: Z));
+    assert(kind != "countersink" || chamfer <= 0.mm, "hole: a countersink's cone is a chamfer already: "
+        ~ "leave chamfer: out");
     immutable c = chamfer >= 0.mm ? chamfer : kind == "ribs" ? 0.5.mm : 0.mm;
-    if (c <= 0.mm || kind == "counterbore" || kind == "countersink")
+    if (c <= 0.mm)
         return shape;
     immutable mouth = kind == "tap" ? s.tap : kind == "insert" ? s.insert : kind == "ribs" ? s.d + 0.3.mm
-        : s.clearance;
+        : kind == "counterbore" ? counterboreWidth(s, head) : s.clearance;
     return shape + cone(d1: mouth, d2: mouth + 2 * c, h: c + 0.01.mm).move(z: -c);
+}
+
+/// A counterbore's width: room for the head given (a hex head's corners,
+/// 1.155 times across its flats), and 0.6 mm.
+private Length counterboreWidth(Screw s, string head)
+{
+    immutable hd = headOf(s, head);
+    return (head == "hex" ? hd.d * 1.155 : hd.d) + 0.6.mm;
 }
 
 private Solid holeShape(Screw s, Length depth, string kind, string head)
@@ -272,14 +306,18 @@ private Solid holeShape(Screw s, Length depth, string kind, string head)
         return cylinder(d: s.tap, h: depth + 0.01.mm).move(z: -depth);
     case "insert":
         assert(s.insert > 0.mm, s.name ~ " has no heat-set insert: a tap hole for a self-tapping screw");
-        return cylinder(d: s.insert, h: s.insertDepth).move(z: -s.insertDepth)
+
+        // the whole hole within depth: an insert longer than that would come out of the part's other side
+        assert(s.insertDepth <= depth, "hole: the " ~ s.name ~ " insert is $(s.insertDepth) long, deeper than "
+            ~ "the hole's $(depth): a depth of $(s.insertDepth) at least, or a cylinder of the insert you have");
+        return cylinder(d: s.insert, h: s.insertDepth + 0.01.mm).move(z: -s.insertDepth)
             + cylinder(d: s.tap, h: depth).move(z: -depth);
     case "counterbore":
         {
-            // room for the head given (a hex head's corners, 1.155 times across its flats)
-            immutable hd = headOf(s, head);
-            immutable wide = head == "hex" ? hd.d * 1.155 : hd.d;
-            return cylinder(d: wide + 0.6.mm, h: hd.h + 0.2.mm).move(z: -hd.h - 0.2.mm)
+            immutable seat = headOf(s, head).h + 0.2.mm;
+            assert(seat <= depth, "hole: the counterbore for the " ~ s.name ~ " head is $(seat) deep, deeper than "
+                ~ "the hole's $(depth): a depth of $(seat) at least, or a thicker part");
+            return cylinder(d: counterboreWidth(s, head), h: seat + 0.01.mm).move(z: -seat)
                     .addTag("hardware.seat", recursive: true)
                 + cylinder(d: s.clearance, h: depth).move(z: -depth);
         }
@@ -298,34 +336,59 @@ private Solid holeShape(Screw s, Length depth, string kind, string head)
                 - ribs;
         }
     case "countersink":
-        // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
-        return cone(d1: s.clearance, d2: 2.24 * s.d + 0.3.mm, h: (2.24 * s.d + 0.3.mm - s.clearance) / 2)
-                .move(z: -(2.24 * s.d + 0.3.mm - s.clearance) / 2)
-                .addTag("hardware.seat", recursive: true)
-            + cylinder(d: s.clearance, h: depth).move(z: -depth);
+        {
+            // 90°, wide enough for an ISO 10642 flat head (2.24 d at most) to sit a little below the face
+            immutable top = 2.24 * s.d + 0.3.mm, sink = (top - s.clearance) / 2;
+            assert(sink <= depth, "hole: the countersink for the " ~ s.name ~ " head is $(sink) deep, "
+                ~ "deeper than the hole's $(depth): a depth of $(sink) at least, or a thicker part");
+            return cone(d1: s.clearance, d2: top, h: sink)
+                    .move(z: -sink)
+                    .addTag("hardware.seat", recursive: true)
+                + cylinder(d: s.clearance, h: depth).move(z: -depth);
+        }
     default:
         assert(false, "hole kind must be clearance, tap, insert, counterbore, countersink or ribs, not " ~ kind);
     }
 }
 
 /// A pocket to trap a nut, from z = 0 going down `depth` (with a little clearance).
-Solid nutTrap(Screw s, Length depth, Length clearance = 0.2.mm) =>
-    hexPrism(s.nut + 2 * clearance, depth + 0.01.mm).move(z: -depth);
+Solid nutTrap(Screw s, Length depth, Length clearance = 0.2.mm)
+{
+    checkNut(s);
+    return hexPrism(s.nut + 2 * clearance, depth + 0.01.mm).move(z: -depth);
+}
+
+/// The self-tapping sizes have no nut.
+private void checkNut(Screw s)
+{
+    assert(s.nut > 0.mm, s.name ~ " is a self-tapping screw: it cuts its own thread in a tap hole, "
+        ~ "with no nut");
+}
 
 /// Square nuts (DIN 562, thin): across the flats and height. They slide
 /// into a slot from the side, where a hex nut needs a pocket from above.
-Length squareNutSize(Screw s) => s.d <= 2.mm ? 4.mm : s.d <= 2.5.mm ? 5.mm : s.d <= 3.mm ? 5.5.mm
-    : s.d <= 4.mm ? 7.mm : s.d <= 5.mm ? 8.mm : s.d <= 6.mm ? 10.mm : 13.mm;
-Length squareNutHeight(Screw s) => s.d <= 2.mm ? 1.2.mm : s.d <= 2.5.mm ? 1.6.mm : s.d <= 3.mm ? 1.8.mm
-    : s.d <= 4.mm ? 2.2.mm : s.d <= 5.mm ? 2.7.mm : s.d <= 6.mm ? 3.2.mm : 4.mm;
+Length squareNutSize(Screw s)
+{
+    checkSquareNut(s);
+    return s.d <= 2.mm ? 4.mm : s.d <= 2.5.mm ? 5.mm : s.d <= 3.mm ? 5.5.mm
+        : s.d <= 4.mm ? 7.mm : s.d <= 5.mm ? 8.mm : s.d <= 6.mm ? 10.mm : 13.mm;
+}
+
+Length squareNutHeight(Screw s)
+{
+    checkSquareNut(s);
+    return s.d <= 2.mm ? 1.2.mm : s.d <= 2.5.mm ? 1.6.mm : s.d <= 3.mm ? 1.8.mm
+        : s.d <= 4.mm ? 2.2.mm : s.d <= 5.mm ? 2.7.mm : s.d <= 6.mm ? 3.2.mm : 4.mm;
+}
+
+private void checkSquareNut(Screw s)
+{
+    assert(s.d <= 8.mm, "square nuts (DIN 562) go from M2 to M8, not " ~ s.name);
+}
 
 /// A square nut standing on z = 0, centred, its hole plain.
-Solid squareNut(Screw s)
-{
-    assert(s.d <= 8.mm, "square nuts (DIN 562) go from M2 to M8");
-    return box(squareNutSize(s), squareNutSize(s), squareNutHeight(s))
-        - cylinder(d: s.d, h: 3 * squareNutHeight(s), center: true);
-}
+Solid squareNut(Screw s) => box(squareNutSize(s), squareNutSize(s), squareNutHeight(s))
+    - cylinder(d: s.d, h: 3 * squareNutHeight(s), center: true);
 
 /// The slot a square nut slides into, to subtract: centred on the screw's
 /// axis at the origin, its middle on z = 0, open towards +X for `reach`

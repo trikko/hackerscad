@@ -71,7 +71,7 @@ The ready-made shapes have the names and arguments of the profiles. They return 
 
 | Shape | Returns | Degrees of freedom left |
 |---|---|---|
-| `s.rect(p, q)`, `s.rect(p, w:, h:)`, `s.rect(center: c, w:, h:)` | bottom, right, top, left | 0 with `w`, `h` and a fixed corner or centre |
+| `s.rect(p, q)`, `s.rect(p, w:, h:)`, `s.rect(center: c, w:, h:)` | bottom, right, top, left | 0 with `w`, `h` and a fixed corner or centre; `w` alone, a square |
 | `s.rect(…, angle: 30.deg)` / `angle: "free"` / `corner: 3.mm` | turned / turn left to constraints / rounded | |
 | `s.polygon(c, 6, d: 13.mm, fit: "sides")` | its n sides | 1 (the turn) unless `angle:` or a constraint takes it |
 | `s.polygon([p, q, vec(0, 20)])` | a closed polyline | |
@@ -154,7 +154,7 @@ Solid arm() => lever().extrude(5.mm);
 
 A profile made of more than three shapes, moved by sizes worked out by hand, or rounded with `.offset(r).offset(-r)`, is an outline that wants a sketch: it reads as its dimensions, keeps its tangents when a size changes, and its edges take fillets. The two mix: `s.profile - circle(d: 5.mm)` is a profile too.
 
-The profile fills what lies inside an odd number of loops: the circles inside the outline are holes. `s.fill(at)` makes the area holding a point full whatever the loops say, `s.fill(at, full: false)` empty.
+The profile fills what lies inside an odd number of loops: the circles inside the outline are holes. Where more than two lines or arcs meet at a point (a line across a rectangle from side to side, an arc from one corner to another; a line ending on another splits it there), every area they close is full. `s.fill(at)` makes the area holding a point full whatever the loops say, `s.fill(at, full: false)` empty.
 
 ## Construction geometry
 
@@ -284,7 +284,7 @@ Solid doorstop()
 
 ![A doorstop with a groove across its slope and a rounded tip](img/sketches-tagged.png)
 
-The groove splits the slope in two; both pieces keep the name, and the fillet finds the edge where the slope meets the base. `s.addTag("name")` tags the whole sketch: its profile, and the solid made from it, have the tag. The names hold when the profile is extruded or revolved straight away (moved or turned first is fine); a profile joined to another first, tapered or swept loses the faces' names, not the points'.
+The groove splits the slope in two; both pieces keep the name, and the fillet finds the edge where the slope meets the base. `s.addTag("name")` tags the whole sketch: its profile, and the solid made from it, have the tag. The names hold when the profile is extruded (also tapered, sheared or twisted) or revolved, and through what is done to the profile first: moved, turned, offset, rounded, joined to another profile or with a hole cut in it. A hull of the profile, a sweep or a loft loses the faces' names, not the points'; looking for such a face then says where its name was lost.
 
 ## Sketches on faces
 
@@ -350,7 +350,7 @@ Solid block()
 
 ![The blind hole under the top face](img/sketches-ex1.png)
 
-`sketch(frame)` and `sketch(plane)` draw on a frame or a plane instead (`sketch(XZ)`: seen from the front), with `s.origin` and no edges: see [the guide on planes](planes.md). A sketch's profile stays where it was drawn: moved or combined with a profile of no place, it stays in its plane; two profiles drawn on different faces do not combine.
+`sketch(frame)` and `sketch(plane)` draw on a frame or a plane instead (`sketch(XZ)`: seen from the front), with `s.origin` and no edges: see [the guide on planes](planes.md). A sketch's profile stays where it was drawn: moved, tiled, hulled or combined with a profile of no place, it stays in its plane; two profiles in different planes do not combine. Turned with `revolve`, its axis is a world one in that plane: a half outline drawn on `sketch(XZ)` turns round Z (`revolve(axis: Z)`, or `revolve()`).
 
 ## Common errors
 

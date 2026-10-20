@@ -356,39 +356,7 @@ final class Sketch
         // the frozen values stay out of the unknowns: the equations see them
         // where they are, and the solver only the others
         frozen.length = vars.length;
-        size_t[] unknown;
-        foreach (i; 0 .. vars.length)
-            if (!frozen[i])
-                unknown ~= i;
-        hackerscad.sketch.solver.SolveResult res;
-        if (unknown.length == vars.length)
-            res = hackerscad.sketch.solver.solve(vars, eqs);
-        else
-        {
-            auto full = vars.dup;
-            // one closure per call: closures made in a loop share one frame
-            static Equation over(Equation e, double[] full, size_t[] unknown)
-            {
-                return Equation(e.count, (const(double)[] y, double[] r) {
-                    foreach (k, i; unknown)
-                        full[i] = y[k];
-                    e.eval(full, r);
-                });
-            }
-            Equation[] reduced;
-            foreach (e; eqs)
-                reduced ~= over(e, full, unknown);
-            auto y = new double[unknown.length];
-            foreach (k, i; unknown)
-                y[k] = vars[i];
-            res = hackerscad.sketch.solver.solve(y, reduced);
-            foreach (k, i; unknown)
-                vars[i] = y[k];
-            auto free = new bool[vars.length];
-            foreach (k, i; unknown)
-                free[i] = res.free[k];
-            res.free = free;
-        }
+        auto res = hackerscad.sketch.solver.solve(vars, eqs, 1e-9, 300, frozen);
         SolveReport rep;
         rep.solved = res.converged;
         rep.dof = res.dof;
@@ -497,6 +465,8 @@ final class Sketch
             size_t entity;
             Vec3 a, b;
             size_t ka, kb;    // canonical end points
+            bool part;        // a piece of its line or arc, split where another segment ends on it
+            Vec3 mid;         // such a piece of an arc: its middle
         }
 
         Seg[] all;
@@ -528,6 +498,81 @@ final class Sketch
             else if (e.kind == EntityKind.spline && !e.closed)
                 all ~= Seg(i, pos(e.refs[0], vars), pos(e.refs[1], vars), canonical(e.refs[0]), canonical(e.refs[1]));
         }
+        // a segment ending on another between its ends (a line across a rectangle, from side to side) splits
+        // it there: the point joins them as a corner would
+        Seg[] split;
+        foreach (s; all)
+        {
+            immutable kind = entities[s.entity].kind;
+            if (kind == EntityKind.spline)
+            {
+                split ~= s;
+                continue;
+            }
+            Vec3 c;
+            double r = 0, a0 = 0, sweep = 0;
+            if (kind == EntityKind.arc)
+            {
+                c = pos(entities[s.entity].refs[0], vars);
+                r = (s.a - c).length;
+                a0 = atan2(s.a.y - c.y, s.a.x - c.x);
+                sweep = atan2(s.b.y - c.y, s.b.x - c.x) - a0;
+                while (sweep <= 1e-12)
+                    sweep += 2 * PI;
+            }
+            // where along it (0 … 1) each corner lying on it is
+            double[] ts;
+            size_t[] ks;
+            foreach (k, q; corners)
+            {
+                if (k == s.ka || k == s.kb)
+                    continue;
+                immutable tol = 1e-6 * max(1.0, q.length);
+                double t;
+                if (kind == EntityKind.line)
+                {
+                    auto d = s.b - s.a;
+                    t = (q - s.a).dot(d) / d.dot(d);
+                    if ((s.a + d * t - q).length > tol)
+                        continue;
+                }
+                else
+                {
+                    if (abs((q - c).length - r) > tol)
+                        continue;
+                    double an = atan2(q.y - c.y, q.x - c.x) - a0;
+                    while (an < 0)
+                        an += 2 * PI;
+                    t = an / sweep;
+                }
+                if (t > 1e-9 && t < 1 - 1e-9)
+                {
+                    ts ~= t;
+                    ks ~= k;
+                }
+            }
+            if (ts.length == 0)
+            {
+                split ~= s;
+                continue;
+            }
+            import std.algorithm : sort;
+            import std.range : zip;
+            zip(ts, ks).sort!((x, y) => x[0] < y[0]);
+            Vec3 at(double t) => kind == EntityKind.line ? s.a + (s.b - s.a) * t
+                : Vec3(c.x + r * cos(a0 + sweep * t), c.y + r * sin(a0 + sweep * t), 0);
+            double t0 = 0;
+            size_t k0 = s.ka;
+            foreach (j; 0 .. ts.length + 1)
+            {
+                immutable t1 = j < ts.length ? ts[j] : 1.0;
+                immutable k1 = j < ts.length ? ks[j] : s.kb;
+                split ~= Seg(s.entity, at(t0), at(t1), k0, k1, true, at((t0 + t1) / 2));
+                t0 = t1;
+                k0 = k1;
+            }
+        }
+        all = split;
         // a line whose ends the constraints brought together (a vertical side also made horizontal) is no edge
         foreach (s; all)
             if (s.ka == s.kb && entities[s.entity].kind == EntityKind.line)
@@ -538,6 +583,17 @@ final class Sketch
         {
             at[s.ka] ~= i;
             at[s.kb] ~= i;
+        }
+        // a fillet rounds a corner where two lines meet: on a circle's centre or a free end it would do nothing
+        foreach (p; fillets.byKey)
+        {
+            auto q = pos(p, vars);
+            bool corner;
+            foreach (k, c; corners)
+                corner = corner || ((c - q).length < 1e-6 * max(1.0, q.length) && at[k].length >= 2);
+            if (!corner)
+                throw new SketchException("a fillet rounds a corner where two lines of the outline meet: this point "
+                    ~ "is none (a circle's centre, the free end of a line, a corner of construction lines?)", [p]);
         }
         // open chains (a line, an arc or a curve with a free end, and what leads to it) stay in the sketch but
         // out of the profile: taken off from their free ends, until every point has two segments or none
@@ -562,10 +618,15 @@ final class Sketch
                             break;
                         }
         }
-        foreach (k, list; at)
+        bool branching;
+        foreach (k; 0 .. corners.length)
             if (degree[k] > 2)
-                throw new SketchException(format("%d segments meet at this point; the outline must form simple loops",
-                    degree[k]), [cornerPoint[k]]);
+            {
+                branching = true;
+                if (cornerPoint[k] in fillets)
+                    throw new SketchException(format("a fillet rounds a corner where two lines meet: %d meet at "
+                        ~ "this point", degree[k]), [cornerPoint[k]]);
+            }
         // the loops walk only what is left
         foreach (k, ref list; at)
         {
@@ -575,6 +636,17 @@ final class Sketch
                     live ~= i;
             list = live;
         }
+
+        // more than two segments at a point (a line across a loop, an arc from one corner of a rectangle to
+        // another): no simple loops to walk, but the areas they close, each a loop of its own, all full
+        // unless a fill says otherwise
+        if (branching)
+            foreach (face; faceLoops(all, used, at))
+            {
+                segs ~= loopSegments(all, face.order, face.rev, cornerPoint, sources);
+                segs ~= OutlineSeg(OutlineSeg.Kind.end);
+                sources ~= OutlineSource.init;
+            }
 
         foreach (start; 0 .. all.length)
         {
@@ -744,6 +816,109 @@ private:
     // a function of its own, so that each delegate captures its own constraint
     Equation equation(Constraint c) => Equation(equationCount(c.kind), (const(double)[] x, double[] r) { eval(c, x, r); });
 
+    struct FaceLoop
+    {
+        size_t[] order;
+        bool[] rev;
+    }
+
+    /// The areas the segments not yet `used` close, where more than two meet at a point: the faces of the
+    /// drawing, each walked counter-clockwise (keeping to the left at every point); the outer border of each
+    /// group of segments, walked clockwise, is none. Marks the segments used.
+    FaceLoop[] faceLoops(S)(S[] all, bool[] used, size_t[][] at)
+    {
+        import std.algorithm : sort;
+
+        // a segment's points from one end to the other (arcs counter-clockwise from their start)
+        Vec3[] along(size_t i, bool rev, double upTo = 1, int n = 24)
+        {
+            auto e = entities[all[i].entity];
+            Vec3[] pts;
+            if (e.kind == EntityKind.arc)
+            {
+                auto c = pos(e.refs[0], vars);
+                immutable a0 = atan2(all[i].a.y - c.y, all[i].a.x - c.x);
+                double a1 = atan2(all[i].b.y - c.y, all[i].b.x - c.x);
+                while (a1 <= a0 + 1e-12)
+                    a1 += 2 * PI;
+                immutable r = (all[i].a - c).length;
+                foreach (k; 0 .. n + 1)
+                {
+                    immutable t = rev ? 1 - upTo * k / n : upTo * k / n;
+                    immutable an = a0 + (a1 - a0) * t;
+                    pts ~= Vec3(c.x + r * cos(an), c.y + r * sin(an), 0);
+                }
+                return pts;
+            }
+            if (e.kind == EntityKind.spline)
+                pts = splinePoles(all[i].entity);
+            else
+                pts = [all[i].a, all[i].b];
+            if (rev)
+            {
+                import std.algorithm : reverse;
+                pts.reverse();
+            }
+            if (upTo < 1)
+                pts = [pts[0], pts[0] + (pts[1] - pts[0]) * upTo];
+            return pts;
+        }
+
+        // every segment both ways: dart d is segment d / 2, reversed when odd
+        immutable darts = all.length * 2;
+        size_t head(size_t d) => d & 1 ? all[d / 2].ka : all[d / 2].kb;
+        size_t tail(size_t d) => d & 1 ? all[d / 2].kb : all[d / 2].ka;
+        // the darts leaving each point, counter-clockwise by the way each leaves it (a point a little along)
+        auto leaving = new size_t[][](at.length);
+        auto angle = new double[darts];
+        foreach (d; 0 .. darts)
+        {
+            if (used[d / 2])
+                continue;
+            auto p = along(d / 2, (d & 1) != 0, 1e-4, 1);
+            angle[d] = atan2(p[1].y - p[0].y, p[1].x - p[0].x);
+            leaving[tail(d)] ~= d;
+        }
+        foreach (ref list; leaving)
+            list.sort!((x, y) => angle[x] < angle[y]);
+
+        FaceLoop[] faces;
+        auto walked = new bool[darts];
+        foreach (d0; 0 .. darts)
+        {
+            if (used[d0 / 2] || walked[d0])
+                continue;
+            FaceLoop f;
+            Vec3[] ring;
+            for (size_t d = d0; !walked[d];)
+            {
+                walked[d] = true;
+                f.order ~= d / 2;
+                f.rev ~= (d & 1) != 0;
+                auto pts = along(d / 2, (d & 1) != 0);
+                ring ~= pts[0 .. $ - 1];
+                // at its end, the next dart clockwise from the way back: the sharpest turn left
+                auto list = leaving[head(d)];
+                immutable back = d ^ 1;
+                size_t k;
+                while (list[k] != back)
+                    k++;
+                d = list[(k + list.length - 1) % list.length];
+            }
+            double area = 0;
+            foreach (i, p; ring)
+            {
+                auto q = ring[(i + 1) % ring.length];
+                area += p.x * q.y - q.x * p.y;
+            }
+            if (area > 1e-12)
+                faces ~= f;
+        }
+        foreach (i; 0 .. all.length)
+            used[i] = true;
+        return faces;
+    }
+
     OutlineSeg[] loopSegments(S)(S[] all, size_t[] order, bool[] rev, size_t[] cornerPoint,
         ref OutlineSource[] sources, bool closed = true)
     {
@@ -818,7 +993,11 @@ private:
             }
             else
             {
-                auto m = arcMid(all[order[i]].entity);
+                Vec3 m;
+                static if (__traits(hasMember, S, "part"))
+                    m = all[order[i]].part ? all[order[i]].mid : arcMid(all[order[i]].entity);
+                else
+                    m = arcMid(all[order[i]].entity);
                 segs ~= OutlineSeg(OutlineSeg.Kind.arc, a[i].x, a[i].y, b[i].x, b[i].y, m.x, m.y);
                 sources ~= OutlineSource(all[order[i]].entity);
             }
@@ -877,11 +1056,13 @@ private:
 
     void check(const Constraint c)
     {
+        // said by the method that adds it (s.on, s.tangent, s.equal…), with all that it takes
         void need(bool ok, string what)
         {
             if (!ok)
-                throw new SketchException(format("%s needs %s", c.kind, what));
+                throw new SketchException(format("%s needs %s", methodOf(c.kind), what));
         }
+        immutable onWhat = "a point and a line, a circle, an arc or an ellipse";
 
         final switch (c.kind) with (ConstraintKind)
         {
@@ -895,25 +1076,30 @@ private:
             need(isLine(c.refs[0]), "a line");
             break;
         case pointLineDistance, onLine, midpoint:
-            need(isPoint(c.refs[0]) && isLine(c.refs[1]), "a point and a line");
+            need(isPoint(c.refs[0]) && isLine(c.refs[1]), c.kind == onLine ? onWhat : "a point and a line");
             break;
         case onCircle:
-            need(isPoint(c.refs[0]) && isRound(c.refs[1]), "a point and a circle or arc");
+            need(isPoint(c.refs[0]) && isRound(c.refs[1]), onWhat);
             break;
-        case parallel, perpendicular, angle, equalLength:
+        case parallel, perpendicular, angle:
             need(isLine(c.refs[0]) && isLine(c.refs[1]), "two lines");
             break;
-        case equalRadius, tangentCircles:
-            need(isRound(c.refs[0]) && isRound(c.refs[1]), "two circles or arcs");
+        case equalLength, equalRadius:
+            need(c.kind == equalLength ? isLine(c.refs[0]) && isLine(c.refs[1]) : isRound(c.refs[0]) && isRound(c.refs[1]),
+                "two lines, or two circles or arcs");
+            break;
+        case tangentCircles:
+            need(isRound(c.refs[0]) && isRound(c.refs[1]), "a line and a circle, an arc or an ellipse, or two circles or arcs");
             break;
         case radius:
             need(isRound(c.refs[0]), "a circle or an arc");
             break;
         case tangentLine:
-            need(isLine(c.refs[0]) && (isRound(c.refs[1]) || isEllipse(c.refs[1])), "a line and a circle, arc or ellipse");
+            need(isLine(c.refs[0]) && (isRound(c.refs[1]) || isEllipse(c.refs[1])),
+                "a line and a circle, an arc or an ellipse, or two circles or arcs");
             break;
         case onEllipse:
-            need(isPoint(c.refs[0]) && isEllipse(c.refs[1]), "a point and an ellipse");
+            need(isPoint(c.refs[0]) && isEllipse(c.refs[1]), onWhat);
             break;
         case radiusX, radiusY, ellipseAngle, equalRadii:
             need(isEllipse(c.refs[0]), "an ellipse");
@@ -929,6 +1115,30 @@ private:
             break;
         case arcRadius:
             break;
+        }
+    }
+
+    /// The sketch method that adds a constraint of that kind, as it is written.
+    static string methodOf(ConstraintKind k)
+    {
+        final switch (k) with (ConstraintKind)
+        {
+        case coincident: return "s.coincident";
+        case fix: return "fixed: true";
+        case horizontal: return "s.horizontal";
+        case vertical: return "s.vertical";
+        case length: return "s.length";
+        case distance, hdistance, vdistance, pointLineDistance: return "s.distance";
+        case onLine, onCircle, onEllipse: return "s.on";
+        case parallel: return "s.parallel";
+        case perpendicular: return "s.perpendicular";
+        case angle, direction, ellipseAngle: return "s.angle";
+        case equalLength, equalRadius, equalRadii: return "s.equal";
+        case radius, radiusX, radiusY: return "s.radius";
+        case tangentLine, tangentCircles, tangentAt: return "s.tangent";
+        case midpoint: return "s.midpoint";
+        case symmetric: return "s.symmetric";
+        case arcRadius: return "an arc";
         }
     }
 

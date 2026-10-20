@@ -28,13 +28,15 @@ Solid tube() => kerf(cylinder(d: 30.mm, h: 60.mm)
 
 - The slots go through the part's thinnest way inside the zone (a plate's thickness, a tube's wall).
 - They run across the body's length, so the part bends along it: a strip end to end, a tube bowing. `along: X` (or `Y`, `Z`) sets the way they run instead, whenever the guess is not what you want.
+- They run along X, Y or Z only, and go through along one of them: a plate lying turned at an angle gets them across it askew. Make the part bend lying along the axes, then turn it.
+- Slots that would cut the part in pieces are an error: shorter ones (`length:`) or wider bridges.
 
 | Argument | What it does |
 |---|---|
 | `width:` | how wide each slot is, 0.8 mm unless given: two lines of a 0.4 mm nozzle leave it open |
 | `bridge:` | the material between two slots of a row, 2 mm unless given: the narrower, the softer it bends |
 | `pitch:` | from one row to the next, 2.5 mm unless given: the closer, the tighter it bends; the bars are `pitch` less `width` thick |
-| `length:` | of each slot, six times the pitch unless given |
+| `length:` | of each slot, six times the pitch unless given; on a narrow strap the strap's width less a bridge, so every other row keeps material at both ends |
 | `along:` | the way the slots run |
 
 How far a band bends depends on the material: in PLA a few degrees a row, and it may crack if bent often; PETG takes a quarter turn in a band of 15 mm with bars 1 mm thick; TPU folds flat. Print the part lying on its flat side, the slots standing upright.

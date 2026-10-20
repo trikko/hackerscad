@@ -18,6 +18,7 @@ Solid threadedRod(Length d, Length pitch, Length length, bool chamfer = true, bo
 }
 
 /// A tool to subtract for an internal thread that a `d` screw fits, from
-/// z = 0 going down `depth`. `clearance` widens it for printed parts.
-Solid tappedHole(Length d, Length pitch, Length depth, Length clearance = 0.15.mm) =>
-    threadedRod(d + 2 * clearance, pitch, depth + pitch, chamfer: false).move(z: -depth);
+/// z = 0 going down `depth`. `clearance` widens it for printed parts; left:
+/// true for a left-handed screw.
+Solid tappedHole(Length d, Length pitch, Length depth, Length clearance = 0.15.mm, bool left = false) =>
+    threadedRod(d + 2 * clearance, pitch, depth + pitch, chamfer: false, left: left).move(z: -depth);

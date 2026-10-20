@@ -1024,7 +1024,8 @@ unittest
 
     assert(error("@part Solid p() => rect(10, 10);").code == Code.type);
     assert(error("@part Solid p() => box(1, 1, 1) + rect(1, 1);").code == Code.type);
-    assert(error("@part Solid p() => (rect(10, 10) + rect(10, 10).rotate(x: 90)).extrude(5);").code == Code.type);
+    // profiles in two planes do not combine (one of no place is taken into the other's plane)
+    assert(error("@part Solid p() => (rect(10, 10).move(z: 1) + rect(10, 10).rotate(x: 90)).extrude(5);").code == Code.type);
     assert(error("@part Solid p() => box(1, 1, 1).extrude(3);").code == Code.type);
     assert(error("@part Solid p() => polygon([vec(0, 0), vec(1, 0)]).extrude(1);").code == Code.type);
 }
@@ -1179,7 +1180,7 @@ unittest
     assert(isClose(partVolume(r, "spring"), PI * 0.25 * wire, 1e-2));
     assert(isClose(partVolume(r, "frustum"), PI * 10 / 3 * (100 + 50 + 25), 1e-6));
     assert(isClose(partVolume(r, "hollow"), 300 * 10, 1e-6));
-    assert(r.log[0].text == "Path Path");
+    assert(r.log[0].text == "Path 94.68 mm long, open Path 1.414 mm long, open", r.log[0].text);
 
     assert(error(`@part Solid p() => helix(r: 5, pitch: 1, height: 5);`).code == Code.type);
     assert(error(`@part Solid p() => box(1, 1, 1) + path([vec(0, 0), vec(1, 1)]);`).code == Code.type);
@@ -3396,14 +3397,18 @@ unittest
 unittest
 {
     // frames along a path: evenly spaced, Z along it, X and Y square; on a
-    // straight line they do not turn; a closed path's last frame is its first
+    // straight line they do not turn; a closed path's frames go all round,
+    // its start not repeated at the end (the step from the last to the first
+    // as from one to the next)
     expectOut(q{
         auto f = path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 40.mm)]).frames(5);
         writeln(f.length, " ", f[1].origin.z, " ", f[4].z.z, " ", f[0].x == f[4].x);
         auto ring = spline([vec(10.mm, 0.mm, 0.mm), vec(0.mm, 10.mm, 0.mm), vec(-10.mm, 0.mm, 0.mm),
             vec(0.mm, -10.mm, 0.mm)], closed: true).frames(30);
-        writeln(abs(ring[0].x.dot(ring[29].x) - 1) < 1e-6, " ", abs(ring[7].x.dot(ring[7].z)) < 1e-9);
-    }, "5 10 mm 1 true\ntrue true", "import std.math;");
+        writeln(ring.length, " ", abs((ring[29].origin - ring[0].origin).length
+            - (ring[1].origin - ring[0].origin).length) < 0.01.mm, " ",
+            abs(ring[7].x.dot(ring[7].z)) < 1e-9);
+    }, "5 10 mm 1 true\n30 true true", "import std.math;");
 }
 
 unittest
@@ -4728,8 +4733,23 @@ unittest
     hc_workaround(HC_WORKAROUND_FILL_CHORDS, 0);
     scope (exit)
         hc_workaround(HC_WORKAROUND_FILL_CHORDS, 1);
-    stillBroken(lowest(src.replace("24)", "25)").replace("i * 15.deg", "i * 14.4.deg").replace("i * 30.deg", "i * 28.8.deg")) < -5,
-        "MakeFilling sagging along curved edges (shim.cpp, hc_fill)");
+    // the rim as OpenCascade's own periodic interpolation makes it, called directly: spline(closed: true) is a
+    // sketch's closed spline now, which the filling does not sag on
+    import std.math : cos, sin;
+    double[] xyz;
+    foreach (i; 0 .. 25)
+        xyz ~= [20 * cos(i * 14.4 * PI / 180), 14 * sin(i * 14.4 * PI / 180), 4 * sin(i * 28.8 * PI / 180)];
+    auto rim = hc_spline(xyz.ptr, 25, 1);
+    assert(rim !is null);
+    scope (exit)
+        hc_shape_free(rim);
+    auto plate = hc_fill(rim, null, null, 0, null, 0, null, 0);
+    assert(plate !is null);
+    scope (exit)
+        hc_shape_free(plate);
+    double[6] bb;
+    assert(hc_bbox(plate, bb) == 0);
+    stillBroken(bb[2] < -5, "MakeFilling sagging along curved edges (shim.cpp, hc_fill)");
 }
 
 unittest
@@ -5290,4 +5310,1067 @@ unittest
         assert(d.severity != Severity.error, d.message);
     auto log = r.log.map!(l => l.text).join("\n");
     assert(log.canFind("sanity caught 2") && log.canFind("bad 0"), log);
+}
+
+// references (addTag(…, at:)) where the solid goes: each piece of a split those that lie in it or on it,
+// a copy joined to itself holds them once, a tag given again replaces them, a pattern keeps its first copy's
+unittest
+{
+    expectOut(`auto b = box(40, 10, 10).addTag("pin", at: vec(-15, 0, 5)).addTag("mid", at: vec(0, 0, 5));
+        auto h = b.halves(plane(origin: vec(0, 0, 0), normal: X));
+        writeln(h.below.point("pin"), " ", h.above.point("mid"), " ", h.below.point("mid"), " ",
+            (h.above + h.below).point("pin"), " ", (b + b).point("pin"));
+        auto ps = b.split(plane(origin: vec(0, 0, 0), normal: X));
+        writeln(ps[0].point("pin"), " ", ps[1].point("mid"), " ", (ps[0] + ps[1]).point("mid"));
+        writeln(b.extrude(faces.top, depth: 5).point("pin"), " ", b.cut(faces.top, depth: 5).point("pin"));
+        writeln(b.linearPattern(3, vec(50, 0, 0)).point("pin"), " ", b.move(x: 50).circularPattern(4).point("pin"));
+        auto c = b;
+        c.addTag("pin", at: vec(1, 2, 3));
+        writeln(c.point("pin"), " ", minkowski(b, sphere(r: 1)).point("pin"));`,
+        "[-15 mm, 0 mm, 5 mm] [0 mm, 0 mm, 5 mm] [0 mm, 0 mm, 5 mm] [-15 mm, 0 mm, 5 mm] [-15 mm, 0 mm, 5 mm]\n"
+        ~ "[-15 mm, 0 mm, 5 mm] [0 mm, 0 mm, 5 mm] [0 mm, 0 mm, 5 mm]\n"
+        ~ "[-15 mm, 0 mm, 5 mm] [-15 mm, 0 mm, 5 mm]\n"
+        ~ "[-15 mm, 0 mm, 5 mm] [35 mm, 0 mm, 5 mm]\n"
+        ~ "[1 mm, 2 mm, 3 mm] [-15 mm, 0 mm, 5 mm]");
+    // not on the side it does not lie on, nor in what an intersection leaves out (a hole's axis stays)
+    auto e = error(`@part Solid p() { auto b = box(40, 10, 10).addTag("pin", at: vec(-15, 0, 5));
+        return box(1, 1, 1).move(z: b.halves(plane(origin: vec(0, 0, 0), normal: X)).above.point("pin").z); }`);
+    assert(e.message.canFind("no point, axis, plane or frame of this solid is tagged 'pin'"), e.message);
+    assert(error(`@part Solid p() { auto b = box(40, 10, 10).addTag("pin", at: vec(-15, 0, 5));
+        return box(1, 1, 1).move((b & box(5, 5, 5)).point("pin")); }`).message.canFind("tagged 'pin'"));
+    expectOut(`auto d = box(40, 10, 10) - cylinder(d: 4, h: 30, center: true).move(x: 15)
+            .addTag("drill", at: axis(origin: vec(15, 0, 5), direction: Z));
+        writeln((d & box(20, 20, 20).move(x: 15)).axis("drill").origin, " ",
+            d.halves(XY.offset(5)).below.axis("drill").origin);`,
+        "[15 mm, 0 mm, 5 mm] [15 mm, 0 mm, 5 mm]");
+    assert(error(`@part Solid p() { auto d = box(40, 10, 10) - cylinder(d: 4, h: 30, center: true).move(x: 15)
+            .addTag("drill", at: axis(origin: vec(15, 0, 5), direction: Z));
+        return box(1, 1, 1).move((d & box(10, 10, 10).move(x: -15)).axis("drill").origin); }`)
+        .message.canFind("tagged 'drill'"));
+    // copies in different places: which, and what to do
+    e = error(`@part Solid p() { auto b = box(10, 10, 10).addTag("pin", at: vec(0, 0, 10));
+        auto u = b + b.move(x: 20); return box(1, 1, 1).move(u.point("pin")); }`);
+    assert(e.message.canFind("different places") && e.suggestion.canFind("replaces"), e.message ~ " " ~ e.suggestion);
+}
+
+// the frame of a tagged axis or plane: its X as plane(…).frame() and frame(face) have it, also once turned;
+// an empty solid's references kept by a union
+unittest
+{
+    expectOut(`auto t = box(10, 10, 10).addTag("a", at: axis(origin: vec(0, 0, 0), direction: Z))
+            .addTag("p", at: plane(origin: vec(0, 0, 0), normal: -Z));
+        writeln(t.frame("a").x, " ", t.frame("p").x, " ", t.frame("p").y, " ", t.rotate(y: 90).frame("a").x, " ",
+            plane(origin: vec(0, 0, 0), normal: X).frame().x, " ", t.frame(faces.bottom).y);
+        auto n = Solid.nothing.addTag("q", at: vec(1, 2, 3));
+        writeln((box(1, 1, 1) + n).point("q"));`,
+        "[1, 0, 0] [1, 0, 0] [0, -1, 0] [0, 1, 0] [0, 1, 0] [0, -1, 0]\n[1 mm, 2 mm, 3 mm]");
+}
+
+// extruded symmetric, a sketch's point stays where it was drawn; sheared, a circle's axis leans with its hole
+unittest
+{
+    expectOut(`auto s = sketch();
+        s.rect(s.point(0, 0, fixed: true), s.point(20, 10, fixed: true));
+        s.point(5, 5, fixed: true).addTag("mark");
+        s.circle(s.point(15, 5, fixed: true), d: 3).addTag("hole");
+        writeln(s.profile.extrude(10, symmetric: true).point("mark"), " ",
+            s.profile.rotate(x: 90).extrude(10, symmetric: true).point("mark"), " ",
+            s.profile.extrude(10, shear: vec(10, 0)).axis("hole").direction, " ",
+            s.profile.extrude(10, shear: vec(10, 0), symmetric: true).axis("hole").origin);`,
+        "[5 mm, 5 mm, 0 mm] [5 mm, 0 mm, 5 mm] [0.707107, 0, 0.707107] [15 mm, 5 mm, 0 mm]");
+}
+
+// a sketch's tagged lines and circles tag the faces made from them also sheared, twisted, offset, the
+// profile joined with or less another; where a step cannot keep them, the error says so
+unittest
+{
+    enum prof = `Profile prof()
+    {
+        auto s = sketch();
+        auto l = s.polyline([s.point(0, 0, fixed: true), s.point(20, 0, fixed: true), s.point(20, 10, fixed: true),
+            s.point(0, 10, fixed: true)], closed: true);
+        l[1].addTag("side");
+        s.circle(s.point(10, 5, fixed: true), d: 4).addTag("bore");
+        return s.profile;
+    }
+    void show(Solid r) { writeln(r.faces.tagged("side").count, " ", r.faces.tagged("bore").count); }`;
+    expectOut(`auto P = prof();
+        show(P.extrude(5, shear: vec(2, 1)));
+        show(P.extrude(5, twist: 30.deg));
+        show(P.offset(1).extrude(5));
+        show(P.offset(-0.5).extrude(5));
+        show((P - circle(d: 2).move(x: 3, y: 3)).extrude(5));
+        show((P + circle(d: 4).move(x: 20, y: 5)).extrude(5));
+        show(P.round(1).extrude(5));`, "1 1\n1 1\n1 1\n1 1\n1 1\n2 1\n1 1", prof);
+    auto e = error(prof ~ `@part Solid p() => hull(prof()).extrude(5).fillet(edges.of(faces.tagged("side")), r: 1);`);
+    assert(e.message.canFind("lost its name") && e.message.canFind("a hull"), e.message);
+    e = error(prof ~ `@part Solid p() => (box(50, 50, 50) - loft([prof(), prof().move(z: 10)]))
+        .fillet(edges.of(faces.tagged("bore")), r: 1);`);
+    assert(e.message.canFind("lost its name") && e.message.canFind("a loft"), e.message);
+}
+
+// tags: no ';' nor blank ones (a STEP file would change them), dots only between a module and a name,
+// tags lost in a foreach told, removeTag's hint telling tags and references apart
+unittest
+{
+    assert(error(`@part Solid p() { auto b = box(1, 1, 1); b.faces.top.addTag("a;b"); return b; }`)
+        .message.canFind("cannot hold ';'"));
+    assert(error(`@part Solid p() => box(1, 1, 1).addTag("  ");`).message.canFind("blank"));
+    assert(error(`@part Solid p() { auto s = sketch(); s.circle(s.point(0, 0), d: 2).addTag(" "); return box(1, 1, 1); }`)
+        .message.canFind("blank"));
+    foreach (t; [".x", "x.", "a..b"])
+        assert(error(`@part Solid p() => box(1, 1, 1).addTag("` ~ t ~ `");`).message.canFind("is not a tag"), t);
+    auto e = error(`@part Solid p() => box(1, 1, 1).addTag("sub.deep.z");`);
+    assert(e.message.canFind("only be given in module sub.deep") && e.suggestion.canFind("'z' without the dot"),
+        e.message ~ " " ~ e.suggestion);
+    e = error(`@part Solid p() { Solid[] arr = [box(1, 1, 1), box(2, 2, 2)];
+        foreach (s; arr)
+            s.addTag("all");
+        return arr[0]; }`);
+    assert(e.message.canFind("would be lost") && e.suggestion.canFind("arr[i].addTag"), e.message);
+    // used in the loop too: not lost
+    expectOut(`Solid[] arr = [box(1, 1, 1)];
+        Solid[] kept;
+        foreach (s; arr) { s.addTag("all"); kept ~= s; }
+        writeln(kept[0].tags);`, `["all"]`);
+    e = error(`@part Solid p() { auto b = box(1, 1, 1).addTag("body").addTag("pin", at: vec(0, 0, 0));
+        b.removeTag("nothere"); return b; }`);
+    assert(e.suggestion.canFind("its tags: body") && e.suggestion.canFind("its references: pin"), e.suggestion);
+    assert(error(`@part Solid p() { auto s = sketch(); auto c = s.circle(s.point(0, 0), d: 2); c.removeTag("x");
+        return box(1, 1, 1); }`).message.canFind("this circle is not tagged"));
+}
+
+// ---------------------------------------------------------------- profiles in planes, tiles, sketches (bug hunt 2026-10-20)
+
+unittest
+{
+    // tiles with no gap touch one another: joined into one area, a valid profile (r - t was 300 mm², the cut invalid)
+    expectOut(q{
+        auto r = rect(40.mm, 40.mm);
+        auto t = r.tiles(kind: "square", size: 10.mm);
+        auto b = box(40, 40, 5).cut(t, on: faces.top, depth: 1.mm);
+        writeln((r - t).isEmpty, " ", b.volume, " ", b.isValid, " ", (t & rect(10.mm, 10.mm)).area, " ",
+            (r - r.tiles(kind: "hex", size: 10.mm)).isEmpty, " ", (r - r.tiles(kind: "voronoi", size: 10.mm)).isEmpty);
+    }, "true 6400 mm^3 true 100 mm^2 true true");
+}
+
+unittest
+{
+    // a half section drawn on XZ turns round world Z: with axis: Z, an Axis along Z, or no axis (round its
+    // upright y); on a face, a direction alone goes through the sketch's origin; a section's default too
+    expectOut(q{
+        auto s = sketch(XZ);
+        s.rect(s.point(5, 0, fixed: true), w: 20.mm, h: 10.mm);
+        auto a = s.profile.revolve(axis: Z);
+        auto d = s.profile.revolve();
+        auto x = s.profile.revolve(axis: axis(origin: vec(0, 0, 0), direction: Z));
+        writeln(a.bbox.min, a.bbox.max, " ", d.bbox.min, d.bbox.max, " ", x.bbox.max);
+        auto top = box(20, 20, 10).sketch(faces.top);
+        top.rect(top.point(5, 0, fixed: true), w: 5.mm, h: 3.mm);
+        writeln(top.profile.revolve(axis: Y).bbox.min, top.profile.revolve().bbox.min);
+        writeln(box(40, 40, 40).section(XZ).move(x: 30.mm).revolve().bbox.max);
+    }, "[-25 mm, -25 mm, 0 mm][25 mm, 25 mm, 10 mm] [-25 mm, -25 mm, 0 mm][25 mm, 25 mm, 10 mm] [25 mm, 25 mm, 10 mm]\n"
+        ~ "[-10 mm, 0 mm, 0 mm][-10 mm, -10 mm, 10 mm]\n[50 mm, 50 mm, 40 mm]");
+    // Y is across XZ: not an axis in its plane
+    auto d = errorIn(q{
+        auto s = sketch(XZ);
+        s.rect(s.point(5, 0, fixed: true), w: 20.mm, h: 10.mm);
+        s.profile.revolve(axis: Y);
+    });
+    assert(d.message.canFind("axis must lie in the profile's plane") && d.suggestion.canFind("world"), d.message);
+}
+
+unittest
+{
+    // booleans of profiles off XY: one of no place is taken into the other's plane, two in one plane combine,
+    // two planes are an error (they did nothing, silently)
+    expectOut(q{
+        auto mz = rect(20.mm, 10.mm).move(z: 2.mm);
+        writeln((mz - circle(d: 2.mm)).area, " ", (mz & rect(10.mm, 10.mm)).area, " ", (mz - circle(d: 2.mm)).bbox.min);
+        auto b = box(20, 10, 5);
+        writeln((b.section(XY.offset(2.mm)) - circle(d: 2.mm)).area);
+        auto s = b.sketch(faces.front);
+        s.circle(s.origin, d: 4.mm);
+        writeln((b.section(XZ.offset(5.mm)) - s.profile).area);
+    }, "196.858 mm^2 100 mm^2 [-10 mm, -5 mm, 2 mm]\n196.858 mm^2\n87.4336 mm^2");
+    auto d = errorIn(q{
+        auto b = box(20, 10, 5);
+        auto s = b.sketch(faces.front);
+        s.circle(s.origin, d: 4.mm);
+        writeln((b.section(XZ) - s.profile).area);
+    });
+    assert(d.code == Code.type && d.message.canFind("different planes") && d.span.line == 7, d.message);
+}
+
+unittest
+{
+    // tiles and hull of a profile drawn on a face stay on it (they cut nothing); tiles of a section work
+    expectOut(q{
+        auto b = box(40, 40, 10);
+        auto s = b.sketch(faces.front);
+        s.rect(center: s.origin, w: 30.mm, h: 6.mm);
+        auto cells = s.profile.tiles(kind: "square", size: 5.mm, gap: 1.mm);
+        writeln(b.volume - b.cut(cells, depth: 1.mm).volume, " ", cells.area);
+        auto h = hull(s.profile, circle(d: 2.mm));
+        writeln(b.volume - b.cut(h, depth: 1.mm).volume, " ", h.area);
+        auto sec = box(40, 40, 40).section(XZ).tiles(kind: "hex", size: 6.mm, gap: 1.mm);
+        writeln(sec.bbox.min, sec.bbox.max);
+    }, "96 mm^3 96 mm^2\n180 mm^3 180 mm^2\n[-20 mm, 0 mm, 0 mm][20 mm, 0 mm, 40 mm]");
+}
+
+unittest
+{
+    // a difference that takes everything is an empty Profile, not a Solid; extruding it says so
+    expectOut("writeln(cutAway(rect(10.mm, 10.mm), rect(20.mm, 20.mm)).isEmpty, \" \", "
+        ~ "(rect(10.mm, 10.mm) & rect(5.mm, 5.mm).move(x: 50.mm)).isEmpty);", "true true",
+        "Profile cutAway(Profile a, Profile b) => a - b;");
+    auto d = errorIn("(rect(10.mm, 10.mm) - rect(20.mm, 20.mm)).extrude(2.mm);");
+    assert(d.message.canFind("the profile is empty"), d.message);
+    // a hull of profiles in two planes is a solid: extruding it says what it is
+    d = errorIn("hull(rect(10.mm, 10.mm).move(z: 3.mm), rect(10.mm, 10.mm).rotate(x: 90.deg)).extrude(2.mm);");
+    assert(d.message.canFind("this is a Solid, not a profile"), d.message);
+}
+
+unittest
+{
+    // a sketch's rect with w: alone is a square, as the profile's
+    expectOut(q{
+        auto s = sketch();
+        s.rect(center: s.point(0, 0, fixed: true), w: 30.mm);
+        auto t = sketch();
+        t.rect(t.point(0, 0, fixed: true), w: 12.mm);
+        writeln(s.profile.bbox.size, " ", s.dof, " ", t.profile.bbox.size, " ", t.dof);
+    }, "[30 mm, 30 mm, 0 mm] 0 [12 mm, 12 mm, 0 mm] 0");
+}
+
+unittest
+{
+    // a profile on a face or in a plane: bbox, spots, contains and outline all where it lies
+    expectOut(q{
+        auto b = box(40, 20, 10);
+        auto s = b.sketch(faces.front);
+        s.circle(s.origin, d: 4.mm);
+        auto p = s.profile;
+        writeln(p.bbox.min, p.bbox.max, " ", p.spots(1), " ", p.contains(vec(0.mm, -10.mm, 5.mm)));
+        auto sec = b.section(XZ);
+        writeln(sec.contains(vec(0.mm, 0.mm, 5.mm)), " ", sec.contains(vec(0.mm, 5.mm)));
+        foreach (q; box(20, 10, 10).section(XZ).outline(4))
+            writeln(q.at, " ", q.normal);
+    }, "[-2 mm, -10 mm, 3 mm][2 mm, -10 mm, 7 mm] [[0 mm, -10 mm, 5 mm]] true\ntrue false\n"
+        ~ "[10 mm, 0 mm, 5 mm] [1, 0, 0]\n[0 mm, 0 mm, 10 mm] [0, 0, 1]\n[-10 mm, 0 mm, 5 mm] [-1, 0, 0]\n"
+        ~ "[0 mm, 0 mm, 0 mm] [0, 0, -1]");
+}
+
+unittest
+{
+    // a bow tie: an error where it is drawn, not an empty error at 1:1 or an invalid part
+    auto d = errorIn(q{
+        auto s = sketch();
+        auto a = s.point(0, 0, fixed: true);
+        auto b = s.point(10, 0, fixed: true);
+        auto c = s.point(10, 10, fixed: true);
+        auto d = s.point(0, 10, fixed: true);
+        s.polyline([a, c, b, d]);
+        writeln(s.profile.area);
+    });
+    assert(d.code == Code.sketch && d.message.canFind("the outline drawn at line 9 crosses itself") && d.span.line == 9,
+        d.message);
+}
+
+unittest
+{
+    // smooth closed curves as a sketch's closed spline: symmetric whatever the first point; a closed
+    // spline whose last point repeats the first is the same curve
+    expectOut(q{
+        Vec2[] p;
+        foreach (i; 0 .. 4)
+            p ~= vec(10.mm * cos(i * 90.deg), 10.mm * sin(i * 90.deg));
+        auto a = polygon(p, smooth: true);
+        auto b = polygon([p[1], p[2], p[3], p[0]], smooth: true);
+        writeln(a.bbox.min, a.bbox.max, " ", b.bbox.min, b.bbox.max);
+        auto sp = spline([vec(20, 0, 0), vec(0, 20, 0), vec(-20, 0, 0), vec(0, -20, 0)], closed: true);
+        auto sq = spline([vec(20, 0, 0), vec(0, 20, 0), vec(-20, 0, 0), vec(0, -20, 0), vec(20, 0, 0)], closed: true);
+        writeln(circle(d: 0.2.mm).sweep(sp).bbox.max, " ", circle(d: 0.2.mm).sweep(sq).bbox.min);
+    }, "[-10 mm, -10 mm, 0 mm][10 mm, 10 mm, 0 mm] [-10 mm, -10 mm, 0 mm][10 mm, 10 mm, 0 mm]\n"
+        ~ "[20.1 mm, 20.1 mm, 0.1 mm] [-20.1 mm, -20.1 mm, -0.1 mm]");
+}
+
+unittest
+{
+    // a font not installed: a warning naming it (the text still made with another)
+    auto r = runModel(`unittest { auto t = text("HI", size: 5.mm, font: "No Such Font XYZ"); }`);
+    bool warned;
+    foreach (d; r.diagnostics)
+    {
+        assert(d.severity != Severity.error, d.message);
+        warned = warned || (d.severity == Severity.warning && d.message.canFind("'No Such Font XYZ' is installed"));
+    }
+    assert(warned);
+}
+
+unittest
+{
+    // shrunk to nothing: an empty profile (all of it, or one region of two); zero heights and depths said plainly
+    expectOut(q{
+        writeln(rect(20.mm, 10.mm).offset(-5.mm).isEmpty, " ", rect(20.mm, 10.mm).offset(-6.mm).isEmpty, " ",
+            circle(d: 10.mm).offset(-5.mm).isEmpty, " ",
+            (rect(20.mm, 10.mm) + circle(d: 40.mm).move(x: 50.mm)).offset(-5.5.mm).area);
+    }, "true true true 660.52 mm^2");
+    auto d = errorIn("rect(20.mm, 10.mm).extrude(0.mm);");
+    assert(d.message == "the height must not be zero", d.message);
+    d = errorIn("box(10, 10, 10).cut(rect(2.mm, 2.mm), on: faces.top, depth: 0.mm);");
+    assert(d.message == "depth must not be zero", d.message);
+}
+
+unittest
+{
+    // sketch errors: a fillet's at the s.fillet call; one on no corner is an error, not ignored
+    auto d = errorIn(q{
+        auto s = sketch();
+        auto r = s.rect(s.point(0, 0, fixed: true), w: 20.mm, h: 10.mm);
+        s.fillet(r[0].end, 12.mm);
+        writeln(s.profile.area);
+    });
+    assert(d.message.canFind("too big") && d.span.line == 6, format("%s %s", d.span.line, d.message));
+    d = errorIn(q{
+        auto s = sketch();
+        auto o = s.point(0, 0, fixed: true);
+        s.circle(o, r: 5.mm);
+        s.fillet(o, 2.mm);
+        writeln(s.profile.area);
+    });
+    assert(d.message.canFind("a fillet rounds a corner") && d.span.line == 7, format("%s %s", d.span.line, d.message));
+    // an arc's own equation in a conflict: its line, not the sketch's
+    d = errorIn(q{
+        auto s = sketch();
+        auto o = s.point(0, 0, fixed: true);
+        auto a = s.point(10, 0, fixed: true);
+        auto b = s.point(0, 5, fixed: true);
+        s.arc(o, a, b);
+        s.line(b, o);
+        s.line(o, a);
+        writeln(s.profile.area);
+    });
+    assert(d.message.canFind("lines 5, 6, 7, 8"), d.message);
+    // s.paths names the conflict as s.profile does
+    d = errorIn(q{
+        auto s = sketch();
+        auto a = s.point(0, 0, fixed: true);
+        auto l = s.line(a, s.point(10, 3));
+        s.horizontal(l);
+        s.vertical(l);
+        s.length(l, 5.mm);
+        writeln(s.paths.length);
+    });
+    assert(d.message.canFind("check the constraints at line"), d.message);
+}
+
+unittest
+{
+    // the methods' own names, not the solver's; types and members suggested from the sketch's own
+    auto d = errorIn("auto s = sketch(); s.on(s.point(1, 1), s.point(2, 2));");
+    assert(d.message == "s.on needs a point and a line, a circle, an arc or an ellipse", d.message);
+    d = errorIn("auto s = sketch(); s.equal(s.line(vec(0, 0), vec(10, 0)), s.circle(vec(0, 0), r: 5.mm));");
+    assert(d.message == "s.equal needs two lines, or two circles or arcs", d.message);
+    d = errorIn("auto s = sketch(); s.tangent(s.point(3, 3), s.line(vec(0, 0), vec(10, 0)));");
+    assert(d.message.canFind("s.tangent needs"), d.message);
+    d = errorIn("auto s = sketch(); s.equal(s.line(vec(0, 0), vec(10, 0)));");
+    assert(d.message == "missing argument 'b' for s.equal(a, b)", d.message);
+    d = errorIn("auto s = sketch(); writeln(s.circle(vec(0, 0), r: 5.mm).start);");
+    assert(d.suggestion == "its members: center, radius", d.suggestion);
+    d = errorIn("Point q = sketch().point(1, 2);");
+    assert(d.suggestion == "did you mean 'SketchPoint'?", d.suggestion);
+    expectOut("SketchPoint p = sketch().point(1, 2); writeln(p.x);", "1 mm");
+}
+
+unittest
+{
+    // fills: one in no area is a warning there; every area emptied is said so, at the fill
+    auto r = runModel(q{unittest {
+        auto s = sketch();
+        s.circle(s.point(0, 0, fixed: true), r: 10.mm);
+        s.fill(vec(50.mm, 0.mm));
+        writeln(s.profile.area);
+    }});
+    bool warned;
+    foreach (d; r.diagnostics)
+        warned = warned || (d.severity == Severity.warning && d.message.canFind("lies in no area") && d.span.line == 4);
+    assert(warned);
+    auto d = errorIn(q{
+        auto s = sketch();
+        s.circle(s.point(0, 0, fixed: true), r: 10.mm);
+        s.fill(vec(0.mm, 0.mm), full: false);
+        writeln(s.profile.area);
+    });
+    assert(d.message.canFind("every area of the outline is left empty") && d.span.line == 6, d.message);
+}
+
+unittest
+{
+    // an SVG's circles and ellipses as true curves (a circle of r 5 was 77.57 mm²), turned and stretched too
+    auto dir = buildPath(tempDir, "hcad-svg-round");
+    mkdirRecurse(dir);
+    scope (exit)
+        rmdirRecurse(dir);
+    write(buildPath(dir, "round.svg"), `<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="20mm" viewBox="0 0 100 20">
+        <circle cx="10" cy="10" r="5"/>
+        <g transform="translate(50 0) rotate(30)"><ellipse cx="5" cy="5" rx="4" ry="2"/></g>
+        <g transform="translate(70 0) scale(2 1)"><circle cx="5" cy="5" r="3"/></g></svg>`);
+    auto it = make();
+    it.root = dir;
+    auto r = it.runSource(q{
+        unittest { foreach (q; load("round.svg").pieces) writeln(q.area); }
+    }, buildPath(dir, "main.hcad"));
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    auto log = r.log.map!(l => l.text).join(" ");
+    assert(log == "78.5398 mm^2 25.1327 mm^2 56.5487 mm^2", log);
+}
+
+unittest
+{
+    // a sketch of many separate loops: the solver takes its independent parts apart, the profile its
+    // holes in one cut (225 holes took 3.5 s)
+    import std.datetime.stopwatch : StopWatch, AutoStart;
+    auto sw = StopWatch(AutoStart.yes);
+    expectOut(q{
+        auto s = sketch();
+        s.rect(s.point(0, 0, fixed: true), w: 160.mm, h: 160.mm);
+        foreach (i; 0 .. 15)
+            foreach (j; 0 .. 15)
+                s.circle(s.point(10 + i * 10, 10 + j * 10, fixed: true), r: 3.mm);
+        writeln(s.profile.area, " ", s.dof);
+    }, "19238.3 mm^2 0");
+    assert(sw.peek.total!"msecs" < 1500, format("%s ms", sw.peek.total!"msecs"));
+}
+
+
+// ---------------------------------------------------------------- bug hunt 2026-10-20: solids, selectors
+
+unittest
+{
+    // a profile's depth on a face is positive, the call saying which way: no quiet pocket from a
+    // negative extrude, no cut doing nothing
+    auto d = errorIn("auto s = box(30, 24, 20).extrude(circle(d: 5.mm), on: faces.top, depth: -30.mm);");
+    assert(d.code == Code.type && d.message.canFind("use cut"), d.message);
+    d = errorIn("auto s = box(30, 24, 20).cut(circle(d: 5.mm), on: faces.top, depth: -2.mm);");
+    assert(d.code == Code.type && d.message.canFind("use extrude"), d.message);
+    d = errorIn("auto s = box(30, 24, 20).cut(circle(d: 5.mm), on: faces.top, depth: 0.mm);");
+    assert(d.message.canFind("must not be zero"), d.message);
+}
+
+unittest
+{
+    // faces.top on a part turned a little: the face facing up the most; exact as before when square
+    expectOut("auto b = box(10, 20, 5).rotate(x: 0.1.deg); writeln(b.faces.top.count);"
+        ~ " writeln(box(40, 40, 20).rotate(x: 30.deg).faces.top.count, \" \", box(40, 40, 20).rotate(x: 30.deg).faces.bottom.count);"
+        ~ " auto st = box(20, 10, 10) + box(10, 10, 5).move(x: 20.mm); writeln(st.faces.top.count);"
+        ~ " auto tw = (box(20, 10, 10) + box(10, 10, 10).move(x: 20.mm, z: 5.mm)).rotate(y: 0.2.deg); writeln(tw.faces.top.count);"
+        ~ " writeln(box(10, 20, 5).rotate(x: 0.1.deg).shell(open: faces.top, thickness: 1.mm).volume < 1000 * 1.mm ^^ 3);",
+        "1\n1 1\n1\n1\ntrue");
+}
+
+unittest
+{
+    // a curved face faces the way its normal points on the whole: a dome up, a cylinder's whole side no way
+    expectOut("auto boss = box(20, 20, 5) + cylinder(d: 10.mm, h: 10.mm).move(z: 5.mm);"
+        ~ " writeln(boss.faces.normal(-X).count, \" \", boss.faces.top.count);"
+        ~ " auto dome = cylinder(d: 10.mm, h: 10.mm) + sphere(5.mm).move(z: 10.mm);"
+        ~ " writeln(dome.faces.top.count, \" \", dome.faces.normal(Z).count);"
+        ~ " writeln(sphere(5.mm).faces.normal(Z).count, \" \", box(10, 10, 10).fillet(edges.parallel(Z), r: 2.mm)"
+        ~ ".faces.normal(Z).count);",
+        "1 1\n1 1\n0 1");
+}
+
+unittest
+{
+    // @parts: Solid.nothing in the list is no part; another empty solid an error with its place;
+    // nothing at all, said so
+    auto r = runModel("@parts\nSolid[] many() => [box(5, 5, 5), Solid.nothing];\n");
+    assert(r.parts.length == 1);
+    auto d = error("@parts\nSolid[] many() => [box(5, 5, 5), box(1, 1, 1) - box(3, 3, 3).move(x: -1.mm, y: -1.mm, "
+        ~ "z: -1.mm)];\n");
+    assert(d.message.canFind("[1] is empty") && d.span.line == 2, d.message);
+    r = runModel("@parts\nSolid lid() => Solid.nothing;\n");
+    assert(r.parts.length == 0 && r.diagnostics.canFind!(x => x.message.canFind("no parts this time")));
+}
+
+unittest
+{
+    // the sum of an empty Solid[] is an empty solid, as fuse([]) is; of an empty Profile[] an empty profile
+    expectOut("Solid[] none; writeln((box(10, 10, 10) + none.sum.move(x: 1.mm)).volume);"
+        ~ " Profile[] flat; writeln((rect(2.mm, 2.mm) + flat.sum).area);"
+        ~ " writeln([box(1, 1, 1)].filter(s => s.volume > 2 * 1.mm ^^ 3).sum.isEmpty);"
+        ~ " int[] n; writeln(n.sum);",
+        "1000 mm^3\n4 mm^2\ntrue\n0");
+}
+
+unittest
+{
+    // a condition is true or false (or an integer, as in D): a length, a solid is a mistake
+    auto d = errorIn("auto s = box(10, 10, 10).fillet(edges.filter(e => e.length), r: 1.mm);");
+    assert(d.code == Code.type && d.message.canFind("true or false, not Length"), d.message);
+    expectErr("if (3.mm) writeln(1);", Code.type);
+    expectErr("if (box(1, 1, 1)) writeln(1);", Code.type);
+    expectErr("auto x = \"a\" && true;", Code.type);
+    expectOut("writeln([1, 2, 3, 4].filter(x => x % 2), \" \", !0);", "[1, 3] true");
+}
+
+unittest
+{
+    // selectors combined from one solid stay of it: counted, gone through
+    expectOut("auto s = box(30, 20, 10); writeln((s.faces.top + s.faces.bottom).count);"
+        ~ " foreach (f; s.faces.top + s.faces.bottom) writeln(f.center.z);", "2\n0 mm\n10 mm");
+}
+
+unittest
+{
+    // a tapered cut through: as deep as the body, not a closing outline 100 mm on
+    expectOut("auto a = box(30, 24, 20).cut(circle(d: 10.mm), on: faces.top, through: true, taper: 3.deg);"
+        ~ " writeln(a.volume < 30.mm * 24.mm * 20.mm - 1000 * 1.mm ^^ 3, \" \", a.faces.count);", "true 7");
+}
+
+unittest
+{
+    // the wording of face extrude and thread errors
+    auto d = errorIn("auto a = box(30, 24, 10).extrude(faces.top, depth: 5.mm, along: vec(1, 0, 0));");
+    assert(d.message.canFind("extrude failed") && !d.message.canFind("push/pull"), d.message);
+    d = errorIn("auto a = (box(20, 20, 15) - cylinder(d: 6.8.mm, h: 40.mm, center: true))"
+        ~ ".thread(faces.filter(f => !f.isPerpendicular(Z)), \"M8\");");
+    assert(d.message.canFind("matched 5 faces"), d.message);
+}
+
+unittest
+{
+    // nextTo along an axis as before; an oblique direction along it, the boxes touching
+    expectOut("auto b = box(30, 24, 20); auto s = box(4, 6, 8).move(x: -70.mm);"
+        ~ " writeln(s.nextTo(b, X, gap: 1.mm).bbox.min); writeln(s.nextTo(b, vec(1, 2, 0)).bbox.min);",
+        "[16 mm, -3 mm, 0 mm]\n[5.5 mm, 12 mm, 0 mm]");
+}
+
+unittest
+{
+    // seams are no edges: a cylinder's side has no straight edge to round; a sphere none at all
+    expectOut("writeln(cylinder(d: 10.mm, h: 10.mm).edges.lines.count, \" \", cylinder(d: 10.mm, h: 10.mm).edges.count);",
+        "0 2");
+    auto d = errorIn("auto a = cylinder(d: 10.mm, h: 10.mm).fillet(edges.parallel(Z), r: 1.mm);");
+    assert(d.suggestion.canFind("seam"), d.message ~ " / " ~ d.suggestion);
+    d = errorIn("auto a = sphere(5.mm).fillet(edges, r: 1.mm);");
+    assert(d.suggestion.canFind("seam") && !d.message.canFind("suitable"), d.message);
+}
+
+unittest
+{
+    mixin(slowTest);
+    // fillet and chamfer failures: a size that works, no kernel jargon, rounds of one radius made in turn
+    auto d = errorIn("auto a = box(10, 10, 10).fillet(edges.of(faces.top), r: 2.mm).fillet(edges.parallel(Z), r: 2.mm);");
+    assert(!d.message.canFind("NotDone") && d.suggestion.canFind("in one fillet"), d.message ~ " / " ~ d.suggestion);
+    d = errorIn("auto a = box(10, 10, 10).fillet(edges.parallel(Z), r: 2.mm).chamfer(edges.of(faces.top), d: 3.mm);");
+    assert(d.suggestion.canFind("up to about 1.9") && !d.suggestion.canFind("0.522"), d.suggestion);
+    expectOut("writeln(box(10, 10, 10).fillet(edges.parallel(Z), r: 2.mm).chamfer(edges.of(faces.top), d: 1.mm).isValid);",
+        "true");
+}
+
+unittest
+{
+    // the axis of a curved face; a frame on one says how to get it
+    expectOut("auto c = cylinder(d: 20.mm, h: 30.mm).move(x: 5.mm); auto ax = c.axis(faces.largest);"
+        ~ " writeln(ax.direction, \" \", ax.origin.x);", "[0, 0, 1] 5 mm");
+    auto d = errorIn("auto f = cylinder(d: 20.mm, h: 30.mm).frame(faces.largest);");
+    assert(d.message.canFind("body.axis(faces"), d.message);
+    d = errorIn("auto a = box(10, 10, 10).axis(faces.top);");
+    assert(d.message.canFind("turned round an axis"), d.message);
+    d = errorIn("auto a = box(10, 10, 10).fillet(faces.top, r: 1.mm);");
+    assert(d.message.canFind("an edge selector") && !d.message.canFind("Selector"), d.message);
+}
+
+unittest
+{
+    // bounding boxes: a fill's plate boxed where it is trimmed, no 1e-7 past a part's corners
+    expectOut("Path rim = path([vec(0.mm, 0.mm, 0.mm), vec(10.mm, 0.mm, 0.mm), vec(10.mm, 10.mm, 5.mm),"
+        ~ " vec(0.mm, 10.mm, 0.mm)], closed: true); auto t = fill(rim, through: [vec(5.mm, 5.mm, 8.mm)]).thicken(1.mm);"
+        ~ " writeln(t.bbox.min.x > -1.mm, \" \", t.bbox.max.x < 11.mm, \" \", t.bbox.min.z);"
+        ~ " writeln(box(10, 10, 10).scale(z: 2).bbox.min.z, \" \", loft([circle(d: 20.mm), circle(d: 10.mm).move(z: 50.mm)])"
+        ~ ".bbox.min.z, \" \", sphere(5.mm).scale(z: 2).bbox.min);",
+        "true true 0 mm\n0 mm 0 mm [-5 mm, -5 mm, -10 mm]");
+}
+
+unittest
+{
+    mixin(slowTest);
+    // projections: a loft's straight sides stay straight; a twisted prism's shadow is made
+    expectOut("auto p = loft([rect(20.mm, 10.mm), rect(10.mm, 30.mm).move(z: 50.mm)]).projection;"
+        ~ " writeln(p.area, \" \", p.bbox.max.x);", "500 mm^2 10 mm");
+    expectOut("auto p = rect(20.mm, 10.mm).extrude(30.mm, twist: 60.deg).projection;"
+        ~ " writeln(p.area > 310 * 1.mm ^^ 2 && p.area < 325 * 1.mm ^^ 2);", "true");
+}
+
+unittest
+{
+    // a hole closing as the solid grows: filled, the result well defined
+    expectOut("auto s = box(30, 24, 10) - cylinder(d: 8.mm, h: 30.mm, center: true);"
+        ~ " writeln(s.offset(4.5.mm, sharp: true).volume, \" \", s.offset(4.5.mm).bbox.size);",
+        "24453 mm^3 [39 mm, 33 mm, 19 mm]");
+}
+
+unittest
+{
+    // symmetric: the profile is the middle of the solid, tapered or twisted too
+    expectOut("auto p = rect(20.mm, 10.mm);"
+        ~ " writeln(p.extrude(10.mm, taper: 10.deg, symmetric: true).section(XY).bbox.size);"
+        ~ " writeln(p.extrude(10.mm, twist: 90.deg, symmetric: true).section(XY).bbox.size);"
+        ~ " auto t = p.extrude(10.mm, taper: 10.deg, symmetric: true); writeln(t.bbox.min.z, \" \", t.bbox.max.z,"
+        ~ " \" \", t.section(XY.offset(4.mm)).bbox.size == t.section(XY.offset(-4.mm)).bbox.size);",
+        "[20 mm, 10 mm, 0 mm]\n[20 mm, 10 mm, 0 mm]\n-5 mm 5 mm true");
+}
+
+unittest
+{
+    mixin(slowTest);
+    // a Minkowski sum with a box: swept along its sides, in a moment
+    import std.datetime.stopwatch : StopWatch, AutoStart;
+    auto sw = StopWatch(AutoStart.yes);
+    expectOut("auto m = minkowski(box(40, 40, 10) - cylinder(d: 10.2.mm, h: 30.mm, center: true), box(2, 2, 2, center: true));"
+        ~ " writeln(m.bbox.size, \" \", m.isValid, \" \", m.volume > 20500 * 1.mm ^^ 3 && m.volume < 20700 * 1.mm ^^ 3);",
+        "[42 mm, 42 mm, 12 mm] true true");
+    assert(sw.peek.total!"seconds" < 20);
+}
+
+
+// ------------------------------------------------- the libraries' fixes (bug hunt of 2026-10-20)
+
+/// A model with no errors and no warnings.
+void clean(EvalResult r)
+{
+    foreach (d; r.diagnostics)
+        assert(d.severity == Severity.note, d.message);
+}
+
+unittest
+{
+    mixin(slowTest);
+    // hole(): every kind within its depth, at every size; an insert, a counterbore's or a countersink's seat
+    // deeper than the hole is an error that says so; a counterbore takes a chamfer, a countersink refuses one
+    clean(runModel(q{
+        import std.hardware;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            foreach (s; [M2, M2_5, M3, M4, M5, M6, M8, M10, M12])
+                foreach (k; ["clearance", "tap", "insert", "counterbore", "countersink", "ribs"])
+                    assert(abs(hole(s, 17.mm, k).bbox.min.z + 17.mm) < 0.001.mm, s.name ~ " " ~ k);
+            immutable cb = "counterbore";
+            assert(hole(M3, 5.mm, cb, chamfer: 1.mm).volume > hole(M3, 5.mm, cb).volume + 5 * 1.mm ^^ 3, "chamfered");
+            assert(hole(M3, 5.mm, cb, chamfer: 1.mm).bbox.size.x > hole(M3, 5.mm, cb).bbox.size.x + 1.9.mm, "round the head");
+        }
+    }));
+    assert(error("import std.hardware;\n@part Solid p() => box(20, 20, 3) - hole(M3, 3.mm, \"insert\").move(z: 3);")
+        .message.canFind("the M3 insert is 5.7 mm long, deeper than the hole's 3 mm"));
+    assert(error("import std.hardware;\n@part Solid p() => box(20, 20, 3) - hole(M3, 3.mm, \"counterbore\").move(z: 3);")
+        .message.canFind("the counterbore for the M3 head is 3.2 mm deep"));
+    assert(error("import std.hardware;\n@part Solid p() => box(20, 20, 3) - hole(M12, 5.mm, \"countersink\").move(z: 5);")
+        .message.canFind("the countersink for the M12 head"));
+    assert(error("import std.hardware;\n@part Solid p() => hole(M3, 5.mm, \"countersink\", chamfer: 1.mm);")
+        .message.canFind("chamfer already"));
+}
+
+unittest
+{
+    // the hardware library's checks: what has no size says so, at the call
+    immutable hw = "import std.hardware;\n";
+    assert(error(hw ~ "@part Solid p() => nut(ST2_9);").message.canFind("ST2.9 is a self-tapping screw"));
+    assert(error(hw ~ "@part Solid p() => box(10, 10, 10) - nutTrap(ST2_9, 3.mm);").message.canFind("no nut"));
+    assert(error(hw ~ "@part Solid p() => box(30, 30, 10) - squareNutSlot(M10, 10.mm);")
+        .message.canFind("go from M2 to M8, not M10"));
+    assert(error(hw ~ "@part Solid p() => setScrew(M12, 3.mm, point: \"flat\");").message.canFind("6 mm long at least"));
+    assert(error(hw ~ "@part Solid p() => screw(M3, 0.3.mm);").message.canFind("1.5 mm long at least"));
+    assert(error("import std.snaps;\n@part Solid p() => snapHook(lead: 90.deg);").message.canFind("from 5°"));
+    assert(error("import std.snaps;\n@part Solid p() => snapHook(lead: 0.deg);").message.canFind("from 5°"));
+    assert(error("import std.gears;\n@part Solid p() => spurGear(2.mm, 20, 5.mm, backlash: 3.mm);")
+        .message.canFind("keep it below"));
+    assert(error("import std.gears;\n@part Solid p() => rack(2.mm, 10, 5.mm, pressure: 40.deg);")
+        .message.canFind("pressure angle goes from above 0° to 30°"));
+}
+
+unittest
+{
+    mixin(slowTest);
+    // a threaded nut's hole is tagged as the plain one's; a left-handed tapped hole; short screws are fine
+    clean(runModel(q{
+        import std.hardware;
+        import std.threads;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            auto n = nut(M3, threaded: true);
+            assert(n.faces.tagged("hardware.bore").count > 10 && n.faces.tagged("hardware.bore").count < n.faces.count);
+            auto l = tappedHole(8.mm, 1.25.mm, 10.mm, left: true), r = tappedHole(8.mm, 1.25.mm, 10.mm);
+            assert(abs(l.volume - r.volume) < 0.01 * 1.mm ^^ 3 && (l - r).volume > 1.mm ^^ 3, "left-handed");
+            assert(setScrew(M12, 6.mm, point: "flat").volume > 0.mm ^^ 3 && screw(M3, 1.5.mm).volume > 0.mm ^^ 3);
+        }
+    }));
+}
+
+unittest
+{
+    mixin(slowTest);
+    // gears cut as a rack cuts them: small pinions, undercut, mesh with a large wheel and a rack with no
+    // backlash at all
+    clean(runModel(q{
+        import std.gears;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable m = 2.mm;
+            auto wheel = spurGear(m, 40, 3.mm, backlash: 0.mm);
+            foreach (z; [6, 10, 14])
+            {
+                auto g = spurGear(m, z, 3.mm, backlash: 0.mm);
+                auto bar = rack(m, 2 * z + 6, 3.mm, backlash: 0.mm).move(x: -(z + 3) * PI * m, y: -m * z / 2);
+                foreach (k; 0 .. 6)
+                {
+                    immutable t = 360.0 / z * k / 6;
+                    assert((g.rotate(z: t) & wheel.rotate(z: 180 + 180.0 / 40 - t * z / 40)
+                        .move(x: centerDistance(m, z, 40))).volume == 0.mm ^^ 3, "z$(z) with z40 at $(t)");
+                    assert((g.rotate(z: t - 90) & bar.move(x: t / 180.0 * PI * m * z / 2)).volume == 0.mm ^^ 3,
+                        "z$(z) on the rack at $(t)");
+                }
+            }
+        }
+    }));
+}
+
+unittest
+{
+    mixin(slowTest);
+    // shadowCase on a slanted plane: quick, one solid each, as tall as the part along the normal; a flat part
+    // with the default lip; a round part's walls round, its lip three faces
+    clean(runModel(q{
+        import std.enclosures;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            immutable n = vec(1, 1, 1).normalized;
+            auto c = shadowCase(sphere(10.mm), on: plane(origin: vec(0.mm, 0.mm, 0.mm), normal: n));
+            assert(c.base.pieces.length == 1 && c.lid.pieces.length == 1 && (c.base & c.lid).volume < 0.01 * 1.mm ^^ 3);
+            assert(c.base.volume > 2000 * 1.mm ^^ 3 && c.lid.volume > 2000 * 1.mm ^^ 3, "whole");
+            auto turned = (c.base + c.lid)
+                .rotate(acos(n.z), axis: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: cross(n, Z).normalized));
+            assert(abs(turned.bbox.size.z - 24.5.mm) < 0.01.mm, "20 mm of sphere, 0.5 mm over it, two walls");
+            auto flat = shadowCase(box(20.mm, 20.mm, 4.mm));
+            assert((flat.base & flat.lid).volume < 0.01 * 1.mm ^^ 3 && flat.base.bbox.max.z < 4.5.mm, "a lower lip");
+            auto round = shadowCase(cylinder(d: 20.mm, h: 20.mm));
+            assert(abs(round.base.bbox.min.x + 12.5.mm) < 0.001.mm, "round walls");
+            assert(round.base.faces.tagged("enclosures.lip").count == 3, "the lip's faces");
+        }
+    }));
+    assert(error("import std.enclosures;\n@part Solid p() => shadowCase(box(20, 20, 4), lip: 3.mm).base;")
+        .message.canFind("the lip reaches the lid's top"));
+}
+
+unittest
+{
+    mixin(slowTest);
+    // splitJoint on a tube: pins and dowels on its wall, a wedged scarf, no tenon in its hollow middle;
+    // fingers on a slanted cut leave no loose slivers; keys: as count:, count: as keys:; joinParts with a
+    // seated dovetail and a barbed tenon
+    clean(runModel(q{
+        import std.joints;
+        import std.molds;
+        immutable tube = cylinder(d: 30.mm, h: 100.mm) - cylinder(d: 22.mm, h: 300.mm, center: true);
+        immutable mid = plane(origin: vec(0.mm, 0.mm, 50.mm), normal: Z);
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            foreach (k; ["pins", "dowels", "kanawa"])
+            {
+                auto j = splitJoint(tube, mid, kind: k);
+                assert(j.a.pieces.length == 1 && j.b.pieces.length == 1, k);
+                assert(tube.volume - j.a.volume - j.b.volume > 5 * 1.mm ^^ 3 && (j.a & j.b).volume == 0.mm ^^ 3, k);
+            }
+            auto f = splitJoint(box(20.mm, 20.mm, 100.mm),
+                plane(origin: vec(0.mm, 0.mm, 50.mm), normal: vec(0.2, 0, 1).normalized), kind: "fingers");
+            assert(f.a.pieces.length == 1 && f.b.pieces.length == 1, "no slivers");
+            auto beam = box(20.mm, 20.mm, 100.mm);
+            assert(splitJoint(beam, mid, kind: "pins", keys: 3).a.volume == splitJoint(beam, mid, kind: "pins", count: 3).a.volume);
+            assert(splitFlat(beam, mid, count: 1).keys.length == 1);
+            immutable post = box(20.mm, 20.mm, 60.mm), shelf = box(20.mm, 20.mm, 40.mm).move(z: 60.mm);
+            immutable top = plane(origin: vec(0.mm, 0.mm, 60.mm), normal: Z);
+            foreach (k; ["koshikake", "barbed"])
+            {
+                auto j = joinParts(post, shelf, top, kind: k);
+                assert((j.a & j.b).volume == 0.mm ^^ 3 && j.a.volume < post.volume && j.b.volume > shelf.volume, k);
+            }
+        }
+    }));
+    assert(error("import std.joints;\nimmutable tube = cylinder(d: 30.mm, h: 100.mm) - cylinder(d: 22.mm, h: 300.mm, center: true);\n"
+        ~ "@part Solid p() => splitJoint(tube, plane(origin: vec(0.mm, 0.mm, 50.mm), normal: Z)).a;")
+        .message.canFind("hollow or narrow in the middle of the cut"));
+
+    // WORKAROUND (OpenCascade 7.9, boolean cut) in splitJoint: the wedge's hole of a kanawa on a tube cut
+    // from a piece once joined fails; the library cuts it from each part before joining them
+    stillBroken(fails(q{
+        immutable tube = cylinder(d: 30.mm, h: 100.mm) - cylinder(d: 22.mm, h: 300.mm, center: true);
+        immutable s = sqrt(PI / 4 * (900 - 484)) * 1.mm, len = 0.6 * s, far = 4 * s, g = 0.2.mm;
+        immutable hook = 0.2 * s, lip = min(0.15 * len, 0.3 * s);
+        Solid span(Length x0, Length x1, Length y0, Length y1, Length z0, Length z1, Length c) =>
+            box(x1 - x0 + 2 * c, y1 - y0 + 2 * c, z1 - z0 + 2 * c)
+                .move(x: (x0 + x1) / 2, y: (y0 + y1) / 2, z: z0 - c + 50.mm);
+        @part Solid a()
+        {
+            auto up = span(-far, far, -far, 0.mm, -0.01.mm, len, 0.mm)
+                + span(-far, far, -0.01.mm, hook, len - lip, len, 0.mm);
+            auto down = span(-far, far, 0.mm, far, -len, 0.01.mm, g)
+                + span(-far, far, -hook, 0.01.mm, -len, -len + lip, g);
+            immutable w = 0.18 * s, reach = 2 * s, taper = reach / 20;
+            auto hole = loft([rect(w + 2 * g, w + 2 * g).move(z: -reach / 2),
+                    rect(w + taper + 2 * g, w + taper + 2 * g).move(z: reach / 2)])
+                .rotate(x: -90)
+                .move(z: 50.mm);
+            auto below = tube.halves(plane(origin: vec(0.mm, 0.mm, 50.mm), normal: Z)).below;
+            return (below - down) + (tube & up) - hole;
+        }
+    }), "OpenCascade's cut of a kanawa's wedge hole from a tube's piece once joined");
+}
+
+unittest
+{
+    mixin(slowTest);
+    // kerf on a strap narrower than six pitches: one piece, its slots shorter; mold on a plane at 45°: its
+    // pry notches cut, as on any other plane
+    clean(runModel(q{
+        import std.flex;
+        import std.molds;
+        @part Solid p() => box(1, 1, 1);
+        unittest
+        {
+            foreach (w; [8.mm, 12.mm, 15.mm])
+            {
+                auto b = box(120.mm, w, 3.mm);
+                auto k = kerf(b, box(40.mm, w + 10.mm, 10.mm, center: true));
+                assert(k.pieces.length == 1 && k.volume < b.volume - 100 * 1.mm ^^ 3, "strap $(w)");
+            }
+            auto at = plane(origin: vec(0.mm, 0.mm, 0.mm), normal: vec(1, 1, 0).normalized);
+            assert(mold(sphere(10.mm), at, pry: false).a.volume - mold(sphere(10.mm), at).a.volume > 50 * 1.mm ^^ 3);
+        }
+    }));
+    assert(error("import std.flex;\n@part Solid p() => kerf(box(120, 12, 3), box(40, 20, 10, center: true), length: 20.mm);")
+        .message.canFind("cut the part apart"));
+}
+
+
+unittest
+{
+    mixin(slowTest);
+    // a roll along a mitred path (no bend:): up, a twist and a guide sweep each straight stretch with
+    // its roll, the stretches meeting in the mitre planes; the volume stays the area times the length
+    expectOut(`auto l = path([vec(0, 0, 0), vec(40, 0, 0), vec(40, 40, 0)]);
+        auto bar = rect(10.mm, 2.mm);
+        writeln(v(bar.sweep(l, up: Z)), " ", v(bar.sweep(l, twist: 90.deg)), " ",
+            v(bar.sweep(l, guide: path([vec(0, 0, 5), vec(40, 0, 5), vec(40, 40, 5)]))));
+        auto z = circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(20, 0, 0), vec(20, 20, 10), vec(0, 20, 30)]),
+            twist: 180.deg);
+        writeln(abs(z.volume / (PI * 4 * (20 + sqrt(500.0) + sqrt(800.0)) * 1.mm ^^ 3) - 1) < 1e-4);`,
+        "1600 1600 1600\ntrue", "import std.math;\ndouble v(Solid s) => round(s.volume / 1.mm ^^ 3 * 10) / 10;   // to 0.1 mm³");
+    // a gentle kink is a corner, not a bend: no warning that the profile folds, and a valid solid
+    auto r = runModel(`@part Solid a() => circle(d: 4.mm).sweep(path([vec(0, 0, 0), vec(40, 0, 0), vec(80, 10, 0)]), up: Z);`);
+    assert(r.diagnostics.length == 0, r.diagnostics.length ? r.diagnostics[0].message : "");
+    assert(abs(partVolume(r, "a") / (PI * 4 * (40 + sqrt(1700.0))) - 1) < 1e-4);
+    // a path turning right back on itself: said, with where
+    auto back = error(`@part Solid a() => circle(d: 2.mm).sweep(path([vec(0, 0, 0), vec(10, 0, 0), vec(0, 0, 0)]));`);
+    assert(back.message.canFind("turns right back on itself at (10, 0, 0)"), back.message);
+}
+
+unittest
+{
+    mixin(slowTest);
+    // along a helix the profile keeps to its axis: a twist, up and a guide work over many turns, and a
+    // round profile comes out the right size; a closed circle of a sketch takes a twist
+    expectOut(`auto h4 = helix(r: 10.mm, pitch: 2.mm, height: 8.mm), h30 = helix(r: 10.mm, pitch: 2.mm, height: 60.mm);
+        immutable turn = sqrt((20 * PI) ^^ 2 + 4.0), l30 = 30 * turn;
+        auto bar = rect(2.mm, 1.mm);
+        writeln(abs(bar.sweep(h4, twist: 30.deg).volume / (8 * turn * 1.mm ^^ 3) - 1) < 1e-4);
+        writeln(abs(bar.sweep(h30, up: Z).volume / (2 * l30 * 1.mm ^^ 3) - 1) < 1e-4, " ",
+            abs(bar.sweep(h30).volume / (2 * l30 * 1.mm ^^ 3) - 1) < 1e-4);
+        auto wire = circle(d: 1.mm).sweep(h30);
+        writeln(abs(wire.volume / (PI / 4 * l30 * 1.mm ^^ 3) - 1) < 1e-4, " ", abs(wire.bbox.size.x / 21.mm - 1) < 1e-3);
+        auto g = rect(1.mm, 0.5.mm).sweep(helix(r: 10.mm, pitch: 2.mm, height: 20.mm),
+            guide: helix(r: 12.mm, pitch: 2.mm, height: 20.mm));
+        writeln(abs(g.volume / (0.5 * 10 * turn * 1.mm ^^ 3) - 1) < 1e-4);
+        auto s = sketch();
+        s.circle(s.point(0, 0, fixed: true), d: 40.mm);
+        writeln(abs(rect(4.mm, 2.mm).sweep(s.path, twist: 360.deg).volume / (8 * 40 * PI * 1.mm ^^ 3) - 1) < 1e-4);`,
+        "true\ntrue true\ntrue true\ntrue\ntrue", "import std.math;");
+}
+
+unittest
+{
+    // frames round a closed path: n of them a length/n apart, the start not repeated; a path's length
+    expectOut(`immutable sq = path([vec(0, 0, 0), vec(20, 0, 0), vec(20, 20, 0), vec(0, 20, 0)], closed: true);
+        foreach (f; sq.frames(4))
+            writeln(f.origin);
+        writeln(sq.length, " ", path([vec(0, 0, 0), vec(3, 4, 0)]).length);`,
+        "[0 mm, 0 mm, 0 mm]\n[20 mm, 0 mm, 0 mm]\n[20 mm, 20 mm, 0 mm]\n[0 mm, 20 mm, 0 mm]\n80 mm 5 mm");
+}
+
+unittest
+{
+    // annotations before a unittest, a struct or an import are errors, not dropped; @unit belongs to
+    // the module line
+    auto e = error("@whatever(3)\nunittest { writeln(1); }\n");
+    assert(e.code == Code.syntax && e.message.canFind("'@whatever' cannot be put before a unittest"), e.message);
+    assert(error("@unit(inch)\nunittest { writeln(1); }\n").message.canFind("before its module line"));
+    assert(error("@part\nstruct S { int a; }\n").message.canFind("before a struct"));
+    assert(error("@param(\"x\")\nimport std.hardware;\n").message.canFind("before an import"));
+}
+
+unittest
+{
+    // columns count characters, not the bytes of UTF-8; a tab in the line is a tab under it
+    import std.algorithm : startsWith;
+    import hackerscad.tool.codegen : offsetOf;
+    auto e = error("Solid b()\n{\n    auto s = \"àèìòù €\";  auto y = nosuch;\n    return box(1, 1, 1);\n}\n@part Solid a() => b();\n");
+    assert(e.span.line == 3 && e.span.col == 35, format("%s", e.span));
+    immutable tabbed = "unittest\n{\n\tauto y = nosuch;\n}\n";
+    auto t = error(tabbed);
+    assert(t.span.col == 11 && render(t, tabbed).canFind("| \t         ^^^^^^"), render(t, tabbed));
+    // the code tools find a token by its column after letters of several bytes
+    immutable src = "auto s = \"é\"; auto y = 3;\n";
+    assert(src[offsetOf(src, Span("", 1, 20, 1)) .. $].startsWith("y = 3"));
+}
+
+unittest
+{
+    // a Length times an Angle (in radians) is a Length, an arc's; a Length over an Angle too
+    expectOut(`writeln(10.mm * 90.deg, " ", 1.mm / 2.deg);`, "15.708 mm 28.6479 mm");
+}
+
+unittest
+{
+    // an array literal holds one type: a string among numbers, a Length among Angles are errors;
+    // whole and fractional numbers mix, and bare numbers with Lengths (bare numbers given to geometry are mm)
+    auto e = errorIn(`auto a = [1, "a"];`);
+    assert(e.code == Code.type && e.message.canFind("[0] is an int, [1] a string"), e.message);
+    assert(errorIn(`auto a = [1.mm, 2.deg];`).message.canFind("[0] is a Length, [1] an Angle"));
+    expectOut(`auto a = [1, 2.5]; auto b = [1.mm, 2]; auto c = [box(1, 1, 1), circle(d: 1)];
+        writeln(a.length + b.length + c.length);`, "6");
+}
+
+unittest
+{
+    // -D for a string @param: a bare word is the word, when it names nothing; else the usual errors
+    auto model = `@param string style = "round";
+        @part Solid p() => style == "square" ? box(1, 1, 1) : box(2, 2, 2);`;
+    auto it = make();
+    it.overrides["style"] = "square";
+    assert(isClose(partVolume(runModel(model, it), "p"), 1));
+    it = make();
+    it.overrides["style"] = "X";
+    assert(error(model, it).code == Code.type);
+}
+
+unittest
+{
+    // a private symbol of an imported module: said private, not undefined
+    auto dir = buildPath(tempDir, "hcad-private-test");
+    mkdirRecurse(buildPath(dir, "lib"));
+    scope (exit)
+        rmdirRecurse(dir);
+    write(buildPath(dir, "lib", "parts.hcad"), "module lib.parts;\nprivate immutable secret = 1;\n");
+    foreach (src; ["import lib.parts;\nunittest { auto x = secret; }", "import p = lib.parts;\nunittest { auto x = p.secret; }"])
+    {
+        auto it = make();
+        it.root = dir;
+        auto e = error(src, it);
+        assert(e.message.canFind("'secret' is private to module 'lib.parts'"), e.message);
+    }
+    // changing an immutable: no mention of enum, which hcad files do not have
+    assert(!errorIn("immutable x = 1; x = 2;").message.canFind("enum"));
+}
+
+unittest
+{
+    // writeln of shapes and selections: a short summary
+    expectOut(`writeln(box(30, 20, 10)); writeln(rect(30.mm, 20.mm)); writeln(path([vec(0, 0, 0), vec(10, 0, 0)]));
+        writeln(box(1, 1, 1).faces.top, " ", faces.top);`,
+        "Solid 30 × 20 × 10 mm, volume 6000 mm³\nProfile 30 × 20 mm, area 600 mm²\nPath 10 mm long, open\nfaces (1) faces");
+}
+
+unittest
+{
+    // drawings: a sheet with only a section is laid out and scaled; a section plane that misses the part is an
+    // error; a dimension of the model's own replaces the view's overall one across the same span, and a positive
+    // offset is away from the part
+    import hackerscad.drawing.sheet : toSvg;
+    import hackerscad.lang.drawingval : DrawingVal;
+    auto r = runModel(q{
+        @part Solid bracket() => box(60, 30, 6);
+        @drawing Drawing sheet()
+        {
+            auto d = drawing(title: "S");
+            d.section(bracket, YZ, label: "B");
+            return d;
+        }
+    });
+    auto svg = toSvg((cast(DrawingVal) r.drawings[0].drawing).render());
+    assert(svg.canFind("Section B-B") && !svg.canFind("inf"), svg);
+    auto miss = error(q{
+        @part Solid bracket() => box(60, 30, 6);
+        @drawing Drawing sheet()
+        {
+            auto d = drawing(title: "S");
+            d.section(bracket, YZ.offset(100.mm), label: "B");
+            return d;
+        }
+    });
+    assert(miss.message.canFind("does not cut the part"), miss.message);
+    r = runModel(q{
+        @part Solid bracket() => box(60, 30, 6);
+        @drawing Drawing sheet()
+        {
+            auto d = drawing(title: "M", size: "A3", scale: 2, landscape: false);
+            auto v = d.view(bracket, "top", at: vec(100, 150));
+            d.dimension(v, from: vec(-30, -15, 6), to: vec(30, -15, 6), offset: 10.mm);
+            return d;
+        }
+    });
+    svg = toSvg((cast(DrawingVal) r.drawings[0].drawing).render());
+    // one 60, below the bottom edge (at 120 mm up the sheet, its text 309 mm down from the top of the A3)
+    assert(svg.count(">60<") == 1 && svg.canFind(`y="309"`) && svg.canFind(`text-anchor="middle">60<`), svg);
+}
+
+unittest
+{
+    // hcad section --projection --no-sketch: the outline without the sketch
+    import hackerscad.io.stl : toStl;
+    import hackerscad.tool.features : projectionReport;
+    auto dir = buildPath(tempDir, "hcad-projection-test");
+    mkdirRecurse(dir);
+    scope (exit)
+        rmdirRecurse(dir);
+    write(buildPath(dir, "b.stl"), toStl(kernel.tessellate(kernel.box(20, 10, 5), 0.01, 0.1).welded));
+    assert(projectionReport(buildPath(dir, "b.stl"), null, "xy").canFind("as a sketch"));
+    assert(!projectionReport(buildPath(dir, "b.stl"), null, "xy", false).canFind("as a sketch"));
+}
+
+unittest
+{
+    // more than two segments at a point: the areas they close, all full, each to fill or empty (an arc from
+    // one corner of a rectangle to the opposite one; a line across a rectangle, ending on its sides)
+    expectOut(q{
+        auto s = sketch();
+        auto p = s.point(0, 20, fixed: true);
+        auto q = s.point(20, 0, fixed: true);
+        auto r = s.rect(p, q);
+        s.arc(s.point(0, 0, fixed: true), q, p);
+        writeln(round(s.profile.area.to!double));
+        s.fill(vec(5, 5), full: false);
+        writeln(round(s.profile.area.to!double));
+        auto t = sketch();
+        t.rect(t.point(0, 0, fixed: true), t.point(20, 10, fixed: true));
+        t.line(t.point(10, 0, fixed: true), t.point(10, 10, fixed: true));
+        writeln(t.profile.area);
+        t.fill(vec(15, 5), full: false);
+        writeln(t.profile.area, " ", t.profile.bbox.max);
+    }, "400\n86\n200 mm^2\n100 mm^2 [10 mm, 10 mm, 0 mm]");
 }

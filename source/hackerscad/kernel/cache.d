@@ -65,6 +65,7 @@ final class CachingKernel : BrepKernel
     Brep polygon(const(double)[] xy) => op(key("polygon", xy), inner.polygon(xy));
     Brep splineProfile(const(double)[] xy) => op(key("splineProfile", xy), inner.splineProfile(xy));
     Brep text(string t, double size, string font) => op(key("text", t, size, font), inner.text(t, size, font));
+    bool fontKnown(string font, out string[] similar) => inner.fontKnown(font, similar);
     Brep profileRound(Brep s, double r) => op(key("round", s, r), inner.profileRound(s, r));
     Brep profileOffset(Brep s, double d) => op(key("offset", s, d), inner.profileOffset(s, d));
     Brep extrude(Brep p, double h, double taper) => op(key("extrude", p, h, taper), inner.extrude(p, h, taper));
@@ -235,6 +236,8 @@ final class CachingKernel : BrepKernel
     Brep fillet(Brep s, const(int)[] edges, double r) => op(key("fillet", s, edges, r), inner.fillet(s, edges, r));
     Brep chamfer(Brep s, const(int)[] edges, double d) => op(key("chamfer", s, edges, d), inner.chamfer(s, edges, d));
     bool faceCylinder(Brep s, int face, out CylinderInfo info) => inner.faceCylinder(s, face, info);
+    bool faceAxis(Brep s, int face, out Vec3 origin, out Vec3 direction) => inner.faceAxis(s, face, origin, direction);
+    Brep sweepSolid(Brep s, Vec3 v) => op(key("sweepSolid", s, v), inner.sweepSolid(s, v));
     bool inside(Brep s, Vec3 p) => inner.inside(s, p);
     Brep facePrism(Brep s, int face, Vec3 v) => op(key("facePrism", s, face, v), inner.facePrism(s, face, v));
     Brep shell(Brep s, const(int)[] faces, double t) => op(key("shell", s, faces, t), inner.shell(s, faces, t));

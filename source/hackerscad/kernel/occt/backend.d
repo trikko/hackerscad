@@ -74,8 +74,45 @@ final class OcctKernel : BrepKernel
     Brep circle(double r) => wrap(hc_circle(r), "circle");
     Brep ellipse(double rx, double ry) => wrap(hc_ellipse(rx, ry), "ellipse");
     Brep polygon(const(double)[] xy) => wrap(hc_polygon(xy.ptr, cast(int)(xy.length / 2)), "polygon");
-    Brep splineProfile(const(double)[] xy) => wrap(hc_spline_profile(xy.ptr, cast(int)(xy.length / 2)), "smooth outline");
+    Brep splineProfile(const(double)[] xy)
+    {
+        // a sketch's closed spline: the same curve whichever point it starts at
+        Vec3[] pts;
+        foreach (i; 0 .. xy.length / 2)
+            pts ~= Vec3(xy[2 * i], xy[2 * i + 1], 0);
+        double[] poles;
+        foreach (q; closedSplinePoles(pts, "smooth outline"))
+            poles ~= [q.x, q.y];
+        return wrap(hc_spline_profile(poles.ptr, cast(int)(poles.length / 2)), "smooth outline");
+    }
+
+    /// The Bézier poles of the closed spline through `pts` (a point repeating the one before, or the
+    /// last the first, left out), as a sketch's closed spline has them.
+    private static Vec3[] closedSplinePoles(Vec3[] pts, string what)
+    {
+        import hackerscad.geom.spline : splinePoles;
+        double size = 0;
+        foreach (q; pts)
+            size = size > q.length ? size : q.length;
+        Vec3[] kept;
+        foreach (q; pts)
+            if (kept.length == 0 || (q - kept[$ - 1]).length > 1e-9 * (1 + size))
+                kept ~= q;
+        while (kept.length > 1 && (kept[0] - kept[$ - 1]).length <= 1e-9 * (1 + size))
+            kept = kept[0 .. $ - 1];
+        if (kept.length < 3)
+            throw new KernelException(what ~ " failed: a closed curve needs at least 3 different points");
+        return splinePoles(kept, true);
+    }
     Brep text(string s, double size, string font) => wrap(hc_text(s.toStringz, size, font.toStringz), "text");
+    bool fontKnown(string font, out string[] similar)
+    {
+        import std.string : splitLines;
+        if (hc_font_known(font.toStringz))
+            return true;
+        similar = hc_last_error().fromStringz.idup.splitLines;
+        return false;
+    }
     Brep profileRound(Brep s, double r) => wrap(hc_profile_round(h(s), r), "round");
     Brep profileOffset(Brep s, double d) => wrap(hc_profile_offset(h(s), d), "offset");
     Brep extrude(Brep p, double height, double taper) => wrap(hc_extrude(h(p), height, taper), "extrude");
@@ -115,8 +152,16 @@ final class OcctKernel : BrepKernel
     }
     Brep polyline(const(Vec3)[] pts, bool closed) =>
         wrap(hc_polyline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "path");
-    Brep spline(const(Vec3)[] pts, bool closed) =>
-        wrap(hc_spline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "spline");
+    Brep spline(const(Vec3)[] pts, bool closed)
+    {
+        // closed: as a sketch's closed spline, the same curve whichever point it starts at
+        if (closed)
+        {
+            auto poles = closedSplinePoles(pts.dup, "spline");
+            return wrap(hc_spline_poles(cast(const(double)*) poles.ptr, cast(int) poles.length), "spline");
+        }
+        return wrap(hc_spline(cast(const(double)*) pts.ptr, cast(int) pts.length, closed), "spline");
+    }
     Brep outlinePath(const(OutlineSeg)[] segs)
     {
         auto data = outlineData(segs);
@@ -446,13 +491,13 @@ final class OcctKernel : BrepKernel
         shared bool failed;
         foreach (i, ref f; parallel(r, 4))
         {
-            double[7] v;
+            double[8] v;
             if (hc_face_info(shape, cast(int) i, v) != 0)
             {
                 failed = true;
                 continue;
             }
-            f = FaceInfo(Vec3(v[0], v[1], v[2]), Vec3(v[3], v[4], v[5]), v[6]);
+            f = FaceInfo(Vec3(v[0], v[1], v[2]), Vec3(v[3], v[4], v[5]), v[6], v[7] != 0);
         }
         check(!failed, "face query");
         return r;
@@ -536,6 +581,20 @@ final class OcctKernel : BrepKernel
         info = CylinderInfo(Vec3(v[0], v[1], v[2]), Vec3(v[3], v[4], v[5]), v[6], v[7], v[8], v[9], v[10] != 0);
         return true;
     }
+
+    bool faceAxis(Brep s, int face, out Vec3 origin, out Vec3 direction)
+    {
+        double[6] v;
+        immutable r = hc_face_axis(h(s), face, v);
+        check(r >= 0, "face query");
+        if (r == 0)
+            return false;
+        origin = Vec3(v[0], v[1], v[2]);
+        direction = Vec3(v[3], v[4], v[5]);
+        return true;
+    }
+
+    Brep sweepSolid(Brep s, Vec3 v) => wrap(hc_sweep_solid(h(s), v.x, v.y, v.z), "sweep");
 
     Brep facePrism(Brep s, int face, Vec3 v) => wrap(hc_face_prism(h(s), face, v.x, v.y, v.z), "push/pull");
 

@@ -10,7 +10,7 @@ import std.format : format;
 import std.math : abs, cos, sin;
 
 import hackerscad.geom.vec;
-import hackerscad.kernel.brep : Brep, EdgeInfo, EdgeKind;
+import hackerscad.kernel.brep : Brep, EdgeInfo, EdgeKind, OutlineSeg;
 import hackerscad.lang.builtins : Args, primitive, polygonFit;
 import hackerscad.lang.errors;
 import hackerscad.lang.interp;
@@ -154,6 +154,7 @@ final class SketchVal : ObjectVal
     string[][] entityTags;    /// by entity: its tags, references of the profile and paths made from it
     Span[] profileSpans;      /// where `.profile` was read
     Span[] fillSpans;         /// the s.fill calls, in order
+    bool warnedFill;          /// a fill in no area said once
     bool asProfile;           /// a profile's one-shape sketch: everything given, not shown as a sketch
     bool placed;              /// drawn on a face or plane: its frame below (else on XY)
     Vec3[4] place;            /// origin, x, y, z
@@ -1088,7 +1089,8 @@ final class SketchVal : ObjectVal
         // new point at the origin without center:. The lines go p → (q.x, p.y) → q → (p.x, q.y) → p:
         // bottom, right, top, left when p is the lower left corner. angle: 30.deg turns it (its
         // first side that far from X); angle: "free" leaves the turn to the constraints
-        // (s.parallel(r[0], line) lays it along a slanted line). A profile's h is w when not given
+        // (s.parallel(r[0], line) lays it along a slanted line). h is w when not given (a square, as the
+        // profile rect(w)); with neither, a sketch's starts 20 × 10, its size left to the constraints
         immutable cons = construction(x);
         bool turned, free;
         double turn = 0;
@@ -1110,7 +1112,9 @@ final class SketchVal : ObjectVal
         immutable u = Vec3(cos(turn), sin(turn), 0), v = Vec3(-sin(turn), cos(turn), 0);
         size_t[4] c;
         size_t ctr = size_t.max;
-        double hDefault(double w) => asProfile ? w : 10;
+        double hDefault(double w) => asProfile || x.has("w") ? w : 10;
+        // a square: h is w
+        immutable square = x.has("w") && !x.has("h");
         if (!x.has("p") && !x.has("q"))
         {
             // round its centre
@@ -1132,9 +1136,9 @@ final class SketchVal : ObjectVal
         else if (!x.has("q"))
         {
             // one corner and the size: the rest of it along and across from there
-            if (!x.has("w") || (!x.has("h") && !asProfile))
-                throw new HcadError(Code.missingArg, "a rectangle from one corner needs w: and h: (or give "
-                    ~ "the opposite corner)", s);
+            if (!x.has("w"))
+                throw new HcadError(Code.missingArg, "a rectangle from one corner needs w: and h: (w: alone, a "
+                    ~ "square; or give the opposite corner)", s);
             immutable w = positiveLen(x, "w"), h = x.has("h") ? positiveLen(x, "h") : w;
             c[0] = pointOrNew(x, "p", s);
             immutable o = sk.guess(c[0]);
@@ -1201,8 +1205,9 @@ final class SketchVal : ObjectVal
             calling = "length";
             if (x.has("w"))
                 add(ConstraintKind.length, [idOf(lines[0])], s, positiveLen(x, "w"), 0, x.spanOf("w"));
-            if (x.has("h"))
-                add(ConstraintKind.length, [idOf(lines[1])], s, positiveLen(x, "h"), 0, x.spanOf("h"));
+            if (x.has("h") || square)
+                add(ConstraintKind.length, [idOf(lines[1])], s, positiveLen(x, square ? "w" : "h"), 0,
+                    x.spanOf(square ? "w" : "h"));
         }
         if (x.has("corner"))
         {
@@ -1835,25 +1840,51 @@ final class SketchVal : ObjectVal
         return r.join("; ");
     }
 
+    /// Where a sketch error (on the outline, once solved) points: the call that asked for the corner
+    /// fillet it is about, else where its point or line is drawn, else `fallback`.
+    Span errorSpan(SketchException e, Span fallback)
+    {
+        if (e.entities.length == 0)
+            return fallback;
+        immutable p = e.entities[0];
+        if (p in sk.fillets)
+            foreach (tag, kind; constraintKinds)
+                if (kind == "fillet" && constraintRefs[tag].length && constraintRefs[tag][0] == p)
+                    return constraintSpans[tag];
+        return p < entitySpans.length && entitySpans[p] != Span.init ? entitySpans[p] : fallback;
+    }
+
     /// An error naming the conflicting constraints when the sketch does not solve.
     void requireSolved(SolveReport rep)
     {
         if (rep.solved)
             return;
         size_t[] tags;
+        Span[] own;   // an entity's own equations (an arc's ends at one radius): where it is drawn
         foreach (c; rep.conflicting)
             // past the constraints: equations the sketch adds itself
             if (c < sk.constraints.length)
-                tags ~= sk.constraints[c].tag;
+            {
+                immutable con = sk.constraints[c];
+                if (con.tag != 0)
+                    tags ~= con.tag;
+                else if (con.refs[0] < entitySpans.length && entitySpans[con.refs[0]] != Span.init)
+                    own ~= entitySpans[con.refs[0]];
+            }
         import std.algorithm : canFind;
-        immutable where = lines(tags, constraintSpans);
+        string where;
+        {
+            auto ls = tags.map!(i => constraintSpans[i].line).array ~ own.map!(o => o.line).array;
+            where = ls.sort.uniq.map!(l => l.to!string).array.join(", ");
+        }
         if (where.length == 0)
             throw new HcadError(Code.sketch, "the sketch constraints conflict, and no single one is to blame: "
                 ~ "several contradict each other, or the points start too far from where they must go", span,
                 "draw the points nearer where they go, pin fewer of them (fixed: true), or leave out the "
                 ~ "constraints added last until it solves");
         throw new HcadError(Code.sketch, format("the sketch constraints conflict: check the constraints at line%s %s",
-            where.canFind(",") ? "s" : "", where), constraintSpans[tags[0]], "remove or change one of them");
+            where.canFind(",") ? "s" : "", where), tags.length ? constraintSpans[tags[0]] : own[0],
+            "remove or change one of them");
     }
 
     Value profile(Span at)
@@ -1863,13 +1894,11 @@ final class SketchVal : ObjectVal
         import hackerscad.kernel.brep : OutlineSeg;
 
         OutlineSeg[] segs;
+        OutlineSource[] sources;
         try
-            segs = sk.outline();
+            segs = sk.outline(sources);
         catch (SketchException e)
-        {
-            auto where = e.entities.length && e.entities[0] < entitySpans.length ? entitySpans[e.entities[0]] : span;
-            throw new HcadError(Code.sketch, e.msg, where);
-        }
+            throw new HcadError(Code.sketch, e.msg, errorSpan(e, span));
         // open lines and arcs: drawn, constrained, out of the profile; said once
         if (sk.lastOpen.length && !warnedOpen)
         {
@@ -1924,11 +1953,74 @@ final class SketchVal : ObjectVal
             }
         }
 
+        // a loop crossing itself (a polyline through the corners out of order) makes no area: said here,
+        // where it is drawn (with fills, crossing lines are how the areas are drawn)
+        if (sk.fills.length == 0)
+        {
+            size_t[2] which;
+            Vec3[2][2] where;
+            if (selfCrossing(segs, which, where))
+            {
+                size_t lineOf(size_t g)
+                {
+                    immutable e = g < sources.length ? sources[g].entity : size_t.max;
+                    return e < entitySpans.length && entitySpans[e] != Span.init ? entitySpans[e].line : 0;
+                }
+                // (both drawn by one call, a polyline: its line said once)
+                immutable one = lineOf(which[0]) == lineOf(which[1]);
+                string what(size_t g)
+                {
+                    immutable kind = segs[g].kind == OutlineSeg.Kind.line ? "the line" : segs[g].kind
+                        == OutlineSeg.Kind.arc ? "the arc" : "the curve";
+                    return lineOf(g) && !one ? format("%s drawn at line %d", kind, lineOf(g)) : kind;
+                }
+                string piece(Vec3[2] q) => format("from (%g, %g) to (%g, %g)", q[0].x, q[0].y, q[1].x, q[1].y);
+                immutable e0 = sources[which[0]].entity;
+                throw new HcadError(Code.sketch, format("the outline%s crosses itself: %s (%s) meets %s (%s)",
+                    one && lineOf(which[0]) ? format(" drawn at line %d", lineOf(which[0])) : "",
+                    what(which[0]), piece(where[0]), what(which[1]), piece(where[1])),
+                    e0 < entitySpans.length && entitySpans[e0] != Span.init ? entitySpans[e0] : at,
+                    "draw it in order round the outline (a polyline through the corners one after the other), or "
+                    ~ "join the lines where they cross");
+            }
+        }
         Brep b;
         try
             b = it.kernel.outline(segs);
         catch (KernelException e)
+        {
+            import std.algorithm : canFind;
+            if (e.msg.canFind("left empty") && fillSpans.length)
+                throw new HcadError(Code.sketch, "every area of the outline is left empty: the fills with full: false "
+                    ~ "take all of it", fillSpans[$ - 1], "leave one out, or fill an area full");
             throw new HcadError(Code.kernel, e.msg, span, "does the outline cross itself?");
+        }
+        // a fill in no area (outside every loop, or on a line) fills nothing: said where it is
+        if (sk.fills.length && !warnedFill)
+        {
+            int full;
+            Brep slab;
+            try
+                slab = it.kernel.extrude(it.kernel.outlineRegions(segs, full), 1, 0);
+            catch (KernelException)
+            {
+            }
+            // each area on its own: areas side by side are no one solid to look inside
+            auto areas = slab is null ? null : it.kernel.solids(slab);
+            foreach (k, f; slab is null ? null : sk.fills)
+            {
+                import std.algorithm : any;
+                immutable q = f.point >= 0 ? sk.position(f.point) : f.at;
+                if (!areas.any!(r => it.kernel.inside(r, Vec3(q.x, q.y, 0.5))))
+                {
+                    warnedFill = true;
+                    it.diagnostics ~= Diagnostic(Severity.warning, Code.sketch, format("this fill, at (%g, %g), lies in "
+                        ~ "no area of the outline (outside every loop, or on a line): it fills nothing", q.x, q.y),
+                        k < fillSpans.length ? fillSpans[k] : span, "put it inside the area to fill");
+                    break;
+                }
+            }
+        }
         auto sv = primitive(it, b, "sketch", span);
         sv.flat = true;
         // drawn on a face or plane: the profile lies there
@@ -1941,6 +2033,108 @@ final class SketchVal : ObjectVal
     }
 }
 
+/// Where one loop of an outline crosses itself (a bow tie: a polyline through the corners out of
+/// order): the two segments, by index in `segs`, and a point of each crossing piece; false when none
+/// does. Lines, arcs and curves are taken as short chords (an arc or a curve as eight of them, each
+/// piece of a curve), crossing only where they go right through each other.
+private bool selfCrossing(const(OutlineSeg)[] segs, out size_t[2] which, out Vec3[2][2] where)
+{
+    import std.algorithm : max, min, sort;
+    import std.math : atan2, PI;
+    struct Piece
+    {
+        Vec3 a, b;
+        size_t seg;
+    }
+    Vec3[] chordsOf(const ref OutlineSeg g)
+    {
+        auto a = Vec3(g.ax, g.ay, 0), b = Vec3(g.bx, g.by, 0);
+        final switch (g.kind)
+        {
+        case OutlineSeg.Kind.line: return [a, b];
+        case OutlineSeg.Kind.arc:
+            {
+                // round the circle through a, m and b, the way that passes m
+                auto m = Vec3(g.mx, g.my, 0), c = circumcentre(a, m, b);
+                immutable r = (a - c).length;
+                double ang(Vec3 q) => atan2(q.y - c.y, q.x - c.x);
+                immutable t0 = ang(a);
+                double sweep(Vec3 q)
+                {
+                    double t = ang(q) - t0;
+                    while (t < 0)
+                        t += 2 * PI;
+                    return t;
+                }
+                double t1 = sweep(b);
+                if (sweep(m) > t1)
+                    t1 -= 2 * PI;
+                Vec3[] r8 = [a];
+                foreach (i; 1 .. 8)
+                    r8 ~= c + Vec3(cos(t0 + t1 * i / 8), sin(t0 + t1 * i / 8), 0) * r;
+                return r8 ~ b;
+            }
+        case OutlineSeg.Kind.spline:
+            {
+                // cubic Bézier pieces: their poles three by three, then the end
+                Vec3 pole(size_t i) => Vec3(g.poles[2 * i], g.poles[2 * i + 1], 0);
+                immutable pieces = (g.poles.length / 2 - 1) / 3;
+                Vec3[] r = [pole(0)];
+                foreach (q; 0 .. pieces)
+                    foreach (i; 1 .. 9)
+                    {
+                        immutable t = i / 8.0, u = 1 - t;
+                        r ~= pole(3 * q) * (u * u * u) + pole(3 * q + 1) * (3 * u * u * t)
+                            + pole(3 * q + 2) * (3 * u * t * t) + pole(3 * q + 3) * (t * t * t);
+                    }
+                return r;
+            }
+        case OutlineSeg.Kind.ellipse, OutlineSeg.Kind.end, OutlineSeg.Kind.fill: return null;
+        }
+    }
+    size_t start;
+    foreach (e; 0 .. segs.length + 1)
+    {
+        if (e < segs.length && segs[e].kind != OutlineSeg.Kind.end)
+            continue;
+        // one loop: segs[start .. e]
+        Piece[] ps;
+        double size = 0;
+        foreach (g; start .. e)
+        {
+            auto pts = chordsOf(segs[g]);
+            foreach (i; 1 .. pts.length)
+            {
+                ps ~= Piece(pts[i - 1], pts[i], g);
+                size = max(size, abs(pts[i].x), abs(pts[i].y));
+            }
+        }
+        start = e + 1;
+        immutable eps = 1e-9 * max(size, 1e-6) * max(size, 1e-6);
+        double orient(Vec3 a, Vec3 b, Vec3 c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        // by their left end: each against those that start before it ends
+        ps.sort!((p, q) => min(p.a.x, p.b.x) < min(q.a.x, q.b.x));
+        foreach (i, p; ps)
+            foreach (q; ps[i + 1 .. $])
+            {
+                if (min(q.a.x, q.b.x) > max(p.a.x, p.b.x))
+                    break;
+                if (p.seg == q.seg && segs[p.seg].kind == OutlineSeg.Kind.line)
+                    continue;
+                immutable o1 = orient(p.a, p.b, q.a), o2 = orient(p.a, p.b, q.b);
+                immutable o3 = orient(q.a, q.b, p.a), o4 = orient(q.a, q.b, p.b);
+                if (((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps))
+                    && ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps)))
+                {
+                    which = p.seg < q.seg ? [p.seg, q.seg] : [q.seg, p.seg];
+                    where = p.seg < q.seg ? [[p.a, p.b], [q.a, q.b]] : [[q.a, q.b], [p.a, p.b]];
+                    return true;
+                }
+            }
+    }
+    return false;
+}
+
 /// The chains a sketch draws (its lines, arcs, curves, circles and
 /// ellipses that are not construction, end to end) as paths, where the
 /// sketch lies.
@@ -1951,13 +2145,12 @@ private Value[] sketchPaths(SketchVal sv, Span at)
 
     bool[] closed;
     OutlineSeg[][] chains;
+    // constraints that conflict: named, as for the profile
+    sv.requireSolved(sv.sk.report());
     try
         chains = sv.sk.chains(closed);
     catch (SketchException e)
-    {
-        auto where = e.entities.length && e.entities[0] < sv.entitySpans.length ? sv.entitySpans[e.entities[0]] : at;
-        throw new HcadError(Code.sketch, e.msg, where);
-    }
+        throw new HcadError(Code.sketch, e.msg, sv.errorSpan(e, at));
     if (chains.length == 0)
         throw new HcadError(Code.sketch, "the sketch draws no path: draw lines, arcs, curves or circles that are not "
             ~ "construction", at);
@@ -2428,7 +2621,9 @@ final class SketchEntityVal : ObjectVal
                 auto x = Args(owner.it, a, name, name == "clearTags" ? ["entity"] : ["entity", "tag"]);
                 if (owner.entityTags.length < owner.sk.entities.length)
                     owner.entityTags.length = owner.sk.entities.length;
-                return changeTags(owner.it, owner.entityTags[id], name, x, "this " ~ typeName,
+                // "this circle": the entity in plain words, not its type's name
+                import std.uni : toLower;
+                return changeTags(owner.it, owner.entityTags[id], name, x, "this " ~ typeName[6 .. $].toLower,
                     Value.make(Kind.object_, this));
             };
         default:

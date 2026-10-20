@@ -64,7 +64,7 @@ dimensions and pictures, compare them with the request, fix, then export.
   faces.from(foot)) follows the @params, a filter on e.mid.z does not.
   faces.top is the highest face (after an upright with a round top is
   added, that top, no longer the foot's); faces.normal(Z) also takes
-  curved faces whose normal at their centre points up; faces.from(foot)
+  curved faces facing up on the whole (a dome); faces.from(foot)
   has neither problem, and a frame can be taken on the solid before
   (foot.frame(faces.top)). edges.chain(edges.…) takes a curved outline
   made of many pieces whole (the edges running on without a corner),

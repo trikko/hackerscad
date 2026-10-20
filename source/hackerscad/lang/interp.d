@@ -155,7 +155,8 @@ enum long maxExactInt = (1L << 53) - 1;
 
 struct Limits
 {
-    size_t steps = 200_000_000;
+    // about 3 s of a loop doing nothing; every example and library stays far below
+    size_t steps = 25_000_000;
     uint depth = 1000;
     size_t arrayLength = 10_000_000;
 }
@@ -337,8 +338,16 @@ final class Interp
                 if (!many)
                     throw new HcadError(Code.type, format("@part '%s' returns %d solids: @parts makes a part of each",
                         f.name, v.arr.length), f.nameSpan);
-                foreach (e; v.arr)
+                foreach (i, e; v.arr)
+                {
+                    // as for a part returning one: Solid.nothing is no part, empty otherwise a mistake
+                    if (e.solid.brep is null && e.solid.none)
+                        continue;
+                    if (e.solid.brep is null)
+                        throw new HcadError(Code.kernel, format("@parts '%s': its solid [%d] is empty: did a cut take it "
+                            ~ "all? (Solid.nothing in the list leaves a part out on purpose)", f.name, i), f.nameSpan);
                     items ~= e.solid;
+                }
             }
             else if (v.kind == Kind.solid)
             {
@@ -488,7 +497,9 @@ final class Interp
             r.drawings ~= DrawingResult(f.name, v.obj, f.nameSpan);
         }
         if (r.parts.length == 0 && r.drawings.length == 0)
-            diagnostics ~= Diagnostic(Severity.warning, Code.undefined, "the model has no @part function: nothing to export",
+            diagnostics ~= Diagnostic(Severity.warning, Code.undefined, partCount == 0
+                ? "the model has no @part function: nothing to export"
+                : "no parts this time: each @part returned Solid.nothing (each @parts no solid): nothing to export",
                 Span(path, 1, 1));
 
         // unittests are design checks: failures are reported, geometry is kept;
@@ -832,7 +843,20 @@ final class Interp
                         return global(owner.env, s, span);
         }
         immutable name = nameOf(s);
+        for (auto e = env; e !is null; e = e.parent)
+            if (e.mod !is null && e.parent is prelude)
+                foreach (m; e.mod.imported)
+                    privateTo(m, name, span);
         throw new HcadError(Code.undefined, format("undefined identifier '%s'", name), span, suggest(name, env.allNames));
+    }
+
+    /// The error for a name another module keeps to itself (declared private).
+    private void privateTo(ModuleVal m, string name, Span span)
+    {
+        if (m.env is prelude || name in m.publicNames || (name !in m.env.vars && name !in m.env.pending))
+            return;
+        throw new HcadError(Code.undefined, format("'%s' is private to module '%s': only that module can use it",
+            name, m.name), span);
     }
 
     /// ditto
@@ -1028,7 +1052,20 @@ final class Interp
         if (auto pv = preset in p.presets)
             v = *pv;
         if (auto o = d.name in overrides)
-            v = check(eval(parseExpression(*o, "-D " ~ d.name), env), d.nameSpan);
+        {
+            import std.regex : ctRegex, matchFirst;
+
+            // -D style=square for a string: the word itself when it names nothing (the shell
+            // ate the quotes of -D style='"square"')
+            try
+                v = check(eval(parseExpression(*o, "-D " ~ d.name), env), d.nameSpan);
+            catch (HcadError e)
+            {
+                if (def.kind != Kind.str || e.diag.code != Code.undefined || !matchFirst(*o, ctRegex!`^[A-Za-z_]\w*$`))
+                    throw e;
+                v = Value.of(*o);
+            }
+        }
         p.value = v;
         params ~= p;
         return v;
@@ -1086,7 +1123,7 @@ final class Interp
         }
         if (auto i = as!If(s))
         {
-            if (eval(i.cond, env).truthy)
+            if (eval(i.cond, env).condition(i.cond.span))
                 return exec(i.then, new Env(env, env.mod));
             if (i.otherwise)
                 return exec(i.otherwise, new Env(env, env.mod));
@@ -1100,7 +1137,7 @@ final class Interp
             if (f.init)
                 exec(f.init, scope_);
             Env lastTurn, lastBody;
-            while (f.cond is null || eval(f.cond, scope_).truthy)
+            while (f.cond is null || eval(f.cond, scope_).condition(f.cond.span))
             {
                 auto fl = loopBody(f.body, Env.next(lastTurn, scope_, env.mod), lastBody);
                 if (fl == Flow.break_)
@@ -1115,7 +1152,7 @@ final class Interp
         if (auto w = as!While(s))
         {
             Env lastTurn, lastBody;
-            while (eval(w.cond, env).truthy)
+            while (eval(w.cond, env).condition(w.cond.span))
             {
                 auto fl = loopBody(w.body, Env.next(lastTurn, env, env.mod), lastBody);
                 if (fl == Flow.break_)
@@ -1136,7 +1173,7 @@ final class Interp
             return Flow.continue_;
         if (auto a = as!AssertStmt(s))
         {
-            if (!eval(a.cond, env).truthy)
+            if (!eval(a.cond, env).condition(a.cond.span))
             {
                 auto msg = a.message ? eval(a.message, env).toString : "assertion failed";
                 throw new HcadError(Code.assertion, msg, a.span);
@@ -1207,6 +1244,33 @@ final class Interp
         return exec(body, scope_);
     }
 
+    /// The first of the statements of `body` when they are all tag changes on variable `name`
+    /// (name.addTag(…), name.faces.top.addTag(…)), nothing else reading it; null otherwise.
+    private static Call onlyTagsOf(Stmt body, string name)
+    {
+        Stmt[] list = [body];
+        if (auto b = as!Block(body))
+            list = b.stmts;
+        Call first;
+        foreach (st; list)
+        {
+            auto es = as!ExprStmt(st);
+            auto c = es is null ? null : as!Call(es.expr);
+            auto m = c is null ? null : as!Member(c.callee);
+            if (m is null || (m.name != "addTag" && m.name != "removeTag" && m.name != "clearTags"))
+                return null;
+            Expr e = m.object;
+            while (as!Member(e) || as!Call(e))
+                e = as!Member(e) ? as!Member(e).object : as!Call(e).callee;
+            auto id = as!Ident(e);
+            if (id is null || id.name != name)
+                return null;
+            if (first is null)
+                first = c;
+        }
+        return first;
+    }
+
     private Flow execForeach(Foreach f, Env env)
     {
         Env lastTurn, lastBody;
@@ -1269,6 +1333,17 @@ final class Interp
             }
             enumerated = enumerated && f.key.name.length;
             auto items = agg.arr;
+            // foreach (s; parts) s.addTag("x");: each s a copy, tagged and dropped
+            import std.algorithm : any;
+            if (!enumerated && items.any!(v => v.kind == Kind.solid))
+                if (auto c = onlyTagsOf(f.body, f.value.name))
+                {
+                    auto list = as!Ident(f.aggregate) ? as!Ident(f.aggregate).name : "list";
+                    throw new HcadError(Code.type, format("%s: the tag would be lost, as '%s' is a copy of each "
+                        ~ "element of the list (foreach gives copies)", (cast(Member) c.callee).name, f.value.name),
+                        c.span, format("tag the elements themselves: foreach (i; 0 .. %s.length) %s[i].%s(…);",
+                        list, list, (cast(Member) c.callee).name));
+                }
             foreach (k; 0 .. items.length)
             {
                 immutable i = f.reverse ? items.length - 1 - k : k;
@@ -1350,7 +1425,7 @@ final class Interp
             auto v = eval(u.operand, env);
             switch (u.op)
             {
-            case Tok.bang: return Value.of(!v.truthy);
+            case Tok.bang: return Value.of(!v.condition(u.operand.span));
             case Tok.plus: return v;
             default:
                 if (v.isNum)
@@ -1403,13 +1478,14 @@ final class Interp
             return v;
         }
         if (auto t = as!Ternary(e))
-            return eval(t.cond, env).truthy ? eval(t.then, env) : eval(t.otherwise, env);
+            return eval(t.cond, env).condition(t.cond.span) ? eval(t.then, env) : eval(t.otherwise, env);
         if (auto a = as!ArrayLit(e))
         {
             Value[] items;
             items.reserve(a.elems.length);
             foreach (x; a.elems)
                 items ~= eval(x, env);
+            checkArrayElements(items, a);
             return Value.of(items);
         }
         if (auto a = as!AssocLit(e))
@@ -1589,7 +1665,7 @@ final class Interp
             if (e is null)
                 throw new HcadError(Code.undefined, format("undefined identifier '%s'", id.name), id.span, suggest(id.name, env.allNames));
             if (e.vars.isReadonly(sym))
-                throw new HcadError(Code.immutable_, format("cannot modify '%s': it is enum/immutable/const or module-level", id.name), id.span);
+                throw new HcadError(Code.immutable_, format("cannot modify '%s': it is immutable, const or module-level", id.name), id.span);
             // a declared type holds for every assignment, not only the first
             if (auto t = e.vars.typeOf(sym))
                 v = coerce(v, t.type, env.mod, id.span, "'" ~ id.name ~ "'", t.mod);
@@ -1658,9 +1734,9 @@ final class Interp
     private Value binary(Binary b, Env env)
     {
         if (b.op == Tok.andAnd)
-            return Value.of(eval(b.left, env).truthy && eval(b.right, env).truthy);
+            return Value.of(eval(b.left, env).condition(b.left.span) && eval(b.right, env).condition(b.right.span));
         if (b.op == Tok.orOr)
-            return Value.of(eval(b.left, env).truthy || eval(b.right, env).truthy);
+            return Value.of(eval(b.left, env).condition(b.left.span) || eval(b.right, env).condition(b.right.span));
         return applyBinary(b.op, eval(b.left, env), eval(b.right, env), b.span);
     }
 
@@ -1674,6 +1750,10 @@ final class Interp
         auto a = l.sel, b = r.sel;
         auto c = new SelectorVal;
         c.faces = a.faces;
+        // taken from one solid (s.faces.top + s.faces.bottom, or one of them only): still of it, to count
+        // or go through
+        if (a.of is null || b.of is null || a.of.brep is b.of.brep)
+            c.of = a.of !is null ? a.of : b.of;
         immutable o = op;
         c.tests ~= (size_t i, ref SelectCtx ctx) {
             immutable inA = ctx.resolve(a).canFind(cast(int) i), inB = ctx.resolve(b).canFind(cast(int) i);
@@ -1851,7 +1931,7 @@ final class Interp
         {
         case Tok.plus: sameDim(); return bothInt ? whole(a.value + b.value) : Value.number(a.value + b.value, a.dim);
         case Tok.minus: sameDim(); return bothInt ? whole(a.value - b.value) : Value.number(a.value - b.value, a.dim);
-        case Tok.mul: return bothInt ? whole(a.value * b.value) : Value.number(a.value * b.value, a.dim + b.dim);
+        case Tok.mul: return bothInt ? whole(a.value * b.value) : Value.number(a.value * b.value, (a.dim + b.dim).ofProduct);
         case Tok.div:
             if (b.value == 0 && bothInt)
                 throw new HcadError(Code.type, "integer division by zero", span);
@@ -1859,7 +1939,7 @@ final class Interp
             // processor traps on it, so it is negated instead (and wraps)
             if (bothInt)
                 return Value.integer(b.value == -1 ? -cast(long) a.value : cast(long) a.value / cast(long) b.value);
-            return Value.number(a.value / b.value, a.dim - b.dim);
+            return Value.number(a.value / b.value, (a.dim - b.dim).ofProduct);
         case Tok.mod:
             sameDim();
             if (bothInt)
@@ -1894,6 +1974,47 @@ final class Interp
         }
     }
 
+    /// An array literal holds one type of value, as in D: a string among
+    /// numbers, or a Length among Angles, is said where it is written, not
+    /// found later. Whole and fractional numbers mix, and bare numbers with
+    /// dimensioned ones (bare numbers given to geometry are mm, as in
+    /// vec(1.mm, 2, 0)). Other values are left to what takes the array:
+    /// many take mixes (a sketch's points with vectors, solids with
+    /// profiles in hull([body, outline])).
+    private void checkArrayElements(const Value[] items, ArrayLit a)
+    {
+        static string family(const ref Value v)
+        {
+            switch (v.kind)
+            {
+            case Kind.num: return "number";
+            case Kind.str: return "string";
+            case Kind.bool_: return "bool";
+            default: return null;
+            }
+        }
+        static string an(string type) => ("AEIOUaeiou".canFind(type[0]) ? "an " : "a ") ~ type;
+        size_t first = size_t.max, dimAt = size_t.max;
+        foreach (i, ref v; items)
+        {
+            immutable f = family(v);
+            if (f is null)
+                continue;
+            if (first == size_t.max)
+                first = i;
+            else if (family(items[first]) != f)
+                throw new HcadError(Code.type, format("an array holds one type of value: [%d] is %s, [%d] %s",
+                    first, an(items[first].typeName), i, an(v.typeName)), a.elems[i].span);
+            if (v.kind != Kind.num || v.n.dim == Dim.none)
+                continue;
+            if (dimAt == size_t.max)
+                dimAt = i;
+            else if (items[dimAt].n.dim != v.n.dim)
+                throw new HcadError(Code.units, format("an array holds one type of value: [%d] is %s, [%d] %s",
+                    dimAt, items[dimAt].n.dim.aName, i, v.n.dim.aName), a.elems[i].span);
+        }
+    }
+
     private Value vectorOp(Tok op, Value l, Value r, Span span)
     {
         if (l.kind == Kind.vec && r.kind == Kind.vec)
@@ -1907,9 +2028,9 @@ final class Interp
         }
         if (l.kind == Kind.vec && r.isNum && (op == Tok.mul || op == Tok.div))
             return Value.vector(op == Tok.mul ? l.v.v * r.n.value : l.v.v / r.n.value, l.v.n,
-                op == Tok.mul ? l.v.dim + r.n.dim : l.v.dim - r.n.dim);
+                (op == Tok.mul ? l.v.dim + r.n.dim : l.v.dim - r.n.dim).ofProduct);
         if (r.kind == Kind.vec && l.isNum && op == Tok.mul)
-            return Value.vector(r.v.v * l.n.value, r.v.n, r.v.dim + l.n.dim);
+            return Value.vector(r.v.v * l.n.value, r.v.n, (r.v.dim + l.n.dim).ofProduct);
         throw new HcadError(Code.type, format("operator '%s' is not defined for %s and %s", opText(op), l.typeName, r.typeName), span);
     }
 
@@ -1947,6 +2068,8 @@ final class Interp
         if (obj.kind == Kind.module_)
         {
             auto owner = publicOwner(obj.mod, m.name);
+            if (owner is null)
+                privateTo(obj.mod, m.name, m.nameSpan);
             if (owner is null)
                 throw new HcadError(Code.undefined, format("module '%s' has no public symbol '%s'", obj.mod.name, m.name),
                     m.nameSpan, suggest(m.name, publicNamesOf(obj.mod)));
@@ -1995,6 +2118,14 @@ final class Interp
         if (all.canFind(m.name))
             throw new HcadError(Code.undefined, format("%s has no member '%s': '%s' stands on its own, write it without "
                 ~ "'%s.' in front (e.g. as an argument)", obj.typeName, m.name, m.name, obj.typeName.toLower), m.nameSpan);
+        // an object of the language's own (a sketch's circle, point…): its own members, not any function
+        // that happens to be spelt alike (.start on a circle is no 'sqrt')
+        if (obj.kind == Kind.object_ && candidates.length)
+        {
+            auto own = suggest(m.name, candidates.filter!(n => n != m.name).array);
+            throw new HcadError(Code.undefined, format("%s has no member '%s' and there is no function '%s'", obj.typeName,
+                m.name, m.name), m.nameSpan, own ? own : format("its members: %-(%s, %)", candidates));
+        }
         throw new HcadError(Code.undefined, format("%s has no member '%s' and there is no function '%s'", obj.typeName, m.name, m.name),
             m.nameSpan, suggest(m.name, (candidates ~ all).filter!(n => n != m.name).array));
     }
@@ -2551,7 +2682,11 @@ final class Interp
             auto items = v.arr.dup;
             foreach (i, ref x; items)
                 x = coerce(x, t.elem, mod, span, format("%s[%d]", what, i), typeScope);
-            return Value.of(items);
+            auto r = Value.of(items);
+            if (t.elem !is null && !t.elem.isArray && !t.elem.isAA)
+                r.holds = t.elem.name == "Solid" ? ElemHint.solid : t.elem.name == "Profile" ? ElemHint.profile
+                    : ElemHint.none;
+            return r;
         }
         if (t.isAA)
         {
@@ -2656,9 +2791,11 @@ final class Interp
                         fail();
                     return v;
                 }
+                // a sketch's points, lines…: SketchPoint, SketchLine…
                 throw new HcadError(Code.undefined, format("unknown type '%s'", t.name), t.span,
-                    suggest(t.name, ["int", "double", "bool", "string", "Length", "Angle", "Area", "Volume", "Vec2", "Vec3",
-                        "Solid", "Profile", "Edge", "Face"]));
+                    objectTypes.canFind("Sketch" ~ t.name) ? format("did you mean 'Sketch%s'?", t.name)
+                    : suggest(t.name, ["int", "double", "bool", "string", "Length", "Angle", "Area", "Volume", "Vec2", "Vec3",
+                        "Solid", "Profile", "Path", "Surface", "Edge", "Face"] ~ objectTypes ~ structTypes));
             }
         }
     }

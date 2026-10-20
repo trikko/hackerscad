@@ -122,6 +122,34 @@ final class DrawingVal : ObjectVal
                 }
                 catch (KernelException e)
                     throw new HcadError(Code.kernel, e.msg, a.span);
+                // a plane beside the part would give an empty view, or the whole part with nothing cut
+                import std.algorithm : max, min;
+                import std.math : abs;
+
+                static double tidy(double v) => abs(v) < 1e-6 ? 0 : v;
+                bool cuts;
+                if (kept !is null)
+                    foreach (f; it.kernel.faces(kept))
+                        if (abs((f.center - o).dot(n)) < 1e-6 && f.normal.dot(n) > 0.999)
+                        {
+                            cuts = true;
+                            break;
+                        }
+                if (!cuts)
+                {
+                    auto bb = it.kernel.bbox(s);
+                    double lo = double.infinity, hi = -double.infinity;
+                    foreach (i; 0 .. 8)
+                    {
+                        immutable c = Vec3(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y,
+                            i & 4 ? bb.max.z : bb.min.z).dot(n);
+                        lo = min(lo, c);
+                        hi = max(hi, c);
+                    }
+                    throw new HcadError(Code.type, format("the section plane does not cut the part: it lies at %g mm "
+                        ~ "along its normal, the part from %g to %g mm; move the plane into the part", tidy(o.dot(n)),
+                        tidy(lo), tidy(hi)), x.spanOf("plane"));
+                }
                 View v;
                 v.solid = kept;
                 v.name = "section";

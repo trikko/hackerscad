@@ -11,6 +11,7 @@ import hackerscad.geom.hull;
 import hackerscad.geom.mesh;
 import hackerscad.geom.vec;
 import hackerscad.kernel.brep;
+import hackerscad.io.outlines : Round;
 import hackerscad.lang.errors;
 
 /// How closely curved surfaces are followed: a hull of a sphere is
@@ -223,7 +224,43 @@ Brep minkowskiOf(BrepKernel k, Brep a, Brep b, bool flat, Span span)
     catch (KernelException)
     {
     }
+    // with a box along the axes (and the other made of flat and cylindrical faces): the other swept along
+    // its three sides in turn, exact and quick; the piece by piece way below joins hundreds of hulls
+    if (!flat)
+        foreach (pair; [[a, b], [b, a]])
+        {
+            if (!isAxisBox(k, pair[1]))
+                continue;
+            immutable bb = k.bbox(pair[1]);
+            try
+            {
+                auto swept = k.translate(pair[0], bb.min);
+                foreach (axis; 0 .. 3)
+                {
+                    auto v = Vec3(0, 0, 0);
+                    v[axis] = bb.size[axis];
+                    swept = k.sweepSolid(swept, v);
+                }
+                return swept;
+            }
+            catch (KernelException)
+            {
+            }
+        }
     return flat ? minkowski2(k, a, b, ma, mb, pa, pb, span) : minkowski3(k, a, b, ma, mb, pa, pb, span);
+}
+
+/// A box with its sides along the axes: six flat faces facing ±X, ±Y, ±Z, as large as its bounding box.
+bool isAxisBox(BrepKernel k, Brep b)
+{
+    auto fs = k.faces(b);
+    if (fs.length != 6)
+        return false;
+    foreach (f; fs)
+        if (abs(abs(f.normal.x) + abs(f.normal.y) + abs(f.normal.z) - 1) > 1e-9)
+            return false;
+    immutable bb = k.bbox(b), boxVolume = bb.size.x * bb.size.y * bb.size.z;
+    return boxVolume > 0 && abs(abs(k.volume(b)) - boxVolume) <= 1e-9 * boxVolume;
 }
 
 /// A sphere (a disc when flat): every point of its surface (outline) as far
@@ -476,10 +513,58 @@ void swap(T)(ref T a, ref T b)
 /// facing up, so the triangles facing up cover it; within one face of the
 /// solid they do not overlap seen from above, and the sides they use once
 /// are the outlines of that face's shadow. Those regions joined are the
-/// shadow (curved surfaces within the meshing's 0.02 mm).
+/// shadow (curved surfaces within the meshing's 0.02 mm). Where they do not
+/// join (a face turning from facing up to facing down across it, a twisted
+/// prism's sides: near the turn its triangles' shadows fold over each other),
+/// the shadow of the whole mesh traced on a fine grid, its outline fitted.
 public Brep projectionOf(BrepKernel k, Brep b, Span span)
 {
     auto m = k.tessellate(b, 0.02, 0.2).welded;
+    try
+        return facesShadow(k, m, span);
+    catch (KernelException)
+    {
+    }
+    import hackerscad.geom.outlinefit : shadowLoops;
+    import std.algorithm : sort;
+    immutable bb = k.bbox(b);
+    immutable pixel = max(0.01, max(bb.size.x, bb.size.y) / 2000);
+    struct Loop
+    {
+        double[] xy;
+        double area;
+    }
+    Loop[] loops;
+    foreach (loop; shadowLoops(m, Vec3(1, 0, 0), Vec3(0, 1, 0), pixel))
+    {
+        double[] xy;
+        foreach (p; loop)
+            xy ~= [p[0], p[1]];
+        immutable area = loopArea(xy);
+        if (xy.length >= 6 && abs(area) > pixel * pixel)
+            loops ~= Loop(xy, area);
+    }
+    if (loops.length == 0)
+        throw new HcadError(Code.type, "the solid casts no shadow seen from above", span);
+    // the largest first: an outline, the holes in it, an island in a hole…
+    loops.sort!((x, y) => abs(x.area) > abs(y.area));
+    Brep r;
+    try
+    {
+        foreach (l; loops)
+        {
+            auto face = fittedLoop(k, l.area > 0 ? l.xy : reversedLoop(l.xy), 1.5 * pixel, true);
+            r = r is null ? face : k.boolean(r, face, l.area > 0 ? BoolOp.fuse : BoolOp.cut);
+        }
+    }
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, "the shadow of this solid could not be made: " ~ e.msg, span);
+    return r;
+}
+
+/// The shadows of the faces of mesh `m` (of a closed solid) seen from above, joined: see projectionOf.
+private Brep facesShadow(BrepKernel k, const Mesh m, Span span)
+{
     immutable faced = m.faceStart.length >= 2;
     immutable faces = faced ? m.faceStart.length - 1 : 1;
     Brep[] regions;
@@ -523,15 +608,10 @@ public Brep projectionOf(BrepKernel k, Brep b, Span span)
             while (at != start && at in next);
             if (xy.length < 6)
                 continue;
-            double area = 0;
-            for (size_t i = 0; i + 1 < xy.length; i += 2)
-            {
-                immutable j = (i + 2) % xy.length;
-                area += xy[i] * xy[j + 1] - xy[j] * xy[i + 1];
-            }
+            immutable area = loopArea(xy);
             if (abs(area) < 1e-12)
                 continue;
-            (area > 0 ? outer : holes) ~= fittedLoop(k, xy);
+            (area > 0 ? outer : holes) ~= fittedLoop(k, xy, 0.02, false);
         }
         if (outer.length == 0)
             continue;
@@ -545,18 +625,41 @@ public Brep projectionOf(BrepKernel k, Brep b, Span span)
     return unionOfProfiles(k, regions);
 }
 
+/// Twice the signed area of a loop (x y of its points): positive counter-clockwise.
+private double loopArea(const double[] xy)
+{
+    double area = 0;
+    for (size_t i = 0; i + 1 < xy.length; i += 2)
+    {
+        immutable j = (i + 2) % xy.length;
+        area += xy[i] * xy[j + 1] - xy[j] * xy[i + 1];
+    }
+    return area;
+}
+
+/// A loop (x y of its points) the other way round.
+private double[] reversedLoop(const double[] xy)
+{
+    double[] r;
+    for (size_t i = xy.length; i >= 2; i -= 2)
+        r ~= [xy[i - 2], xy[i - 1]];
+    return r;
+}
+
 /// A loop of a shadow (x y of its points) as a face: its points as lines
-/// and arcs within 0.02 mm of them, as a section's outline is read, not as
+/// and arcs within `tol` of them, as a section's outline is read, not as
 /// hundreds of tiny segments (a sweep of those would crawl); the polygon if
-/// that fails.
-private Brep fittedLoop(BrepKernel k, double[] xy)
+/// that fails. `traced`: the points are a grid's (shadowLoops).
+private Brep fittedLoop(BrepKernel k, double[] xy, double tol, bool traced)
 {
     import std.math : atan2, cos, sin;
     import hackerscad.geom.outlinefit : fit, P2, withoutSlivers;
     P2[] pts;
     for (size_t i = 0; i + 1 < xy.length; i += 2)
         pts ~= [xy[i], xy[i + 1]];
-    auto els = withoutSlivers(fit(pts, 0.02));
+    // the mesh's facets stand at most 0.02 mm off the surface: an arc of facets standing further
+    // off their chords is a polygon whose corners happen to lie on a circle (a trapezoid's)
+    auto els = withoutSlivers(fit(pts, tol, traced, traced ? double.infinity : 3 * tol));
     if (els.length == 0)
         return k.polygon(xy);
     OutlineSeg[] segs;
@@ -652,7 +755,7 @@ public Brep shapeOfShadows(BrepKernel k, Brep b, Span span)
 
 /// A profile on XY from closed outlines (from a drawing): an outline inside
 /// an even number of others is filled, inside an odd number it is a hole.
-public Brep profileOfLoops(BrepKernel k, double[2][][] loops, Span span)
+public Brep profileOfLoops(BrepKernel k, double[2][][] loops, Span span, const(Round)[] rounds = null)
 {
     static bool inside(const(double[2])[] poly, double[2] p)
     {
@@ -675,9 +778,13 @@ public Brep profileOfLoops(BrepKernel k, double[2][][] loops, Span span)
         return inside(l, q) ? q : other;
     }
     const(double[2])[][] good;
-    foreach (l; loops)
+    Round[] goodRounds;
+    foreach (i, l; loops)
         if (l.length >= 3 && abs(area2(l)) > 1e-9)
+        {
             good ~= l;
+            goodRounds ~= i < rounds.length ? rounds[i] : Round.init;
+        }
     if (good.length == 0)
         throw new HcadError(Code.import_, "the drawing has no outlines with an area", span);
     // depth: how many other outlines each one is inside
@@ -689,8 +796,18 @@ public Brep profileOfLoops(BrepKernel k, double[2][][] loops, Span span)
             if (i != j && inside(o, p))
                 depth[i]++;
     }
-    Brep polygonOf(const(double[2])[] l)
+    Brep polygonOf(size_t i)
     {
+        // a whole circle or ellipse: the curve itself
+        immutable r = goodRounds[i];
+        if (r.rx > 0 && r.ry > 0)
+        {
+            auto e = abs(r.rx - r.ry) <= 1e-9 * r.rx ? k.circle(r.rx) : k.ellipse(r.rx, r.ry);
+            if (abs(r.angle) > 1e-12 && abs(r.rx - r.ry) > 1e-9 * r.rx)
+                e = k.rotate(e, Vec3(0, 0, 1), r.angle);
+            return k.translate(e, Vec3(r.cx, r.cy, 0));
+        }
+        auto l = good[i];
         double[] xy;
         foreach (p; l)
             xy ~= [p[0], p[1]];
@@ -704,11 +821,11 @@ public Brep profileOfLoops(BrepKernel k, double[2][][] loops, Span span)
     {
         if (depth[i] % 2)
             continue;
-        auto region = polygonOf(l);
+        auto region = polygonOf(i);
         Brep[] holes;
         foreach (j, o; good)
             if (depth[j] == depth[i] + 1 && inside(l, probe(o)))
-                holes ~= polygonOf(o);
+                holes ~= polygonOf(j);
         if (holes.length)
             region = k.boolean(region, unionOfProfiles(k, holes), BoolOp.cut);
         regions ~= region;

@@ -189,7 +189,7 @@ final class Run
             break;
         }
         if (result.parts.length == 0)
-            throw new HcadError(Code.undefined, "nothing to export: the model has no @part", Span.init);
+            throw new HcadError(Code.undefined, "nothing to export: the model has no @part, or each returned Solid.nothing", Span.init);
         auto ms = partMeshes();
         immutable picture = extension(file).toLower == ".png";
         auto kept = partIndices(only, picture);

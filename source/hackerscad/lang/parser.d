@@ -138,11 +138,27 @@ struct Parser
             attrs ~= parseAttributes();
         }
 
+        // annotations mean something only on functions and variables: anywhere else they
+        // would be dropped without a word
+        void noAttributes(string what)
+        {
+            if (!attrs.length)
+                return;
+            auto a = attrs[0];
+            throw new HcadError(Code.syntax, a.name == "unit"
+                ? format("'@unit' cannot be put before %s: it sets the unit of a whole file, before its module "
+                    ~ "line (@unit(inch) module m;)", what)
+                : format("'@%s' cannot be put before %s: annotations go on functions and immutables", a.name, what),
+                a.span);
+        }
+
         switch (kind)
         {
         case Tok.kwImport:
+            noAttributes("an import");
             return parseImport(isPublic);
         case Tok.kwUnittest:
+            noAttributes("a unittest");
             {
                 auto u = node!Unittest(cur.span);
                 advance();
@@ -150,6 +166,7 @@ struct Parser
                 return u;
             }
         case Tok.kwStruct:
+            noAttributes("a struct");
             return parseStruct(isPrivate);
         default:
             auto s = parseStatement(attrs, true);
@@ -872,7 +889,7 @@ struct Parser
                 line++;
                 col = 1;
             }
-            else
+            else if (!continuesChar(src[i]))
                 col++;
             i++;
         }

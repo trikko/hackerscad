@@ -329,7 +329,7 @@ int main(string[] args)
                     }
                 }
                 else if (projection)
-                    write(projectionReport(args[1], part, plane));
+                    write(projectionReport(args[1], part, plane, !noSketch));
                 else
                 {
                     import std.algorithm : map;

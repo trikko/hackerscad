@@ -76,7 +76,7 @@ A profile can be read: `.area`, `.outer` (without its holes), `.holes`, `.pieces
 | `taper:` | the sides lean in going away from the profile (the outline narrows, its holes widen); a negative angle the other way. For a mould, or to print without supports | `0.deg` |
 | `twist:` | the profile turns round Z as it rises, evenly: `2 * 360.deg` two turns. A twisted column, a vase that turns | `0.deg` |
 | `shear:` | `vec(dx, dy)`: the top moved that much sideways, the sides leaning straight. A leaning prism, a blade's bevel | none |
-| `symmetric:` | half the height each side of the profile's plane | `false` |
+| `symmetric:` | half the height each side of the profile's plane: the profile is the middle of the solid (a taper narrows both ways from it, a twist turns half each way) | `false` |
 | `along:` | `X` or `Y`: the profile stood up across that axis and pushed along it | Z |
 
 <!-- render: profiles-extrude --from 0.4,-1,0.6 -->
@@ -152,7 +152,7 @@ A profile that lies in another plane (a sketch on a face or a plane, a section o
 
 ## Revolving
 
-Revolving makes round parts: a knob, a bottle, a pulley. `profile.revolve()` turns the profile round Z, standing it up: its x is the radius, its y the height. Draw half the outline of a knob, a bottle, a pulley, and turn it. `revolve(axis: X, angle: 180.deg)` turns it round an axis in its own plane (a direction through the origin, or an `Axis` anywhere) without standing it up, and less than all the way. The profile must lie on one side of the axis; touching it is fine.
+Revolving makes round parts: a knob, a bottle, a pulley. `profile.revolve()` turns the profile round Z, standing it up: its x is the radius, its y the height. Draw half the outline of a knob, a bottle, a pulley, and turn it. `revolve(axis: X, angle: 180.deg)` turns it round an axis in its own plane (a direction through the origin, or an `Axis` anywhere) without standing it up, and less than all the way. The profile must lie on one side of the axis; touching it is fine. A profile drawn on a plane or a face turns where it lies, round a world axis in that plane: the half outline of a knob drawn with `sketch(XZ)`, as the Front view shows it, turns round Z with `revolve(axis: Z)` or just `revolve()`.
 
 <!-- render: profiles-revolve -->
 ```d
@@ -183,6 +183,8 @@ A boss (a raised stud), a rib (a thin wall that stiffens), a pocket (a hollow th
 
 - `body.extrude(profile, on: …, depth:)` grows the profile outwards from the face;
 - `body.cut(profile, on: …, depth:)` digs it in; `through: true` cuts all the way.
+
+The depth is always positive: which way it goes is the call's, extrude out of the face, cut into it.
 
 `on:` takes a frame (`body.frame(faces.top)`, moved with `.at(x:, y:)`), a face selector of the same solid (`on: faces.top`, which must pick one face), or a plane. The profile is drawn as on XY round the origin, and lands with its origin on the frame's origin, its x and y along the frame's: on a wall, x is horizontal and to the right seen from outside, and y goes up, so a teardrop points up and a text reads on every side. `at: vec(…)` puts the origin at that point of the face instead of its centre. Both take `taper:`.
 
@@ -317,6 +319,7 @@ Use it to change a part as it is (a wall thicker, a loaded STL made taller); for
 | *'on' needs exactly one face, the selector matched 2* | the selector is ambiguous: `faces.farthest(-Y)`, `faces.from(tool)`, or a frame |
 | *this profile was drawn on a face (its sketch's): it is already where it goes, leave on: out* | a sketch's profile knows its face: drop `on:` |
 | *missing argument 'depth' for cut(…)* | give `depth:`, or `through: true` to cut all the way |
+| *depth must be greater than 0: cut digs the profile into the face; to raise it, use extrude* | a negative depth does not turn a cut into an extrude: call the other one |
 | *file not found: logo.svg* | the drawing must be in the project's folder, the path relative to the model |
 
 ## In the application

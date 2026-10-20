@@ -112,10 +112,10 @@ int hc_edge_info(const hc_shape *s, int index, double out[23]);
 int hc_face_outer_edges(const hc_shape *s, int face, int *out, int max);
 int hc_profile_part_count(const hc_shape *s, int which);
 hc_shape *hc_profile_part(const hc_shape *s, int which, int index);
-/* out: centre of mass xyz, normal at centre xyz, area */
-int hc_face_info(const hc_shape *s, int index, double out[7]);
+/* out: centre of mass xyz, normal xyz (a curved face's on the whole), area, whether it faces a way */
+int hc_face_info(const hc_shape *s, int index, double out[8]);
 
-/* For every edge, the indices of its two faces (-1 when missing): out has
+/* For every edge, the indices of its two faces (-1 when missing, -2 for a seam: one face closing on itself): out has
  * 2 * edge count entries. Returns the edge count, or -1. */
 int hc_edge_faces(const hc_shape *s, int *out);
 
@@ -123,6 +123,11 @@ hc_shape *hc_fillet(const hc_shape *s, const int *edges, int nedges, double r);
 hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d);
 int hc_point_inside(const hc_shape *s, double x, double y, double z);
 int hc_face_cylinder(const hc_shape *s, int index, double out[11]);
+/* The axis of a face turned round one (cylinder, cone, torus, revolved): point xyz, direction xyz;
+ * 1, 0 for another face, -1 on error. */
+int hc_face_axis(const hc_shape *s, int index, double out[6]);
+/* The volume the solid sweeps moving along v: planes and cylinders only. */
+hc_shape *hc_sweep_solid(const hc_shape *s, double vx, double vy, double vz);
 hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, double vz);
 hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thickness);
 /* Tilts faces by `angle` around their intersection with the neutral plane
@@ -148,6 +153,8 @@ hc_shape *hc_from_mesh(const float *verts, int nverts, const int *tris, int ntri
 /* Paths (wires) for sweeps. The helix winds around +Z from (r, 0, 0). */
 hc_shape *hc_polyline(const double *xyz, int n, int closed);
 hc_shape *hc_spline(const double *xyz, int n, int closed);
+hc_shape *hc_spline_poles(const double *xyz, int n);
+int hc_font_known(const char *font);
 hc_shape *hc_helix(double r, double pitch, double height, int left);
 hc_shape *hc_helix_tapered(double r, double pitch, double height, int left, double taper);
 /* a right-handed ISO metric thread on z = 0 .. length, built from its boundary; ends chamfered by `chamfer` */

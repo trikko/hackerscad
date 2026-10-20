@@ -1,6 +1,6 @@
 # Holes and hardware
 
-Holes for metric screws from M2 to M8, from the `hardware` library: clearance, tapping, heat-set insert, counterbore and countersink holes with `hole()`, nut traps, the screws, nuts and washers themselves, teardrop holes that print sideways, and the Hole entry of the 3D view's right-click menu.
+Holes for metric screws from M2 to M12, from the `hardware` library: clearance, tapping, heat-set insert, counterbore and countersink holes with `hole()`, nut traps, the screws, nuts and washers themselves, teardrop holes that print sideways, and the Hole entry of the 3D view's right-click menu.
 
 ![The five kinds of hole, cut in half](img/holes-kinds.png)
 
@@ -79,7 +79,7 @@ Solid block()
 | `"countersink"` | a cone at the top, for a flat (conical) head to sit flush: a 90° cone from `clearance` to 2.24 `d` + 0.3 mm across (an ISO 10642 flat head, 6.72 mm for M3, sits a little below the face), then the clearance hole | |
 | `"ribs"` | a hole the screw passes freely, with three ribs along it, 120° apart, reaching in to the `tap` size: the screw cuts its thread in the ribs only (below) | |
 
-Any other kind is an error. The depth is always the whole depth from z = 0: a counterbore of `depth` 10 mm is 10 mm deep, the head's seat included. For a hole all the way through, give the thickness of the wall; `hole()` already reaches 0.01 mm past the top, so the cut is clean.
+Any other kind is an error. The depth is always the whole depth from z = 0: a counterbore of `depth` 10 mm is 10 mm deep, the head's seat included, and nothing of the hole goes deeper. An insert, a counterbore's seat or a countersink's cone deeper than `depth` is an error that says how deep it is (an M3 insert needs 5.7 mm): a deeper hole, or a thicker part. For a hole all the way through, give the thickness of the wall; `hole()` already reaches 0.01 mm past the top, so the cut is clean.
 
 What grips the screw decides how strong the joint is and how often it can be undone. A self-tapping screw in a `tap` hole needs nothing but the screw, and wears the hole after a few dozen times in and out. A heat-set insert takes the most torque (twisting force) and hundreds of times. Under M5 a printed thread comes out too fine to hold; from M6 up, for a screw put in once, a printed thread works: see [the guide on threads](threads.md).
 
@@ -274,7 +274,7 @@ Solid selfTapper() => screw(ST2_9, 9.5.mm, head: "pan")
 
 A plain `tap` hole makes the screw cut its thread all the way round: for small screws that takes force, and can split a thin wall. With `"ribs"` the hole is wide enough for the screw, and three narrow ribs along it, 120° apart, are all the screw has to cut: it forms its thread in them as it goes in, holds well, and goes in easily. For small screws it works better than a printed thread, which comes out too fine.
 
-One rib points to −Y. In a wall, cut with `on:` a face (whose frame has y going up), that is the rib at the bottom, which prints best when the hole lies sideways; the other two lean over it at 120°. The ribs start 0.6 mm in from the face, so the screw's tip finds the hole before it has to cut. The mouth is chamfered 0.5 mm at 45°, which guides the screw in and takes up the first layers' spread when the hole opens on the bed: `chamfer:` sets it (`chamfer: 0.mm` none), and gives any other kind of hole a chamfered mouth too.
+One rib points to −Y. In a wall, cut with `on:` a face (whose frame has y going up), that is the rib at the bottom, which prints best when the hole lies sideways; the other two lean over it at 120°. The ribs start 0.6 mm in from the face, so the screw's tip finds the hole before it has to cut. The mouth is chamfered 0.5 mm at 45°, which guides the screw in and takes up the first layers' spread when the hole opens on the bed: `chamfer:` sets it (`chamfer: 0.mm` none), and gives any other kind of hole a chamfered mouth too: a counterbore's round the head's recess. A countersink's cone is a chamfer already: one given to it is an error.
 
 <!-- render: holes-ribs --from front --look-at 0,-2,6 --size 14 --cut -->
 ```d
@@ -427,8 +427,12 @@ Each post is 7 mm across for a 3.6 mm insert: leave at least 1.5 mm of wall roun
 
 | Message or symptom | What to do |
 |---|---|
-| *hole kind must be clearance, tap, insert, counterbore or countersink, not through* | one of those five; for a through hole, a depth equal to the wall |
-| *module 'hardware' has no public symbol 'M10'* | the sizes are M2, M2_5, M3, M4, M5, M6, M8; for others write a `cylinder` |
+| *hole kind must be clearance, tap, insert, counterbore, countersink or ribs, not through* | one of those six; for a through hole, a depth equal to the wall |
+| *hole: the M3 insert is 5.7 mm long, deeper than the hole's 3 mm…* | a deeper hole (a taller boss), or a shorter insert's hole of your own: `cylinder(d: …)`; the same for a counterbore's or a countersink's seat |
+| *module 'hardware' has no public symbol 'M14'* | the sizes are M2, M2_5, M3, M4, M5, M6, M8, M10, M12 (and the inch and self-tapping ones); for others write a `cylinder` |
+| *ST2.9 is a self-tapping screw: it cuts its own thread in a tap hole, with no nut* | `nut()` and `nutTrap()` take the metric and inch sizes |
+| *square nuts (DIN 562) go from M2 to M8, not M10* | a hex nut in a `nutTrap` for the larger sizes |
+| *screw: an M3 screw is 1.5 mm long at least…* | `screw()` and `setScrew()` are at least half their diameter long |
 | *undefined identifier 'hole'* | add it to the import: `import std.hardware : M3, hole;` |
 | *the point's angle is from the vertical: between 3° and 90°* | a teardrop's `angle:` out of range |
 | the hole is missing, no error | `hole()` goes down from z = 0: it was not moved up to the face (`.move(z: thickness)`) |
@@ -453,7 +457,7 @@ Solid clip() => carlo()
 
 ![An M3 clearance hole on Carlo's top, as the menu writes it](img/holes-menu-clearance.png)
 
-The other three write a `hole()` of the hardware library, placed on the face, and add `import std.hardware : hole, M3;` at the top when the model lacks it:
+The other four write a `hole()` of the hardware library, placed on the face, 5 mm deep or as deep as an insert or a head's seat needs (6 mm for an M3 insert), and add `import std.hardware : hole, M3;` at the top when the model lacks it:
 
 <!-- render: holes-menu-counterbore --from 1,-1,1.4 -->
 ```d

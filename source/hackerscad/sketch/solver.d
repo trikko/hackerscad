@@ -4,7 +4,10 @@
 /// or more residual equations that are zero when it holds. The solver runs
 /// Levenberg–Marquardt with a numeric Jacobian, then studies the Jacobian at
 /// the solution: its rank gives the degrees of freedom left, and the unknowns
-/// outside its row space are the ones that can still move.
+/// outside its row space are the ones that can still move. Unknowns that no
+/// equation ties together (two circles each held on its own) make a Jacobian
+/// that is block diagonal: its blocks are studied and solved apart, the same
+/// arithmetic in a fraction of the time (hundreds of holes in a plate).
 module hackerscad.sketch.solver;
 
 import std.algorithm : max, min;
@@ -28,25 +31,34 @@ struct SolveResult
     size_t iterations;
 }
 
-/// Solves in place, starting from the values already in `x`.
-SolveResult solve(double[] x, const(Equation)[] eqs, double tolerance = 1e-9, size_t maxIterations = 300)
+/// Solves in place, starting from the values already in `x`; `held[i]` keeps
+/// x[i] where it is, no unknown (it is not free and counts no freedom).
+SolveResult solve(double[] x, const(Equation)[] eqs, double tolerance = 1e-9, size_t maxIterations = 300,
+    const(bool)[] held = null)
 {
-    SolveResult res;
-    res.converged = minimize(x, eqs, tolerance, maxIterations, res.iterations, res.residual);
-    auto j = jacobian(x, eqs);
-    auto basis = rowBasis(j, x.length);
-    res.rank = basis.length;
-    res.dof = x.length - res.rank;
-    res.free = new bool[x.length];
+    size_t[] cols;
     foreach (i; 0 .. x.length)
+        if (i >= held.length || !held[i])
+            cols ~= i;
+    SolveResult res;
+    res.converged = minimize(x, eqs, cols, tolerance, maxIterations, res.iterations, res.residual);
+    auto j = jacobian(x, eqs, cols);
+    res.free = new bool[x.length];
+    foreach (b; blocks(j, cols.length))
     {
-        double inSpan = 0;
-        foreach (q; basis)
-            inSpan += q[i] * q[i];
-        res.free[i] = inSpan < 1 - 1e-6;
+        auto basis = rowBasis(j, b);
+        res.rank += basis.length;
+        foreach (k, c; b.cols)
+        {
+            double inSpan = 0;
+            foreach (q; basis)
+                inSpan += q[k] * q[k];
+            res.free[cols[c]] = inSpan < 1 - 1e-6;
+        }
     }
+    res.dof = cols.length - res.rank;
     if (!res.converged)
-        res.conflicting = findConflicts(x, eqs, tolerance);
+        res.conflicting = findConflicts(x, eqs, cols, tolerance);
     return res;
 }
 
@@ -86,83 +98,156 @@ double maxAbs(const(double)[] v)
     return s;
 }
 
-/// Rows = equations, columns = unknowns (central differences).
-double[][] jacobian(const(double)[] x0, const(Equation)[] eqs)
+/// Rows = equations, columns = the unknowns `cols` (central differences).
+double[][] jacobian(const(double)[] x0, const(Equation)[] eqs, const(size_t)[] cols)
 {
-    immutable m = totalCount(eqs), n = x0.length;
+    immutable m = totalCount(eqs), n = cols.length;
     auto j = new double[][](m, n);
     auto x = x0.dup;
     auto rp = new double[m], rm = new double[m];
-    foreach (c; 0 .. n)
+    foreach (c, v; cols)
     {
-        immutable h = 1e-6 * (1 + abs(x0[c]));
-        x[c] = x0[c] + h;
+        immutable h = 1e-6 * (1 + abs(x0[v]));
+        x[v] = x0[v] + h;
         residuals(x, eqs, rp);
-        x[c] = x0[c] - h;
+        x[v] = x0[v] - h;
         residuals(x, eqs, rm);
-        x[c] = x0[c];
+        x[v] = x0[v];
         foreach (r; 0 .. m)
             j[r][c] = (rp[r] - rm[r]) / (2 * h);
     }
     return j;
 }
 
-bool minimize(double[] x, const(Equation)[] eqs, double tolerance, size_t maxIterations, out size_t iterations,
-    out double residual)
+/// Columns of a Jacobian that no row ties together, and the rows (not all zero) on each: the matrix
+/// is block diagonal over them, exactly (a zero is a zero), so that its rank, its row space and the
+/// normal equations split into theirs.
+struct Block
 {
-    immutable m = totalCount(eqs), n = x.length;
+    size_t[] cols, rows;
+}
+
+/// ditto
+Block[] blocks(const(double[])[] j, size_t n)
+{
+    auto parent = new size_t[n];
+    foreach (i; 0 .. n)
+        parent[i] = i;
+    size_t root(size_t i)
+    {
+        while (parent[i] != i)
+            i = parent[i] = parent[parent[i]];
+        return i;
+    }
+    foreach (row; j)
+    {
+        size_t first = size_t.max;
+        foreach (c; 0 .. n)
+            if (row[c] != 0)
+            {
+                if (first == size_t.max)
+                    first = root(c);
+                else
+                    parent[root(c)] = first;
+            }
+    }
+    auto index = new size_t[n];
+    index[] = size_t.max;
+    Block[] r;
+    foreach (c; 0 .. n)
+    {
+        immutable g = root(c);
+        if (index[g] == size_t.max)
+        {
+            index[g] = r.length;
+            r ~= Block();
+        }
+        r[index[g]].cols ~= c;
+    }
+    foreach (k, row; j)
+        foreach (c; 0 .. n)
+            if (row[c] != 0)
+            {
+                r[index[root(c)]].rows ~= k;
+                break;
+            }
+    return r;
+}
+
+bool minimize(double[] x, const(Equation)[] eqs, const(size_t)[] cols, double tolerance, size_t maxIterations,
+    out size_t iterations, out double residual)
+{
+    immutable m = totalCount(eqs), n = cols.length;
     auto r = new double[m];
     residuals(x, eqs, r);
     double cost = norm2(r);
     double lambda = 1e-3;
-    auto trial = new double[n];
+    auto trial = x.dup;
     auto rt = new double[m];
     foreach (it; 0 .. maxIterations)
     {
         iterations = it;
         if (maxAbs(r) < tolerance)
             break;
-        auto j = jacobian(x, eqs);
-        // normal equations (JᵀJ + λ·diag) δ = −Jᵀr
-        auto a = new double[][](n, n);
-        auto g = new double[n];
-        foreach (p; 0 .. n)
+        auto j = jacobian(x, eqs, cols);
+        // normal equations (JᵀJ + λ·diag) δ = −Jᵀr, a block at a time
+        auto bs = blocks(j, n);
+        auto a = new double[][][](bs.length);
+        auto g = new double[][](bs.length);
+        double floor = 1e-6;
+        foreach (bi, b; bs)
         {
-            double s = 0;
-            foreach (k; 0 .. m)
-                s += j[k][p] * r[k];
-            g[p] = -s;
-            foreach (q; p .. n)
+            immutable nb = b.cols.length;
+            a[bi] = new double[][](nb, nb);
+            g[bi] = new double[nb];
+            foreach (p, cp; b.cols)
             {
-                double t = 0;
-                foreach (k; 0 .. m)
-                    t += j[k][p] * j[k][q];
-                a[p][q] = a[q][p] = t;
+                double s = 0;
+                foreach (k; b.rows)
+                    s += j[k][cp] * r[k];
+                g[bi][p] = -s;
+                foreach (q; p .. nb)
+                {
+                    immutable cq = b.cols[q];
+                    double t = 0;
+                    foreach (k; b.rows)
+                        t += j[k][cp] * j[k][cq];
+                    a[bi][p][q] = a[bi][q][p] = t;
+                }
+                // unknowns the residuals barely depend on (a nearly horizontal line
+                // sliding along itself) are damped like the others, else one step
+                // throws them far from where they were
+                floor = max(floor, 1e-3 * a[bi][p][p]);
             }
         }
-        // unknowns the residuals barely depend on (a nearly horizontal line
-        // sliding along itself) are damped like the others, else one step
-        // throws them far from where they were
-        double floor = 1e-6;
-        foreach (p; 0 .. n)
-            floor = max(floor, 1e-3 * a[p][p]);
         bool improved;
         foreach (attempt; 0 .. 12)
         {
-            auto aa = new double[][](n, n);
-            foreach (p; 0 .. n)
+            bool singular;
+            trial[] = x[];
+            foreach (bi, b; bs)
             {
-                aa[p][] = a[p][];
-                aa[p][p] += lambda * (a[p][p] + floor);
+                immutable nb = b.cols.length;
+                auto aa = new double[][](nb, nb);
+                foreach (p; 0 .. nb)
+                {
+                    aa[p][] = a[bi][p][];
+                    aa[p][p] += lambda * (a[bi][p][p] + floor);
+                }
+                auto delta = solveLinear(aa, g[bi].dup);
+                if (delta is null)
+                {
+                    singular = true;
+                    break;
+                }
+                foreach (p, c; b.cols)
+                    trial[cols[c]] = x[cols[c]] + delta[p];
             }
-            auto delta = solveLinear(aa, g.dup);
-            if (delta is null)
+            if (singular)
             {
                 lambda *= 10;
                 continue;
             }
-            foreach (p; 0 .. n)
-                trial[p] = x[p] + delta[p];
             residuals(trial, eqs, rt);
             immutable c = norm2(rt);
             if (isFinite(c) && c < cost)
@@ -225,14 +310,18 @@ double[] solveLinear(double[][] a, double[] b)
     return x;
 }
 
-/// Orthonormal basis of the row space (modified Gram–Schmidt, rows scaled
-/// to unit length first so that lengths and angles weigh the same).
-double[][] rowBasis(double[][] j, size_t n)
+/// Orthonormal basis of the row space of block `b` of `j`, in its columns'
+/// order (modified Gram–Schmidt, rows scaled to unit length first so that
+/// lengths and angles weigh the same).
+double[][] rowBasis(const(double[])[] j, Block b)
 {
+    immutable n = b.cols.length;
     double[][] basis;
-    foreach (row; j)
+    foreach (k; b.rows)
     {
-        auto v = row.dup;
+        auto v = new double[n];
+        foreach (i, c; b.cols)
+            v[i] = j[k][c];
         immutable len = sqrt(norm2(v));
         if (len < 1e-12)
             continue;
@@ -255,7 +344,7 @@ double[][] rowBasis(double[][] j, size_t n)
 }
 
 /// Constraints that, removed one at a time, let the rest be satisfied.
-size_t[] findConflicts(const(double)[] x0, const(Equation)[] eqs, double tolerance)
+size_t[] findConflicts(const(double)[] x0, const(Equation)[] eqs, const(size_t)[] cols, double tolerance)
 {
     size_t[] r;
     foreach_reverse (skip; 0 .. eqs.length)
@@ -264,7 +353,7 @@ size_t[] findConflicts(const(double)[] x0, const(Equation)[] eqs, double toleran
         auto x = x0.dup;
         size_t its;
         double res;
-        if (minimize(x, rest, tolerance, 100, its, res))
+        if (minimize(x, rest, cols, tolerance, 100, its, res))
             r ~= skip;
         if (r.length >= 6)
             break;

@@ -5,7 +5,7 @@ module hackerscad.lang.builtins;
 import std.conv : to, ConvException;
 import std.format : format;
 import std.math : PI, E, abs, sqrt, floor, ceil, round, sin, cos, tan, asin, acos, atan, atan2, isFinite, exp, log, log10, log2, hypot;
-import std.algorithm : all, any, canFind, filter, map, sort, max, min;
+import std.algorithm : all, any, canFind, countUntil, filter, map, sort, max, min;
 import std.array : array, join;
 import std.uni : toLower;
 static import std.string;
@@ -128,8 +128,8 @@ void installPrelude(Interp it, Env env)
     }
 
     // ---- output and strings
-    def("writeln", (ref CallArgs a) { it.print(a.positional.map!(v => v.toString).join, a.span); return Value.void_; });
-    def("write", (ref CallArgs a) { it.print(a.positional.map!(v => v.toString).join, a.span, false); return Value.void_; });
+    def("writeln", (ref CallArgs a) { it.print(a.positional.map!(v => shown(it, v, a.span)).join, a.span); return Value.void_; });
+    def("write", (ref CallArgs a) { it.print(a.positional.map!(v => shown(it, v, a.span)).join, a.span, false); return Value.void_; });
     def("format", (ref CallArgs a) => Value.of(formatValues(a)));
     def("to", (ref CallArgs a) => convert(it, a));
 
@@ -352,9 +352,14 @@ void installPrelude(Interp it, Env env)
         auto f = fnArg(a, 1, "filter", "x => condition");
         Value[] r;
         foreach (v; xs)
-            if (call1(it, f, v, a.span).truthy)
+            if (call1(it, f, v, a.span).condition(a.span))
                 r ~= v;
-        return Value.of(r);
+        // what the list holds, kept when nothing is left: its .sum still an empty solid
+        auto kept = Value.of(r);
+        kept.holds = a.positional[0].holds;
+        if (kept.holds == ElemHint.none && xs.length && xs.all!(v => v.kind == Kind.solid))
+            kept.holds = xs[0].solid.flat ? ElemHint.profile : ElemHint.solid;
+        return kept;
     });
     def("fold", (ref CallArgs a) {
         // xs.fold((acc, x) => …) or xs.fold((acc, x) => …, seed)
@@ -386,7 +391,15 @@ void installPrelude(Interp it, Env env)
             return acc;
         }
         if (xs.length == 0)
-            return Value.integer(0);
+        {
+            // an empty Solid[] adds up to an empty solid (as fuse([]) does), an empty Profile[] to an
+            // empty profile; a list of no declared type to 0
+            if (a.positional[0].holds == ElemHint.none)
+                return Value.integer(0);
+            auto e = new SolidVal(null, a.span);
+            e.flat = a.positional[0].holds == ElemHint.profile;
+            return Value.of(e);
+        }
         if (xs[0].kind == Kind.solid)
             return unionAll(it, xs, a.span);
         Value acc = xs[0];
@@ -403,7 +416,7 @@ void installPrelude(Interp it, Env env)
         auto xs = arrayArg(a, 0, "any");
         auto f = fnArg(a, 1, "any", "x => condition");
         foreach (v; xs)
-            if (call1(it, f, v, a.span).truthy)
+            if (call1(it, f, v, a.span).condition(a.span))
                 return Value.of(true);
         return Value.of(false);
     });
@@ -411,7 +424,7 @@ void installPrelude(Interp it, Env env)
         auto xs = arrayArg(a, 0, "all");
         auto f = fnArg(a, 1, "all", "x => condition");
         foreach (v; xs)
-            if (!call1(it, f, v, a.span).truthy)
+            if (!call1(it, f, v, a.span).condition(a.span))
                 return Value.of(false);
         return Value.of(true);
     });
@@ -423,7 +436,7 @@ void installPrelude(Interp it, Env env)
         auto f = fnArg(a, 1, "count", "x => condition");
         long n;
         foreach (v; xs)
-            if (call1(it, f, v, a.span).truthy)
+            if (call1(it, f, v, a.span).condition(a.span))
                 n++;
         return Value.integer(n);
     });
@@ -435,7 +448,7 @@ void installPrelude(Interp it, Env env)
             throw new HcadError(Code.arity, "use xs.canFind(value) or xs.canFind(x => condition)", a.span);
         auto needle = a.positional[1];
         foreach (v; xs)
-            if (needle.isCallable ? call1(it, needle, v, a.span).truthy : it.applyBinary(Tok.eq, v, needle, a.span).truthy)
+            if (needle.isCallable ? call1(it, needle, v, a.span).condition(a.span) : it.applyBinary(Tok.eq, v, needle, a.span).truthy)
                 return Value.of(true);
         return Value.of(false);
     });
@@ -449,7 +462,7 @@ void installPrelude(Interp it, Env env)
         import core.exception : AssertError;
         try
             sort!((x, y) => less.kind == Kind.void_ ? it.applyBinary(Tok.lt, x, y, a.span).truthy
-                : call2(it, less, x, y, a.span).truthy)(xs);
+                : call2(it, less, x, y, a.span).condition(a.span))(xs);
         catch (AssertError)
             throw new HcadError(Code.type, "the comparison given to sort is not consistent: it must say whether "
                 ~ "a comes strictly before b, like (a, b) => a < b (not <=)", a.span);
@@ -712,7 +725,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (!(r > 0))
             throw new HcadError(Code.type, "the fillet radius r must be greater than 0", x.spanOf("r"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("edges"));
-        return edgeFeature(it, a, s, idx, "fillet", "r", r, (b, e) => k.fillet(b, e, r));
+        return edgeFeature(it, a, s, idx, "fillet", "r", r, (b, e, v) => k.fillet(b, e, v));
     });
     def("chamfer", (ref CallArgs a) {
         auto x = Args(it, a, "chamfer", ["solid", "edges", "d"]);
@@ -722,7 +735,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (!(d > 0))
             throw new HcadError(Code.type, "the chamfer size d must be greater than 0", x.spanOf("d"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("edges"));
-        return edgeFeature(it, a, s, idx, "chamfer", "d", d, (b, e) => k.chamfer(b, e, d));
+        return edgeFeature(it, a, s, idx, "chamfer", "d", d, (b, e, v) => k.chamfer(b, e, v));
     });
     def("shell", (ref CallArgs a) {
         auto x = Args(it, a, "shell", ["solid", "open", "thickness"]);
@@ -754,15 +767,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto d = x.has("dir") ? x.dir("dir") : Vec3(1, 0, 0);
         immutable gap = x.lenOr("gap", 0);
         auto bs = k.bbox(nonEmpty(s, a.span)), bo = k.bbox(nonEmpty(o, a.span));
+        if (d.length < 1e-12)
+            throw new HcadError(Code.type, "nextTo needs a direction, not a zero vector", x.spanOf("dir"));
+        d = d.normalized;
+        // its centre on the line from the other's centre that way, as near as the boxes go without
+        // overlapping (touching), then gap further along it; across the axes the direction does not
+        // go along it stays where it is (along X: only its x changes, its box just past the other's)
+        double t = double.infinity;
+        foreach (axis; 0 .. 3)
+            if (abs(comp(d, axis)) > 1e-9)
+                t = min(t, (comp(bs.size, axis) + comp(bo.size, axis)) / 2 / abs(comp(d, axis)));
         Vec3 shift;
         foreach (axis; 0 .. 3)
-        {
-            immutable c = comp(d, axis);
-            if (abs(c) < 0.5)
-                continue;
-            immutable delta = c > 0 ? comp(bo.max, axis) + gap - comp(bs.min, axis) : comp(bo.min, axis) - gap - comp(bs.max, axis);
-            shift = shift + axisVec(axis) * delta;
-        }
+            if (abs(comp(d, axis)) > 1e-9)
+                shift = shift + axisVec(axis) * (comp(bo.center, axis) + comp(d, axis) * (t + gap) - comp(bs.center, axis));
         return transformed(it, a.span, s, b => k.translate(b, shift));
     });
     def("on", (ref CallArgs a) {
@@ -811,7 +829,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         Value[] copies;
         foreach (i; 0 .. n)
             copies ~= transformed(it, a.span, s, b => k.translate(b, step * i));
-        return unionAll(it, copies, a.span);
+        return firstCopyAnchors(unionAll(it, copies, a.span), s);
     });
     def("circularPattern", (ref CallArgs a) {
         auto x = Args(it, a, "circularPattern", ["solid", "n", "axis", "angle"]);
@@ -831,7 +849,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         Value[] copies;
         foreach (i; 0 .. n)
             copies ~= transformed(it, a.span, s, b => k.translate(k.rotate(k.translate(b, -o), axis, step * i), o));
-        return unionAll(it, copies, a.span);
+        return firstCopyAnchors(unionAll(it, copies, a.span), s);
     });
 
     def("draft", (ref CallArgs a) {
@@ -895,9 +913,14 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 {
                     import hackerscad.io.outlines : readSvg, readDxf, OutlineException;
                     import hackerscad.lang.convex : profileOfLoops;
+                    import hackerscad.io.outlines : Round;
                     try
-                        b = profileOfLoops(k, ext == ".svg" ? readSvg(readText(file)) : readDxf(readText(file)),
-                            x.spanOf("path"));
+                    {
+                        // whole circles and ellipses as the curves they are
+                        Round[] rounds;
+                        auto loops = ext == ".svg" ? readSvg(readText(file), rounds) : readDxf(readText(file), rounds);
+                        b = profileOfLoops(k, loops, x.spanOf("path"), rounds);
+                    }
                     catch (OutlineException e)
                         throw new HcadError(Code.import_, e.msg, x.spanOf("path"));
                     break;
@@ -1022,6 +1045,16 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (!(size >= 0.01))
             throw new HcadError(Code.type, format("the text size must be at least 0.01 mm, not %g mm", size),
                 x.has("size") ? x.spanOf("size") : a.span);
+        // a font not installed: another is used in its place (the model still builds elsewhere), said once
+        string[] similar;
+        if (x.has("font") && !font.canFind('/') && !font.canFind('\\') && !k.fontKnown(font, similar))
+        {
+            immutable msg = format("no font '%s' is installed: the text uses another one", font);
+            if (!it.diagnostics.canFind!(d => d.message == msg))
+                it.diagnostics ~= Diagnostic(Severity.warning, Code.type, msg, x.spanOf("font"), similar.length
+                    ? format("installed fonts like it: %-(%s, %)", similar)
+                    : "give a font that is installed (fc-list lists them), or the path of a font file");
+        }
         return flat(k.text(t.s, size, font), "text", a.span);
     });
     def("round", (ref CallArgs a) {
@@ -1040,6 +1073,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto x = Args(it, a, "extrude", ["profile", "height", "taper", "symmetric", "twist", "along", "shear"]);
         auto p = profileArg(x, "profile");
         immutable h = x.len("height"), taper = x.angleOr("taper", 0), twist = x.angleOr("twist", 0);
+        if (abs(h) < 1e-9)
+            throw new HcadError(Code.type, "the height must not be zero", x.spanOf("height"));
         immutable sym = x.flag("symmetric", false);
         if (twist != 0 && taper != 0)
             throw new HcadError(Code.type, "an extrusion is either twisted or tapered, not both", x.spanOf("twist"));
@@ -1081,17 +1116,55 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 ~ "leave along: out", x.spanOf("along"));
         if (tilted)
             base = fromPlace(k, tilt, base);
+        // symmetric: the profile is the middle of the solid, as it is (sheared, its top and bottom moved
+        // half each way; twisted, turned half each way; tapered, narrowing both ways away from it)
+        immutable turn = h < 0 ? -twist : twist;
+        if (sym && twist != 0)
+            base = k.rotate(base, Vec3(0, 0, 1), -turn / 2);
         // twisted: a sweep up a straight line, the profile turning around Z as it rises
         auto sv = derived(it, twist != 0 ? k.sweep(base, k.polyline([Vec3(0, 0, 0), Vec3(0, 0, h)], false),
-            false, h < 0 ? -twist : twist) : sx != 0 || sy != 0 ? k.extrudeShear(base, h, sx, sy)
+            false, turn) : sx != 0 || sy != 0 ? k.extrudeShear(base, h, sx, sy)
+            : sym && taper != 0 ? k.boolean(k.extrude(base, h / 2, taper), k.extrude(base, -h / 2, taper), BoolOp.fuse)
             : k.extrude(base, h, taper), [p], "extrude", a.span);
         sv.flat = false;
         sv.placed = false;
+        // sheared or twisted, the kernel does not say which side comes from which of the profile's lines:
+        // the side standing on each, at the bottom, has its tags
+        if (sv.lostEdgeTags.length && p.edgeTags.length)
+        {
+            auto onBase = carryEdgeTags(k, base, p.edgeTags, sv.brep, 0);
+            if (onBase.length)
+            {
+                auto fs = k.faces(sv.brep);
+                if (sv.faceTags.length != fs.length)
+                    sv.faceTags = new string[][fs.length];
+                foreach (j, pair; k.edgeFaces(sv.brep))
+                    if (j < onBase.length && onBase[j].length)
+                        foreach (f; pair)
+                            if (f >= 0 && f < fs.length && abs(abs(fs[f].normal.z) - 1) > 1e-9)
+                                sv.faceTags[f] = tagUnion(sv.faceTags[f], onBase[j]);
+                keptEdgeTags(sv);
+            }
+        }
         // a tilted profile's references lie where it lies: brought onto XY with it, put back below
         if (tilted && sv.anchors.length)
             sv.anchors = mapAnchors(it, (Brep q) => fromPlace(k, tilt, q), sv.anchors, a.span);
-        if (sym)
+        // sheared: a circle's axis leans as its hole does
+        if (sx != 0 || sy != 0)
+            foreach (ref an; sv.anchors)
+                if (an.kind == AnchorKind.axis && abs(abs(an.z.z) - 1) < 1e-9)
+                {
+                    an.z = (Vec3(sx, sy, h) * (an.z.z * h > 0 ? 1 : -1)).normalized;
+                    an.x = faceXAxis(an.z);
+                    an.y = an.z.cross(an.x);
+                }
+        if (sym && taper == 0)
+        {
+            // the profile's references stay where it was drawn: halfway up now
+            auto kept = sv.anchors;
             sv = transformed(it, a.span, sv, b => k.translate(b, Vec3(-sx / 2, -sy / 2, -h / 2))).solid;
+            sv.anchors = kept;
+        }
         // along X: the profile's x along Y and its y up Z, pushed towards +X (a turn of
         // 120° about the diagonal); along Y: its x along X and y up Z, towards +Y (Y and Z
         // swapped: a mirror)
@@ -1119,28 +1192,55 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // the radius and its y the height along Z (pots, bottles, knobs).
         auto x = Args(it, a, "revolve", ["profile", "axis", "angle"]);
         auto p = profileArg(x, "profile");
+        // a profile drawn on a face or plane, or lying in one: turned in that plane's coordinates and
+        // put back there; an axis given is the world's, as everything else in that plane (a direction
+        // alone, X or Z, through the plane's origin: the sketch's, or where the plane is nearest the world's)
+        Vec3[4] frame;
+        immutable lies = liesOf(it, p, a.span, frame);
         Vec3 o, d = Vec3(0, 1, 0);
         immutable upright = !x.has("axis");
         if (!upright)
+        {
             axisArg(x, "axis", o, d);
+            if (lies != Lies.onXY)
+            {
+                if (!isAxis(x.get("axis")))
+                    o = frame[0];
+                auto w = o - frame[0];
+                o = Vec3(w.dot(frame[1]), w.dot(frame[2]), w.dot(frame[3]));
+                d = Vec3(d.dot(frame[1]), d.dot(frame[2]), d.dot(frame[3]));
+            }
+        }
+        // standing in a plane whose y goes up (sketch(XZ), a section across Y, a wall's face): turned round
+        // that y, as it stands (a half section through Z turns round Z)
+        immutable standing = lies != Lies.onXY && frame[2].z > 1 - 1e-9;
         immutable ang = x.angleOr("angle", 2 * PI);
         if (!(abs(ang) > 1e-9 && abs(ang) <= 2 * PI + 1e-9))
             throw new HcadError(Code.type, "a revolve turns by more than 0° and at most 360° (either way)",
                 x.has("angle") ? x.spanOf("angle") : a.span);
-        auto b = k.revolve(nonEmpty(p, a.span), o, d, max(-2 * PI, min(2 * PI, ang)));
+        auto local = lies == Lies.tilted ? fromPlace(k, frame, p.brep) : nonEmpty(p, a.span);
+        Brep b;
+        try
+            b = k.revolve(local, o, d, max(-2 * PI, min(2 * PI, ang)));
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span, lies != Lies.onXY && !upright
+                ? "this profile lies in a plane of its own: the axis is a world one (X, Y, Z or an Axis) lying in "
+                ~ "that plane (for one drawn on XZ, Z or X)" : null);
         auto sv = derived(it, b, [p], "revolve", a.span);
         sv.flat = false;
         sv.placed = false;
         // stood up and placed after: as a transform, so the faces keep the tags of the
         // profile's lines they were turned from
-        if (!upright && !p.placed)
+        if (!upright && lies == Lies.onXY)
             return Value.of(sv);
-        auto place = p.place;
-        immutable placed = p.placed;
+        // a tilted profile's references lie where it lies: brought into its plane's coordinates with it
+        if (lies == Lies.tilted && sv.anchors.length)
+            sv.anchors = mapAnchors(it, (Brep q) => fromPlace(k, frame, q), sv.anchors, a.span);
+        immutable stand = upright && !standing;
         return transformed(it, a.span, sv, (Brep s) {
-            if (upright)
+            if (stand)
                 s = k.rotate(s, Vec3(1, 0, 0), PI / 2);
-            return placed ? toPlace(k, place, s) : s;
+            return lies != Lies.onXY ? toPlace(k, frame, s) : s;
         });
     });
 
@@ -1219,7 +1319,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                         lo = min(lo, c.dot(shared_));
                         hi = max(hi, c.dot(shared_));
                     }
-                    return [lo, hi];
+                    // a box's own tolerance (1e-7) is no stretch: printed, -1e-07 would puzzle
+                    double snap(double v) => abs(v) < 1e-6 ? 0 : v;
+                    return [snap(lo), snap(hi)];
                 }
                 immutable ra = along(pa), rb = along(pb);
                 immutable tol = 0.02 * max(ra[1] - ra[0], rb[1] - rb[0]) + 1e-3;
@@ -1310,6 +1412,36 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         if (ways.length > 1)
             throw new HcadError(Code.type, format("%s and %s both decide how the profile turns about the path: give one",
                 ways[0], ways[1]), x.spanOf(ways[1]));
+        // a profile reaching further from the path than its tightest bend folds through itself there:
+        // OpenCascade may still call the solid valid, or fail to build it
+        double reach = 0, tightest = double.infinity;
+        if (!open)
+        {
+            // how far the outline gets from the origin: line ends, circles whole (arcs counted whole too)
+            foreach (e; k.edges(p.brep))
+            {
+                double far(Vec3 q) => sqrt(q.x * q.x + q.y * q.y);
+                if (e.kind == EdgeKind.circle)
+                    reach = max(reach, far(e.center) + e.radius);
+                else
+                    reach = max(reach, max(far(e.start), far(e.end), far(e.mid)));
+            }
+            Vec3[] pts, tans;
+            k.pathSample(route.brep, 400, pts, tans);
+            auto turns = new double[pts.length];
+            turns[0] = 0;
+            foreach (i; 1 .. pts.length)
+                turns[i] = acos(min(1.0, max(-1.0, tans[i - 1].dot(tans[i]))));
+            foreach (i; 1 .. pts.length)
+            {
+                // a sharp corner (mitred) is not a bend: it turns all at once, between two
+                // samples, where a bend turns over the samples beside them too
+                immutable before = turns[i - 1], after = i + 1 < pts.length ? turns[i + 1] : 0;
+                if (turns[i] > 1e-9 && turns[i] < PI / 9 && max(before, after) > 0.1 * turns[i])
+                    tightest = min(tightest, (pts[i] - pts[i - 1]).length / turns[i]);
+            }
+        }
+        immutable folds = reach > tightest * 1.001;
         Brep made;
         try
         {
@@ -1337,36 +1469,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 made = k.sweep(nonEmpty(p, a.span), route.brep, frenet, x.angleOr("twist", 0));
         }
         catch (KernelException e)
-            throw new HcadError(Code.kernel, e.msg, a.span);
-        // a profile reaching further from the path than its tightest bend folds through itself there:
-        // OpenCascade may still call the solid valid
-        if (!open)
-        {
-            // how far the outline gets from the origin: line ends, circles whole (arcs counted whole too)
-            double reach = 0;
-            foreach (e; k.edges(p.brep))
-            {
-                double far(Vec3 q) => sqrt(q.x * q.x + q.y * q.y);
-                if (e.kind == EdgeKind.circle)
-                    reach = max(reach, far(e.center) + e.radius);
-                else
-                    reach = max(reach, max(far(e.start), far(e.end), far(e.mid)));
-            }
-            Vec3[] pts, tans;
-            k.pathSample(route.brep, 400, pts, tans);
-            double tightest = double.infinity;
-            foreach (i; 1 .. pts.length)
-            {
-                immutable turn = acos(min(1.0, max(-1.0, tans[i - 1].dot(tans[i]))));
-                // a sharp corner (mitred) is not a bend
-                if (turn > 1e-9 && turn < PI / 9)
-                    tightest = min(tightest, (pts[i] - pts[i - 1]).length / turn);
-            }
-            if (reach > tightest * 1.001)
-                it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("the profile reaches %.3g mm from "
-                    ~ "the path, more than its tightest bend's radius (%.3g mm): the sweep folds through itself there; "
-                    ~ "a smaller profile or a wider bend", reach, tightest), a.span);
-        }
+            throw new HcadError(Code.kernel, e.msg, a.span, folds ? format("the profile reaches %.3g mm from the "
+                ~ "path, more than its tightest bend's radius (%.3g mm): a smaller profile or a wider bend", reach,
+                tightest) : null);
+        if (folds)
+            it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, format("the profile reaches %.3g mm from "
+                ~ "the path, more than its tightest bend's radius (%.3g mm): the sweep folds through itself there; "
+                ~ "a smaller profile or a wider bend", reach, tightest), a.span);
         auto sv = derived(it, made, [p], "sweep", a.span);
         sv.flat = false;
         sv.placed = false;
@@ -1740,9 +1849,17 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         Brep[] bs;
         bool allFlat = true;
         foreach (sv; items)
-        {
-            bs ~= nonEmpty(sv, a.span);
             allFlat = allFlat && sv.flat;
+        // profiles in one plane (a sketch's, a section): their hull stays there, one of no place taken into
+        // it; in different planes, a solid round them where they lie
+        Lies lies;
+        Vec3[4] frame;
+        bool onePlane;
+        auto inPlane = allFlat ? intoOnePlane(it, items, a.span, lies, frame, onePlane) : null;
+        foreach (i, sv; items)
+        {
+            nonEmpty(sv, a.span);
+            bs ~= onePlane ? inPlane[i].brep : sv.placed ? toPlace(k, sv.place, sv.brep) : sv.brep;
         }
         bool flat;
         Brep made;
@@ -1759,6 +1876,10 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             made = hullOf(k, bs, allFlat, a.span, flat);
         auto r = primitive(it, made, "hull", a.span);
         r.flat = flat;
+        if (flat && onePlane)
+            r = liesAs(r, lies, frame);
+        // made anew: the names of the profiles' sketch lines are not handed on
+        lostEdgeTagsOf(r, items, "hull");
         r.rgb = items[0].rgb;
         r.hasColor = items[0].hasColor;
         // the flat faces of theirs the hull lies on keep their tags; their references stay where they are
@@ -1767,6 +1888,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             r.tags = items[0].tags;
             foreach (sv; items)
                 r.anchors ~= sv.anchors;
+            r.anchors = mergeAnchors(r.anchors);
             tagsByPlane(it, r, items, (size_t, Vec3) => 0.0);
         }
         return Value.of(r);
@@ -1785,10 +1907,12 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         r.flat = sa.flat;
         r.rgb = sa.rgb;
         r.hasColor = sa.hasColor;
+        // a's tags and references (b, moving a about, is the tool: a sphere rounding it)
+        r.tags = sa.tags;
+        r.anchors = sa.anchors.dup;
         // a flat face of either moved out by how far the other reaches that way keeps its tags
         if (!r.flat && (sa.faceTags.length || sb.faceTags.length))
         {
-            r.tags = sa.tags;
             auto ma = k.tessellate(sa.brep, 0.01, 0.1), mb = k.tessellate(sb.brep, 0.01, 0.1);
             double reach(const Mesh m, Vec3 n)
             {
@@ -1870,6 +1994,22 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             // body.axis("bore"): the axis tagged so (a circle of its sketch: the circle's)
             auto x = Args(it, a, "axis", ["solid", "tag"]);
             return anchorValue(it, x.solid("solid"), tagName(x.get("tag"), x.spanOf("tag")), AnchorKind.axis, x.spanOf("tag"));
+        }
+        if (a.positional.length == 2 && a.positional[0].kind == Kind.solid && a.positional[1].kind == Kind.selector
+            && a.positional[1].sel.faces)
+        {
+            // body.axis(faces.largest): the axis of a cylinder's, a cone's or a turned face
+            auto x = Args(it, a, "axis", ["solid", "face"]);
+            auto s = x.solid("solid");
+            auto idx = resolveSelector(it, x.selector("face", true), s, x.spanOf("face"));
+            if (idx.length != 1)
+                throw new HcadError(Code.type, format("axis needs exactly one face, the selector matched %d", idx.length),
+                    x.spanOf("face"));
+            Vec3 o, d;
+            if (!k.faceAxis(s.brep, idx[0], o, d))
+                throw new HcadError(Code.type, "only a face turned round an axis (a cylinder, a cone, a revolved face) "
+                    ~ "has one; of a flat face, body.frame(…) gives its normal", x.spanOf("face"));
+            return axisValue(o, d);
         }
         if (a.positional.length && a.positional[0].kind == Kind.solid)
         {
@@ -2039,14 +2179,58 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             // no distance: the solid as it is (the kernel cannot offset by nothing)
             if (abs(d) < 1e-6)
                 return Value.of(s);
-            return transformed(it, a.span, s, b => k.offset(b, d, sharp), "offset");
+            // a hole closing up (grown by its radius or more) makes the kernel fail, or turn the hole's
+            // wall inside out: grown, the solid covers the hole all the same, so those holes are filled first
+            Brep filled = s.brep;
+            double closes = 0, smallest = double.infinity;
+            if (d > 0 && s.brep !is null)
+                foreach (f; 0 .. k.faceCount(s.brep))
+                {
+                    CylinderInfo c;
+                    if (!k.faceCylinder(s.brep, cast(int) f, c) || c.outside)
+                        continue;
+                    smallest = min(smallest, c.radius);
+                    if (c.radius > d)
+                        continue;
+                    closes = max(closes, c.radius);
+                    import hackerscad.lang.convex : turnFromZ;
+                    Vec3 turnAxis;
+                    double turn;
+                    turnFromZ(c.axis.normalized, turnAxis, turn);
+                    auto plug = k.cylinder(c.radius, c.to - c.from);
+                    if (turn > 1e-12)
+                        plug = k.rotate(plug, turnAxis, turn);
+                    try
+                        filled = k.boolean(filled, k.translate(plug, c.origin + c.axis.normalized * c.from), BoolOp.fuse);
+                    catch (KernelException)
+                    {
+                    }
+                }
+            try
+                return transformed(it, a.span, s, b => k.offset(filled is s.brep ? b : filled, d, sharp), "offset");
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, e.msg, a.span, closes > 0
+                    ? format("the holes of ⌀%g mm and less close up at this distance (filled first, it still fails): "
+                        ~ "try a smaller distance", 2 * closes)
+                    : smallest < double.infinity ? format("a hole of ⌀%g mm closes up when grown by %g mm or more",
+                        2 * smallest, smallest) : null);
         }
         if (a.positional.length && a.positional[0].kind == Kind.solid)
         {
             auto x = Args(it, a, "offset", ["profile", "distance"]);
             auto p = profileArg(x, "profile");
             immutable d = x.len("distance");
-            return Value.of(flatResult(transformed(it, a.span, p, b => k.profileOffset(b, d), "offset")));
+            auto r = flatResult(transformed(it, a.span, p, b => k.profileOffset(b, d), "offset"));
+            // shrunk away: an empty profile, where it lay
+            if (r.brep !is null && k.faceCount(r.brep) == 0)
+                r.brep = null;
+            // a line offset is the parallel side, a circle the one round the same centre: their tags kept
+            if (p.edgeTags.length && r.brep !is null)
+            {
+                r.edgeTags = carryEdgeTags(k, p.brep, p.edgeTags, r.brep, d, r.edgeTags);
+                keptEdgeTags(r);
+            }
+            return Value.of(r);
         }
         auto x = Args(it, a, "offset", ["plane", "distance"]);
         Vec3 o, n;
@@ -2067,7 +2251,22 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         Vec3 o, n;
         planeArg(x, "plane", o, n);
         auto half = halfSpace(it, nonEmpty(s, a.span), o, n, a.span);
-        return [solidBoolean(it, s, half, BoolOp.common, a.span), solidBoolean(it, s, half, BoolOp.cut, a.span)];
+        Value[2] sides = [solidBoolean(it, s, half, BoolOp.common, a.span), solidBoolean(it, s, half, BoolOp.cut, a.span)];
+        // each reference to the side it lies on (both, on the cut)
+        if (s.anchors.length)
+        {
+            SolidVal[] both;
+            foreach (ref side; sides)
+                if (side.kind == Kind.solid)
+                {
+                    // the copy of s an empty side may be is not s
+                    if (side.solid is s)
+                        side = Value.of(copySolid(s));
+                    both ~= side.solid;
+                }
+            shareAnchors(it, s.anchors, both);
+        }
+        return sides;
     }
     // surface.thicken(2.mm): made a solid that thick, on the side its normals point (negative: the other side)
     // fill(path, through: […]): a smooth face closing a closed path, a Surface; body.fill(edges…,
@@ -2224,14 +2423,67 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
 }
 
+/// What writeln shows of a value: a shape with a short summary (its size, and
+/// its volume, area or length: all cheap, nothing meshed), a selection taken
+/// from a solid with how many it selects; the rest as toString writes it.
+string shown(Interp it, Value v, Span span)
+{
+    static string g(double x) => format("%.4g", abs(x) < 1e-9 ? 0 : x);
+    switch (v.kind)
+    {
+    case Kind.array:
+        return "[" ~ v.arr.map!(x => x.kind == Kind.str ? `"` ~ x.s ~ `"` : shown(it, x, span)).join(", ") ~ "]";
+    case Kind.selector:
+        if (v.sel.of is null || v.sel.of.brep is null)
+            return v.toString;
+        return format("%s (%d)", v.toString, resolveSelector(it, v.sel, v.sel.of, span, true).length);
+    case Kind.solid:
+        {
+            auto s = v.solid;
+            if (s.brep is null)
+                return v.toString;
+            auto k = it.kernel;
+            immutable z = k.bbox(s.brep).size;
+            immutable size = s.flat && !s.placed ? format("%s × %s mm", g(z.x), g(z.y))
+                : format("%s × %s × %s mm", g(z.x), g(z.y), g(z.z));
+            if (s.path)
+            {
+                double l = 0;
+                foreach (e; k.edges(s.brep))
+                    l += e.length;
+                Vec3 a, b, ta, tb;
+                k.pathFrame(s.brep, false, a, ta);
+                k.pathFrame(s.brep, true, b, tb);
+                return format("Path %s mm long, %s", g(l), (a - b).length < 1e-6 ? "closed" : "open");
+            }
+            if (s.flat)
+                return format("Profile %s, area %s mm²", size, g(k.area(s.brep)));
+            if (s.surface)
+                return format("Surface %s, area %s mm²", size, g(k.area(s.brep)));
+            return format("Solid %s, volume %s mm³", size, g(k.volume(s.brep)));
+        }
+    default:
+        return v.toString;
+    }
+}
+
 /// `n` frames evenly along path `s` by length, ends included: origin, X, Y,
 /// Z, with Z along the path. They turn as little as a frame can while
 /// following it (rotation-minimising, by double reflection), so profiles
 /// placed on them do not twist round the path; on a closed path what twist
-/// is left is spread evenly, so the last matches the first.
+/// is left is spread evenly, so the last matches the first. A closed path
+/// has no end: there the n frames are a length/n apart all round, the start
+/// not repeated.
 Vec3[4][] pathFrames(Interp it, SolidVal s, int n)
 {
     import std.math : atan2;
+    Vec3 from, to, t0, t1;
+    it.kernel.pathFrame(s.brep, false, from, t0);
+    it.kernel.pathFrame(s.brep, true, to, t1);
+    immutable loop = (from - to).length < 1e-6;
+    immutable wanted = n;
+    if (loop)
+        n++;   // the last one is the first again: computed (it closes the spread), not given
     Vec3[] p, t;
     it.kernel.pathSample(s.brep, n, p, t);
     Vec3[4][] r;
@@ -2274,7 +2526,7 @@ Vec3[4][] pathFrames(Interp it, SolidVal s, int n)
         }
         r ~= [p[i], x, z.cross(x), z];
     }
-    return r;
+    return r[0 .. wanted];
 }
 
 /// What `outline(n)` gives for each point: where it is, its outward
@@ -2304,7 +2556,11 @@ StructDef outlinePointDef()
 Value[] outlinePoints(Interp it, SolidVal s, size_t n, Span span, double round = 0)
 {
     import std.math : atan2;
-    auto loops = it.kernel.faceLoops(s.brep, 0, 0.01);
+    // a profile in a plane (drawn on a face, a section): taken round in that plane, given where it lies
+    Lies lies;
+    Vec3[4] frame;
+    auto local = localOf(it, s, span, lies, frame);
+    auto loops = it.kernel.faceLoops(local, 0, 0.01);
     if (loops.length == 0)
         throw new HcadError(Code.kernel, "this profile has no outline", span);
     // the outer loop: the largest area; counter-clockwise
@@ -2380,8 +2636,13 @@ Value[] outlinePoints(Interp it, SolidVal s, size_t n, Span span, double round =
         auto p = pointAt(d);
         auto tangent = pointAt(d + reach) - pointAt(d - reach);
         auto normal = Vec3(tangent.y, -tangent.x, 0).normalized;
-        r ~= Value.make(Kind.struct_, StructVal(outlinePointDef, [Value.vector(Vec3(p.x, p.y, 0), 2, Dim.length),
-            Value.vector(normal, 2, Dim.none), Value.number(cast(double) i / n)]));
+        immutable here = Vec3(p.x, p.y, 0);
+        if (lies != Lies.onXY)
+            r ~= Value.make(Kind.struct_, StructVal(outlinePointDef, [Value.vector(worldOf(frame, here), 3, Dim.length),
+                Value.vector(frame[1] * normal.x + frame[2] * normal.y, 3, Dim.none), Value.number(cast(double) i / n)]));
+        else
+            r ~= Value.make(Kind.struct_, StructVal(outlinePointDef, [Value.vector(here, 2, Dim.length),
+                Value.vector(normal, 2, Dim.none), Value.number(cast(double) i / n)]));
     }
     return r;
 }
@@ -2529,6 +2790,9 @@ SolidVal[] piecesOf(Interp it, SolidVal s, Span span)
         }
         r ~= p;
     }
+    // each reference to the bodies it lies in or on
+    if (r.length > 1 && s.anchors.length)
+        shareAnchors(it, s.anchors, r);
     sortPieces(it, r);
     return r;
 }
@@ -2714,17 +2978,19 @@ Brep fromPlace(BrepKernel k, Vec3[4] place, Brep b)
 
 /// Whether profile `p` lies flat in a plane other than XY (a section, a
 /// profile turned or moved up), and the frame of that plane: its normal the
-/// faces' own, its origin under the middle of the profile, its axes those of
-/// a frame on a face with that normal. An error when it is not flat at all.
+/// faces' own, its origin where the plane is nearest the world's origin (a
+/// profile moved up keeps its x and y, one on XZ reads x and z), its axes
+/// those of a frame on a face with that normal. An error when it is not flat
+/// at all.
 bool tiltedProfile(Interp it, SolidVal p, Span span, out Vec3[4] place)
 {
     auto k = it.kernel;
     auto bb = k.bbox(nonEmpty(p, span));
+    // flat at z = 0: on XY, whatever its faces (not read: every boolean of profiles asks)
+    if (abs(bb.min.z) < 1e-6 && abs(bb.max.z) < 1e-6)
+        return false;
     auto fs = k.faces(p.brep);
-    bool onXY = abs(bb.min.z) < 1e-6 && abs(bb.max.z) < 1e-6;
-    foreach (f; fs)
-        onXY = onXY && abs(abs(f.normal.z) - 1) < 1e-9;
-    if (onXY || fs.length == 0)
+    if (fs.length == 0)
         return false;
     auto n = fs[0].normal.normalized;
     immutable size = max(bb.size.length, 1e-3);
@@ -2732,12 +2998,129 @@ bool tiltedProfile(Interp it, SolidVal p, Span span, out Vec3[4] place)
         if (abs(abs(f.normal.normalized.dot(n)) - 1) > 1e-7 || abs((f.center - fs[0].center).dot(n)) > 1e-6 * size)
             throw new HcadError(Code.type, "this profile is not flat in one plane: extrude a profile that lies in a "
                 ~ "plane (a section, a drawing, a profile moved or turned whole)", span);
-    auto c = bb.center;
-    auto o = c - n * (c - fs[0].center).dot(n);
+    auto o = n * fs[0].center.dot(n);
     auto ax = faceXAxis(n);
     place = [o, ax, n.cross(ax), n];
     return true;
 }
+
+/// How a profile lies: on XY (no place of its own), drawn on a face or plane
+/// (placed: its brep on XY, in the frame's coordinates) or in another plane
+/// (tilted: a section, a profile turned or moved up; its brep where it lies).
+enum Lies
+{
+    onXY,
+    placed,
+    tilted,
+}
+
+/// How profile `p` lies, and the frame of its plane (placed or tilted).
+Lies liesOf(Interp it, SolidVal p, Span span, out Vec3[4] frame)
+{
+    if (p.placed)
+    {
+        frame = p.place;
+        return Lies.placed;
+    }
+    if (p.brep !is null && tiltedProfile(it, p, span, frame))
+        return Lies.tilted;
+    frame = [Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)];
+    return Lies.onXY;
+}
+
+/// Whether two frames' planes are one (facing either way).
+bool samePlane(Vec3[4] a, Vec3[4] b, double size)
+    => abs(abs(a[3].dot(b[3])) - 1) < 1e-7 && abs((b[0] - a[0]).dot(a[3])) < 1e-6 * (1 + size);
+
+/// Profiles brought together into one plane, for a boolean or a hull: each as
+/// a copy whose brep and references are where the first that lies somewhere
+/// (`lies`, `frame`) keeps them; one of no place is taken into that plane, in
+/// its coordinates. `ok` false (and nothing brought) when two lie in different
+/// planes. Copies of the profiles themselves when none lies anywhere.
+SolidVal[] intoOnePlane(Interp it, SolidVal[] ps, Span span, out Lies lies, out Vec3[4] frame, out bool ok)
+{
+    auto k = it.kernel;
+    auto how = new Lies[ps.length];
+    auto frames = new Vec3[4][ps.length];
+    lies = Lies.onXY;
+    foreach (i, p; ps)
+    {
+        how[i] = liesOf(it, p, span, frames[i]);
+        if (how[i] != Lies.onXY && lies == Lies.onXY)
+        {
+            lies = how[i];
+            frame = frames[i];
+        }
+    }
+    ok = true;
+    if (lies == Lies.onXY)
+        return ps;
+    double size = 0;
+    foreach (p; ps)
+        if (p.brep !is null)
+            size = max(size, k.bbox(p.brep).size.length);
+    // each into the frame's coordinates (placed) or where it lies (tilted)
+    // (made by a function of its own: a delegate made in a loop would share the loop's variables)
+    static Brep delegate(Brep) mover(BrepKernel k, Lies from, Vec3[4] f, Lies to, Vec3[4] target)
+    {
+        return (Brep b) {
+            if (from == to && (from == Lies.tilted || f == target))
+                return b;
+            // into world coordinates, then into the target's
+            if (from == Lies.onXY)
+                return to == Lies.tilted ? toPlace(k, target, b) : b;
+            auto w = from == Lies.placed ? toPlace(k, f, b) : b;
+            return to == Lies.placed ? fromPlace(k, target, w) : w;
+        };
+    }
+    Brep delegate(Brep)[] moves;
+    foreach (i, p; ps)
+    {
+        if (how[i] != Lies.onXY && !samePlane(frame, frames[i], size))
+        {
+            ok = false;
+            return null;
+        }
+        moves ~= mover(k, how[i], frames[i], lies, frame);
+    }
+    SolidVal[] r;
+    foreach (i, p; ps)
+    {
+        auto c = new SolidVal(p.brep is null ? null : moves[i](p.brep), p.origin);
+        c.rgb = p.rgb;
+        c.hasColor = p.hasColor;
+        c.creators = p.creators;
+        c.tags = p.tags;
+        c.faceTags = p.faceTags;
+        c.edgeTags = p.edgeTags;
+        c.flat = true;
+        if (p.anchors.length)
+            c.anchors = mapAnchors(it, moves[i], p.anchors, span);
+        r ~= c;
+    }
+    return r;
+}
+
+/// Profile `r`, made in the coordinates that intoOnePlane gave, put where
+/// they lie.
+SolidVal liesAs(SolidVal r, Lies lies, Vec3[4] frame)
+{
+    r.flat = true;
+    r.placed = lies == Lies.placed;
+    if (r.placed)
+        r.place = frame;
+    return r;
+}
+
+/// Profile `p`'s brep in its plane's coordinates (on XY when it lies on XY), and how it lies.
+Brep localOf(Interp it, SolidVal p, Span span, out Lies lies, out Vec3[4] frame)
+{
+    lies = liesOf(it, p, span, frame);
+    return lies == Lies.tilted ? fromPlace(it.kernel, frame, p.brep) : nonEmpty(p, span);
+}
+
+/// A point in a frame's coordinates, in the world's.
+Vec3 worldOf(Vec3[4] frame, Vec3 p) => frame[0] + frame[1] * p.x + frame[2] * p.y + frame[3] * p.z;
 
 /// The lines through `pts` with each corner rounded by an arc of radius r
 /// (a straight corner left as it is); an error at `span` names a corner
@@ -2913,19 +3296,44 @@ Value cutAllSolids(Interp it, SolidVal a, Value[] tools, Span span)
 Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span, bool merged = false)
 {
     SolidVal r;
-    // profiles drawn on two different faces have no plane in common
-    if (a.flat && b.flat && a.placed && b.placed && a.place != b.place)
-        throw new HcadError(Code.type, "these two profiles were drawn on different faces or planes: combine profiles "
-            ~ "drawn on the same one", span);
     if (a.brep is null || b.brep is null)
     {
         final switch (op)
         {
-        case BoolOp.fuse: r = a.brep is null ? b : a; break;
+        case BoolOp.fuse:
+            r = a.brep is null ? b : a;
+            // an empty solid's references are kept (its own tags and faces are not)
+            auto none = a.brep is null ? a : b;
+            if (none.anchors.length && r !is none)
+            {
+                r = copySolid(r);
+                r.anchors = mergeAnchors(r.anchors ~ none.anchors);
+            }
+            break;
         case BoolOp.cut: r = a; break;
-        case BoolOp.common: r = new SolidVal(null, span); break;
+        case BoolOp.common:
+            r = new SolidVal(null, span);
+            // nothing in common between profiles is an empty profile, where they lie
+            r.flat = a.flat || b.flat;
+            r.placed = a.placed || b.placed;
+            r.place = a.placed ? a.place : b.place;
+            break;
         }
         return Value.of(r);
+    }
+    // profiles: both brought into the plane of the one that lies somewhere (a sketch's, a
+    // section, a profile moved up), the other of no place taken into it; two planes, an error
+    Lies lies;
+    Vec3[4] frame;
+    if (a.flat && b.flat)
+    {
+        bool one;
+        auto both = intoOnePlane(it, [a, b], span, lies, frame, one);
+        if (!one)
+            throw new HcadError(Code.type, "these two profiles lie in different planes (drawn on different faces, "
+                ~ "or a section and a sketch elsewhere): combine profiles that lie in the same one", span);
+        a = both[0];
+        b = both[1];
     }
     try
     {
@@ -2949,10 +3357,26 @@ Value solidBoolean(Interp it, SolidVal a, SolidVal b, BoolOp op, Span span, bool
             r.hasColor = a.hasColor;
         }
         else
+        {
             r = derived(it, b2, [a, b], op == BoolOp.fuse ? "union" : op == BoolOp.cut ? "difference" : "intersection", span);
+            // an intersection: the references in the part of an operand it cut away go (as a split's, each to
+            // where it lies; one in a hole stays as long as the result is as near as the operand was)
+            if (op == BoolOp.common && r.anchors.length)
+            {
+                Anchor[] kept;
+                foreach (input; [a, b])
+                    foreach (an; input.anchors)
+                        if (pointDistance(it.kernel, b2, an.o) <= pointDistance(it.kernel, input.brep, an.o) + 1e-4)
+                            kept ~= an;
+                r.anchors = mergeAnchors(kept);
+            }
+        }
     }
     catch (KernelException e)
         throw new HcadError(Code.kernel, e.msg, span);
+    // a profile stays one, empty too (a - b with b over all of a), where they lie
+    if (a.flat && b.flat)
+        r = liesAs(r, lies, frame);
     return Value.of(r);
 }
 
@@ -3231,6 +3655,8 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
                             throw new HcadError(Code.type, "at: tags a reference on the solid, not its faces: recursive does "
                                 ~ "not apply", x.spanOf("recursive"));
                         auto r = copySolid(s);
+                        // a tag given again: the new reference replaces those it named
+                        r.anchors = s.anchors.filter!(an => !names.canFind(an.tag)).array;
                         foreach (t; names)
                             r.anchors ~= anchorOf(x, "at", t);
                         return Value.of(r);
@@ -3240,7 +3666,7 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
                             if (!s.tags.canFind(t) && !s.anchors.any!(an => an.tag == t)
                                 && !(all && s.faceTags.any!(f => f.canFind(t))))
                                 throw new HcadError(Code.type, format("this solid is not tagged '%s'", t), x.spanOf("tag"),
-                                    tagHint(t, s.tags ~ s.anchors.map!(an => an.tag).array, all ? s.faceTags : null));
+                                    tagHint(t, s.tags, all ? s.faceTags : null, s.anchors.map!(an => an.tag).array));
                     string[] change(string[] tags) => name == "addTag" ? tagUnion(tags, names)
                         : clear ? null : tags.filter!(t => !names.canFind(t)).array;
                     auto r = copySolid(s);
@@ -3258,13 +3684,25 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
                 return true;
             case "bbox":
                 {
-                    auto b = it.kernel.bbox(nonEmpty(s, span));
+                    // a profile drawn on a face: where it lies, as its contains and spots
+                    auto b = it.kernel.bbox(s.placed ? toPlace(it.kernel, s.place, nonEmpty(s, span)) : nonEmpty(s, span));
                     result = Value.make(Kind.struct_, StructVal(bboxDef,
                         [vec3(b.min), vec3(b.max), vec3(b.size), vec3(b.center)]));
                     return true;
                 }
             case "volume": result = Value.number(s.brep ? it.kernel.volume(s.brep) : 0, Dim.volume); return true;
             case "area": result = Value.number(s.brep ? it.kernel.area(s.brep) : 0, Dim.area); return true;
+            case "length":
+                {
+                    // a path's length, along it
+                    if (!s.path)
+                        return false;
+                    double l = 0;
+                    foreach (e; it.kernel.edges(nonEmpty(s, span)))
+                        l += e.length;
+                    result = Value.number(l, Dim.length);
+                    return true;
+                }
             case "centroid":
                 if (s.flat || s.path)
                     return false;
@@ -3313,8 +3751,14 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
                     if (s.flat)
                     {
                         // a profile: its separate regions, each with its holes
+                        SolidVal[] parts;
                         foreach (b; s.brep is null ? null : it.kernel.profileParts(s.brep, 2))
-                            r ~= Value.of(derived(it, b, [s], "pieces", span));
+                            parts ~= derived(it, b, [s], "pieces", span);
+                        // each reference to the regions it lies in or on
+                        if (parts.length > 1 && s.anchors.length)
+                            shareAnchors(it, s.anchors, parts);
+                        foreach (q; parts)
+                            r ~= Value.of(q);
                         result = Value.of(r);
                         return true;
                     }
@@ -3356,13 +3800,14 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
                             return Value.of(false);
                         if (!s.flat)
                             return Value.of(it.kernel.inside(s.brep, q));
-                        // a profile drawn on a face lies on XY in its frame's coordinates
-                        if (s.placed)
-                        {
-                            auto d = q - s.place[0];
-                            q = Vec3(d.dot(s.place[1]), d.dot(s.place[2]), 0);
-                        }
-                        auto slab = it.kernel.extrude(s.brep, 1, 0);
+                        // a profile in a plane (drawn on a face, a section): the point taken onto it, in
+                        // its coordinates
+                        Lies lies;
+                        Vec3[4] frame;
+                        auto local = localOf(it, s, a.span, lies, frame);
+                        auto d = q - frame[0];
+                        q = Vec3(d.dot(frame[1]), d.dot(frame[2]), 0);
+                        auto slab = it.kernel.extrude(local, 1, 0);
                         return Value.of(it.kernel.inside(slab, Vec3(q.x, q.y, 0.5)));
                     });
                     return true;
@@ -3381,8 +3826,9 @@ private bool builtinMemberAll(Interp it, Value obj, string name, Span span, out 
                         immutable margin = x.lenOr("margin", 0);
                         Brep b = nonEmpty(s, a.span);
                         Value[] r;
+                        // a profile drawn on a face: where it lies
                         foreach (q; it.kernel.spots(b, n, margin))
-                            r ~= Value.vector(q, 3, Dim.length);
+                            r ~= Value.vector(s.placed ? worldOf(s.place, q) : q, 3, Dim.length);
                         return Value.of(r);
                     });
                     return true;
@@ -3470,20 +3916,31 @@ string tagName(Value v, Span span)
 }
 
 /// A tag with a dot belongs to a module, the one its name starts with ("hinges.pin" to the hinges
-/// library): given only there, so that a library's tags and a model's never collide.
+/// library): given only there, so that a library's tags and a model's never collide. A tag given is
+/// not blank and holds no ';' (a STEP file keeps a face's tags joined by it).
 void ownTags(const(string)[] tags, ModuleVal caller, Span span)
 {
-    import std.string : indexOf;
+    import std.string : indexOf, lastIndexOf, strip;
     foreach (t; tags)
     {
+        if (t.strip.length == 0)
+            throw new HcadError(Code.type, "a tag cannot be blank: give it a name, such as \"lid\"", span);
+        if (t.indexOf(';') >= 0)
+            throw new HcadError(Code.type, format("a tag cannot hold ';' (a STEP file keeps a face's tags joined by "
+                ~ "it): '%s'", t), span, "use another character, such as '-' or '_'");
         if (t.indexOf('.') < 0)
             continue;
+        if (t[0] == '.' || t[$ - 1] == '.' || t.indexOf("..") >= 0)
+            throw new HcadError(Code.type, format("'%s' is not a tag: a dot goes between the name of a module and "
+                ~ "a name, such as \"hinges.pin\"", t), span, "leave the dot out");
         immutable mine = caller is null ? null : caller.name;
         if (mine.length && t.length > mine.length + 1 && t[0 .. mine.length] == mine && t[mine.length] == '.')
             continue;
+        // the module is all before the last dot (sub.deep's tags are "sub.deep.name"), the name after it
+        immutable mod = t[0 .. t.lastIndexOf('.')], bare = t[t.lastIndexOf('.') + 1 .. $];
         throw new HcadError(Code.type, format("a tag with a dot belongs to a module: '%s' can only be given in module %s",
-            t, t[0 .. t.indexOf('.')]), span, mine.length ? format("here, in module %s: '%s' without the dot, or '%s.%s'",
-            mine, t[t.indexOf('.') + 1 .. $], mine, t[t.indexOf('.') + 1 .. $]) : null);
+            t, mod), span, mine.length ? format("here, in module %s: '%s' without the dot, or '%s.%s'",
+            mine, bare, mine, bare) : format("here: '%s' without the dot", bare));
     }
 }
 
@@ -3509,15 +3966,19 @@ Value tagList(const(string)[] tags)
 }
 
 /// "did you mean" over the tags there are, and which they are.
-string tagHint(string t, const(string)[] tags, const(string[])[] faceTags)
+string tagHint(string t, const(string)[] tags, const(string[])[] faceTags, const(string)[] refs = null)
 {
     string[] all = tags.dup;
     foreach (f; faceTags)
         all = tagUnion(all, f);
-    if (all.length == 0)
+    auto named = tagUnion(null, refs);
+    if (all.length == 0 && named.length == 0)
         return null;
-    auto close = Interp.suggest(t, all);
-    return (close ? close ~ " " : "") ~ format("(its tags: %-(%s, %))", all);
+    auto close = Interp.suggest(t, all ~ named);
+    // its references (addTag(…, at:)) told apart from its tags
+    auto lists = (all.length ? [format("its tags: %-(%s, %)", all)] : []) ~ (named.length
+        ? [format("its references: %-(%s, %)", named)] : []);
+    return (close ? close ~ " " : "") ~ "(" ~ lists.join("; ") ~ ")";
 }
 
 /// The tags of each face of `s` (a list of empty ones when it has none).
@@ -3553,6 +4014,8 @@ SolidVal copySolid(SolidVal s)
     r.faceTags = s.faceTags;
     r.anchors = s.anchors;
     r.edgeTags = s.edgeTags;
+    r.lostEdgeTags = s.lostEdgeTags;
+    r.lostBy = s.lostBy;
     r.loftPaths = s.loftPaths;
     r.loftRuled = s.loftRuled;
     r.flat = s.flat;
@@ -3618,8 +4081,11 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
 
     immutable n = sel.faces ? faces.length : ctx.edges.length;
     int[] r;
+    bool seamsOnly;
     foreach (i; 0 .. n)
     {
+        // a seam (where a cylinder's side closes on itself) is no edge: nothing to round, nothing seen
+        immutable seam = !sel.faces && ctx.edgeFaces[i][1] == -2;
         bool ok = true;
         foreach (t; sel.tests)
             if (!t(i, ctx))
@@ -3646,9 +4112,11 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
                 e.index = i;
                 item = Value.make(Kind.edge, e);
             }
-            ok = call1(it, p, item, span).truthy;
+            ok = call1(it, p, item, span).condition(span);
         }
-        if (ok)
+        if (ok && seam)
+            seamsOnly = true;
+        else if (ok)
             r ~= cast(int) i;
     }
     if (r.length == 0 && !allowEmpty)
@@ -3665,12 +4133,21 @@ int[] resolveSelector(Interp it, SelectorVal sel, SolidVal s, Span span, bool al
                 throw new HcadError(Code.kernel, format("faces tagged %-(%s, %) are there, but none of them is left by "
                     ~ "the rest of the selector", sel.tagged.map!(t => "'" ~ t ~ "'")), span,
                     "look at the filter or the direction that follows the tag");
+            // a sketch's line or circle so tagged, whose name an operation on the profile lost
+            foreach (t; sel.tagged)
+                if (!present.canFind(t) && s.lostEdgeTags.canFind(t))
+                    throw new HcadError(Code.kernel, format("no face of this solid is tagged '%s': the sketch's line, arc "
+                        ~ "or circle tagged so lost its name on the way, where the profile went through %s", t,
+                        lostByWords(s.lostBy[s.lostEdgeTags.countUntil(t)])), span,
+                        "tag the solid's faces themselves: b.faces.….addTag(\"" ~ t ~ "\")");
             auto close = present.length ? Interp.suggest(sel.tagged[0], present) : null;
             throw new HcadError(Code.kernel, format("no face of this solid is tagged %-(%s, %)", sel.tagged.map!(t => "'" ~ t ~ "'")),
                 span, present.length ? (close ? close ~ " " : "") ~ format("(the tags on its faces: %-(%s, %))", present)
                     : "none of its faces has a tag: give them one with addTag (b.faces.top.addTag(\"lid\"))");
         }
-        throw new HcadError(Code.kernel, format("the selector matched no %s on this solid", sel.faces ? "faces" : "edges"), span);
+        throw new HcadError(Code.kernel, format("the selector matched no %s on this solid", sel.faces ? "faces" : "edges"), span,
+            seamsOnly ? "only seams: the line where a curved face closes on itself (down a cylinder's side, round a "
+                ~ "sphere) is not an edge, nothing to round there" : null);
     }
     return r;
 }
@@ -3751,6 +4228,10 @@ struct Args
     {
         if (auto v = find(n))
             return *v;
+        // a sketch's method: as it is written, s.equal(a, b)
+        if (names.length && names[0] == "sketch")
+            throw new HcadError(Code.missingArg, format("missing argument '%s' for s.%s(%s)", n, fn,
+                names[1 .. $].join(", ")), raw.span);
         throw new HcadError(Code.missingArg, format("missing argument '%s' for %s(%s)", n, fn, names.join(", ")), raw.span);
     }
 
@@ -3837,8 +4318,9 @@ struct Args
     {
         auto v = get(n);
         if (v.kind != Kind.selector || v.sel.faces != faces)
-            throw new HcadError(Code.type, format("'%s' must be a %s selector (e.g. %s), not %s", n, faces ? "face" : "edge",
-                faces ? "faces.top" : "edges.parallel(Z)", v.typeName), spanOf(n));
+            throw new HcadError(Code.type, format("'%s' must be %s (e.g. %s), not %s", n, faces ? "a face selector"
+                : "an edge selector", faces ? "faces.top" : "edges.parallel(Z)", v.kind == Kind.selector
+                ? (v.sel.faces ? "faces" : "edges") : v.typeName), spanOf(n));
         return v.sel;
     }
 
@@ -3876,13 +4358,14 @@ struct Args
 
 /// Fillet and chamfer: kernel failures get a message that says what to try.
 /// OpenCascade only says "not done": the edges are tried one by one to find
-/// those that fail, and beside those, a face narrower than the size asked
-/// (a rounding needs that much room on each face) is named with its width.
+/// those that fail, and the largest size that works on them all is searched
+/// for, with a face narrower than that beside the failing edges (a rounding
+/// needs that much room on each face) named with its width.
 Value edgeFeature(Interp it, ref CallArgs a, SolidVal s, int[] idx, string kind, string size, double value,
-    Brep delegate(Brep, const(int)[]) f)
+    Brep delegate(Brep, const(int)[], double) f)
 {
     try
-        return transformed(it, a.span, s, (Brep b) => f(b, idx), kind);
+        return transformed(it, a.span, s, (Brep b) => f(b, idx, value), kind);
     catch (KernelException e)
     {
         auto k = it.kernel;
@@ -3890,17 +4373,21 @@ Value edgeFeature(Interp it, ref CallArgs a, SolidVal s, int[] idx, string kind,
         if (bodies > 1)
             throw new HcadError(Code.kernel, e.msg, a.span, format("the solid is made of %s separate bodies touching "
                 ~ "each other; fuse them first", bodies));
+        bool works(const(int)[] es, double v)
+        {
+            try
+                f(s.brep, es, v);
+            catch (KernelException)
+                return false;
+            return true;
+        }
         // which edges fail on their own (not too many tries: each is a fillet)
         int[] failing;
         immutable tried = idx.length <= 24;
         if (tried)
             foreach (i; idx)
-            {
-                try
-                    f(s.brep, [i]);
-                catch (KernelException)
+                if (!works([i], value))
                     failing ~= i;
-            }
         auto infos = k.edges(s.brep);
         string where(const(int)[] es)
         {
@@ -3910,26 +4397,68 @@ Value edgeFeature(Interp it, ref CallArgs a, SolidVal s, int[] idx, string kind,
                     == EdgeKind.circle ? "the curved edge" : "the edge", fmtPoint(infos[i].mid));
             return r.join(", ") ~ (es.length > 3 ? format(" and %d more", es.length - 3) : "");
         }
+        // rounds of that very radius made before, which these edges may run into: OpenCascade cannot join
+        // two rounds of one radius meeting at a corner when they are made one after the other
+        bool sameRadius;
+        if (kind == "fillet")
+            foreach (fi; 0 .. k.faceCount(s.brep))
+            {
+                CylinderInfo ci;
+                if (k.faceCylinder(s.brep, cast(int) fi, ci) && abs(ci.radius - value) < 1e-6 * (1 + value))
+                    sameRadius = true;
+            }
+        immutable together = sameRadius ? "; where they run into rounds of that same r made before, round them all in "
+            ~ "one fillet (the two selectors joined with +), or these first" : "";
         if (tried && failing.length == 0)
             throw new HcadError(Code.kernel, format("%s failed: each of the %d edges takes it on its own, not all together",
                 kind, idx.length), a.span, format("where they meet the %s does not close: %s them in groups, or try "
-                ~ "a smaller %s", kind, kind, size));
+                ~ "a smaller %s", kind, kind, size) ~ together);
         auto bad = tried ? failing : idx;
-        // the narrowest face beside the failing edges
+        // the largest size that works on all the edges (a few tries, halving the gap): a number that is
+        // right, or none
+        double ok = 0;
+        if (tried)
+        {
+            double lo = 0, hi = value;
+            foreach (_; 0 .. 7)
+            {
+                immutable mid = (lo + hi) / 2;
+                if (works(idx, mid))
+                    lo = mid;
+                else
+                    hi = mid;
+            }
+            ok = lo;
+        }
+        // the narrowest face beside the failing edges: the reason, when it is about the size that works
         immutable narrow = narrowestBeside(it, s.brep, bad);
         string msg = format("%s failed%s", kind, tried ? format(" on %s", where(bad)) : "");
         string hint;
-        if (narrow < value)
+        if (ok > 0 && narrow < value && narrow > 0.8 * ok && narrow < 1.25 * ok)
             hint = format("a face beside %s is only %s mm wide there, and a %s of %s %s needs that much room on it: "
                 ~ "make %s smaller than %s mm (or %s before the cut that narrows that face)", bad.length > 1 ? "them"
                 : "it", fmtNum(narrow), kind, size, fmtNum(value), size, fmtNum(narrow), kind);
+        else if (ok > 0)
+            hint = format("%s up to about %s mm works on these edges: make %s smaller, or apply it to fewer edges at a "
+                ~ "time (%s edges selected)", size, fmtDown(ok), size, idx.length);
         else
             hint = format("try a smaller %s, or apply it to fewer edges at a time (%s edges selected)", size, idx.length);
-        // OpenCascade's own words, without the "fillet failed:" they start with
+        // OpenCascade's own words, without the "fillet failed:" they start with; none when they only say
+        // it was not done
         import std.algorithm : findSplitAfter;
         auto said = e.msg.findSplitAfter(": ");
-        throw new HcadError(Code.kernel, msg ~ " (" ~ (said ? said[1] : e.msg) ~ ")", a.span, hint);
+        immutable words = said ? said[1].idup : e.msg;
+        immutable silent = words.canFind("NotDone") || words.canFind("command not done");
+        throw new HcadError(Code.kernel, msg ~ (silent ? "" : " (" ~ words ~ ")"), a.span, hint ~ together);
     }
+}
+
+/// `v` to 3 significant digits, rounded down: a size that still works.
+private string fmtDown(double v)
+{
+    import std.math : log10, pow;
+    immutable step = pow(10.0, floor(log10(v)) - 2);
+    return format("%g", floor(v / step) * step);
 }
 
 private string fmtNum(double v) => format("%.3g", v);
@@ -4034,12 +4563,15 @@ Value transformed(Interp it, Span span, SolidVal s, Brep delegate(Brep) f, strin
     if (s.brep is null)
         return Value.of(s);
     rigid = rigid || kind == "transform";
-    auto r = derived(it, f(s.brep), [s], kind, span);
+    auto r = derived(it, f(s.brep), [s], kind, span, !rigid);
     // moved, turned, mirrored, scaled: its references too, and a profile's tagged edges, in the same order
     if (rigid && s.anchors.length)
         r.anchors = mapAnchors(it, f, s.anchors, span);
     if (rigid && s.edgeTags.length)
+    {
         r.edgeTags = s.edgeTags;
+        keptEdgeTags(r);
+    }
     // moving what a feature has just made, in the same statement
     // (circle(…).move(…)): the feature shows where its solid ends up. A caller
     // moving what a function returned (f().move(…)), or a solid kept in a
@@ -4154,9 +4686,12 @@ Value anchorValue(Interp it, SolidVal s, string tag, AnchorKind want, Span span)
             names.length ? (close ? close ~ " " : "") ~ format("(its references: %-(%s, %))", names)
                 : "tag one with addTag(\"name\", at: …), or a point of the sketch it is made from");
     }
+    found = mergeAnchors(found);
     if (found.length > 1)
-        throw new HcadError(Code.type, format("%d references of this solid are tagged '%s' (a copy joined to it?): tag "
-            ~ "them apart", found.length, tag), span);
+        throw new HcadError(Code.type, format("%d references in different places on this solid are tagged '%s': each "
+            ~ "copy joined into it brought its own", found.length, tag), span,
+            format("tag the copies apart before joining them, or tag the joined solid again (addTag(\"%s\", at: …) "
+            ~ "replaces them)", tag));
     auto a = found[0];
     if (want == AnchorKind.plane && a.kind == AnchorKind.point)
         throw new HcadError(Code.type, format("'%s' is a point: a plane needs a direction too (tag a plane, an axis or "
@@ -4172,7 +4707,67 @@ Value anchorValue(Interp it, SolidVal s, string tag, AnchorKind want, Span span)
     case AnchorKind.point: return Value.vector(at(a.o), 3, Dim.length);
     case AnchorKind.axis: return axisValue(at(a.o), dir(a.z));
     case AnchorKind.plane: return planeValue(at(a.o), dir(a.z));
-    case AnchorKind.frame: return frameValue(at(a.o), dir(a.x), dir(a.y), dir(a.z));
+    case AnchorKind.frame:
+        // an axis or a plane: its X as a plane's frame() and a face's have it, wherever it was turned
+        if (a.kind == AnchorKind.axis || a.kind == AnchorKind.plane)
+        {
+            auto z = dir(a.z).normalized, x = faceXAxis(z);
+            return frameValue(at(a.o), x, z.cross(x), z);
+        }
+        return frameValue(at(a.o), dir(a.x), dir(a.y), dir(a.z));
+    }
+}
+
+/// Whether two references are one: of one tag and kind, in one place (and facing one way), to a hair.
+bool sameAnchor(const Anchor a, const Anchor b)
+{
+    immutable tol = 1e-6 * (1 + a.o.length);
+    if (a.tag != b.tag || a.kind != b.kind || (a.o - b.o).length > tol)
+        return false;
+    if (a.kind == AnchorKind.point)
+        return true;
+    return (a.z - b.z).length < 1e-6 && (a.kind != AnchorKind.frame || (a.x - b.x).length < 1e-6);
+}
+
+/// `as` without the references equal to an earlier one: a solid joined to a copy of itself (two
+/// halves joined again, a face pushed out) holds each of them once.
+Anchor[] mergeAnchors(const(Anchor)[] as)
+{
+    Anchor[] r;
+    foreach (a; as)
+        if (!r.any!(b => sameAnchor(a, b)))
+            r ~= a;
+    return r;
+}
+
+/// How far point `p` lies from `b`: 0 inside it or on its surface.
+double pointDistance(BrepKernel k, Brep b, Vec3 p)
+{
+    // a speck of a box there: a solid inside another one is at distance 0
+    enum e = 1e-5;
+    Vec3 u, v;
+    return k.distance(b, k.translate(k.box(e, e, e), p - Vec3(e / 2, e / 2, e / 2)), u, v);
+}
+
+/// The references `from` hands to the pieces it was cut into: each to the pieces it lies in or on
+/// (one on the cut, to those on both sides of it), one in none (on a hole's axis) to the nearest.
+void shareAnchors(Interp it, const(Anchor)[] from, SolidVal[] pieces)
+{
+    foreach (p; pieces)
+        if (p !is null)
+            p.anchors = null;
+    foreach (a; from)
+    {
+        auto d = new double[pieces.length];
+        double least = double.infinity;
+        foreach (i, p; pieces)
+        {
+            d[i] = p is null || p.brep is null ? double.infinity : pointDistance(it.kernel, p.brep, a.o);
+            least = min(least, d[i]);
+        }
+        foreach (i, p; pieces)
+            if (d[i] < double.infinity && d[i] <= least + 1e-4)
+                p.anchors ~= a;
     }
 }
 
@@ -4207,9 +4802,9 @@ Anchor anchorOf(ref Args x, string name, string tag)
     else
         throw new HcadError(Code.type, format("at: is a point, an Axis, a Plane or a Frame to tag, not %s", v.typeName),
             x.spanOf(name));
-    // an x and a y across the direction, for a frame read from it
+    // an x and a y across the direction, as a plane's frame() has them (a frame read from it takes them anew)
     a.z = a.z.normalized;
-    a.x = (abs(a.z.z) < 0.9 ? Vec3(0, 0, 1) : Vec3(1, 0, 0)).cross(a.z).normalized;
+    a.x = faceXAxis(a.z);
     a.y = a.z.cross(a.x);
     return a;
 }
@@ -4226,7 +4821,7 @@ SolidVal primitive(Interp it, Brep b, string kind, Span span)
 
 /// A result solid whose faces inherit the creators of the faces they come
 /// from (kernel face history); new faces belong to a new feature.
-SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span)
+SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span, bool carry = true)
 {
     auto r = new SolidVal(b, span);
     if (inputs.length)
@@ -4260,6 +4855,23 @@ SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span)
         }
     }
     inheritTags(it, r, b, inputs, origins);
+    // a profile made from profiles: the tags of their sketches' lines and circles on the edges lying where
+    // those were (what a boolean or pieces leaves of them)
+    bool[2] profile;   // known, and whether r is a profile (r.flat may be its input's still: an extrusion)
+    bool isProfile()
+    {
+        if (!profile[0])
+            profile = [true, r.flat && it.kernel.solids(b).length == 0];
+        return profile[1];
+    }
+    if (carry && r.flat && inputs.any!(i => i !is null && i.edgeTags.length) && isProfile())
+        foreach (input; inputs)
+            if (input !is null && input.flat && input.brep !is null && input.edgeTags.length)
+                r.edgeTags = carryEdgeTags(it.kernel, input.brep, input.edgeTags, b, 0, r.edgeTags);
+    // the names of sketch lines and circles it could not keep: told when a face so tagged is looked for
+    lostEdgeTagsOf(r, inputs, kind);
+    if (r.lostEdgeTags.length)
+        keptEdgeTags(r, isProfile());
     // a boolean is a step of the model even when all its faces come from
     // its operands (a - b where b only trims a): the feature tree lists it
     immutable boolean = inputs.length == 2 && (kind == "union" || kind == "difference" || kind == "intersection");
@@ -4290,10 +4902,13 @@ private void inheritTags(Interp it, SolidVal r, Brep b, SolidVal[] inputs, const
         return;
     if (inputs[0] !is null)
         r.tags = inputs[0].tags;
-    // the references of all of them: a hole's axis stays when it is cut
+    // the references of all of them: a hole's axis stays when it is cut; those of a copy joined to
+    // itself, once
     foreach (input; inputs)
         if (input !is null && input.anchors.length)
             r.anchors ~= input.anchors;
+    if (inputs.length > 1)
+        r.anchors = mergeAnchors(r.anchors);
     bool any;
     string[] fromProfiles;
     auto fromEdges = it.kernel.faceFromEdges(b);
@@ -4362,6 +4977,122 @@ private void tagsByPlane(Interp it, SolidVal r, SolidVal[] inputs, double delega
     }
 }
 
+/// The names of sketch lines and circles `inputs` hold (on their edges) or had lost, in r.lostEdgeTags as
+/// lost by `kind` until r is found to hold them (keptEdgeTags).
+void lostEdgeTagsOf(SolidVal r, SolidVal[] inputs, string kind)
+{
+    foreach (input; inputs)
+        if (input !is null)
+            foreach (i, t; input.lostEdgeTags)
+                if (!r.lostEdgeTags.canFind(t))
+                {
+                    r.lostEdgeTags ~= t;
+                    r.lostBy ~= input.lostBy[i];
+                }
+    foreach (input; inputs)
+        if (input !is null)
+            foreach (ts; input.edgeTags)
+                foreach (t; ts)
+                    if (!r.lostEdgeTags.canFind(t))
+                    {
+                        r.lostEdgeTags ~= t;
+                        r.lostBy ~= kind;
+                    }
+}
+
+/// `r` without the names of sketch lines and circles among those it lost (r.lostEdgeTags) that it holds
+/// after all, on a profile's edges or a solid's faces.
+void keptEdgeTags(SolidVal r)
+{
+    keptEdgeTags(r, r.flat);
+}
+
+/// The same, `r` a profile or not.
+void keptEdgeTags(SolidVal r, bool profile)
+{
+    if (!r.lostEdgeTags.length)
+        return;
+    string[] present;
+    foreach (t; profile ? r.edgeTags : r.faceTags)
+        present = tagUnion(present, t);
+    string[] tags, by;
+    foreach (i, t; r.lostEdgeTags)
+        if (!present.canFind(t))
+        {
+            tags ~= t;
+            by ~= r.lostBy[i];
+        }
+    r.lostEdgeTags = tags;
+    r.lostBy = by;
+}
+
+/// What lost a sketch line's name, in words (a feature kind: "offset", "hull").
+string lostByWords(string kind)
+{
+    switch (kind)
+    {
+    case "extrude": return "an extrusion";
+    case "round": return "round()";
+    case "tiles": return "tiles";
+    default: return ("aeiou".canFind(kind.length ? kind[0] : 'x') ? "an " : "a ") ~ kind;
+    }
+}
+
+/// The tags `tags` of the edges of profile `from` on the edges of profile `to` that lie on them (a line on
+/// the same line, within it; an arc on the same circle), or `distance` away from them when `to` is `from`
+/// offset; added to `onto` (per edge of `to`, may be empty).
+string[][] carryEdgeTags(BrepKernel k, Brep from, const(string[])[] tags, Brep to, double distance,
+    string[][] onto = null)
+{
+    auto fe = k.edges(from), te = k.edges(to);
+    auto r = onto.length == te.length ? onto.dup : new string[][te.length];
+    immutable d = abs(distance);
+    foreach (j, g; te)
+        foreach (i, f; fe)
+        {
+            if (i >= tags.length || !tags[i].length || f.kind == EdgeKind.other || f.kind != g.kind && !(d == 0
+                && g.kind == EdgeKind.other))
+                continue;
+            immutable tol = 1e-6 * (1 + f.mid.length + d);
+            bool on;
+            if (g.kind == EdgeKind.other)
+            {
+                // a curve the kernel made in place of a line or an arc (a twisted extrusion's): its ends and
+                // middle on it
+                on = true;
+                foreach (q; [g.start, g.mid, g.end])
+                    if (f.kind == EdgeKind.line)
+                    {
+                        auto u = f.end - f.start;
+                        immutable t = (q - f.start).dot(u) / u.dot(u);
+                        on = on && t > -tol && t < 1 + tol && (q - (f.start + u * t)).length < tol;
+                    }
+                    else
+                        on = on && abs((q - f.center).length - f.radius) < tol && abs((q - f.center).dot(f.axis)) < tol;
+            }
+            else if (f.kind == EdgeKind.line)
+            {
+                auto u = f.end - f.start;
+                immutable l = u.length;
+                if (l < 1e-12 || g.direction.cross(u / l).length > 1e-6)
+                    continue;
+                immutable t = (g.mid - f.start).dot(u) / (l * l);
+                auto across = g.mid - (f.start + u * t);
+                // within it, as far from it as the offset (lines offset keep their length; a cut one is shorter)
+                on = t > -tol && t < 1 + tol && abs(across.length - d) < tol;
+            }
+            else if (f.kind == EdgeKind.circle)
+                on = (g.center - f.center).length < tol && g.axis.cross(f.axis).length < 1e-6
+                    && abs(abs(g.radius - f.radius) - d) < tol;
+            if (on)
+                r[j] = tagUnion(r[j], tags[i]);
+        }
+    foreach (t; r)
+        if (t.length)
+            return r;
+    return onto.length == te.length ? onto : null;
+}
+
 /// `a` with the tags of `b` it does not have, in order.
 string[] tagUnion(const(string)[] a, const(string)[] b)
 {
@@ -4394,8 +5125,11 @@ Value tilesOf(Interp it, ref CallArgs a)
     auto x = Args(it, a, "tiles", ["region", "kind", "size", "gap", "round", "angle", "tile", "step", "origin",
         "whole", "scale", "keep", "seed", "jitter", "relax", "points"]);
     auto region = profileArg(x, "region");
-    requireXY(it, region, x.spanOf("region"));
-    immutable bb = k.bbox(region.brep);
+    // a region drawn on a face or lying in another plane: tiled in that plane's coordinates, the tiles left there
+    Vec3[4] frame;
+    immutable lies = liesOf(it, region, x.spanOf("region"), frame);
+    auto area = lies == Lies.tilted ? fromPlace(k, frame, region.brep) : nonEmpty(region, x.spanOf("region"));
+    immutable bb = k.bbox(area);
     immutable gap = x.lenOr("gap", 0), rnd = x.lenOr("round", 0), ang = x.angleOr("angle", 0);
     if (gap < 0 || rnd < 0)
         throw new HcadError(Code.type, "gap and round cannot be negative", a.span);
@@ -4643,8 +5377,11 @@ Value tilesOf(Interp it, ref CallArgs a)
         foreach (mo; motifs)
             cell += k.area(mo);
         cell /= motifs.length;
-        return Value.of(flatResult(Value.of(primitive(it, k.tiles(motifs, place, region.brep,
-            x.flag("whole", false) ? 2 : 1, 0.02 * cell), "tiles", a.span))));
+        // with no gap the cells touch: joined into one area, or they make no valid profile
+        auto made = k.tiles(motifs, place, area, (x.flag("whole", false) ? 2 : 1) | (gap > 0 ? 0 : 4), 0.02 * cell);
+        if (lies == Lies.tilted)
+            made = toPlace(k, frame, made);
+        return Value.of(liesAs(flatResult(Value.of(primitive(it, made, "tiles", a.span))), lies, frame));
     }
     catch (KernelException e)
         throw new HcadError(Code.kernel, e.msg, a.span);
@@ -4668,6 +5405,18 @@ void requireXY(Interp it, SolidVal p, Span span)
         throw new HcadError(Code.type, "extrude a profile while it lies on XY, then place the solid (placeOn, move, rotate)", span);
 }
 
+/// The depth of a profile cut into or raised from a face: always positive, the way given by the
+/// call (cut digs in, extrude raises), so a sign never quietly turns one into the other.
+void checkFaceDepth(double depth, bool remove, Span span)
+{
+    if (depth == 0)
+        throw new HcadError(Code.type, "depth must not be zero", span);
+    if (!(depth > 0))
+        throw new HcadError(Code.type, remove
+            ? "depth must be greater than 0: cut digs the profile into the face; to raise it, use extrude"
+            : "depth must be greater than 0: extrude raises the profile from the face; to dig it in, use cut", span);
+}
+
 /// body.extrude(profile, on:, depth:) adds material outwards from a face;
 /// body.cut(profile, on:, depth: | through: true) removes it inwards.
 Value onFace(Interp it, ref CallArgs a, bool remove)
@@ -4683,7 +5432,13 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
     // a solid as the tool: built on XY, its z = 0 brought onto the face and +Z out of it (a hole()
     // from the hardware library, which goes down from z = 0, cuts into the material)
     auto given = x.get("profile");
-    immutable solidTool = given.kind == Kind.solid && !given.solid.flat && !given.solid.path && !given.solid.surface;
+    // s.extrude(2.mm) on what is a solid already (a hull of profiles in two planes is one)
+    if (given.isNum)
+        throw new HcadError(Code.type, format("this is a %s, not a profile: a profile is extruded by a height, a "
+            ~ "solid %s a profile on one of its faces (%s(profile, on: faces.top, depth: …)) or pushes its faces "
+            ~ "(%s(faces.top, depth: …))", body.brep is null ? "Solid (empty)" : "Solid", remove ? "cuts" : "adds",
+            fn, fn), x.spanOf("profile"));
+    immutable solidTool =given.kind == Kind.solid && !given.solid.flat && !given.solid.path && !given.solid.surface;
     if (solidTool && !x.has("on"))
         throw new HcadError(Code.type, format("%s with a solid needs on: the face or frame to place it on", fn),
             x.spanOf("profile"));
@@ -4693,21 +5448,23 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
                 throw new HcadError(Code.type, format("'%s' is for a profile: a solid tool is cut as it is", n),
                     x.spanOf(n));
     auto p = solidTool ? given.solid : profileArg(x, "profile");
-    if (!solidTool)
-        requireXY(it, p, a.span);
+    // a profile drawn on a face, or lying in another plane (a section, its tiles): where it lies
+    Vec3[4] where;
+    immutable lies = solidTool ? Lies.onXY : liesOf(it, p, a.span, where);
     Vec3 o, ax, ay, az;
-    if (p.placed && x.has("on"))
-        throw new HcadError(Code.type, "this profile was drawn on a face (its sketch's): it is already where it goes, "
-            ~ "leave on: out", x.spanOf("on"));
-    if (p.placed)
+    if (lies != Lies.onXY && x.has("on"))
+        throw new HcadError(Code.type, format("this profile %s: it is already where it goes, leave on: out",
+            lies == Lies.placed ? "was drawn on a face (its sketch's)" : "lies in a plane of its own (a section?)"),
+            x.spanOf("on"));
+    if (lies != Lies.onXY)
     {
-        o = p.place[0];
-        ax = p.place[1];
-        ay = p.place[2];
-        az = p.place[3];
+        o = where[0];
+        ax = where[1];
+        ay = where[2];
+        az = where[3];
         if (x.has("at"))
-            throw new HcadError(Code.type, "this profile was drawn on a face: place it in its sketch, not with at:",
-                x.spanOf("at"));
+            throw new HcadError(Code.type, "this profile lies where it was drawn: place it in its sketch (or move "
+                ~ "it), not with at:", x.spanOf("at"));
     }
     else if (x.has("on"))
     {
@@ -4762,14 +5519,30 @@ Value onFace(Interp it, ref CallArgs a, bool remove)
     {
         if (!remove)
             throw new HcadError(Code.type, "through: is for cut()", x.spanOf("through"));
+        // as far in as the body goes behind the face, and a millimetre more: no further, or a taper
+        // would close the outline up long before the tool's end
         auto bb = k.bbox(nonEmpty(body, a.span));
-        depth = 2 * ((bb.center - o).length + bb.size.length) + 1;
+        double behind = 0;
+        foreach (i; 0 .. 8)
+        {
+            immutable q = Vec3(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z);
+            behind = max(behind, (o - q).dot(az));
+        }
+        depth = behind + 1;
     }
     else
+    {
         depth = x.len("depth");
+        checkFaceDepth(depth, remove, x.spanOf("depth"));
+    }
     immutable taper = x.angleOr("taper", 0);
-    auto tool = derived(it, k.extrude(nonEmpty(p, a.span), remove ? -depth : depth, taper), [p], fn, a.span);
+    auto tool = derived(it, k.extrude(lies == Lies.tilted ? fromPlace(k, where, p.brep) : nonEmpty(p, a.span),
+        remove ? -depth : depth, taper), [p], fn, a.span);
     tool.flat = false;
+    tool.placed = false;
+    // a tilted profile's references lie where it lies: brought into its plane's coordinates with it
+    if (lies == Lies.tilted && tool.anchors.length)
+        tool.anchors = mapAnchors(it, (Brep q) => fromPlace(k, where, q), tool.anchors, a.span);
     Vec3 axis;
     immutable angle = axisAngle(ax, ay, az, axis);
     auto placed = transformed(it, a.span, tool, (Brep b) {
@@ -4972,8 +5745,7 @@ Value onCurvedFace(Interp it, ref CallArgs a, ref Args x, SolidVal body, bool re
         throw new HcadError(Code.type, format("'%s' needs exactly one face, the selector matched %d", what, idx.length),
             x.spanOf(what));
     immutable depth = x.len("depth");
-    if (!(depth > 0))
-        throw new HcadError(Code.type, "depth must be greater than 0", x.spanOf("depth"));
+    checkFaceDepth(depth, remove, x.spanOf("depth"));
     immutable at = x.has("at") ? x.vecLen("at") : Vec3(double.nan, double.nan, double.nan);
     immutable dir = x.has("along") ? x.dir("along") : Vec3(0, 0, 0);
     // first built at once, the face holed and the floors sewn in, with no boolean: quicker, and sound
@@ -5104,7 +5876,11 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
         try
             prisms ~= k.facePrism(body.brep, f, v);
         catch (KernelException e)
-            throw new HcadError(Code.kernel, e.msg, x.spanOf(x.has("along") ? "along" : "faces"));
+        {
+            import std.string : chompPrefix;
+            throw new HcadError(Code.kernel, fn ~ " failed: " ~ e.msg.chompPrefix("push/pull failed: "),
+                x.spanOf(x.has("along") ? "along" : "faces"));
+        }
         auto p = new SolidVal(prisms[$ - 1], a.span);
         inheritTags(it, p, p.brep, [body], k.faceOrigins(p.brep));
         swept ~= p;
@@ -5162,8 +5938,10 @@ Value threadFace(Interp it, ref CallArgs a)
     {
         CylinderInfo ci;
         if (!k.faceCylinder(b, f, ci))
-            throw new HcadError(Code.type, "a thread goes on a cylindrical face: the outside of a shaft or the wall of a hole",
-                x.spanOf("face"));
+            throw new HcadError(Code.type, idx.length == 1
+                ? "a thread goes on a cylindrical face: the outside of a shaft or the wall of a hole"
+                : format("the selector matched %d faces, not all cylindrical: a thread needs the one face of a shaft "
+                    ~ "or hole (faces.largest, faces.tagged(…))", idx.length), x.spanOf("face"));
         if (n == 0)
             c = ci;
         else
@@ -5553,7 +6331,8 @@ int count(ref Args x, string n)
 Brep nonEmpty(SolidVal s, Span span)
 {
     if (s.brep is null)
-        throw new HcadError(Code.kernel, "the solid is empty", span);
+        throw new HcadError(Code.kernel, s.flat ? "the profile is empty (a difference took all of it, or an "
+            ~ "intersection found nothing in common?): check it with isEmpty first" : "the solid is empty", span);
     return s.brep;
 }
 
@@ -5571,7 +6350,7 @@ public FaceInfo flatFace(Interp it, SolidVal s, int face, string fn, Span span)
                 CylinderInfo c;
                 immutable cylinder = it.kernel.faceCylinder(s.brep, face, c);
                 throw new HcadError(Code.type, format("%s needs a flat face; this one is curved%s", fn, cylinder
-                    ? format(" (a cylinder ⌀%g mm): body.axis(…) gives its axis, plane(origin:, normal:) a plane "
+                    ? format(" (a cylinder ⌀%g mm): body.axis(faces.…) gives its axis, plane(origin:, normal:) a plane "
                         ~ "touching it", 2 * c.radius) : ""), span);
             }
     return f;
@@ -5661,6 +6440,14 @@ void positive(ref CallArgs a, double[] xs, string what)
 
 double comp(Vec3 v, size_t i) => i == 0 ? v.x : i == 1 ? v.y : v.z;
 Vec3 axisVec(size_t i) => i == 0 ? Vec3(1, 0, 0) : i == 1 ? Vec3(0, 1, 0) : Vec3(0, 0, 1);
+
+/// A pattern of `s`: the references of its first copy (where `s` was), not one of each copy.
+Value firstCopyAnchors(Value pattern, SolidVal s)
+{
+    if (pattern.kind == Kind.solid && pattern.solid !is s)
+        pattern.solid.anchors = s.anchors.dup;
+    return pattern;
+}
 
 Value unionAll(Interp it, Value[] xs, Span span)
 {
@@ -5991,16 +6778,22 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
     }
 
     // faces.top etc.: faces whose outward normal points that way and that lie
-    // furthest along it (the outer skin, not inner floors)
-    Value extremal(Vec3 axis) => with_((size_t i, ref SelectCtx c) {
-        if (c.faces[i].normal.dot(axis) < 1 - 1e-6)
-            return false;
-        double best = -double.infinity;
-        foreach (g; c.faces)
-            if (g.normal.dot(axis) > 1 - 1e-6)
-                best = max(best, g.center.dot(axis));
-        return c.faces[i].center.dot(axis) >= best - 1e-6;
-    });
+    // furthest along it (the outer skin, not inner floors); on a part turned a little (or a
+    // mesh not quite square) none points exactly that way: then those facing it the most,
+    // within half a degree, and among them the outermost along their own normal
+    Value extremal(Vec3 axis)
+    {
+        bool[] memo;
+        const(FaceInfo)* key;
+        return with_((size_t i, ref SelectCtx c) {
+            if (c.faces.ptr !is key)
+            {
+                key = c.faces.ptr;
+                memo = extremalFaces(c.faces, axis);
+            }
+            return memo[i];
+        });
+    }
 
     switch (name)
     {
@@ -6056,11 +6849,47 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
         return fn((ref CallArgs a) {
             auto x = Args(it, a, "normal", ["selector", "axis"]);
             auto ax = x.dir("axis");
-            return with_((size_t i, ref SelectCtx c) => c.faces[i].normal.dot(ax) > 1 - 1e-6);
+            return with_((size_t i, ref SelectCtx c) => c.faces[i].facing && c.faces[i].normal.dot(ax) > 1 - 1e-6);
         });
     default:
         return false;
     }
+}
+
+/// Which faces faces.top (axis Z), faces.right… pick: those facing `axis` exactly and furthest along it;
+/// when none faces it exactly (a part turned, a mesh not quite square), those facing it the most (at
+/// least 60° from sideways, within half a degree of the best) and outermost along their own normal.
+bool[] extremalFaces(const(FaceInfo)[] faces, Vec3 axis)
+{
+    auto r = new bool[faces.length];
+    double bestDot = -double.infinity;
+    foreach (g; faces)
+        if (g.facing)
+            bestDot = max(bestDot, g.normal.dot(axis));
+    if (bestDot > 1 - 1e-6)
+    {
+        double best = -double.infinity;
+        foreach (g; faces)
+            if (g.facing && g.normal.dot(axis) > 1 - 1e-6)
+                best = max(best, g.center.dot(axis));
+        foreach (i, g; faces)
+            r[i] = g.facing && g.normal.dot(axis) > 1 - 1e-6 && g.center.dot(axis) >= best - 1e-6;
+        return r;
+    }
+    if (!(bestDot >= 0.5))
+        return r;
+    immutable minDot = cos(min(acos(bestDot) + 0.5 * PI / 180, PI));
+    Vec3 n;
+    foreach (g; faces)
+        if (g.facing && g.normal.dot(axis) == bestDot)
+            n = g.normal;
+    double best = -double.infinity;
+    foreach (g; faces)
+        if (g.facing && g.normal.dot(axis) >= minDot)
+            best = max(best, g.center.dot(n));
+    foreach (i, g; faces)
+        r[i] = g.facing && g.normal.dot(axis) >= minDot && g.center.dot(n) >= best - 1e-3;
+    return r;
 }
 
 Value call1(Interp it, Value f, Value x, Span span)
@@ -6293,3 +7122,4 @@ StructDef bboxDef()
 }
 
 import std.algorithm : fold;
+

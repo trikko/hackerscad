@@ -251,7 +251,7 @@ Lofting through paths instead of profiles, `loft([path1, path2])`, gives a `Surf
 
 ### Along a curve: frames
 
-A sweep keeps its profile the same size. For an outline that grows or changes along a curve, place profiles on `path.frames(n)`. A *frame* is a place with its own directions, as a small set of X, Y and Z axes standing somewhere in space; a profile placed on one lies across its Z. `frames(n)` gives n frames evenly along the path, from its start to its end, Z along it and turning as little as they can, so the profiles placed on them do not twist. Then loft:
+A sweep keeps its profile the same size. For an outline that grows or changes along a curve, place profiles on `path.frames(n)`. A *frame* is a place with its own directions, as a small set of X, Y and Z axes standing somewhere in space; a profile placed on one lies across its Z. `frames(n)` gives n frames evenly along the path, from its start to its end (round a closed one, the start not repeated), Z along it and turning as little as they can, so the profiles placed on them do not twist. Then loft:
 
 <!-- render: sweeps-ex3 -->
 ```d

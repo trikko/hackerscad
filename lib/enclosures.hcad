@@ -101,64 +101,72 @@ Enclosure enclosure(Vec3 inner, Length wall = 2.mm, Length r = 3.mm, Length lidH
 /// the lid: its walls, `play` wider round the lip, and a top `wall` thick
 /// `clearance` over the part. close: "lip" holds the lid on by friction;
 /// "snap" adds a bead round the lip, halfway up it, that clicks into a groove
-/// inside the lid (its wall gives a little as it goes over).
+/// inside the lid (its wall gives a little as it goes over). The lip is 3 mm
+/// high unless given, lower on a flat part (a card, a coin, a board) where
+/// that does not fit under the lid's top.
+///
+/// Tags: the base's floor inside is "enclosures.floor", the top of its walls,
+/// where the lid rests, "enclosures.rim", the lip (on the base) "enclosures.lip";
+/// the lid has none.
 Enclosure shadowCase(Solid inside, Plane on = XY, Length wall = 2.mm, Length clearance = 0.5.mm,
-    double split = 0.5, string close = "lip", Length lip = 3.mm, Length play = 0.2.mm)
+    double split = 0.5, string close = "lip", Length lip = 0.mm, Length play = 0.2.mm)
 {
     assert(close == "lip" || close == "snap", "shadowCase: close is \"lip\" or \"snap\", not \"" ~ close ~ "\"");
-    assert(wall > 0.mm && clearance >= 0.mm && lip > 0.mm && play >= 0.mm && play < wall,
-        "shadowCase: a wall thicker than 0, a clearance and a play of 0 or more (the play thinner than the wall)");
+    assert(wall > 0.mm && clearance >= 0.mm && lip >= 0.mm && play >= 0.mm && play < wall,
+        "shadowCase: a wall and a lip thicker than 0, a clearance and a play of 0 or more (the play thinner "
+        ~ "than the wall)");
     assert(split > 0 && split < 1, "shadowCase: split is where base and lid meet, between 0 (the bottom) and "
         ~ "1 (the top) of the part");
     immutable n = on.normal, o = on.origin;
-    // how far the part reaches along the normal, from the plane (the corners of its box: exact for the
-    // planes of the axes)
-    immutable b = inside.bbox;
-    Length low = 1e9.mm, high = -1e9.mm;
-    foreach (x; [b.min.x, b.max.x])
-        foreach (y; [b.min.y, b.max.y])
-            foreach (z; [b.min.z, b.max.z])
-            {
-                immutable d = (vec(x, y, z) - o).dot(n);
-                low = min(low, d);
-                high = max(high, d);
-            }
+
+    // how far the part reaches along the normal, from the plane: its box once turned so the normal is Z
+    immutable square = abs(n.z) > 0.999999;
+    immutable b = square ? inside.bbox
+        : inside
+            .rotate(acos(n.z), axis: axis(origin: vec(0.mm, 0.mm, 0.mm), direction: cross(n, Z).normalized))
+            .bbox;
+    immutable low = (square && n.z < 0 ? -b.max.z : b.min.z) - dot(o, n);
+    immutable high = (square && n.z < 0 ? -b.min.z : b.max.z) - dot(o, n);
     immutable cut = low + split * (high - low), top = high + clearance;
-    assert(cut + lip + play < top, "shadowCase: the lip reaches the lid's top: a shorter lip, or split lower");
-    // the outline: the hull of the shadow, grown; the walls drawn as rings in the plane and extruded
-    // across it, from where they go
-    immutable shadow = hull(inside.projection(on));
+
+    // the lip as high as asked, or 3 mm where that leaves the lid's walls half the room above it
+    immutable room = top - cut - play;
+    immutable h = lip > 0.mm ? lip : min(3.mm, room / 2);
+    assert(cut + h + play < top, "shadowCase: the lip reaches the lid's top: a shorter lip, or split lower");
+    immutable bead = close == "snap" ? min(0.4.mm, wall / 4) : 0.mm;
+    assert(h > 2 * bead + play, "shadowCase: the lip is too low for a snap's bead: close: \"lip\", or split lower");
+
+    // the outline: the shadow grown, its convex hull where it is not convex; the walls drawn as rings in
+    // the plane and extruded across it, from where they go
+    immutable projected = inside.projection(on), hullOf = hull(projected);
+    immutable shadow = hullOf.area - projected.outer.area < 1e-6 * hullOf.area ? projected.outer : hullOf;
     Profile around(Length by) => by > 0.mm ? shadow.offset(by) : shadow;
     Solid along(Profile p, Length from, Length height) => p.extrude(height).move(n * from);
     immutable outer = around(clearance + wall), inner = around(clearance);
-    // the base: floor, walls up to the cut, the lip on their inner half
+
+    // the layers below overlap where they are joined: faces that meet on a slanted plane are not
+    // exactly on each other, and joining them is slow and comes out broken.
+    // The base: floor, walls up to the cut (from the floor's bottom), the lip on their inner half
     auto floor = along(outer, low - wall, wall);
     floor.faces.normal(n).addTag("enclosures.floor");
-    auto side = along(outer - inner, low, cut - low);
+    auto side = along(outer - inner, low - wall, cut - low + wall);
     side.faces.normal(n).addTag("enclosures.rim");
+
     // the lid: the outer half of the wall round the lip (play wider), the whole wall above it, the top
-    auto walls = along(outer - inner, cut + lip + play, top - cut - lip - play);
+    immutable over = top - cut - h - play;
+    auto walls = along(outer - inner, cut + h + play, over + wall / 2);
     auto cap = along(outer, top, wall);
-    // the lip and the lid's skirt round it, in layers: with snap, halfway up, a bead `bead` out from the
-    // lip and a groove as much (and play) into the skirt (a step that small prints without support)
+
+    // the lip and the lid's skirt round it: with snap, halfway up, a bead `bead` out from the lip and a
+    // groove as much (and play) into the skirt (a step that small prints without support)
     immutable lipOut = clearance + wall / 2 - play / 2;
-    immutable bead = close == "snap" ? min(0.4.mm, wall / 4) : 0.mm;
-    immutable mid = cut + lip / 2, half = bead > 0.mm ? bead : 0.mm;
-    Solid lipLayer(Length out, Length from, Length to) => along(around(out) - inner, from, to - from);
-    Solid skirtLayer(Length in_, Length from, Length to) => along(outer - around(in_), from, to - from);
-    Solid ring, skirt;
+    immutable mid = cut + h / 2;
+    auto ring = along(around(lipOut) - inner, cut - (cut - low) / 2, h + (cut - low) / 2);
+    auto skirt = along(outer - around(lipOut + play), cut, h + play + over / 2);
     if (bead > 0.mm)
     {
-        ring = lipLayer(lipOut, cut, mid - half) + lipLayer(lipOut + bead, mid - half, mid + half)
-            + lipLayer(lipOut, mid + half, cut + lip);
-        skirt = skirtLayer(lipOut + play, cut, mid - half - play / 2)
-            + skirtLayer(lipOut + bead + play, mid - half - play / 2, mid + half + play / 2)
-            + skirtLayer(lipOut + play, mid + half + play / 2, cut + lip + play);
-    }
-    else
-    {
-        ring = lipLayer(lipOut, cut, cut + lip);
-        skirt = skirtLayer(lipOut + play, cut, cut + lip + play);
+        ring += along(around(lipOut + bead) - around((clearance + lipOut) / 2), mid - bead, 2 * bead);
+        skirt -= along(around(lipOut + bead + play) - around(lipOut), mid - bead - play / 2, 2 * bead + play);
     }
     ring.addTag("enclosures.lip", recursive: true);
     auto base = floor + side + ring, lid = skirt + walls + cap;

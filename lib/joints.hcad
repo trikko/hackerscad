@@ -46,7 +46,8 @@ private Solid span(Length x0, Length x1, Length y0, Length y1, Length z0, Length
 private Solid acrossY(Vec2[] xz, Length reach) =>
     polygon(xz).extrude(2 * reach, along: Y).move(y: -reach);
 
-private Keys keys(string kind, Length s, Length len, Length g, int count)
+/// `across`: how wide the section is along x, which the fingers share.
+private Keys jointKeys(string kind, Length s, Length len, Length g, int count, Length across)
 {
     // far enough to cross the whole section, whatever its shape
     immutable far = 4 * s;
@@ -94,12 +95,15 @@ private Keys keys(string kind, Length s, Length len, Length g, int count)
         }
     case "fingers":
         {
-            // `count` fingers across x, a's and b's in turn, as long as len
-            immutable n = max(count, 3), w = s / n;
+            // `count` fingers across the section's width along x, b's and a's in turn, as long as len.
+            // The width, not the size, and nothing past it: on a plane aslant the part's sides, what
+            // lies beyond the outer fingers stays with the piece it is on, where a finger there would
+            // take a sliver of it, loose
+            immutable n = max(count, 3), w = across / n;
             Solid[] ups, downs;
-            foreach (i; 0 .. n + 2)
+            foreach (i; 1 .. n + 1)
             {
-                immutable x0 = -s / 2 - w + i * w;
+                immutable x0 = -across / 2 - w + i * w;
                 if (i % 2 == 0)
                     ups ~= span(x0, x0 + w, -far, far, -0.01.mm, len, g);
                 else
@@ -256,7 +260,11 @@ private Angle alongLonger(Profile section, Plane here, string kind)
 /// about the plane's normal; `size` sets its scale
 /// (by default the square root of the section's area: the width of a square
 /// beam) and `length` how far it reaches across the plane (0.6 of the size).
-/// `count` is the number of fingers or pins (pins thinner the more there are).
+/// `count` (or `keys`, as in splitFlat and mold) is the number of fingers,
+/// pins or dowels (pins thinner the more there are). The fingers share the
+/// section's width; pins and dowels go in a row across its middle or, where
+/// that is hollow (a tube), on the material round it, as thick as it has
+/// room for; a tenon there is an error.
 ///
 /// - "tenon": a tenon on a, its mortise in b (hozo);
 /// - "dovetail": a tail across the piece, sliding in sideways (ari);
@@ -275,8 +283,9 @@ private Angle alongLonger(Profile section, Plane here, string kind)
 ///   into one of b, held by friction (the split halves press on the walls);
 ///   they print lying on a flat (`print`), and the holes are plain round ones.
 Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
-    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
+    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2, int keys = -1)
 {
+    immutable many = keys >= 0 ? keys : count;
     auto section = body.section(at);
     immutable s = size > 0.mm ? size : sqrt(section.area);
     immutable len = length > 0.mm ? length : 0.6 * s;
@@ -286,12 +295,38 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
     immutable spin = turn + alongLonger(section, here, kind);
     Solid placed(Solid k) => k.rotate(z: spin).placeOn(here);
 
-    auto exact = keys(kind, s, len, 0.mm, count);
-    auto room = keys(kind, s, len, clearance, count);
-    auto sides = body.halves(here);
-    auto a = (cutTagged(sides.below, here) - placed(room.down)) + (body & placed(exact.up));
-    auto b = (cutTagged(sides.above, here) - placed(room.up)) + (body & placed(exact.down));
-    Solid[] loose;
+    immutable wide = widthAlong(section, here, spin);
+    auto exact = jointKeys(kind, s, len, 0.mm, many, wide);
+    auto room = jointKeys(kind, s, len, clearance, many, wide);
+    auto up = placed(exact.up), down = placed(exact.down);
+    auto upRoom = placed(room.up), downRoom = placed(room.down);
+
+    // what goes through both pieces (a wedge's hole, the dowels' sockets), and the loose parts
+    Solid[] holes, loose;
+
+    // a tenon or a row of pins must stand on material where it crosses the plane (its foot, half a
+    // millimetre each side): in the middle of a hollow part (a tube) or a narrow one, a tenon goes
+    // nowhere, and the pins go on the material round it instead
+    auto slab = box(8 * s, 8 * s, 1.mm).move(z: -0.5.mm).placeOn(here);
+    bool onMaterial(Solid k) => (body & k & slab).volume >= 0.99 * (k & slab).volume;
+    assert(kind != "tenon" || onMaterial(up), "splitJoint: the part is hollow or narrow in the middle of the "
+        ~ "cut, where the tenon goes: kind: \"pins\" or \"dowels\" (they go where the material is), or a "
+        ~ "smaller size:");
+    if (kind == "pins" && !onMaterial(up))
+    {
+        auto p = spotsFor(section, many, s, clearance, true);
+        auto one = jointKeys("pins", p.size, len, 0.mm, 1, wide);
+        auto oneRoom = jointKeys("pins", p.size, len, clearance, 1, wide);
+        Solid[] pins, rooms;
+        foreach (q; p.at)
+        {
+            auto there = plane(origin: q, normal: at.normal);
+            pins ~= one.up.rotate(z: spin).placeOn(there);
+            rooms ~= oneRoom.up.rotate(z: spin).placeOn(there);
+        }
+        up = fuse(pins);
+        upRoom = fuse(rooms);
+    }
     if (kind == "kanawa")
     {
         // the wedge: square, tapering 1 in 20, through both halves in the
@@ -301,28 +336,83 @@ Joint splitJoint(Solid body, Plane at, string kind = "tenon", Length size = 0.mm
         // the piece's side, the wide end stands out 3 mm to tap it home and
         // pull it out
         immutable w = 0.18 * s, reach = 2 * s, taper = reach / 20;
+
         // the piece's thickness the way the wedge goes through
-        auto ky = box(0.001.mm, 10.mm, 0.001.mm).rotate(z: spin).placeOn(here).bbox.size / 10.mm;
-        immutable through = dot(section.bbox.size, ky), head = 3.mm;
-        Length wide(Length z) => w + taper * (z + reach / 2) / reach;
-        auto wedge = loft([rect(wide(-through / 2), wide(-through / 2)).move(z: -through / 2),
-                rect(wide(through / 2 + head), wide(through / 2 + head)).move(z: through / 2 + head)])
+        immutable through = widthAlong(section, here, spin + 90.deg), head = 3.mm;
+        Length thick(Length z) => w + taper * (z + reach / 2) / reach;
+        auto wedge = loft([rect(thick(-through / 2), thick(-through / 2)).move(z: -through / 2),
+                rect(thick(through / 2 + head), thick(through / 2 + head)).move(z: through / 2 + head)])
             .rotate(x: -90);
         auto hole = loft([rect(w + 2 * clearance, w + 2 * clearance).move(z: -reach / 2),
                 rect(w + taper + 2 * clearance, w + taper + 2 * clearance).move(z: reach / 2)])
             .rotate(x: -90);
-        a -= placed(hole);
-        b -= placed(hole);
+        holes ~= placed(hole);
         loose ~= placed(wedge);
     }
     if (kind == "dowels")
     {
-        auto d = dowels(s, len, clearance, count);
-        a -= d.sockets.map(k => placed(k));
-        b -= d.sockets.map(k => placed(k));
-        loose ~= d.pins.map(k => placed(k));
+        auto d = dowels(s, len, clearance, many);
+        if (onMaterial(fuse(d.sockets.map(k => placed(k)))))
+        {
+            holes ~= d.sockets.map(k => placed(k));
+            loose ~= d.pins.map(k => placed(k));
+        }
+        else
+        {
+            // the row would leave the material: one dowel on each spot of it, as thick as it has room for
+            auto p = spotsFor(section, many, s, clearance, false);
+            auto one = dowels(p.size, length > 0.mm ? len : 0.6 * p.size, clearance, 1);
+            foreach (q; p.at)
+            {
+                auto there = plane(origin: q, normal: at.normal);
+                holes ~= one.sockets[0].rotate(z: spin).placeOn(there);
+                loose ~= one.pins[0].rotate(z: spin).placeOn(there);
+            }
+        }
     }
+    auto sides = body.halves(here);
+
+    // WORKAROUND (OpenCascade 7.9, boolean cut): a kanawa's wedge hole cut from a piece of a tube once
+    // its parts are joined fails (AcquiredSelfIntersection); cut from each part before, it does not.
+    // tests.d tries the joined cut, on splitJoint(tube, …, kind: "kanawa")
+    Solid drilled(Solid piece) => holes.length > 0 ? piece - holes : piece;
+    auto a = drilled(cutTagged(sides.below, here) - downRoom) + drilled(body & up);
+    auto b = drilled(cutTagged(sides.above, here) - upRoom) + drilled(body & down);
     return Joint(a, b, loose, flatRow(loose, body));
+}
+
+/// How wide the section is along the joint's x, turned by `spin` in the plane `here`: its box's reach
+/// that way (a little more than the section's own where it lies aslant).
+private Length widthAlong(Profile section, Plane here, Angle spin)
+{
+    auto kx = box(10.mm, 0.001.mm, 0.001.mm).rotate(z: spin).placeOn(here).bbox.size / 10.mm;
+    return dot(section.bbox.size, kx);
+}
+
+/// Where pins or dowels go, and the size each is made for (0.3 of it across).
+private struct Spots
+{
+    Vec3[] at;
+    Length size;
+}
+
+/// Where `n` pins or dowels go on a section whose middle would leave them in the air (a tube's): on
+/// its material, as far apart as they can be, each made for the size `s`, smaller until they find
+/// room, the flared foot of a pin (the chamfered mouth of a dowel's socket) and 0.4 mm of wall round
+/// them.
+private Spots spotsFor(Profile section, int n, Length s, Length g, bool pin)
+{
+    Length margin(Length size) => (pin ? 0.24 * size + g : 0.15 * size + g / 2 + 0.4.mm) + 0.4.mm;
+    Length size = s;
+    auto at = section.spots(max(1, n), margin: margin(size));
+    while (at.length < max(1, n) && size > 5.mm)
+    {
+        size = max(5.mm, 0.85 * size);
+        at = section.spots(max(1, n), margin: margin(size));
+    }
+    assert(at.length > 0, "splitJoint: the part's walls are too thin at the cut for " ~ (pin ? "pins" : "dowels")
+        ~ ": kind: \"lap\" or \"fingers\"");
+    return Spots(at, size);
 }
 
 /// The two halves of a solid cut flat along a plane, each to print lying on
@@ -359,9 +449,10 @@ private Profile keyOutline(string kind, Length len)
 
 /// `body` cut flat along the plane `at` into two halves, each printed lying
 /// on its cut face (nothing stands out of it, so it lies flat on the bed),
-/// joined by `keys` flat keys: a pocket in each half's cut face, half the
-/// key in each. The keys print lying flat too, and fit their pockets
-/// `clearance` apart; glue them in, or leave them dry to take apart.
+/// joined by `keys` flat keys (or `count`, as in splitJoint): a pocket in
+/// each half's cut face, half the key in each. The keys print lying flat
+/// too, and fit their pockets `clearance` apart; glue them in, or leave them
+/// dry to take apart.
 ///
 /// The keys go where the cut has room for them, at least `wall` from its
 /// edges, as far apart as they can be. "bowtie" keys (butterflies, chigiri)
@@ -371,20 +462,21 @@ private Profile keyOutline(string kind, Length len)
 /// The pockets open with a 0.4 mm chamfer: the first layers spread a little
 /// on the bed, and the pocket's mouth is on the bed.
 FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", Length size = 0.mm,
-    Length depth = 0.mm, Length clearance = 0.15.mm, Length wall = 1.6.mm)
+    Length depth = 0.mm, Length clearance = 0.15.mm, Length wall = 1.6.mm, int count = -1)
 {
-    assert(keys >= 1, "splitFlat needs one key at least");
+    immutable many = count >= 0 ? count : keys;
+    assert(many >= 1, "splitFlat needs one key at least");
     auto section = body.section(at);
 
     // the keys' length: given, or from the section's size, smaller until they find room in it
     // (half their length, half their width for a disc, and the wall, from its edges)
     Length len = size > 0.mm ? size : clamp(0.3 * sqrt(section.area), 8.mm, 30.mm);
     Length room(Length l) => (kind == "disc" ? 0.3 : 0.5) * l + wall;
-    auto spots = section.spots(keys, margin: room(len));
+    auto spots = section.spots(many, margin: room(len));
     while (spots.length == 0 && size == 0.mm && len > 4.mm)
     {
         len = max(4.mm, 0.8 * len);
-        spots = section.spots(keys, margin: room(len));
+        spots = section.spots(many, margin: room(len));
     }
     assert(spots.length > 0, "splitFlat: the cut has no room for a key $(len) long $(wall) from its edges: "
         ~ "a smaller size: or wall:");
@@ -428,16 +520,21 @@ FlatSplit splitFlat(Solid body, Plane at, int keys = 2, string kind = "bowtie", 
 /// `a`'s far side stops flush with it (a through tenon). Kinds: "tenon",
 /// "dovetail" (a sliding dovetail, its housing running out of `a` the way it
 /// slides in), "pins", "fingers" (a corner of a box), "lap", "kama" (its
-/// housing too runs out of `a`), "dowels" (holes in both, the dowels in `.loose` and, lying flat,
-/// in `.print`). Gives the two parts changed: `.a` with the hollows, `.b` with what fits in them.
+/// housing too runs out of `a`), "koshikake" (a sliding dovetail over a
+/// seat, its housing running out of `a` too), "barbed" (driven in for good),
+/// "dowels" (holes in both, the dowels in `.loose` and, lying flat, in
+/// `.print`); not "kanawa", which joins two ends: splitJoint. `count` (or
+/// `keys`) as in splitJoint. Gives the two parts changed: `.a` with the
+/// hollows, `.b` with what fits in them.
 Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size = 0.mm, Length length = 0.mm,
-    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2)
+    Length clearance = 0.2.mm, Angle turn = 0.deg, int count = 2, int keys = -1)
 {
     assert(kind != "kanawa", "joinParts joins two parts that meet; a wedged scarf joins two ends: splitJoint");
+    immutable many = keys >= 0 ? keys : count;
     // b's end, a hair inside it
     auto end = b.section(plane(origin: at.origin + at.normal * 0.01.mm, normal: at.normal));
     immutable s = size > 0.mm ? size : sqrt(end.area);
-    immutable slides = kind == "dovetail" || kind == "kama";
+    immutable slides = kind == "dovetail" || kind == "kama" || kind == "koshikake";
 
     // a's depth behind the plane: a housing that runs out of a the way it slides must stop short
     // of a's far side, or it cuts a in two
@@ -455,8 +552,10 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
     auto here = plane(origin: end.bbox.center - at.normal * 0.01.mm, normal: -at.normal);
     immutable spin = turn + alongLonger(end, here, kind);
     Solid placed(Solid k) => k.rotate(z: spin).placeOn(here);
-    auto exact = keys(kind, s, len, 0.mm, count);
-    auto room = keys(kind, s, len, clearance, count);
+    immutable wide = widthAlong(end, here, spin);
+    auto exact = jointKeys(kind, s, len, 0.mm, many, wide);
+    auto room = jointKeys(kind, s, len, clearance, many, wide);
+
     // what one pushes into the other stays within b's end, carried across the plane both ways
     auto footprint = end.extrude(2 * (len + 1.mm), symmetric: true);
     // a dovetail's or a gooseneck's housing runs on along the way it slides, out of a, so b goes in
@@ -466,7 +565,7 @@ Joint joinParts(Solid a, Solid b, Plane at, string kind = "tenon", Length size =
     Solid[] loose;
     if (kind == "dowels")
     {
-        auto d = dowels(s, len, clearance, count);
+        auto d = dowels(s, len, clearance, many);
         na -= d.sockets.map(k => placed(k));
         nb -= d.sockets.map(k => placed(k));
         loose ~= d.pins.map(k => placed(k));

@@ -117,6 +117,9 @@ struct FaceInfo
     Vec3 center;
     Vec3 normal;
     double area;
+    /// false for a curved face that closes round on itself (a cylinder's whole side, a sphere): its
+    /// normal points every way, so it faces none (normal is then the one at its middle)
+    bool facing = true;
 }
 
 /// A face lying on a cylinder: its axis, radius, extent along the axis
@@ -191,6 +194,9 @@ interface BrepKernel
     /// A smooth closed curve through the points on XY, filled.
     Brep splineProfile(const(double)[] xy);
     Brep text(string s, double size, string font);
+    /// Whether a font of that name (or an alias of one, "Sans") is installed, as text() looks for it;
+    /// if not, `similar` gets a few installed ones whose names share a word with it.
+    bool fontKnown(string font, out string[] similar);
     /// Rounds the corners of a profile.
     Brep profileRound(Brep s, double r);
     /// Grows (d > 0) or shrinks (d < 0) a profile.
@@ -331,7 +337,8 @@ interface BrepKernel
     Brep profileRegions(Brep profile, const(int)[] which);
     /// Copies of the flat `motifs`, each placed by four numbers in `place` (which motif, dx, dy, a scale
     /// about its origin), as one profile; mode 1 cut to `region` (the pieces cut off smaller than `minArea`
-    /// left out), mode 2 only those wholly inside it.
+    /// left out), mode 2 only those wholly inside it; plus 4, the copies touch one another and are joined
+    /// into one face per area.
     Brep tiles(Brep[] motifs, const(double)[] place, Brep region, int mode, double minArea = 0);
     /// The disconnected solid bodies of `s` (face origins point into `s`).
     Brep[] solids(Brep s);
@@ -350,7 +357,8 @@ interface BrepKernel
     /// The faces of `s` swept from an edge of an input (an extrusion's sides from its profile's lines):
     /// `origin.index` is the edge's index there.
     FaceAlso[] faceFromEdges(Brep s);
-    /// For every edge, the indices of its two faces (-1 when missing).
+    /// For every edge, the indices of its two faces (-1 when missing, -2 for a seam: the second
+    /// side of one face closing on itself, a cylinder's side).
     int[2][] edgeFaces(Brep s);
 
     Brep fillet(Brep s, const(int)[] edges, double r);
@@ -359,6 +367,10 @@ interface BrepKernel
     bool inside(Brep s, Vec3 p);
     /// Whether face `face` lies on a cylinder, and which.
     bool faceCylinder(Brep s, int face, out CylinderInfo info);
+    /// The axis of a face turned round one (a cylinder, cone, torus, a revolved face); false for another.
+    bool faceAxis(Brep s, int face, out Vec3 origin, out Vec3 direction);
+    /// The volume solid `s` sweeps moving along `v`, not turning (its faces flat or cylindrical only).
+    Brep sweepSolid(Brep s, Vec3 v);
     /// The flat face `face` swept by the vector `v`: what pushing or
     /// pulling it adds or removes.
     Brep facePrism(Brep s, int face, Vec3 v);

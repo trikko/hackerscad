@@ -85,7 +85,7 @@ int hc_edge_info(const(hc_shape)* s, int index, ref double[23] output);
 int hc_face_outer_edges(const(hc_shape)* s, int face, int* output, int max);
 int hc_profile_part_count(const(hc_shape)* s, int which);
 hc_shape* hc_profile_part(const(hc_shape)* s, int which, int index);
-int hc_face_info(const(hc_shape)* s, int index, ref double[7] output);
+int hc_face_info(const(hc_shape)* s, int index, ref double[8] output);
 
 int hc_edge_faces(const(hc_shape)* s, int* output);
 
@@ -93,6 +93,8 @@ hc_shape* hc_fillet(const(hc_shape)* s, const(int)* edges, int nedges, double r)
 hc_shape* hc_chamfer(const(hc_shape)* s, const(int)* edges, int nedges, double d);
 int hc_point_inside(const(hc_shape)* s, double x, double y, double z);
 int hc_face_cylinder(const(hc_shape)* s, int index, ref double[11] out_);
+int hc_face_axis(const(hc_shape)* s, int index, ref double[6] out_);
+hc_shape* hc_sweep_solid(const(hc_shape)* s, double vx, double vy, double vz);
 hc_shape* hc_face_prism(const(hc_shape)* s, int face, double vx, double vy, double vz);
 hc_shape* hc_shell(const(hc_shape)* s, const(int)* faces, int nfaces, double thickness);
 hc_shape* hc_draft(const(hc_shape)* s, const(int)* faces, int nfaces, double angle_rad,
@@ -110,6 +112,8 @@ void hc_mesh_free(hc_mesh* m);
 hc_shape* hc_from_mesh(const(float)* verts, int nverts, const(int)* tris, int ntris, double tolerance);
 hc_shape* hc_polyline(const(double)* xyz, int n, int closed);
 hc_shape* hc_spline(const(double)* xyz, int n, int closed);
+hc_shape* hc_spline_poles(const(double)* xyz, int n);
+int hc_font_known(const(char)* font);
 hc_shape* hc_outline_path(const(double)* data, int n);
 hc_shape* hc_wire3(const(double)* data, int n);
 hc_shape* hc_edges_path(const(hc_shape)* s, const(int)* idx, int n);

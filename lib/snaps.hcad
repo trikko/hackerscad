@@ -8,6 +8,8 @@ module snaps;
 Solid snapHook(Length length = 10.mm, Length thickness = 1.5.mm, Length width = 5.mm, Length overhang = 1.mm,
     Angle lead = 30.deg)
 {
+    assert(lead >= 5.deg && lead <= 85.deg, "snapHook: the lead is the slope of the barb's face, from 5° (long "
+        ~ "and gentle) to 85° (short and steep): not $(lead)");
     immutable barb = overhang / tan(lead);     // height of the sloped face
     auto profile = polygon([vec(0.mm, 0.mm), vec(thickness, 0.mm), vec(thickness, length),
                             vec(thickness + overhang, length), vec(thickness, length + barb),

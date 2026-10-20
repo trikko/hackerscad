@@ -18,47 +18,82 @@ double involute(Length rb, Length r)
 
 /// The outline of a spur gear centred on the origin, a tooth on +X.
 /// backlash thins the teeth (measured on the pitch circle) so that printed
-/// gears do not bind.
+/// gears do not bind. The teeth are those a rack cuts (generated): under
+/// about 21 teeth the rack's tip undercuts the flanks' roots, room for the
+/// tips of the gear they mesh with.
 Profile gearProfile(Length m, int teeth, Angle pressure = 20.deg, Length backlash = 0.1.mm, int steps = 6)
 {
     assert(teeth >= 6, "a gear needs at least 6 teeth");
+    checkPressure(pressure);
+    assert(backlash >= 0.mm, "the backlash cannot be negative");
     immutable r = m * teeth / 2;
     immutable rb = r * cos(pressure);
     immutable ra = r + m;
     immutable rf = r - 1.25 * m;
-    // half the tooth thickness on the pitch circle, as an angle, plus the involute offset
-    assert(backlash >= 0.mm, "the backlash cannot be negative");
-    assert(backlash < PI * m / 2, "the backlash would thin the teeth to nothing: keep it below half the tooth (π·m/2)");
+
+    // half the tooth thickness on the pitch circle, as an angle, plus the involute offset; the tip keeps
+    // some thickness up to the backlash `most`
     immutable half = PI / (2 * teeth) - backlash / (2 * r) + involute(rb, r);
-    immutable start = max(rb, rf);
+    immutable most = 2 * r * (PI / (2 * teeth) + involute(rb, r) - involute(rb, ra));
+    assert(backlash < most, "the backlash would thin the teeth to nothing: keep it below $(most) "
+        ~ "for this gear");
+
+    // the rack that cuts the gear, its teeth 1.25 m high and sharp (the deepest undercut): the corner
+    // of its tip beside a flank, along the pitch line from the tooth's centre. Its straight flank cuts
+    // the involute down to `low`, its tip's corner the trochoid below, which undercuts the involute
+    // of a gear with few teeth
+    immutable u = backlash / 2 - PI * m / 4 - 1.25 * m * tan(pressure);
+    immutable reach = 1.25 * m / sin(pressure), along = r * sin(pressure);
+    immutable low = reach < along ? hypot(rb, along - reach) : rb;
+
+    // the flank at radius rr, as an angle from the tooth's centre line (negative): as near to the
+    // centre line as the involute or the corner's trochoid cuts
+    double side(Length rr)
+    {
+        immutable s = rr > rf ? sqrt(rr ^^ 2 - rf ^^ 2) : 0.mm;
+        auto a = max(atan2(s, rf) / 1.rad - (s - u) / r, atan2(-s, rf) / 1.rad - (-s - u) / r);
+        return rr >= low ? max(a, involute(rb, max(rr, rb)) - half) : a;
+    }
+
+    // a flank from the root to the tip: steps points on the trochoid, steps on the involute
+    Length[] radii;
+    if (low > rf + 0.001.mm)
+        foreach (i; 0 .. steps)
+            radii ~= rf + (low - rf) * i / steps;
+    foreach (i; 0 .. steps + 1)
+        radii ~= low + (ra - low) * i / steps;
+    double[] sides;
+    foreach (rr; radii)
+    {
+        sides ~= side(rr);
+        assert(sides[$ - 1] < 0, "the backlash would thin the teeth to nothing: keep it below $(most) "
+            ~ "for this gear");
+    }
     Vec2[] pts;
     foreach (k; 0 .. teeth)
     {
         immutable c = 2 * PI * k / teeth;
-        Vec2[] flank;    // from the root to the tip, on the side of negative angles
-        if (rf < rb)
-            flank ~= vec(rf * cos(c - half), rf * sin(c - half));
-        foreach (i; 0 .. steps + 1)
-        {
-            immutable rr = start + (ra - start) * i / steps;
-            immutable a = c - half + involute(rb, rr);
-            flank ~= vec(rr * cos(a), rr * sin(a));
-        }
-        pts ~= flank;
-        // the other flank, mirrored around the tooth's centre line, from the tip to the root
-        foreach_reverse (p; flank)
-        {
-            immutable a = 2 * c - atan2(p.y, p.x) / 1.rad;
-            immutable rr = sqrt(p.x ^^ 2 + p.y ^^ 2);
-            pts ~= vec(rr * cos(a), rr * sin(a));
-        }
+
+        // the side of negative angles from the root to the tip, the other back down
+        foreach (i, rr; radii)
+            pts ~= vec(rr * cos(c + sides[i]), rr * sin(c + sides[i]));
+        foreach_reverse (i, rr; radii)
+            pts ~= vec(rr * cos(c - sides[i]), rr * sin(c - sides[i]));
     }
     return polygon(pts);
 }
 
+/// The pressure angles that give teeth: from above 0° to 30° (14.5°, 20°
+/// and 25° are the usual ones).
+private void checkPressure(Angle pressure)
+{
+    assert(pressure > 0.deg && pressure <= 30.deg, "the pressure angle goes from above 0° to 30° (20° is the "
+        ~ "standard, 14.5° and 25° the others): not $(pressure)");
+}
+
 /// A spur gear standing on z = 0, with an optional bore; `steps` points on
-/// each flank (more: smoother teeth, slower). Tags: the axis "gears.axis",
-/// the bore's wall "gears.bore".
+/// each flank's involute and as many on its root (more: smoother teeth,
+/// slower). Tags: the axis "gears.axis", the bore's wall "gears.bore".
 Solid spurGear(Length m, int teeth, Length thickness, Length bore = 0.mm, Angle pressure = 20.deg,
     Length backlash = 0.1.mm, int steps = 6)
 {
@@ -77,11 +112,16 @@ Solid rack(Length m, int teeth, Length thickness, Length base = 0.mm, Angle pres
     Length backlash = 0.1.mm)
 {
     assert(teeth >= 1, "a rack needs at least 1 tooth");
-    assert(backlash >= 0.mm && backlash < PI * m / 2, "rack: the backlash goes from 0 to under half the tooth (π·m/2)");
+    checkPressure(pressure);
     immutable e = backlash / 2;
     immutable p = PI * m;
     immutable b = base > 0.mm ? base : 2 * m;
     immutable t = tan(pressure);
+
+    // the tooth's top keeps some width
+    immutable most = p / 2 - 2 * m * t;
+    assert(backlash >= 0.mm && backlash < most, "rack: the backlash goes from 0 to under $(most) (the width "
+        ~ "of the teeth's tops)");
     Vec2[] pts = [vec(0.mm, -1.25 * m - b)];
     foreach (k; 0 .. teeth)
     {

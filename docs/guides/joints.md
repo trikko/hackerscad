@@ -65,6 +65,8 @@ Solid barbed() => shown(8);
 
 The joint sits in the middle of the cut. Its size follows the cut: by default it is the square root of the section's area, the width of a square beam, so the same call suits a thin rod and a thick post. The hollows are `clearance` larger all round (0.2 mm unless given), so the pieces go together without forcing: see [Fits and printing](fits.md) to choose it for your printer.
 
+A hollow part, a tube, has nothing in the middle of its cut: there the pins and the dowels go on the material round it instead, as far apart as they can be and as thick as the wall has room for, and a tenon is an error. The fingers share the cut's width, across the part whatever way the plane leans.
+
 | Kind | What it is | Goes together | Holds against |
 |---|---|---|---|
 | `"tenon"` | a rectangular tenon in a mortise (hozo) | pushed straight in | bending; glue or a pin for pulling |
@@ -85,7 +87,7 @@ The joint sits in the middle of the cut. Its size follows the cut: by default it
 | `size:` | the joint's scale, instead of the square root of the section's area |
 | `length:` | how far it reaches across the cut, 0.6 of the size unless given |
 | `turn:` | turns it about the plane's normal (it lies along the cut's longer side unless turned): which way a dovetail or a gooseneck slides in |
-| `count:` | the number of pins or dowels (thinner the more there are) or fingers |
+| `count:` | the number of pins or dowels (thinner the more there are) or fingers; `keys:` is the same, as in `splitFlat` and `mold` |
 
 ## A rail longer than the bed
 
@@ -186,7 +188,7 @@ Push the dowels into one piece, then the other piece onto them. They hold by fri
 
 ## Two parts that meet
 
-`joinParts(a, b, plane)` joins two separate parts where one ends on the other: a shelf on an upright, a rail on a post, the sides of a box. `b` is the part that ends on the plane (a face of `a`, the plane's normal pointing into `b`), and the joint goes from `b` into `a`, centred on `b`'s end and sized by it. A tenon longer than `a` is thick comes out flush on the far side, a through tenon, as the frames of Japanese cabinets (sashimono) show them. The kinds are those of `splitJoint` but the wedged scarf; `.a` comes back with the hollows, `.b` with what fits in them (with `"dowels"`, both with holes, and the dowels in `.loose` and `.print`).
+`joinParts(a, b, plane)` joins two separate parts where one ends on the other: a shelf on an upright, a rail on a post, the sides of a box. `b` is the part that ends on the plane (a face of `a`, the plane's normal pointing into `b`), and the joint goes from `b` into `a`, centred on `b`'s end and sized by it. A tenon longer than `a` is thick comes out flush on the far side, a through tenon, as the frames of Japanese cabinets (sashimono) show them. The kinds are those of `splitJoint` but the wedged scarf (a sliding dovetail's, a gooseneck's and a seated dovetail's housing runs out of `a` the way it slides in); `.a` comes back with the hollows, `.b` with what fits in them (with `"dowels"`, both with holes, and the dowels in `.loose` and `.print`).
 
 <!-- render: joints-parts --from -0.5,1,0.6 -->
 ```d
@@ -326,6 +328,8 @@ To choose the places yourself, `profile.spots(n, margin:)` gives the points `spl
 | one piece comes out in two bodies | the plane cuts through two separate parts of the solid (both jaws of a clip): cut where the section is one piece |
 | the joint is too big for a flat part | the size follows the section's area: give `size:` (and `length:`) |
 | the pieces do not go together | the joint slides the wrong way for how you want to assemble them: `turn: 90.deg` |
+| *splitJoint: the part is hollow or narrow in the middle of the cut, where the tenon goes…* | a tube or a ring: `"pins"` or `"dowels"`, which go on its wall, or a smaller `size:` |
+| *splitJoint: the part's walls are too thin at the cut for pins…* | `"lap"` or `"fingers"`, which take the wall's whole thickness |
 | *splitFlat: the cut has no room for a key…* | the cut is too narrow for a key with `wall` round it: a smaller `size:` or `wall:`, or a cut elsewhere |
 | *undefined identifier 'splitJoint'* | `import std.joints;` |
 

@@ -144,7 +144,23 @@ Sheet render(ref Drawing d, BrepKernel k)
     titleBlock(sh, d, margin);
 
     foreach (i, ref v; d.views)
-        drawView(sh, v, k);
+    {
+        // an overall dimension the model gives itself is left out (not drawn twice, one on
+        // the other) where it has one of its own across the same span
+        bool[2] given;
+        foreach (dim; d.dims)
+            if (dim.view == i)
+            {
+                auto a = v.project(dim.from), b = v.project(dim.to);
+                bool same(double p, double q, double lo, double hi)
+                    => (abs(p - lo) < 1e-6 && abs(q - hi) < 1e-6) || (abs(p - hi) < 1e-6 && abs(q - lo) < 1e-6);
+                if (abs(a[1] - b[1]) < 1e-9 && same(a[0], b[0], v.minX, v.maxX))
+                    given[0] = true;
+                if (abs(a[0] - b[0]) < 1e-9 && same(a[1], b[1], v.minY, v.maxY))
+                    given[1] = true;
+            }
+        drawView(sh, v, k, given);
+    }
     foreach (dim; d.dims)
         if (dim.view < d.views.length)
             drawDimension(sh, d.views[dim.view], dim);
@@ -202,8 +218,18 @@ void layout(ref Drawing d, double ax, double ay, double aw, double ah)
     foreach (ref v; d.views)
         if (v.autoPlaced && front is null && v.name != "iso" && !v.isSection)
             front = &v;
+    // only sections (or an iso view) to lay out: the first stands where the front would
     if (front is null)
+        foreach (ref v; d.views)
+            if (v.autoPlaced && front is null)
+                front = &v;
+    if (front is null)
+    {
+        // every view placed by hand: the title block gives their scale
+        if (d.scale <= 0 && d.views.length)
+            d.scale = d.views[0].scale;
         return;
+    }
     double wFront = front.maxX - front.minX, hFront = front.maxY - front.minY;
     double side = 0, below = 0, iso = 0, isoH = 0, sections = 0;
     foreach (ref v; d.views)
@@ -292,7 +318,8 @@ void layout(ref Drawing d, double ax, double ay, double aw, double ah)
     }
 }
 
-void drawView(ref Sheet sh, ref View v, BrepKernel k)
+/// `given`: the overall width and height the model dimensions itself, left out here.
+void drawView(ref Sheet sh, ref View v, BrepKernel k, bool[2] given = [false, false])
 {
     foreach (g; v.segments)
     {
@@ -327,8 +354,10 @@ void drawView(ref Sheet sh, ref View v, BrepKernel k)
     // overall dimensions: width below, height on the left
     Dimension w, h;
     auto lo = v.toSheet(v.minX, v.minY), hi = v.toSheet(v.maxX, v.maxY);
-    linearOnSheet(sh, lo[0], lo[1], hi[0], lo[1], -8, measure(v.maxX - v.minX), true);
-    linearOnSheet(sh, lo[0], lo[1], lo[0], hi[1], -8, measure(v.maxY - v.minY), false);
+    if (!given[0])
+        linearOnSheet(sh, lo[0], lo[1], hi[0], lo[1], -8, measure(v.maxX - v.minX), true);
+    if (!given[1])
+        linearOnSheet(sh, lo[0], lo[1], lo[0], hi[1], -8, measure(v.maxY - v.minY), false);
     // holes seen end-on: one callout per diameter, with the count
     holeCallouts(sh, v, k);
 }
@@ -481,13 +510,19 @@ void drawDimension(ref Sheet sh, ref View v, Dimension d)
     auto pa = v.toSheet(a[0], a[1]), pb = v.toSheet(b[0], b[1]);
     immutable dx = b[0] - a[0], dy = b[1] - a[1];
     string text = d.text.length ? d.text : measure(sqrt(dx * dx + dy * dy));
+    // a positive offset is away from the middle of the part (below a bottom edge, left of a left one)
+    immutable mx = (a[0] + b[0]) / 2 - (v.minX + v.maxX) / 2, my = (a[1] + b[1]) / 2 - (v.minY + v.maxY) / 2;
     // horizontal, vertical or aligned
     if (abs(dy) < 1e-9)
-        linearOnSheet(sh, pa[0], pa[1], pb[0], pb[1], d.offset, text, true);
+        linearOnSheet(sh, pa[0], pa[1], pb[0], pb[1], my < 0 ? -d.offset : d.offset, text, true);
     else if (abs(dx) < 1e-9)
-        linearOnSheet(sh, pa[0], pa[1], pb[0], pb[1], d.offset, text, false);
+        linearOnSheet(sh, pa[0], pa[1], pb[0], pb[1], mx < 0 ? -d.offset : d.offset, text, false);
     else
-        alignedOnSheet(sh, pa[0], pa[1], pb[0], pb[1], d.offset, text);
+    {
+        // aligned: the offset goes to the left of from → to; away is the side the middle is not
+        immutable left = -dy * mx + dx * my;
+        alignedOnSheet(sh, pa[0], pa[1], pb[0], pb[1], left < 0 ? -d.offset : d.offset, text);
+    }
 }
 
 /// A horizontal (or vertical) dimension between two sheet points, `offset`

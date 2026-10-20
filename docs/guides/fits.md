@@ -165,7 +165,7 @@ import std.snaps;
 | `thickness` | the beam's thickness: thinner bends more easily, and breaks sooner | `1.5.mm` |
 | `width` | across the beam | `5.mm` |
 | `overhang` | how far the barb sticks out: how much it holds | `1.mm` |
-| `lead` | the slope of the barb's top, which pushes the beam aside going in | `30.deg` |
+| `lead` | the slope of the barb's top, which pushes the beam aside going in: 5° to 85° | `30.deg` |
 | `wall` (slot) | the thickness of the wall the window goes through | `2.mm` |
 | `clearance` (slot) | play round the hook in the window | `0.3.mm` |
 

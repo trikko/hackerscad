@@ -2167,9 +2167,9 @@ private:
         lineEnd = lineStart.copy();
         if (!lineEnd.endsLine())
             lineEnd.forwardToLineEnd();
-        immutable lineLength = lineEnd.getLineIndex();
+        immutable lineLength = lineEnd.getLineOffset();   // columns count characters
         immutable from = min(cast(int) span.col - 1, max(0, lineLength - 1));
-        buffer.getIterAtLineIndex(a, span.line - 1, from);
+        buffer.getIterAtLineOffset(a, span.line - 1, from);
         b = a.copy();
         int n = span.length > 1 ? span.length : 1;
         b.forwardChars(n);
@@ -5619,7 +5619,33 @@ private:
 
     // a function of its own: closures made in a loop would all share the last size
     // a blind hole 5 mm deep at the clicked point: edit the depth, or use through: true
-    void delegate() holeAction(string kind, string size) => () => ctx("hole", "5.mm", kind, size);
+    void delegate() holeAction(string kind, string size) => () => ctx("hole", holeDepth(kind, size), kind, size);
+
+    /// 5 mm, or deeper where hole() needs it: an insert's length, the seat of
+    /// a counterbore's head or a countersink's (hole() refuses a shallower
+    /// one), to the whole millimetre.
+    static string holeDepth(string kind, string size)
+    {
+        import std.algorithm : countUntil;
+        import std.math : ceil;
+        import std.format : format;
+        immutable sizes = ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"];
+        immutable double[] insert = [4, 5, 5.7, 8.1, 9.5, 12.7, 12.7, 14, 16],
+            counterbore = [2.2, 2.7, 3.2, 4.2, 5.2, 6.2, 8.2, 10.2, 12.2],
+            countersink = [1.19, 1.5, 1.81, 2.38, 3, 3.57, 4.61, 5.85, 6.84];
+        auto i = sizes.countUntil(size);
+        if (i < 0)
+            return "5.mm";
+        immutable need = kind == "insert" ? insert[i] : kind == "counterbore" ? counterbore[i]
+            : kind == "countersink" ? countersink[i] : 0;
+        return format("%g.mm", need > 5 ? ceil(need) : 5.0);
+    }
+
+    unittest
+    {
+        assert(holeDepth("clearance", "M3") == "5.mm" && holeDepth("insert", "M3") == "6.mm");
+        assert(holeDepth("counterbore", "M8") == "9.mm" && holeDepth("countersink", "M12") == "7.mm");
+    }
 
     /// The sizes of what is selected, as rows of a name and a value: a
     /// part's size, an edge's length (or radius), a face's size in its own

@@ -1885,15 +1885,25 @@ string argumentText(string source, string file, uint line, uint col)
     return source[e.offset .. e.offset + e.length];
 }
 
-/// Byte offset of a 1-based line/column.
+/// Byte offset of a 1-based line/column (columns count characters).
 size_t offsetOf(string source, Span s)
 {
+    import hackerscad.lang.lexer : continuesChar;
+
     size_t o;
     uint l = 1;
     while (l < s.line && o < source.length)
         if (source[o++] == '\n')
             l++;
-    return o + s.col - 1;
+    foreach (_; 1 .. s.col)
+    {
+        if (o >= source.length || source[o] == '\n')
+            break;
+        o++;
+        while (o < source.length && continuesChar(source[o]))
+            o++;
+    }
+    return o;
 }
 
 /// 0-based line and byte index in that line of a byte offset (for GtkTextBuffer).

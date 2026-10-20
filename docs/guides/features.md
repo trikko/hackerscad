@@ -82,7 +82,7 @@ A solid is bounded by *faces* (flat or curved patches of its surface) that meet 
 
 | Selector | Picks |
 |---|---|
-| `faces.top`, `.bottom`, `.left`, `.right`, `.front`, `.back` | the outermost face(s) facing +Z, −Z, −X, +X, −Y, +Y |
+| `faces.top`, `.bottom`, `.left`, `.right`, `.front`, `.back` | the outermost face(s) facing +Z, −Z, −X, +X, −Y, +Y; on a part turned a little, those facing that way the most |
 | `faces.normal(X)` | every face facing +X, outermost or not |
 | `faces.largest` | the largest face (of those selected so far) |
 | `faces.farthest(Z)` | the face whose centre is farthest that way, whichever way it faces: a tilted top |
@@ -139,7 +139,7 @@ Position-based selectors break in quiet ways:
 
 - `edges.filter(e => e.mid.z == 5.mm)` would also catch the plate's outer top edges and the holes' rims, which lie at the same height; and it stops matching when the plate's thickness changes.
 - `faces.top` is the *highest* face. Here it is the top of the post, not of the plate: `edges.between(faces.from(holes), faces.top)` matches nothing.
-- `faces.normal(Z)` takes every face facing up; a curved face whose normal at its centre points up counts too.
+- `faces.normal(Z)` takes every face facing up; a curved face facing up on the whole (a dome) counts too, a cylinder's whole side faces no way.
 
 **Keep the tool in a variable.** Provenance belongs to one value: `auto holes = …; body - holes; faces.from(holes)` reads best, and so does a module-level `immutable holes = …`. A function called twice, `body - holes()` then `faces.from(holes())`, makes a second tool; it still finds the faces, by the lines of code that made them, but the variable says plainly which tool it is.
 

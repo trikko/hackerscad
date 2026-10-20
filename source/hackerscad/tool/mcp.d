@@ -1481,7 +1481,7 @@ JValue callTool(string name, JValue args)
                 else if (auto pr = args.getPtr("projection"))
                 {
                     if (pr.safe!bool.or(false))
-                        text(projectionReport(arg("path"), arg("part"), arg("plane")));
+                        text(projectionReport(arg("path"), arg("part"), arg("plane"), withSketch));
                     else
                         text(sectionReport(arg("path"), arg("part"), arg("plane"), level, region, withSketch));
                 }

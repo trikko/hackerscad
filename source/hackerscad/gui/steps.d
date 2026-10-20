@@ -157,6 +157,21 @@ final class StepsPanel
             if (line == 0 || line > source.length || col == 0)
                 return fallback;
             auto s = source[line - 1];
+            // the column counts characters: from here on, the byte it falls on
+            {
+                import hackerscad.lang.lexer : continuesChar;
+
+                size_t b;
+                foreach (_; 1 .. col)
+                {
+                    if (b >= s.length)
+                        break;
+                    b++;
+                    while (b < s.length && continuesChar(s[b]))
+                        b++;
+                }
+                col = cast(uint)(b + 1);
+            }
             if (col - 1 >= s.length)
                 return fallback;
             // a feature's span is its argument list: back to the name before it

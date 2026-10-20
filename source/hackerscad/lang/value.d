@@ -33,6 +33,11 @@ struct Dim
 
     Dim times(int k) const => Dim(cast(byte)(len * k), cast(byte)(ang * k));
 
+    /// The dimension of a product or quotient: an angle in radians is a
+    /// plain ratio (an arc's length over its radius), so with a length it
+    /// drops out: radius * angle is an arc's length, a Length.
+    Dim ofProduct() const => len != 0 ? Dim(len, 0) : this;
+
     string name() const
     {
         if (this == none) return "number";
@@ -126,9 +131,20 @@ string kindName(Kind k)
     }
 }
 
+/// What an array was declared to hold, where it matters when it is empty.
+enum ElemHint : ubyte
+{
+    none,
+    solid,
+    profile,
+}
+
 struct Value
 {
     Kind kind;
+    /// an array declared Solid[] (or Profile[]) holds solids (profiles) even when empty, so that its
+    /// .sum is an empty solid (profile), not 0
+    ElemHint holds;
     // the payload: read and written through the accessors below, which
     // check the kind first; reading the wrong member of an untagged union
     // would reinterpret its bits (a number read as a string crashes)
@@ -288,6 +304,27 @@ struct Value
         case Kind.array: return arr.length > 0;
         default: return true;
         }
+    }
+
+    /// The value of a condition (if, while, &&, a filter's predicate…): true or false, or an
+    /// integer as in D (0 is false) or null; anything else (a length, a solid, a text) is a
+    /// mistake, not quietly true.
+    bool condition(Span span) const
+    {
+        switch (kind)
+        {
+        case Kind.bool_: return b;
+        case Kind.null_: return false;
+        case Kind.object_: return true;
+        case Kind.num:
+            if (n.isInt)
+                return n.value != 0;
+            break;
+        default:
+            break;
+        }
+        throw new HcadError(Code.type, format("a condition must be true or false, not %s: compare it (==, <, >…)",
+            typeName), span);
     }
 
     bool opEquals(const Value o) const
@@ -969,6 +1006,10 @@ final class SolidVal
     string[][] faceTags;   /// per face, its tags (empty: none); handed on to the faces made from it
     Anchor[] anchors;  /// the points, axes, planes and frames tagged on it
     string[][] edgeTags;   /// a profile's, per edge: from its sketch's lines and circles, for the faces swept from them
+    /// the tags of sketch lines and circles an operation on the profile could not hand on, and for
+    /// each which (its feature kind, "offset"): told when a face so tagged is looked for
+    string[] lostEdgeTags;
+    string[] lostBy;
     /// a surface lofted through closed paths: the paths and ruled, for thicken to fall back on
     Brep[] loftPaths;
     bool loftRuled;

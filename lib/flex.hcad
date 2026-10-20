@@ -6,14 +6,18 @@ module flex;
 /// bars that twist and bend (kerf bending, as in laser-cut plywood). The slots
 /// go through the part's thinnest way inside the zone, and run across the
 /// body's length (along its shorter side), so it bends along its length.
-/// `along:` (X, Y or Z) sets the way they run instead.
+/// `along:` (X, Y or Z) sets the way they run instead. The slots run along
+/// the axes X, Y and Z only, and go through along one of them: make a part
+/// that lies turned at an angle bend before turning it.
 ///
 /// - `width`: how wide each slot is (0.8 mm: two lines of a 0.4 mm nozzle
 ///   leave it open);
 /// - `bridge`: the material between two slots of a row: the narrower, the
 ///   softer it bends;
 /// - `pitch`: from one row to the next: the closer, the tighter it bends;
-/// - `length`: of each slot (six times the pitch unless given).
+/// - `length`: of each slot (six times the pitch unless given, shorter on a
+///   narrow part: its width less a bridge, so there is material at its
+///   ends). Slots that cut the part apart are an error.
 ///
 /// In PLA a few degrees per row; PETG and TPU bend much further. Print the part
 /// lying flat, the slots upright.
@@ -45,7 +49,13 @@ Solid kerf(Solid body, Solid zone, Length width = 0.8.mm, Length bridge = 2.mm, 
     auto dims = [size.x / 1.mm, size.y / 1.mm, size.z / 1.mm];
     immutable across = 3 - thin - run;
     immutable longSide = dims[run] * 1.mm, wide = dims[across] * 1.mm, deep = dims[thin] * 1.mm;
-    immutable len = length > 0.mm ? length : 6 * pitch;
+
+    // six pitches, or on a narrow part (a strap) the part's width less a bridge: in every other row a
+    // slot in the middle, half a bridge of material at each end, and in the rows between two from the
+    // edges with a bridge between them
+    immutable len = length > 0.mm ? length : min(6 * pitch, longSide - bridge);
+    assert(len > 2 * width, "kerf: the zone is too narrow along the slots for slots and bridges: a wider "
+        ~ "zone, or narrower bridges (bridge:)");
 
     // the slots as a profile: x along them, y across, then stood on the plane square to `through`
     auto region = rect(longSide + 2 * len, wide);
@@ -60,5 +70,8 @@ Solid kerf(Solid body, Solid zone, Length width = 0.8.mm, Length bridge = 2.mm, 
     auto cutter = thin == 2 ? turned.extrude(h).move(z: -h / 2)
         : thin == 1 ? turned.extrude(h, along: Y).move(y: -h / 2)
         : turned.extrude(h, along: X).move(x: -h / 2);
-    return body - (cutter.move(x: bb.center.x, y: bb.center.y, z: bb.center.z) & zone);
+    auto r = body - (cutter.move(x: bb.center.x, y: bb.center.y, z: bb.center.z) & zone);
+    assert(r.pieces.length <= body.pieces.length, "kerf: the slots cut the part apart: shorter slots "
+        ~ "(length:) or wider bridges (bridge:)");
+    return r;
 }

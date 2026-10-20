@@ -114,6 +114,19 @@ struct Token
     Span span;
 }
 
+/// Whether a byte of UTF-8 continues a character (is not its first byte).
+bool continuesChar(char c) => (c & 0xC0) == 0x80;
+
+/// How many characters a piece of UTF-8 holds: what columns and lengths of
+/// spans count.
+uint chars(const(char)[] s)
+{
+    uint n;
+    foreach (c; s)
+        n += !continuesChar(c);
+    return n;
+}
+
 /// `line`/`col` place the source inside a larger file (interpolations).
 Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
 {
@@ -132,8 +145,8 @@ Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
                 line++;
                 col = 1;
             }
-            else
-                col++;
+            else if (i >= source.length || !continuesChar(source[i]))
+                col++;   // columns count characters, not the bytes of UTF-8
             i++;
         }
     }
@@ -215,7 +228,7 @@ Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
             }
             auto content = source[from .. i];
             advance();
-            span.length = cast(uint)(i - startI);
+            span.length = chars(source[startI .. i]);
             toks ~= Token(Tok.stringLit, content, span);
             continue;
         }
@@ -269,7 +282,7 @@ Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
             }
             auto content = source[from .. i];
             advance();
-            span.length = cast(uint)(i - startI);
+            span.length = chars(source[startI .. i]);
             if (interpolated)
                 toks ~= Token(Tok.interpLit, content, span);
             else
@@ -305,7 +318,7 @@ Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
                 while (isHexDigit(peek) || peek == '_')
                     advance();
                 auto digits = source[startI + 2 .. i].replace("_", "");
-                span.length = cast(uint)(i - startI);
+                span.length = chars(source[startI .. i]);
                 if (digits.length == 0)
                     throw new HcadError(Code.lex, "0x needs hex digits after it, like 0xFF", span);
                 if (digits.stripLeft('0').length > 16)
@@ -352,7 +365,7 @@ Token[] lex(string source, string file, uint startLine = 1, uint startCol = 1)
                             format("write %s.%s", source[startI .. i], unit));
                     }
             }
-            span.length = cast(uint)(i - startI);
+            span.length = chars(source[startI .. i]);
             toks ~= Token(isFloat ? Tok.floatLit : Tok.intLit, source[startI .. i].replace("_", ""), span);
             continue;
         }

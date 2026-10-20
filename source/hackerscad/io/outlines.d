@@ -21,6 +21,14 @@ class OutlineException : Exception
 alias Pt = double[2];
 alias Loop = Pt[];
 
+/// A whole circle or ellipse of a drawing, as it is: its centre, its radii (rx along the direction
+/// `angle` radians from X) and none when rx is 0. Its loop is the same as straight pieces, to sort
+/// the outlines by; the profile takes the curve.
+struct Round
+{
+    double cx = 0, cy = 0, rx = 0, ry = 0, angle = 0;
+}
+
 /// How far straight pieces may stray from a curve (mm).
 enum tolerance = 0.05;
 
@@ -41,8 +49,18 @@ size_t segmentsFor(double radius, double angle)
 /// numbers (or px) are taken as mm.
 Loop[] readSvg(string text)
 {
+    Round[] rounds;
+    return readSvg(text, rounds);
+}
+
+/// ditto, with its whole circles and ellipses as curves: `rounds[i]` for `loops[i]`.
+Loop[] readSvg(string text, out Round[] rounds)
+{
     auto parser = SvgParser(text);
-    return parser.run();
+    auto loops = parser.run();
+    rounds = parser.rounds;
+    rounds.length = loops.length;
+    return loops;
 }
 
 private struct Matrix
@@ -68,6 +86,7 @@ private struct SvgParser
     string text;
     size_t at;
     Loop[] loops;
+    Round[] rounds;   /// by loop: a whole circle or ellipse, else none
 
     Loop[] run()
     {
@@ -201,7 +220,16 @@ private struct SvgParser
                 immutable n = segmentsFor(max(rx, ry), 2 * PI);
                 foreach (i; 0 .. n)
                     l ~= [cx + rx * cos(2 * PI * i / n), cy + ry * sin(2 * PI * i / n)];
-                return add(l);
+                add(l);
+                // the curve itself, transformed: the axes of the ellipse that its two radii, mapped, are
+                // conjugate half diameters of (B Bᵀ's eigenvectors, B their columns)
+                immutable b11 = m.a * rx, b21 = m.b * rx, b12 = m.c * ry, b22 = m.d * ry;
+                immutable p = b11 * b11 + b12 * b12, q = b11 * b21 + b12 * b22, r = b21 * b21 + b22 * b22;
+                immutable mid = (p + r) / 2, half = sqrt(((p - r) / 2) ^^ 2 + q * q);
+                auto c = m.apply([cx, cy]);
+                rounds.length = loops.length;
+                rounds[$ - 1] = Round(c[0], c[1], sqrt(mid + half), sqrt(max(0.0, mid - half)), 0.5 * atan2(2 * q, p - r));
+                return;
             }
         case "polygon":
             {
@@ -655,6 +683,13 @@ private double dist(Pt a, Pt b) => sqrt((a[0] - b[0]) ^^ 2 + (a[1] - b[1]) ^^ 2)
 /// and splines joined end to end into loops where their ends meet.
 Loop[] readDxf(string text)
 {
+    Round[] rounds;
+    return readDxf(text, rounds);
+}
+
+/// ditto, with its whole circles as curves: `rounds[i]` for `loops[i]`.
+Loop[] readDxf(string text, out Round[] rounds)
+{
     // group code / value pairs
     string[2][] pairs;
     {
@@ -731,6 +766,8 @@ Loop[] readDxf(string text)
                 foreach (k; 0 .. n)
                     l ~= [cx + r * cos(2 * PI * k / n), cy + r * sin(2 * PI * k / n)];
                 loops ~= l;
+                rounds.length = loops.length;
+                rounds[$ - 1] = Round(cx, cy, r, r);
                 break;
             }
         case "ARC":
@@ -865,6 +902,9 @@ Loop[] readDxf(string text)
     foreach (ref l; loops)
         foreach (ref p; l)
             p = [p[0] * scale, p[1] * scale];
+    rounds.length = loops.length;
+    foreach (ref r; rounds)
+        r = Round(r.cx * scale, r.cy * scale, r.rx * scale, r.ry * scale, r.angle);
     return loops;
 }
 
