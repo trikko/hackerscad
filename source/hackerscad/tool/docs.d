@@ -174,7 +174,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   window's planes, named after it; body.plane(faces.top, faces.bottom) is
   halfway between two parallel faces.
 - Existing parts: load("part.stl"/".obj"/".ply"/".3mf"/".glb"/".step", scale: 1) gives a
-  solid to modify (glTF is turned from metres and Y up to mm and Z up); text("LABEL", size: 4.mm).centered centres a profile for engraving.
+  solid to modify (glTF is turned from metres and Y up to mm and Z up; repair:
+  true mends a scan's doubled walls and sheets that touch); text("LABEL", size: 4.mm).centered centres a profile for engraving.
 - When asked to copy lettering from a photo, a drawing or a model: if the
   font cannot be recognised, or text() does not have it (it uses the fonts
   installed), ask the user before going on, offering a similar installed

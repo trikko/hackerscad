@@ -118,7 +118,8 @@ Mesh readObj(const(char)[] text)
 /// Why a mesh read is not closed, in words: its edges with one triangle
 /// (holes), those with more than two (where the surface touches itself) and
 /// its triangles doubled facing the other way (walls of no thickness).
-string openness(const Mesh m)
+/// `mendable`: there are of the last two kinds, what Mesh.repaired mends.
+string openness(const Mesh m, out bool mendable)
 {
     import std.format : format;
     import std.algorithm : sort;
@@ -146,6 +147,7 @@ string openness(const Mesh m)
     foreach (i; 1 .. faces.length)
         if (faces[i] == faces[i - 1])
             doubled++;
+    mendable = touching || doubled;
     string[] what;
     if (holes)
         what ~= format("%s edges of holes", holes);

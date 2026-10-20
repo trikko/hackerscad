@@ -227,7 +227,7 @@ immutable Ref[] reference =
     withForms(F("sphere", "", ["r: Length", "d: Length"], "Solid", "A sphere centred on the origin."), [
         "sphere(5.mm)        // radius",
         "sphere(d: 10.mm)    // diameter"]),
-    F("load", "", ["path: string", "scale: number"], "Solid", "A part from an STL, OBJ, PLY, 3MF, glTF (.glb, .gltf: metres to mm, Y up turned to Z up) or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm), whole circles and ellipses as true curves."),
+    F("load", "", ["path: string", "scale: number", "repair: bool"], "Solid", "A part from an STL, OBJ, PLY, 3MF, glTF (.glb, .gltf: metres to mm, Y up turned to Z up) or STEP file in the project; repair: true mends a mesh that is not quite a solid (a scan's: doubled walls of no thickness taken out, where the surface touches itself the sheets parted; holes stay); from an SVG or DXF drawing, its closed outlines as a profile on XY (mm), whole circles and ellipses as true curves."),
     ]) ~
     group("Transforms", [
     withForms(F("move", "Shape", ["v: Vec", "x: Length", "y: Length", "z: Length"], "", "Moves: move(x: 10.mm) or move(vec(…))."), [

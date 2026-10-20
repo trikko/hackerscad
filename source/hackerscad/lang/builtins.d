@@ -881,7 +881,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         import std.string : toLower;
         import hackerscad.io.meshread;
 
-        auto x = Args(it, a, "load", ["path", "scale"]);
+        auto x = Args(it, a, "load", ["path", "scale", "repair"]);
+        immutable repair = x.flag("repair", false);
         auto p = x.get("path");
         if (p.kind != Kind.str)
             throw new HcadError(Code.type, "load needs a file path string", x.spanOf("path"));
@@ -898,7 +899,8 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // the same file, unchanged, with the same kernel: what it gave last
         // time (reading and checking a large mesh takes most of a second)
         import std.file : timeLastModified, getSize;
-        immutable cacheKey = format("%s|%s|%s|%s", cast(void*) k, file, timeLastModified(file).stdTime, getSize(file));
+        immutable cacheKey = format("%s|%s|%s|%s|%s", cast(void*) k, file, timeLastModified(file).stdTime, getSize(file),
+            repair);
         synchronized (loadCacheLock)
             if (auto cached = cacheKey in loadCache)
                 b = *cached;
@@ -942,10 +944,20 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                         : ext == ".ply" ? readPly(cast(ubyte[]) read(file))
                         : ext == ".glb" ? readGlb(cast(ubyte[]) read(file), &beside)
                         : ext == ".gltf" ? readGltf(readText(file), null, &beside) : read3mf(cast(ubyte[]) read(file));
+                    // mended where it is not quite a solid: doubled walls out, the sheets that touch parted
+                    if (repair && !mesh.isClosed)
+                        mesh = mesh.repaired;
                     if (!mesh.isClosed)
-                        throw new HcadError(Code.kernel, "the mesh in " ~ p.s ~ " is not a closed solid: " ~ openness(mesh),
-                            x.spanOf("path"), "repair it first (in MeshLab or Blender: merge by distance, remove "
-                            ~ "duplicate faces, make it manifold)");
+                    {
+                        // repair: true offered for what it mends, not tried: on a large mesh it takes a while
+                        bool mendable;
+                        immutable what = openness(mesh, mendable);
+                        throw new HcadError(Code.kernel, "the mesh in " ~ p.s ~ " is not a closed solid: " ~ what,
+                            x.spanOf("path"), !repair && mendable ? "try load(\"" ~ p.s ~ "\", repair: true): it takes out "
+                            ~ "the doubled walls and parts the sheets that touch (holes it leaves)"
+                            : (repair ? "what repair: true left needs " : "it needs ")
+                            ~ "mending in MeshLab or Blender (fill holes, make it manifold)");
+                    }
                     b = k.fromMesh(mesh);
                     break;
                 }
