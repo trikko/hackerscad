@@ -117,8 +117,10 @@ double noiseOf(NoiseKind kind, double x, double y, double z, long seed = 0, int 
 double loopNoise(double around, double along, double bumps = 4, long seed = 0,
     NoiseKind kind = NoiseKind.smooth, int octaves = 1)
 {
-    // a circle `bumps` units round: features about one unit across
-    immutable r = bumps / (2 * PI), a = 2 * PI * around;
+    // a circle `bumps` units round: features about one unit across; `around` taken round to 0…1 first,
+    // so 1 is 0 exactly (cos and sin of 2π are not 1 and 0 to the last bit, and the cells' noise jumps
+    // across a border: on macOS the two ends came out apart)
+    immutable r = bumps / (2 * PI), a = 2 * PI * (around - floor(around));
     return noiseOf(kind, r * cos(a), r * sin(a), along, seed, octaves);
 }
 

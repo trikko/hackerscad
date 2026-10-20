@@ -2241,6 +2241,41 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
     });
 }
 
+// `h` as it is when it is a valid solid, else mended by ShapeFix (and h freed), each face of the
+// mended one coming from the face of h it replaces: an outline a wrapped cell leaves on a cone can close
+// within the tolerance on one build of OpenCascade and miss it by a hair on another. h when it cannot be
+// mended.
+static hc_shape *mended(hc_shape *h)
+{
+    if (!h || hc_is_valid(h))
+        return h;
+    ShapeFix_Shape fix(h->shape);
+    fix.Perform();
+    const TopoDS_Shape r = fix.Shape();
+    if (r.IsNull() || !BRepCheck_Analyzer(r).IsValid())
+        return h;
+    TopTools_IndexedMapOfShape before, after;
+    TopExp::MapShapes(h->shape, TopAbs_FACE, before);
+    TopExp::MapShapes(r, TopAbs_FACE, after);
+    const std::vector<Origin> history = g_history;
+    const std::vector<Also> also = g_also, fromEdge = g_from_edge;
+    history_new(r);
+    for (int i = 1; i <= before.Extent() && i <= (int)history.size(); i++)
+        for (TopExp_Explorer e(fix.Context()->Value(before(i)), TopAbs_FACE); e.More(); e.Next())
+            if (const int j = after.FindIndex(e.Current()); j > 0) {
+                if (history[i - 1].input >= 0)
+                    history_from(j, history[i - 1]);
+                for (const Also &a : also)
+                    if (a.face == i - 1)
+                        history_from(j, a.origin);
+                for (const Also &a : fromEdge)
+                    if (a.face == i - 1)
+                        g_from_edge.push_back(Also{j - 1, a.origin});
+            }
+    delete h;
+    return checked(wrap(r));
+}
+
 // `a` less all of `tools` in one boolean: much quicker than one cut at a time
 // (400 holes in a plate: a cut each grows the plate's faces, and every next
 // cut goes through them all again). Each face remembers where it came from:
@@ -2284,7 +2319,7 @@ hc_shape *hc_cut_all(const hc_shape *a, const hc_shape *const *tools, int n)
         record(a->shape, 0);
         for (int i = 0; i < n; i++)
             record(tools[i]->shape, i + 1);
-        return wrap(r);
+        return mended(wrap(r));
     });
 }
 
@@ -4394,7 +4429,7 @@ hc_shape *hc_wrap_tool(const hc_shape *s, int face, const hc_shape *profile, int
 hc_shape *hc_wrap_direct(const hc_shape *s, int face, const hc_shape *profile, int project, const double *at,
                          const double *dir, double floor)
 {
-    return wrap_impl(s, face, profile, project, at, dir, floor, 0, true);
+    return mended(wrap_impl(s, face, profile, project, at, dir, floor, 0, true));
 }
 
 // Face `face` of `s` unrolled flat as wrap lays a profile on it (the same anchor, axes and lengths, at
@@ -4962,6 +4997,15 @@ static double mesh_volume(const TopoDS_Shape &shape)
     if (!meshed)
         BRepMesh_IncrementalMesh(shape, std::min(0.01, diag * 1e-4), false, 0.2, true);
     double volume = 0;
+    // the triangles' sides, their ends welded where the faces' meshes meet (an edge's points are the same
+    // in both): each side two triangles', or the mesh has a hole and its volume says nothing (a fillet's
+    // face meshed in part, on macOS)
+    std::map<std::array<long long, 3>, int> points;
+    std::map<std::pair<int, int>, int> sides;
+    auto point = [&](const gp_XYZ &p) {
+        const std::array<long long, 3> k = {std::llround(p.X() * 1e6), std::llround(p.Y() * 1e6), std::llround(p.Z() * 1e6)};
+        return points.emplace(k, (int)points.size()).first->second;
+    };
     for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
         const TopoDS_Face &f = TopoDS::Face(ex.Current());
         TopLoc_Location loc;
@@ -4978,8 +5022,15 @@ static double mesh_volume(const TopoDS_Shape &shape)
             gp_XYZ p = t->Node(a).Transformed(tr).XYZ(), q = t->Node(b).Transformed(tr).XYZ(),
                    r = t->Node(c).Transformed(tr).XYZ();
             volume += p.Dot(q.Crossed(r)) / 6;
+            const int ip = point(p), iq = point(q), ir = point(r);
+            for (auto [u, v] : {std::pair{ip, iq}, std::pair{iq, ir}, std::pair{ir, ip}})
+                if (u != v)
+                    sides[{std::min(u, v), std::max(u, v)}]++;
         }
     }
+    for (const auto &side : sides)
+        if (side.second != 2)
+            return -1;
     return volume;
 }
 
@@ -6057,7 +6108,7 @@ int hc_write_step(const hc_shape *const *shapes, const char *const *names, int n
         }
         // the program that made it, in the file's header (set last: the transfer writes its own)
         if (system && *system) {
-            APIHeaderSection_MakeHeader header(Handle(StepData_StepModel)::DownCast(w.Model()));
+            APIHeaderSection_MakeHeader header(w.Model());
             if (header.IsDone()) {
                 header.SetName(new TCollection_HAsciiString(names[0]));
                 header.SetOriginatingSystem(new TCollection_HAsciiString(system));
@@ -6726,10 +6777,16 @@ static void parse_outline(const double *data, int n, std::vector<TopoDS_Wire> &l
                 wire.Add(BRepBuilderAPI_MakeEdge(a, b).Edge());
                 open = true;
                 break;
-            case 1: // arc a → b through m
-                wire.Add(BRepBuilderAPI_MakeEdge(GC_MakeArcOfCircle(a, gp_Pnt(d[5], d[6], 0), b).Value()).Edge());
+            case 1: { // arc a → b through m; a line where they lie in one (an OpenCascade built without its
+                      // checks gives no curve then, where another raises)
+                GC_MakeArcOfCircle arc(a, gp_Pnt(d[5], d[6], 0), b);
+                if (arc.IsDone())
+                    wire.Add(BRepBuilderAPI_MakeEdge(arc.Value()).Edge());
+                else
+                    wire.Add(BRepBuilderAPI_MakeEdge(a, b).Edge());
                 open = true;
                 break;
+            }
             case 2: // end of loop
                 close();
                 break;

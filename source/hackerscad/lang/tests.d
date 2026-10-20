@@ -1719,11 +1719,12 @@ unittest
         assert(kernel.isValid(p.solid.brep), p.name);
     // a fillet of r 1 takes (1 - π/4) mm² along each mm of edge: about 30 mm³ round the pebble, 35 round the wave
     immutable pebbleCut = vol("flat") - vol("round"), waveCut = vol("block") - vol("soft");
-    // (what the fillet made, told when it is wrong: round the wave it took 476 mm³ on macOS alone)
+    // (what the fillet made, told when it is wrong: on macOS the wave's mesh had a hole, its volume 441 mm³ short)
     string made(string name)
     {
         auto b = r.parts.filter!(p => p.name == name).front.solid.brep;
-        return format("%s: %s mm³, %s faces, %s", name, kernel.volume(b), kernel.faces(b).length, kernel.bbox(b));
+        return format("%s: %s mm³, %s, valid %s, faces (area at centre) %s", name, kernel.volume(b), kernel.bbox(b),
+            kernel.isValid(b), kernel.faces(b).map!(f => format("%.4f %s", f.area, f.center)).array);
     }
     assert(pebbleCut > 20 && pebbleCut < 40, format("%s; %s; %s", pebbleCut, made("flat"), made("round")));
     assert(waveCut > 25 && waveCut < 45, format("%s; %s; %s", waveCut, made("block"), made("soft")));
