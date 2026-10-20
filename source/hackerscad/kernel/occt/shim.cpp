@@ -2066,9 +2066,6 @@ static void check_boolean(BRepAlgoAPI_BooleanOperation &mk, const TopoDS_Shape &
     // disjoint, their intersection and union empty, with none
     if (!solids)
         return;
-    // (to 1e-3 relative: exact to a few parts in a million, and quick enough for every boolean)
-    const double va = quick_volume(a), vb = quick_volume(b), vr = quick_volume(mk.Shape());
-    const double tol = 1e-4 * (va + vb) + 1e-3;
     // their union fits in the box round both (a little larger than they are)
     Bnd_Box bounds;
     BRepBndLib::Add(a, bounds);
@@ -2076,15 +2073,26 @@ static void check_boolean(BRepAlgoAPI_BooleanOperation &mk, const TopoDS_Shape &
     double x0, y0, z0, x1, y1, z1;
     bounds.Get(x0, y0, z0, x1, y1, z1);
     const double box = (x1 - x0) * (y1 - y0) * (z1 - z0);
-    double lo = 0, hi = 0;
-    switch (op) {
-    case HC_FUSE: lo = std::max(va, vb); hi = std::min(va + vb, box); break;
-    case HC_CUT: lo = std::max(0.0, va - vb); hi = std::min(va, box - vb); break;
-    default: lo = std::max(0.0, va + vb - box); hi = std::min(va, vb); break;
-    }
-    if (vr < lo - tol || vr > hi + tol)
-        throw Standard_Failure(("the boolean operation gave a wrong result (volume " + std::to_string(vr) +
-                                " mm³, it can only be between " + std::to_string(lo) + " and " + std::to_string(hi) +
+    // the volumes to 1e-3 relative first, quick enough for every boolean; one out of bounds integrated
+    // again to 1e-6 (the quick ones were 3e-4 off on Windows' OpenCascade) before the result is refused
+    auto outOfBounds = [&](double (*volume)(const TopoDS_Shape &), std::string &why) {
+        const double va = volume(a), vb = volume(b), vr = volume(mk.Shape());
+        // with no warning only a gross mistake is looked for (a solid left out, the threads were 0.45% off):
+        // a right union came out 1e-4 over the sum of the two, its surfaces made again
+        const double tol = (warnings.empty() ? 1e-3 : 1e-4) * (va + vb) + 1e-3;
+        double lo = 0, hi = 0;
+        switch (op) {
+        case HC_FUSE: lo = std::max(va, vb); hi = std::min(va + vb, box); break;
+        case HC_CUT: lo = std::max(0.0, va - vb); hi = std::min(va, box - vb); break;
+        default: lo = std::max(0.0, va + vb - box); hi = std::min(va, vb); break;
+        }
+        why = "volume " + std::to_string(vr) + " mm³, it can only be between " + std::to_string(lo) + " and " +
+              std::to_string(hi);
+        return vr < lo - tol || vr > hi + tol;
+    };
+    std::string why;
+    if (outOfBounds(quick_volume, why) && outOfBounds(solid_volume, why))
+        throw Standard_Failure(("the boolean operation gave a wrong result (" + why +
                                 (warnings.empty() ? std::string() : "; OpenCascade warns: " + list(warnings)) +
                                 ")").c_str());
 }
