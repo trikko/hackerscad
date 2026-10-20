@@ -1,11 +1,13 @@
 // Dual-thread bolt: two threads, two nuts, turned opposite ways
 // A big bolt carrying two threads at once on the same shank: an
-// ISO M24 right-handed and a trapezoidal Tr24x5 left-handed. The
+// ISO M24x4 right-handed and a trapezoidal Tr24x8 left-handed. The
 // shank is what both threads leave (the one bolt cut by both), so
 // each nut runs on its own thread through the other's grooves.
 // Tightened against each other, the two nuts turn opposite ways:
 // a vibration that would loosen one tightens the other, and the
 // pair cannot work loose (the idea of lock-nut dual-thread bolts).
+// The pitches are coarse and the crests cut flat, bolt and nuts: where
+// the two threads cross they leave fewer thin slivers to print.
 // Move "Turn the nuts" to screw them along: the ISO nut clockwise
 // seen from above, the trapezoidal one counter-clockwise, both
 // going down.
@@ -17,15 +19,20 @@ immutable turn = 0;
 @param("Play of the nuts' threads", min: 0.1.mm, max: 0.5.mm)
 immutable play = 0.25.mm;
 
+// how much each crest loses, on the bolt and in the nuts
+@param("Crests cut flat", min: 0.mm, max: 0.8.mm)
+immutable flat = 0.4.mm;
+
 immutable d = 24.mm;
 immutable shank = 70.mm;
 immutable nutHeight = 14.mm;
 
-// the two threads: an ISO coarse M24 and a lead screw's Tr24x5
-immutable iso = "M24";
-immutable isoPitch = 3.mm;
-immutable trap = "Tr24x5";
-immutable trapPitch = 5.mm;
+// the two threads: an ISO M24 with a 4 mm pitch (coarser than its
+// own 3) and a lead screw's Tr24x8
+immutable iso = "M24x4";
+immutable isoPitch = 4.mm;
+immutable trap = "Tr24x8";
+immutable trapPitch = 8.mm;
 
 // where the nuts start, from the top of the shank
 immutable isoAt = 46.mm;
@@ -43,13 +50,15 @@ Solid bolt()
         .chamfer(edges.of(faces.bottom), d: 1.5.mm)
         .move(z: -15.mm);
 
-    // material only where both threads leave it
-    return head + (threaded(iso, false) & threaded(trap, true));
+    // material only where both threads leave it, the crests cut
+    return head + (threaded(iso, false) & threaded(trap, true)
+        & cylinder(d: d - 2 * flat, h: shank));
 }
 
 // a nut's thread as a tube from the shank's tip down past the nut,
 // cut from the same free end as the bolt's (so the two are in
-// step), then a nut taken out of it at `at` from the top
+// step), then a nut taken out of it at `at` from the top, the
+// crests of its thread cut
 Solid nut(string size, bool left, Length hole, Length at)
 {
     immutable len = at + nutHeight + 1.mm;
@@ -67,7 +76,8 @@ Solid nut(string size, bool left, Length hole, Length at)
         .chamfer(edges.of(faces.top) + edges.of(faces.bottom),
             d: 1.5.mm)
         .move(z: shank - at - nutHeight);
-    return tube & hex;
+    return (tube & hex)
+        - cylinder(d: hole + 2 * flat, h: shank).move(z: shank - len);
 }
 
 // turned along its thread: a right-handed nut turned clockwise seen
@@ -80,15 +90,18 @@ Solid screwed(Solid n, Length pitch, bool left)
 }
 
 @part("Pink Pop")
-Solid isoNut() => screwed(nut(iso, false, 21.mm, isoAt),
+Solid isoNut() => screwed(nut(iso, false, 20.mm, isoAt),
     isoPitch, false);
 
 @part("gold")
-Solid trapNut() => screwed(nut(trap, true, 19.mm, trapAt),
+Solid trapNut() => screwed(nut(trap, true, 16.mm, trapAt),
     trapPitch, true);
 
 unittest
 {
+    // the shank is there (a wrong boolean once left the head alone)
+    assert(bolt.bbox.size.z > shank, "the shank came out empty");
+
     // each nut runs free on the bolt, and they do not touch
     assert((bolt & isoNut).volume < 0.01 * 1.mm ^^ 3,
         "the ISO nut binds");
