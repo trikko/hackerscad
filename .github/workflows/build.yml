@@ -68,7 +68,7 @@ jobs:
             dub build --compiler=ldc2 &&
             for f in examples/*.hcad; do bin/hcad check "$f" || exit 1; done'
           sudo rm -rf bin .dub
-          sudo chown -R "$USER" build third_party ~/dub-cache
+          sudo chown -R "$USER" build ~/dub-cache
 
       - name: AppImage
         run: |
