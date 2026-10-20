@@ -4,6 +4,9 @@ module hackerscad.about;
 
 enum string appName = "hackerscad";
 enum string appVersion = "0.3.1";
+/// The version shown (hcad --version, the About window): a release's number when the commit built
+/// is tagged for it, else the commit and its date, 1d217d1-2026-10-20 (tools/version.sh)
+enum string appBuild = import("version.txt").length ? import("version.txt") : appVersion;
 /// What the files hackerscad writes say made them: the program (a 3MF's Application, a STEP's
 /// originating system, a PNG's Software), and a line with where to find it (comments, descriptions)
 enum string madeWith = appName;

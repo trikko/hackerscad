@@ -45,6 +45,8 @@ subPackage {
 	stringImportPaths "docs" "examples" "lib" "build/gen"
 	// the list of the Examples menu, from the files in examples/
 	preBuildCommands "sh \"$PACKAGE_DIR/tools/examples-list.sh\""
+	// the version shown: a release's number, or the commit and its date
+	preBuildCommands "sh \"$PACKAGE_DIR/tools/version.sh\""
 	extraDependencyFiles "source/hackerscad/kernel/occt/shim.cpp" "source/hackerscad/kernel/occt/shim.h" "tools/build-native.sh"
 	// Linux and macOS: the OpenCascade shim linked statically
 	preBuildCommands "$PACKAGE_DIR/tools/build-native.sh" platform="posix"

@@ -2221,7 +2221,7 @@ private:
         import gdk.display : Display;
         import gdk.rectangle : Rectangle;
         import gtk.settings : Settings;
-        string[] r = [format("%s %s", appName, appVersion), "system: " ~ systemText(),
+        string[] r = [format("%s %s", appName, appBuild), "system: " ~ systemText(),
             format("GTK %s.%s.%s, libadwaita %s.%s.%s", imported!"gtk.global".getMajorVersion(),
                 imported!"gtk.global".getMinorVersion(), imported!"gtk.global".getMicroVersion(),
                 imported!"adw.global".getMajorVersion(), imported!"adw.global".getMinorVersion(),
@@ -6806,7 +6806,7 @@ private:
     {
         JValue j = JSOB("path", path, "status", statusText);
         j["window"] = control ? control.name : null;
-        j["version"] = appVersion;
+        j["version"] = appBuild;
         if (exeChanged())
             j["outdated"] = "hackerscad was rebuilt or updated after this window started: ask the user to restart it "
                 ~ "to get the newest tools";
