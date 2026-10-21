@@ -2480,6 +2480,48 @@ unittest
 
 unittest
 {
+    // a solid made and dropped by a statement of its own is a warning, once for each place, with the line
+    // that keeps it; addTag (it changes the solid), assignments and plain calls are not
+    import std.algorithm : endsWith, filter, startsWith;
+    auto r = runModel(q{
+        Solid helper() => box(5, 5, 5);
+        @part Solid p()
+        {
+            auto pieces = box(20, 20, 20).split(XY.offset(10.mm));
+            pieces[0].color("red");
+            auto b = cylinder(d: 5, h: 10);
+            foreach (i; 0 .. 3)
+                b.move(x: 10);
+            b.move(x: 1,
+                y: 2);
+            b.addTag("pin");
+            b.faces.top.addTag("lid");
+            helper();
+            helper().move(x: 2);
+            b = b.move(x: 1);
+            writeln(b.volume > 0);
+            return b + pieces[1];
+        }
+    });
+    auto unused = r.diagnostics.filter!(d => d.code == Code.unused).array;
+    assert(unused.length == 5, format("%s", unused));
+    assert(unused[0].severity == Severity.warning && unused[0].span.line == 6
+        && unused[0].message.canFind("pieces[0] stays as it was") && unused[0].suggestion == `pieces[0] = pieces[0].color("red");`,
+        format("%s", unused[0]));
+    assert(unused[1].suggestion == "b = b.move(x: 10);" && unused[3].message.canFind("helper()"), format("%s", unused));
+    // what the fix takes the place of: the statement as written, from where it starts to its ;
+    assert(unused[0].replaces == `pieces[0].color("red");` && unused[0].fromLine == 6 && unused[0].fromCol == 13
+        && unused[0].toLine == 6 && unused[0].toCol == 13 + 23, format("%s", unused[0]));
+    assert(unused[2].replaces.endsWith("y: 2);") && unused[2].toLine == unused[2].fromLine + 1, format("%s", unused[2]));
+    // the arguments as written, over two lines too
+    assert(unused[2].suggestion.startsWith("b = b.move(x: 1,\n") && unused[2].suggestion.endsWith("y: 2);"),
+        unused[2].suggestion);
+    // on what nothing keeps (a call's result): no assignment to suggest
+    assert(unused[4].message.canFind("move()") && !unused[4].suggestion.canFind("="), format("%s", unused[4]));
+}
+
+unittest
+{
     // a solid meshed again at other qualities (the view's mesh, then an export's): each mesh closed,
     // and as fine as asked; flat faces were once kept from the first mesh, and cracked along their edges
     import hackerscad.tool.exporter : EdgeFaults, edgeFaults;

@@ -434,6 +434,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - Declared types (`Length h`, `Solid f()`) are checked on calls, returns and assignments, with clear errors.
   - There are no templates: functions are passed as normal arguments (`xs.filter(x => x > 0)`). `!` is only used for type conversions (`to!string`).
 - **Value semantics.** Arrays, associative arrays and structs behave as values: `b = a; b[0] = 9;` does not change `a`.
+  Solids, profiles, surfaces and paths too: a method gives a new one and leaves the one it is called on as it was, so `pieces[0].color("red");` alone changes nothing (a warning says so, E0208); write `pieces[0] = pieces[0].color("red");`. Only `addTag`, `removeTag` and `clearTags` change the solid they are called on (and give it back too).
 - **An array literal holds one type**, as in D: `[1, "a"]` or `[1.mm, 2.deg]` is an error naming the two elements; whole and fractional numbers mix, and bare numbers with Lengths (`[1.mm, 2]`, the bare number in mm, as in `vec`).
 - **Purity.**
   - Locals inside functions are mutable.

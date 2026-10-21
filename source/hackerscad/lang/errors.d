@@ -26,6 +26,11 @@ struct Diagnostic
     string message;
     Span span;
     string suggestion;  /// optional fix, shown as "did you mean …"
+    /// When the suggestion is code that takes the place of some code: that
+    /// code (`replaces`, as it was written) and where it starts and ends
+    /// (lines and columns from 1, in characters; the end just past it).
+    string replaces;
+    uint fromLine, fromCol, toLine, toCol;
 }
 
 /// Thrown for any problem in a .hcad program; carries a diagnostic so the
@@ -55,6 +60,7 @@ enum Code : string
     missingArg = "E0205",
     immutable_ = "E0206",
     index = "E0207",
+    unused = "E0208",
     units = "E0310",
     kernel = "E0410",
     sketch = "E0420",
@@ -96,7 +102,12 @@ string render(const Diagnostic d, string source)
         lead ~= " ".replicate(d.span.col - at);
     auto r = head ~ format("%s |\n%s | %s\n%s | %s%s", pad, num, line, pad, lead,
         "^".replicate(d.span.length ? d.span.length : 1));
-    if (d.suggestion.length)
+    // a suggestion of several lines under the code, each line in the margin
+    import std.algorithm : canFind;
+    import std.array : join;
+    if (d.suggestion.canFind('\n'))
+        r ~= format("\n%s = %s", pad, d.suggestion.splitLines.join("\n" ~ pad ~ " | "));
+    else if (d.suggestion.length)
         r ~= " " ~ d.suggestion;
     return r ~ "\n";
 }

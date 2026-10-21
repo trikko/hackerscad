@@ -192,6 +192,7 @@ final class Interp
 
     LogLine[] log;
     Diagnostic[] diagnostics;
+    private bool[Span] unusedSaid;   /// the places unusedResult warned of, once each
     /// random(…, seed:): where each seed's stream has got to, from the start at every run
     ulong[long] randomStreams;
     ParamInfo[] params;
@@ -1074,6 +1075,147 @@ final class Interp
 
     // ------------------------------------------------------------ statements
 
+    /// The statement that keeps what a method makes, written from the code
+    /// itself with its arguments (pieces[0] = pieces[0].color("red");), and
+    /// in `on` what it is called on; null when that is not something to
+    /// assign to (carlo() in carlo().move(…)) or the code cannot be read.
+    private string keepingFix(Member m, out string on, out Diagnostic where)
+    {
+        import std.algorithm : count;
+        import std.range : walkLength;
+        import std.string : lastIndexOf, strip;
+        import std.utf : toUTFindex;
+        // only what can be assigned to: a variable, an element of one (pieces[0]), a field
+        for (Expr e = m.object; ; )
+        {
+            if (as!Ident(e))
+                break;
+            if (auto i = as!Index(e))
+                e = i.object;
+            else if (auto o = as!Member(e))
+                e = o.object;
+            else
+                return null;
+        }
+        // where the receiver starts: an index or a member's span is at its [ or its name
+        Span start = m.object.span;
+        for (Expr e = m.object; e !is null;)
+        {
+            if (e.span.line < start.line || (e.span.line == start.line && e.span.col < start.col))
+                start = e.span;
+            if (auto i = as!Index(e))
+                e = i.object;
+            else if (auto o = as!Member(e))
+                e = o.object;
+            else
+                e = null;
+        }
+        auto mod = start.file in modules;
+        if (mod is null)
+            return null;
+        immutable src = (*mod).source;
+        // a line and a column (characters) as an index into the source
+        size_t at(uint line, uint col)
+        {
+            size_t i, l = 1;
+            while (l < line && i < src.length)
+                if (src[i++] == '\n')
+                    l++;
+            size_t end = i;
+            while (end < src.length && src[end] != '\n')
+                end++;
+            return i + toUTFindex(src[i .. end], col - 1);
+        }
+        try
+        {
+            immutable from = at(start.line, start.col), name = at(m.nameSpan.line, m.nameSpan.col);
+            auto receiver = src[from .. name].strip;
+            if (receiver.length && receiver[$ - 1] == '.')
+                receiver = receiver[0 .. $ - 1].strip;
+            // the statement runs to its ; outside brackets and strings
+            size_t i = name;
+            int depth;
+            for (; i < src.length; i++)
+            {
+                immutable c = src[i];
+                if (c == '"')
+                    for (i++; i < src.length && src[i] != '"'; i++)
+                        i += src[i] == '\\';
+                else if (c == '(' || c == '[' || c == '{')
+                    depth++;
+                else if (c == ')' || c == ']' || c == '}')
+                    depth--;
+                else if (c == ';' && depth == 0)
+                    break;
+            }
+            if (receiver.length == 0 || i >= src.length || i - from > 400)
+                return null;
+            on = receiver;
+            // what the fix takes the place of: the statement, to its ;
+            where.replaces = src[from .. i + 1];
+            where.fromLine = start.line;
+            where.fromCol = start.col;
+            where.toLine = cast(uint)(1 + src[0 .. i + 1].count('\n'));
+            immutable lineStart = src[0 .. i + 1].lastIndexOf('\n') + 1;
+            where.toCol = cast(uint)(1 + src[lineStart .. i + 1].walkLength);
+            return receiver ~ " = " ~ src[from .. i].strip ~ ";";
+        }
+        catch (Exception)
+            return null;
+    }
+
+    /// A statement that makes a solid (a profile, a surface, a path) and
+    /// drops it: pieces[0].color("red"); leaves pieces[0] as it was, since
+    /// solids are values. A warning, once for each place.
+    private void unusedResult(Expr x, Value v)
+    {
+        import std.algorithm : all, max;
+        if (as!Assign(x) || as!IncDec(x))
+            return;
+        if (!(v.kind == Kind.solid || (v.kind == Kind.array && v.arr.length && v.arr.all!(a => a.kind == Kind.solid))))
+            return;
+        string name, on, fix;
+        Diagnostic replacing;
+        Span at = x.span;
+        if (auto c = as!Call(x))
+        {
+            if (auto m = as!Member(c.callee))
+            {
+                // these change the solid they are called on, and give it back too
+                if (["addTag", "removeTag", "clearTags"].canFind(m.name))
+                    return;
+                name = m.name;
+                fix = keepingFix(m, on, replacing);
+                at = m.nameSpan;
+            }
+            else if (auto id = as!Ident(c.callee))
+            {
+                name = id.name;
+                at = id.span;
+            }
+        }
+        if (at in unusedSaid)
+            return;
+        unusedSaid[at] = true;
+        immutable what = name.length ? name ~ "()" : "this";
+        immutable message = format("the %s that %s gives is not used: %s", v.kind == Kind.array ? "pieces" : v.typeName,
+            what, on.length ? format("%s stays as it was (%s gives a new one)", on, what)
+            : "a statement on its own changes nothing");
+        if (fix is null)
+            fix = "assign it to a variable, or return it";
+        at.length = cast(uint) max(1, name.length);
+        auto d = Diagnostic(Severity.warning, Code.unused, message, at, fix);
+        if (replacing.replaces.length)
+        {
+            d.replaces = replacing.replaces;
+            d.fromLine = replacing.fromLine;
+            d.fromCol = replacing.fromCol;
+            d.toLine = replacing.toLine;
+            d.toCol = replacing.toCol;
+        }
+        diagnostics ~= d;
+    }
+
     /// The statement running (blocks aside): a feature is shown moved only
     /// by a move in the statement that made it (see transformed).
     Object currentStatement;
@@ -1092,7 +1234,7 @@ final class Interp
             statementExpr = e.expr;
             scope (exit)
                 statementExpr = outerExpr;
-            eval(e.expr, env);
+            unusedResult(e.expr, eval(e.expr, env));
             return Flow.normal;
         }
         if (auto b = as!Block(s))
