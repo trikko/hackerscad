@@ -43,7 +43,9 @@ only source of truth, so it diffs, versions and reviews like any other code.
 
 ## Quickstart
 
-Download the package for your system from the releases.
+Download the package for your system from the releases. Until the first
+release, the [nightly build](https://github.com/trikko/hackerscad/releases/tag/nightly)
+has them, made from the latest code.
 
 **Linux:** the AppImage runs on its own.
 
@@ -237,9 +239,9 @@ Without `hcad` in the `PATH`, the full path takes the place of the second
 `hcad`, the one before `mcp`. For example, with the AppImage in `~/Apps`:
 
 ```sh
-claude mcp add -s user hcad -- ~/Apps/hackerscad-0.3.1-x86_64.AppImage hcad mcp
-codex mcp add hcad -- ~/Apps/hackerscad-0.3.1-x86_64.AppImage hcad mcp
-agy mcp add hcad ~/Apps/hackerscad-0.3.1-x86_64.AppImage hcad mcp
+claude mcp add -s user hcad -- ~/Apps/hackerscad-nightly-x86_64.AppImage hcad mcp
+codex mcp add hcad -- ~/Apps/hackerscad-nightly-x86_64.AppImage hcad mcp
+agy mcp add hcad ~/Apps/hackerscad-nightly-x86_64.AppImage hcad mcp
 ```
 
 (the name of the AppImage changes with every version: the link of step 1
