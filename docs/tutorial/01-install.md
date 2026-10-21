@@ -40,7 +40,8 @@ Building it from the source code is explained in the
 ## The first start
 
 Open hackerscad. A window opens on an example: Carlo, the mascot, a clip
-that keeps bags of biscuits closed, something to play with.
+that keeps bags of biscuits closed, something to play with. It is the first
+of the **Examples** menu, which opens him again at any time.
 
 ![hackerscad at its first start](img/01-first-start.png)
 
