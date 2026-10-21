@@ -18,7 +18,7 @@ Press **New**, select all the code (Ctrl+A) and paste this over it:
 ```d
 module medal;
 
-import std.shapes;
+import std;
 
 @param("Diameter", min: 30.mm, max: 60.mm)
 immutable diameter = 40.mm;

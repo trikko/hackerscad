@@ -193,7 +193,7 @@ The depth is always positive: which way it goes is the call's, extrude out of th
 // on Carlo's faces: a peg grown from the top, a hole
 // through the front that prints standing, point up
 
-import std.carlo;
+import std;
 
 @part
 Solid clip()
@@ -253,7 +253,7 @@ The profile's origin lands on the front of the face (the side facing −Y, halfw
 ```d
 // a name round a mug, Carlo stamped on a ball
 
-import std.carlo;
+import std;
 
 @part("Sky Pop")
 Solid mug()

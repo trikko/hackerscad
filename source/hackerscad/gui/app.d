@@ -120,8 +120,7 @@ enum newModelTemplate = `// Carlo is hackerscad's mascot: a little crocodile tha
 //
 // Delete this and write your own model in its place.
 
-import std.shapes;
-import std.carlo;
+import std;
 
 @part
 Solid body()
@@ -6488,10 +6487,10 @@ private:
         import std.uni : toLower;
         immutable drawing = [".svg", ".dxf"].canFind(extension(file).toLower);
         replaceCode(drawing
-            ? format("module %s;\n\nimport std.shapes;\n\n"
+            ? format("module %s;\n\nimport std;\n\n"
                 ~ "// the outlines of %s, from the same folder as this model, made a plate\n"
                 ~ "@part\nSolid imported() => load(\"%s\")\n    .extrude(3.mm);\n", name, baseName(file), baseName(file))
-            : format("module %s;\n\nimport std.shapes;\n\n"
+            : format("module %s;\n\nimport std;\n\n"
                 ~ "// %s, from the same folder as this model: cut it, add to it, measure it\n"
                 ~ "@part\nSolid imported() => load(\"%s\");\n", name, baseName(file), baseName(file)));
         diskTime = 0;

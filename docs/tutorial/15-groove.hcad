@@ -1,6 +1,6 @@
 module grooved;
 
-import std.carlo;
+import std;
 
 /// Carlo with a groove along its lower jaw, drawn on
 /// its top face.

@@ -5,8 +5,7 @@
 // works out where the corners go. Then it is extruded.
 module carlo;
 
-import std.shapes;
-import std.math;
+import std;
 
 @param("Height", min: 5.mm, max: 40.mm)
 immutable height = 15.mm;

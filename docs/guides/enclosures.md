@@ -6,11 +6,11 @@ Boxes, trays and cases with lids: the `enclosures` library (`roundedBox`, `tray`
 
 ## The enclosures library
 
-`import std.enclosures;` gives three functions, each built on the one before: a block with rounded vertical edges to start from, an open box (a tray, a drawer), and a closed case whose lid screws on. For a lid that snaps on or sits flush, **Examples › Box with lid** in the application is a ready start.
+The enclosures library (`import std;`) gives three functions, each built on the one before: a block with rounded vertical edges to start from, an open box (a tray, a drawer), and a closed case whose lid screws on. For a lid that snaps on or sits flush, **Examples › Box with lid** in the application is a ready start.
 
 <!-- render: enclosures-library -->
 ```d
-import std.enclosures;
+import std;
 
 // the library's three shapes, side by side
 
@@ -53,8 +53,7 @@ The sizes that matter come from what goes inside: measure it first, then add the
 
 <!-- render: enclosures-carlo --from 1,-1.2,1.2 -->
 ```d
-import std.carlo;
-import std.enclosures;
+import std;
 
 // a tray for Carlo, sized from Carlo itself
 
@@ -111,7 +110,7 @@ unittest
 | `screw` | the screw size, from the `hardware` library (`M2` to `M12`, the inch and the self-tapping sizes) | `M3` |
 | `clearance` | play between the lip and the walls, and round the posts | `0.2.mm` |
 
-To pass a screw size, import it too: `import std.hardware : M3;` (or `M2_5`, `M4`…); the [guide on holes](holes.md) lists the sizes and what each hole is for.
+The screw sizes come with `import std;` too: pass `M3` (or `M2_5`, `M4`…); the [guide on holes](holes.md) lists the sizes and what each hole is for.
 
 What the numbers mean once it is closed:
 
@@ -124,7 +123,7 @@ To see it closed, turn the lid over onto the base:
 
 <!-- render: enclosures-ex1 -->
 ```d
-import std.enclosures;
+import std;
 
 // the lid turned over onto the base, as it closes
 
@@ -214,8 +213,7 @@ The lid is drawn lifted to show the lip; to print it, turn it over (`.rotate(x: 
 
 <!-- render: enclosures-shadow --from 1,-1.3,0.9 -->
 ```d
-import std.carlo;
-import std.enclosures;
+import std;
 
 // a case for Carlo; snap: the lid clicks shut
 immutable c = shadowCase(carlo(), close: "snap");
@@ -263,8 +261,7 @@ A boss is a post that takes a screw, standing on the floor or a wall. The kind o
 
 <!-- render: enclosures-ex3 -->
 ```d
-import std.enclosures;
-import std.hardware : M3, hole;
+import std;
 
 // four bosses for heat-set inserts, 40 × 30 mm apart
 
@@ -292,7 +289,7 @@ Air goes through slots and holes cut in a wall or in the lid. `body.cut(profile,
 
 <!-- render: enclosures-vents --from 0.4,-1,0.4 -->
 ```d
-import std.enclosures;
+import std;
 
 // three ways to let air through a wall
 
@@ -365,8 +362,7 @@ A case for a board with four mounting holes, a USB socket on a short side and ve
 
 <!-- render: enclosures-pcb --from -1,-1.2,0.9 -->
 ```d
-import std.enclosures;
-import std.hardware : M3, hole;
+import std;
 
 // a case for a 70 × 50 mm board: made-up sizes,
 // measure your own
@@ -511,7 +507,7 @@ What to measure on a real board, with calipers:
 | *tray: a wall as thick as r leaves sharp inside corners that cannot be built…* | a larger `r` (or a thicker wall) |
 | *enclosure: the lid's lip (lidHeight) must be lower than the inside (inner.z)* | a shorter lip or a taller box |
 | *shadowCase: the lip reaches the lid's top: a shorter lip, or split lower* | the `lip:` given is too high for the part: a lower one, or leave it out |
-| *undefined identifier 'M3'* | import the size: `import std.hardware : M3;` |
+| *undefined identifier 'M3'* | `import std;` at the top |
 
 ## In the application
 

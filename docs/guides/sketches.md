@@ -301,7 +301,7 @@ The profile knows its face: `body.cut(s.profile, depth:)` and `body.extrude(s.pr
 // on Carlo's top face: a groove along its lower edge,
 // and a recess round its eye, both placed from the face
 
-import std.carlo;
+import std;
 
 @part
 Solid marked()

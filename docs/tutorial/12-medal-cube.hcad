@@ -1,7 +1,7 @@
 // A first sketch: a medal with an H and a rim in relief
 module medal;
 
-import std.shapes;
+import std;
 
 @param("Diameter", min: 30.mm, max: 60.mm)
 immutable diameter = 40.mm;

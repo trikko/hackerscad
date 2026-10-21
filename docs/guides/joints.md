@@ -7,7 +7,7 @@ A part too long for the printer's bed cut in two pieces that lock together with 
 // a beam 20 mm square cut with each kind of joint, the
 // two pieces pulled apart to show it
 
-import std.joints;
+import std;
 
 Solid shown(int i)
 {
@@ -98,7 +98,7 @@ A rail 300 mm long does not fit a printer of 220 mm. Cut in the middle with a go
 // a rail 300 mm long in two pieces joined by a
 // gooseneck, shown a little apart
 
-import std.joints;
+import std;
 
 @param("Play in the joint", min: 0.1.mm, max: 0.5.mm)
 immutable play = 0.2.mm;
@@ -133,7 +133,7 @@ The kanawa tsugi of Japanese carpentry joins two beams end to end in a half lap 
 // a post joined end to end with a wedged scarf: the
 // two halves and the wedge, a little apart
 
-import std.joints;
+import std;
 
 Solid post() => box(25.mm, 25.mm, 160.mm);
 
@@ -163,7 +163,7 @@ Woodworkers join two pieces with round wooden dowels glued into holes. `"dowels"
 // the pieces apart, the dowels between them, and
 // the dowels again lying flat, as they print
 
-import std.joints;
+import std;
 
 Joint cut() => splitJoint(box(120.mm, 30.mm, 12.mm),
     plane(origin: vec(0.mm, 0.mm, 0.mm), normal: X),
@@ -195,7 +195,7 @@ Push the dowels into one piece, then the other piece onto them. They hold by fri
 // a shelf into an upright with a through tenon, a rail
 // into a post with a sliding dovetail, pulled apart
 
-import std.joints;
+import std;
 
 Solid upright() => box(12.mm, 60.mm, 100.mm)
     .move(x: -6.mm);
@@ -245,7 +245,7 @@ A round or tall part often prints best in two halves, each lying on the face of 
 // half with its keys in, the other turned round beside
 // it to show its pockets
 
-import std.joints;
+import std;
 
 Solid egg() => sphere(30.mm)
     .scale(z: 1.5)
@@ -279,7 +279,7 @@ Laid out for printing, the same split:
 // the egg's halves on their cut faces and the keys
 // lying flat: one bed
 
-import std.joints;
+import std;
 
 Solid egg() => sphere(30.mm)
     .scale(z: 1.5)
@@ -331,7 +331,7 @@ To choose the places yourself, `profile.spots(n, margin:)` gives the points `spl
 | *splitJoint: the part is hollow or narrow in the middle of the cut, where the tenon goes…* | a tube or a ring: `"pins"` or `"dowels"`, which go on its wall, or a smaller `size:` |
 | *splitJoint: the part's walls are too thin at the cut for pins…* | `"lap"` or `"fingers"`, which take the wall's whole thickness |
 | *splitFlat: the cut has no room for a key…* | the cut is too narrow for a key with `wall` round it: a smaller `size:` or `wall:`, or a cut elsewhere |
-| *undefined identifier 'splitJoint'* | `import std.joints;` |
+| *undefined identifier 'splitJoint'* | `import std;` at the top |
 
 ## In the application
 

@@ -44,6 +44,17 @@ shared static this()
     ];
 }
 
+/// `import std;`: a module that gives every built-in library (the
+/// standard modules are in the prelude anyway).
+string stdPackage()
+{
+    import std.algorithm : sort;
+    string src = "module std;\n";
+    foreach (name; librarySources.keys.sort)
+        src ~= "public import std." ~ name ~ ";\n";
+    return src;
+}
+
 void installPrelude(Interp it, Env env)
 {
     foreach (name, src; librarySources)
@@ -51,6 +62,7 @@ void installPrelude(Interp it, Env env)
         it.embedded[name] = src;
         it.embedded["std." ~ name] = src;
     }
+    it.embedded["std"] = stdPackage();
 
     void def(string name, BuiltinImpl impl)
     {

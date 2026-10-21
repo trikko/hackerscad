@@ -48,7 +48,7 @@ A wavy cut through Carlo: a curve drawn across X, swept along Y at mid-height:
 
 <!-- render: surfaces-wavy-cut --from 1,-1,0.3 -->
 ```d
-import std.carlo;
+import std;
 
 // the wave runs along -Y, so the curve's x lands on +X;
 // it reaches past Carlo on every side
@@ -185,7 +185,7 @@ Sew when you have every side anyway (they were lofted between curves you were gi
 
 <!-- render: surfaces-fill --from 1,-1.2,0.7 -->
 ```d
-import std.math;
+import std;
 
 // a closed rim that rises and falls, filled with a
 // smooth face, then made into a dome through a point
@@ -216,7 +216,7 @@ On a solid, `body.fill(edges, tangent: faces)` closes a loop of its own edges: t
 
 <!-- render: surfaces-fill-opening --from 1,-1.2,1 -->
 ```d
-import std.carlo;
+import std;
 
 // a block with a wavy top, and an opening shaped like
 // Carlo cut down into it

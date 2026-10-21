@@ -226,8 +226,13 @@ private string docAbove(string[] lines, uint line)
 /// std module, which lives in the prelude).
 string moduleSource(const string[] path, string root, const string[] libraryDirs, out string file)
 {
-    import hackerscad.lang.builtins : librarySources;
+    import hackerscad.lang.builtins : librarySources, stdPackage;
     auto name = path.join(".");
+    if (name == "std")
+    {
+        file = "<std>";
+        return stdPackage();
+    }
     auto canonical = name.startsWith("std.") ? name[4 .. $] : name;
     if (auto src = canonical in librarySources)
     {

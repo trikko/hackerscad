@@ -686,7 +686,7 @@ immutable Ref[] reference =
     ]) ~
     group("Keywords", [
     K("module", "Names the model: module box;"),
-    K("import", "import std.hardware : M3;  import pizza;  import p = parts.bracket;"),
+    K("import", "import std; (every library)  import std.hardware : M3;  import pizza;  import p = parts.bracket;"),
     K("immutable", "A constant: immutable width = 60.mm;"),
     K("auto", "A local variable: auto s = box(…);"),
     K("return", "Gives the result of a function."),

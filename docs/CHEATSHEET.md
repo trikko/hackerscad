@@ -385,7 +385,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 ## Keywords
 
 - `module` — Names the model: module box;
-- `import` — import std.hardware : M3;  import pizza;  import p = parts.bracket;
+- `import` — import std; (every library)  import std.hardware : M3;  import pizza;  import p = parts.bracket;
 - `immutable` — A constant: immutable width = 60.mm;
 - `auto` — A local variable: auto s = box(…);
 - `return` — Gives the result of a function.

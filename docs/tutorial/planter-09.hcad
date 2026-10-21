@@ -1,6 +1,6 @@
 module planter;
 
-import std.shapes;
+import std;
 
 @param("Size", min: 50.mm, max: 120.mm)
 @preset("herbs", 62.mm) @preset("basil", 80.mm) @preset("chili", 96.mm)

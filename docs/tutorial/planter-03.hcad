@@ -1,6 +1,6 @@
 module planter;
 
-import std.shapes;
+import std;
 
 @part("sienna")
 Solid tank()

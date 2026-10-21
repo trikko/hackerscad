@@ -703,7 +703,7 @@ final class Interp
         // a built-in library by its old name, without std.: a module of the project's or the personal library's
         // with that name comes first (it was hidden before); else the library, with a word about its name
         string own;
-        if (!name.startsWith("std.") && (name in embedded) !is null)
+        if (name != "std" && !name.startsWith("std.") && (name in embedded) !is null)
         {
             try
                 own = findModule(d);
@@ -881,11 +881,12 @@ final class Interp
                 if (!callable || v.isCallable)
                     return true;
             }
+            // imported names, those a module re-exports (public import) too
             if (e.mod !is null && e.parent is prelude)
                 foreach (m; e.mod.imported)
-                    if (m.publicNames.has(s))
+                    if (auto owner = publicOwner(m, s))
                     {
-                        v = global(m.env, s, Span.init);
+                        v = global(owner.env, s, Span.init);
                         if (!callable || v.isCallable)
                             return true;
                     }

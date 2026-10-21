@@ -1,7 +1,7 @@
 // The shapes a sketch has, each fully constrained
 module shapes;
 
-import std.shapes;
+import std;
 
 @part
 Solid sampler()

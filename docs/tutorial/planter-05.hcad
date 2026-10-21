@@ -1,6 +1,6 @@
 module planter;
 
-import std.shapes;
+import std;
 
 @param("Size", min: 50.mm, max: 120.mm)
 immutable size = 62.mm;

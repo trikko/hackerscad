@@ -26,7 +26,9 @@ cmp -s build/tour.hcad examples/05_language.hcad || { echo "the tour in docs/LAN
 # the same cup is in the Examples menu: the two must not drift apart
 cmp -s build/readme-cup.hcad examples/01_cup.hcad || { echo "examples/01_cup.hcad differs from the README's cup"; exit 1; }
 # and the tutorial's finished planter, but for the first line (the menu's entry)
-tail -n +2 examples/02_planter.hcad | cmp -s - docs/tutorial/planter-11.hcad \
+# and the imports (import std; in the tutorial, each library in the example)
+grep -v '^import ' docs/tutorial/planter-11.hcad > build/planter-tutorial.hcad
+tail -n +2 examples/02_planter.hcad | grep -v '^import ' | cmp -s - build/planter-tutorial.hcad \
     || { echo "examples/02_planter.hcad differs from docs/tutorial/planter-11.hcad"; exit 1; }
 # the tutorial's planter: the model at the end of each page must check; the
 # pictures of the index from page 9's (the finished planter, before the agent

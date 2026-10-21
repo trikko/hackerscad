@@ -121,7 +121,7 @@ Carlo, the mascot clip, made for two kinds of bag. A thin bag of crisps wants th
 
 <!-- render: parameters-carlo --preset coffee -->
 ```d
-import std.carlo;
+import std;
 
 // Carlo for thin and thick bags: a preset sets the
 // teeth and the gap between the jaws together
@@ -189,7 +189,7 @@ A model can measure itself. The **bounding box** is the smallest box, square to 
 
 <!-- render: parameters-ex1 -->
 ```d
-import std.carlo;
+import std;
 
 // Carlo measured: his size, volume and weight
 

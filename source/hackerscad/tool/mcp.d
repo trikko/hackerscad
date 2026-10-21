@@ -896,8 +896,8 @@ JValue toolList()
             ~ `"params": {"type": "boolean"}, `
             ~ `"theme": {"type": "string", "enum": ["system", "light", "dark"]}, `
             ~ `"antialias": {"type": "boolean"}`, `[]`),
-        gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (a cube with two "
-            ~ "holes), parameters and view reset; with example, one of the Examples menu instead (" ~ exampleList
+        gui("hcad_gui_new", "Start a new model in the user's window, as the New button: the template (Carlo, "
+            ~ "the mascot, from import std;), parameters and view reset; with example, one of the Examples menu instead (" ~ exampleList
             ~ "), unsaved. Refused when the user has unsaved "
             ~ "changes, unless force is true (which discards them: ask the user first). To copy an object from a "
             ~ "photo or a real part, ask for its sizes (and the font of any lettering) before starting one.",

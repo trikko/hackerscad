@@ -1,6 +1,6 @@
 module sketched;
 
-import std.shapes;
+import std;
 
 /// A bracket whose outline is given by its sides: the corners are worked
 /// out from the constraints.

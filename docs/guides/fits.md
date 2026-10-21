@@ -51,7 +51,7 @@ A bar with the same hole at five plays and the pin that goes in them: print it, 
 
 <!-- render: fits-gauge -->
 ```d
-import std.format;
+import std;
 
 // one pin, and its hole with more play each time
 
@@ -154,7 +154,7 @@ In the application, select two faces of a part and right-click: **Measure** give
 A snap hook is a flexible beam with a barb (a small wedge) on its tip: pushed through a window, the beam bends, and the barb clicks over the window's edge. It holds two parts together with no screw.
 
 ```d
-import std.snaps;
+import std;
 ```
 
 `snapHook(length:, thickness:, width:, overhang:, lead:)` stands on z = 0 with its barb towards +X; `snapSlot(thickness:, width:, overhang:, wall:, clearance:)` is the window to subtract from the mating wall, `clearance` larger all round than the hook bent aside.
@@ -173,7 +173,7 @@ import std.snaps;
 
 <!-- render: fits-snap --from 0.25,-1,0.2 --look-at 1,0,6 --size 15 --cut -->
 ```d
-import std.snaps;
+import std;
 
 // a lid held by a snap hook: the barb clicks over the
 // edge of a window in the lid
@@ -220,7 +220,7 @@ A hinge that comes out of the printer already assembled, nothing to put together
 
 <!-- render: fits-hinge -->
 ```d
-import std.hinges;
+import std;
 
 @param("Play of the hinge", min: 0.2.mm, max: 0.6.mm)
 immutable play = 0.4.mm;
@@ -293,7 +293,7 @@ The model is the part as it prints: draw it in the position it will print in, or
 
 <!-- render: fits-orient --from 1,-1,-0.4 --printability -->
 ```d
-import std.carlo;
+import std;
 
 // Carlo as it should print, flat, and stood on its back
 

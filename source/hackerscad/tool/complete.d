@@ -20,6 +20,7 @@ struct Completion
     string kind;     /// function, method, property, field, parameter, keyword, unit, constant, type, module, annotation
     string detail;   /// signature or type
     string doc;
+    int tier;        /// a member: 0 defined on the value's own type, 1 on a wider one (Shape, list)
 }
 
 struct CompletionResult
@@ -56,19 +57,32 @@ CompletionResult complete(string source, size_t cursor, string path, const strin
     if (inStringOrComment(before))
         return r;
     immutable ch = start > 0 ? before[start - 1] : '\0';
-    if (ch == '@')
+    auto order = Order.shortest;
+    string recv;
+    // an import line first: its dots part module names (std.gears), not members
+    if (isImportLine(before[0 .. start]))
+    {
+        r.items = importItems(ctx, before[0 .. start]);
+        order = Order.given;
+    }
+    else if (ch == '@')
         r.items = annotations();
     else if (ch == '.' && numberBefore(before[0 .. start - 1]))
         r.items = units();
     else if (ch == '.')
-        r.items = membersOf(ctx, receiverType(ctx, before[0 .. start - 1]));
-    else if (isImportLine(before[0 .. start]))
-        r.items = moduleNames(ctx);
+    {
+        recv = receiverType(ctx, before[0 .. start - 1]);
+        r.items = membersOf(ctx, recv);
+        order = Order.members;
+    }
     else
     {
         r.items = argumentNames(r) ~ general(ctx);
     }
-    r.items = filtered(r.items, r.prefix);
+    // what is returned: what gives the function's type first (inside a
+    // call the argument's type matters instead)
+    immutable expected = order == Order.given || r.signature.length ? "" : returnedType(before[0 .. start]);
+    r.items = filtered(r.items, r.prefix, order, expected, recv);
     return r;
 }
 
@@ -432,6 +446,7 @@ private Completion[] membersOf(ref Context ctx, string t)
         if ((d.kind == Decl.Kind.field || d.kind == Decl.Kind.function_) && d.on.length && d.on == t)
             r ~= fromDecl(d, true);
     bool[string] seen;
+    // what only this type has comes before what every shape or list has
     foreach (ref e; reference)
     {
         if (e.on.length == 0)
@@ -442,7 +457,9 @@ private Completion[] membersOf(ref Context ctx, string t)
         if (key in seen)
             continue;
         seen[key] = true;
-        r ~= fromRef(e);
+        auto c = fromRef(e);
+        c.tier = t.length && e.on != t ? 1 : 0;
+        r ~= c;
     }
     // user and library functions whose first argument fits (UFCS)
     if (t.length)
@@ -516,15 +533,65 @@ private bool isImportLine(string before)
     return line.startsWith("import") || line.startsWith("public import");
 }
 
+/// On an import line: the modules under the dotted name typed (after
+/// `std.` the libraries), or after the colon the names the module gives.
+private Completion[] importItems(ref Context ctx, string text)
+{
+    auto line = text[text.lastIndexOf('\n') + 1 .. $];
+    auto colon = line.indexOf(':');
+    if (colon >= 0)
+    {
+        auto name = line[0 .. colon].strip;
+        foreach (k; ["public", "import"])
+            if (name.startsWith(k))
+                name = name[k.length .. $].strip;
+        Completion[] r;
+        foreach (d; visibleDecls(name.split("."), ctx.root, ctx.libraryDirs))
+            if (d.kind != Decl.Kind.field)
+                r ~= fromDecl(d);
+        return r;
+    }
+    // the module's name so far, up to its last dot: "std." of "std.ge"
+    size_t s = text.length;
+    while (s > 0 && (isIdent(text[s - 1]) || text[s - 1] == '.'))
+        s--;
+    auto typed = text[s .. $];
+    auto qual = typed[0 .. typed.lastIndexOf('.') + 1];
+    Completion[] r;
+    foreach (c; moduleNames(ctx))
+    {
+        if (!c.label.startsWith(qual))
+            continue;
+        // one part of the name at a time: std. offers gears, not std.gears
+        auto rest = c.label[qual.length .. $];
+        auto dot = rest.indexOf('.');
+        if (dot >= 0)
+            rest = rest[0 .. dot];
+        c.label = c.insert = rest;
+        r ~= c;
+    }
+    return r;
+}
+
 private Completion[] moduleNames(ref Context ctx)
 {
     import std.file : dirEntries, SpanMode, exists, isDir;
     import std.path : baseName, stripExtension, buildPath;
     import hackerscad.lang.builtins : librarySources, stdModules;
     Completion[] r;
+    r ~= Completion("std", "std", "module", "every built-in library",
+        "All the libraries at once: " ~ librarySources.keys.sort.join(", ") ~ ".");
     foreach (name; librarySources.keys.sort)
-        r ~= Completion("std." ~ name, "std." ~ name, "module", "built-in library", "");
-    foreach (name; stdModules)
+    {
+        // what it gives, as its documentation
+        string[] names;
+        foreach (d; visibleDecls(["std", name], ctx.root, ctx.libraryDirs))
+            if (d.kind != Decl.Kind.field && !names.canFind(d.name))
+                names ~= d.name;
+        r ~= Completion("std." ~ name, "std." ~ name, "module", "built-in library",
+            names.length ? "Gives " ~ names.join(", ") ~ "." : "");
+    }
+    foreach (name; stdModules.dup.sort)
         r ~= Completion(name, name, "module", "standard module", "");
     foreach (base; [ctx.root] ~ ctx.libraryDirs)
     {
@@ -578,8 +645,73 @@ private Completion fromDecl(Decl d, bool member = false)
     }
 }
 
+/// How often each name follows a dot in the examples that come with
+/// hackerscad (written as a user writes, unlike the libraries' insides):
+/// the same for everyone, not the user's habits.
+private int[string] memberUse()
+{
+    static int[string] counts;
+    static bool done;
+    if (!done)
+    {
+        import hackerscad.examples : examples;
+        done = true;
+        foreach (e; examples)
+            foreach (m; matchAll(e.source, ctRegex!(`\.([A-Za-z_]\w*)`)))
+                counts[m[1]]++;
+    }
+    return counts;
+}
+
+/// The type the code at the end of `before` must give: the declared
+/// result of the function it is in, in a `return` or after its `=>`.
+/// Empty elsewhere, or when the function does not declare one.
+private string returnedType(string before)
+{
+    // the last function header at the left margin: Solid body(…
+    string type;
+    size_t bodyAt;
+    foreach (m; matchAll(before, ctRegex!(`(?m)^(\w+(?:\[\])?)\s+\w+\s*\(`)))
+    {
+        type = m[1];
+        bodyAt = before.length - m.post.length;
+    }
+    if (type.length == 0 || ["void", "auto", "immutable", "const", "enum", "import", "module", "return"].canFind(type))
+        return "";
+    auto rest = before[bodyAt .. $];
+    auto arrow = rest.indexOf("=>"), brace = rest.indexOf('{');
+    // an expression body: until its ';'
+    if (arrow >= 0 && (brace < 0 || arrow < brace))
+        return rest[arrow .. $].indexOf(';') < 0 ? type : "";
+    // a block: the statement being written starts with return
+    size_t s = rest.length;
+    while (s > 0 && rest[s - 1] != ';' && rest[s - 1] != '{' && rest[s - 1] != '}')
+        s--;
+    auto statement = rest[s .. $].strip;
+    return statement.startsWith("return") && (statement.length == 6 || !isIdent(statement[6])) ? type : "";
+}
+
+/// The type an entry gives: its result, or for a member without one (a
+/// transform: move, rotate) the type of the value it is called on.
+private string givenType(const Completion c, string recv)
+{
+    auto arrow = c.detail.lastIndexOf("→");
+    if (arrow >= 0)
+        return c.detail[arrow + "→".length .. $].strip;
+    auto colon = c.detail.indexOf(": ");
+    if (colon >= 0 && c.detail.indexOf('(') < 0)
+        return c.detail[colon + 2 .. $].strip;
+    return c.kind == "method" ? recv : "";
+}
+
+/// How the entries that start with the prefix are sorted: the shorter
+/// first; members the most used first, then those of the value's own
+/// type; or as they come.
+private enum Order { shortest, members, given }
+
 /// Starting with the prefix first, then containing it; one per label.
-private Completion[] filtered(Completion[] items, string prefix)
+private Completion[] filtered(Completion[] items, string prefix, Order order = Order.shortest, string expected = "",
+    string recv = "")
 {
     auto p = prefix.toLower;
     Completion[] first, second;
@@ -602,7 +734,25 @@ private Completion[] filtered(Completion[] items, string prefix)
     Completion[] arguments, rest;
     foreach (c; first)
         (c.kind == "parameter" ? arguments : rest) ~= c;
-    rest.sort!((a, b) => a.label.length != b.label.length ? a.label.length < b.label.length : a.label < b.label);
+    // what gives the type to return before the rest, in the order below
+    bool fits(const Completion c) => expected.length && givenType(c, recv) == expected;
+    if (order == Order.members)
+    {
+        auto use = memberUse();
+        rest.sort!((a, b) {
+            if (fits(a) != fits(b))
+                return fits(a);
+            immutable ua = use.get(a.label, 0), ub = use.get(b.label, 0);
+            if (ua != ub)
+                return ua > ub;
+            if (a.tier != b.tier)
+                return a.tier < b.tier;
+            return a.label.length != b.label.length ? a.label.length < b.label.length : a.label < b.label;
+        });
+    }
+    else if (order == Order.shortest)
+        rest.sort!((a, b) => fits(a) != fits(b) ? fits(a)
+            : a.label.length != b.label.length ? a.label.length < b.label.length : a.label < b.label);
     return arguments ~ rest ~ second;
 }
 
@@ -807,6 +957,68 @@ unittest
     src = "module m;\nimport std.hardware;\n@part Solid a() => hole(M3, ";
     r = complete(src, src.length, "", null);
     assert(r.signature.startsWith("hole(s: Screw") && r.activeParam == 1, r.signature);
+}
+
+unittest
+{
+    // import std.: the libraries, one part of the name, not a solid's methods
+    auto src = "module m;\nimport std.";
+    auto r = complete(src, src.length, "", null);
+    assert(r.items.canFind!(c => c.label == "enclosures") && r.items.canFind!(c => c.label == "shapes"));
+    assert(!r.items.canFind!(c => c.label == "std"));
+    src = "module m;\nimport st";
+    r = complete(src, src.length, "", null);
+    assert(r.items.length && r.items[0].label == "std");
+    // import std; gives every library
+    src = "module m;\nimport std;\n@part Solid a() => box(1, 2, 3) - ho";
+    r = complete(src, src.length, "", null);
+    assert(r.items.canFind!(c => c.label == "hole"));
+    src = "module m;\nimport std : M3, ho";
+    r = complete(src, src.length, "", null);
+    assert(r.items.canFind!(c => c.label == "hole"));
+    assert(!r.items.canFind!(c => c.label == "fillet" || c.label.startsWith("std.")));
+    src = "module m;\nimport std.ge";
+    r = complete(src, src.length, "", null);
+    assert(r.items.length && r.items[0].label == "gears" && r.items[0].doc.length, r.items.length ? r.items[0].label : "none");
+    // after the colon, what the module gives
+    src = "module m;\nimport std.hardware : ho";
+    r = complete(src, src.length, "", null);
+    assert(r.items.canFind!(c => c.label == "hole"));
+
+    // members: the most used in the examples first, then the type's own
+    // before those of every shape
+    src = "module m;\n@part Solid a() => box(1, 2, 3).";
+    r = complete(src, src.length, "", null);
+    import std.algorithm : countUntil;
+    assert(r.items.countUntil!(c => c.label == "move") < r.items.countUntil!(c => c.label == "mirror"));
+    auto use = memberUse();
+    foreach (k; 1 .. r.items.length)
+    {
+        auto a = r.items[k - 1], b = r.items[k];
+        immutable ua = use.get(a.label, 0), ub = use.get(b.label, 0);
+        assert(ua > ub || (ua == ub && a.tier <= b.tier), a.label ~ " " ~ b.label);
+    }
+
+    // returning a Solid: what gives a Solid first (bbox, volume after them)
+    foreach (s; ["module m;\n@part\nSolid a()\n{\n    auto c = box(1, 2, 3);\n    return c.",
+        "module m;\n@part\nSolid a() => box(1, 2, 3)\n    ."])
+    {
+        r = complete(s, s.length, "", null);
+        auto firstOther = r.items.countUntil!(c => givenType(c, "Solid") != "Solid");
+        assert(firstOther > 0, s);
+        foreach (c; r.items[firstOther .. $])
+            assert(givenType(c, "Solid") != "Solid", c.label);
+        assert(r.items.countUntil!(c => c.label == "bbox") > r.items.countUntil!(c => c.label == "fillet"));
+    }
+    // not in a return: the usual order, bbox among the first
+    src = "module m;\n@part\nSolid a()\n{\n    auto c = box(1, 2, 3);\n    auto s = c.";
+    r = complete(src, src.length, "", null);
+    assert(r.items.countUntil!(c => c.label == "bbox") < r.items.countUntil!(c => c.label == "shell"));
+    assert(returnedType("Solid a()\n{\n    return ") == "Solid");
+    assert(returnedType("Solid a()\n{\n    auto x = ") == "");
+    assert(returnedType("void main()\n{\n    return ") == "");
+    assert(returnedType("Profile p() => rect(1, 2).") == "Profile");
+    assert(returnedType("Profile p() => rect(1, 2);\nimmutable q = ") == "");
 }
 
 unittest

@@ -690,14 +690,17 @@ unittest
 unittest
 {
     // the pillow block of the tutorial's page 14 is the example's, but for the first line (the
-    // menu's entry), and every piece of code on the page is a piece of it, word for word
+    // menu's entry) and the imports (import std; in the tutorial, each library in the example),
+    // and every piece of code on the page is a piece of it, word for word
+    import std.algorithm : filter, startsWith;
     import std.file : thisExePath, readText;
     import std.path : dirName;
-    import std.string : indexOf, split;
+    import std.string : indexOf, split, join;
     auto root = dirName(dirName(dirName(thisExePath)));
     auto model = readText(buildPath(root, "docs", "tutorial", "14-pillow-block.hcad"));
     auto example = readText(buildPath(root, "examples", "10_pillowblock.hcad"));
-    assert(example[example.indexOf("\n") + 1 .. $] == model,
+    static string withoutImports(string s) => s.split("\n").filter!(l => !l.startsWith("import ")).join("\n");
+    assert(withoutImports(example[example.indexOf("\n") + 1 .. $]) == withoutImports(model),
         "docs/tutorial/14-pillow-block.hcad differs from examples/10_pillowblock.hcad");
     auto page = readText(buildPath(root, "docs", "tutorial", "14-pillow-block.md")).split("```d\n");
     assert(page.length > 1);
@@ -2913,6 +2916,17 @@ unittest
             && d.message.canFind("std.gears")), "the old name, warned");
         auto q = runModel("import std.gears;\n@part Solid p() => spurGear(1.mm, 12, 3.mm);\n");
         assert(q.parts.length == 1 && !q.diagnostics.canFind!(d => d.severity == Severity.warning), "the new name");
+    }
+    // import std; gives every library at once, selectively too, or under a name
+    {
+        auto r = runModel("import std;\n@part Solid p() => spurGear(1.mm, 12, 3.mm) - hole(M3, 2.mm);\n");
+        assert(r.parts.length == 1 && !r.diagnostics.canFind!(d => d.severity == Severity.warning), "import std;");
+        assert(runModel("import std : M3, hole;\n@part Solid p() => box(9, 9, 9) - hole(M3, 2.mm);\n").parts.length == 1);
+        assert(runModel("import s = std;\n@part Solid p() => box(9, 9, 9) - s.hole(s.M3, 2.mm);\n").parts.length == 1);
+        assert(error("import std : M99;").code == Code.import_);
+        // its structs as types too (Enclosure from std.enclosures, re-exported)
+        assert(runModel("import std;\nEnclosure e() => enclosure(vec(40.mm, 30.mm, 20.mm));\n"
+            ~ "@part Solid p() => e().base;\n").parts.length == 1);
     }
     // a tag with a dot belongs to its module: given only there, read anywhere
     assert(error(`@part Solid p() { return box(1, 1, 1).addTag("hardware.bore"); }`)

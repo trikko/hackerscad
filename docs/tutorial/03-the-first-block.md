@@ -16,7 +16,7 @@ that holds the water.
    ```d
    module planter;
 
-   import std.shapes;
+   import std;
 
    @part("sienna")
    Solid tank() => box(62.mm, 62.mm, 66.mm);
@@ -27,8 +27,9 @@ that holds the water.
 The view shows a block at once. What the lines say:
 
 - `module planter;` is the name of the model.
-- `import std.shapes;` makes the basic shapes available: boxes, cylinders,
-  spheres and the like.
+- `import std;` makes hackerscad's ready-made pieces available: screws and
+  their holes, gears, hinges and the other libraries (boxes, cylinders and
+  the basic shapes are always there).
 - `@part("sienna")` says that what follows is a piece to print, and its
   colour: sienna is a terracotta brown. Any colour name of the web works
   (`"steelblue"`, `"orange"`…), hackerscad's own (`"Sky Pop"`, `"Pink Pop"`…,

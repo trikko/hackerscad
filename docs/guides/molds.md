@@ -8,8 +8,7 @@ A two-part mold to cast copies of a part in silicone, resin or plaster: a block 
 // thin core that would tear the cast), open: the lower
 // half with its keys and the seal, the upper turned over
 
-import std.carlo;
-import std.molds;
+import std;
 
 Mold carloMold() => mold(carlo(eye: false),
     plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z));
@@ -32,8 +31,7 @@ Closed, the mold shows the pour hole, its funnel and the two vents on top, and t
 // the same mold closed, as it stands to be poured: the
 // funnel and the vents on top
 
-import std.carlo;
-import std.molds;
+import std;
 
 Mold carloMold() => mold(carlo(eye: false),
     plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z));
@@ -66,8 +64,7 @@ Each half prints on its outer face, the parting face up: the keys and the seal s
 // the same mold laid for printing: both halves on their
 // outer faces, the parting faces up
 
-import std.carlo;
-import std.molds;
+import std;
 
 Mold carloMold() => mold(carlo(eye: false),
     plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z));
@@ -96,7 +93,7 @@ Solid upper() => carloMold().bPrint.move(x: 70.mm);
 |---|---|
 | *mold: no room for the keys on the parting face* | a thicker `wall:`, fewer `keys:`, or `seal: 0.mm` |
 | the cast does not come out | the parting plane does not cross the part where it is widest: move it, or turn it |
-| *undefined identifier 'mold'* | `import std.molds;` |
+| *undefined identifier 'mold'* | `import std;` at the top |
 
 ## In the application
 

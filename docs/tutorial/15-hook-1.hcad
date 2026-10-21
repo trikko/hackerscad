@@ -1,6 +1,6 @@
 module hook;
 
-import std.shapes;
+import std;
 
 /// A hook for the wall: a plate with a hole for a screw, and an arm to
 /// hang things on.

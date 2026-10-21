@@ -1,6 +1,6 @@
 module label;
 
-import std.shapes;
+import std;
 
 /// A label to push into the soil of the planter: a leaf drawn in a drawing
 /// program, a stake, and the name of the plant.

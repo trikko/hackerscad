@@ -8,7 +8,7 @@ can change from the Parameters panel, as you did with the teeth of the clip.
 
 ## Name the sizes
 
-Write these lines under `import std.shapes;`:
+Write these lines under `import std;`:
 
 ```d
 @param("Size", min: 50.mm, max: 120.mm)

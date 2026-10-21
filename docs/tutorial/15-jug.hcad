@@ -1,6 +1,6 @@
 module jug;
 
-import std.shapes;
+import std;
 
 @part("orange")
 Solid jug()

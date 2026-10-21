@@ -33,7 +33,7 @@ from the wall, and the screw holds it there.
 ```d
 module hook;
 
-import std.shapes;
+import std;
 
 /// A hook for the wall: a plate with a hole for a screw, and an arm to
 /// hang things on.
@@ -127,7 +127,7 @@ under the arm:
 ```d
 module hook;
 
-import std.shapes;
+import std;
 
 /// A hook for the wall: a plate with a hole for a screw, and an arm to
 /// hang things on.
@@ -175,7 +175,7 @@ the same way.
 ```d
 module label;
 
-import std.shapes;
+import std;
 
 /// A label to push into the soil of the planter: a leaf drawn in a drawing
 /// program, a stake, and the name of the plant.
@@ -205,7 +205,7 @@ the constraints, and hackerscad works out where the corners go.
 ```d
 module sketched;
 
-import std.shapes;
+import std;
 
 /// A bracket whose outline is given by its sides: the corners are worked
 /// out from the constraints.
@@ -254,7 +254,7 @@ runs along Carlo's lower jaw, 3 mm above its bottom side:
 ```d
 module grooved;
 
-import std.carlo;
+import std;
 
 /// Carlo with a groove along its lower jaw, drawn on
 /// its top face.
@@ -364,7 +364,7 @@ here; `.sweep(path)` moves an outline along a curve, the handle.
 ```d
 module jug;
 
-import std.shapes;
+import std;
 
 @part("orange")
 Solid jug()
@@ -392,9 +392,7 @@ Solid jug()
 ```d
 module fixings;
 
-import std.shapes;
-import std.hardware;
-import std.gears : spurGear;
+import std;
 
 @part
 Solid lid()
@@ -412,6 +410,9 @@ Solid gear() => spurGear(1.5.mm, 24, 6.mm, bore: 5.mm).move(x: 70.mm);
 ```
 
 ![A lid with holes for M3 screws, and a gear](img/15-fixings.png)
+
+`import std;` brings in all of them; `import std.hardware;` only one, and
+`import std.hardware : M3, hole;` only those names.
 
 - `hardware`: screw sizes `M2` to `M8`, screws, nuts, washers, and holes made
   for them (`"clearance"`, `"tap"`, `"insert"`, `"ribs"`, `"counterbore"`,
@@ -451,7 +452,7 @@ each separate body instead, and finds how many there are each time the model
 is evaluated:
 
 ```d
-import std.carlo;
+import std;
 
 @param("Where to cut", min: -5.mm, max: 25.mm)
 immutable cut = 10.mm;
@@ -463,7 +464,7 @@ Solid jaws() => carlo().halves(cutPlane).above;
 ```
 
 Carlo, the clip of [chapter 13](13-carlo.md), is a good object to try things
-on: `import std.carlo;` and `carlo()` make one. `halves` cuts in two sides,
+on: `import std;` and `carlo()` make one. `halves` cuts in two sides,
 `.above` and `.below`. Where the cut crosses Carlo's slot, the side above is
 two jaws, and the parts list shows `jaws1`
 and `jaws2`, each in its colour (`varied: true`); move `cut` past the slot and

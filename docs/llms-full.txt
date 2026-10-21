@@ -181,17 +181,18 @@ dimensions and pictures, compare them with the request, fix, then export.
       immutable width = 60.mm;
   and put requirements in unittest blocks:
   unittest { assert(body.bbox.size.z <= 40.mm, "must fit in the drawer"); }
-- Use the libraries instead of modelling common parts by hand:
-  import std.hardware : M3, screw, nut, hole; then M3.clearance, M3.tap,
-  screw(M3, 20.mm), nut(M3), hole(M3, 5.mm, "counterbore"|"insert"|…);
-  import std.threads (threadedRod, tappedHole); import std.gears (spurGear, rack,
-  centerDistance); import std.hinges (hinge(…).fixed/.moving, print in place);
-  import std.snaps (snapHook, snapSlot); import std.enclosures (roundedBox, tray,
-  enclosure(vec(x, y, z)).base/.lid); import std.joints (splitJoint(body,
+- Use the libraries instead of modelling common parts by hand: import std;
+  gives them all (import std.hardware : M3, hole; only those names).
+  std.hardware: M3.clearance, M3.tap, screw(M3, 20.mm), nut(M3),
+  hole(M3, 5.mm, "counterbore"|"insert"|…);
+  std.threads (threadedRod, tappedHole); std.gears (spurGear, rack,
+  centerDistance); std.hinges (hinge(…).fixed/.moving, print in place);
+  std.snaps (snapHook, snapSlot); std.enclosures (roundedBox, tray,
+  enclosure(vec(x, y, z)).base/.lid); std.joints (splitJoint(body,
   plane, kind: "dovetail"|"dowels"|…).a/.b for a part longer than the bed,
   .loose/.print the wedge or dowels in place and laid flat; splitFlat
-  for two halves printed on their cut faces, joinParts(a, b, plane)); import
-  std.molds (mold(part, plane).aPrint/.bPrint); import std.flex (kerf(body, zone)
+  for two halves printed on their cut faces, joinParts(a, b, plane));
+  std.molds (mold(part, plane).aPrint/.bPrint); std.flex (kerf(body, zone)
   to make it bend; hinges also has pinHinge, snapHinge, livingHinge).
   Built in: region.tiles(kind: "hex"|"voronoi"|…) fills a profile with
   cells, body.knurl(face) raises a grip, body.cut(profile, wrap: face,
@@ -221,7 +222,7 @@ dimensions and pictures, compare them with the request, fix, then export.
   (not right after { or another comment); comments say why.
 - For an example, a trial or an explanation that needs some object to work
   on (to move, cut, place, measure), use Carlo, the mascot clip: import
-  std.carlo; then carlo(), and call it Carlo (always the same, recognisable,
+  std; then carlo(), and call it Carlo (always the same, recognisable,
   small and quick to evaluate). Not instead of an object the
   request names (the phone, the shaft): model that one.
 
@@ -420,9 +421,9 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - Struct literals `Screw("M3", 3.mm)` or `Screw(d: 3.mm)`.
 - **Paren-less calls:** a declared function whose parameters all have defaults is called when named without parentheses (`body.bbox`, `nextTo(body, …)`). Use `&f` to pass the function itself.
 - **Modules:**
-  - `import std.math;`, `import std.hardware : M3;`, `import hw = std.hardware;`, `import lib.hinges;`, `import a, b;`.
+  - `import std;` (every built-in library at once), `import std.math;`, `import std.hardware : M3;`, `import hw = std.hardware;`, `import lib.hinges;`, `import a, b;`.
   - `lib.hinges` resolves to `lib/hinges.hcad`; a folder is a package: `import pizza;` loads `pizza.hcad`, or else `pizza/package.hcad`, whose `public import pizza.base, pizza.toppings;` makes their names visible to whoever imports `pizza` (as in D).
-  - Modules are looked for in the directory of the model, then in the folders of `$HCAD_PATH`, then in the personal library folder: `~/.local/share/hackerscad/lib` on Linux (`$XDG_DATA_HOME/hackerscad/lib`), `~/Library/Application Support/hackerscad/lib` on macOS, `%APPDATA%\hackerscad\lib` on Windows. The built-in libraries are `std.hardware`, `std.gears`… (imported without `std.`, the old way, they still work with a warning, and a module of yours of that name comes first).
+  - Modules are looked for in the directory of the model, then in the folders of `$HCAD_PATH`, then in the personal library folder: `~/.local/share/hackerscad/lib` on Linux (`$XDG_DATA_HOME/hackerscad/lib`), `~/Library/Application Support/hackerscad/lib` on macOS, `%APPDATA%\hackerscad\lib` on Windows. The built-in libraries are `std.hardware`, `std.gears`… (`import std;` imports them all, also as `import std : M3, hole;` or `import s = std;`; imported without `std.`, the old way, they still work with a warning, and a module of yours of that name comes first).
   - `private` symbols are not exported.
 
 ## What is different from D
@@ -441,7 +442,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
 - **Not available:** classes, pointers, `mixin`, `static if`, user templates, exceptions, `asm`, `alias`, `new`.
 - **Sandbox.**
   - `load()` reads mesh, STEP and drawing (SVG, DXF) files inside the project directory only.
-  - Library imports are limited to hackerscad's standard modules: `std.shapes`, `std.math`, `std.algorithm`, `std.range`, `std.conv`, `std.format`, `std.stdio`, `std.array`, and the built-in libraries (`std.hardware`, `std.threads`, `std.gears`, `std.hinges`, `std.snaps`, `std.enclosures`, `std.joints`, `std.molds`, `std.flex`, `std.carlo`).
+  - Library imports are limited to hackerscad's standard modules: `std.shapes`, `std.math`, `std.algorithm`, `std.range`, `std.conv`, `std.format`, `std.stdio`, `std.array`, and the built-in libraries (`std.hardware`, `std.threads`, `std.gears`, `std.hinges`, `std.snaps`, `std.enclosures`, `std.joints`, `std.molds`, `std.flex`, `std.carlo`; `std` is all of them).
   - Imports cannot leave the project directory or the library folder they were found in.
   - There is no file, network or process access.
   - Evaluation steps, recursion depth and array sizes are limited.
@@ -463,7 +464,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
 - **`@part("colour")`** above **`Solid name() { … }`** declares an exported body: a separate object in 3MF, a separate named body in STEP, its own file in a zip of STLs (`name.stl`; a lone `.stl` takes one part). A part is evaluated once per run even when other parts refer to it. Without a colour a part is Sky Pop (`#0FC3F2`). `@part("slategray", alpha: 0.35)` makes it see-through; `export: false` makes it a reference part (a shaft, a board, the object a holder is for): drawn in the view and in PNGs, left out of STL, 3MF and STEP. `name: "Tank"` is the part's name in exported files (object, body and file names) instead of the function's; two parts cannot share one.
 - **`@parts`** above a function makes **a part of each separate body** it returns: of a `Solid` (two halves of a cut, copies that do not touch, the objects of a loaded 3MF) or of each element of a `Solid[]`. The parts are named after the function with a number, `jaws1`, `jaws2`… (just `jaws` when there is one), in the order of `.pieces` (along X, then Y, then Z); how many there are comes from the evaluation, so a parameter can change it. It takes what `@part` takes, plus `varied: true`, which gives the pieces colours that tell apart (the first in the part's colour). A piece coloured on its own (`pieces[1] = pieces[1].color("Blue Pop");`, what the menu's Colour writes on a piece) keeps its colour; the others take the annotation's. A solid in a `Solid[]` made of several bodies stays one part. An empty `Solid[]` makes no part: a part to choose with a parameter, `@parts Solid[] lid() => withLid ? [makeLid()] : [];`. `@part` on a function returning a `Solid[]` is an error that points at `@parts`; on a `Solid` of several bodies it is one part (one object in 3MF).
   ```d
-  import std.carlo;   // Carlo, the mascot clip: an object to try things on
+  import std;   // Carlo, the mascot clip, is in it: an object to try things on
 
   immutable cutPlane = plane(origin: vec(10, 0, 0), normal: X);
 
@@ -576,7 +577,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
   - face properties: `center`, `normal`, `area`.
   - selectors combine: `edges.parallel(Z) - edges.of(faces.top)`, `faces.top + faces.bottom`, `a & b` (in both).
 - **Tags:** names given to faces and to whole solids, which follow them wherever they go. `b.faces.top.addTag("lid")` tags the faces selected on `b` (`b.faces` and `b.edges` are the solid's own, to select from); `b.addTag("body")` tags the solid as an object, `recursive: true` its faces as well. `removeTag(tag)`, `clearTags()` and, read only, `tags` and `hasTag(tag)`, on a solid or its faces (`b.faces.top.tags`); a tag is a text, or a list of them to add several. Like a method of a D struct, `addTag` changes the variable it is called on (`b`, or `parts[2]`) and gives the solid back, so it also works in a chain: `auto b = box(…).faces.top.addTag("lid");`. A face keeps its tags through what changes it: moved, turned, mirrored, scaled, split, trimmed by a cut, filleted, drafted, offset, pushed (`extrude(faces…)`), textured (`knurl`, wrap): its pieces all keep them, two faces merged into one (blocks side by side) have the tags of both, faces made new (a fillet's round, a hole's wall, a thread's flanks: a rod's end threaded over is new too) have none, except the walls a tagged tool leaves (`body - drill`, the drill tagged `recursive: true`: its wall is tagged). A hull or a Minkowski sum keeps the tags of the flat faces it lies on (for a Minkowski sum, moved out by how far the other shape reaches). A solid made from others keeps the first one's own tags (`a - b` is still `a`); a profile's go to what is extruded or revolved from it. `faces.tagged("lid")` finds the faces later, wherever the solid was turned since (`faces.top` would find another face); `b.faces.tagged("lid").count` and `.list` (or `foreach (f; b.faces.top)`) read them. Mistakes: a tag found on no face says which tags there are; a tag added to a solid in no variable or in an immutable one is lost, an error. Edges have no tags yet: tag the faces on either side, `edges.between(faces.tagged("a"), faces.tagged("b"))`. Exported, the faces' tags name the faces of a STEP file (`lid;seat`) and named sets of triangles in a 3MF (the part's own tags in its object's metadata); `load("part.step")` gives a STEP file's face names back as tags. `faces.tagged("a").tagged("b")` takes the faces with both tags, a list those with either. A tag with a dot belongs to a module: `"hinges.pin"` can only be given in module `hinges` (read anywhere), so libraries tag what they make without colliding with the model's tags: `hardware.bore` and `hardware.seat` (a `hole()`'s faces, on the wall it leaves), `hardware.axis` (holes, screws, nuts, washers), `gears.axis`, `gears.bore`, `gears.pitch` (a rack), `hinges.axis`, `hinges.pin`, `enclosures.rim`, `enclosures.floor`, `enclosures.lip`, `joints.cut`, `joints.plane`, `molds.cavity`, `molds.parting`, `molds.sprue`. Points, axes, planes and frames can be tagged on a solid too, as references that move, turn, mirror and scale with it and stay through cuts and joins: `b.addTag("pin", at: vec(15.mm, 10.mm, 8.mm))` (or `at:` an `axis(…)`, a `plane(…)`, a frame), read back where the solid now is with `b.point("pin")`, `b.axis("hinge")`, `b.plane("mid")`, `b.frame("seat")` (a frame on whatever was tagged: `part.placeOn(body.frame("seat"))`; on an axis or a plane its X is the one `plane(…).frame()` and `frame(faces…)` give, however the solid was turned). Tagged again, the new reference replaces the old one. A copy joined to itself (two halves joined again, a face pushed or pulled, `b + b`) holds each reference once; copies in different places joined together hold one each, and reading the tag then is an error: tag the copies apart, or tag the joined solid again. Split (`split`, `halves`, `pieces`, the libraries' joints), each piece has the references lying in it or on its surface (one on the cut, both pieces), one lying in none (a hole's axis) the nearest piece; an intersection drops those in the part it cuts away; a pattern (`linearPattern`, `circularPattern`) keeps its first copy's; `minkowski(a, b)` keeps `a`'s; a union with an empty solid (`Solid.nothing`) keeps the empty one's references (not its own tags). In a sketch, `s.addTag("plate")` tags its profile and paths, and an entity's tag (`c.addTag("pivot")` on a point, `s.circle(c, d: 6.mm).addTag("bore")`, construction ones too) becomes a reference of the profile and of what is made from it (swept, where the profile starts on the path): a point where it is, a circle's or arc's centre an axis across the sketch, a line an axis along it. A tagged line, circle or arc also tags the face extruded or revolved from it: `sides[1].addTag("slope")`, then `faces.tagged("slope")` on the solid, the side swept from that line (a circle: the hole's wall). This holds for a profile extruded (straight, tapered, sheared, twisted or symmetric) or revolved, moved, turned, scaled or mirrored first, offset (a line gives the parallel side, a circle the one round the same centre), rounded, cut into `pieces`, or joined with, less or intersected with another profile (the edges left of it keep the tag); a hull of the profile, a sweep or a loft loses the faces' names (not the points'), and looking for a face so tagged says which step lost it. A tag is a name: not blank, without `;` (a STEP file joins a face's tags with it); a dot goes only between a module's name and a name. `foreach (s; parts) s.addTag("x");` tags copies and is an error: tag `parts[i]`.
-- **Built-in libraries** (`import std.gears;` or `import std.gears;`, selective imports work too):
+- **Built-in libraries** (`import std;` for all of them, `import std.gears;` for one, selective imports work too):
   - `joints`: `splitJoint(body, plane, kind: "tenon" | "dovetail" | "pins" | "fingers" | "lap" | "kama" | "kanawa" | "koshikake" | "barbed" | "dowels", clearance: 0.2.mm, size:, length:, turn:, count:)` (`keys:` the same as `count:`) cuts a solid along a plane into two pieces that lock together without screws, as joiners join timber: a tenon, a dovetail sliding in sideways, round pins, a finger joint, a half lap, a gooseneck (kama tsugi), a half lap with hooks locked by a wedge (kanawa tsugi), a dovetail over a seat (koshikake ari tsugi), a barbed tenon split down its middle, driven in for good, loose printed dowels (rods with two flats, split at the ends, `count:` of them) held by friction in plain round holes; it gives a `Joint` with `.a` (behind the plane), `.b` (in front of it), `.loose` (the wedge or the dowels, in place) and `.print` (those lying flat in a row, to print), the hollows `clearance` larger; the joint sits in the middle of the cut, sized by the square root of the section's area unless `size:` says (fingers share the section's width; pins and dowels go on the material round a hollow middle, a tube's, a tenon there is an error); `jointKinds` lists the kinds. For a part longer than the printer's bed. `splitFlat(body, plane, keys: 2, kind: "bowtie" | "disc", size:, depth:, clearance: 0.15.mm, wall: 1.6.mm)` (`count:` the same as `keys:`) cuts it into two halves with flat faces, each to print lying on its cut face, joined by flat keys (butterflies, chigiri) in pockets cut in both faces, placed where the cut has room, as far apart as they can be: a `FlatSplit` with `.a`, `.b`, `.keys` (in place), and laid for printing `.aPrint`, `.bPrint` (on their cut faces, on z = 0) and `.print` (the keys flat in a row). `joinParts(a, b, plane, kind:)` joins two separate parts where `b` ends on a face of `a` (the plane, its normal into `b`): the same joints but `"kanawa"` (a sliding dovetail's, a gooseneck's and a seated dovetail's housing running out of `a`), from `b` into `a`, sized by `b`'s end, a tenon longer than `a` is thick flush on the far side; joints lie along the cut's longer side unless `turn:` says. `profile.spots(n, margin:)` gives the points it uses: up to n inside a profile in any plane, at least margin from its edges, far apart.
   - `molds`: `mold(part, plane, wall: 10.mm, keys: 4, sprue: 6.mm, vents: 2, seal: 0.8.mm, clearance: 0.15.mm, pry: true)` (`count:` the same as `keys:`) a two-part mold to cast the part in (silicone, resin, plaster): a block round it cut along the parting plane (where the part is widest), the part hollow inside, cone keys on one half's parting face and sockets in the other, a seal ridge round the cavity and its groove, a pour hole with a funnel and vents up through the half in front of the plane, notches on two sides to pry it open; a `Mold` with `.a`, `.b` and, laid on their outer faces with the parting face up, `.aPrint`, `.bPrint`.
   - `flex`: `kerf(body, zone, width: 0.8.mm, bridge: 2.mm, pitch: 2.5.mm, length:, along:)` makes the body bend inside the zone (any solid): rows of slots through its thinnest way, each row shifted half a slot, running across the body's length (or `along:` X, Y or Z), so a plate bends end to end and a tube bows; the slots `length:` long, six pitches unless given, shorter on a narrow strap (its width less a bridge); slots that cut the part apart are an error. They run along X, Y or Z only: bend a part before turning it at an angle.
@@ -1117,7 +1118,7 @@ unittest
 // A first sketch: a medal with an H and a rim in relief
 module medal;
 
-import std.shapes;
+import std;
 
 @param("Diameter", min: 30.mm, max: 60.mm)
 immutable diameter = 40.mm;
@@ -1210,7 +1211,7 @@ Solid medal()
 // The shapes a sketch has, each fully constrained
 module shapes;
 
-import std.shapes;
+import std;
 
 @part
 Solid sampler()

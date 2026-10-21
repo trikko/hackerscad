@@ -2129,8 +2129,8 @@ Edit withImport(string source, Edit e, string mod, string[] names)
     import std.regex : regex, matchFirst;
     import std.string : indexOf, strip;
     import std.array : split;
-    // already there: the whole module, or a selective import with them all
-    auto whole = matchFirst(source, regex(`(?m)^\s*import\s+(std\.)?` ~ mod ~ `\s*;`));
+    // already there: the whole module (or all of std), or a selective import with them all
+    auto whole = matchFirst(source, regex(`(?m)^\s*import\s+((std\.)?` ~ mod ~ `|std)\s*;`));
     if (!whole.empty)
         return e;
     auto sel = matchFirst(source, regex(`(?m)^\s*import\s+(std\.)?` ~ mod ~ `\s*:([^;]*);`));
@@ -2198,4 +2198,7 @@ unittest
     auto src3 = "import std.hardware;\n@part\nSolid p() => box(10, 10, 10);\n";
     auto e3 = appendToPart(src3, "m.hcad", "p", ".x()");
     assert(withImport(src3, e3, "hardware", ["hole"]) == e3);
+    auto src4 = "import std;\n@part\nSolid p() => box(10, 10, 10);\n";
+    auto e4 = appendToPart(src4, "m.hcad", "p", ".x()");
+    assert(withImport(src4, e4, "hardware", ["hole"]) == e4);
 }
