@@ -6404,13 +6404,17 @@ private:
         import std.uni : toLower;
 
         immutable ext = extension(file).toLower;
+        // two short paragraphs: the dialog centres its text, and one long block reads badly
         if (importable.canFind(ext))
-            return format("“%s” is a %s file, not a hackerscad model. hackerscad opens models written as code "
-                ~ "(.hcad); a model can use this file with load(\"%s\").", baseName(file), ext[1 .. $].toUpper,
-                baseName(file));
+        {
+            immutable kind = ext[1 .. $].toUpper;
+            return format("“%s” is %s %s file: hackerscad opens models written as code (.hcad files).\n\n"
+                ~ "A model can use it with load(\"%s\").", baseName(file), "AEFHILMNORSX".canFind(kind[0]) ? "an" : "a",
+                kind, baseName(file));
+        }
         if (ext != ".hcad")
-            return format("hackerscad opens only its models, .hcad files written as code: “%s” is not one%s.",
-                baseName(file), ext.length ? format(" (%s files are not supported)", ext) : "");
+            return format("hackerscad opens models written as code (.hcad files), and “%s” is not one.%s",
+                baseName(file), ext.length ? format("\n\n%s files are not supported.", ext) : "");
         // a .hcad that is not text (a binary renamed, a broken download)
         try
         {

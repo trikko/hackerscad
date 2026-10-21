@@ -29,7 +29,11 @@ mixin template ControlMethods()
                 if (!exists(file))
                     return reply(JValue.init, "file not found: " ~ file);
                 if (auto why = notAModel(file))
-                    return reply(JValue.init, why ~ " To use a mesh or CAD file, write a model that calls load() on it.");
+                {
+                    import std.array : replace;
+                    return reply(JValue.init, why.replace("\n\n", " ") ~ " To use a mesh or CAD file, write a model "
+                        ~ "that calls load() on it.");
+                }
                 if (modified && !p.safe!bool("force").or(false))
                     return reply(JValue.init, "the user has unsaved changes in " ~ baseName(path)
                         ~ ": ask them to save, or pass force: true to discard them");
