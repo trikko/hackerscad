@@ -1034,6 +1034,7 @@ final class MainWindow
         buildTransformBar();
         viewport = new Viewport;
         viewport.setAntialias(antialiasChoice.getActive());
+        viewport.setSmoothTurning(smoothTurnChoice.getActive());
         viewport.onPick = (Hit h) => picked(h);
         viewport.onSketchShown = () => showProblems();
         viewport.onGrab = (double x, double y) => sketchGrab(x, y);
@@ -2353,6 +2354,7 @@ private:
         JValue g = JSOB("renderer", viewport.glRenderer, "version", viewport.glVersion, "vendor", viewport.glVendor);
         g["software"] = viewport.softwareGl();
         g["antialias"] = viewport.antialiasing();
+        g["smooth_rotation"] = smoothTurnChoice.getActive();
         auto f = viewport.frameStats();
         JValue frames = JSOB("frames", f.frames, "slow", f.slow);
         frames["draw_ms"] = f.drawMs;
@@ -3834,7 +3836,7 @@ private:
     Paned mainPaned;        /// the code on the left, the rest on the right
     import gtk.check_button : CheckButton;
     CheckButton[Shading] shadingChoice;
-    CheckButton perspectiveChoice, orthographicChoice, antialiasChoice, printabilityChoice;
+    CheckButton perspectiveChoice, orthographicChoice, antialiasChoice, smoothTurnChoice, printabilityChoice;
     CheckButton[3] shineChoice;   /// none, normal, high
 
     /// The shine chosen last (Normal the first time).
@@ -4037,6 +4039,22 @@ private:
                     viewport.setAntialias(antialiasChoice.getActive());
             });
             box.append(antialiasChoice);
+            // Windows moves the pointer in whole pixels: there the model would turn by steps
+            version (Windows)
+                enum smoothDefault = "on";
+            else
+                enum smoothDefault = "off";
+            smoothTurnChoice = new CheckButton;
+            smoothTurnChoice.setLabel("Smooth rotation");
+            smoothTurnChoice.setTooltipText("Turning the view glides over a few frames, a little behind the mouse: "
+                ~ "for a mouse that moves by whole pixels, whose small steps the model shows");
+            smoothTurnChoice.setActive(setting("smooth-turning", smoothDefault) != "off");
+            smoothTurnChoice.connectToggled(() {
+                setSetting("smooth-turning", smoothTurnChoice.getActive() ? "on" : "off");
+                if (viewport !is null)
+                    viewport.setSmoothTurning(smoothTurnChoice.getActive());
+            });
+            box.append(smoothTurnChoice);
         }
         auto pop = new Popover;
         pop.setChild(box);

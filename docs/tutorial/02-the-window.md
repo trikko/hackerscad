@@ -125,6 +125,10 @@ The cube in the view bar opens a small menu:
 - **Smooth edges**, under *Quality*: edges and curves without steps. It asks
   more of the graphics card: turn it off if turning the view is slow. The
   choice is kept.
+- **Smooth rotation**, under *Quality*: turning the view glides over a few
+  frames, a little behind the mouse. It is for a mouse that moves by whole
+  pixels, where the model would otherwise turn in small visible steps. The
+  choice is kept.
 
 ## Editing the code
 

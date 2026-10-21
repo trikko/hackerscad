@@ -889,6 +889,7 @@ JValue toolList()
             ~ `"sidebar": {"type": "string", "enum": ["params", "steps"]}, `
             ~ `"cursor": {"type": "integer"}, "code_width": {"type": "integer"}, `
             ~ `"hidden": {"type": "array", "items": {"type": "string"}}, `
+            ~ `"smooth_rotation": {"type": "boolean", "description": "the user's rotations glide over a few frames, for a mouse that moves by whole pixels (the cube's Smooth rotation; kept between runs)"}, `
             ~ `"grid": {"type": "boolean", "description": "show the ground grid (the eye's menu; kept between runs)"}, `
             ~ `"axes": {"type": "boolean", "description": "show the X and Y axes (the eye's menu; kept between runs)"}, `
             ~ `"code": {"type": "boolean"}, "console": {"type": "boolean"}, "view": {"type": "boolean"}, `

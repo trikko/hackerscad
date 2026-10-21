@@ -235,6 +235,9 @@ mixin template ControlMethods()
                 // antialiasing, for this run (the user's choice in the cube menu stays)
                 if (has("antialias"))
                     viewport.setAntialias(p["antialias"].safe!bool.or(false));
+                // the rotation that glides, as the cube's check box (kept between runs)
+                if (has("smooth_rotation"))
+                    smoothTurnChoice.setActive(p["smooth_rotation"].safe!bool.or(false));
                 // the ground grid and the axes, as the eye's menu (kept between runs)
                 if (has("grid"))
                     gridChoice.setActive(p["grid"].safe!bool.or(false));

@@ -227,6 +227,12 @@ final class Viewport
     // where the drag began, else the middle of what is drawn (never a target
     // that zooming has carried far off), with the view's axes as they were then
     private Vec3 orbitPivot;
+    // a rotation's pixels not turned yet: each frame turns part of them, so
+    // a pointer that moves in whole pixels (Windows) turns smoothly too
+    private bool smoothTurning;
+    private double turnDx = 0, turnDy = 0;
+    private uint turnTick;
+    private long turnFrameAt;
     private double panScale = 1;   /// mm per pixel of a pan: at the depth of what was grabbed
 
     this()
@@ -291,6 +297,7 @@ final class Viewport
             }
             else
             {
+                finishTurn();
                 auto under = pick(x, y);
                 Vec3 lo, hi;
                 orbitPivot = under.part >= 0 ? under.point : drawnBox(lo, hi) ? (lo + hi) * 0.5 : target;
@@ -346,7 +353,10 @@ final class Viewport
             {
                 // each step turns about the view's axes as they are now, so
                 // the model always follows the pointer, upside down too
-                turn(dx - lastDx, dy - lastDy, orbitPivot);
+                if (smoothTurning)
+                    smoothTurn(dx - lastDx, dy - lastDy);
+                else
+                    turn(dx - lastDx, dy - lastDy, orbitPivot);
                 lastDx = dx;
                 lastDy = dy;
             }
@@ -2891,6 +2901,66 @@ final class Viewport
         // square again, against drift over many steps
         viewUp = (viewUp - eyeDir * viewUp.dot(eyeDir)).normalized;
         target = pivot + round(target - pivot);
+    }
+
+    /// Turns the view by a drag's step about orbitPivot over the next
+    /// frames: most of it within ~50 ms, so whole-pixel steps glide.
+    private void smoothTurn(double dx, double dy)
+    {
+        import gtk.widget : Widget;
+        import gdk.frame_clock : FrameClock;
+
+        turnDx += dx;
+        turnDy += dy;
+        if (turnTick != 0)
+            return;
+        turnFrameAt = 0;
+        turnTick = area.addTickCallback((Widget w, FrameClock clock) {
+            immutable now = clock.getFrameTime();   // microseconds
+            immutable dt = turnFrameAt == 0 ? 1000.0 / 60 : (now - turnFrameAt) / 1000.0;
+            turnFrameAt = now;
+            immutable k = 1 - pow(0.5, dt / turnHalfLife);
+            double sx = turnDx * k, sy = turnDy * k;
+            // the last hundredth of a pixel: all of it, and stop
+            immutable done = abs(turnDx - sx) + abs(turnDy - sy) < 0.01;
+            if (done)
+            {
+                sx = turnDx;
+                sy = turnDy;
+            }
+            turn(sx, sy, orbitPivot);
+            turnDx -= sx;
+            turnDy -= sy;
+            moved();
+            redraw();
+            if (done)
+                turnTick = 0;
+            return !done;
+        });
+    }
+
+    private enum turnHalfLife = 16.0;   /// ms in which half of a rotation's step is turned
+
+    /// Whether a rotation glides over a few frames: for a pointer that
+    /// moves in whole pixels, whose steps the model would show.
+    void setSmoothTurning(bool on)
+    {
+        smoothTurning = on;
+        if (!on)
+            finishTurn();
+    }
+
+    /// Turns at once what a rotation has not turned yet.
+    private void finishTurn()
+    {
+        if (turnTick != 0)
+        {
+            area.removeTickCallback(turnTick);
+            turnTick = 0;
+        }
+        if (turnDx != 0 || turnDy != 0)
+            turn(turnDx, turnDy, orbitPivot);
+        turnDx = turnDy = 0;
     }
 
     /// v turned by angle a about unit axis k (Rodrigues).
