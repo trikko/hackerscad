@@ -3,6 +3,8 @@ module hackerscad.geom.mesh;
 import hackerscad.geom.vec;
 import std.algorithm.mutation : swap;
 
+private long[3] to3(long[] a) => [a[0], a[1], a[2]];
+
 /// Indexed triangle mesh, the common currency between kernels, exporters and
 /// the viewport.
 struct Mesh
@@ -33,19 +35,33 @@ struct Mesh
     {
         import std.math : lround;
 
-        uint[long[3]] index;
+        // a grid of cells `tolerance` wide: two points a hair apart may fall in
+        // cells side by side, so the cells round a point are searched too
+        uint[][long[3]] cells;
         auto remap = new uint[vertexCount];
         Mesh r;
         foreach (i; 0 .. vertexCount)
         {
             float[3] p3 = verts[i * 3 .. i * 3 + 3];
             long[3] key = [lround(p3[0] / tolerance), lround(p3[1] / tolerance), lround(p3[2] / tolerance)];
-            if (auto p = key in index)
-                remap[i] = *p;
+            long found = -1;
+            if (auto p = key in cells)
+                found = (*p)[0];
+            else
+                foreach (dx; -1 .. 2)
+                    foreach (dy; -1 .. 2)
+                        foreach (dz; -1 .. 2)
+                            if (found < 0)
+                                if (auto p = [key[0] + dx, key[1] + dy, key[2] + dz].to3 in cells)
+                                    foreach (id; *p)
+                                        if (found < 0 && (r.vertex(id) - Vec3(p3[0], p3[1], p3[2])).length <= tolerance)
+                                            found = id;
+            if (found >= 0)
+                remap[i] = cast(uint) found;
             else
             {
                 immutable id = cast(uint) r.vertexCount;
-                index[key] = id;
+                cells[key] ~= id;
                 r.verts ~= p3[];
                 remap[i] = id;
             }
@@ -285,6 +301,16 @@ struct Mesh
         }
         return v / 6;
     }
+}
+
+unittest
+{
+    // the same point a hair apart across a cell's border of the welding grid (0.00015 rounds up,
+    // 0.0001499 down): welded all the same
+    Mesh m;
+    m.verts = [0.00015f, 0, 0, 0, 1, 0, 1, 0, 0, 0.0001499f, 0, 0, 0, 1, 0, 0, -1, 0];
+    m.tris = [0, 1, 2, 3, 5, 4];
+    assert(m.welded.vertexCount == 4, "a point split by the grid");
 }
 
 unittest

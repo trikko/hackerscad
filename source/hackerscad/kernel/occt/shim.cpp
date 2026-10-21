@@ -54,6 +54,9 @@
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <BRepCheck_Shell.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <IMeshTools_Parameters.hxx>
+#include <Message_ProgressIndicator.hxx>
+#include <Message_ProgressScope.hxx>
 #include <BRepLProp_SLProps.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Poly_PolygonOnTriangulation.hxx>
@@ -4983,24 +4986,24 @@ static bool triangle_properties(const hc_shape *s, double &volume, double &area)
 static const double mass_accuracy = 1e-5;
 
 
-// The volume summed over the triangles of the faces' meshes (meshed finely
-// here when they have none), each face's turned as the face is.
-static double mesh_volume(const TopoDS_Shape &shape)
+// A copy of `shape` with no mesh: meshed, it leaves the shape's own mesh as
+// it is. (BRepMesh meshing again a shape meshed before at other deflections
+// keeps the old mesh on some faces and edges, makes a new one on others, and
+// their triangles no longer meet.)
+static TopoDS_Shape unmeshed_copy(const TopoDS_Shape &shape)
 {
-    Bnd_Box box;
-    BRepBndLib::Add(shape, box);
-    const double diag = box.IsVoid() ? 1 : sqrt(box.SquareExtent());
-    bool meshed = true;
-    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More() && meshed; ex.Next()) {
-        TopLoc_Location loc;
-        meshed = !BRep_Tool::Triangulation(TopoDS::Face(ex.Current()), loc).IsNull();
-    }
-    if (!meshed)
-        BRepMesh_IncrementalMesh(shape, std::min(0.01, diag * 1e-4), false, 0.2, true);
+    TopoDS_Shape copy = BRepBuilderAPI_Copy(shape, false, false).Shape();
+    BRepTools::Clean(copy);
+    return copy;
+}
+
+// The volume summed over the triangles of the faces' meshes, each face's
+// turned as the face is, or -1 when they are not a closed surface.
+static double closed_mesh_volume(const TopoDS_Shape &shape)
+{
     double volume = 0;
     // the triangles' sides, their ends welded where the faces' meshes meet (an edge's points are the same
-    // in both): each side two triangles', or the mesh has a hole and its volume says nothing (a fillet's
-    // face meshed in part, on macOS)
+    // in both): each side two triangles', or the mesh has a hole and its volume says nothing
     std::map<std::array<long long, 3>, int> points;
     std::map<std::pair<int, int>, int> sides;
     auto point = [&](const gp_XYZ &p) {
@@ -5033,6 +5036,29 @@ static double mesh_volume(const TopoDS_Shape &shape)
         if (side.second != 2)
             return -1;
     return volume;
+}
+
+// The volume of the faces' meshes: the shape's own when every face has one
+// and they close, else of a copy meshed finely here; -1 when that does not
+// close either.
+static double mesh_volume(const TopoDS_Shape &shape)
+{
+    bool meshed = true;
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More() && meshed; ex.Next()) {
+        TopLoc_Location loc;
+        meshed = !BRep_Tool::Triangulation(TopoDS::Face(ex.Current()), loc).IsNull();
+    }
+    if (meshed) {
+        const double own = closed_mesh_volume(shape);
+        if (own != -1)
+            return own;
+    }
+    Bnd_Box box;
+    BRepBndLib::Add(shape, box);
+    const double diag = box.IsVoid() ? 1 : sqrt(box.SquareExtent());
+    const TopoDS_Shape fresh = unmeshed_copy(shape);
+    BRepMesh_IncrementalMesh(fresh, std::min(0.01, diag * 1e-4), false, 0.2, true);
+    return closed_mesh_volume(fresh);
 }
 
 double hc_volume(const hc_shape *s)
@@ -5274,27 +5300,19 @@ int hc_bbox(const hc_shape *s, double out[6])
         }
         if (!slow.empty())
         {
-            bool meshed = true;
-            for (const auto &face : slow)
-            {
-                TopLoc_Location loc;
-                meshed = meshed && !BRep_Tool::Triangulation(face, loc).IsNull();
-            }
             Bnd_Box rough;
             BRepBndLib::Add(s->shape, rough, false);
             const double deflection = std::max(0.01, 1e-4 * std::sqrt(rough.SquareExtent()));
+            // copies meshed: the faces' own mesh, if any, left as it is (see unmeshed_copy)
             for (const auto &face : slow)
             {
-                BRepMesh_IncrementalMesh(face, deflection, false, 0.5, true);
+                const TopoDS_Shape copy = unmeshed_copy(face);
+                BRepMesh_IncrementalMesh(copy, deflection, false, 0.5, true);
                 Bnd_Box fb;
-                BRepBndLib::Add(face, fb, true);
+                BRepBndLib::Add(copy, fb, true);
                 fb.SetGap(0);
                 b.Add(fb);
             }
-            // leave no fine mesh behind: tessellate() would reuse it
-            if (!meshed)
-                for (const auto &face : slow)
-                    BRepTools::Clean(face);
         }
         if (!TopExp_Explorer(s->shape, TopAbs_FACE).More())
             BRepBndLib::AddOptimal(s->shape, b, false, false);   // wires, vertices
@@ -5406,6 +5424,26 @@ static double mesh_area(const TopoDS_Face &face)
 // bug is gone; then this, mesh_area and the division loop in hc_tessellate
 // can go.
 
+// A time limit for BRepMesh: it asks its progress whether to stop, and
+// stops, the faces it had not done left without a mesh. (WORKAROUND
+// OpenCascade 7.9.3, macOS arm64: meshing a fillet's cylinder divided in
+// pieces, finely, never ended.)
+class MeshDeadline : public Message_ProgressIndicator
+{
+    std::chrono::steady_clock::time_point end;
+
+public:
+    explicit MeshDeadline(std::chrono::steady_clock::time_point end) : end(end) {}
+    Standard_Boolean UserBreak() override { return std::chrono::steady_clock::now() > end; }
+    void Show(const Message_ProgressScope &, const Standard_Boolean) override {}
+};
+
+// Thrown by tessellate_once when BRepMesh met its time limit: hc_tessellate
+// meshes coarser.
+struct MeshTimeout
+{
+};
+
 // The deflection a mesh made here with a solid carries (a solid through
 // rings): such a face keeps it when the solid is meshed.
 static const double own_mesh_mark = 1e-7;
@@ -5416,6 +5454,13 @@ static bool meshed_badly(const TopoDS_Face &face)
 {
     if (!workaround(HC_WORKAROUND_MESH_DIVIDE))
         return false;
+    // far fewer triangles than points: the mesher gave up inside the face's outline, whatever the
+    // surface (WORKAROUND OpenCascade 7.9.3, macOS arm64: a fillet's long cylinder beside a dense
+    // B-spline fillet, 29 triangles for 1301 points); a whole mesh has at least points - 2
+    TopLoc_Location loc;
+    const auto tri = BRep_Tool::Triangulation(face, loc);
+    if (!tri.IsNull() && tri->NbNodes() > 8 && tri->NbTriangles() < tri->NbNodes() - 2)
+        return true;
     if (BRepAdaptor_Surface(face, false).GetType() <= GeomAbs_Torus)
         return false;
     // the plain (Gauss) integration first, much faster; it can be 5% off
@@ -5432,15 +5477,18 @@ static bool meshed_badly(const TopoDS_Face &face)
     return off(exact.Mass());
 }
 
-hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angular_deflection)
+// One meshing of hc_tessellate: `fresh`, of a copy without the shape's mesh
+// even when it has none yet; `parallel`, BRepMesh's faces on several threads.
+static hc_mesh *tessellate_once(const hc_shape *s, double linear_deflection, double angular_deflection, bool fresh,
+                                bool parallel)
 {
-    return guarded<>((hc_mesh *)nullptr, [&]() -> hc_mesh * {
+    {
         // faces in the same order as the face indices used everywhere else;
         // plain triangles are taken as they are, the rest is meshed
         const auto &given = map_of(s, TopAbs_FACE);
         std::vector<std::array<gp_Pnt, 3>> plain(given.Extent());
         std::vector<bool> isPlain(given.Extent()), kept(given.Extent());
-        bool meshedBefore = false;
+        bool meshedBefore = fresh;
         for (int f = 1; f <= given.Extent(); f++) {
             isPlain[f - 1] = plain_triangle(TopoDS::Face(given(f)), plain[f - 1].data());
             if (!isPlain[f - 1]) {
@@ -5474,8 +5522,16 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
                 bb.Add(rest, faces(f));
                 anyRest = true;
             }
-        if (anyRest)
-            BRepMesh_IncrementalMesh(rest, linear_deflection, false, angular_deflection, true);
+        if (anyRest) {
+            IMeshTools_Parameters params;
+            params.Deflection = linear_deflection;
+            params.Angle = angular_deflection;
+            params.InParallel = parallel;
+            Handle(MeshDeadline) deadline = new MeshDeadline(std::chrono::steady_clock::now() + std::chrono::seconds(60));
+            BRepMesh_IncrementalMesh(rest, params, deadline->Start());
+            if (deadline->UserBreak())
+                throw MeshTimeout();
+        }
 
         // the triangles of each face come from these faces: itself, or the
         // pieces it is divided into when the mesher got it wrong
@@ -5491,7 +5547,11 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
         // through one context, the edges they share with their neighbours
         // are divided in those too, so that the mesh stays closed. The solid
         // itself is left as it is.
+        // at most 10 s in all: past it, the faces keep the mesh they have (see MeshDeadline)
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         for (int parts = 8; !bad.empty() && parts <= 128; parts *= 4) {
+            if (std::chrono::steady_clock::now() > end)
+                break;
             Handle(ShapeBuild_ReShape) context = new ShapeBuild_ReShape;
             for (int f : bad) {
                 const TopoDS_Face &face = TopoDS::Face(faces(f));
@@ -5504,7 +5564,14 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
                 context->Replace(face, divide.Result());
             }
             const TopoDS_Shape divided = context->Apply(shape);
-            BRepMesh_IncrementalMesh(divided, linear_deflection, false, angular_deflection, true);
+            IMeshTools_Parameters params;
+            params.Deflection = linear_deflection;
+            params.Angle = angular_deflection;
+            params.InParallel = parallel;
+            Handle(MeshDeadline) deadline = new MeshDeadline(end);
+            BRepMesh_IncrementalMesh(divided, params, deadline->Start());
+            if (deadline->UserBreak())
+                break;
             std::vector<int> still;
             for (int f = 1; f <= faces.Extent(); f++) {
                 if (isPlain[f - 1])
@@ -5584,6 +5651,141 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
             }
         }
         m->face_start[faces.Extent()] = ti / 3;
+        return m;
+    }
+}
+
+// The vertices of a mesh welded as Mesh.welded does: an id per vertex, the
+// same for points within 1e-4 mm, found in a grid of cells that wide and the
+// cells round them (two points a hair apart on either side of a border).
+static std::vector<int> weld_ids(const hc_mesh *m)
+{
+    const double cell = 1e-4;
+    std::map<std::array<long long, 3>, std::vector<int>> cells;
+    std::vector<int> id(m->nverts);
+    for (int i = 0; i < m->nverts; i++) {
+        const float *v = m->verts + i * 3;
+        const std::array<long long, 3> k = {std::llround(v[0] / cell), std::llround(v[1] / cell), std::llround(v[2] / cell)};
+        int found = -1;
+        for (int dx = -1; dx <= 1 && found < 0; dx++)
+            for (int dy = -1; dy <= 1 && found < 0; dy++)
+                for (int dz = -1; dz <= 1 && found < 0; dz++) {
+                    auto it = cells.find({k[0] + dx, k[1] + dy, k[2] + dz});
+                    if (it == cells.end())
+                        continue;
+                    for (int j : it->second) {
+                        const float *w = m->verts + j * 3;
+                        if (std::hypot(v[0] - w[0], v[1] - w[1], v[2] - w[2]) <= cell) {
+                            found = id[j];
+                            break;
+                        }
+                    }
+                }
+        if (found < 0) {
+            found = i;
+            cells[k].push_back(i);
+        }
+        id[i] = found;
+    }
+    return id;
+}
+
+// WORKAROUND (OpenCascade 7.9.3, macOS arm64): the mesher leaves a few cracks
+// in a fillet's long cylinder beside a dense B-spline fillet, even meshed
+// divided (see meshed_badly). In the mesh of a closed solid, each small loop
+// of open sides is closed with a fan of triangles, added to the last face; a
+// mesh with many open sides, or loops that cross, is left as it is. Returns
+// how many sides were open.
+static int close_small_holes(hc_mesh *m)
+{
+    const std::vector<int> id = weld_ids(m);
+    std::map<std::pair<int, int>, int> uses;   // undirected
+    for (int t = 0; t < m->ntris; t++)
+        for (int j = 0; j < 3; j++) {
+            const int u = id[m->tris[t * 3 + j]], v = id[m->tris[t * 3 + (j + 1) % 3]];
+            if (u != v)
+                uses[{std::min(u, v), std::max(u, v)}]++;
+        }
+    // the open sides as their triangles go, u → v: the hole goes v → u
+    std::map<int, int> from;   // v → u
+    int open = 0;
+    for (int t = 0; t < m->ntris; t++)
+        for (int j = 0; j < 3; j++) {
+            const int u = id[m->tris[t * 3 + j]], v = id[m->tris[t * 3 + (j + 1) % 3]];
+            if (u == v || uses[{std::min(u, v), std::max(u, v)}] != 1)
+                continue;
+            open++;
+            if (!from.emplace(v, u).second)
+                return open;   // two open sides from one point: loops that touch
+        }
+    if (open == 0 || open > 256)
+        return open;
+    std::vector<std::vector<int>> loops;
+    std::set<int> seen;
+    for (const auto &start : from) {
+        if (seen.count(start.first))
+            continue;
+        std::vector<int> loop;
+        int at = start.first;
+        while (!seen.count(at)) {
+            seen.insert(at);
+            loop.push_back(at);
+            auto next = from.find(at);
+            if (next == from.end() || loop.size() > 64)
+                return open;
+            at = next->second;
+        }
+        if (at != start.first || loop.size() < 3)
+            return open;
+        loops.push_back(loop);
+    }
+    int added = 0;
+    for (const auto &loop : loops)
+        added += (int)loop.size() - 2;
+    float *verts = new float[(m->nverts + 3 * added) * 3];
+    int *tris = new int[(m->ntris + added) * 3];
+    std::copy(m->verts, m->verts + m->nverts * 3, verts);
+    std::copy(m->tris, m->tris + m->ntris * 3, tris);
+    int nv = m->nverts, nt = m->ntris;
+    for (const auto &loop : loops)
+        for (size_t i = 1; i + 1 < loop.size(); i++)
+            for (int corner : {loop[0], loop[i], loop[i + 1]}) {
+                std::copy(m->verts + corner * 3, m->verts + corner * 3 + 3, verts + nv * 3);
+                tris[nt * 3 + (nv - m->nverts) % 3] = nv;
+                nv++;
+                if ((nv - m->nverts) % 3 == 0)
+                    nt++;
+            }
+    delete[] m->verts;
+    delete[] m->tris;
+    m->verts = verts;
+    m->tris = tris;
+    m->nverts = nv;
+    m->ntris = nt;
+    m->face_start[m->nfaces] = nt;
+    return open;
+}
+
+hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angular_deflection)
+{
+    return guarded<>((hc_mesh *)nullptr, [&]() -> hc_mesh * {
+        // WORKAROUND (OpenCascade 7.9.3, macOS arm64): BRepMesh never ended on a fillet's faces at
+        // 0.005 mm; past its time limit the shape is meshed again from no mesh, twice as coarse, twice
+        hc_mesh *m = nullptr;
+        for (double scale = 1; m == nullptr; scale *= 2)
+            try {
+                m = tessellate_once(s, linear_deflection * scale, angular_deflection * std::min(scale, 2.0), scale > 1,
+                                    true);
+            } catch (const MeshTimeout &) {
+                if (scale >= 4)
+                    throw Standard_Failure("meshing did not end (OpenCascade's mesher, at 4 times the tolerance too)");
+            }
+        // a closed solid: its mesh's cracks closed (see close_small_holes)
+        bool solid = TopExp_Explorer(s->shape, TopAbs_SOLID).More();
+        for (TopExp_Explorer ex(s->shape, TopAbs_SHELL); ex.More() && solid; ex.Next())
+            solid = BRep_Tool::IsClosed(ex.Current());
+        if (solid)
+            close_small_holes(m);
         return m;
     });
 }

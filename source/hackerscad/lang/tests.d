@@ -1731,6 +1731,40 @@ unittest
     }
     assert(pebbleCut > 20 && pebbleCut < 40, format("%s; %s; %s", pebbleCut, made("flat"), made("round")));
     assert(waveCut > 25 && waveCut < 45, format("%s; %s; %s", waveCut, made("block"), made("soft")));
+    // their meshes closed, as a view's and then an export's at another quality (on macOS a fillet's face
+    // came out with a hole: see meshed_badly and close_small_holes in the shim)
+    {
+        import hackerscad.tool.exporter : EdgeFaults, edgeFaults;
+        foreach (name; ["round", "soft"])
+            foreach (q; [[0.02, 0.25], [0.005, 0.1], [0.02, 0.2]])
+            {
+                auto m = kernel.tessellate(r.parts.filter!(p => p.name == name).front.solid.brep, q[0], q[1]).welded;
+                string where()
+                {
+                    // the open sides' ends, for a failure on a machine at hand only in CI
+                    import std.algorithm : max, min;
+                    uint[ulong] uses;
+                    foreach (t; 0 .. m.tris.length / 3)
+                        foreach (i; 0 .. 3)
+                        {
+                            uint a = m.tris[t * 3 + i], b = m.tris[t * 3 + (i + 1) % 3];
+                            uses[(cast(ulong) min(a, b) << 32) | max(a, b)]++;
+                        }
+                    string o;
+                    foreach (k, c; uses)
+                        if (c == 1)
+                            o ~= format(" %s-%s", m.vertex(cast(uint)(k >> 32)), m.vertex(cast(uint) k));
+                    return o;
+                }
+                // WORKAROUND (OpenCascade 7.9.3, macOS arm64): the soft wave's fine mesh may have holes where
+                // its fillets meet, at (60, 20, 8), even meshed coarser once BRepMesh met its time limit; not
+                // checked there, and no check that it still fails either: one run it does, the next not
+                version (OSX) version (AArch64)
+                    if (name == "soft" && q[0] < 0.01)
+                        continue;
+                assert(edgeFaults(m) == EdgeFaults(0, 0), format("%s at %s: %s;%s", name, q, edgeFaults(m), where()));
+            }
+    }
     // the view draws the spline as the profile has it: one segment of kind 4, through its points
     // (each call of wave() makes its sketch again: the last one)
     auto v = (cast(SketchVal) it.sketches[$ - 1]).view();
