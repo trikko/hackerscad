@@ -16,7 +16,9 @@ import glib.global : timeoutAdd;
 import glib.source : Source;
 import glib.types : PRIORITY_DEFAULT;
 import gtk.box : Box;
+import gtk.event_controller_focus : EventControllerFocus;
 import gtk.event_controller_key : EventControllerKey;
+import gtk.grid : Grid;
 import gtk.gesture_click : GestureClick;
 import gtk.label : Label;
 import gtk.list_box : ListBox;
@@ -75,6 +77,21 @@ final class EditorCompletion
         // a click only places the cursor (or picks a line): the signature is for typing
         click.connectPressed(() { hide(); });
         view.addController(click);
+
+        // the editor loses the focus (a click elsewhere, another window): the
+        // popups go, unless the focus went to the list (a click on an entry)
+        auto focus = new EventControllerFocus;
+        focus.connectLeave(() {
+            import glib.global : idleAdd;
+            idleAdd(PRIORITY_DEFAULT, () {
+                auto root = view.getRoot();
+                auto now = root is null ? null : root.getFocus();
+                if (!view.hasFocus() && (now is null || !now.isAncestor(list)))
+                    hide();
+                return false;
+            });
+        });
+        view.addController(focus);
 
         // help on the name under the pointer
         view.setHasTooltip(true);
@@ -140,6 +157,7 @@ private:
     ListBox rows;
     ScrolledWindow scroller;
     Label doc, sigLabel;
+    Grid sigForms;
     CompletionResult current;
     uint pending, sigPending;
 
@@ -187,11 +205,21 @@ private:
         sig.setPosition(PositionType.Top);
         sig.setHalign(Align.Start);
         sig.setCanFocus(false);
+        auto sigBox = new Box(Orientation.Vertical, 0);
         sigLabel = new Label("");
-        sigLabel.addCssClass("monospace");
+        sigLabel.addCssClass("hcad-signature-head");
         sigLabel.setMaxWidthChars(80);
         sigLabel.setWrap(true);
-        sig.setChild(sigLabel);
+        sigLabel.setWrapMode(WrapMode.WordChar);
+        sigLabel.setXalign(0);
+        sigBox.append(sigLabel);
+        // the ways to call it, when they are alternatives: the code, and what it means
+        sigForms = new Grid;
+        sigForms.addCssClass("hcad-signature-forms");
+        sigForms.setColumnSpacing(14);
+        sigForms.setRowSpacing(2);
+        sigBox.append(sigForms);
+        sig.setChild(sigBox);
     }
 
     string text()
@@ -352,10 +380,8 @@ private:
             sig.popdown();
             return;
         }
-        // the ways to call it under the signature, when they are alternatives
-        import glib.global : markupEscapeText;
-        sigLabel.setMarkup(highlighted(res.signature, res.activeParam)
-            ~ (res.forms.length ? "\n<small>" ~ markupEscapeText(res.forms) ~ "</small>" : ""));
+        sigLabel.setMarkup(highlighted(res.signature, res.activeParam, dark()));
+        fillForms(res.forms);
         TextIter it;
         buffer.getIterAtMark(it, buffer.getInsert());
         auto src = text();
@@ -363,8 +389,44 @@ private:
         sig.popup();
     }
 
-    /// The signature with the active argument in bold.
-    static string highlighted(string signature, int active)
+    /// The forms under the signature, one a row: its code, its comment.
+    void fillForms(string forms)
+    {
+        import std.string : indexOf, lineSplitter, strip;
+        while (auto child = sigForms.getFirstChild())
+            sigForms.remove(child);
+        int row;
+        foreach (line; forms.lineSplitter)
+        {
+            auto cut = line.indexOf("//");
+            auto code = (cut >= 0 ? line[0 .. cut] : line).strip;
+            if (code.length == 0)
+                continue;
+            auto c = new Label(code);
+            c.addCssClass("monospace");
+            c.setXalign(0);
+            sigForms.attach(c, 0, row, 1, 1);
+            if (cut >= 0)
+            {
+                auto m = new Label(line[cut + 2 .. $].strip);
+                m.addCssClass("dim-label");
+                m.setXalign(0);
+                sigForms.attach(m, 1, row, 1, 1);
+            }
+            row++;
+        }
+        sigForms.setVisible(row > 0);
+    }
+
+    static bool dark()
+    {
+        import adw.style_manager : StyleManager;
+        return StyleManager.getDefault().getDark();
+    }
+
+    /// The signature: the name in bold, the types faint, the argument the
+    /// cursor is on in the accent colour.
+    static string highlighted(string signature, int active, bool dark = false)
     {
         import glib.global : markupEscapeText;
         import std.string : indexOf, lastIndexOf;
@@ -388,15 +450,25 @@ private:
             }
         }
         params ~= signature[start .. close];
-        string m = markupEscapeText(signature[0 .. open + 1]);
+        // a name and its type: the type faint
+        static string param(string p)
+        {
+            auto colon = p.indexOf(':');
+            if (colon < 0)
+                return markupEscapeText(p);
+            return markupEscapeText(p[0 .. colon + 1]) ~ "<span alpha=\"60%\">" ~ markupEscapeText(p[colon + 1 .. $])
+                ~ "</span>";
+        }
+        immutable accent = dark ? "#78aeed" : "#1c71d8";
+        string m = "<tt><b>" ~ markupEscapeText(signature[0 .. open]) ~ "</b>(";
         foreach (k, p; params)
         {
             if (k)
                 m ~= ",";
-            auto e = markupEscapeText(p);
-            m ~= k == active ? "<b>" ~ e ~ "</b>" : e;
+            m ~= k == active ? "<span foreground=\"" ~ accent ~ "\" weight=\"bold\">" ~ markupEscapeText(p) ~ "</span>"
+                : param(p);
         }
-        return m ~ markupEscapeText(signature[close .. $]);
+        return m ~ ")<span alpha=\"60%\">" ~ markupEscapeText(signature[close + 1 .. $]) ~ "</span></tt>";
     }
 
     bool onKey(uint key, ModifierType state)
