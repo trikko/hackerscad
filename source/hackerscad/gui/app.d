@@ -916,6 +916,11 @@ final class MainWindow
             auto wa = new MarkAttributes;
             wa.setIconName("dialog-warning-symbolic");
             editor.setMarkAttributes("warning", wa, 1);
+            // a click on an icon in the gutter: the problems of that line, told in full
+            editor.connectLineMarkActivated((TextIter it, uint button, ModifierType state, int presses) {
+                if (button == 1)
+                    showLineProblems(it.getLine());
+            });
         }
         editor.setAutoIndent(true);
         editor.setTabWidth(4);
@@ -2168,7 +2173,7 @@ private:
             completion.snapshotOver(snap, window);
         // the open menus of the view: the right-click one, the parts, the display style
         if (other is null)
-            foreach (pop; [contextPopover, partsMenu ? partsMenu.getPopover() : null,
+            foreach (pop; [contextPopover, problemsPopover, partsMenu ? partsMenu.getPopover() : null,
                     displayMenu ? displayMenu.getPopover() : null])
                 snapshotPopover(snap, window, pop);
         auto node = snap.toNode();
@@ -2181,9 +2186,171 @@ private:
         return w.getRenderer().renderTexture(node, null).saveToPng(file);
     }
 
+    /// The problems marked in the code, with their line (0-based).
+    struct ShownProblem
+    {
+        int line;
+        Diagnostic d;
+    }
+
+    ShownProblem[] shownProblems;
+    imported!"gtk.popover".Popover problemsPopover;   /// showLineProblems', while open
+
+    /// The problems of `line` (0-based) in a popover by its icon in the
+    /// gutter: what each is, its message and the fix it suggests.
+    void showLineProblems(int line)
+    {
+        import gtk.image : Image;
+        import gtk.popover : Popover;
+        import gtk.separator : Separator;
+        import gtk.types : PositionType, TextWindowType;
+        import gdk.rectangle : Rectangle;
+        import gobject.value : Value;
+        import std.uni : toUpper;
+        Diagnostic[] here;
+        foreach (p; shownProblems)
+            if (p.line == line)
+                here ~= p.d;
+        if (here.length == 0)
+            return;
+        auto box = new Box(Orientation.Vertical, 8);
+        foreach (i, d; here)
+        {
+            if (i)
+                box.append(new Separator(Orientation.Horizontal));
+            immutable error = d.severity == Severity.error;
+            auto head = new Box(Orientation.Horizontal, 6);
+            auto icon = Image.newFromIconName(error ? "dialog-error-symbolic" : "dialog-warning-symbolic");
+            icon.addCssClass(error ? "error" : "warning");
+            head.append(icon);
+            auto title = new Label(error ? "Error" : "Warning");
+            title.addCssClass("heading");
+            head.append(title);
+            auto code = new Label(d.code);
+            code.addCssClass("dim-label");
+            code.addCssClass("caption");
+            head.append(code);
+            box.append(head);
+            auto message = new Label(d.message.length ? d.message[0 .. 1].toUpper ~ d.message[1 .. $] : "");
+            message.setWrap(true);
+            message.setMaxWidthChars(48);
+            message.setXalign(0);
+            box.append(message);
+            if (d.suggestion.length)
+            {
+                // a line of code to write (it ends as a statement does): in a box of its own, with a
+                // button that copies it; else a hint in words
+                immutable isCode = d.suggestion.endsWith(";");
+                auto fix = new Label(isCode ? d.suggestion : d.suggestion[0 .. 1].toUpper ~ d.suggestion[1 .. $]);
+                fix.setWrap(true);
+                fix.setMaxWidthChars(48);
+                fix.setXalign(0);
+                fix.setHexpand(true);
+                if (!isCode)
+                {
+                    fix.addCssClass("dim-label");
+                    box.append(fix);
+                    continue;
+                }
+                fix.addCssClass("monospace");
+                auto caption = new Label("Suggested fix: write instead");
+                caption.addCssClass("caption-heading");
+                caption.addCssClass("dim-label");
+                caption.setXalign(0);
+                caption.setMarginTop(4);
+                box.append(caption);
+                auto row = new Box(Orientation.Horizontal, 6);
+                row.addCssClass("card");
+                fix.setMarginStart(8);
+                fix.setMarginTop(6);
+                fix.setMarginBottom(6);
+                row.append(fix);
+                auto copy = Button.newFromIconName("edit-copy-symbolic");
+                copy.addCssClass("flat");
+                copy.setValign(Align.Center);
+                copy.setTooltipText("Copy the fix");
+                immutable text = d.suggestion;
+                copy.connectClicked(() {
+                    // said in words: a check mark is the button beside it, Apply
+                    window.getClipboard().set(new Value(text));
+                    copy.setTooltipText("Copied");
+                    note("the fix copied");
+                });
+                row.append(copy);
+                if (d.replaces.length)
+                {
+                    // put in place of the code it replaces, as one change Ctrl+Z undoes
+                    auto apply = Button.newFromIconName("object-select-symbolic");
+                    apply.addCssClass("flat");
+                    apply.setValign(Align.Center);
+                    apply.setTooltipText("Write the fix in place of the code marked");
+                    immutable fixed = d;
+                    apply.connectClicked(() {
+                        if (auto why = applyFix(fixed))
+                            note(why);
+                        if (problemsPopover !is null)
+                            problemsPopover.popdown();
+                    });
+                    row.append(apply);
+                }
+                box.append(row);
+            }
+        }
+        box.setMarginTop(4);
+        box.setMarginBottom(4);
+        box.setMarginStart(4);
+        box.setMarginEnd(4);
+        auto pop = new Popover;
+        pop.setChild(box);
+        pop.setParent(editor);
+        pop.setPosition(PositionType.Bottom);
+        // under the icon of that line
+        TextIter it;
+        buffer.getIterAtLine(it, line);
+        int y, height, wx, wy;
+        editor.getLineYrange(it, y, height);
+        editor.bufferToWindowCoords(TextWindowType.Widget, 0, y, wx, wy);
+        auto gutter = editor.getGutter(TextWindowType.Left);
+        pop.setPointingTo(Rectangle(0, wy, gutter is null ? 20 : gutter.getWidth(), height));
+        pop.connectClosed(() {
+            if (problemsPopover is pop)
+                problemsPopover = null;
+            idleAdd(PRIORITY_DEFAULT, () { pop.unparent(); return false; });
+        });
+        if (problemsPopover !is null)
+            problemsPopover.popdown();
+        problemsPopover = pop;
+        pop.popup();
+    }
+
+    /// Writes a problem's fix in place of the code it replaces, as one change
+    /// (Ctrl+Z undoes it); null, or why it was not written.
+    string applyFix(const Diagnostic d)
+    {
+        if (d.replaces.length == 0)
+            return "this problem has no fix to write in place";
+        TextIter a, b;
+        if (!buffer.getIterAtLineOffset(a, d.fromLine - 1, d.fromCol - 1)
+            || !buffer.getIterAtLineOffset(b, d.toLine - 1, d.toCol - 1) || buffer.getText(a, b, true) != d.replaces)
+            return "the code there changed since it was checked: the fix was not written";
+        buffer.beginUserAction();
+        buffer.delete_(a, b);
+        buffer.insert(a, d.suggestion);
+        buffer.endUserAction();
+        return null;
+    }
+
+    /// A problem as the code's tooltips say it.
+    static string problemTip(const Diagnostic d)
+    {
+        immutable error = d.severity == Severity.error;
+        return format("%s %s: %s%s", error ? "✗" : "⚠", error ? "error" : "warning", d.message,
+            d.suggestion.length ? "\n→ " ~ d.suggestion : "");
+    }
+
     /// Underlines the code of a problem (at least the whole word), tints its
-    /// line and puts an icon in the gutter.
-    void markProblem(Span span, string kind)
+    /// line and puts an icon in the gutter: a click on it tells `d` in full.
+    void markProblem(Span span, string kind, const Diagnostic d)
     {
         TextIter a, b, lineStart, lineEnd;
         if (!buffer.getIterAtLine(lineStart, span.line - 1))
@@ -2203,6 +2370,7 @@ private:
         if (b.compare(lineEnd) > 0)
             b = lineEnd.copy();
         buffer.applyTagByName(kind, a, b);
+        shownProblems ~= ShownProblem(lineStart.getLine(), d);
         auto next = lineEnd.copy();
         next.forwardChar();
         buffer.applyTagByName(kind ~ "-line", lineStart, next);
@@ -2539,6 +2707,7 @@ private:
     Button problemBanner;
     Label problemText;
     Span problemSpan;
+    string problemFirst;   /// the message of the problem problemSpan is of
     Diagnostic[] problems;     /// the last run's
     bool problemsEvaluated;    /// whether that run made the model
 
@@ -2552,33 +2721,36 @@ private:
         foreach (tag; ["error", "error-line", "warning", "warning-line"])
             buffer.removeTagByName(tag, s, e);
         buffer.removeSourceMarks(s, e, null);
+        shownProblems = null;
         Diagnostic first;
         bool haveFirst;
+        size_t errors, warnings;
         foreach (d; problems)
         {
             if (d.severity != Severity.error && d.code == Code.sketch && !viewport.sketchShown)
                 continue;
             if (d.span.file == absolutePath(path) && d.span.line > 0)
-                markProblem(d.span, d.severity == Severity.error ? "error" : "warning");
+                markProblem(d.span, d.severity == Severity.error ? "error" : "warning", d);
+            (d.severity == Severity.error ? errors : warnings)++;
             if (!haveFirst || (d.severity == Severity.error && first.severity != Severity.error))
             {
                 first = d;
                 haveFirst = true;
             }
         }
-        showProblem(haveFirst, first, problemsEvaluated);
+        showProblem(errors, warnings, first, problemsEvaluated);
     }
 
-    /// A banner over the 3D view with the first problem; it jumps to the line.
-    void showProblem(bool any, Diagnostic d, bool evaluated)
+    /// A badge over the 3D view with how many errors and warnings there are
+    /// (the code marks them, the console says them); a click goes to the
+    /// first one, the errors before the warnings.
+    void showProblem(size_t errors, size_t warnings, Diagnostic d, bool evaluated)
     {
         if (problemBanner is null)
         {
             problemBanner = new Button;
             problemBanner.addCssClass("hcad-problem");
             problemText = new Label("");
-            problemText.setEllipsize(EllipsizeMode.End);
-            problemText.setMaxWidthChars(80);
             problemText.setXalign(0);
             problemBanner.setChild(problemText);
             problemBanner.setHalign(Align.Start);
@@ -2586,23 +2758,38 @@ private:
             problemBanner.setMarginStart(10);
             problemBanner.setMarginEnd(10);
             problemBanner.setMarginBottom(10);
-            problemBanner.connectClicked(() => jumpTo(problemSpan, problemText.getText()));
+            problemBanner.connectClicked(() {
+                // in this file: the line scrolled into sight, then its popover pointed at it once the
+                // editor has moved (pointed before, it lands on the old place, over the line); elsewhere,
+                // the message in the info line
+                immutable here = problemSpan.file == absolutePath(path) && problemSpan.line > 0;
+                jumpTo(problemSpan, here ? "" : problemFirst);
+                if (here)
+                {
+                    immutable line = problemSpan.line - 1;
+                    timeoutAdd(PRIORITY_DEFAULT, 250, () { showLineProblems(line); return false; });
+                }
+            });
             overlay.addOverlay(problemBanner);
         }
-        problemBanner.setVisible(any);
-        if (!any)
+        problemBanner.setVisible(errors + warnings > 0);
+        if (errors + warnings == 0)
             return;
-        immutable error = d.severity == Severity.error;
-        problemBanner.removeCssClass(error ? "warning" : "error");
-        problemBanner.addCssClass(error ? "error" : "warning");
+        problemBanner.removeCssClass(errors ? "warning" : "error");
+        problemBanner.addCssClass(errors ? "error" : "warning");
         problemSpan = d.span;
-        auto where = d.span.line > 0 ? (d.span.file == absolutePath(path) ? format("line %d: ", d.span.line)
-            : format("%s:%d: ", baseName(d.span.file), d.span.line)) : "";
-        auto hint = d.suggestion.length ? (d.suggestion.length < 40 && !d.suggestion.canFind(' ') ? " · did you mean '"
-            ~ d.suggestion ~ "'?" : " · " ~ d.suggestion) : "";
-        problemText.setText(format("%s %s%s%s", error ? "✗" : "⚠", where, d.message, hint));
-        problemBanner.setTooltipText(d.message ~ hint ~ (!evaluated && last.parts.length ? "\nThe view shows the last valid model."
-            : "") ~ "\nClick to go to the line.");
+        problemFirst = d.message;
+        string[] counts;
+        if (errors)
+            counts ~= format("✗ %d error%s", errors, errors > 1 ? "s" : "");
+        if (warnings)
+            counts ~= format("⚠ %d warning%s", warnings, warnings > 1 ? "s" : "");
+        problemText.setText(counts.join("   "));
+        auto where = d.span.line > 0 ? (d.span.file == absolutePath(path) ? format("line %d", d.span.line)
+            : format("%s, line %d", baseName(d.span.file), d.span.line)) : "";
+        problemBanner.setTooltipText(problemTip(d) ~ (!evaluated && last.parts.length
+            ? "\nThe view shows the last valid model." : "") ~ "\nThe code marks each one (click its icon), the console "
+            ~ "says them all." ~ (where.length ? " Click to go to the first, at " ~ where ~ "." : ""));
     }
 
     /// A click selects a face: it is highlighted and the editor shows the

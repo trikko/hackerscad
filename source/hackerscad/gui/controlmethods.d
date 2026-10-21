@@ -273,6 +273,15 @@ mixin template ControlMethods()
                 // the tab of the sidebar
                 if (auto tab = arg("sidebar"))
                     sideStack.setVisibleChildName(tab == "steps" ? "steps" : "params");
+                // the problems of a line of the code, as a click on its icon in the gutter shows them (0 closes)
+                if (has("problems"))
+                {
+                    immutable line = cast(int) p["problems"].get!long;
+                    if (problemsPopover !is null)
+                        problemsPopover.popdown();
+                    if (line > 0)
+                        showLineProblems(line - 1);
+                }
                 // a menu of the view bar opened, for a screenshot ("none" closes them)
                 if (auto m = arg("menu"))
                 {
@@ -1277,6 +1286,20 @@ mixin template ControlMethods()
             {
                 // the editor's line actions, as their keys: {"action": "comment" | "duplicate" | "delete" |
                 // "move_up" | "move_down" | "indent" | "unindent", "lines": [from, to]}; {"goto": line} shows a line
+                // {"fix": line}: the fix of the problem on that line written in place of the code it replaces, as
+                // the Apply of its icon's popover does
+                if (has("fix"))
+                {
+                    immutable line = cast(int) numberOf(p["fix"]) - 1;
+                    foreach (sp; shownProblems)
+                        if (sp.line == line && sp.d.replaces.length)
+                        {
+                            if (auto why = applyFix(sp.d))
+                                return reply(JValue.init, why);
+                            return whenIdle(() => reply(state(), null));
+                        }
+                    return reply(JValue.init, "no problem on that line has a fix to write in place");
+                }
                 if (has("goto"))
                 {
                     // the cursor moved as the user moves it: the sketch whose code it is in shows

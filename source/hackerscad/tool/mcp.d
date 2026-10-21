@@ -858,7 +858,9 @@ JValue toolList()
             ~ "the right-click menu does (after preset, before the rest). style draws the parts shaded with edges, shaded only or as a wireframe (hidden edges "
             ~ "faint); printability marks, over any style, the overhangs needing supports in red and the walls under "
             ~ "min_wall in violet (then hcad_gui_state has their areas per part); projection is perspective or orthographic; menu opens the parts (eye), display (cube) or views (View) "
-            ~ "menu of the view bar, or the header bar's examples or export menu, for a screenshot, none closes them; sidebar shows the params or steps tab; "
+            ~ "menu of the view bar, or the header bar's examples or export menu, for a screenshot, none closes them; problems: a line "
+            ~ "of the code opens what its icon in the gutter shows on a click (its errors and warnings, each with its fix), 0 "
+            ~ "closes it; sidebar shows the params or steps tab; "
             ~ "cursor puts the editor's cursor at the start of a line and scrolls there (for a picture: the sketch at "
             ~ "the cursor does not follow it; hcad_gui_edit goto does); code_width sets how wide "
             ~ "the code is (pixels); theme draws the window light or dark for this run (the user's own choice, in the "
@@ -869,6 +871,7 @@ JValue toolList()
             ~ "view bar's planes button does, to draw a sketch on one (hcad_gui_feature action sketch with plane); "
             ~ "hcad_gui_state lists them while shown. hcad_gui_state gives the camera.",
             `"preset": {"type": "string", "enum": ["iso", "front", "top", "right", "fit"]}, `
+            ~ `"problems": {"type": "integer", "description": "a line of the code: its problems shown as a click on its icon does"}, `
             ~ `"look_at": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}, `
             ~ `"look_at_face": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}, `
             ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}}}, `
@@ -1162,6 +1165,7 @@ JValue toolList()
             `"old": {"type": "string"}, "new": {"type": "string"}, `
             ~ `"lines": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}, `
             ~ `"insert": {"type": "integer"}, "text": {"type": "string"}, "goto": {"type": "integer"}, `
+            ~ `"fix": {"type": "integer", "description": "a line: the fix its problem suggests written in place of the code it replaces, as the Apply of its icon does"}, `
             ~ `"action": {"type": "string", "enum": ["comment", "duplicate", "delete", "move_up", "move_down", "indent", "unindent"]}`, `[]`),
         gui("hcad_gui_find", "Find in the code of the user's editor, as its find bar (Ctrl+F): the matches of text, with "
             ~ "line and column (regex, case, word as its options); with replace, every match is replaced, as its "
