@@ -639,7 +639,8 @@ enum modelProps = `
     "path": {"type": "string", "description": "Model file. With 'source', only used to resolve project imports."},
     "params": {"type": "object", "description": "Parameter overrides, name to value: numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\" or \"\\\"text\\\"\".", "additionalProperties": {"type": ["string", "number", "boolean"]}},
     "preset": {"type": "string", "description": "Name of a @preset to apply."},
-    "tolerance": {"type": "number", "description": "Mesh chord tolerance in mm for exported meshes and pictures (default 0.02; smaller is finer and slower)."},
+    "quality": {"type": "string", "description": "How finely curves become triangles in exported meshes and pictures: draft (0.1 mm), normal (0.02 mm, the default), fine (0.005 mm, resin and small parts), or a number of mm."},
+    "tolerance": {"type": "number", "description": "The same as quality, in mm alone: the largest distance between a curved surface and its triangles."},
     "printability": {"type": "boolean", "description": "For 3D printing: per part, the area of overhangs needing supports and of walls too thin to print (report 'printability'), marked in pictures (overhangs striped red, thin walls hatched violet)."},
     "overhang_angle": {"type": "number", "description": "printability: overhangs steeper than this many degrees from a wall need supports (default 45)."},
     "min_wall": {"type": "number", "description": "printability: walls thinner than this many mm do not print (default 0.8)."}`;
@@ -1133,8 +1134,12 @@ JValue toolList()
         gui("hcad_gui_export", "Export the model open in the user's window, with the parameters and preset set "
             ~ "there, to 'path': .3mf (one object per part, colours), .stl (one part), .zip (one STL per part), "
             ~ ".step (one named body per part) or .png (the 3D view as shown; with 'parts', those alone), or a "
-            ~ "@drawing as .pdf, .svg or .dxf (the first; parts: [name] another).",
-            `"path": {"type": "string"}, ` ~ partsProp ~ `, ` ~ oneObjectProp, `["path"]`),
+            ~ "@drawing as .pdf, .svg or .dxf (the first; parts: [name] another). Meshes at the window's Export › "
+            ~ "Mesh quality, or 'quality' for this export; 'quality' without 'path' sets the window's choice, as the "
+            ~ "menu does (the state's export_quality tells it), and \"custom\" opens its Custom… dialog for the user.",
+            `"path": {"type": "string"}, ` ~ partsProp ~ `, ` ~ oneObjectProp ~ `, "quality": {"type": "string", `
+            ~ `"description": "draft (0.1 mm), normal (0.02 mm), fine (0.005 mm), or a number of mm: the largest distance `
+            ~ `between a curved surface and its triangles"}`, `[]`),
         gui("hcad_gui_complete", "What the editor's completion offers in the user's window: at the cursor, or at "
             ~ "line and col (1-based). Gives the proposals with their signature and documentation, and inside a call "
             ~ "the callee's signature and the argument the cursor is on, with forms: its ways to be called, simplest "
@@ -1225,7 +1230,8 @@ JValue toolList()
             ~ "does: changed with source_hash, the model changed; source_hash alone, only spaces or comments (the "
             ~ "window does not evaluate again when they keep every line where it was); modified is false when the code is the "
             ~ "one saved (typing and undoing back to it included); auto_rebuild whether the window builds as the "
-            ~ "user types, stale that the code changed since the last build (rebuilding off: hcad_gui_set builds). "
+            ~ "user types, stale that the code changed since the last build (rebuilding off: hcad_gui_set builds); "
+            ~ "export_quality the Export › Mesh quality chosen (name: draft, normal, fine, or none for a custom one; mm). "
             ~ "only gives just the fields named (and the "
             ~ "window), e.g. [\"revision\", \"source_hash\", \"camera\"]: a quick look at what changed, "
             ~ "much shorter than the whole state. cursor is the editor's cursor (line, col); sketch the sketch shown (from_cursor, "
@@ -1830,6 +1836,11 @@ RunOptions options(JValue args)
     {
         o.tolerance = t.get!double;
         enforce(o.tolerance > 0, "'tolerance' must be a positive number of mm");
+    }
+    if (auto q = args.getPtr("quality"))
+    {
+        import hackerscad.tool.exporter : qualityTolerance;
+        o.tolerance = qualityTolerance(q.isString ? q.get!string : q.toJSON());
     }
     if (auto ps = args.getPtr("params"))
         o.overrides = toOverrides(*ps);

@@ -111,6 +111,7 @@
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepTools.hxx>
 #include <BRepLib.hxx>
 #include <Geom_BSplineSurface.hxx>
@@ -5405,6 +5406,10 @@ static double mesh_area(const TopoDS_Face &face)
 // bug is gone; then this, mesh_area and the division loop in hc_tessellate
 // can go.
 
+// The deflection a mesh made here with a solid carries (a solid through
+// rings): such a face keeps it when the solid is meshed.
+static const double own_mesh_mark = 1e-7;
+
 // Whether the mesher got a face wrong (see the WORKAROUND above). Analytic
 // faces mesh well and are not checked.
 static bool meshed_badly(const TopoDS_Face &face)
@@ -5432,25 +5437,43 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
     return guarded<>((hc_mesh *)nullptr, [&]() -> hc_mesh * {
         // faces in the same order as the face indices used everywhere else;
         // plain triangles are taken as they are, the rest is meshed
-        const auto &faces = map_of(s, TopAbs_FACE);
-        std::vector<std::array<gp_Pnt, 3>> plain(faces.Extent());
-        std::vector<bool> isPlain(faces.Extent());
+        const auto &given = map_of(s, TopAbs_FACE);
+        std::vector<std::array<gp_Pnt, 3>> plain(given.Extent());
+        std::vector<bool> isPlain(given.Extent()), kept(given.Extent());
+        bool meshedBefore = false;
+        for (int f = 1; f <= given.Extent(); f++) {
+            isPlain[f - 1] = plain_triangle(TopoDS::Face(given(f)), plain[f - 1].data());
+            if (!isPlain[f - 1]) {
+                // a solid through rings comes with its own mesh: kept (BRepMesh's own deflection is
+                // near 0 on flat faces too, so the mark, not the value, tells them apart)
+                TopLoc_Location loc;
+                auto own = BRep_Tool::Triangulation(TopoDS::Face(given(f)), loc);
+                kept[f - 1] = !own.IsNull() && own->Deflection() == own_mesh_mark;
+                meshedBefore = meshedBefore || (!own.IsNull() && !kept[f - 1]);
+            }
+        }
+        // meshed before at other deflections (the view's mesh, another quality of export): meshed in
+        // place, some faces and edges would keep the old mesh and others not, and the triangles would
+        // not meet; a copy is meshed instead, without the old mesh, and the shape is left as it is
+        TopoDS_Shape shape = s->shape;
+        TopTools_IndexedMapOfShape copied;
+        if (meshedBefore) {
+            shape = BRepBuilderAPI_Copy(s->shape, false, true).Shape();
+            TopExp::MapShapes(shape, TopAbs_FACE, copied);
+            for (int f = 1; f <= copied.Extent(); f++)
+                if (!isPlain[f - 1] && !kept[f - 1])
+                    BRepTools::Clean(copied(f));
+        }
+        const TopTools_IndexedMapOfShape &faces = meshedBefore ? copied : given;
         TopoDS_Compound rest;
         BRep_Builder bb;
         bb.MakeCompound(rest);
         bool anyRest = false;
-        for (int f = 1; f <= faces.Extent(); f++) {
-            isPlain[f - 1] = plain_triangle(TopoDS::Face(faces(f)), plain[f - 1].data());
-            if (!isPlain[f - 1]) {
-                // already meshed at least as finely (a solid through rings comes with its own): kept
-                TopLoc_Location loc;
-                auto own = BRep_Tool::Triangulation(TopoDS::Face(faces(f)), loc);
-                if (!own.IsNull() && own->Deflection() <= linear_deflection && own->Deflection() < 1e-6)
-                    continue;
+        for (int f = 1; f <= faces.Extent(); f++)
+            if (!isPlain[f - 1] && !kept[f - 1]) {
                 bb.Add(rest, faces(f));
                 anyRest = true;
             }
-        }
         if (anyRest)
             BRepMesh_IncrementalMesh(rest, linear_deflection, false, angular_deflection, true);
 
@@ -5480,7 +5503,7 @@ hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angul
                 divide.Perform();
                 context->Replace(face, divide.Result());
             }
-            const TopoDS_Shape divided = context->Apply(s->shape);
+            const TopoDS_Shape divided = context->Apply(shape);
             BRepMesh_IncrementalMesh(divided, linear_deflection, false, angular_deflection, true);
             std::vector<int> still;
             for (int f = 1; f <= faces.Extent(); f++) {
@@ -8046,7 +8069,7 @@ static Handle(Poly_Triangulation) grid_side_mesh(const Handle(Geom_BSplineSurfac
             side->SetTriangle(t++, Poly_Triangle(node(i, j), node(i + 1, j), node(i + 1, j + 1)));
             side->SetTriangle(t++, Poly_Triangle(node(i, j), node(i + 1, j + 1), node(i, j + 1)));
         }
-    side->Deflection(1e-7);
+    side->Deflection(own_mesh_mark);
     return side;
 }
 
@@ -8059,7 +8082,7 @@ static Handle(Poly_Triangulation) cap_mesh(const std::vector<gp_Pnt> &ring, cons
         cap->SetNode((int)i + 1, ring[i]);
     for (size_t k = 0; k < tris.size(); k++)
         cap->SetTriangle((int)k + 1, Poly_Triangle(tris[k][0] + 1, tris[k][1] + 1, tris[k][2] + 1));
-    cap->Deflection(1e-7);
+    cap->Deflection(own_mesh_mark);
     return cap;
 }
 
@@ -8089,7 +8112,7 @@ static Handle(Poly_Triangulation) rim_mesh(const std::vector<gp_Pnt> &outer, con
             rim->SetTriangle(t++, Poly_Triangle(a, d, c));
         }
     }
-    rim->Deflection(1e-7);
+    rim->Deflection(own_mesh_mark);
     return rim;
 }
 

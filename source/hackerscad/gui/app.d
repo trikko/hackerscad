@@ -1306,6 +1306,7 @@ final class MainWindow
         foreach (f; exportFormats)
             exportAction(app, f.ext);
         action(app, "export-3mf-one", [], () => exportFile("3mf", null, true));
+        exportQualityAction();
         action(app, "drawing-show", [], () => showDrawing());
         foreach (ext; ["pdf", "svg", "dxf"])
             drawingAction(app, ext);
@@ -6826,7 +6827,7 @@ private:
 
     /// Every field the state can have, for hcad_gui_state's only.
     static immutable string[] stateFields = ["path", "status", "window", "version", "outdated", "revision",
-        "user_changed", "evaluating", "stage", "seconds", "modified", "auto_rebuild", "stale", "source_hash", "model_hash", "preset", "overrides", "parts",
+        "user_changed", "evaluating", "stage", "seconds", "modified", "auto_rebuild", "export_quality", "stale", "source_hash", "model_hash", "preset", "overrides", "parts",
         "params", "presets", "inspect", "sketch", "sketch_follow", "planes", "annotations", "annotate_mode", "annotated_view",
         "cursor", "camera", "printability", "graphics", "problems", "log", "source", "steps"];
 
@@ -6852,6 +6853,12 @@ private:
         j["modified"] = modified;
         // rebuilding as the user types, on or off; stale: typed since the last build (the view is older)
         j["auto_rebuild"] = autoRebuild;
+        {
+            import std.algorithm : find;
+            import hackerscad.tool.exporter : meshQualities;
+            auto named = meshQualities.find!(q => q.tolerance == exportTolerance);
+            j["export_quality"] = JSOB("name", named.length ? JValue(named[0].name) : JValue(null), "mm", exportTolerance);
+        }
         j["stale"] = codeStale;
         j["source_hash"] = format("%016x", codeHash(text()));
         {
@@ -6972,6 +6979,19 @@ private:
                 m.append("3MF, one object — the parts as its pieces: for prints in several colours",
                     "win.export-3mf-one");
         }
+        // how finely curves become triangles in STL and 3MF files
+        {
+            import std.string : capitalize;
+            import hackerscad.tool.exporter : meshQualities;
+            auto quality = new GMenu;
+            foreach (q; meshQualities)
+                quality.append(format("%s — %g mm: %s", capitalize(q.name), q.tolerance, q.what),
+                    "win.export-quality::" ~ q.name);
+            quality.append("Custom…", "win.export-quality::custom");
+            auto section = new GMenu;
+            section.appendSubmenu("Mesh quality", quality);
+            m.appendSection(null, section);
+        }
         // the model's @drawing: shown in a window of its own, or written
         auto drawings = new GMenu;
         drawings.append("Show the drawing — the model's @drawing, as it prints", "win.drawing-show");
@@ -6980,6 +7000,85 @@ private:
         drawings.append("Drawing as DXF — for CAD and laser cutters", "win.export-drawing-dxf");
         m.appendSection(null, drawings);
         return m;
+    }
+
+    /// Export › Mesh quality: the largest distance in mm between a curved
+    /// surface and its triangles in STL and 3MF files (draft, normal, fine
+    /// or a custom one), kept for the next runs.
+    double exportTolerance = 0.02;
+    SimpleAction qualityAction;    /// ditto, its menu
+    string lastExportSummary;      /// of the last export of a mesh: its triangles and quality
+    size_t lastExportTriangles;    /// ditto
+    double lastExportTolerance;    /// ditto
+
+    void exportQualityAction()
+    {
+        import glib.variant : Variant;
+        import glib.variant_type : VariantType;
+        import hackerscad.gui.settings : setting;
+        import hackerscad.tool.exporter : qualityTolerance;
+        try
+            exportTolerance = qualityTolerance(setting("export-quality", "normal"));
+        catch (Exception)
+            exportTolerance = 0.02;
+        qualityAction = SimpleAction.newStateful("export-quality", new VariantType("s"),
+            Variant.newString(qualityName(exportTolerance)));
+        qualityAction.connectChangeState((Variant value, SimpleAction self) {
+            if (value.getString() == "custom")
+                customQuality();
+            else
+                setExportQuality(value.getString());
+        });
+        window.addAction(qualityAction);
+    }
+
+    /// The menu's name for `tolerance`: draft, normal, fine or custom.
+    static string qualityName(double tolerance)
+    {
+        import hackerscad.tool.exporter : meshQualities;
+        foreach (q; meshQualities)
+            if (q.tolerance == tolerance)
+                return q.name;
+        return "custom";
+    }
+
+    /// Sets the mesh quality of exports: a name or mm (else throws); kept, and the menu shows it.
+    void setExportQuality(string quality)
+    {
+        import glib.variant : Variant;
+        import hackerscad.gui.settings : setSetting;
+        import hackerscad.tool.exporter : qualityTolerance;
+        exportTolerance = qualityTolerance(quality);
+        immutable name = qualityName(exportTolerance);
+        setSetting("export-quality", name == "custom" ? format("%g", exportTolerance) : name);
+        qualityAction.setState(Variant.newString(name));
+    }
+
+    /// Mesh quality › Custom…: the distance in mm, asked.
+    void customQuality()
+    {
+        import adw.alert_dialog : AlertDialog;
+        import adw.types : ResponseAppearance;
+        import gtk.spin_button : SpinButton;
+        auto d = new AlertDialog("Custom mesh quality",
+            "The largest distance, in mm, between a curved surface and the flat triangles that stand for it in "
+            ~ "STL and 3MF files: smaller is smoother, and makes larger files. Draft is 0.1 mm, normal 0.02 mm, "
+            ~ "fine 0.005 mm.");
+        auto spin = SpinButton.newWithRange(0.001, 1, 0.001);
+        spin.setDigits(3);
+        spin.setValue(exportTolerance);
+        spin.setHalign(Align.Center);
+        d.setExtraChild(spin);
+        d.addResponse("cancel", "_Cancel");
+        d.addResponse("set", "_Set");
+        d.setResponseAppearance("set", ResponseAppearance.Suggested);
+        d.setDefaultResponse("set");
+        d.setCloseResponse("cancel");
+        d.connectResponse(null, (string response) {
+            if (response == "set")
+                setExportQuality(format("%g", spin.getValue()));
+        });
+        d.present(window);
     }
 
     MenuButton examplesButton, exportButton;   /// in the header bar
@@ -7101,7 +7200,8 @@ private:
                     exportFormat = given == ".zip" ? "stl" : given.length > 1
                         && [".3mf", ".stl", ".step", ".png"].canFind(given) ? given[1 .. $] : ext;
                 auto warnings = exportTo(out_, part ? [part] : null, oneObject);
-                note("exported " ~ out_ ~ (warnings.length ? "; warning: " ~ warnings.join("; ") : ""));
+                note("exported " ~ out_ ~ (lastExportSummary.length ? " (" ~ lastExportSummary ~ ")" : "")
+                    ~ (warnings.length ? "; warning: " ~ warnings.join("; ") : ""));
             }
             catch (ErrorWrap)
             {
@@ -7114,9 +7214,12 @@ private:
     /// Writes the parts shown (with the window's parameters) to `out_`, the
     /// format from its extension (see hackerscad.tool.exporter; .png the
     /// view). `only`: those parts, by function name or @part(name:); else
-    /// every part but the reference ones.
-    string[] exportTo(string out_, string[] only = null, bool oneObject = false)
+    /// every part but the reference ones. Meshes at `tolerance` mm, by
+    /// default the window's Mesh quality.
+    string[] exportTo(string out_, string[] only = null, bool oneObject = false, double tolerance = double.nan)
     {
+        lastExportSummary = null;
+        lastExportTriangles = 0;
         import std.algorithm : countUntil, filter, map;
         import std.array : array, join;
         import hackerscad.tool.exporter : ExportPart, exportParts;
@@ -7182,10 +7285,25 @@ private:
             }
         default:
         {
+            import std.math : isNaN;
             import std.path : stripExtension;
-            return exportParts(out_, parts.map!(p => ExportPart(p.label, p.welded, p.rgb, p.brep, p.tags, p.faceTags)).array,
-                parts[0].kernel,
-                oneObject ? baseName(stripExtension(path)) : null);
+            import hackerscad.tool.exporter : qualityAngle, qualityLabel;
+            // meshes made again from the solids at the quality asked: the view's are made for the screen
+            immutable meshes = [".3mf", ".stl", ".zip"].canFind(extension(out_).toLower);
+            immutable tol = isNaN(tolerance) ? exportTolerance : tolerance;
+            ExportPart[] eps;
+            foreach (p; parts)
+            {
+                auto mesh = meshes ? p.kernel.tessellate(p.brep, tol, qualityAngle(tol)).welded : p.welded;
+                lastExportTriangles += mesh.tris.length / 3;
+                eps ~= ExportPart(p.label, mesh, p.rgb, p.brep, p.tags, p.faceTags);
+            }
+            if (meshes)
+            {
+                lastExportTolerance = tol;
+                lastExportSummary = format("%,d triangles, mesh quality %s", lastExportTriangles, qualityLabel(tol));
+            }
+            return exportParts(out_, eps, parts[0].kernel, oneObject ? baseName(stripExtension(path)) : null);
         }
         }
         return null;

@@ -119,7 +119,9 @@ options:
                     them for prints in several colours or materials
   --part NAME       export only this @part (by function name or name:); repeat it
                     for more; without it, every part but the export: false ones
-  --tolerance MM    mesh chord tolerance (default 0.02)
+  --quality Q       how finely curves become triangles in meshes: draft (0.1 mm),
+                    normal (0.02 mm, the default), fine (0.005 mm), or a number of mm
+  --tolerance MM    the same, in mm alone
   --printability    report overhangs and thin walls per part, and mark them in
                     pictures: overhangs striped red, thin walls hatched violet
   --overhang DEG    overhangs steeper than this from a wall need supports (45)
@@ -639,11 +641,11 @@ int main(string[] args)
     bool json;
     string[] only;
     bool oneObject, cut, opaque;
-    string from, lookAt;
+    string from, lookAt, quality;
     double size = 0;
     try
         getopt(args, "o|output", &outputs, "D", &defines, "preset", &o.preset, "drawing", &o.drawing, "tolerance", &o.tolerance,
-            "part", &only, "one-object", &oneObject, "json", &json, "printability", &o.printability,
+            "quality", &quality, "part", &only, "one-object", &oneObject, "json", &json, "printability", &o.printability,
             "overhang", &o.overhangAngle, "min-wall", &o.minWall, "from", &from, "look-at", &lookAt, "size", &size,
             "cut", &cut, "opaque", &opaque);
     catch (GetOptException e)
@@ -655,6 +657,17 @@ int main(string[] args)
     {
         stderr.writeln(usage);
         return 2;
+    }
+    if (quality.length)
+    {
+        import hackerscad.tool.exporter : ExportException, qualityTolerance;
+        try
+            o.tolerance = qualityTolerance(quality);
+        catch (ExportException e)
+        {
+            stderr.writeln("error: --quality: ", e.msg);
+            return 2;
+        }
     }
     if (!(o.tolerance > 0))
     {

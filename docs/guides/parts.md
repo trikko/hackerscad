@@ -165,6 +165,20 @@ hcad render box.hcad -o big.3mf -D play=1.mm
 
 The names given to faces with `addTag` ([Selectors and features](features.md)) go into the files too: in a STEP file each face is named by its tags (`lid;seat`), and `load("part.step")` gives them back as tags, so a part made here, exported and loaded again, keeps its names. A 3MF holds them as named sets of the triangles of those faces (its *triangle sets* extension), and a part's own tags in the object's metadata; slicers that do not know them simply ignore them. Every file says it was made with hackerscad: 3MF and STEP in their fields for it, STL, zip, PNG, SVG, PDF and DXF in a comment.
 
+STL and 3MF files hold flat triangles, not curves: a round hole becomes a many-sided one. The **mesh quality** says how far the triangles may stray from the true surface, at most:
+
+| Quality | Largest distance | Choose it for |
+|---|---|---|
+| draft | 0.1 mm | small files, quick tries |
+| normal | 0.02 mm | most prints: the default |
+| fine | 0.005 mm | resin printers, small parts, smooth shiny surfaces |
+
+The distance is the same on a large curve and a small one, so a large circle gets more sides than a small one; small holes always get enough sides to stay round. Finer files are larger and slower for the slicer, and below what the printer can draw they change nothing. `--quality fine` (or a number of mm, `--quality 0.01`) sets it; STEP files are exact and do not need it.
+
+```bash
+hcad render knob.hcad -o knob.3mf --quality fine
+```
+
 Every export runs the model's `unittest`s first. `-D name=value` and `--preset name` change parameters; `--part` (repeated for more) picks parts; without it, every part but the reference ones. `--printability` adds, per part, the overhangs that need supports and the walls too thin to print.
 
 ## Technical drawings
@@ -240,6 +254,7 @@ hcad render bracket.hcad -o bracket.pdf
 ## In the application
 
 - The **Export** button in the header bar opens a menu of the formats: **3MF** (one object per part, with colours), **3MF, one object** (the parts as its pieces, for prints in several colours), **STL** (a zip of one STL per part when there are more), **STEP**, **PNG** (a picture of the parts). Ctrl+E (⌘E on macOS) repeats the last format. The same menu is under **☰ › Export**.
+- **Export › Mesh quality** chooses Draft, Normal or Fine for STL and 3MF files, or **Custom…** a distance in mm; the choice is kept for the next times. After an export, the line at the bottom says how many triangles the file holds and at which quality.
 - Right-click a part › **Export *name*** › **3MF…**, **STL…**, **STEP…** exports that part alone.
 - Right-click a part › **Colour** writes the colour into the code (the Pop colours, or **Other…** for any); **Hide *name***, **Show only *name***, **Show all parts** change only what the view shows.
 - Exports use the parameters and preset set in the side panel, and run the `unittest`s first.

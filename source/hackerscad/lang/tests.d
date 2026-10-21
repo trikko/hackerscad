@@ -2442,6 +2442,23 @@ unittest
 
 unittest
 {
+    // a solid meshed again at other qualities (the view's mesh, then an export's): each mesh closed,
+    // and as fine as asked; flat faces were once kept from the first mesh, and cracked along their edges
+    import hackerscad.tool.exporter : EdgeFaults, edgeFaults;
+    auto knob = kernel.boolean(kernel.cylinder(10, 12), kernel.translate(kernel.cylinder(1.5, 30), Vec3(0, 0, -5)),
+        BoolOp.cut);
+    size_t[] counts;
+    foreach (q; [[0.02, 0.25], [0.005, 0.1], [0.1, 0.45], [0.005, 0.1]])
+    {
+        auto m = kernel.tessellate(knob, q[0], q[1]).welded;
+        assert(edgeFaults(m) == EdgeFaults(0, 0), format("%s: %s", q, edgeFaults(m)));
+        counts ~= m.tris.length / 3;
+    }
+    assert(counts[1] > counts[0] && counts[2] < counts[0] && counts[3] == counts[1], format("%s", counts));
+}
+
+unittest
+{
     // the copies of a seam vertex (a cylinder's side meets itself) share one
     // normal, so the light does not show the seam
     import hackerscad.render.raster : vertexNormals;

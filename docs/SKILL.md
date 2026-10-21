@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text has the docs stamp `83b73278`. Before the first
+This text has the docs stamp `fda31c25`. Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `83b73278`:** this text is up to date.
+- **It prints `fda31c25`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -315,8 +315,9 @@ format stamp):
   as the Front view shows it. A plane kept in a variable shows in the
   window's planes, named after it; body.plane(faces.top, faces.bottom) is
   halfway between two parallel faces.
-- Existing parts: load("part.stl"/".obj"/".3mf"/".step", scale: 1) gives a solid to
-  modify; text("LABEL", size: 4.mm).centered centres a profile for engraving.
+- Existing parts: load("part.stl"/".obj"/".ply"/".3mf"/".glb"/".step", scale: 1) gives a
+  solid to modify (glTF is turned from metres and Y up to mm and Z up; repair:
+  true mends a scan's doubled walls and sheets that touch); text("LABEL", size: 4.mm).centered centres a profile for engraving.
 - When asked to copy lettering from a photo, a drawing or a model: if the
   font cannot be recognised, or text() does not have it (it uses the fonts
   installed), ask the user before going on, offering a similar installed

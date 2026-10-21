@@ -114,7 +114,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `cone(r1: Length, r2: Length, h: Length, d1: Length, d2: Length, center: bool) → Solid` — A cone (or truncated cone) along Z.
 - `torus(major: Length, minor: Length) → Solid` — A ring round Z centred on the origin: major to the middle of the tube, minor the tube's radius.
 - `sphere(r: Length, d: Length) → Solid` — A sphere centred on the origin.
-- `load(path: string, scale: number) → Solid` — A part from an STL, OBJ, 3MF or STEP file in the project; from an SVG or DXF drawing, its closed outlines as a profile on XY (mm), whole circles and ellipses as true curves.
+- `load(path: string, scale: number, repair: bool) → Solid` — A part from an STL, OBJ, PLY, 3MF, glTF (.glb, .gltf: metres to mm, Y up turned to Z up) or STEP file in the project; repair: true mends a mesh that is not quite a solid (a scan's: doubled walls of no thickness taken out, where the surface touches itself the sheets parted; holes stay); from an SVG or DXF drawing, its closed outlines as a profile on XY (mm), whole circles and ellipses as true curves.
 
 ## Transforms
 

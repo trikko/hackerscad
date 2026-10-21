@@ -76,6 +76,58 @@ EdgeFaults edgeFaults(const Mesh m)
     return f;
 }
 
+/// How finely curved surfaces become triangles in exported meshes: the
+/// largest distance in mm between the surface and its triangles.
+struct MeshQuality
+{
+    string name;        /// draft, normal, fine
+    double tolerance;   /// mm
+    string what;        /// what it is for, as the menus say
+}
+
+/// ditto
+immutable MeshQuality[] meshQualities = [
+    MeshQuality("draft", 0.1, "small files, quick tries"),
+    MeshQuality("normal", 0.02, "most prints"),
+    MeshQuality("fine", 0.005, "resin and small parts, smooth surfaces"),
+];
+
+/// The tolerance of quality `s`: a name of meshQualities or a number of mm.
+double qualityTolerance(string s)
+{
+    import std.conv : to;
+    foreach (q; meshQualities)
+        if (q.name == s.toLower)
+            return q.tolerance;
+    double t;
+    try
+        t = s.to!double;
+    catch (Exception)
+        t = double.nan;
+    if (!(t > 0))
+        throw new ExportException(format("mesh quality '%s': draft, normal, fine or a positive number of mm", s));
+    return t;
+}
+
+/// The quality of `tolerance` as said to the user: "fine, 0.005 mm", or the mm alone.
+string qualityLabel(double tolerance)
+{
+    foreach (q; meshQualities)
+        if (q.tolerance == tolerance)
+            return format("%s, %g mm", q.name, tolerance);
+    return format("%g mm", tolerance);
+}
+
+/// The angular deflection that goes with `tolerance`: a bound relative to
+/// the radius, so small holes stay round where the tolerance alone would
+/// leave a few sides (0.2 rad at 0.02 mm, wider for coarser meshes).
+double qualityAngle(double tolerance)
+{
+    import std.algorithm : clamp;
+    import std.math : sqrt;
+    return clamp(0.2 * sqrt(tolerance / 0.02), 0.05, 0.5);
+}
+
 /// Writes `parts` (at least one) to `file`. With `assembly` (a name), a
 /// 3MF holds them as the pieces of one object of that name (prints in
 /// several colours or materials).
@@ -202,4 +254,17 @@ unittest
     auto fin = m;
     fin.tris = m.tris ~ [0u, 1u, 4u];
     assert(edgeFaults(fin) == EdgeFaults(2, 1));
+}
+
+unittest
+{
+    // the qualities by name or mm; the angle grows with the tolerance, 0.2 rad at normal
+    import std.exception : assertThrown;
+    import std.math : isClose;
+    assert(qualityTolerance("fine") == 0.005 && qualityTolerance("Draft") == 0.1 && qualityTolerance("0.03") == 0.03);
+    assertThrown!ExportException(qualityTolerance("best"));
+    assertThrown!ExportException(qualityTolerance("-1"));
+    assert(qualityLabel(0.02) == "normal, 0.02 mm" && qualityLabel(0.03) == "0.03 mm");
+    assert(isClose(qualityAngle(0.02), 0.2) && qualityAngle(0.1) > qualityAngle(0.02)
+        && qualityAngle(0.005) < qualityAngle(0.02));
 }

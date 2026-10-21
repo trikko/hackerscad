@@ -22,6 +22,7 @@ import hackerscad.lang.interp;
 import hackerscad.lang.value;
 import hackerscad.render.png;
 import hackerscad.render.raster;
+import hackerscad.tool.exporter : qualityAngle;
 import hackerscad.geom.printability : PrintCheck, checkPrint;
 import hackerscad.drawing.sheet : Sheet, toSvg, toPdf, toDxf;
 import hackerscad.tool.closeup : Place;
@@ -100,7 +101,7 @@ final class Run
             Mesh[] welded, raw;
             foreach (p; result.parts)
             {
-                auto m = kernel.tessellate(p.solid.brep, tolerance, 0.2);
+                auto m = kernel.tessellate(p.solid.brep, tolerance, qualityAngle(tolerance));
                 raw ~= m;
                 welded ~= m.welded;
             }

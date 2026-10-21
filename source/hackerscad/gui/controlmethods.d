@@ -1105,20 +1105,43 @@ mixin template ControlMethods()
             }
         case "export":
             {
-                // the window's model as shown (parameters, preset): .3mf .stl .step .png
+                // the window's model as shown (parameters, preset): .3mf .stl .step .png; meshes at the
+                // window's Mesh quality, or "quality" (draft, normal, fine, mm); "quality" alone sets the window's
+                // ("custom" opens Mesh quality › Custom… for the user)
                 auto file = arg("path");
-                if (file is null)
+                string quality;
+                if (p.has("quality"))
+                    quality = p["quality"].isString ? p["quality"].get!string : p["quality"].toJSON();
+                if (file is null && quality is null)
                     return reply(JValue.init, "missing 'path'");
                 whenIdle(() {
                     try
                     {
+                        import hackerscad.tool.exporter : qualityLabel, qualityTolerance;
+                        if (file is null && quality == "custom")
+                        {
+                            customQuality();
+                            return reply(state(), null);
+                        }
+                        if (file is null)
+                        {
+                            setExportQuality(quality);
+                            note("mesh quality " ~ qualityLabel(exportTolerance));
+                            return reply(state(), null);
+                        }
                         string[] only;
                         if (p.has("parts") && p["parts"].isArray)
                             foreach (v; p["parts"].get!JArray.elements)
                                 only ~= v.get!string;
-                        auto warnings = exportTo(file, only, has("one_object") && p["one_object"].safe!bool.or(false));
-                        note("exported " ~ file);
+                        auto warnings = exportTo(file, only, has("one_object") && p["one_object"].safe!bool.or(false),
+                            quality is null ? double.nan : qualityTolerance(quality));
+                        note("exported " ~ file ~ (lastExportSummary.length ? " (" ~ lastExportSummary ~ ")" : ""));
                         JValue r = JSOB("path", file);
+                        if (lastExportSummary.length)
+                        {
+                            r["triangles"] = lastExportTriangles;
+                            r["quality_mm"] = lastExportTolerance;
+                        }
                         if (warnings.length)
                             r["warnings"] = toJSON(warnings);
                         reply(r, null);
