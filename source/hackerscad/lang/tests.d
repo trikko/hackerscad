@@ -3099,6 +3099,35 @@ unittest
 unittest
 {
     mixin(slowTest);
+    // a thread on the outside of a tube keeps its bore: the threaded rod put in place of the plain
+    // length is solid, and it once filled the bore (a jar's neck came out closed); on a flange, the
+    // bore wider than half the radius, the free end is still the tube's
+    auto r = runModel(q{
+        Solid tube(Length h) => cylinder(d: 20, h: h).faces.filter(f => f.center.z > 0.mm && f.center.z < h)
+            .addTag("o");
+        @part Solid plain() => (tube(10.mm) - cylinder(d: 14, h: 30, center: true))
+            .thread(faces.tagged("o"), "M20");
+        @part Solid neck() => (cylinder(d: 30, h: 4) + tube(12.mm).move(z: 4)
+                - cylinder(d: 15, h: 50, center: true))
+            .thread(faces.tagged("o"), "M20");
+        unittest
+        {
+            assert(plain.isValid && neck.isValid, "valid");
+            assert(!plain.contains(vec(0, 0, 5)) && !neck.contains(vec(0, 0, 2))
+                && !neck.contains(vec(0, 0, 14)), "the bore stays open");
+            assert(plain.volume < (cylinder(d: 20, h: 10) - cylinder(d: 14, h: 30, center: true)).volume,
+                "the grooves are cut");
+            // the 45° start at the free end: narrower at the top than over the crests
+            assert(neck.section(XY.offset(15.9.mm)).bbox.size.x < 19.mm, "the free end at the top");
+        }
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+}
+
+unittest
+{
+    mixin(slowTest);
     // taper: any thread made conical; NPT's own taper turned off; too much of it refused
     auto r = runModel(q{
         Solid shaft(Length d, Length h) => cylinder(d: d * 1.6, h: 5) + cylinder(d: d, h: h).move(z: 5);

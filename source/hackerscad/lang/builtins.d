@@ -6077,10 +6077,14 @@ Value threadFace(Interp it, ref CallArgs a)
     // which end it starts from: the free one, where the axis leaves the material (the tip of a
     // shaft, the opening of a hole); flip: true for the other
     immutable faceLen = to - from;
+    auto side = c.axis.cross(abs(c.axis.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).normalized;
+    // where the ends are looked at: halfway to a shaft's axis, or, on a tube whose bore reaches
+    // there, in its wall, half a tooth under the face
+    immutable probe = !outside ? 0
+        : k.inside(b, c.origin + c.axis * ((from + to) / 2) + side * (0.5 * c.radius)) ? 0.5 * c.radius
+        : c.radius - 0.5 * h;
     bool freeAtTo;
     {
-        immutable probe = outside ? 0.5 * c.radius : 0;
-        auto side = c.axis.cross(abs(c.axis.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).normalized;
         bool solidAt(double t) => k.inside(b, c.origin + c.axis * t + side * probe);
         immutable beyondTo = solidAt(to + 0.01), beyondFrom = solidAt(from - 0.01);
         freeAtTo = beyondTo != beyondFrom ? !beyondTo : true;
@@ -6117,8 +6121,6 @@ Value threadFace(Interp it, ref CallArgs a)
     // two fuse cleanly, where only touching along a plane they often do not
     double sink = 0;
     {
-        immutable probe = outside ? 0.5 * c.radius : 0;
-        auto side = c.axis.cross(abs(c.axis.x) < 0.9 ? Vec3(1, 0, 0) : Vec3(0, 1, 0)).normalized;
         immutable fixedAt = freeAtTo ? to - len : from + len;
         immutable beyond = fixedAt + (freeAtTo ? -0.01 : 0.01);
         if (len < faceLen - 1e-6 || k.inside(b, c.origin + c.axis * beyond + side * probe))
@@ -6351,6 +6353,23 @@ Value threadFace(Interp it, ref CallArgs a)
     catch (KernelException e)
         throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
     plain.flat = false;
+    // the threaded rod is solid: what was empty inside the face (a tube's bore) is taken out of it
+    // again. The plain cylinder reaches a little past both ends, so a bore going on is cut whole
+    SolidVal hollow;
+    try
+    {
+        immutable past = 0.25 * pitch + sink;
+        auto inner = k.translate(k.cylinder(c.radius - 0.01, len + 2 * past), Vec3(0, 0, -past));
+        auto empty = k.boolean(placed(inner), b, BoolOp.cut);
+        if (k.solids(empty).length && k.volume(empty) > 1e-6)
+        {
+            hollow = apart(empty);
+            hollow.flat = false;
+        }
+    }
+    catch (KernelException e)
+        throw new HcadError(Code.kernel, "the thread could not be built: " ~ e.msg, a.span);
+    Value hollowed(Value v) => hollow is null ? v : solidBoolean(it, v.solid, hollow, BoolOp.cut, a.span);
     auto bare = solidBoolean(it, body, plain, BoolOp.cut, a.span);
     // the thread standing on material at its fixed end (a shoulder, a head): joined to that face by
     // hand, or, when it does not stand on a flat face wider than itself (the shaft goes on at its
@@ -6358,17 +6377,18 @@ Value threadFace(Interp it, ref CallArgs a)
     if (direct && sink > 0 && bare.solid.brep !is null)
     {
         try
-            return Value.of(derived(it, k.joinTouching(bare.solid.brep, sv.brep), [bare.solid, sv], "union", a.span));
+            return hollowed(Value.of(derived(it, k.joinTouching(bare.solid.brep, sv.brep), [bare.solid, sv], "union",
+                a.span)));
         catch (KernelException)
         {
             immutable dd = t.major - 2 * clearance;
             auto core = k.translate(k.cylinder(dd / 2 - h - 0.02, sink + 0.02), Vec3(0, 0, -sink));
             auto withCore = apart(placed(k.boolean(tool, core, BoolOp.fuse)));
             withCore.flat = false;
-            return solidBoolean(it, bare.solid, withCore, BoolOp.fuse, a.span);
+            return hollowed(solidBoolean(it, bare.solid, withCore, BoolOp.fuse, a.span));
         }
     }
-    return solidBoolean(it, bare.solid, sv, BoolOp.fuse, a.span);
+    return hollowed(solidBoolean(it, bare.solid, sv, BoolOp.fuse, a.span));
 }
 
 int count(ref Args x, string n)
