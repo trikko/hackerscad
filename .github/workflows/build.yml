@@ -182,7 +182,8 @@ jobs:
           brew install ldc dub cmake freetype gtk4 libadwaita gtksourceview5 adwaita-icon-theme dylibbundler librsvg imagemagick
           brew list --versions ldc > brew-versions.txt
       # OpenCascade built by us, not Homebrew's (see the script): once, then from the cache
-      - uses: actions/cache@v4
+      # (saved at once: a later step that fails would otherwise leave it unsaved)
+      - uses: actions/cache/restore@v4
         id: occt
         with:
           path: build/occt
@@ -190,6 +191,11 @@ jobs:
       - name: OpenCascade
         if: steps.occt.outputs.cache-hit != 'true'
         run: packaging/macos/build-occt.sh
+      - uses: actions/cache/save@v4
+        if: steps.occt.outputs.cache-hit != 'true'
+        with:
+          path: build/occt
+          key: occt-macos-15-${{ hashFiles('packaging/macos/build-occt.sh') }}
       - uses: actions/cache@v4
         with:
           path: |
