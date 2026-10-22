@@ -30,7 +30,7 @@ for lib in $gidlibs; do
     cp "$brew/lib/$lib" "$fw/"
     chmod u+w "$fw/$lib"
 done
-dylibbundler -of -cd -b -p @executable_path/../../Frameworks/ -d "$fw/" \
+dylibbundler -of -cd -b -p @executable_path/../../Frameworks/ -d "$fw/" -s build/occt/lib \
     -x "$app/Contents/Resources/bin/hcad" -x "$app/Contents/Resources/bin/hackerscad" \
     $(for lib in $gidlibs; do printf -- '-x %s ' "$fw/$lib"; done)
 

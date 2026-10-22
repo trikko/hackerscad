@@ -23,11 +23,12 @@ else
 # --- OpenCascade shim -------------------------------------------------------
 src="$root/source/hackerscad/kernel/occt"
 lib="$out/libhcad_occt.a"
-# OpenCascade headers: $OCCT_INCLUDE, or where Linux distributions, Homebrew
-# and MSYS2 put them
+# OpenCascade headers: $OCCT_INCLUDE, or ours (packaging/macos/build-occt.sh), or
+# where Linux distributions, Homebrew and MSYS2 put them
 occt_inc="${OCCT_INCLUDE:-}"
 if [ -z "$occt_inc" ]; then
-    for d in /usr/include/opencascade /usr/local/include/opencascade /opt/homebrew/include/opencascade \
+    for d in "$root/build/occt/include/opencascade" /usr/include/opencascade /usr/local/include/opencascade \
+             /opt/homebrew/include/opencascade \
              "${MINGW_PREFIX:-/ucrt64}/include/opencascade"; do
         if [ -f "$d/Standard.hxx" ]; then occt_inc="$d"; break; fi
     done

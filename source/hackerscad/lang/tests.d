@@ -1731,20 +1731,14 @@ unittest
     }
     assert(pebbleCut > 20 && pebbleCut < 40, format("%s; %s; %s", pebbleCut, made("flat"), made("round")));
     assert(waveCut > 25 && waveCut < 45, format("%s; %s; %s", waveCut, made("block"), made("soft")));
-    // their meshes closed, as a view's and then an export's at another quality (on macOS a fillet's face
-    // came out with a hole: see meshed_badly and close_small_holes in the shim)
+    // their meshes closed, as a view's and then an export's at another quality (on macOS, with an
+    // OpenCascade built with fused multiply-adds, a fillet's face came out with a hole, or its mesher
+    // looped: see packaging/macos/build-occt.sh)
     {
         import hackerscad.tool.exporter : EdgeFaults, edgeFaults;
         foreach (name; ["round", "soft"])
             foreach (q; [[0.02, 0.25], [0.005, 0.1], [0.02, 0.2]])
             {
-                // WORKAROUND (OpenCascade 7.9.3, macOS arm64): the soft wave's meshes may have holes where
-                // its fillets meet, at (60, 20, 8), at any quality (fine ones even meshed coarser once BRepMesh
-                // met its time limit); not checked there, and no check that they still fail either: one run
-                // they do, the next not
-                version (OSX) version (AArch64)
-                    if (name == "soft")
-                        continue;
                 auto m = kernel.tessellate(r.parts.filter!(p => p.name == name).front.solid.brep, q[0], q[1]).welded;
                 string where()
                 {

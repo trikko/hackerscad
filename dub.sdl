@@ -57,6 +57,8 @@ subPackage {
 	// the C++ runtime differs per system
 	libs "stdc++" platform="linux"
 	libs "c++" platform="osx"
+	// OpenCascade: ours when built (packaging/macos/build-occt.sh), else Homebrew's
+	lflags "-L$PACKAGE_DIR/build/occt/lib" "-rpath" "$PACKAGE_DIR/build/occt/lib" platform="osx"
 	lflags "-L/opt/homebrew/lib" "-L/usr/local/lib" platform="osx"
 	// Windows: the shim behind its C interface in hcad_native.dll (built with
 	// clang/libc++ against MSYS2's CLANG64 libraries, natively or from Linux)

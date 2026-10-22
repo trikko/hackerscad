@@ -61,7 +61,7 @@ recent enough OpenGL, such as virtual machines without 3D acceleration, it
 draws with the software OpenGL it ships with. The program is not signed: if
 SmartScreen stops it, choose "More info" and then "Run anyway".
 
-**macOS** (Apple Silicon): unzip it, move `hackerscad.app` to Applications
+**macOS** (Apple Silicon, macOS 15 or later): unzip it, move `hackerscad.app` to Applications
 and clear the attributes macOS puts on downloaded files (the quarantine). The
 app is not signed by an Apple developer, so without this macOS says it is
 damaged or cannot be opened:
@@ -280,6 +280,7 @@ Packages:
 packaging/linux/build-appimage.sh   # AppImage, built in an Ubuntu 24.04 container (podman)
 tools/setup-win-cross.sh            # once: the Windows toolchain and libraries, in build/win
 packaging/windows/package.sh        # Windows zip, built on Linux; try it with Wine
+packaging/macos/build-occt.sh       # macOS: OpenCascade into build/occt, without the fused multiply-adds that make its mesher loop
 packaging/macos/package.sh          # macOS app bundle, on a Mac with Homebrew
 tools/docs.sh                       # regenerate the agent documentation in docs/
 ```

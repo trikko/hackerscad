@@ -167,7 +167,10 @@ jobs:
   # macOS minutes cost ten times the Linux ones: not on pull requests
   macos:
     if: github.event_name != 'pull_request' && contains(fromJSON('["all", "macos"]'), inputs.platforms || 'all')
-    runs-on: macos-14
+    # macOS 15: Homebrew has no bottles for 14 any more (everything would build from source)
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v4
       - name: Dependencies
@@ -176,15 +179,24 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: |
-          brew install ldc dub opencascade gtk4 libadwaita gtksourceview5 adwaita-icon-theme dylibbundler librsvg imagemagick
-          brew list --versions ldc opencascade > brew-versions.txt
+          brew install ldc dub cmake freetype gtk4 libadwaita gtksourceview5 adwaita-icon-theme dylibbundler librsvg imagemagick
+          brew list --versions ldc > brew-versions.txt
+      # OpenCascade built by us, not Homebrew's (see the script): once, then from the cache
+      - uses: actions/cache@v4
+        id: occt
+        with:
+          path: build/occt
+          key: occt-macos-15-${{ hashFiles('packaging/macos/build-occt.sh') }}
+      - name: OpenCascade
+        if: steps.occt.outputs.cache-hit != 'true'
+        run: packaging/macos/build-occt.sh
       - uses: actions/cache@v4
         with:
           path: |
             ~/.dub
             build/native
-          key: macos-${{ hashFiles('brew-versions.txt', 'dub.selections.json', 'tools/build-native.sh') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*') }}
-          restore-keys: macos-${{ hashFiles('brew-versions.txt', 'dub.selections.json', 'tools/build-native.sh') }}-
+          key: macos-${{ hashFiles('brew-versions.txt', 'dub.selections.json', 'tools/build-native.sh', 'packaging/macos/build-occt.sh') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*') }}
+          restore-keys: macos-${{ hashFiles('brew-versions.txt', 'dub.selections.json', 'tools/build-native.sh', 'packaging/macos/build-occt.sh') }}-
       - name: Test
         run: |
           dub test :core --compiler=ldc2
