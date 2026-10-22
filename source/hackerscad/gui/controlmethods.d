@@ -19,7 +19,7 @@ mixin template ControlMethods()
             import std.algorithm : canFind;
             if (frozen && ["pick", "transform", "split", "inspect", "rollback", "step", "sketch", "menu"].canFind(method))
                 return reply(JValue.init, "the view is annotated (locked, with marks on it): " ~ method ~ " would "
-                    ~ "change what it shows; hcad_gui_annotate mode: false (or the user's Done) takes it back to the live view");
+                    ~ "change what it shows; hcad_gui_annotate mode: false (or the user's Close) takes it back to the live view");
         }
         switch (method)
         {
@@ -154,7 +154,7 @@ mixin template ControlMethods()
                 if (frozen && (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom")
                         || has("size") || has("projection") || has("look_at_face")))
                     return reply(JValue.init, "the view is annotated (locked, with marks on it): it cannot move "
-                        ~ "until hcad_gui_annotate mode: false (or the user's Done) takes it back to the live view");
+                        ~ "until hcad_gui_annotate mode: false (or the user's Close) takes it back to the live view");
                 // moved as the user moves it: the frames count in graphics' figures
                 if (has("preset") || has("look_at") || has("orbit") || has("pan") || has("zoom") || has("size"))
                     viewport.moved();

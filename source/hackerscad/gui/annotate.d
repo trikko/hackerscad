@@ -79,7 +79,7 @@ mixin template Annotate()
         });
 
         // two rows, so that it is never wider than the view bar: what it says with Clear and
-        // Done, then the tools and the colour
+        // Close, then the tools and the colour
         annotateBar = new Box(Orientation.Vertical, 2);
         auto top = new Box(Orientation.Horizontal, 6);
         auto row = new Box(Orientation.Horizontal, 6);
@@ -164,8 +164,8 @@ mixin template Annotate()
         clear.connectClicked(() => clearNotes(null));
         top.append(clear);
         auto done = new Button;
-        done.setLabel("Done");
-        done.setTooltipText("Back to the live view (Esc), without the marks");
+        done.setLabel("Close");
+        done.setTooltipText("Back to the live view (Esc): the marks go, unless saved or copied first");
         done.addCssClass("suggested-action");
         done.connectClicked(() => unlockView());
         top.append(done);
@@ -445,7 +445,7 @@ mixin template Annotate()
         if (!frozen)
             return false;
         if (say)
-            info("the view is annotated: Done (or Esc in the view) goes back to the live view first");
+            info("the view is annotated: Close (or Esc in the view) goes back to the live view first");
         return true;
     }
 

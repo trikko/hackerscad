@@ -135,7 +135,7 @@ what it means, "this wall is too thin", or to ask which place you mean:
 Click a mark to move it, Delete to remove it; right-click it to add a label or
 edit its text, **Clear** removes them all. The two buttons by the colours save
 the view with its marks as a picture, or copy it to paste in a message: marks
-work for showing a person too. **Done** (or Esc) brings the view back to life,
+work for showing a person too. **Close** (or Esc) brings the view back to life,
 without the marks.
 
 Each window has a name in its header bar (*tidy-pine*, *blue-otter*…): click

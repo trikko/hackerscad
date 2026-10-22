@@ -17,12 +17,12 @@ reference first and follow the rules below.
 
 ## Setup and updates
 
-This text has the docs stamp `9ca17e68`. Before the first
+This text has the docs stamp `f393362f`. Before the first
 model of a session, run `hcad docs --stamp` (`hcad` may be a full path, or the
 AppImage followed by the word `hcad`; with the MCP server, hcad_docs with
 format stamp):
 
-- **It prints `9ca17e68`:** this text is up to date.
+- **It prints `f393362f`:** this text is up to date.
 - **It prints something else:** hackerscad was updated and this text is
   older or newer than it. Installed as a skill, refresh it in place:
   `hcad docs --skill` into this SKILL.md, `hcad docs` into the llms-full.txt
@@ -329,6 +329,9 @@ format stamp):
   lettering are traced as a sketch. Lettering on a mesh or STEP to copy
   needs no question: its exact shape is there (see Remodelling a mesh).
 - Constants are immutable; module-level values cannot be modified.
+- Solids, profiles and paths are values, not references: b.move(x: 5.mm);
+  alone changes nothing (warning E0208), write b = b.move(x: 5.mm); only
+  addTag, removeTag and clearTags change the solid they are called on.
 - Expose the dimensions a user may want to change as parameters:
       @param("Outer width", min: 20.mm, max: 200.mm)
       immutable width = 60.mm;
