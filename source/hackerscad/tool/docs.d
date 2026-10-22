@@ -187,6 +187,9 @@ dimensions and pictures, compare them with the request, fix, then export.
   lettering are traced as a sketch. Lettering on a mesh or STEP to copy
   needs no question: its exact shape is there (see Remodelling a mesh).
 - Constants are immutable; module-level values cannot be modified.
+- Solids, profiles and paths are values, not references: b.move(x: 5.mm);
+  alone changes nothing (warning E0208), write b = b.move(x: 5.mm); only
+  addTag, removeTag and clearTags change the solid they are called on.
 - Expose the dimensions a user may want to change as parameters:
       @param("Outer width", min: 20.mm, max: 200.mm)
       immutable width = 60.mm;
