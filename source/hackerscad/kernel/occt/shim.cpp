@@ -4986,6 +4986,20 @@ static bool triangle_properties(const hc_shape *s, double &volume, double &area)
 static const double mass_accuracy = 1e-5;
 
 
+// A time limit for BRepMesh: it asks its progress whether to stop, and
+// stops, the faces it had not done left without a mesh. (WORKAROUND
+// OpenCascade 7.9.3, macOS arm64: meshing a fillet's cylinder divided in
+// pieces, finely, never ended.)
+class MeshDeadline : public Message_ProgressIndicator
+{
+    std::chrono::steady_clock::time_point end;
+
+public:
+    explicit MeshDeadline(std::chrono::steady_clock::time_point end) : end(end) {}
+    Standard_Boolean UserBreak() override { return std::chrono::steady_clock::now() > end; }
+    void Show(const Message_ProgressScope &, const Standard_Boolean) override {}
+};
+
 // A copy of `shape` with no mesh: meshed, it leaves the shape's own mesh as
 // it is. (BRepMesh meshing again a shape meshed before at other deflections
 // keeps the old mesh on some faces and edges, makes a new one on others, and
@@ -5057,7 +5071,15 @@ static double mesh_volume(const TopoDS_Shape &shape)
     BRepBndLib::Add(shape, box);
     const double diag = box.IsVoid() ? 1 : sqrt(box.SquareExtent());
     const TopoDS_Shape fresh = unmeshed_copy(shape);
-    BRepMesh_IncrementalMesh(fresh, std::min(0.01, diag * 1e-4), false, 0.2, true);
+    // at most 60 s (see MeshDeadline): past it, no volume from the mesh, the caller integrates
+    IMeshTools_Parameters params;
+    params.Deflection = std::min(0.01, diag * 1e-4);
+    params.Angle = 0.2;
+    params.InParallel = true;
+    Handle(MeshDeadline) deadline = new MeshDeadline(std::chrono::steady_clock::now() + std::chrono::seconds(60));
+    BRepMesh_IncrementalMesh(fresh, params, deadline->Start());
+    if (deadline->UserBreak())
+        return -1;
     return closed_mesh_volume(fresh);
 }
 
@@ -5424,24 +5446,11 @@ static double mesh_area(const TopoDS_Face &face)
 // bug is gone; then this, mesh_area and the division loop in hc_tessellate
 // can go.
 
-// A time limit for BRepMesh: it asks its progress whether to stop, and
-// stops, the faces it had not done left without a mesh. (WORKAROUND
-// OpenCascade 7.9.3, macOS arm64: meshing a fillet's cylinder divided in
-// pieces, finely, never ended.)
-class MeshDeadline : public Message_ProgressIndicator
-{
-    std::chrono::steady_clock::time_point end;
-
-public:
-    explicit MeshDeadline(std::chrono::steady_clock::time_point end) : end(end) {}
-    Standard_Boolean UserBreak() override { return std::chrono::steady_clock::now() > end; }
-    void Show(const Message_ProgressScope &, const Standard_Boolean) override {}
-};
-
 // Thrown by tessellate_once when BRepMesh met its time limit: hc_tessellate
 // meshes coarser.
 struct MeshTimeout
 {
+    double deflection;   // the one that met it
 };
 
 // The deflection a mesh made here with a solid carries (a solid through
@@ -5530,7 +5539,7 @@ static hc_mesh *tessellate_once(const hc_shape *s, double linear_deflection, dou
             Handle(MeshDeadline) deadline = new MeshDeadline(std::chrono::steady_clock::now() + std::chrono::seconds(60));
             BRepMesh_IncrementalMesh(rest, params, deadline->Start());
             if (deadline->UserBreak())
-                throw MeshTimeout();
+                throw MeshTimeout{linear_deflection};
         }
 
         // the triangles of each face come from these faces: itself, or the
