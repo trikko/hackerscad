@@ -81,15 +81,9 @@ void serve()
         }
         sendLine(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`);
     }
-    version (Posix)
-    {
-        // unbuffered, so that a new program started in place reads what this one did not
-        import core.stdc.stdio : setvbuf, _IONBF;
-        setvbuf(stdin.getFP, null, _IONBF, 0);
-    }
     if (replay.length)
         process(replay, worker);
-    foreach (line; stdin.byLineCopy)
+    for (string line; nextLine(line);)
     {
         if (exeUpdated() && worker.idle && atomicLoad(guiCalls) == 0)
             restart(line, worker);
@@ -108,6 +102,50 @@ void serve()
     stdout.flush();
     import core.stdc.stdlib : _Exit;
     _Exit(0);
+}
+
+/// The client's next message, a line of stdin without its newline; false
+/// once stdin is closed. On Posix read from the descriptor a byte at a time:
+/// a new program started in place (restart) reads what this one did not, and
+/// no lock is held while waiting. Read through stdin's FILE, the wait held its
+/// lock, and on macOS fileno() takes it: spawnProcess, starting the worker or
+/// a window from another thread, waited for the client's next message, which
+/// would not come before the answer (hcad_gui_launch never came back).
+private bool nextLine(out string line)
+{
+    version (Posix)
+    {
+        import core.stdc.errno : errno, EINTR;
+        import core.sys.posix.unistd : read;
+        char[] buf;
+        char c;
+        while (true)
+        {
+            immutable n = read(0, &c, 1);
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n <= 0)
+            {
+                line = buf.idup;
+                return buf.length > 0;
+            }
+            if (c == '\n')
+            {
+                line = buf.idup;
+                return true;
+            }
+            buf ~= c;
+        }
+    }
+    else
+    {
+        if (stdin.eof)
+            return false;
+        line = stdin.readln();
+        if (line.length && line[$ - 1] == '\n')
+            line = line[0 .. $ - 1];
+        return line.length > 0 || !stdin.eof;
+    }
 }
 
 /// The executable, as it was when the server started.
