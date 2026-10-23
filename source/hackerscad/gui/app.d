@@ -1184,7 +1184,8 @@ final class MainWindow
                 }
                 // X in a sketch that can be edited: the bar's ┄
                 if ((key == KEY_x || key == KEY_X) && viewport.sketchShown && drawnSketch() !is null
-                    && sketchUneditable() is null && !(state & (ModifierType.ControlMask | ModifierType.AltMask)))
+                    && sketchUneditable() is null
+                    && !(state & (ModifierType.ControlMask | ModifierType.AltMask | ModifierType.MetaMask)))
                 {
                     info(constructionClicked());
                     return true;
@@ -1873,7 +1874,7 @@ private:
                 w.close();
         });
         app.addAction(a);
-        app.setAccelsForAction("app.quit", ["<Primary>q"]);
+        app.setAccelsForAction("app.quit", primary(["<Primary>q"]));
     }
 
     void action(AdwApplication app, string name, string[] accels, void delegate() run)
@@ -1881,7 +1882,23 @@ private:
         auto a = new SimpleAction(name);
         a.connectActivate(() => run());
         window.addAction(a);
-        app.setAccelsForAction("win." ~ name, accels);
+        app.setAccelsForAction("win." ~ name, primary(accels));
+    }
+
+    /// GTK 4's <Primary> is Ctrl on macOS too: there the shortcuts take Cmd,
+    /// which GTK calls Meta, as the tooltips say.
+    static string[] primary(string[] accels)
+    {
+        import std.array : replace;
+        version (OSX)
+        {
+            string[] r;
+            foreach (s; accels)
+                r ~= s.replace("<Primary>", "<Meta>");
+            return r;
+        }
+        else
+            return accels;
     }
 
     /// Data files: installed (bin/../share/hackerscad), next to the

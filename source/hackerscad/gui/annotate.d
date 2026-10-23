@@ -211,7 +211,8 @@ mixin template Annotate()
                 removeNote(selectedNote);
                 return true;
             }
-            if ((key == KEY_a || key == KEY_A) && (state & (ModifierType.ControlMask | ModifierType.AltMask)) == 0)
+            if ((key == KEY_a || key == KEY_A)
+                && (state & (ModifierType.ControlMask | ModifierType.AltMask | ModifierType.MetaMask)) == 0)
             {
                 unlockView();
                 return true;

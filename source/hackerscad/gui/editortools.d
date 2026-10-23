@@ -32,6 +32,13 @@ import gtksource.search_context : SearchContext;
 import gtksource.search_settings : SearchSettings;
 import gtksource.view : SourceView = View;
 
+/// The modifier of the shortcuts: Ctrl, and Cmd on macOS (GTK 4's <Primary>
+/// is Ctrl everywhere, Cmd comes as Meta).
+version (OSX)
+    enum primaryMask = ModifierType.MetaMask;
+else
+    enum primaryMask = ModifierType.ControlMask;
+
 final class EditorTools
 {
     /// The find bar, to put above the code; hidden until Ctrl+F.
@@ -416,7 +423,7 @@ private:
 
     bool onKey(uint key, ModifierType state)
     {
-        immutable ctrl = (state & ModifierType.ControlMask) != 0, shift = (state & ModifierType.ShiftMask) != 0,
+        immutable ctrl = (state & primaryMask) != 0, shift = (state & ModifierType.ShiftMask) != 0,
             alt = (state & ModifierType.AltMask) != 0;
         if (alt && !ctrl && (key == KEY_Up || key == KEY_Down))
             return lineAction(key == KEY_Up ? LineAction.up : LineAction.down) || true;
