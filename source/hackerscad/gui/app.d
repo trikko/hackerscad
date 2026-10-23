@@ -1339,6 +1339,7 @@ final class MainWindow
         action(app, "save", ["<Primary>s"], &save);
         action(app, "open", ["<Primary>o"], &openFile);
         action(app, "new", ["<Primary>n"], &newFile);
+        action(app, "new-window", ["<Primary><Shift>n"], &newWindow);
         action(app, "save-as", ["<Primary><Shift>s"], () => saveAs());
         appQuit(app);
         // Ctrl+E (Cmd+E on macOS): the format used last (3MF at first); the menus name them all
@@ -1643,15 +1644,65 @@ private:
         return b;
     }
 
+    /// macOS: the menu bar at the top of the screen is the application's, set by the first window
+    static bool menubarSet;
+
+    /// Another window, as a process of its own like every window (its own name, channel and
+    /// evaluations), on a new model in this one's folder. Started from a thread: spawnProcess waits
+    /// for the program to start, and the window must not.
+    void newWindow()
+    {
+        import core.thread : Thread;
+        import std.file : thisExePath;
+        import std.process : environment, spawnProcess, Config;
+        import std.stdio : File, stdout, stderr;
+        // an AppImage is started again: the program inside it goes when this one's mount does
+        auto exe = environment.get("APPIMAGE", thisExePath);
+        version (Windows)
+            enum nowhere = "NUL";
+        else
+            enum nowhere = "/dev/null";
+        auto dir = dirName(path);
+        auto t = new Thread({
+            try
+                spawnProcess([exe], File(nowhere, "r"), stdout, stderr, null, Config.detached | Config.suppressConsole,
+                    dir);
+            catch (Exception e)
+            {
+                auto why = "cannot open a new window: " ~ e.msg;
+                idleAdd(PRIORITY_DEFAULT, () { info(why); return false; });
+            }
+        });
+        t.isDaemon = true;
+        t.start();
+    }
+
     /// The menu at the right of the header bar: files, help, about.
     Widget mainMenu()
     {
         import gio.menu : Menu;
         auto files = new Menu;
         files.append("New", "win.new");
+        files.append("New Window", "win.new-window");
         files.append("Open…", "win.open");
         files.append("Save As…", "win.save-as");
         files.appendSubmenu("Export", exportModel());
+        // macOS: File in the menu bar at the top of the screen too, where New Window is looked for (a click
+        // on the Dock's icon brings the open window forward, it does not start another)
+        version (OSX)
+            if (!menubarSet)
+            {
+                menubarSet = true;
+                auto file = new Menu;
+                file.append("New", "win.new");
+                file.append("New Window", "win.new-window");
+                file.append("Open…", "win.open");
+                file.append("Save", "win.save");
+                file.append("Save As…", "win.save-as");
+                auto bar = new Menu;
+                bar.appendSubmenu("File", file);
+                window.getApplication().setMenubar(bar);
+            }
         auto help = new Menu;
         help.append("Cheatsheet", "win.cheatsheet");
         help.append("Tutorial", "win.tutorial");
