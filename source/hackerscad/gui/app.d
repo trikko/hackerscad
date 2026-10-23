@@ -595,6 +595,9 @@ final class MainWindow
     bool testsNext;       /// the next evaluation runs them
     string statusText;   /// the latest program message (for the control socket)
     ToggleButton paramsToggle, consoleToggle, codeToggle, viewToggle, sectionToggle, inspectToggle;
+    /// Esc in the code cleared the selection and went on (to close the completion list): it closes
+    /// nothing else
+    bool escapeUsed;
     Box sectionBar, viewBar;
     DropDown sectionPlane;
     Scale sectionSlider;
@@ -703,7 +706,7 @@ final class MainWindow
         // ---- toolbar above the 3D view: views, navigation, section, sketches
         viewBar = new Box(Orientation.Horizontal, 6);
         viewBar.addCssClass("hcad-viewbar");
-        sectionToggle = toggle("hcad-section-symbolic", "Section view: cut the model with a plane you can slide", false);
+        sectionToggle = toggle("hcad-section-symbolic", "Section view: cut the model with a plane you can slide (Esc closes it)", false);
         sectionToggle.connectToggled(() {
             sectionBar.setVisible(sectionToggle.getActive());
             // closed: a split under way ends too
@@ -1471,7 +1474,12 @@ final class MainWindow
                     return true;
                 }
                 else if (key == KEY_Escape && viewport.selection().length)
+                {
                     clearSelection();   // and the key goes on: it also closes the completion list
+                    escapeUsed = true;
+                }
+                else if (key == KEY_Escape)
+                    escapeUsed = false;
                 return false;
             });
             keys.connectKeyReleased((uint key, uint code, ModifierType state) {
@@ -1479,6 +1487,31 @@ final class MainWindow
                     updateEditorCursor(false);
             });
             editor.addController(keys);
+
+            // Esc that nothing closer took (the completion list, the find bar, a sketch, Inspect, a
+            // selection): out of Annotate, then out of the section view, wherever the focus is
+            auto windowKeys = new EventControllerKey;
+            windowKeys.connectKeyPressed((uint key, uint code, ModifierType state) {
+                if (key != KEY_Escape)
+                    return false;
+                if (escapeUsed)
+                {
+                    escapeUsed = false;
+                    return false;
+                }
+                if (annotating())
+                {
+                    unlockView();
+                    return true;
+                }
+                if (sectionToggle.getActive())
+                {
+                    sectionToggle.setActive(false);
+                    return true;
+                }
+                return false;
+            });
+            window.addController(windowKeys);
             auto motion = new EventControllerMotion;
             motion.connectMotion((double x, double y, EventControllerMotion m) {
                 updateEditorCursor((m.getCurrentEventState() & inspectClick) != 0);
