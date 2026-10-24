@@ -1464,6 +1464,35 @@ final class MainWindow
             // selection): out of Annotate, then out of the section view, wherever the focus is
             auto windowKeys = new EventControllerKey;
             windowKeys.connectKeyPressed((uint key, uint code, ModifierType state) {
+                // undo and redo of the code wherever the focus is (the 3D view after a change made with the mouse),
+                // but in a text field, which has its own: Ctrl+Z and Ctrl+Shift+Z, Ctrl+Y too, Cmd on macOS (the
+                // editor's own are GTK's, with Ctrl)
+                {
+                    import gdk.types : KEY_z, KEY_Z, KEY_y, KEY_Y;
+                    import gtk.editable : Editable;
+                    import hackerscad.gui.editortools : primaryMask;
+                    immutable primary = (state & primaryMask) != 0, shift = (state & ModifierType.ShiftMask) != 0;
+                    immutable z = key == KEY_z || key == KEY_Z;
+                    bool redoKey = primary && shift && z;
+                    version (OSX)
+                    {
+                    }
+                    else
+                        redoKey = redoKey || (primary && !shift && (key == KEY_y || key == KEY_Y));
+                    if ((primary && !shift && z) || redoKey)
+                    {
+                        if (cast(Editable) window.getFocus())
+                            return false;
+                        if (redoKey ? buffer.getCanRedo() : buffer.getCanUndo())
+                        {
+                            if (redoKey)
+                                buffer.redo();
+                            else
+                                buffer.undo();
+                        }
+                        return true;
+                    }
+                }
                 if (key != KEY_Escape)
                     return false;
                 if (escapeUsed)
