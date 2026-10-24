@@ -2,10 +2,12 @@
 
 [![build](https://github.com/trikko/hackerscad/actions/workflows/build.yml/badge.svg)](https://github.com/trikko/hackerscad/actions/workflows/build.yml)
 
-**hackerscad** is the hacker's CAD: a solid model is a small program, and the
-3D view follows while you type. Select a face with the mouse, pick "Fillet" or
-"Hole at point", and hackerscad writes the code for you. The file stays the
-only source of truth, so it diffs, versions and reviews like any other code.
+**hackerscad** is the hacker's CAD: parametric solid models you write as
+code, draw with the mouse, or ask an AI agent for. Type and the 3D view
+follows; sketch on a face, pick an edge to round, drag a part, and the code is
+written for you. Threads, gears, hinges, enclosures and moulds come ready in
+the libraries, and the file stays the only source of truth: it diffs,
+versions and reviews like any other code.
 
 **Documentation:** [tutorial](docs/TUTORIAL.md) · [guides by topic](docs/GUIDES.md) ·
 [language reference](docs/LANGUAGE.md) · [cheatsheet](docs/CHEATSHEET.md) · [examples](examples) ·
