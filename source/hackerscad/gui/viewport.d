@@ -3544,19 +3544,10 @@ private:
     }
 
     /// The GLArea's error, if any.
-    // WORKAROUND (gid 0.9.13, GLArea.getError): its wrapper frees the error
-    // it does not own, and GTK frees it again when the view goes, corrupting
-    // the heap; so the C function is called directly. The "known bugs"
-    // unittest in lang/tests.d fails when gid's version changes: then read
-    // getError in gid's gtk/gl_area.d, and if it no longer frees the error,
-    // area.getError() will do.
     string glError()
     {
-        import gtk.c.functions : gtk_gl_area_get_error;
-        import gtk.c.types : GtkGLArea;
-        import std.string : fromStringz;
-        auto e = gtk_gl_area_get_error(cast(GtkGLArea*) area._cPtr);
-        return e is null ? null : (e.message ? e.message.fromStringz.idup : "unknown error");
+        auto e = area.getError();
+        return e is null ? null : (e.msg.length ? e.msg.idup : "unknown error");
     }
 
     /// Hands glHelp, when known, to whoever shows it: later, outside the

@@ -529,36 +529,7 @@ int main(string[] args)
         auto w = new MainWindow(app, path);
         w.screenshotPath = shot;
     });
-    collectOnMainThread();
     return app.run(args[0 .. 1]);
-}
-
-/// WORKAROUND (gid 0.9.13): the D object that stands for a GTK object (a
-/// tooltip, a widget), collected by the garbage collector, lets go of the
-/// GTK object on the thread that collects; an evaluation's thread collects as
-/// it allocates, and GTK must not be touched there: macOS stops the program
-/// ("Must only be used from the main thread", a tooltip's window closed).
-/// The automatic collections are off and the main thread collects, when the
-/// heap has grown by a quarter (64 MB at least) since its last collection;
-/// the garbage collector still collects where it allocates when memory runs
-/// out.
-void collectOnMainThread()
-{
-    import core.memory : GC;
-    import glib.global : timeoutAdd;
-    import glib.types : PRIORITY_DEFAULT;
-    GC.disable();
-    static size_t after;
-    after = GC.stats().usedSize;
-    timeoutAdd(PRIORITY_DEFAULT, 200, () {
-        immutable used = GC.stats().usedSize;
-        if (used > after + max(size_t(64) << 20, after / 4))
-        {
-            GC.collect();
-            after = GC.stats().usedSize;
-        }
-        return true;
-    });
 }
 
 struct ExportFormat

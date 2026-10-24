@@ -34,26 +34,6 @@ dylibbundler -of -cd -b -p @executable_path/../../Frameworks/ -d "$fw/" -s build
     -x "$app/Contents/Resources/bin/hcad" -x "$app/Contents/Resources/bin/hackerscad" \
     $(for lib in $gidlibs; do printf -- '-x %s ' "$fw/$lib"; done)
 
-# WORKAROUND (gid 0.9.13, library loading): gid looks the functions of a
-# pair of libraries (gobject and glib,
-# cairo-gobject and cairo, harfbuzz-gobject and harfbuzz) up in the first one
-# only, and dlsym on macOS does not search its dependencies. The first one
-# becomes a library re-exporting both; the real one is renamed. The other
-# libraries load it under the old name and still find every symbol. When
-# gid's version changes (the "known bugs" unittest in lang/tests.d fails),
-# check whether it looks symbols up in every library; if so, this can go.
-echo > /tmp/hcad-empty.c
-reexport() {   # reexport FIRST SECOND
-    real="${1%.dylib}.real.dylib"
-    mv "$fw/$1" "$fw/$real"
-    install_name_tool -id "@executable_path/../../Frameworks/$real" "$fw/$real"
-    cc -dynamiclib /tmp/hcad-empty.c -o "$fw/$1" -install_name "@executable_path/../../Frameworks/$1" \
-        -Wl,-reexport_library,"$fw/$real" -Wl,-reexport_library,"$fw/$2"
-}
-reexport libgobject-2.0.0.dylib libglib-2.0.0.dylib
-reexport libcairo-gobject.2.dylib libcairo.2.dylib
-reexport libharfbuzz-gobject.0.dylib libharfbuzz.0.dylib
-
 # GTK runtime data
 share="$app/Contents/Resources/share"
 mkdir -p "$share/glib-2.0" "$share/icons"

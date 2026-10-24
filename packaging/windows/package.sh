@@ -42,7 +42,6 @@ esac
 "$ldcbin" -betterC -O -release -boundscheck=off -mtriple=x86_64-windows-msvc -of="$out/hackerscad.exe" -od=build/win/native \
     packaging/windows/launcher.d -L"$root/build/win/native/hackerscad.res" \
     -L/SUBSYSTEM:WINDOWS -L/ENTRY:start -L/NODEFAULTLIB -L kernel32.lib -L user32.lib
-sh tools/win-forwarders.sh "$sys/bin" "$out/bin"
 
 # GTK data
 mkdir -p "$out/share/glib-2.0" "$out/share/icons"

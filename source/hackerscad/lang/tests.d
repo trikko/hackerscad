@@ -1890,18 +1890,18 @@ bool fails(string src)
 
 unittest
 {
-    // gid's bugs cannot be tried here (one corrupts the heap): the
-    // WORKAROUNDs for them (GLArea.getError in gui/viewport.d, the library
-    // pairs in tools/win-forwarders.sh and packaging/macos/package.sh) are
-    // tied to the version they were seen in
+    // gid 0.9.13 and older had three bugs hackerscad worked around, the workarounds now gone: GObjects let
+    // go on the thread that collects (macOS stops the program), GErrors not owned freed (GLArea.getError,
+    // the heap corrupted), and symbols looked up in the first library of a pair only (macOS, Windows).
+    // Fixed upstream in commit 8e394ae (issues #54, #55): gid comes from there, or a later release
     import std.file : thisExePath, readText;
     import djson : parseJSONComplete;
     import std.path : dirName;
     auto root = dirName(dirName(dirName(thisExePath)));
-    immutable v = parseJSONComplete(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"].get!string;
-    assert(v == "0.9.13", "gid is now " ~ v ~ ": check whether GLArea.getError still frees the error it does not own, "
-        ~ "and whether symbols are still looked up in the first library of a pair only; drop the WORKAROUNDs it "
-        ~ "fixed, then put the new version here");
+    auto gid = parseJSONComplete(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"];
+    immutable v = gid.isString ? gid.get!string : gid["version"].get!string;
+    assert(!["0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13"].canFind(v), "gid " ~ v ~ " has the bugs fixed in "
+        ~ "commit 8e394ae and no workaround for them any more: use that commit or a later release");
 }
 
 unittest
