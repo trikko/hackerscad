@@ -11,10 +11,12 @@ only source of truth, so it diffs, versions and reviews like any other code.
 [language reference](docs/LANGUAGE.md) · [cheatsheet](docs/CHEATSHEET.md) · [examples](examples) ·
 [for AI agents](#using-hackerscad-with-an-ai-agent)
 
-* ✏️ **Models as code**: `.hcad` is a sandboxed scripting language inspired
-  by D, with units (`60.mm`, `30.deg`), solids joined, cut and intersected
-  with `+`, `-` and `&`, and selectors such as `edges.parallel(Z)` instead of
-  edge numbers.
+* ✏️ **Models as code**: `.hcad` is a small, sandboxed scripting language
+  with a familiar C-style syntax: if you have read C, Java, C# or JavaScript,
+  you can read it. Units (`60.mm`, `30.deg`), solids joined, cut and
+  intersected with `+`, `-` and `&`, and selectors such as
+  `edges.parallel(Z)` instead of edge numbers. Its syntax is a subset of D's,
+  so editors highlight it and AI models already know it.
 * 💡 **An editor that knows the language**: completion of methods, units,
   arguments and library functions, signatures while you type, help on hover,
   and a searchable cheatsheet (F1).
@@ -32,8 +34,16 @@ only source of truth, so it diffs, versions and reviews like any other code.
   several pieces, for prints in several colours), STL (a zip of one
   file per part), STEP with a named body per part, PNG, and
   drawings with views, sections and dimensions as PDF, SVG or DXF.
-* 🔩 **Libraries**: screws, nuts, holes and inserts, ISO threads, gears,
-  print-in-place hinges, snap fits, enclosures, and Carlo the mascot.
+* 🔩 **Libraries**: screws, nuts, holes and inserts; threads (metric, inch,
+  trapezoidal, pipe, bottle necks, lamp bases); gears; print-in-place,
+  snap-together and living hinges; snap fits; enclosures; joints to split a
+  part longer than the bed; two-part moulds; cuts that make a part bend; and
+  Carlo the mascot.
+* 🎨 **Surfaces**: knurled grips, hexagon and Voronoi patterns that fill a
+  face, and text or outlines wrapped onto curved faces.
+* 🔁 **Remodel a mesh or STEP**: load an STL, 3MF, OBJ or STEP file and
+  rebuild it as a parametric model; the tools compare the copy with the
+  original and show where they differ, so an AI agent can do it for you.
 * 🤖 **AI agents**: an MCP server lets an agent write, check, look at and
   export models, and drive the application while you watch; mark up the
   view with arrows, circles and text to show it (or a person) where.

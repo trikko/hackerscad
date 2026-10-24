@@ -1,8 +1,9 @@
 # The `.hcad` language
 
 A `.hcad` file is written in an **interpreted, sandboxed scripting language inspired by D**. Anyone who knows D can read it without
-surprises. There is no compilation step: the interpreter runs inside hackerscad and re-evaluates a
-model in milliseconds.
+surprises, and its C-style syntax reads at once to anyone who has written C, Java, C# or JavaScript: braces, semicolons,
+`if` and `for`, functions with typed parameters. There is no compilation step: the interpreter runs inside hackerscad and
+re-evaluates a model in milliseconds.
 
 New to it? The [tour of the language](#a-tour-of-the-language) at the end is one model that uses each
 basic construct once, with comments saying what each makes appear; in the application it is under
