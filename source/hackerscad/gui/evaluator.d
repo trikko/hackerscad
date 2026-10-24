@@ -103,6 +103,21 @@ struct Outcome
     size_t unittestsFailed;
 }
 
+/// What the worker computes with: the kernel and its caches. A run that does
+/// not stop when told keeps the one it has, and the runs after it get new ones.
+private final class Engine
+{
+    CachingKernel kernel;
+    PartMesh[Brep] prepared;
+    PartMesh[Brep] inspected;   /// meshes made by prepareSolids
+}
+
+/// A run's stop sign, its own: a run left behind still finds it set.
+private final class StopSign
+{
+    shared bool set;
+}
+
 final class Evaluator
 {
     void delegate(Outcome) onResult;
@@ -111,14 +126,16 @@ final class Evaluator
 
     private Request pending;
     private bool hasPending;
-    private void delegate()[] jobs;   /// worker tasks waiting for the kernel
+    /// worker tasks waiting for the kernel: computed on the worker, they give
+    /// back what to run on the GTK thread
+    private void delegate() delegate(Engine)[] jobs;
     private bool running;
+    private bool runningJob;    /// what runs is a job, not an evaluation
+    private ulong run;          /// the run on the worker; one finished after it was left behind counts no more
     private ulong generation;
-    private shared bool cancelFlag;
-    // only the worker thread touches these, one evaluation at a time
-    private CachingKernel kernel;
-    private PartMesh[Brep] prepared;
-    private PartMesh[Brep] inspected;   /// meshes made by prepareSolids
+    private StopSign sign;
+    // only the worker thread touches it, one run at a time
+    private Engine engine;
 
     /// An evaluation is running or queued.
     bool busy() const => running || hasPending;
@@ -128,9 +145,9 @@ final class Evaluator
         r.generation = ++generation;
         pending = r;
         hasPending = true;
-        if (running)
-            atomicStore(cancelFlag, true);
-        else
+        if (running && !runningJob)
+            stopRun();
+        else if (!running)
             startNext();
     }
 
@@ -139,7 +156,33 @@ final class Evaluator
     {
         hasPending = false;
         if (running)
-            atomicStore(cancelFlag, true);
+            stopRun();
+    }
+
+    /// Tells the run to stop, and gives it a second: the interpreter stops
+    /// between its steps, but an OpenCascade operation (a fillet, a boolean,
+    /// the mesher) runs to its end, for minutes or for ever, and the window
+    /// waited for it: no evaluation after it, every right-click operation
+    /// refused ("wait for the evaluation to finish") until a restart. Still
+    /// running then, it is left to end on its own with its kernel, its result
+    /// dropped, and the next run starts on a new kernel.
+    private void stopRun()
+    {
+        import glib.global : timeoutAdd;
+        if (sign !is null)
+            atomicStore(sign.set, true);
+        immutable stopped = run;
+        timeoutAdd(PRIORITY_DEFAULT, 1000, () {
+            if (running && run == stopped)
+            {
+                ++run;
+                running = false;
+                engine = new Engine;
+                if (hasPending || jobs.length)
+                    startNext();
+            }
+            return false;
+        });
     }
 
     /// Tessellates the solid left by a feature (for rollback views) on the
@@ -163,16 +206,16 @@ final class Evaluator
     /// thread (empty when it could not be made).
     void prepareSolids(SolidVal[] vals, void delegate(PartMesh[]) done)
     {
-        jobs ~= () {
+        jobs ~= (Engine e) {
             auto ms = new PartMesh[vals.length];
             // a few hundred values are kept: Inspect goes back and forth on the same lines
-            if (inspected.length > 400)
-                inspected = null;
+            if (e.inspected.length > 400)
+                e.inspected = null;
             foreach (i, v; vals)
             {
                 if (v is null || v.brep is null)
                     continue;
-                if (auto old = v.brep in inspected)
+                if (auto old = v.brep in e.inspected)
                 {
                     ms[i] = *old;
                     continue;
@@ -185,29 +228,23 @@ final class Evaluator
                 {
                     if (v.path)
                     {
-                        ms[i].bbox = kernel.bbox(v.brep);
-                        ms[i].edgeInfo = kernel.edges(v.brep);
+                        ms[i].bbox = e.kernel.bbox(v.brep);
+                        ms[i].edgeInfo = e.kernel.edges(v.brep);
                         ms[i].brep = v.brep;
                     }
-                    else if (auto old = v.brep in prepared)
+                    else if (auto old = v.brep in e.prepared)
                         ms[i] = *old;
                     else
-                        ms[i] = prepare(kernel, p, 0.02);
+                        ms[i] = prepare(e.kernel, p, 0.02);
                     ms[i].flat = v.flat;
                     ms[i].path = v.path;
-                    inspected[v.brep] = ms[i];
+                    e.inspected[v.brep] = ms[i];
                 }
                 catch (Exception)
                 {
                 }
             }
-            idleAdd(PRIORITY_DEFAULT, () {
-                done(ms);
-                running = false;
-                if (hasPending || jobs.length)
-                    startNext();
-                return false;
-            });
+            return () => done(ms);
         };
         if (!running)
             startNext();
@@ -215,15 +252,28 @@ final class Evaluator
 
     private void startNext()
     {
+        if (engine is null)
+            engine = new Engine;
+        auto e = engine;
+        immutable mine = ++run;
+        running = true;
         if (!hasPending && jobs.length)
         {
             auto job = jobs[0];
             jobs = jobs[1 .. $];
-            running = true;
+            runningJob = true;
             auto t = new Thread({
-                if (kernel is null)
-                    kernel = new CachingKernel(new OcctKernel);
-                job();
+                if (e.kernel is null)
+                    e.kernel = new CachingKernel(new OcctKernel);
+                auto deliver = job(e);
+                idleAdd(PRIORITY_DEFAULT, () {
+                    if (run == mine)
+                    {
+                        deliver();
+                        ended();
+                    }
+                    return false;
+                });
             });
             t.isDaemon = true;
             t.start();
@@ -231,23 +281,27 @@ final class Evaluator
         }
         auto req = pending;
         hasPending = false;
-        running = true;
-        atomicStore(cancelFlag, false);
-        auto flag = &cancelFlag;
+        runningJob = false;
+        auto s = sign = new StopSign;
         void progress(string what)
         {
             idleAdd(PRIORITY_DEFAULT, () {
-                if (running && onProgress !is null)
+                if (running && run == mine && onProgress !is null)
                     onProgress(what);
                 return false;
             });
         }
 
         auto t = new Thread({
-            if (kernel is null)
-                kernel = new CachingKernel(new OcctKernel);
-            auto o = evaluate(req, flag, kernel, prepared, &progress);
-            idleAdd(PRIORITY_DEFAULT, () { finished(o); return false; });
+            if (e.kernel is null)
+                e.kernel = new CachingKernel(new OcctKernel);
+            auto o = evaluate(req, &s.set, e.kernel, e.prepared, &progress);
+            idleAdd(PRIORITY_DEFAULT, () {
+                // left behind (it did not stop in time): another run took its place
+                if (run == mine)
+                    finished(o);
+                return false;
+            });
         });
         t.isDaemon = true;
         t.start();
@@ -258,6 +312,14 @@ final class Evaluator
         running = false;
         if (!o.cancelled && o.generation == generation && onResult !is null)
             onResult(o);
+        if (hasPending || jobs.length)
+            startNext();
+    }
+
+    /// The run on the worker is over: the next, if any.
+    private void ended()
+    {
+        running = false;
         if (hasPending || jobs.length)
             startNext();
     }

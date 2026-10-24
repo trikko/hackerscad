@@ -197,8 +197,20 @@ final class ControlServer
                 client = listener.accept();
             catch (SocketException)
                 continue;
-            serveClient(client);
+            // each client in a thread of its own: a request waiting for an evaluation (set, edit) held the
+            // others behind it, the stop that would end that evaluation among them. The requests still run one
+            // at a time, on the GTK thread
+            serveApart(client);
         }
+    }
+
+    /// serveClient in a thread; a function of its own, so that each thread has its own `client` (a closure
+    /// made in the accept loop would share the loop's variable with the next client)
+    private void serveApart(Socket client)
+    {
+        auto t = new Thread(() => serveClient(client));
+        t.isDaemon = true;
+        t.start();
     }
 
     private void serveClient(Socket client)
