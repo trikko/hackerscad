@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <!-- 3D view: the X, Y and Z axes from one corner (filled shapes only, for symbolic recolouring) -->
-  <path fill="#2e3436" d="M4.125 4 L5.875 4 L5.875 11.875 L4.125 11.875 Z"/>
-  <path fill="#2e3436" d="M5 0.3 L7.6 4.6 L2.4 4.6 Z"/>
-  <path fill="#2e3436" d="M4.125 10.125 L12 10.125 L12 11.875 L4.125 11.875 Z"/>
-  <path fill="#2e3436" d="M15.7 11 L11.4 13.6 L11.4 8.4 Z"/>
-  <path fill="#2e3436" d="M5.62 11.62 L3.12 14.12 L1.88 12.88 L4.38 10.38 Z"/>
-  <path fill="#2e3436" d="M0.4 15.6 L0.9 11.4 L4.6 15.1 Z"/>
-</svg>

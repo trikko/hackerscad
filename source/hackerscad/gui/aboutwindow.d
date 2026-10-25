@@ -101,15 +101,15 @@ private:
         auto list = new ListBox;
         list.setSelectionMode(SelectionMode.None);
         list.addCssClass("boxed-list");
-        list.append(row("Website", appWebsite, "adw-external-link-symbolic", () => open(appWebsite)));
-        list.append(row("Report a problem", appIssues, "adw-external-link-symbolic", () => open(appIssues)));
+        list.append(row("Website", appWebsite, "hcad-external-link-symbolic", () => open(appWebsite)));
+        list.append(row("Report a problem", appIssues, "hcad-external-link-symbolic", () => open(appIssues)));
         {
             // where the log and the crash reports are, to attach to a problem report
             import hackerscad.gui.crashlog : logDir;
             import std.file : mkdirRecurse;
             immutable dir = logDir();
             ActionRow logs;
-            logs = row("Logs and crash reports", dir, "folder-open-symbolic", () {
+            logs = row("Logs and crash reports", dir, "hcad-folder-symbolic", () {
                 try
                     mkdirRecurse(dir);
                 catch (Exception)
@@ -120,11 +120,11 @@ private:
             });
             list.append(logs);
         }
-        list.append(row("Credits and licences", "the libraries hackerscad is built with", "go-next-symbolic",
+        list.append(row("Credits and licences", "the libraries hackerscad is built with", "hcad-next-symbolic",
             () => pages.push(credits)));
         ActionRow copy;
         copy = row("Copy debug information", "what draws the 3D view and how fast, for a problem report",
-            "edit-copy-symbolic", () {
+            "hcad-copy-symbolic", () {
                 window.getClipboard().set(new Value(debugInfo));
                 copy.setSubtitle("Copied: paste it into the report");
             });

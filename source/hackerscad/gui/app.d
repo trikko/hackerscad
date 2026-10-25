@@ -695,8 +695,8 @@ final class MainWindow
                 import hackerscad.gui.winsnap : captionHitTest;
                 captionHitTest(window, (double x, double y) => onHeaderSpace(header, x, y));
             });
-        header.packStart(button("document-new-symbolic", "New model (" ~ shortcutKey ~ "+N)", &newFile));
-        header.packStart(button("document-open-symbolic", "Open (" ~ shortcutKey ~ "+O)", &openFile));
+        header.packStart(button("hcad-new-symbolic", "New model (" ~ shortcutKey ~ "+N)", &newFile));
+        header.packStart(button("hcad-open-symbolic", "Open (" ~ shortcutKey ~ "+O)", &openFile));
         // words, not icons: Adwaita's save (an arrow down) and send (an
         // arrow out) read as download and upload
         // Save, with Save As in its arrow: the main menu alone had it, where it was not looked for
@@ -720,10 +720,10 @@ final class MainWindow
         // always in its place, drawn only while it spins: shown and hidden, it
         // pushed the window's name aside at every evaluation
         busyIndicator.setTooltipText(null);
-        consoleToggle = toggle("utilities-terminal-symbolic", "Show console (" ~ shortcutKey ~ "+J)", true);
-        paramsToggle = toggle("sidebar-show-right-symbolic", "Show parameters (F9)", true);
-        codeToggle = toggle("sidebar-show-symbolic", "Show code (F7)", true);
-        viewToggle = toggle("hcad-view-symbolic", "Show the 3D view (F8)", true);
+        consoleToggle = toggle("hcad-panel-console-symbolic", "Show console (" ~ shortcutKey ~ "+J)", true);
+        paramsToggle = toggle("hcad-panel-params-symbolic", "Show parameters (F9)", true);
+        codeToggle = toggle("hcad-panel-code-symbolic", "Show code (F7)", true);
+        viewToggle = toggle("hcad-panel-view-symbolic", "Show the 3D view (F8)", true);
         header.packEnd(mainMenu());
         header.packEnd(paramsToggle);
         header.packEnd(viewToggle);
@@ -735,7 +735,7 @@ final class MainWindow
             import hackerscad.gui.settings : setting;
             autoRebuild = setting("auto-rebuild", "on") != "off";
         }
-        rebuildToggle = toggle("view-refresh-symbolic", "", autoRebuild);
+        rebuildToggle = toggle("hcad-rebuild-symbolic", "", autoRebuild);
         rebuildToggle.connectToggled(() => setAutoRebuild(rebuildToggle.getActive()));
         buildButton = new Button;
         buildButton.setLabel("Build");
@@ -781,7 +781,7 @@ final class MainWindow
                 planeFromSelection();
             updateSection(true);
         });
-        inspectToggle = toggle("edit-find-symbolic", "Inspect (" ~ shortcutKey ~ "+I): click a line of code to see the solids and "
+        inspectToggle = toggle("hcad-inspect-symbolic", "Inspect (" ~ shortcutKey ~ "+I): click a line of code to see the solids and "
             ~ "2D profiles it makes, or a function's name to see what it returns; " ~ shortcutKey ~ "+click a line does the same", false);
         inspectToggle.connectToggled(() => updateEditorCursor(false));
         buildAnnotate();
@@ -970,7 +970,7 @@ final class MainWindow
         }
         viewBar.append(separator());
         partsMenu = new MenuButton;   // its list is added once the parameters panel exists
-        partsMenu.setIconName("view-reveal-symbolic");
+        partsMenu.setIconName("hcad-eye-symbolic");
         partsMenu.setTooltipText("Parts shown in the view");
         partsMenu.addCssClass("flat");
         viewBar.append(partsMenu);
@@ -1019,10 +1019,10 @@ final class MainWindow
         {
             import gtksource.mark_attributes : MarkAttributes;
             auto ea = new MarkAttributes;
-            ea.setIconName("dialog-error-symbolic");
+            ea.setIconName("hcad-error-symbolic");
             editor.setMarkAttributes("error", ea, 2);
             auto wa = new MarkAttributes;
-            wa.setIconName("dialog-warning-symbolic");
+            wa.setIconName("hcad-warning-symbolic");
             editor.setMarkAttributes("warning", wa, 1);
             // a click on an icon in the gutter: the problems of that line, told in full
             editor.connectLineMarkActivated((TextIter it, uint button, ModifierType state, int presses) {
@@ -1313,10 +1313,10 @@ final class MainWindow
         // parameters in a sidebar with bounded width that can be hidden
         // parameters and the feature tree share the sidebar
         auto stack = sideStack = new ViewStack;
-        stack.addTitledWithIcon(paramsScroll, "params", "Parameters", "preferences-other-symbolic");
+        stack.addTitledWithIcon(paramsScroll, "params", "Parameters", "hcad-params-symbolic");
         auto stepsScroll = new ScrolledWindow;
         stepsScroll.setChild(stepsPanel.widget);
-        stack.addTitledWithIcon(stepsScroll, "steps", "Steps", "view-list-symbolic");
+        stack.addTitledWithIcon(stepsScroll, "steps", "Steps", "hcad-steps-symbolic");
         stack.setVexpand(true);
         auto switcher = new ViewSwitcher;
         switcher.setMarginTop(6);
@@ -1741,7 +1741,7 @@ private:
     static Button closeButton(ToggleButton pane, string tooltip)
     {
         auto b = new Button;
-        b.setIconName("window-close-symbolic");
+        b.setIconName("hcad-close-symbolic");
         b.addCssClass("flat");
         b.addCssClass("circular");
         b.addCssClass("hcad-pane-close");
@@ -1879,7 +1879,7 @@ private:
         menu.appendSection(null, look);
         menu.appendSection(null, app);
         auto b = new MenuButton;
-        b.setIconName("open-menu-symbolic");
+        b.setIconName("hcad-menu-symbolic");
         b.setTooltipText("Main menu");
         b.setMenuModel(menu);
         b.setPrimary(true);
@@ -2519,7 +2519,7 @@ private:
                 box.append(new Separator(Orientation.Horizontal));
             immutable error = d.severity == Severity.error;
             auto head = new Box(Orientation.Horizontal, 6);
-            auto icon = Image.newFromIconName(error ? "dialog-error-symbolic" : "dialog-warning-symbolic");
+            auto icon = Image.newFromIconName(error ? "hcad-error-symbolic" : "hcad-warning-symbolic");
             icon.addCssClass(error ? "error" : "warning");
             head.append(icon);
             auto title = new Label(error ? "Error" : "Warning");
@@ -2564,7 +2564,7 @@ private:
                 fix.setMarginTop(6);
                 fix.setMarginBottom(6);
                 row.append(fix);
-                auto copy = Button.newFromIconName("edit-copy-symbolic");
+                auto copy = Button.newFromIconName("hcad-copy-symbolic");
                 copy.addCssClass("flat");
                 copy.setValign(Align.Center);
                 copy.setTooltipText("Copy the fix");
@@ -2579,7 +2579,7 @@ private:
                 if (d.replaces.length)
                 {
                     // put in place of the code it replaces, as one change Ctrl+Z undoes
-                    auto apply = Button.newFromIconName("object-select-symbolic");
+                    auto apply = Button.newFromIconName("hcad-apply-symbolic");
                     apply.addCssClass("flat");
                     apply.setValign(Align.Center);
                     apply.setTooltipText("Write the fix in place of the code marked");
@@ -3960,7 +3960,7 @@ private:
         sectionBar.append(sectionLabel);
         sectionFlip = new ToggleButton;
         sectionFlip.addCssClass("flat");
-        sectionFlip.setIconName("object-flip-vertical-symbolic");
+        sectionFlip.setIconName("hcad-flip-symbolic");
         sectionFlip.setTooltipText("Invert the plane's normal: show the other side of the cut");
         sectionFlip.connectToggled(() {
             if (sectionUpdating)
@@ -4620,7 +4620,7 @@ private:
         modeBar = new Box(Orientation.Horizontal, 8);
         modeBar.addCssClass("hcad-modebar");
         auto icon = new Image;
-        icon.setFromIconName("edit-find-symbolic");
+        icon.setFromIconName("hcad-inspect-symbolic");
         modeBar.append(icon);
         modeText = new Label("");
         modeText.setEllipsize(EllipsizeMode.End);

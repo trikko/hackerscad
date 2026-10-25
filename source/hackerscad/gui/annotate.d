@@ -146,11 +146,11 @@ mixin template Annotate()
             auto keep = new Box(Orientation.Horizontal, 0);
             keep.addCssClass("linked");
             auto save = new Button;
-            save.setIconName("document-save-symbolic");
+            save.setIconName("hcad-save-symbolic");
             save.setTooltipText("Save the view with its marks as a PNG picture");
             save.connectClicked(() => saveAnnotated());
             auto copy = new Button;
-            copy.setIconName("edit-copy-symbolic");
+            copy.setIconName("hcad-copy-symbolic");
             copy.setTooltipText("Copy the view with its marks, to paste the picture in a message");
             copy.connectClicked(() { info(copyAnnotated() ? "the view with its marks is copied: paste it as a picture"
                 : "the view could not be captured"); });

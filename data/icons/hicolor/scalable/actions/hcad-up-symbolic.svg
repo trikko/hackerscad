@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- a chevron up (made by tools/icons.py: 1-pixel strokes as filled outlines, for symbolic recolouring) -->
+  <path fill="#2e3436" d="m 7.646,5.146 -4.5,4.5 a 0.5,0.5 0 0 0 0,0.707 0.5,0.5 0 0 0 0.707,0 L 8,6.207 12.146,10.353 a 0.5,0.5 0 0 0 0.707,0 0.5,0.5 0 0 0 0,-0.707 l -4.500,-4.5 a 0.500,0.500 0 0 0 -0.707,0 z"/>
+</svg>

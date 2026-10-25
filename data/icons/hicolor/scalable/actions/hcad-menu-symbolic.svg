@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- three lines (made by tools/icons.py: 1-pixel strokes as filled outlines, for symbolic recolouring) -->
+  <path fill="#2e3436" d="M 2.5,3 A 0.5,0.5 0 0 0 2,3.5 0.5,0.5 0 0 0 2.5,4 h 11 A 0.5,0.5 0 0 0 14,3.5 0.5,0.5 0 0 0 13.5,3 Z m 0,4 A 0.5,0.5 0 0 0 2,7.5 0.5,0.5 0 0 0 2.5,8 h 11 A 0.5,0.5 0 0 0 14,7.5 0.5,0.5 0 0 0 13.5,7 Z m 0,4 A 0.5,0.5 0 0 0 2,11.5 0.5,0.5 0 0 0 2.5,12 h 11 A 0.5,0.5 0 0 0 14,11.5 0.5,0.5 0 0 0 13.5,11 Z"/>
+</svg>

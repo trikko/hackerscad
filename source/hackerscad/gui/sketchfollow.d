@@ -528,7 +528,7 @@ mixin template SketchFollow()
     ToggleButton makePinButton()
     {
         pinButton = new ToggleButton;
-        pinButton.setIconName("view-pin-symbolic");
+        pinButton.setIconName("hcad-pin-symbolic");
         pinButton.setTooltipText("Keep this sketch shown when the cursor leaves its code (Esc closes it)");
         pinButton.addCssClass("flat");
         pinButton.setVisible(false);

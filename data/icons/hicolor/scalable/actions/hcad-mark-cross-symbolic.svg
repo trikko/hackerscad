@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <!-- annotate tool: a cross with a gap at the point it marks -->
-  <path fill="#2e3436" d="M7.25 1 H8.75 V6 H7.25 Z M7.25 10 H8.75 V15 H7.25 Z M1 7.25 H6 V8.75 H1 Z M10 7.25 H15 V8.75 H10 Z"/>
+  <!-- a cross with a gap at the point it marks (made by tools/icons.py: 1-pixel strokes as filled outlines, for symbolic recolouring) -->
+  <path fill="#2e3436" d="M 8,1 A 0.5,0.5 0 0 0 7.5,1.5 v 4 A 0.5,0.5 0 0 0 8,6 0.5,0.5 0 0 0 8.5,5.5 v -4 A 0.5,0.5 0 0 0 8,1 Z M 1.5,7.5 A 0.5,0.5 0 0 0 1,8 0.5,0.5 0 0 0 1.5,8.5 h 4 A 0.5,0.5 0 0 0 6,8 0.5,0.5 0 0 0 5.5,7.5 Z m 9,0 A 0.5,0.5 0 0 0 10,8 0.5,0.5 0 0 0 10.5,8.5 h 4 A 0.5,0.5 0 0 0 15,8 0.5,0.5 0 0 0 14.5,7.5 Z M 8,10 a 0.5,0.5 0 0 0 -0.5,0.5 v 4 A 0.5,0.5 0 0 0 8,15 0.5,0.5 0 0 0 8.5,14.5 v -4 A 0.5,0.5 0 0 0 8,10 Z"/>
+  <path fill="#2e3436" d="M 8.9,8 A 0.899,0.899 0 0 1 8,8.9 0.899,0.899 0 0 1 7.1,8 0.899,0.899 0 0 1 8,7.1 0.899,0.899 0 0 1 8.9,8 Z"/>
 </svg>

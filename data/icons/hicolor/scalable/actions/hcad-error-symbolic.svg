@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- an exclamation mark in a circle (made by tools/icons.py: 1-pixel strokes as filled outlines, for symbolic recolouring) -->
+  <path fill="#2e3436" d="M 8,1 C 4.139,1 1,4.139 1,8 c 0,3.860 3.139,7 7,7 3.860,0 7,-3.139 7,-7 C 15,4.139 11.860,1 8,1 Z m 0,1 c 3.319,0 6,2.680 6,6 0,3.319 -2.680,6 -6,6 C 4.680,14 2,11.319 2,8 2,4.680 4.680,2 8,2 Z"/>
+  <path fill="#2e3436" d="M 8,4 A 0.5,0.5 0 0 0 7.5,4.5 V 9 A 0.5,0.5 0 0 0 8,9.5 0.5,0.5 0 0 0 8.5,9 V 4.5 A 0.5,0.5 0 0 0 8,4 Z"/>
+  <path fill="#2e3436" d="M 8.85,11.25 A 0.850,0.850 0 0 1 8,12.1 0.850,0.850 0 0 1 7.15,11.25 0.850,0.850 0 0 1 8,10.4 0.850,0.850 0 0 1 8.85,11.25 Z"/>
+</svg>

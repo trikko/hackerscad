@@ -357,7 +357,7 @@ private:
         r.setTitle(title);
         r.setSubtitle(command ~ (note.length ? "\n(" ~ note ~ ")" : ""));
         r.setSubtitleSelectable(true);
-        r.addSuffix(Image.newFromIconName("edit-copy-symbolic"));
+        r.addSuffix(Image.newFromIconName("hcad-copy-symbolic"));
         r.setActivatable(true);
         r.connectActivated(() {
             window.getClipboard().set(new Value(command));

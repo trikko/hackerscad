@@ -265,7 +265,7 @@ private:
         wordToggle = option("ab|", "Whole words only", (bool on) => settings.setAtWordBoundaries(on));
         regexToggle = option(".*", "Regular expression", (bool on) => settings.setRegexEnabled(on));
         replaceToggle = new ToggleButton;
-        replaceToggle.setIconName("edit-find-replace-symbolic");
+        replaceToggle.setIconName("hcad-replace-symbolic");
         replaceToggle.setTooltipText("Replace (Ctrl+H)");
         replaceToggle.addCssClass("flat");
         replaceToggle.connectToggled(() => replaceRow.setVisible(replaceToggle.getActive()));
@@ -273,8 +273,8 @@ private:
         auto findRow = new Box(Orientation.Horizontal, 4);
         findRow.append(findEntry);
         findRow.append(count);
-        findRow.append(iconButton("go-up-symbolic", "Previous (Shift+F3)", () => previous()));
-        findRow.append(iconButton("go-down-symbolic", "Next (F3, Enter)", () => next()));
+        findRow.append(iconButton("hcad-up-symbolic", "Previous (Shift+F3)", () => previous()));
+        findRow.append(iconButton("hcad-down-symbolic", "Next (F3, Enter)", () => next()));
         auto options = new Box(Orientation.Horizontal, 0);
         options.addCssClass("linked");
         options.append(caseToggle);
@@ -282,7 +282,7 @@ private:
         options.append(regexToggle);
         findRow.append(options);
         findRow.append(replaceToggle);
-        findRow.append(iconButton("window-close-symbolic", "Close (Esc)", () => close()));
+        findRow.append(iconButton("hcad-close-symbolic", "Close (Esc)", () => close()));
 
         replaceEntry = new Entry;
         replaceEntry.setHexpand(true);

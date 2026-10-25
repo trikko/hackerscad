@@ -264,7 +264,7 @@ private:
 
             // small, and always in its place (hidden by its opacity): the
             // line keeps its height whether it shows or not
-            auto icon = Image.newFromIconName("edit-undo-symbolic");
+            auto icon = Image.newFromIconName("hcad-undo-symbolic");
             icon.setPixelSize(12);
             auto undo = new Button;
             undo.setChild(icon);
