@@ -84,6 +84,12 @@ open /Applications/hackerscad.app                                    # the appli
 /Applications/hackerscad.app/Contents/Resources/bin/hcad check model.hcad  # the command line tool
 ```
 
+Something went wrong? **About › Logs and crash reports** opens the folder
+with the reports of crashes and, on Windows, the program's log
+(`%LOCALAPPDATA%\hackerscad\logs` on Windows, `~/.local/state/hackerscad`
+on Linux, `~/Library/Logs/hackerscad` on macOS): attach them to the
+[issue](https://github.com/trikko/hackerscad/issues).
+
 The window opens on a small example: Carlo, the mascot, a clip that keeps
 bags of biscuits closed. Change its parameters, edit its code, right-click its faces. The New
 button starts a model of your own from a few lines that make Carlo, to

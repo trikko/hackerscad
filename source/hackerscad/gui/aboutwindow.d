@@ -103,6 +103,20 @@ private:
         list.addCssClass("boxed-list");
         list.append(row("Website", appWebsite, "adw-external-link-symbolic", () => open(appWebsite)));
         list.append(row("Report a problem", appIssues, "adw-external-link-symbolic", () => open(appIssues)));
+        {
+            // where the log and the crash reports are, to attach to a problem report
+            import hackerscad.gui.crashlog : logDir;
+            import std.file : mkdirRecurse;
+            immutable dir = logDir();
+            list.append(row("Logs and crash reports", dir, "folder-open-symbolic", () {
+                try
+                    mkdirRecurse(dir);
+                catch (Exception)
+                {
+                }
+                open(fileUri(dir));
+            }));
+        }
         list.append(row("Credits and licences", "the libraries hackerscad is built with", "go-next-symbolic",
             () => pages.push(credits)));
         ActionRow copy;
@@ -152,6 +166,16 @@ private:
         r.setActivatable(true);
         r.connectActivated(activated);
         return r;
+    }
+
+    /// A folder's file:// URI, to open it in the system's file manager
+    static string fileUri(string path)
+    {
+        import std.array : replace;
+        version (Windows)
+            return "file:///" ~ path.replace("\\", "/");
+        else
+            return "file://" ~ path;
     }
 
     void open(string uri)

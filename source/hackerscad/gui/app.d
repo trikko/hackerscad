@@ -396,12 +396,14 @@ extern (C) __gshared string[] rt_options = ["gcopt=parallel:0"];
 
 int main(string[] args)
 {
+    import hackerscad.gui.crashlog : startCrashReports;
+    startCrashReports(appName ~ " " ~ appVersion ~ "\nsystem: " ~ MainWindow.systemText());
     version (Windows)
     {
         if (relaunchWithMesa(args))
             return 0;
         // a windowed program has no console: started from a terminal it
-        // writes there, otherwise its messages go nowhere instead of failing
+        // writes there, otherwise into a log file
         {
             import core.sys.windows.wincon : AttachConsole, ATTACH_PARENT_PROCESS;
             import std.stdio : stdout, stderr;
@@ -412,8 +414,9 @@ int main(string[] args)
             }
             else
             {
-                stdout.reopen("NUL", "w");
-                stderr.reopen("NUL", "w");
+                // no terminal: into the log, kept for a problem report (gui/crashlog.d)
+                import hackerscad.gui.crashlog : logToFile;
+                logToFile();
             }
         }
         // WORKAROUND (Wine, Pango's DirectWrite backend): under Wine it draws
@@ -529,7 +532,27 @@ int main(string[] args)
         auto w = new MainWindow(app, path);
         w.screenshotPath = shot;
     });
-    return app.run(args[0 .. 1]);
+    // a crash in D that reaches the top: its report written, then out as before
+    try
+    {
+        // HCAD_CRASH_TEST=d: such a crash, to try the reports
+        import std.process : environment;
+        if (environment.get("HCAD_CRASH_TEST") == "d")
+            throw new Error("crash test (HCAD_CRASH_TEST=d)");
+        return app.run(args[0 .. 1]);
+    }
+    catch (Throwable t)
+    {
+        import hackerscad.gui.crashlog : reportCrash;
+        import std.stdio : stderr;
+        auto report = reportCrash(t);
+        try
+            stderr.writeln("hackerscad crashed: ", report.length ? "its report is " ~ report : t.msg);
+        catch (Exception)
+        {
+        }
+        throw t;
+    }
 }
 
 struct ExportFormat
@@ -1620,6 +1643,32 @@ final class MainWindow
             return true;
         });
         window.present();
+        // the previous run crashed: where its report is (gui/crashlog.d)
+        {
+            import hackerscad.gui.crashlog : pendingReport;
+            if (auto report = pendingReport())
+            {
+                note("hackerscad closed unexpectedly last time: its report is " ~ report
+                    ~ " (attach it to a problem report)");
+                info("hackerscad closed unexpectedly last time: About › Logs and crash reports has its report");
+            }
+        }
+        // HCAD_CRASH_TEST=native: a native crash (a write through a null pointer) once the window is up, in a
+        // thread of its own as the evaluations' (on the GTK thread, inside a window procedure, 64-bit Windows
+        // may swallow it), to try the reports
+        {
+            import std.process : environment;
+            if (environment.get("HCAD_CRASH_TEST") == "native")
+                timeoutAdd(PRIORITY_DEFAULT, 3000, () {
+                    import core.thread : Thread;
+                    new Thread({
+                        // volatile: the optimizer drops a plain write it can prove is through null
+                        import core.volatile : volatileStore;
+                        volatileStore(cast(uint*) null, 1);
+                    }).start();
+                    return false;
+                });
+        }
     }
 
 private:
@@ -2634,6 +2683,7 @@ private:
             }
         }
         r ~= screen;
+        r ~= "logs and crash reports: " ~ imported!"hackerscad.gui.crashlog".logDir();
         r ~= format("window %d×%d, drawn by %s", window.getWidth(), window.getHeight(),
             window.getRenderer() is null ? "?" : typeOf(window.getRenderer()));
         r ~= format("3D view: %d×%d pixels, OpenGL %s on %s (%s)%s, antialiasing %s",
