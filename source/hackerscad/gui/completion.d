@@ -370,7 +370,8 @@ private:
         view.getIterLocation(it, r);
         int x, y;
         view.bufferToWindowCoords(TextWindowType.Widget, r.x, r.y, x, y);
-        p.setPointingTo(Rectangle(x, y, 1, r.height));
+        auto at = Rectangle(x, y, 1, r.height);
+        p.setPointingTo(&at);
     }
 
     void showSignature(CompletionResult res)

@@ -52,7 +52,8 @@ Popover popupMenu(Widget parent, double x, double y, MenuEntry[] entries)
 {
     auto m = new Menu(entries);
     m.pop.setParent(parent);
-    m.pop.setPointingTo(Rectangle(cast(int) x, cast(int) y, 1, 1));
+    auto at = Rectangle(cast(int) x, cast(int) y, 1, 1);
+    m.pop.setPointingTo(&at);
     m.pop.setPosition(PositionType.Right);
     m.pop.connectClosed(() {
         idleAdd(PRIORITY_DEFAULT, () { m.pop.unparent(); return false; });

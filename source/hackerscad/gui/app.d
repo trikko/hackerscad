@@ -2455,7 +2455,8 @@ private:
         editor.getLineYrange(it, y, height);
         editor.bufferToWindowCoords(TextWindowType.Widget, 0, y, wx, wy);
         auto gutter = editor.getGutter(TextWindowType.Left);
-        pop.setPointingTo(Rectangle(0, wy, gutter is null ? 20 : gutter.getWidth(), height));
+        auto at = Rectangle(0, wy, gutter is null ? 20 : gutter.getWidth(), height);
+        pop.setPointingTo(&at);
         pop.connectClosed(() {
             if (problemsPopover is pop)
                 problemsPopover = null;

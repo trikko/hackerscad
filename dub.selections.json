@@ -4,9 +4,6 @@
 		"bindbc-loader": "1.0.3",
 		"bindbc-opengl": "1.0.5",
 		"djson": "0.9.6",
-		"gid": {
-			"repository": "git+https://github.com/Kymorphia/gid.git",
-			"version": "8e394ae20bb3ba4863057d42daf7af8b5110809e"
-		}
+		"gid": "0.9.14"
 	}
 }

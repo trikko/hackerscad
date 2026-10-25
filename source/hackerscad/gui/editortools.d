@@ -166,7 +166,7 @@ final class EditorTools
         r.y = 8;
         r.width = 1;
         r.height = 1;
-        goToPopover.setPointingTo(r);
+        goToPopover.setPointingTo(&r);
         goToPopover.popup();
         goToEntry.grabFocus();
         goToEntry.selectRegion(0, -1);

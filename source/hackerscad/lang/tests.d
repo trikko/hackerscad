@@ -1893,7 +1893,7 @@ unittest
     // gid 0.9.13 and older had three bugs hackerscad worked around, the workarounds now gone: GObjects let
     // go on the thread that collects (macOS stops the program), GErrors not owned freed (GLArea.getError,
     // the heap corrupted), and symbols looked up in the first library of a pair only (macOS, Windows).
-    // Fixed upstream in commit 8e394ae (issues #54, #55): gid comes from there, or a later release
+    // Fixed upstream in release 0.9.14 (issues #54, #55)
     import std.file : thisExePath, readText;
     import djson : parseJSONComplete;
     import std.path : dirName;
@@ -1901,7 +1901,7 @@ unittest
     auto gid = parseJSONComplete(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"];
     immutable v = gid.isString ? gid.get!string : gid["version"].get!string;
     assert(!["0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13"].canFind(v), "gid " ~ v ~ " has the bugs fixed in "
-        ~ "commit 8e394ae and no workaround for them any more: use that commit or a later release");
+        ~ "0.9.14 and no workaround for them any more: use 0.9.14 or later");
 }
 
 unittest
