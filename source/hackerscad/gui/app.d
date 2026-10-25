@@ -625,6 +625,16 @@ final class MainWindow
         header.setTitleWidget(title);
         // Windows: the header bar's empty part is the caption for Windows, which then moves the window itself,
         // offering Snap Assist and the snap layouts (see gui/winsnap.d)
+        // Windows: not "decorated" for GTK, so that it leaves no margin round the window for its shadow and
+        // resize handles (GTK keeps 12 pixels however small the shadow): Windows counts the margin as the
+        // window's, and snapped the window stood off the screen's edges by it. The header bar and its buttons
+        // are libadwaita's, which this does not touch; Windows draws the shadow and resizes the window from its
+        // edges (gui/winsnap.d)
+        version (Windows)
+        {
+            window.addCssClass("hcad-main");
+            window.setDecorated(false);
+        }
         version (Windows)
             window.connectRealize(() {
                 import hackerscad.gui.winsnap : captionHitTest;
@@ -817,6 +827,17 @@ final class MainWindow
                 ~ " .hcad-about-version { padding: 2px 12px; border-radius: 999px; font-weight: bold;"
                 ~ " color: @accent_color; background: alpha(@accent_bg_color, 0.15); }");
             StyleContext.addProviderForDisplay(Display.getDefault(), css, 600);
+            // Windows: the main window without GTK's shadow and the margin GTK leaves round it for the shadow,
+            // which Windows counts as the window's: snapped, the window stood off the screen's edges by it and
+            // overlapped its neighbour. Windows draws the shadow and rounds the corners instead, and resizes the
+            // window from its edges (gui/winsnap.d)
+            version (Windows)
+            {
+                auto native = new CssProvider;
+                native.loadFromString("window.hcad-main.csd, window.hcad-main.csd:backdrop, window.hcad-main.solid-csd"
+                    ~ " { box-shadow: none; margin: 0; border-radius: 0; }");
+                StyleContext.addProviderForDisplay(Display.getDefault(), native, 700);
+            }
             if (underWine())
             {
                 // Wine cannot blend a window's own transparent pixels with

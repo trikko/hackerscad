@@ -45,6 +45,7 @@ void captionHitTest(Window window, bool delegate(double x, double y) isCaption)
                 framed = true;
                 SetWindowLongPtrW(hwnd, GWL_STYLE, GetWindowLongPtrW(hwnd, GWL_STYLE) | frameStyles);
                 frameChanged(hwnd);
+                nativeShadow(hwnd);
             }
             return false;
         });
@@ -59,8 +60,51 @@ private enum SWP_STATECHANGED = 0x8000;
 /// the styles Windows snaps a window by, kept on it once given
 enum frameStyles = WS_THICKFRAME | WS_MAXIMIZEBOX;
 private __gshared bool framed;
+/// Windows moves or sizes the window itself (its loop, between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE)
+private __gshared bool systemSizing;
 private __gshared bool delegate(double, double) caption;
 private __gshared int delegate() scaleOf;
+
+/// Windows' own shadow and, on Windows 11, its round corners, in place of GTK's (taken away on Windows, see
+/// app.d): the frame extended by a pixel into the window, which GTK covers, makes DWM draw the shadow
+private void nativeShadow(HWND hwnd) nothrow
+{
+    static struct Margins
+    {
+        int left, right, top, bottom;
+    }
+    alias Extend = extern (Windows) int function(HWND, const(Margins)*) nothrow @nogc;
+    alias SetAttribute = extern (Windows) int function(HWND, DWORD, const(void)*, DWORD) nothrow @nogc;
+    auto dwm = LoadLibraryW("dwmapi.dll"w.ptr);
+    if (dwm is null)
+        return;
+    if (auto extend = cast(Extend) GetProcAddress(dwm, "DwmExtendFrameIntoClientArea"))
+    {
+        immutable m = Margins(0, 0, 0, 1);
+        extend(hwnd, &m);
+    }
+    // DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND: ignored before Windows 11
+    if (auto set = cast(SetAttribute) GetProcAddress(dwm, "DwmSetWindowAttribute"))
+    {
+        immutable int round = 2;
+        set(hwnd, 33, &round, round.sizeof);
+    }
+}
+
+/// How far in from the window's edges a press resizes it, in pixels at the window's DPI
+private int resizeBorder(HWND hwnd) nothrow
+{
+    alias GetDpi = extern (Windows) UINT function(HWND) nothrow @nogc;
+    static GetDpi getDpi;
+    static bool looked;
+    if (!looked)
+    {
+        looked = true;
+        getDpi = cast(GetDpi) GetProcAddress(GetModuleHandleW("user32.dll"w.ptr), "GetDpiForWindow");
+    }
+    immutable dpi = getDpi is null ? 96 : getDpi(hwnd);
+    return MulDiv(6, dpi, 96);
+}
 
 /// The frame worked out again at once, after its styles changed: until then Windows takes the frame of the
 /// new styles to be there, and the window's content showed moved by its width until the next move
@@ -71,6 +115,10 @@ private void frameChanged(HWND hwnd) nothrow
 
 private extern (Windows) LRESULT hitTestFirst(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) nothrow
 {
+    if (msg == WM_ENTERSIZEMOVE)
+        systemSizing = true;
+    else if (msg == WM_EXITSIZEMOVE)
+        systemSizing = false;
     // GTK's own changes of the window, told apart by their flags (also while Windows moves the window, when
     // they came too and the window slid away): not Windows' moves and snaps, its maximizing and restoring, nor
     // what another process asks (Win+arrows, from the shell)
@@ -83,10 +131,11 @@ private extern (Windows) LRESULT hitTestFirst(HWND hwnd, UINT msg, WPARAM wParam
         // (Windows never moves a window that way): the client area stays, and GTK does not lay it out again
         if ((pos.flags & SWP_FRAMECHANGED) && !(pos.flags & SWP_STATECHANGED))
             pos.flags |= SWP_NOMOVE | SWP_NOSIZE;
-        // GTK sizing the window (a size, not a position: Windows' snaps give both) works the size out from its
-        // content with AdjustWindowRectEx, adding a frame that is not there (the client area is all of the
-        // window, below): the window grew by it. That frame is taken off again
-        else if ((pos.flags & SWP_NOMOVE) && !(pos.flags & (SWP_NOSIZE | SWP_STATECHANGED)))
+        // GTK sizing the window (a size, not a position: Windows' snaps give both; and not while Windows itself
+        // sizes it from an edge) works the size out from its content with AdjustWindowRectEx, adding a frame
+        // that is not there (the client area is all of the window, below): the window grew by it. That frame
+        // is taken off again
+        else if ((pos.flags & SWP_NOMOVE) && !(pos.flags & (SWP_NOSIZE | SWP_STATECHANGED)) && !systemSizing)
         {
             RECT f;
             AdjustWindowRectEx(&f, cast(DWORD) GetWindowLongPtrW(hwnd, GWL_STYLE), FALSE,
@@ -137,6 +186,22 @@ private extern (Windows) LRESULT hitTestFirst(HWND hwnd, UINT msg, WPARAM wParam
     POINT p = POINT(cast(short) LOWORD(lParam), cast(short) HIWORD(lParam));
     if (!ScreenToClient(hwnd, &p))
         return answer;
+    // near the edges, Windows resizes the window (GTK did it in the margin of its shadow, gone on Windows)
+    if (framed && !IsZoomed(hwnd))
+    {
+        RECT c;
+        GetClientRect(hwnd, &c);
+        immutable b = resizeBorder(hwnd);
+        immutable left = p.x < b, right = p.x >= c.right - b, top = p.y < b, bottom = p.y >= c.bottom - b;
+        if (top)
+            return left ? HTTOPLEFT : right ? HTTOPRIGHT : HTTOP;
+        if (bottom)
+            return left ? HTBOTTOMLEFT : right ? HTBOTTOMRIGHT : HTBOTTOM;
+        if (left)
+            return HTLEFT;
+        if (right)
+            return HTRIGHT;
+    }
     try
     {
         immutable scale = scaleOf();
