@@ -4923,9 +4923,10 @@ SolidVal derived(Interp it, Brep b, SolidVal[] inputs, string kind, Span span, b
     if (r.lostEdgeTags.length)
         keptEdgeTags(r, isProfile());
     // a boolean is a step of the model even when all its faces come from
-    // its operands (a - b where b only trims a): the feature tree lists it
+    // its operands (a - b where b only trims a): the feature tree lists it.
+    // So is a draft, which tilts faces it is given and makes none of its own
     immutable boolean = inputs.length == 2 && (kind == "union" || kind == "difference" || kind == "intersection");
-    if (boolean && created == 0)
+    if ((boolean || kind == "draft") && created == 0)
         created = it.addFeature(kind, span);
     if (created)
     {

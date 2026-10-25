@@ -2489,6 +2489,22 @@ unittest
 
 unittest
 {
+    // a draft is a step of its own, on its line (the Steps panel rolls back to it), though the faces it
+    // tilts keep coming from the box
+    auto r = runModel(q{
+        @part Solid body() => box(40, 40, 30)
+            .draft(faces.front + faces.back, angle: 4.deg);
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error, d.message);
+    import std.algorithm : filter;
+    import std.array : array;
+    auto drafts = r.features.filter!(f => f.kind == "draft").array;
+    assert(drafts.length == 1 && drafts[0].span.line == 3 && drafts[0].result !is null);
+}
+
+unittest
+{
     // a solid made and dropped by a statement of its own is a warning, once for each place, with the line
     // that keeps it; addTag (it changes the solid), assignments and plain calls are not
     import std.algorithm : endsWith, filter, startsWith;
