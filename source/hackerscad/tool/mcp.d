@@ -34,7 +34,7 @@ enum instructions = "hackerscad is a parametric CAD for code-defined models (.hc
     ~ "has hackerscad open, hcad_gui_* tools show your work in their window, and only they drive it: never "
     ~ "through the screen (clicks, keys, computer use), its file or its socket; change its code with "
     ~ "hcad_gui_edit. If these tools are missing or fail, stop and tell the user to connect hackerscad's MCP "
-    ~ "server (its menu, AI Agents…, gives the command). With several windows, ask which one (never assume the most "
+    ~ "server (its menu, AI Agents, gives the command). With several windows, ask which one (never assume the most "
     ~ "recent). With a window open, at the start of every turn, before thinking or editing: hcad_gui_state with "
     ~ "only [\"source_hash\", \"user_changed\"]; if the code changed, read it again (source: true) and work on "
     ~ "it, never on your earlier copy: the user may have edited it. To show an example in a window of its own, hcad_gui_launch it with code (or copy: a file), not "
@@ -1246,8 +1246,10 @@ JValue toolList()
             ~ "problems.", ``),
         gui("hcad_gui_about", "Open the About window of the user's hackerscad (version, credits, licences); close: true "
             ~ "closes it; debug: true returns the debug information its Copy button copies (versions, system, screen, "
-            ~ "renderer, frame times, fonts, model size) without opening it.",
-            `"close": {"type": "boolean"}, "debug": {"type": "boolean"}`),
+            ~ "renderer, frame times, fonts, model size) without opening it; logs: true returns the folder of the logs "
+            ~ "and crash reports (About › Logs and crash reports) with the reports in it, newest first (read one when "
+            ~ "the user reports a crash), and with open: true also opens that folder for the user.",
+            `"close": {"type": "boolean"}, "debug": {"type": "boolean"}, "logs": {"type": "boolean"}, "open": {"type": "boolean"}`),
         gui("hcad_gui_ai", "Which agents have driven the user's window through these tools (each as its MCP client "
             ~ "named itself: you show there too), its latest requests with their errors, and the commands that "
             ~ "connect each agent (MCP server and skill) on this installation; open: true opens the window's AI "

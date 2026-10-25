@@ -63,7 +63,7 @@ format stamp):
   screenshot, state), so they see what you do. Only these tools drive the
   window: never through the screen (clicks and keys, computer use), its file
   or its socket. If they are missing or fail, stop and tell the user to add
-  hackerscad's MCP server (the window's menu, AI Agents…, gives the command
+  hackerscad's MCP server (the window's menu, AI Agents, gives the command
   for their agent and shows whether one is connected); hcad_gui_ai tells
   which agents the window has seen. Points can be given in
   model millimetres (hcad_gui_project converts them). Each window has a name

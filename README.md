@@ -237,7 +237,7 @@ The folder for each agent:
 #### 3. Add the MCP server, too
 
 One command, for all your projects; then restart the agent. In the
-application, the main menu's **AI Agents…** gives these commands with the path
+application, the main menu's **AI Agents** gives these commands with the path
 of your installation, shows which agent drives the window and what it asked,
 and what to ask your agent to check it is connected (it then shows there by its
 own name): an agent working on the window that never shows there

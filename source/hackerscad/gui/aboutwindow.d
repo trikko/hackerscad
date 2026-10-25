@@ -108,14 +108,17 @@ private:
             import hackerscad.gui.crashlog : logDir;
             import std.file : mkdirRecurse;
             immutable dir = logDir();
-            list.append(row("Logs and crash reports", dir, "folder-open-symbolic", () {
+            ActionRow logs;
+            logs = row("Logs and crash reports", dir, "folder-open-symbolic", () {
                 try
                     mkdirRecurse(dir);
                 catch (Exception)
                 {
                 }
-                open(fileUri(dir));
-            }));
+                // the reason in the row when it cannot open
+                openFolder(window, dir, (string why) => logs.setSubtitle(dir ~ " (cannot open it: " ~ why ~ ")"));
+            });
+            list.append(logs);
         }
         list.append(row("Credits and licences", "the libraries hackerscad is built with", "go-next-symbolic",
             () => pages.push(credits)));
@@ -168,14 +171,22 @@ private:
         return r;
     }
 
-    /// A folder's file:// URI, to open it in the system's file manager
-    static string fileUri(string path)
+    /// Opens a folder in the file manager (a file:// URI through the URI launcher is refused by the desktop
+    /// portal on Linux); `failed` gets the reason when it cannot
+    public static void openFolder(Window parent, string dir, void delegate(string why) failed)
     {
-        import std.array : replace;
-        version (Windows)
-            return "file:///" ~ path.replace("\\", "/");
-        else
-            return "file://" ~ path;
+        import gio.async_result : AsyncResult;
+        import gio.file : File;
+        import glib.error : ErrorWrap;
+        import gobject.object : ObjectWrap;
+        import gtk.file_launcher : FileLauncher;
+        auto launcher = new FileLauncher(File.newForPath(dir));
+        launcher.launch(parent, null, (ObjectWrap source, AsyncResult result) {
+            try
+                launcher.launchFinish(result);
+            catch (ErrorWrap e)
+                failed(e.msg);
+        });
     }
 
     void open(string uri)

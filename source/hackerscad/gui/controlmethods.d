@@ -1584,6 +1584,39 @@ mixin template ControlMethods()
                 reply(JSOB("debug", debugReport()), null);
                 return;
             }
+            // {"logs": true}: the folder of the logs and crash reports (About › Logs and crash reports) and the
+            // reports in it, newest first; with "open": true the folder opens in the file manager, as the row does
+            if (p.safe!bool("logs").or(false))
+            {
+                import hackerscad.gui.crashlog : logDir, logFile;
+                import std.algorithm : map, sort;
+                import std.array : array;
+                import std.file : dirEntries, mkdirRecurse, SpanMode;
+                immutable dir = logDir();
+                try
+                    mkdirRecurse(dir);
+                catch (Exception)
+                {
+                }
+                string[] reports;
+                try
+                    reports = dirEntries(dir, "crash-*.txt", SpanMode.shallow).array
+                        .sort!((a, b) => a.timeLastModified > b.timeLastModified).map!(e => e.name).array;
+                catch (Exception)
+                {
+                }
+                auto r = JSOB("folder", dir, "reports", JValue(reports.map!(f => JValue(f)).array));
+                if (exists(logFile()))
+                    r["log"] = logFile();
+                if (p.safe!bool("open").or(false))
+                {
+                    import hackerscad.gui.aboutwindow : AboutWindow;
+                    AboutWindow.openFolder(window, dir, (string why) => note("cannot open " ~ dir ~ ": " ~ why));
+                    r["opened"] = true;
+                }
+                reply(r, null);
+                return;
+            }
             // {"close": true} closes it
             if (p.safe!bool("close").or(false))
             {

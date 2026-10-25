@@ -1870,7 +1870,7 @@ private:
         auto look = new Menu;
         look.appendSubmenu("Style", style);
         auto app = new Menu;
-        app.append("AI Agents…", "win.ai-agents");
+        app.append("AI Agents", "win.ai-agents");
         app.append("About hackerscad", "win.about");
         app.append("Quit", "app.quit");
         auto menu = new Menu;
