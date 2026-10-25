@@ -627,7 +627,21 @@ final class MainWindow
         header.packStart(button("document-open-symbolic", "Open (" ~ shortcutKey ~ "+O)", &openFile));
         // words, not icons: Adwaita's save (an arrow down) and send (an
         // arrow out) read as download and upload
-        header.packStart(textButton("Save", "Save (" ~ shortcutKey ~ "+S)", &save));
+        // Save, with Save As in its arrow: the main menu alone had it, where it was not looked for
+        {
+            import adw.split_button : SplitButton;
+            import gio.menu : Menu;
+            auto saving = new Menu;
+            saving.append("Save As…", "win.save-as");
+            auto b = new SplitButton;
+            b.addCssClass("flat");
+            b.setLabel("Save");
+            b.setTooltipText("Save (" ~ shortcutKey ~ "+S)");
+            b.setDropdownTooltip("Save As… (" ~ shortcutKey ~ "+Shift+S)");
+            b.setMenuModel(saving);
+            b.connectClicked(() => save());
+            header.packStart(b);
+        }
         header.packStart(exportMenu());
         header.packStart(examplesMenu());
         busyIndicator = new Spinner;
