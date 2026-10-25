@@ -1906,6 +1906,21 @@ unittest
 
 unittest
 {
+    // WORKAROUND (gid 0.9.14, gsk.RenderNode): render nodes are unreffed on the thread that collects, which
+    // crashes when one holds the 3D view's GL texture; the screenshots let theirs go at once
+    // (MainWindow.releaseNode, gui/app.d). A newer gid: does RenderNode.~this still unref the node itself?
+    // If not, releaseNode can go; either way, update the version here
+    import std.file : thisExePath, readText;
+    import djson : parseJSONComplete;
+    import std.path : dirName;
+    auto root = dirName(dirName(dirName(thisExePath)));
+    auto gid = parseJSONComplete(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"];
+    immutable v = gid.isString ? gid.get!string : gid["version"].get!string;
+    assert(v == "0.9.14", "gid " ~ v ~ ": check whether MainWindow.releaseNode (gui/app.d) is still needed");
+}
+
+unittest
+{
     // the basics: powers, logarithms, the hypotenuse, sign, lerp, e; an ellipse and a torus, exact
     auto r = runModel(q{
         import std.math;
