@@ -67,11 +67,14 @@ if ! [ -f "$out/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache" ]; then
     exit 1
 fi
 
-# every DLL the executables, GTK (opened at run time) and the pixbuf loaders
-# import, followed recursively; system DLLs are not in $sys/bin
-seeds="$out/bin/hcad.exe $out/bin/hackerscad.exe $out/bin/hcad_native.dll $out/bin/gobject-2.0-0.dll
-    $out/bin/cairo-gobject-2.dll $out/bin/harfbuzz-gobject-0.dll
-    $sys/bin/libgtk-4-1.dll $sys/bin/libadwaita-1-0.dll $sys/bin/libgtksourceview-5-0.dll
+# the libraries gid opens at run time (not imported by the executables): GTK
+# and the others, and every library of a pair gid opens both of
+gidlibs="libgtk-4-1.dll libadwaita-1-0.dll libgtksourceview-5-0.dll libgobject-2.0-0.dll libglib-2.0-0.dll
+    libcairo-gobject-2.dll libcairo-2.dll libharfbuzz-gobject-0.dll libharfbuzz-0.dll"
+# every DLL the executables, those libraries and the pixbuf loaders import,
+# followed recursively; system DLLs are not in $sys/bin
+seeds="$out/bin/hcad.exe $out/bin/hackerscad.exe $out/bin/hcad_native.dll
+    $(for dll in $gidlibs; do printf '%s ' "$sys/bin/$dll"; done)
     $(ls "$out"/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll)"
 todo="$seeds"
 while [ -n "$todo" ]; do
@@ -89,7 +92,7 @@ while [ -n "$todo" ]; do
     done
     todo="$next"
 done
-for dll in libgtk-4-1.dll libadwaita-1-0.dll libgtksourceview-5-0.dll; do
+for dll in $gidlibs; do
     [ -f "$out/bin/$dll" ] || cp "$sys/bin/$dll" "$out/bin/"
 done
 
