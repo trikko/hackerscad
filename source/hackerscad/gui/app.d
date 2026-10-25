@@ -623,6 +623,13 @@ final class MainWindow
         auto header = new HeaderBar;
         title = new WindowTitle(baseName(path), dirName(path));
         header.setTitleWidget(title);
+        // Windows: the header bar's empty part is the caption for Windows, which then moves the window itself,
+        // offering Snap Assist and the snap layouts (see gui/winsnap.d)
+        version (Windows)
+            window.connectRealize(() {
+                import hackerscad.gui.winsnap : captionHitTest;
+                captionHitTest(window, (double x, double y) => onHeaderSpace(header, x, y));
+            });
         header.packStart(button("document-new-symbolic", "New model (" ~ shortcutKey ~ "+N)", &newFile));
         header.packStart(button("document-open-symbolic", "Open (" ~ shortcutKey ~ "+O)", &openFile));
         // words, not icons: Adwaita's save (an arrow down) and send (an
@@ -1660,6 +1667,27 @@ private:
 
     /// macOS: the menu bar at the top of the screen is the application's, set by the first window
     static bool menubarSet;
+
+    /// Windows: whether a point of the window (GTK's logical pixels, from the surface's corner) is the
+    /// header bar's empty part: inside it, and on nothing that takes a click (a button, a menu, a field)
+    version (Windows)
+    bool onHeaderSpace(Widget header, double x, double y)
+    {
+        import gtk.button : Button;
+        import gtk.editable : Editable;
+        import gtk.menu_button : MenuButton;
+        import gtk.types : PickFlags;
+        double dx, dy;
+        window.getSurfaceTransform(dx, dy);
+        for (auto w = window.pick(x - dx, y - dy, PickFlags.Default); w !is null; w = w.getParent())
+        {
+            if (w is header)
+                return true;
+            if (cast(Button) w || cast(MenuButton) w || cast(Editable) w || w.getFocusable())
+                return false;
+        }
+        return false;
+    }
 
     /// Another window, as a process of its own like every window (its own name, channel and
     /// evaluations), on a new model in this one's folder. Started from a thread: spawnProcess waits
