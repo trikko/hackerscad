@@ -3,7 +3,7 @@
 module hackerscad.gui.params;
 
 import std.format : format;
-import std.math : PI, isNaN;
+import std.math : PI, abs, isNaN;
 import std.algorithm : map, countUntil;
 import std.array : array;
 import std.conv : to;
@@ -292,11 +292,16 @@ private:
         return box;
     }
 
-    void changed(string name, string expr)
+    /// A value set in the panel; `atBase`: it is the code's (or the preset's) again, typed back by hand, and
+    /// the parameter is no longer changed, as its ↺ would make it
+    void changed(string name, string expr, bool atBase)
     {
         if (updating)
             return;
-        overrides[name] = expr;
+        if (atBase)
+            overrides.remove(name);
+        else
+            overrides[name] = expr;
         if (onChange)
             onChange();
     }
@@ -304,13 +309,18 @@ private:
     Widget editor(ParamInfo p)
     {
         auto v = p.value;
+        // what ↺ goes back to: the preset's value, or the code's
+        immutable base = preset.length && (preset in p.presets) ? p.presets[preset] : p.defaultValue;
         if (p.choices.length)
         {
             auto dd = DropDown.newFromStrings(p.choices.map!(c => c.toString).array);
             auto idx = p.choices.countUntil(v);
             dd.setSelected(cast(uint)(idx < 0 ? 0 : idx));
             auto choices = p.choices;
-            dd.connectNotify("selected", () => changed(p.name, literal(choices[dd.getSelected()])));
+            dd.connectNotify("selected", () {
+                auto c = choices[dd.getSelected()];
+                changed(p.name, literal(c), literal(c) == literal(base));
+            });
             return dd;
         }
         switch (v.kind)
@@ -320,7 +330,10 @@ private:
                 auto sw = new Switch;
                 sw.setActive(v.b);
                 sw.setHalign(Align.Start);
-                sw.connectStateSet((bool state) { changed(p.name, state ? "true" : "false"); return false; });
+                sw.connectStateSet((bool state) {
+                    changed(p.name, state ? "true" : "false", base.kind == Kind.bool_ && state == base.b);
+                    return false;
+                });
                 return sw;
             }
         case Kind.num:
@@ -338,7 +351,10 @@ private:
                 immutable isInt = v.n.isInt;
                 spin.connectValueChanged(() {
                     auto x = spin.getValue();
-                    changed(p.name, isInt ? format("%d", cast(long) x) : format("%.6g", x) ~ (suffix.length ? suffix : ""));
+                    // the default as the field shows it (to its digits): typed back, it is the default
+                    immutable atBase = base.isNum && abs(x - base.n.value * k) < (isInt ? 0.5 : 0.005);
+                    changed(p.name, isInt ? format("%d", cast(long) x) : format("%.6g", x) ~ (suffix.length ? suffix : ""),
+                        atBase);
                 });
                 if (v.n.dim == Dim.none || v.n.dim == Dim.length || isAngle)
                     return withUnit(spin, v.n.dim == Dim.length ? "mm" : isAngle ? "°" : "");
@@ -348,7 +364,8 @@ private:
             {
                 auto e = new Entry;
                 e.setText(v.s);
-                e.connectActivate(() => changed(p.name, literal(Value.of(e.getText()))));
+                e.connectActivate(() => changed(p.name, literal(Value.of(e.getText())),
+                    base.kind == Kind.str && e.getText() == base.s));
                 return e;
             }
         default:
