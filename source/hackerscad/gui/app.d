@@ -6693,10 +6693,11 @@ private:
 
     void save() => saveThen(null);
 
-    /// Saves (asking for a name when the file has none), then runs `then`.
-    void saveThen(void delegate() then)
+    /// Saves (asking for a name when the file has none), then runs `then`. `named`: the name was just chosen
+    /// in the dialog, untitled.hcad too
+    void saveThen(void delegate() then, bool named = false)
     {
-        if (baseName(path) == "untitled.hcad" && !exists(path))
+        if (!named && baseName(path) == "untitled.hcad" && !exists(path))
             return saveAs(then);
         try
         {
@@ -6725,7 +6726,7 @@ private:
                 if (f is null)
                     return;
                 path = f.getPath();
-                saveThen(then);
+                saveThen(then, true);
             }
             catch (ErrorWrap)
             {

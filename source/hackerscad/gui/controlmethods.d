@@ -1228,7 +1228,7 @@ mixin template ControlMethods()
             {
                 // to the window's file, or to path (then the window follows it, like Save As)
                 auto target = arg("path").length ? absolutePath(arg("path")) : path;
-                if (baseName(target) == "untitled.hcad" && !exists(target))
+                if (!arg("path").length && baseName(target) == "untitled.hcad" && !exists(target))
                     return reply(JValue.init, "the model has no file yet: pass path");
                 if (target != path && exists(target) && !p.safe!bool("force").or(false))
                     return reply(JValue.init, target ~ " exists: pass force: true to overwrite it (ask the user first)");
