@@ -3494,6 +3494,31 @@ private:
         target = target - basis().right * (leftInset / 2 * perPixel);
     }
 
+    /// loadOpenGL, finding the context GTK made however it made it. bindbc-opengl asks EGL for the current
+    /// context only in a Wayland session (XDG_SESSION_TYPE), GLX otherwise; but GTK 4 makes its context with
+    /// EGL on X11 too, which GLX does not see: on X11 the 3D view stayed empty ("noContext", GDK_DEBUG=gl-glx
+    /// needed). Told for the call that the session is Wayland, it tries EGL first and goes on to GLX when no
+    /// EGL context is current (GTK made it with GLX)
+    static GLSupport loadOpenGLOfGtk()
+    {
+        version (linux)
+        {
+            import std.process : environment;
+            immutable session = environment.get("XDG_SESSION_TYPE");
+            environment["XDG_SESSION_TYPE"] = "wayland";
+            scope (exit)
+            {
+                if (session is null)
+                    environment.remove("XDG_SESSION_TYPE");
+                else
+                    environment["XDG_SESSION_TYPE"] = session;
+            }
+            return loadOpenGL();
+        }
+        else
+            return loadOpenGL();
+    }
+
     void realize()
     {
         import std.stdio : stderr;
@@ -3504,7 +3529,7 @@ private:
             explain();
             return;
         }
-        auto support = loadOpenGL();
+        auto support = loadOpenGLOfGtk();
         if (support == GLSupport.noLibrary || support == GLSupport.badLibrary || support < GLSupport.gl33)
         {
             stderr.writeln("3D view: OpenGL 3.3 is needed, found ", support,
