@@ -22,10 +22,11 @@ import gtk.event_controller_key : EventControllerKey;
 import gtk.label : Label;
 import gtk.popover : Popover;
 import gtk.revealer : Revealer;
+import gtk.scrolled_window : ScrolledWindow;
 import gtk.search_entry : SearchEntry;
 import gtk.text_iter : TextIter;
 import gtk.toggle_button : ToggleButton;
-import gtk.types : Align, Orientation, PositionType;
+import gtk.types : Align, Orientation, PolicyType, PositionType;
 import gtk.widget : Widget;
 import gtksource.buffer : SourceBuffer = Buffer;
 import gtksource.search_context : SearchContext;
@@ -303,8 +304,14 @@ private:
         rows.addCssClass("hcad-findbar");
         rows.append(findRow);
         rows.append(replaceRow);
+        // narrower than its row when the code is (a narrow window): clipped, and scrolled sideways
+        auto clip = new ScrolledWindow;
+        clip.setPolicy(PolicyType.External, PolicyType.Never);
+        clip.setPropagateNaturalWidth(true);
+        clip.setPropagateNaturalHeight(true);
+        clip.setChild(rows);
         bar = new Revealer;
-        bar.setChild(rows);
+        bar.setChild(clip);
         bar.setRevealChild(false);
     }
 

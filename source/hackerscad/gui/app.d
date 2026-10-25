@@ -620,6 +620,38 @@ final class MainWindow
     bool positionQueued;
     Evaluator evaluator;
     ControlServer control;
+    /// Narrow (half a laptop's screen, snapped): Export and Examples, in the main menu too, leave the header
+    /// bar, and so does the window's name (in its tooltip and the AI Agents window), and the code can be
+    /// narrower, so that the window fits
+    void addNarrowLayout()
+    {
+        import adw.breakpoint : Breakpoint;
+        import adw.breakpoint_condition : BreakpointCondition;
+        import gobject.value : Value;
+        auto narrow = new Breakpoint(BreakpointCondition.parse(format("max-width: %dpx", wideEnough)));
+        narrow.addSetter(exportButton, "visible", new Value(false));
+        narrow.addSetter(examplesButton, "visible", new Value(false));
+        narrow.addSetter(editorScroll, "width-request", new Value(200));
+        // the name's button by hand: it shows once the window has its name, and a setter would put back,
+        // on leaving, what it found on entering
+        narrow.connectApply(() {
+            narrowWindow = true;
+            windowName.setVisible(false);
+        });
+        narrow.connectUnapply(() {
+            narrowWindow = false;
+            windowName.setVisible(nameShown);
+        });
+        window.addBreakpoint(narrow);
+        // libadwaita wants the least size given when there are breakpoints: the narrow layout's
+        window.setSizeRequest(narrowLeast[0], narrowLeast[1]);
+    }
+
+    /// below this width the header bar leaves Export, Examples and the window's name to the main menu: the
+    /// width the whole header bar needs (with a long window name)
+    enum wideEnough = 940;
+    /// the least size of the window, its header bar narrow
+    static immutable int[2] narrowLeast = [640, 480];
     Button windowName;   /// the name agents use for this window
     Label windowNameLabel;
 
@@ -1016,7 +1048,7 @@ final class MainWindow
         editor.setLeftMargin(4);
         // find and replace, go to a line, line actions, brackets that close themselves
         editorTools = new EditorTools(editor, buffer);
-        auto editorScroll = new ScrolledWindow;
+        editorScroll = new ScrolledWindow;
         editorScroll.setChild(editor);
         editorScroll.setVexpand(true);
         auto editorPane = new Box(Orientation.Vertical, 0);
@@ -1642,6 +1674,7 @@ final class MainWindow
             checkDisk();
             return true;
         });
+        addNarrowLayout();
         window.present();
         // the previous run crashed: where its report is (gui/crashlog.d)
         {
@@ -1807,6 +1840,7 @@ private:
         files.append("Open…", "win.open");
         files.append("Save As…", "win.save-as");
         files.appendSubmenu("Export", exportModel());
+        files.appendSubmenu("Examples", examplesModel());
         // macOS: File in the menu bar at the top of the screen too, where New Window is looked for (a click
         // on the Dock's icon brings the open window forward, it does not start another)
         version (OSX)
@@ -6963,8 +6997,13 @@ private:
         windowNameLabel.setLabel(control.name);
         windowName.setTooltipText(control.name ~ ": this window's name for AI agents (the 'window' of the "
             ~ "hcad_gui_* tools). Click to rename it.");
-        windowName.setVisible(true);
+        nameShown = true;
+        windowName.setVisible(!narrowWindow);
     }
+
+    ScrolledWindow editorScroll;   /// the code's, narrower in the narrow layout
+    bool nameShown;       /// the window's name is known, its button meant to show
+    bool narrowWindow;    /// the window is narrow: Export, Examples and the name are left to the main menu
 
     void renameWindow()
     {
@@ -7546,11 +7585,18 @@ private:
     MenuButton examplesButton, exportButton;   /// in the header bar
 
     /// The Examples button: models to open and try, as unsaved new models.
-    Widget examplesMenu()
+    /// The examples, one entry each: the header bar's Examples menu and the main menu's
+    GMenu examplesModel()
     {
         auto m = new GMenu;
         foreach (e; examples)
             m.append(e.what.length ? e.label ~ " — " ~ e.what : e.label, "win.example-" ~ e.name);
+        return m;
+    }
+
+    Widget examplesMenu()
+    {
+        auto m = examplesModel();
         auto b = new MenuButton;
         b.setLabel("Examples");
         b.setAlwaysShowArrow(true);
