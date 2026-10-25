@@ -187,6 +187,7 @@ final class Interp
     Limits limits;
     string[string] overrides; /// -D name=expr
     string preset;            /// --preset name
+    string[] filesRead;       /// the files load() read, for inputsFingerprint
     shared(bool)* cancel;     /// set by another thread to abandon the evaluation
     void delegate(string) onStage;   /// told what is being evaluated (the GUI shows it)
 
@@ -237,6 +238,62 @@ final class Interp
         if (root is null)
             root = dirName(full);
         return runSource(readText(full), full);
+    }
+
+    /// A fingerprint of everything the result of the model at `mainPath` depends on but its own
+    /// code: the modules it imported (their code by meaning, as codeFingerprints reads it: the
+    /// built-in libraries too), the files load() read (by content), the parameters set and the
+    /// preset. modelFingerprint joins it to the code's own meaning.
+    ulong inputsFingerprint(string mainPath)
+    {
+        import std.algorithm : sort, uniq;
+        import std.array : array;
+        import std.bitmanip : littleEndianToNative;
+        import std.digest.murmurhash : MurmurHash3;
+        import std.file : read;
+        import hackerscad.lang.lexer : codeFingerprints;
+        MurmurHash3!(128, 64) h;
+        void text(const(char)[] t)
+        {
+            immutable uint[1] n = [cast(uint) t.length];
+            h.put(cast(const(ubyte)[]) n[]);
+            h.put(cast(const(ubyte)[]) t);
+        }
+        void number(ulong v)
+        {
+            immutable ulong[1] n = [v];
+            h.put(cast(const(ubyte)[]) n[]);
+        }
+        foreach (p; modules.keys.sort)
+            if (p != mainPath)
+            {
+                ulong meaning, layout;
+                codeFingerprints(modules[p].source, meaning, layout);
+                text(p);
+                number(meaning);
+            }
+        foreach (f; filesRead.dup.sort.uniq)
+        {
+            text(f);
+            try
+            {
+                MurmurHash3!(128, 64) c;
+                c.put(cast(const(ubyte)[]) read(f));
+                h.put(c.finish()[]);
+            }
+            catch (Exception)
+                text("(gone)");
+        }
+        foreach (k; overrides.keys.sort)
+        {
+            ulong meaning, layout;
+            codeFingerprints(overrides[k], meaning, layout);
+            text(k);
+            number(meaning);
+        }
+        text(preset);
+        immutable r = littleEndianToNative!ulong(h.finish()[0 .. 8]);
+        return r ? r : 1;
     }
 
     EvalResult runSource(string source, string path)

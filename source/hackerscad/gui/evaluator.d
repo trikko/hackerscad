@@ -96,6 +96,7 @@ struct Outcome
     Diagnostic[] diagnostics;
     DrawingSheet[] drawings;  /// the @drawing sheets, laid out (or why one could not be)
     string[string] sources;   /// module path → source, to render diagnostics
+    ulong inputs;             /// Interp.inputsFingerprint: imports, files loaded, parameters, preset
     long milliseconds;
     size_t cacheHits, cacheMisses;
     size_t unittests;          /// how many the model has
@@ -454,6 +455,7 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     }
     foreach (path, m; it.modules)
         o.sources[path] = m.source;
+    o.inputs = it.inputsFingerprint(absolutePath(req.path));
     o.milliseconds = sw.peek.total!"msecs";
     o.cacheHits = kernel.hits;
     o.cacheMisses = kernel.misses;

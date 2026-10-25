@@ -724,7 +724,9 @@ JValue toolList()
             ~ "of date: refresh it with format skill).",
             `"topic": {"type": "string"}, "format": {"type": "string", "enum": ["reference", "guide", "cheatsheet", "summary", "agents", "skill", "stamp"]}`),
         tool("hcad_check", "Evaluate a model: parts with bounding boxes and volumes, parameters, presets, "
-            ~ "writeln output, errors with line/column/suggestion and failed unittest checks.", modelProps),
+            ~ "writeln output, errors with line/column/suggestion and failed unittest checks; model_hash, a "
+            ~ "fingerprint of what the model makes (its code but spaces and comments, its imports, the files it "
+            ~ "loads, the parameters and preset): the same one, the same result, no need to check it again.", modelProps),
         tool("hcad_render", "Evaluate a model and return the same report as hcad_check plus a PNG of the parts "
             ~ "(default views: iso, front, top, right; 'parts' draws only some), and where each picture looks from. "
             ~ "view {from: a view name or [x, y, z] towards the viewer, look_at: [x, y, z], size: mm across, cut: true "
@@ -1271,8 +1273,10 @@ JValue toolList()
             ~ "running evaluation; with now: true it answers at once, with evaluating, stage (e.g. part 3 of 12: gear) "
             ~ "and seconds; with source: true it includes the code as it is in the editor (maybe not saved) and steps, "
             ~ "the Steps panel row by row. source_hash is a fingerprint of the code: when it is the one you saw "
-            ~ "last, the code has not changed and need not be asked again; model_hash the same of what the code "
-            ~ "does: changed with source_hash, the model changed; source_hash alone, only spaces or comments (the "
+            ~ "last, the code has not changed and need not be asked again; model_hash the same of what the model "
+            ~ "makes (its code but spaces and comments, the modules it imports, the files it loads, the parameters "
+            ~ "and preset, as the last evaluation found them; the same number hcad_check gives): changed with "
+            ~ "source_hash, the model changed; source_hash alone, only spaces or comments (the "
             ~ "window does not evaluate again when they keep every line where it was); modified is false when the code is the "
             ~ "one saved (typing and undoing back to it included); auto_rebuild whether the window builds as the "
             ~ "user types, stale that the code changed since the last build (rebuilding off: hcad_gui_set builds); "

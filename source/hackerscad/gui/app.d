@@ -67,7 +67,7 @@ import hackerscad.kernel.brep : EdgeKind, tangentChain;
 import hackerscad.examples : examples, exampleNames;
 import hackerscad.tool.codegen : transformPart;
 import hackerscad.lang.errors;
-import hackerscad.lang.lexer : codeFingerprints;
+import hackerscad.lang.lexer : codeFingerprints, modelFingerprint;
 import hackerscad.io.stl;
 import hackerscad.lang.threading : ThreadSpec, allThreads, fits;
 import hackerscad.io.threemf;
@@ -7379,10 +7379,12 @@ private:
         j["stale"] = codeStale;
         j["source_hash"] = format("%016x", codeHash(text()));
         {
-            // the code's meaning: unchanged by spaces and comments
+            // what the model makes: the code's meaning (unchanged by spaces and comments) with its
+            // imports, loaded files, parameters and preset, as the last evaluation found them
             ulong meaning, layout;
             codeFingerprints(text(), meaning, layout);
-            j["model_hash"] = format("%016x", meaning);
+            immutable f = modelFingerprint(meaning, last.inputs);
+            j["model_hash"] = f ? JValue(format("%016x", f)) : JValue(null);
         }
         j["preset"] = params.preset;
         j["overrides"] = JValue(params.overrides);

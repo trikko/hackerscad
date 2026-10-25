@@ -903,6 +903,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto file = buildNormalizedPath(absolutePath(p.s, base));
         if (!(file == root || file.startsWith(root ~ "/")))
             throw new HcadError(Code.sandbox, "load can only read files inside the project directory", x.spanOf("path"));
+        it.filesRead ~= file;
         if (!exists(file) || !isFile(file))
             throw new HcadError(Code.import_, "file not found: " ~ p.s, x.spanOf("path"));
 

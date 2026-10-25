@@ -468,6 +468,22 @@ void codeFingerprints(string source, out ulong meaning, out ulong layout)
         layout = 1;
 }
 
+/// A model's fingerprint: its code's meaning (codeFingerprints) and the rest it depends on
+/// (Interp.inputsFingerprint: imports, files loaded, parameters, preset), as one number; 0 when
+/// the code does not split into tokens.
+ulong modelFingerprint(ulong meaning, ulong inputs)
+{
+    import std.bitmanip : littleEndianToNative;
+    import std.digest.murmurhash : MurmurHash3;
+    if (meaning == 0)
+        return 0;
+    MurmurHash3!(128, 64) h;
+    immutable ulong[2] both = [meaning, inputs];
+    h.put(cast(const(ubyte)[]) both[]);
+    immutable r = littleEndianToNative!ulong(h.finish()[0 .. 8]);
+    return r ? r : 1;
+}
+
 unittest
 {
     ulong m1, l1, m2, l2, m3, l3, m4, l4;

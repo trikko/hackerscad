@@ -50,6 +50,7 @@ final class Run
     string drawingName;
     Diagnostic[] fatal;        /// the error that stopped evaluation, if any
     string path;
+    string source;             /// the model's code, as evaluated
     long milliseconds;
     double tolerance = 0.02;   /// mesh chord tolerance of exports and pictures (--tolerance)
     bool printability;         /// report overhangs and thin walls, mark them in pictures
@@ -1107,6 +1108,15 @@ final class Run
     {
         JValue j = JSOB("ok", !hasErrors);
         j["milliseconds"] = milliseconds;
+        // what the model makes, as one number: the same for the same code (spaces and comments
+        // aside), imports, loaded files, parameters and preset; null when the code does not lex
+        {
+            import hackerscad.lang.lexer : codeFingerprints, modelFingerprint;
+            ulong meaning, layout;
+            codeFingerprints(source, meaning, layout);
+            immutable f = modelFingerprint(meaning, interp.inputsFingerprint(path));
+            j["model_hash"] = f ? JValue(format("%016x", f)) : JValue(null);
+        }
         JValue parts = JSAB();
         foreach (pi, p; result.parts)
         {
@@ -1211,6 +1221,7 @@ Run evaluateModel(RunOptions o)
                 throw new HcadError(Code.import_, "file not found: " ~ o.path, Span(o.path));
             source = readText(run.path);
         }
+        run.source = source;
         run.interp.root = dirName(run.path);
         run.result = run.interp.runSource(source, run.path);
     }
@@ -1220,6 +1231,20 @@ Run evaluateModel(RunOptions o)
         run.fatal = [Diagnostic(Severity.error, Code.kernel, e.msg, Span(run.path))];
     run.milliseconds = sw.peek.total!"msecs";
     return run;
+}
+
+unittest
+{
+    // model_hash: the same for the same model, spaces and comments aside; another for a parameter set
+    RunOptions a, b, c;
+    a.source = "import std.shapes;\n@param immutable w = 2.mm;\n@part Solid s() => box(w, 1, 1);\n";
+    b.source = "// a box\nimport std.shapes;\n@param immutable w = 2.mm;\n\n@part Solid s() => box(w,  1, 1);\n";
+    c.source = a.source;
+    c.overrides = ["w": "3.mm"];
+    auto ha = evaluateModel(a).report()["model_hash"].get!string;
+    assert(ha.length == 16);
+    assert(evaluateModel(b).report()["model_hash"].get!string == ha);
+    assert(evaluateModel(c).report()["model_hash"].get!string != ha);
 }
 
 unittest
