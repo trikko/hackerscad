@@ -698,6 +698,14 @@ final class MainWindow
             auto content = new Box(Orientation.Horizontal, 6);
             content.append(Image.newFromIconName("hcad-agent-symbolic"));
             windowNameLabel = new Label("");
+            // shortened with an ellipsis, as the title is, when the window is narrow: the header bar set the
+            // window's least width, more than half a 1920-pixel screen, and snapped to half of one on Windows
+            // the window overlapped its neighbour (the whole name stays in the tooltip)
+            {
+                import pango.types : EllipsizeMode;
+                windowNameLabel.setEllipsize(EllipsizeMode.End);
+                windowNameLabel.setWidthChars(4);
+            }
             content.append(windowNameLabel);
             windowName.setChild(content);
         }
@@ -6903,8 +6911,8 @@ private:
     void showWindowName()
     {
         windowNameLabel.setLabel(control.name);
-        windowName.setTooltipText("This window's name for AI agents (the 'window' of the hcad_gui_* tools). "
-            ~ "Click to rename it.");
+        windowName.setTooltipText(control.name ~ ": this window's name for AI agents (the 'window' of the "
+            ~ "hcad_gui_* tools). Click to rename it.");
         windowName.setVisible(true);
     }
 
