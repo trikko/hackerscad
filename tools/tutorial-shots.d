@@ -143,7 +143,7 @@ void page4()
 
 void page5()
 {
-    paste("import std.shapes;\n", "import std.shapes;\n" ~ params5);
+    paste("import std;\n", "import std;\n" ~ params5);
     type("box(62.mm, 62.mm, 66.mm)", "box(size, size, height)");
     shot("05-params");
     req("set", `{"params": {"size": 80, "height": 50}}`);
@@ -439,7 +439,7 @@ enum gussets12 = "    // a gusset: a triangle 20 mm along the arm and 20 mm down
     return (plate + arm + gusset.move(x: -15.mm) + gusset.move(x: 12.mm))
 ";
 
-enum start3 = "module planter;\n\nimport std.shapes;\n\n@part(\"sienna\")\nSolid tank() => box(62.mm, 62.mm, 66.mm);\n";
+enum start3 = "module planter;\n\nimport std;\n\n@part(\"sienna\")\nSolid tank() => box(62.mm, 62.mm, 66.mm);\n";
 
 enum params5 = "\n@param(\"Size\", min: 50.mm, max: 120.mm)\nimmutable size = 62.mm;\n\n"
     ~ "@param(\"Height\", min: 50.mm, max: 120.mm)\nimmutable height = 66.mm;\n";
