@@ -6527,8 +6527,19 @@ Value pushFace(Interp it, ref CallArgs a, bool remove)
         catch (KernelException e)
         {
             import std.string : chompPrefix;
-            throw new HcadError(Code.kernel, fn ~ " failed: " ~ e.msg.chompPrefix("push/pull failed: "),
-                x.spanOf(x.has("along") ? "along" : "faces"));
+            // a curved face: thickened along its normal, everywhere the same depth (a band raised round a can)
+            if (!x.has("along") && e.msg.canFind("only flat faces"))
+            {
+                try
+                    prisms ~= k.faceThick(body.brep, f, depth);
+                catch (KernelException e2)
+                    throw new HcadError(Code.kernel, fn ~ " failed: " ~ e2.msg.chompPrefix("extrude failed: "),
+                        x.spanOf("faces"));
+            }
+            else
+                throw new HcadError(Code.kernel, fn ~ " failed: " ~ e.msg.chompPrefix("push/pull failed: ")
+                    ~ (x.has("along") && e.msg.canFind("only flat faces") ? " (a curved face moves along its normal: "
+                        ~ "leave out along:)" : ""), x.spanOf(x.has("along") ? "along" : "faces"));
         }
         auto p = new SolidVal(prisms[$ - 1], a.span);
         inheritTags(it, p, p.brep, [body], k.faceOrigins(p.brep));

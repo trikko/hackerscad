@@ -681,6 +681,13 @@ unittest
         auto c = cylinder(d: 30.mm, h: 40.mm)
             .splitFace(faces.largest, by: plane(origin: vec(0.mm, 0.mm, 25.mm), normal: Z), tag: "band");
         writeln(c.faces.count, " ", c.faces.tagged("band").count, " ", c.faces.tagged("band").list[0].center.z);
+        // a curved piece raised and sunk along its normal: a ring, a groove; a fillet's rounds grown
+        auto ring = c.extrude(faces.tagged("band"), depth: 1.mm), groove = c.cut(faces.tagged("band"), depth: 1.mm);
+        auto at(Solid s, Length z) => s.section(plane(origin: vec(0.mm, 0.mm, z), normal: Z)).bbox.size.x;
+        writeln(at(ring, 10.mm), " ", at(ring, 32.5.mm), " ", at(groove, 32.5.mm), " ", ring.isValid && groove.isValid);
+        auto rounded = box(30.mm, 20.mm, 10.mm).fillet(edges.parallel(Z), r: 4.mm);
+        writeln(format("%.2f", (rounded.extrude(faces.filter(f => f.area < 70.mm * 1.mm), depth: 1.mm).volume
+            - rounded.volume) / 1.mm ^^ 3));
         // a feature on the curved piece alone: knurled the band, the rest of the side plain
         auto k = c.knurl(faces.tagged("band"));
         writeln(k.section(plane(origin: vec(0.mm, 0.mm, 10.mm), normal: Z)).bbox.size.x, " ",
@@ -689,7 +696,7 @@ unittest
             .sweep(path([vec(0.mm, 0.mm, 5.mm), vec(0.mm, 0.mm, 15.mm)]));
         auto b = box(40.mm, 30.mm, 10.mm).splitFace(faces.top, by: wave.rotate(z: 90.deg));
         writeln(b.faces.count, " ", b.isValid);`,
-        "7 true 1 480.0\n4 1 32.5 mm\n30 mm true\n7 true");
+        "7 true 1 480.0\n4 1 32.5 mm\n30 mm 32 mm 28 mm true\n282.74\n30 mm true\n7 true");
     // an outline off the face, a plane missing it, a surface with tag:, several faces at once
     foreach (bad, msg; [q{@part Solid p() => box(20, 20, 5).splitFace(faces.top, by: rect(5.mm, 5.mm));}: "does not lie on the face",
             q{@part Solid p() => box(20, 20, 5).splitFace(faces.top, by: plane(origin: vec(0.mm, 0.mm, 50.mm), normal: Z));}:
@@ -697,7 +704,8 @@ unittest
             q{@part Solid p() => box(20, 20, 5).splitFace(faces.top, by: path([vec(-20.mm, 0.mm), vec(20.mm, 0.mm)])
                 .sweep(path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 10.mm)])), tag: "x");}: "a surface has no inside",
             q{@part Solid p() => box(20, 20, 5).splitFace(faces.filter(f => true), by: plane(origin: vec(0.mm, 0.mm, 0.mm), normal: X));}:
-                "divides one face"])
+                "divides one face",
+            q{@part Solid p() => cylinder(d: 10.mm, h: 10.mm).cut(faces.largest, depth: 6.mm);}: "deeper than its curve's radius"])
         assert(error(bad).message.canFind(msg), error(bad).message);
 
     // lofts along a centreline, and leaving and arriving in given directions
@@ -3065,8 +3073,11 @@ unittest
     assert(isClose(partVolume(r, "sides"), 1000 + 4 * 100, 1e-9));
     // a prism slanted at 45°: the same base, height 5/√2
     assert(isClose(partVolume(r, "slant"), 1000 + 100 * 5 / sqrt(2.0), 1e-9));
-    assert(error("@part Solid p() => cylinder(r: 5, h: 5).extrude(faces.largest, depth: 1);")
-        .message.canFind("flat"));
+    // a curved face grows along its normal: the cylinder 1 mm thicker all round
+    assert(isClose(partVolume(runModel("@part Solid p() => cylinder(r: 5, h: 5).extrude(faces.largest, depth: 1);"), "p"),
+        PI * 36 * 5, 1e-6));
+    assert(error("@part Solid p() => cylinder(r: 5, h: 5).extrude(faces.largest, depth: 1, along: X);")
+        .message.canFind("along its normal"));
     assert(error("@part Solid p() => box(1, 1, 1).extrude(faces.top, depth: 1, along: X);").message.canFind("plane"));
 }
 

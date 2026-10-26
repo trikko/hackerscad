@@ -4745,6 +4745,52 @@ hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, doubl
     });
 }
 
+// The solid between face `face` of `s` and that face moved `depth` along its normal (outwards for depth > 0,
+// into the solid for depth < 0): what extrude() adds or cut() takes away on a curved face. Its faces at both
+// ends come from the face, for its tags.
+hc_shape *hc_face_thick(const hc_shape *s, int face, double depth)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const auto &m = map_of(s, TopAbs_FACE);
+        if (face < 0 || face >= m.Extent())
+            throw Standard_Failure("no such face");
+        const TopoDS_Face f = TopoDS::Face(m(face + 1));
+        BRepOffset_MakeOffset mo;
+        mo.Initialize(f, depth, 1e-4, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Arc, Standard_True);
+        mo.MakeOffsetShape();
+        if (!mo.IsDone())
+            throw Standard_Failure("the face could not be moved that far along its normal (a curve tighter than the "
+                                   "depth?)");
+        TopoDS_Shape r = mo.Shape();
+        if (!TopExp_Explorer(r, TopAbs_SOLID).More()) {
+            BRepBuilderAPI_MakeSolid ms;
+            for (TopExp_Explorer e(r, TopAbs_SHELL); e.More(); e.Next())
+                ms.Add(TopoDS::Shell(e.Current()));
+            if (!ms.IsDone())
+                throw Standard_Failure("the face could not be thickened");
+            r = ms.Solid();
+        }
+        GProp_GProps g;
+        BRepGProp::VolumeProperties(r, g);
+        if (g.Mass() < 0)
+            r.Reverse();
+        if (std::abs(g.Mass()) < 1e-12 || !BRepCheck_Analyzer(r).IsValid())
+            throw Standard_Failure(depth < 0 ? "the face could not be sunk that far: deeper than its curve's radius "
+                                               "(a cylinder's), it would fold on itself"
+                                             : "the face could not be thickened cleanly");
+        // the face itself and its copy moved: from the face
+        history_new(r);
+        TopTools_IndexedMapOfShape res;
+        TopExp::MapShapes(r, TopAbs_FACE, res);
+        for (TopTools_ListOfShape::Iterator it(mo.Generated(f)); it.More(); it.Next())
+            if (int j = res.FindIndex(it.Value()); j > 0)
+                history_from(j, Origin{0, face});
+        if (int j = res.FindIndex(f); j > 0)
+            history_from(j, Origin{0, face});
+        return wrap(r);
+    });
+}
+
 hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thickness)
 {
     return guarded<>((hc_shape *)nullptr, [&] {

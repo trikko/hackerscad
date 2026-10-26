@@ -310,7 +310,7 @@ Solid raised() => marked()
 
 The outline must lie on the face (draw it with `body.sketch(face)`), and a plane or a surface must cross the face from one edge to another. A curved face that closes round on itself, a cylinder's side, has a seam where it joins: dividing it, the piece across the seam comes in two faces, both tagged.
 
-A piece of a flat face takes every feature a flat face does: raise or sink it (`extrude`, `cut`), round or bevel its new edges. A piece of a curved face (a band round a can) takes those that work on a curved face as it is: `knurl` (a grip on the band only), `cut(profile, wrap: …)` (a label laid on it) and `thread`. It cannot yet be raised or sunk, and its new edges, where it carries on smoothly into the rest of the face, cannot be rounded.
+A piece of a flat face takes every feature a flat face does: raise or sink it (`extrude`, `cut`), round or bevel its new edges. A piece of a curved face (a band round a can) can be raised or sunk along its normal (`extrude(faces.tagged("band"), depth: 1.mm)`: a ring; `cut(…)`: a groove), and takes the features that work on a curved face as it is: `knurl` (a grip on the band only), `cut(profile, wrap: …)` (a label laid on it) and `thread`. Its new edges, where it carries on smoothly into the rest of the face, cannot be rounded.
 
 In the view, the lines where a face was divided are drawn fainter than the edges, as are those where a fillet meets the faces beside it: the pieces show without being taken for corners.
 

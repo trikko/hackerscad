@@ -301,6 +301,7 @@ final class OcctKernel : BrepKernel
         normal = Vec3(r[3], r[4], r[5]);
         return true;
     }
+    Brep faceThick(Brep s, int face, double depth) => wrap(hc_face_thick(h(s), face, depth), "extrude");
     Brep molding(Brep spine, Brep profile, bool outward) => wrap(hc_molding(h(spine), h(profile), outward ? 1 : -1), "molding");
     Brep splitFace(Brep s, int face, Brep tool, const(Vec3)[2] plane, int mode, out int[] inside)
     {

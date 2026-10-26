@@ -404,6 +404,8 @@ interface BrepKernel
     /// The flat face `face` swept by the vector `v`: what pushing or
     /// pulling it adds or removes.
     Brep facePrism(Brep s, int face, Vec3 v);
+    /// The solid between face `face` of `s` and that face moved `depth` along its normal (into `s` when < 0)
+    Brep faceThick(Brep s, int face, double depth);
     /// Hollows the solid inwards, opening the given faces.
     Brep shell(Brep s, const(int)[] faces, double thickness);
     /// `s` without `faces`, healed: the faces round them grown or cut back until they close it again.

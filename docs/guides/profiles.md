@@ -280,7 +280,7 @@ Wrapping is exact on faces that unroll flat (cylinders, cones, extruded outlines
 
 ## Extruding and cutting faces
 
-A face is one of the surfaces that bound a solid: a box has six. Instead of a profile, the faces of the solid themselves can move: `body.extrude(faces.right, depth: 10.mm)` sweeps the flat faces outwards along their normals and adds the material; `body.cut(faces.top, depth: 4.mm)` sinks them (as does a negative depth to extrude). `along: vec(1, 0, 1)` sweeps them in another direction, with slanted sides: material is added where the direction leaves the face, removed where it enters.
+A face is one of the surfaces that bound a solid: a box has six. Instead of a profile, the faces of the solid themselves can move: `body.extrude(faces.right, depth: 10.mm)` sweeps the flat faces outwards along their normals and adds the material; `body.cut(faces.top, depth: 4.mm)` sinks them (as does a negative depth to extrude). A curved face grows or sinks along its normal, the same depth everywhere: a band divided off a can's side (`splitFace`) becomes a raised ring, or a groove. `along: vec(1, 0, 1)` sweeps them in another direction, with slanted sides: material is added where the direction leaves the face, removed where it enters.
 
 <!-- render: profiles-ex3 -->
 ```d

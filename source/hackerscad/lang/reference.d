@@ -413,7 +413,7 @@ immutable Ref[] reference =
         "left: bool", "clearance: Length", "chamfer: bool", "flip: bool", "taper: Angle"], "Solid",
         "A thread on a cylindrical face, outside a shaft or inside a hole (made at the tap drill size): \"M8\", \"M8x1\", \"1/4-20 UNC\", \"#10-32 UNF\", \"Tr12x3\", \"G1/2\", tapered \"R1/2\" and \"1/2 NPT\"; taper: 1.79.deg makes any thread conical (each side's lean, narrowing to the free end)."),
     F("extrude", "Solid", ["faces: Selector", "depth: Length", "along: Vec3"], "Solid",
-        "Pulls flat faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep; body.cut(faces.top, depth: 2.mm) pushes them in."),
+        "Pulls faces of the solid outwards: body.extrude(faces.top, depth: 5.mm); along: slants the sweep (flat faces); a curved face (a band divided off a can's side, a fillet's round) grows along its normal, the same depth everywhere; body.cut(faces.top, depth: 2.mm) pushes them in (a curved one no deeper than its curve's radius)."),
     ]) ~
     group("Paths, sweeps and lofts", [
     withForms(F("path", "", ["points: Vec[]", "closed: bool", "bend: Length"], "Path",
