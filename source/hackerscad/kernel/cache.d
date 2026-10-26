@@ -237,6 +237,8 @@ final class CachingKernel : BrepKernel
     }
 
     Brep fillet(Brep s, const(int)[] edges, double r) => op(key("fillet", s, edges, r), inner.fillet(s, edges, r));
+    Brep filletVar(Brep s, const(int)[] edges, double r1, double r2) =>
+        op(key("filletVar", s, edges, r1, r2), inner.filletVar(s, edges, r1, r2));
     Brep chamfer(Brep s, const(int)[] edges, double d) => op(key("chamfer", s, edges, d), inner.chamfer(s, edges, d));
     Brep chamferOn(Brep s, const(int)[] edges, const(int)[] faces, double d, double d2, double angle) =>
         op(key("chamferOn", s, edges, faces, d, d2, angle), inner.chamferOn(s, edges, faces, d, d2, angle));

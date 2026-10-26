@@ -2915,6 +2915,21 @@ hc_shape *hc_fillet(const hc_shape *s, const int *edges, int nedges, double r)
     });
 }
 
+// A fillet whose radius goes from r1 at the start of each contour (the edge given, and the edges tangent to it)
+// to r2 at its end.
+hc_shape *hc_fillet_var(const hc_shape *s, const int *edges, int nedges, double r1, double r2)
+{
+    return guarded<>((hc_shape *)nullptr, [&] {
+        const auto &m = map_of(s, TopAbs_EDGE);
+        BRepFilletAPI_MakeFillet mk(s->shape);
+        for (int i = 0; i < nedges; i++)
+            mk.Add(r1, r2, TopoDS::Edge(m(edges[i] + 1)));
+        require_valid(mk.Shape(), "the result is not a valid solid");
+        history_record(mk, {&s->shape}, mk.Shape());
+        return checked(wrap(mk.Shape()));
+    });
+}
+
 hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d)
 {
     return guarded<>((hc_shape *)nullptr, [&] {

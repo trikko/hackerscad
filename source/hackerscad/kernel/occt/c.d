@@ -90,6 +90,7 @@ int hc_face_info(const(hc_shape)* s, int index, ref double[8] output);
 int hc_edge_faces(const(hc_shape)* s, int* output);
 
 hc_shape* hc_fillet(const(hc_shape)* s, const(int)* edges, int nedges, double r);
+hc_shape* hc_fillet_var(const(hc_shape)* s, const(int)* edges, int nedges, double r1, double r2);
 hc_shape* hc_chamfer(const(hc_shape)* s, const(int)* edges, int nedges, double d);
 hc_shape* hc_chamfer_on(const(hc_shape)* s, const(int)* edges, const(int)* faces, int nedges, double d, double d2,
     double angle);

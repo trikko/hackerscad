@@ -532,6 +532,28 @@ unittest
             q{@part Solid x() => box(9, 9, 9).chamfer(edges.of(faces.top), d: 1.mm, d2: 1.mm, angle: 9.deg, on: faces.top);}])
         error(bad);
 
+    // a variable fillet: r at each edge's start (e.start), r2 at its end; a full round across a face
+    auto rounds = runModel(q{
+        @part Solid varf() => box(20, 20, 20).fillet(edges.between(faces.front, faces.right), r: 1.mm, r2: 6.mm);
+        @part Solid rib() => box(40, 4, 15).fullRound(faces.top);
+        @part Solid tab() => box(30, 20, 3).fullRound(faces.right + faces.left);
+        unittest
+        {
+            // the edge runs from z = 0 up: a small radius near the bottom, a large one near the top
+            assert(varf().contains(vec(9.2.mm, -9.2.mm, 0.5.mm)));
+            assert(!varf().contains(vec(9.2.mm, -9.2.mm, 19.5.mm)));
+            assert(abs(rib().bbox.size.z.to!double - 15) < 1e-6);
+        }
+    });
+    assert(isClose(partVolume(rounds, "rib"), 40 * 4 * 13 + 40 * PI * 2 * 2 / 2, 1e-6));
+    assert(isClose(partVolume(rounds, "tab"), 30 * 20 * 3 - 2 * (20 * 3 * 1.5 - 20 * PI * 1.5 * 1.5 / 2), 1e-6));
+    // a curved face, a face with no parallel pair beside it, a rib that runs into a wall
+    foreach (bad; [q{@part Solid x() => cylinder(d: 10, h: 5).fullRound(faces.largest);},
+            q{@part Solid x() => cone(r1: 10, r2: 5, h: 5).fullRound(faces.top);},
+            q{@part Solid x() => (box(40, 4, 15) + box(4, 30, 30).move(x: 18))
+                .fullRound(faces.filter(f => abs(f.center.z.to!double - 15) < 0.1 && f.normal.z > 0.9));}])
+        error(bad);
+
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{
         @part Solid a() => rect(10, 4).across(X).extrude(3);

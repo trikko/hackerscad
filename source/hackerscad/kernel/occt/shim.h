@@ -120,6 +120,9 @@ int hc_face_info(const hc_shape *s, int index, double out[8]);
 int hc_edge_faces(const hc_shape *s, int *out);
 
 hc_shape *hc_fillet(const hc_shape *s, const int *edges, int nedges, double r);
+/* A fillet whose radius goes from r1 at the start of each contour (an edge and the edges tangent to it) to r2 at
+ * its end. */
+hc_shape *hc_fillet_var(const hc_shape *s, const int *edges, int nedges, double r1, double r2);
 hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d);
 /* Chamfers measured from a face: on each edge, d along faces[i] and d2 along the other face, or, with angle > 0
  * (radians), d along faces[i] and the bevel at that angle from it. */

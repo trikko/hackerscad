@@ -253,7 +253,12 @@ immutable Ref[] reference =
     F("centered", "Shape", [], "", "Moved so its bounding box is centred on the origin."),
     ]) ~
     group("Features", [
-    F("fillet", "Solid", ["edges: Edges", "r: Length"], "Solid", "Rounds the selected edges. Apply it before shell and before cutting holes."),
+    F("fillet", "Solid", ["edges: Edges", "r: Length", "r2: Length"], "Solid",
+        "Rounds the selected edges. Apply it before shell and before cutting holes. r2: a variable round, r at each "
+        ~ "edge's start (e.start) growing to r2 at its end (e.end); an edge with others tangent to it, the whole chain."),
+    F("fullRound", "Solid", ["faces: Faces"], "Solid",
+        "Each flat face, between two parallel faces square to it (a rib's top, a plate's edge), turned into a half "
+        ~ "round as wide as it: its radius half the width, tangent to both."),
     F("chamfer", "Solid", ["edges: Edges", "d: Length", "d2: Length", "angle: Angle", "on: Faces"], "Solid",
         "Bevels the selected edges, d on both faces; uneven: d along the face on: names (one of each edge's two) and "
         ~ "d2 along the other, or d along it and the bevel at angle from it (a countersink's 45°, a lead-in at 30°): "

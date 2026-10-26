@@ -577,6 +577,9 @@ final class OcctKernel : BrepKernel
     Brep fillet(Brep s, const(int)[] edges, double r) =>
         wrap(hc_fillet(h(s), edges.ptr, cast(int) edges.length, r), "fillet");
 
+    Brep filletVar(Brep s, const(int)[] edges, double r1, double r2) =>
+        wrap(hc_fillet_var(h(s), edges.ptr, cast(int) edges.length, r1, r2), "fillet");
+
     Brep chamfer(Brep s, const(int)[] edges, double d) =>
         wrap(hc_chamfer(h(s), edges.ptr, cast(int) edges.length, d), "chamfer");
 

@@ -371,6 +371,9 @@ interface BrepKernel
     int[2][] edgeFaces(Brep s);
 
     Brep fillet(Brep s, const(int)[] edges, double r);
+    /// A fillet whose radius goes from `r1` at the start of each contour (an edge, and the edges tangent to
+    /// it) to `r2` at its end.
+    Brep filletVar(Brep s, const(int)[] edges, double r1, double r2);
     Brep chamfer(Brep s, const(int)[] edges, double d);
     /// Chamfers measured from a face: on each edge, `d` along `faces[i]` (one of the edge's two) and `d2`
     /// along the other, or, with `angle` > 0 (radians), `d` along `faces[i]` and the bevel at `angle` from it.

@@ -127,7 +127,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 
 ## Features
 
-- `s.fillet(edges: Edges, r: Length) → Solid` — Rounds the selected edges. Apply it before shell and before cutting holes.
+- `s.fillet(edges: Edges, r: Length, r2: Length) → Solid` — Rounds the selected edges. Apply it before shell and before cutting holes. r2: a variable round, r at each edge's start (e.start) growing to r2 at its end (e.end); an edge with others tangent to it, the whole chain.
+- `s.fullRound(faces: Faces) → Solid` — Each flat face, between two parallel faces square to it (a rib's top, a plate's edge), turned into a half round as wide as it: its radius half the width, tangent to both.
 - `s.chamfer(edges: Edges, d: Length, d2: Length, angle: Angle, on: Faces) → Solid` — Bevels the selected edges, d on both faces; uneven: d along the face on: names (one of each edge's two) and d2 along the other, or d along it and the bevel at angle from it (a countersink's 45°, a lead-in at 30°): chamfer(edges.of(faces.top), d: 2.mm, d2: 1.mm, on: faces.top).
 - `s.shell(open: Faces, thickness: Length) → Solid` — Hollows the solid, leaving the faces in open: open. Open several faces in one shell.
 - `s.draft(faces: Faces, angle: Angle, pull: Direction, neutral: Length) → Solid` — Tapers faces so the part leaves a mould.

@@ -730,14 +730,44 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
 
     def("fillet", (ref CallArgs a) {
-        auto x = Args(it, a, "fillet", ["solid", "edges", "r"]);
+        // fillet(edges, r:); r2: the radius at each edge's end (e.end), r at its start: a variable fillet
+        auto x = Args(it, a, "fillet", ["solid", "edges", "r", "r2"]);
         auto s = x.solid("solid");
         auto sel = x.selector("edges", false);
         immutable r = x.len("r");
         if (!(r > 0))
             throw new HcadError(Code.type, "the fillet radius r must be greater than 0", x.spanOf("r"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("edges"));
-        return edgeFeature(it, a, s, idx, "fillet", "r", r, (b, e, v) => k.fillet(b, e, v));
+        if (!x.has("r2"))
+            return edgeFeature(it, a, s, idx, "fillet", "r", r, (b, e, v) => k.fillet(b, e, v));
+        immutable r2 = x.len("r2");
+        if (!(r2 > 0))
+            throw new HcadError(Code.type, "the fillet radius r2 must be greater than 0", x.spanOf("r2"));
+        // both radii scale together while a size that works is looked for
+        return edgeFeature(it, a, s, idx, "fillet", "r", r, (b, e, v) => k.filletVar(b, e, v, r2 * v / r));
+    });
+    def("fullRound", (ref CallArgs a) {
+        // fullRound(faces): each face, between two parallel faces, turned into a half round as wide as it
+        auto x = Args(it, a, "fullRound", ["solid", "faces"]);
+        auto s = x.solid("solid");
+        auto idx = resolveSelector(it, x.selector("faces", true), s, x.spanOf("faces"));
+        // one face at a time, found again on the result by where it was (indices change)
+        Vec3[] centres;
+        auto infos = k.faces(s.brep);
+        foreach (i; idx)
+            centres ~= infos[i].center;
+        auto r = s;
+        foreach (c; centres)
+        {
+            auto cur = k.faces(r.brep);
+            int face = -1;
+            double best = double.max;
+            foreach (i, f; cur)
+                if ((f.center - c).length < best)
+                    best = (f.center - c).length, face = cast(int) i;
+            r = fullRoundOne(it, a, r, face, x.spanOf("faces")).solid;
+        }
+        return Value.of(r);
     });
     def("chamfer", (ref CallArgs a) {
         // chamfer(edges, d:) the same on both faces; d2: the other face's distance, or angle: the bevel's
@@ -4543,6 +4573,89 @@ Value edgeFeature(Interp it, ref CallArgs a, SolidVal s, int[] idx, string kind,
         immutable silent = words.canFind("NotDone") || words.canFind("command not done");
         throw new HcadError(Code.kernel, msg ~ (silent ? "" : " (" ~ words ~ ")"), a.span, hint ~ together);
     }
+}
+
+/// Whether face `face` of `s` is flat (every point of its outline on its plane).
+bool isFlatFace(Interp it, Brep s, int face)
+{
+    auto f = it.kernel.faces(s)[face];
+    immutable size = it.kernel.bbox(s).size.length;
+    foreach (loop; it.kernel.faceLoops(s, face, 1e-3 * size))
+        foreach (p; loop)
+            if (abs((p - f.center).dot(f.normal)) > 1e-6 * size)
+                return false;
+    return true;
+}
+
+/// `b`, built in a frame of its own (X, Y, Z the world's), turned and moved so that they are `ux`, `uy`,
+/// `uz` at `o`.
+Brep inFrame(BrepKernel k, Brep b, Vec3 o, Vec3 ux, Vec3 uy, Vec3 uz)
+{
+    Vec3 axis;
+    immutable angle = axisAngle(ux, uy, uz, axis);
+    if (angle > 1e-12)
+        b = k.rotate(b, axis, angle);
+    return k.translate(b, o);
+}
+
+/// One face of `s` made a full round: the face, flat, between two flat faces parallel to each other
+/// and square to it, `w` apart, becomes a half cylinder of radius w / 2 tangent to both; the material
+/// within w / 2 of the face must be that of a plain slab (a rib's top, a plate's edge).
+Value fullRoundOne(Interp it, ref CallArgs a, SolidVal s, int face, Span span)
+{
+    auto k = it.kernel;
+    if (!isFlatFace(it, s.brep, face))
+        throw new HcadError(Code.type, "fullRound needs a flat face (a rib's top, a plate's edge)", span);
+    auto infos = k.faces(s.brep);
+    auto f = infos[face];
+    immutable n = f.normal.normalized;
+    // the flat neighbours square to it, in pairs facing away from each other
+    int[] sides;
+    foreach (e; k.edgeFaces(s.brep))
+        if (e[0] == face || e[1] == face)
+        {
+            immutable other = e[0] == face ? e[1] : e[0];
+            if (other >= 0 && !sides.canFind(other) && abs(infos[other].normal.normalized.dot(n)) < 1e-6
+                    && isFlatFace(it, s.brep, other))
+                sides ~= other;
+        }
+    double w = double.max;
+    int pa = -1, pb = -1;
+    foreach (i, fa; sides)
+        foreach (fb; sides[i + 1 .. $])
+        {
+            immutable na = infos[fa].normal.normalized, nb = infos[fb].normal.normalized;
+            if (na.dot(nb) > -1 + 1e-9)
+                continue;
+            immutable gap = abs((infos[fb].center - infos[fa].center).dot(na));
+            if (gap > 1e-9 && gap < w)
+                w = gap, pa = fa, pb = fb;
+        }
+    if (pa < 0)
+        throw new HcadError(Code.type, "fullRound needs a face between two parallel faces square to it (the round "
+            ~ "spans the width between them)", span);
+    immutable na = infos[pa].normal.normalized;
+    immutable d = na.cross(n).normalized;
+    // the round's axis: midway between the two faces, w / 2 in from the face, along it
+    immutable mid = infos[pa].center + na * (-w / 2);
+    auto c = f.center + na * (mid - f.center).dot(na) - n * (w / 2);
+    // the slab within w / 2 of the face, as long as the solid: what the round replaces
+    immutable len = 4 * k.bbox(s.brep).size.length;
+    auto slab = inFrame(k, k.translate(k.box(len, w + 2e-3 * w, w / 2 + 1e-3 * w), Vec3(-len / 2, -(w + 2e-3 * w) / 2,
+        0)), c, d, na, n);
+    auto region = k.boolean(s.brep, slab, BoolOp.common);
+    // a plain slab: as much material there as a box the face's size and w / 2 deep
+    immutable expected = f.area * (w / 2);
+    immutable got = k.volume(region);
+    if (abs(got - expected) > 1e-3 * expected)
+        throw new HcadError(Code.type, format("fullRound: the material within %s mm of this face is not a plain "
+            ~ "slab %s mm wide (something else joins it there): round it with fillet(r: %s) on its two edges, or "
+            ~ "make the face's end first", fmtNum(w / 2), fmtNum(w), fmtNum(w / 2 * 0.99)), span);
+    auto bar = inFrame(k, k.translate(k.rotate(k.cylinder(w / 2, len), Vec3(0, 1, 0), PI / 2), Vec3(-len / 2, 0, 0)),
+        c, d, na, n);
+    auto round = k.boolean(region, bar, BoolOp.common);
+    return transformed(it, a.span, s, (Brep b) => k.booleanMerged(k.boolean(b, region, BoolOp.cut), round,
+        BoolOp.fuse), "fullRound");
 }
 
 /// `v` to 3 significant digits, rounded down: a size that still works.
