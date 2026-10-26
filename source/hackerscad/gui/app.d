@@ -659,6 +659,10 @@ final class MainWindow
     bool modified;
     ulong savedHash;   /// codeHash of the text as saved, opened or made new
     bool hasSaved;     /// false while no text was saved (an imported mesh's model)
+    /// The model has no file yet, though `path` names one (an example, opened from the menu): Save asks
+    /// where, offering that name, rather than writing next to whatever was open (the application's
+    /// folder, at the first start)
+    bool noFile;
     uint debounce;
     /// Where the tokens of the code last sent to be evaluated stand (codeFingerprints' layout): text
     /// changed to code with the same is not evaluated again (a comment's words, spaces at a line's end).
@@ -6697,11 +6701,12 @@ private:
     /// in the dialog, untitled.hcad too
     void saveThen(void delegate() then, bool named = false)
     {
-        if (!named && baseName(path) == "untitled.hcad" && !exists(path))
+        if (!named && fileless)
             return saveAs(then);
         try
         {
             write(path, text());
+            noFile = false;
             diskTime = mtimeOf(path);
             markSaved();
             note("saved " ~ path);
@@ -6719,6 +6724,11 @@ private:
     {
         auto d = new FileDialog;
         d.setInitialName(baseName(path));
+        if (fileless)
+        {
+            import gio.file : File;
+            d.setInitialFolder(File.newForPath(saveFolder()));
+        }
         d.save(window, null, (ObjectWrap src, AsyncResult res) {
             try
             {
@@ -6732,6 +6742,41 @@ private:
             {
             }
         });
+    }
+
+    /// Whether the model has no file of its own yet: Save asks for one.
+    bool fileless() => noFile || (baseName(path) == "untitled.hcad" && !exists(path));
+
+    /// Where Save first offers to put a model of no file: its folder, unless that is inside the
+    /// application's own (an example's, at the first start), or cannot be written; else Documents.
+    string saveFolder()
+    {
+        import std.algorithm : startsWith;
+        import std.file : thisExePath;
+        import std.path : buildNormalizedPath, dirSeparator;
+        immutable folder = buildNormalizedPath(dirName(path));
+        immutable app = buildNormalizedPath(dirName(dirName(thisExePath)));
+        bool writable(string d)
+        {
+            version (Posix)
+            {
+                import core.sys.posix.unistd : access, W_OK;
+                import std.string : toStringz;
+                return access(d.toStringz, W_OK) == 0;
+            }
+            else
+                return true;
+        }
+        immutable inApp = folder == app || folder.startsWith(app ~ dirSeparator);
+        if (!inApp && exists(folder) && writable(folder))
+            return folder;
+        import glib.global : getUserSpecialDir;
+        import glib.types : UserDirectory;
+        auto docs = getUserSpecialDir(UserDirectory.DirectoryDocuments);
+        if (docs.length && exists(docs))
+            return docs;
+        import std.process : environment;
+        return environment.get("HOME", environment.get("USERPROFILE", folder));
     }
 
     bool closeConfirmed;
@@ -6836,6 +6881,7 @@ private:
     void startNew()
     {
         path = buildPath(dirName(path), "untitled.hcad");
+        noFile = false;
         params.overrides = null;
         params.preset = null;
         params.invalidate();
@@ -6972,6 +7018,7 @@ private:
             target = buildPath(dirName(file), format("%s_%d.hcad", name, k));
         agentText = null;
         path = target;
+        noFile = false;
         params.overrides = null;
         params.preset = null;
         params.invalidate();
@@ -6996,6 +7043,7 @@ private:
     {
         agentText = null;
         path = file;
+        noFile = false;
         params.overrides = null;
         params.preset = null;
         params.invalidate();
@@ -7627,9 +7675,9 @@ private:
     // a function of its own: closures made in a loop would all share the last name
     void delegate() exampleAction(string name) => () => confirmDiscard(() { startExample(name); });
 
-    /// A new model with the example `name`'s code, not saved yet: its
-    /// file would be name.hcad next to the current one (name_2.hcad if
-    /// that exists). False when there is no such example.
+    /// A new model with the example `name`'s code, of no file yet: Save asks where, offering
+    /// name.hcad (name_2.hcad if that exists next to the current one). False when there is no such
+    /// example.
     bool startExample(string name)
     {
         import std.algorithm : find;
@@ -7641,6 +7689,7 @@ private:
             target = buildPath(dirName(path), format("%s_%d.hcad", name, k));
         agentText = null;
         path = target;
+        noFile = true;
         params.overrides = null;
         params.preset = null;
         params.invalidate();

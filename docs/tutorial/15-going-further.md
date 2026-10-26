@@ -22,7 +22,7 @@ watch.
 ![The language tour](img/15-examples.png)
 
 An example opens as a new model, not saved yet: nothing you change is lost
-from the original.
+from the original, and Save asks where to keep it.
 
 ## A hook, ready to print
 
