@@ -21,6 +21,10 @@ on:
         type: boolean
         default: false
 
+# the unit tests list every block's time, slowest first (hackerscad/testrunner.d)
+env:
+  HCAD_TEST_TIMES: all
+
 # a new push to a branch stops the run still going on it
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -62,7 +66,7 @@ jobs:
       - name: Test
         run: |
           mkdir -p ~/dub-cache
-          docker run --rm -v "$PWD:/src" -v "$HOME/dub-cache:/root/.dub" -w /src hackerscad-appimage sh -c '
+          docker run --rm -e HCAD_TEST_TIMES -v "$PWD:/src" -v "$HOME/dub-cache:/root/.dub" -w /src hackerscad-appimage sh -c '
             git config --global --add safe.directory "*"
             dub test :core --compiler=ldc2 &&
             dub build --compiler=ldc2 &&
