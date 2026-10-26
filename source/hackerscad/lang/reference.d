@@ -639,6 +639,16 @@ immutable Ref[] reference =
     F("parallel", "Sketch", ["a: SketchLine", "b: SketchLine"], "", "Two parallel lines."),
     F("perpendicular", "Sketch", ["a: SketchLine", "b: SketchLine"], "", "Two lines at right angles."),
     F("fillet", "Sketch", ["p: SketchPoint", "r: Length"], "", "Rounds the corner where two lines meet at p (an error on any other point: a circle's centre, a free end)."),
+    F("mirror", "Sketch", ["entities", "line: SketchLine"], "Entity[]",
+        "Copies of points, lines, arcs and circles (one, or a list: a polyline, a shape's lines) across a line of the "
+        ~ "sketch (a construction line, usually): each new point held symmetric to its own, so the copy follows; a "
+        ~ "point on the line is its own image. Draw and constrain half an outline, mirror it: the two halves join."),
+    F("pattern", "Sketch", ["entities", "n: int", "step: Vec2"], "Entity[]",
+        "n - 1 copies of points, lines, arcs and circles, step apart (n counts the original), each point held that "
+        ~ "far from its own: a row of holes from one constrained circle."),
+    F("circularPattern", "Sketch", ["entities", "n: int", "center: SketchPoint | Vec2", "angle: Angle"], "Entity[]",
+        "n - 1 copies round a point, each point as far from it as its own, turned by an even share of angle (a full "
+        ~ "turn by default: n round it; less, the first and the last at its two ends): holes on a bolt circle."),
     F("fix", "Sketch", ["p: SketchPoint"], "", "Pins a point."),
     F("horizontal", "Sketch", ["line: SketchLine"], "", "A horizontal line (or two points at the same height, or an ellipse's x axis along X)."),
     F("vertical", "Sketch", ["line: SketchLine"], "", "A vertical line."),

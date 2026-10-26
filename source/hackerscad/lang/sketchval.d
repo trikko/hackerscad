@@ -3,7 +3,7 @@
 /// outline as a Profile.
 module hackerscad.lang.sketchval;
 
-import std.algorithm : canFind, map, sort, uniq;
+import std.algorithm : canFind, map, max, min, sort, uniq;
 import std.array : array, join;
 import std.conv : to;
 import std.format : format;
@@ -625,6 +625,107 @@ final class SketchVal : ObjectVal
             return constraint("symmetric", ["a", "b", "line"], (ref Args x, Span s) {
                 add(ConstraintKind.symmetric, [pointArg(x, "a"), pointArg(x, "b"), lineArg(x, "line")], s);
             });
+        case "mirror":
+            return (ref CallArgs a) {
+                // s.mirror(entities, line): copies across the line, each point held symmetric to its own
+                auto x = Args(it, a, "mirror", ["sketch", "entities", "line"]);
+                auto ids = entitiesArg(x, "entities");
+                auto axis = lineArg(x, "line");
+                calling = "mirror";
+                immutable o = at(sk.entities[axis].refs[0]), d = (at(sk.entities[axis].refs[1]) - o).normalized;
+                immutable size = extent();
+                size_t[size_t] made;
+                size_t mapPoint(size_t p)
+                {
+                    if (auto q = p in made)
+                        return *q;
+                    immutable v = at(p) - o;
+                    immutable off = v - d * v.dot(d);
+                    // a point on the line is its own image
+                    if (off.length < 1e-9 * size)
+                        return made[p] = p;
+                    immutable q = newPoint((o + d * v.dot(d) - off).x, (o + d * v.dot(d) - off).y, a.span);
+                    add(ConstraintKind.symmetric, [p, q, axis], a.span);
+                    return made[p] = q;
+                }
+                return returned(a.span, Value.of(copies(ids, &mapPoint, true, a.span)));
+            };
+        case "pattern":
+            return (ref CallArgs a) {
+                // s.pattern(entities, n, step:): n - 1 copies, step apart, each point held that far from its own
+                auto x = Args(it, a, "pattern", ["sketch", "entities", "n", "step"]);
+                auto ids = entitiesArg(x, "entities");
+                immutable n = cast(int) x.num("n");
+                if (n < 2 || n > 1000)
+                    throw new HcadError(Code.type, "pattern makes 2 to 1000 (the first is the original)", x.spanOf("n"));
+                auto step = vecOf(x, x.get("step"), x.spanOf("step"));
+                if (step.length == 0)
+                    throw new HcadError(Code.type, "a step of zero puts every copy in the same place", x.spanOf("step"));
+                calling = "pattern";
+                Value[] all;
+                foreach (k; 1 .. n)
+                {
+                    size_t[size_t] made;
+                    size_t mapPoint(size_t p)
+                    {
+                        if (auto q = p in made)
+                            return *q;
+                        immutable to = at(p) + step * k;
+                        immutable q = newPoint(to.x, to.y, a.span);
+                        add(ConstraintKind.hdistance, [p, q], a.span, abs(step.x * k));
+                        add(ConstraintKind.vdistance, [p, q], a.span, abs(step.y * k));
+                        return made[p] = q;
+                    }
+                    all ~= copies(ids, &mapPoint, false, a.span);
+                }
+                return returned(a.span, Value.of(all));
+            };
+        case "circularPattern":
+            return (ref CallArgs a) {
+                // s.circularPattern(entities, n, center:, angle:): copies round a point, each point as far from it
+                // as its own, turned by an even share of angle (a full turn: n round it)
+                auto x = Args(it, a, "circularPattern", ["sketch", "entities", "n", "center", "angle"]);
+                auto ids = entitiesArg(x, "entities");
+                immutable n = cast(int) x.num("n");
+                if (n < 2 || n > 1000)
+                    throw new HcadError(Code.type, "circularPattern makes 2 to 1000 (the first is the original)",
+                        x.spanOf("n"));
+                immutable c = pointOrNew(x, "center", a.span);
+                import std.math : PI, round;
+                immutable total = x.has("angle") ? x.angle("angle") : 2 * PI;
+                immutable turns = total / (2 * PI);
+                immutable full = abs(turns - round(turns)) < 1e-9;
+                immutable stepAngle = full ? total / n : total / (n - 1);
+                calling = "circularPattern";
+                immutable centre = at(c);
+                // a construction line from the centre to each original point, and to its last copy: each copy
+                // held one step on from the one before (angles past half a turn would fold back)
+                size_t[size_t] spoke, previous;
+                Value[] all;
+                foreach (k; 1 .. n)
+                {
+                    size_t[size_t] made;
+                    size_t mapPoint(size_t p)
+                    {
+                        if (p == c)
+                            return c;
+                        if (auto q = p in made)
+                            return *q;
+                        immutable v = at(p) - centre, t = stepAngle * k;
+                        immutable to = centre + Vec3(v.x * cos(t) - v.y * sin(t), v.x * sin(t) + v.y * cos(t), 0);
+                        immutable q = newPoint(to.x, to.y, a.span);
+                        if (p !in spoke)
+                            previous[p] = spoke[p] = sk.line(c, p, true);
+                        immutable arm = sk.line(c, q, true);
+                        add(ConstraintKind.equalLength, [spoke[p], arm], a.span);
+                        add(ConstraintKind.angle, [previous[p], arm], a.span, stepAngle);
+                        previous[p] = arm;
+                        return made[p] = q;
+                    }
+                    all ~= copies(ids, &mapPoint, false, a.span);
+                }
+                return returned(a.span, Value.of(all));
+            };
         case "fillet":
             return constraint("fillet", ["point", "r"], (ref Args x, Span s) {
                 // rounds the corner where two lines meet at this point
@@ -1683,6 +1784,91 @@ final class SketchVal : ObjectVal
     }
 
     size_t idOf(Value v) => (cast(SketchEntityVal) v.obj).id;
+
+    /// Where a point is: solved with the constraints so far when they solve, else where it was put.
+    Vec3 at(size_t p)
+    {
+        try
+            return sk.position(p);
+        catch (SketchException)
+            return sk.guess(p);
+    }
+
+    /// How big the sketch is: for tolerances.
+    double extent()
+    {
+        double r = 1;
+        foreach (i, e; sk.entities)
+            if (e.kind == EntityKind.point)
+                r = max(r, at(i).length);
+        return r;
+    }
+
+    /// One entity, or a list of them (a shape's lines, a polyline's).
+    size_t[] entitiesArg(ref Args x, string n)
+    {
+        auto v = x.get(n);
+        size_t[] ids;
+        foreach (e; v.kind == Kind.array ? v.arr : [v])
+            ids ~= entityOf(e, x.spanOf(n));
+        if (ids.length == 0)
+            throw new HcadError(Code.type, "an empty list of entities", x.spanOf(n));
+        return ids;
+    }
+
+    /// Copies of lines, arcs, circles and points through a map of their points; `flip`: a mirror image (arcs
+    /// run the other way round). Circles as big as their own.
+    Value[] copies(size_t[] ids, size_t delegate(size_t) mapPoint, bool flip, Span s)
+    {
+        Value[] r;
+        foreach (e; ids)
+        {
+            auto en = sk.entities[e];
+            final switch (en.kind)
+            {
+            case EntityKind.point:
+                r ~= entity(mapPoint(e));
+                break;
+            case EntityKind.line:
+                {
+                    immutable p = mapPoint(en.refs[0]), q = mapPoint(en.refs[1]);
+                    r ~= made(s, () => sk.line(p, q, en.construction));
+                    break;
+                }
+            case EntityKind.arc:
+                {
+                    immutable c = mapPoint(en.refs[0]), p = mapPoint(en.refs[1]), q = mapPoint(en.refs[2]);
+                    r ~= made(s, () => flip ? sk.arc(c, q, p, en.construction) : sk.arc(c, p, q, en.construction));
+                    break;
+                }
+            case EntityKind.circle:
+                {
+                    immutable c = mapPoint(en.refs[0]);
+                    double rad;
+                    try
+                        rad = sk.radius(e);
+                    catch (SketchException)
+                        rad = sk.vars[en.var];
+                    auto copy = made(s, () => sk.circle(c, rad, en.construction));
+                    add(ConstraintKind.equalRadius, [e, idOf(copy)], s);
+                    r ~= copy;
+                    break;
+                }
+            case EntityKind.ellipse, EntityKind.spline:
+                throw new HcadError(Code.type, "mirror and patterns copy points, lines, arcs and circles", s);
+            }
+            // a corner fillet goes with the corner
+            foreach (p, rad; sk.fillets.dup)
+                if (en.kind == EntityKind.line && (p == en.refs[0] || p == en.refs[1]))
+                {
+                    immutable q = mapPoint(p);
+                    if (q !in sk.fillets)
+                        sk.fillets[q] = rad;
+                }
+        }
+        return r;
+    }
+
 
     Value made(Span s, size_t delegate() f)
     {

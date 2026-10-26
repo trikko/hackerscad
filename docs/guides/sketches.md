@@ -194,6 +194,48 @@ Solid plate() => flange().extrude(4.mm);
 
 Other guides that come up often: a construction diagonal of a rectangle, whose midpoint is its centre; a construction line joining two centres; a construction circle a polygon is inscribed in (`s.on(s.polygon(c, 6), circle)`) or drawn round (`s.tangent(…)`).
 
+## Mirrors and patterns
+
+Half an outline is half the constraints: draw one side, then `s.mirror(half, axis)` copies it across a line of the sketch, usually a construction one. Each new point is held symmetric to its own, so when a dimension of the first half changes, the copy follows; a point on the line is its own image, which joins the two halves. `s.pattern(entities, n, step:)` repeats geometry in a row, `s.circularPattern(entities, n, center:)` round a point: holes from one constrained circle, every copy following it.
+
+<!-- render: sketches-mirror --from top -->
+```d
+// a plate drawn as half an outline, mirrored, and a row
+// of holes from one
+
+Profile plate()
+{
+    auto s = sketch();
+    auto o = s.point(0, 0, fixed: true);
+    auto axis = s.line(o, vec(0.mm, 30.mm), construction: true);
+    s.vertical(axis);
+    s.length(axis, 30.mm);
+
+    // the right half: across, up, and in to the axis
+    auto half = s.polyline([o, vec(30.mm, 0.mm),
+        vec(30.mm, 15.mm), vec(0.mm, 25.mm)], closed: false);
+    s.horizontal(half[0]);
+    s.vertical(half[1]);
+    s.length(half[0], 30.mm);
+    s.length(half[1], 15.mm);
+    s.on(half[2].end, axis);
+    s.distance(o, half[2].end, 25.mm);
+    s.mirror(half, axis);
+
+    // one hole, then four more 12 mm apart
+    auto hole = s.circle(vec(-24.mm, 8.mm), d: 5.mm);
+    s.distance(o, hole.center, 24.mm, along: X);
+    s.distance(o, hole.center, 8.mm, along: Y);
+    s.pattern([hole], 5, step: vec(12.mm, 0.mm));
+    return s.profile;
+}
+
+@part
+Solid part() => plate().extrude(3.mm);
+```
+
+![A plate mirrored from its right half, with a row of holes](img/sketches-mirror.png)
+
 ## Curves: ellipses and splines
 
 `s.ellipse(c, rx:, ry:, angle:)` has its rx along its own x axis, turned `angle` from X. `s.spline([…])` is a smooth curve through the points, in order; `closed: true` goes round back to the first, a loop of its own. An open spline's ends join lines and arcs as theirs do. The points move the curve, so constrain them like any other.

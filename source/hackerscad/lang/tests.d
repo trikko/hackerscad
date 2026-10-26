@@ -677,6 +677,59 @@ unittest
             q{@part Solid x() => loft([circle(r: 5), circle(r: 5).move(z: 9)], along: box(1, 1, 1));}])
         error(bad);
 
+    // sketch mirrors and patterns: the copies follow their originals
+    auto sketched = runModel(q{
+        Profile mirrored()
+        {
+            auto s = sketch();
+            auto o = s.point(0, 0, fixed: true);
+            auto axis = s.line(o, vec(0.mm, 10.mm), construction: true);
+            s.vertical(axis);
+            s.length(axis, 20.mm);
+            auto half = s.polyline([o, vec(10.mm, 0.mm), vec(10.mm, 8.mm), vec(0.mm, 12.mm)], closed: false);
+            s.horizontal(half[0]);
+            s.vertical(half[1]);
+            s.length(half[0], 10.mm);
+            s.length(half[1], 8.mm);
+            s.on(half[2].end, axis);
+            s.distance(o, half[2].end, 12.mm);
+            s.mirror(half, axis);
+            assert(s.dof == 0);
+            return s.profile;
+        }
+        Profile ring()
+        {
+            auto s = sketch();
+            auto o = s.point(0, 0, fixed: true);
+            s.circle(o, d: 40.mm);
+            auto c = s.circle(vec(14.mm, 0.mm), d: 4.mm);
+            s.distance(o, c.center, 14.mm);
+            s.horizontal(s.line(o, c.center, construction: true));
+            auto cs = s.circularPattern([c], 6, center: o);
+            assert(s.dof == 0 && cs.length == 5);
+            // the fourth copy half a turn round
+            assert(abs(cs[2].center.pos.x.to!double + 14) < 1e-6);
+            return s.profile;
+        }
+        Profile row()
+        {
+            auto s = sketch();
+            auto o = s.point(0, 0, fixed: true);
+            auto c = s.circle(vec(5.mm, 0.mm), d: 2.mm);
+            s.distance(o, c.center, 5.mm, along: X);
+            s.distance(o, c.center, 0.mm, along: Y);
+            s.pattern([c], 4, step: vec(5.mm, 0.mm));
+            assert(s.dof == 0);
+            return s.profile;
+        }
+        @part Solid a() => mirrored().extrude(1);
+        @part Solid b() => ring().extrude(1);
+        @part Solid c() => row().extrude(1);
+    });
+    assert(isClose(partVolume(sketched, "a"), 2 * (10 * 8 + 10 * 4 / 2.0), 1e-6));
+    assert(isClose(partVolume(sketched, "b"), PI * 400 - 6 * PI * 4, 1e-6));
+    assert(isClose(partVolume(sketched, "c"), 4 * PI, 1e-6));
+
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{
         @part Solid a() => rect(10, 4).across(X).extrude(3);
