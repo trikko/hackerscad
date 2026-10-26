@@ -3122,8 +3122,16 @@ static bool ruled_walls(const std::vector<TopoDS_Edge> &top, const std::vector<T
         B.UpdateEdge(top[j], new Geom2d_Line(gp_Pnt2d(0, 0), gp_Dir2d(1, 0)), F, tol);
         B.UpdateEdge(bottom[j], new Geom2d_Line(gp_Pnt2d(0, 1), gp_Dir2d(1, 0)), F, tol);
         const TopoDS_Edge &r0 = ruling[j], &r1 = ruling[(j + 1) % n];
-        B.UpdateEdge(r0, new Geom2d_Line(gp_Pnt2d(p.f, 0), gp_Dir2d(0, 1)), F, tol);
-        B.UpdateEdge(r1, new Geom2d_Line(gp_Pnt2d(p.l, 0), gp_Dir2d(0, 1)), F, tol);
+        if (n == 1)
+            // a loop of one closed edge (a rounded cell's outline as one curve): its one ruling is the wall's
+            // seam, on it twice, at its end (as it goes up) and at its start (as it comes down); given one
+            // curve after the other, the second took the place of the first and the wall came out broken
+            B.UpdateEdge(r0, new Geom2d_Line(gp_Pnt2d(p.l, 0), gp_Dir2d(0, 1)),
+                         new Geom2d_Line(gp_Pnt2d(p.f, 0), gp_Dir2d(0, 1)), F, tol);
+        else {
+            B.UpdateEdge(r0, new Geom2d_Line(gp_Pnt2d(p.f, 0), gp_Dir2d(0, 1)), F, tol);
+            B.UpdateEdge(r1, new Geom2d_Line(gp_Pnt2d(p.l, 0), gp_Dir2d(0, 1)), F, tol);
+        }
         TopoDS_Wire W;
         B.MakeWire(W);
         B.Add(W, top[j].Oriented(TopAbs_FORWARD));

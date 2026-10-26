@@ -5582,9 +5582,10 @@ unittest
     import std.process : environment;
     // pockets, reliefs and cuts through a wall laid on a curved face, built at once (no boolean) and
     // the boolean way: the same solid; on a cone, a hole's inner wall, with islands (the O, the D), and
-    // through a conical sleeve
+    // through a conical sleeve. A few cells each: the boolean way takes most of a second a cell. The
+    // rounded cells' outlines are one closed curve each, the wall's seam on it twice
     immutable model = "@part Solid cone() => loft([circle(d: 40.mm), circle(d: 25.mm).move(z: 40.mm)])"
-        ~ ".cut(rect(70.mm, 25.mm).tiles(kind: \"voronoi\", size: 8.mm, gap: 1.2.mm, round: 1.mm, relax: 2), "
+        ~ ".cut(rect(16.mm, 10.mm).tiles(kind: \"voronoi\", size: 8.mm, gap: 1.2.mm, round: 1.mm, relax: 2), "
         ~ "wrap: faces.largest, depth: 1.mm);\n"
         ~ "@part Solid tube() => (cylinder(d: 40.mm, h: 40.mm) - cylinder(d: 34.mm, h: 50.mm).move(z: -5.mm))"
         ~ ".cut(text(\"ODD\", size: 6.mm).centered, wrap: faces.filter(f => f.area > 4000.mm * 1.mm "
@@ -5593,22 +5594,32 @@ unittest
         ~ ".extrude(text(\"ODD\", size: 8.mm).centered, wrap: faces.largest, depth: 0.8.mm);\n"
         ~ "@part Solid sleeve() => loft([circle(d: 40.mm), circle(d: 50.mm).move(z: 60.mm)])"
         ~ ".shell(open: faces.top + faces.bottom, thickness: 2.mm)"
-        ~ ".cut(rect(90.mm, 30.mm).tiles(kind: \"voronoi\", size: 9.mm, gap: 2.mm, round: 1.mm, relax: 2), "
+        ~ ".cut(rect(24.mm, 12.mm).tiles(kind: \"voronoi\", size: 9.mm, gap: 2.mm, round: 1.mm, relax: 2), "
         ~ "wrap: faces.largest, depth: 4.mm);\n"
         // cells running off the face at its top and bottom: those the boolean way, the rest at once
         ~ "@part Solid edged() => cylinder(d: 40.mm, h: 30.mm)"
-        ~ ".cut(rect(100.mm, 40.mm).tiles(kind: \"voronoi\", size: 7.mm, gap: 1.2.mm, round: 0.8.mm, relax: 2), "
+        ~ ".cut(rect(24.mm, 40.mm).tiles(kind: \"voronoi\", size: 7.mm, gap: 1.2.mm, round: 0.8.mm, relax: 2), "
         ~ "wrap: faces.largest, depth: 1.mm);\n";
     double[] volumes(string direct)
     {
-        auto before = environment.get("HCAD_WRAP_DIRECT");
+        // and the direct way taken: HCAD_WRAP_DEBUG makes why it was not a warning, which fails below
+        // (else both ways would be the boolean one, the same, and the test pass at the boolean's pace)
+        auto before = environment.get("HCAD_WRAP_DIRECT"), debugBefore = environment.get("HCAD_WRAP_DEBUG");
         environment["HCAD_WRAP_DIRECT"] = direct;
+        if (direct == "1")
+            environment["HCAD_WRAP_DEBUG"] = "1";
+        else
+            environment.remove("HCAD_WRAP_DEBUG");
         scope (exit)
         {
             if (before is null)
                 environment.remove("HCAD_WRAP_DIRECT");
             else
                 environment["HCAD_WRAP_DIRECT"] = before;
+            if (debugBefore is null)
+                environment.remove("HCAD_WRAP_DEBUG");
+            else
+                environment["HCAD_WRAP_DEBUG"] = debugBefore;
         }
         auto r = runModel(model);
         foreach (d; r.diagnostics)
