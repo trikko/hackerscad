@@ -2205,24 +2205,27 @@ hc_shape *hc_boolean(const hc_shape *a, const hc_shape *b, int op)
             default: throw Standard_Failure("invalid boolean operation");
             }
         };
-        // faces that nearly coincide can make it go wrong: then once more, with a little fuzziness
         g_boolean_broken = false;
         try {
             return make(0);
         } catch (const Standard_Failure &first) {
             if (g_boolean_broken)
                 throw;
-            try {
-                return make(1e-5);
-            } catch (const Standard_Failure &) {
-            }
             // a union or an intersection the other way round: the same, and where one solid's
-            // faces were all taken for outside the other (two threads), the other's may not be
+            // faces were all taken for outside the other (two threads), the other's may not be (the
+            // faces met anew in that order: met once for both, they come out disjoint both ways). Before
+            // the fuzzier try, which does not mend that and took as long again (the dual-thread bolt's
+            // shank: 14 s → 9 s)
             if (op != HC_CUT && !flat)
                 try {
                     return make(0, true);
                 } catch (const Standard_Failure &) {
                 }
+            // faces that nearly coincide can make it go wrong: then once more, with a little fuzziness
+            try {
+                return make(1e-5);
+            } catch (const Standard_Failure &) {
+            }
             // a cut: what of it lies in the solid, taken that way round, then cut away (the faces the
             // cut leaves lose where they came from)
             if (op == HC_CUT && !flat)
