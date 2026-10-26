@@ -301,6 +301,16 @@ final class OcctKernel : BrepKernel
         normal = Vec3(r[3], r[4], r[5]);
         return true;
     }
+    Brep enclosed(Brep[] parts, const(Vec3)[2][] planes)
+    {
+        const(hc_shape)*[] ps;
+        foreach (p; parts)
+            ps ~= h(p);
+        double[] q;
+        foreach (pl; planes)
+            q ~= [pl[0].x, pl[0].y, pl[0].z, pl[1].x, pl[1].y, pl[1].z];
+        return wrap(hc_enclosed(ps.ptr, cast(int) ps.length, q.ptr, cast(int) planes.length), "enclosed");
+    }
     Brep sew(Brep[] parts, double tolerance)
     {
         const(hc_shape)*[] ps;

@@ -4765,6 +4765,31 @@ unittest
         return box(2, 2, 2) + s; }`).message.canFind("cannot combine a Surface"));
     assert(error(`@part Solid p() { auto s = path([vec(0, 0, 0), vec(1, 0, 0), vec(1, 1, 0), vec(0, 1, 0)]).sweep(path([vec(0, 0, 0), vec(0, 0, 5)]));
         return sew([s]); }`).message.canFind("open"));
+
+    // the volumes surfaces, solids and planes close off: every one, each picked by a point, several joined;
+    // a tag on a face given carries on to the volume's face on it
+    expectOut(`auto tube = cylinder(d: 30.mm, h: 40.mm).faces.largest.addTag("side");
+        auto wave = spline([vec(-25.mm, 0.mm), vec(-10.mm, 4.mm), vec(5.mm, -4.mm), vec(25.mm, 3.mm)])
+            .sweep(path([vec(0.mm, -25.mm, 25.mm), vec(0.mm, 25.mm, 25.mm)]));
+        auto cut = plane(origin: vec(0.mm, 0.mm, 8.mm), normal: Z);
+        auto all = enclosed([tube, wave, cut]);
+        auto low = enclosed([tube, wave, cut], at: vec(0.mm, 0.mm, 4.mm));
+        auto both = enclosed([tube, wave, cut], at: [vec(0.mm, 0.mm, 4.mm), vec(0.mm, 0.mm, 15.mm)]);
+        writeln(all.length, " ", abs(all.map(s => s.volume).sum / tube.volume - 1) < 1e-9, " ",
+            abs(low.volume / (PI * 225.mm * 1.mm * 8.mm) - 1) < 1e-9, " ", both.pieces.length, " ",
+            low.faces.tagged("side").count);
+        // a sheet between a plane and a solid's face: the solid's face and the plane alone close nothing
+        auto sheet = path([vec(15.mm, 0.mm), vec(-15.mm, 0.mm)]).sweep(path([vec(0.mm, -20.mm, 5.mm), vec(0.mm, 20.mm, 5.mm)]));
+        writeln(format("%.1f", enclosed([cylinder(d: 30.mm, h: 20.mm, center: true), sheet, XY], at: vec(0.mm, 0.mm, 2.mm))
+            .volume / 1.mm ^^ 3));`,
+        "3 true true 1 1\n3534.3", "import std.math;");
+    // open on a side: no volume; a point in none of them; planes alone have no size
+    assert(error(`@part Solid p() => enclosed([path([vec(-20.mm, 0.mm), vec(20.mm, 0.mm)])
+        .sweep(path([vec(0.mm, -10.mm, 0.mm), vec(0.mm, 10.mm, 0.mm)])), XY], at: vec(0.mm, 0.mm, 5.mm));`)
+        .message.canFind("close off no volume"));
+    assert(error(`@part Solid p() => enclosed([box(10, 10, 10)], at: vec(50.mm, 0.mm, 0.mm));`)
+        .message.canFind("no volume the shapes close off holds"));
+    assert(error(`@part Solid p() => enclosed([XY, XZ], at: vec(1.mm, 1.mm, 1.mm));`).message.canFind("planes alone"));
 }
 
 unittest

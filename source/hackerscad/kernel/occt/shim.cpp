@@ -178,6 +178,7 @@
 #include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BOPAlgo_Builder.hxx>
+#include <BOPAlgo_MakerVolume.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <Geom_OffsetCurve.hxx>
 #include <GeomConvert_ApproxCurve.hxx>
@@ -9842,6 +9843,57 @@ hc_shape *hc_thicken(const hc_shape *s, double t)
 
 // Surfaces sewn along their shared edges into one solid; an error when they
 // leave a gap (free_edges: how many edges have a side open).
+// The volumes the surfaces, solids and planes given close off between them (a "boundary fill"): every
+// region of space they wall in on all sides, as solids of a compound. A plane (origin and normal, three
+// numbers each) stands for a face large enough to cross everything else. The faces keep the history of
+// the shapes they lie on (not of the planes).
+hc_shape *hc_enclosed(const hc_shape *const *parts, int n, const double *planes, int np)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        Bnd_Box box;
+        for (int i = 0; i < n; i++)
+            BRepBndLib::Add(parts[i]->shape, box);
+        if (box.IsVoid())
+            throw Standard_Failure("enclosed needs surfaces or solids, not planes alone: a plane has no size");
+        double x0, y0, z0, x1, y1, z1;
+        box.Get(x0, y0, z0, x1, y1, z1);
+        const gp_Pnt mid((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+        const double reach = 2 * gp_Pnt(x0, y0, z0).Distance(gp_Pnt(x1, y1, z1)) + 1;
+        TopTools_ListOfShape args;
+        for (int i = 0; i < n; i++)
+            args.Append(parts[i]->shape);
+        for (int i = 0; i < np; i++) {
+            const double *q = planes + 6 * i;
+            const gp_Dir nrm(q[3], q[4], q[5]);
+            // the plane's own point nearest the middle of the rest, so its face is centred on them
+            const gp_Pnt o(q[0], q[1], q[2]);
+            const gp_Vec off(o, mid);
+            const gp_Pnt c = mid.Translated(-gp_Vec(nrm) * off.Dot(gp_Vec(nrm)));
+            args.Append(BRepBuilderAPI_MakeFace(gp_Pln(c, nrm), -reach, reach, -reach, reach).Face());
+        }
+        BOPAlgo_MakerVolume mv;
+        mv.SetArguments(args);
+        mv.SetIntersect(Standard_True);
+        mv.SetRunParallel(Standard_True);
+        mv.Perform();
+        if (mv.HasErrors())
+            throw Standard_Failure("the shapes given could not be intersected into volumes");
+        BRep_Builder b;
+        TopoDS_Compound c;
+        b.MakeCompound(c);
+        int count = 0;
+        for (TopExp_Explorer ex(mv.Shape(), TopAbs_SOLID); ex.More(); ex.Next(), count++)
+            b.Add(c, ex.Current());
+        if (count == 0)
+            throw Standard_Failure("the shapes close off no volume: they must wall in a region on all sides");
+        std::vector<const TopoDS_Shape *> inputs;
+        for (int i = 0; i < n; i++)
+            inputs.push_back(&parts[i]->shape);
+        history_record(mv, inputs, c);
+        return wrap(c);
+    });
+}
+
 hc_shape *hc_sew(const hc_shape *const *parts, int n, double tolerance, int *free_edges)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {

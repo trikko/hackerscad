@@ -305,6 +305,9 @@ interface BrepKernel
     Brep thicken(Brep s, double t);
     /// The point of `s` nearest to `p`, and its face's normal there; false off its faces.
     bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal);
+    /// The volumes `parts` (surfaces, solids) and the planes (origin, normal) close off between them, as
+    /// solids of one compound (a boundary fill)
+    Brep enclosed(Brep[] parts, const(Vec3)[2][] planes);
     Brep sew(Brep[] parts, double tolerance);
     /// Hidden-line projection: `dir` points from the model to the viewer.
     ViewSegment[] hiddenLines(Brep s, Vec3 dir, Vec3 up, double deflection);

@@ -173,6 +173,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>x.thicken(thickness: Length) → Solid</dt><dd>The surface made a solid that thick, on the side its normals point (negative: the other side).</dd>
 <dt>fill(path: Path, through: Vec[]) → Surface</dt><dd>A smooth face closing a loop: a closed path, or on a solid body.fill(edges, tangent: faces) a loop of its edges (meeting the faces given smoothly, the others with an edge); through: points it passes through too.</dd>
 <dt>sew(surfaces: Surface[]) → Solid</dt><dd>Surfaces (and flat profiles, to close their ends) that close round a space, joined along their edges into one solid; an error says how many edges stay open.</dd>
+<dt>enclosed(shapes: (Surface | Solid | Profile | Plane)[], at: Vec3 | Vec3[]) → Solid[] | Solid</dt><dd>The volumes the shapes given close off between them (a boundary fill): surfaces, solids (their faces), flat profiles and planes (as large as needed), crossing one another, wall in regions of space; each region is a solid, sorted as pieces. at: a point gives the one holding it, a list of points those holding them joined. Tags on the faces given carry on to the faces of the volumes on them. An error when they close off nothing (a side left open) or no volume holds a point.</dd>
 <dt>s.halves(plane: Plane) → Halves</dt><dd>Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.</dd>
 </dl></section>
 <section><h2>Profiles (2D)</h2><dl>

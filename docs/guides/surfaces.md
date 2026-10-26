@@ -13,6 +13,7 @@ A `Surface` is a sheet, as thin as paper and with no thickness at all: faces wit
 | to cut a solid along a curve instead of a plane | `body.split(surface)` |
 | a thin curved shell, a panel, a gutter | `surface.thicken(2.mm)` |
 | a closed solid whose sides you made one by one | `sew([sides…])` |
+| the space between surfaces, solids and planes, filled | `enclosed([…], at: point)` |
 | the pieces of a cut apart, an exploded view (the pieces drawn a little apart, to show how they fit) | `pieces.push(from: surface, by: 3.mm)` |
 
 If a flat cut will do, cut with a plane: `body.split(plane)` is simpler (see [the guide on planes](planes.md)). If the shape is a closed solid you can sweep, loft, extrude or revolve, make it that way (see [the guide on sweeps](sweeps.md)): surfaces are for what those cannot do.
@@ -179,6 +180,42 @@ Solid cut() => box(60.mm, 40.mm, 20.mm)
 
 Sew when you have every side anyway (they were lofted between curves you were given); split when one surface is the only special thing about the shape.
 
+## The space between
+
+`enclosed([…])` fills the space that surfaces, solids and planes close off between them, as water poured into a mould fills what the walls leave. Each region walled in on every side becomes a solid. Give `at:` a point to take the one holding it, or a list of points to take several, joined; without `at:` you get all of them, sorted as `pieces`, to pick from. Planes count as walls as large as needed.
+
+Below, a tube is cut by the floor plane and by a wavy sheet. The part between them is one volume, and its wavy top is the sheet's shape:
+
+<!-- render: surfaces-enclosed -->
+```d
+// a tube between a floor and a wavy sheet: the space
+// they close off, filled; the lowest piece beside it
+
+immutable tube = cylinder(d: 30.mm, h: 40.mm);
+
+immutable wave = spline([vec(-25.mm, 0.mm),
+        vec(-10.mm, 4.mm), vec(5.mm, -4.mm),
+        vec(25.mm, 3.mm)])
+    .sweep(path([vec(0.mm, -25.mm, 25.mm),
+        vec(0.mm, 25.mm, 25.mm)]));
+
+immutable floor = plane(origin: vec(0.mm, 0.mm, 8.mm),
+    normal: Z);
+
+@part("Sky Pop")
+Solid middle() => enclosed([tube, wave, floor],
+    at: vec(0.mm, 0.mm, 15.mm));
+
+@part("Pink Pop")
+Solid bottom() => enclosed([tube, wave, floor],
+        at: vec(0.mm, 0.mm, 4.mm))
+    .move(x: 40.mm);
+```
+
+![The middle of a tube between a plane and a wavy sheet, and its bottom](img/surfaces-enclosed.png)
+
+The shapes must cross one another: a sheet that stops short of the tube's wall leaves the space open on that side, and nothing is closed off there. Make the sheets generously larger than what they cut, as for a split.
+
 ## Filling a loop
 
 `fill(rim)` makes a smooth face that closes a loop: a closed path, which may rise and fall. `through:` gives points it must pass through too, to make it a dome. The result is a surface, so it is thickened, sewn or used to split like the others.
@@ -264,6 +301,7 @@ Solid cap() => body
 | `pieces.push(from: surface, by:)` | `by:` | how far each piece moves away from the surface | — |
 | `surface.thicken(t)` | `t` | the thickness; negative: the other side | — |
 | `sew(list)` | surfaces and flat profiles | joined into one closed solid | — |
+| `enclosed(list, at:)` | `at:` | a point (or a list): the volume holding it (several: joined) | none: every volume |
 | `fill(rim, through:)` | `through:` | points the face passes through too | none |
 | `body.fill(edges, tangent:)` | `tangent:` | faces the new face carries on from smoothly | none: it only meets them |
 
@@ -283,6 +321,8 @@ Solid cap() => body
 | *return value of 'x' must be a Solid, but this is a Surface, which has no inside: thicken it, sew surfaces into a solid, or split a solid with it* | a part cannot be a sheet |
 | *cannot combine a Surface with '+': split a solid with it (s.split(surface)), or thicken it into a solid first* | use `split` or `thicken`, not `+ - &` |
 | *sew failed: the surfaces do not close: 4 edges are open on one side* | a side is missing, or two sides do not meet exactly: build neighbouring sides from the same paths |
+| *enclosed failed: the shapes close off no volume: they must wall in a region on all sides* | a sheet stops short, or a side is missing: make the sheets larger than what they cut, or add a plane |
+| *no volume the shapes close off holds (x, y, z) mm* | the point is outside every region: list them with `enclosed([…])` and look at where they are |
 | *thicken by 0 leaves no solid* | give a thickness |
 | *could not thicken the surface cleanly where its sharp edges meet smooth ones…* | a sheet other than a loft through closed paths, with sharp and smooth edges meeting: round its corners, or build the solid and `shell` it |
 | *a surface through paths takes paths only, not Profile* | loft profiles (a solid) or paths (a surface), not both |

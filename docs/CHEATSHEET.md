@@ -149,6 +149,7 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `x.thicken(thickness: Length) → Solid` — The surface made a solid that thick, on the side its normals point (negative: the other side).
 - `fill(path: Path, through: Vec[]) → Surface` — A smooth face closing a loop: a closed path, or on a solid body.fill(edges, tangent: faces) a loop of its edges (meeting the faces given smoothly, the others with an edge); through: points it passes through too.
 - `sew(surfaces: Surface[]) → Solid` — Surfaces (and flat profiles, to close their ends) that close round a space, joined along their edges into one solid; an error says how many edges stay open.
+- `enclosed(shapes: (Surface | Solid | Profile | Plane)[], at: Vec3 | Vec3[]) → Solid[] | Solid` — The volumes the shapes given close off between them (a boundary fill): surfaces, solids (their faces), flat profiles and planes (as large as needed), crossing one another, wall in regions of space; each region is a solid, sorted as pieces. at: a point gives the one holding it, a list of points those holding them joined. Tags on the faces given carry on to the faces of the volumes on them. An error when they close off nothing (a side left open) or no volume holds a point.
 - `s.halves(plane: Plane) → Halves` — Cuts with a plane in two sides: .above (where the normal points) and .below, each one solid.
 
 ## Profiles (2D)

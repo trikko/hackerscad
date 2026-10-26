@@ -143,6 +143,15 @@ final class CachingKernel : BrepKernel
     Brep splitBy(Brep s, Brep tool) => op(key("splitBy", s, tool), inner.splitBy(s, tool));
     Brep thicken(Brep s, double t) => op(key("thicken", s, t), inner.thicken(s, t));
     bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal) => inner.normalAt(s, p, point, normal);
+    Brep enclosed(Brep[] parts, const(Vec3)[2][] planes)
+    {
+        double[] ks;
+        foreach (p; parts)
+            ks ~= cast(double) keyOf(p);
+        foreach (pl; planes)
+            ks ~= [pl[0].x, pl[0].y, pl[0].z, pl[1].x, pl[1].y, pl[1].z];
+        return op(key("enclosed", cast(const(double)[]) ks, cast(double) parts.length), inner.enclosed(parts, planes));
+    }
     Brep sew(Brep[] parts, double tolerance)
     {
         ulong[] ks;

@@ -2769,6 +2769,92 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         sv.placed = false;
         return Value.of(sv);
     });
+    // enclosed([surfaces, solids, planes], at:): the volumes they close off between them (a boundary fill), as
+    // pieces; with at: (a point, or a list) the one holding it, or those holding them joined
+    def("enclosed", (ref CallArgs a) {
+        auto x = Args(it, a, "enclosed", ["shapes", "at"]);
+        auto v = x.get("shapes");
+        if (v.kind != Kind.array || v.arr.length == 0)
+            throw new HcadError(Code.type, "enclosed takes a list of surfaces, solids and planes: enclosed([a, b, XY])",
+                x.spanOf("shapes"));
+        Brep[] bs;
+        SolidVal[] ins;
+        Vec3[2][] planes;
+        foreach (q; v.arr)
+        {
+            if (q.kind == Kind.struct_ && q.st.def is planeDef)
+            {
+                planes ~= [q.st.fields[0].v.v, q.st.fields[1].v.v.normalized];
+                continue;
+            }
+            if (q.kind != Kind.solid || q.solid.path)
+                throw new HcadError(Code.type, format("enclosed takes surfaces, solids, flat profiles and planes, not %s",
+                    q.typeName), x.spanOf("shapes"));
+            bs ~= q.solid.placed ? toPlace(k, q.solid.place, nonEmpty(q.solid, a.span)) : nonEmpty(q.solid, a.span);
+            ins ~= q.solid;
+        }
+        if (bs.length == 0)
+            throw new HcadError(Code.type, "planes alone have no size: give enclosed a surface or a solid too",
+                x.spanOf("shapes"));
+        Brep b;
+        try
+            b = k.enclosed(bs, planes);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span, "the shapes must cross each other and wall in a region on "
+                ~ "every side: a surface that stops short leaves it open");
+        auto whole = derived(it, b, ins, "enclosed", a.span);
+        whole.surface = false;
+        whole.flat = false;
+        whole.placed = false;
+        auto cells = piecesOf(it, whole, a.span);
+        if (!x.has("at"))
+        {
+            Value[] r;
+            foreach (c; cells)
+                r ~= Value.of(c);
+            return Value.of(r);
+        }
+        // the points: one vector, or a list of them
+        Vec3[] pts;
+        auto at = x.get("at");
+        if (at.kind == Kind.array && at.arr.length && (at.arr[0].kind == Kind.vec || at.arr[0].kind == Kind.array))
+            foreach (e; at.arr)
+            {
+                auto w = e.kind == Kind.array ? arrayToVec(it, e.arr, a.caller, x.spanOf("at")) : e;
+                if (w.kind != Kind.vec)
+                    throw new HcadError(Code.type, "at is a point, or a list of points", x.spanOf("at"));
+                pts ~= w.v.dim == Dim.length ? w.v.v : w.v.v * x.unitFactor;
+            }
+        else
+            pts ~= x.vecLen("at");
+        Brep[] picked;
+        SolidVal[] from;
+        foreach (p; pts)
+        {
+            bool found;
+            foreach (c; cells)
+                if (k.inside(c.brep, p))
+                {
+                    found = true;
+                    if (!from.canFind!(f => f is c))
+                    {
+                        picked ~= c.brep;
+                        from ~= c;
+                    }
+                }
+            if (!found)
+                throw new HcadError(Code.kernel, format("no volume the shapes close off holds (%g, %g, %g) mm: "
+                    ~ "enclosed(...) without at: lists them all", p.x, p.y, p.z), x.spanOf("at"));
+        }
+        if (from.length == 1)
+            return Value.of(from[0]);
+        Brep joined;
+        try
+            joined = k.fuseAll(picked);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span);
+        return Value.of(derived(it, joined, from, "enclosed", a.span));
+    });
     def("halves", (ref CallArgs a) {
         auto sides = cutSides(a, "halves");
         // a copy: sides lives on this call's stack

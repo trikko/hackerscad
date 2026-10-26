@@ -229,6 +229,7 @@ hc_shape *hc_split_by(const hc_shape *s, const hc_shape *tool);
 hc_shape *hc_thicken(const hc_shape *s, double t);
 /* the point of s nearest to p and its face's normal there: x y z nx ny nz; 0 off its faces */
 int hc_normal_at(const hc_shape *s, const double p[3], double out[6]);
+hc_shape *hc_enclosed(const hc_shape *const *parts, int n, const double *planes, int np);
 hc_shape *hc_sew(const hc_shape *const *parts, int n, double tolerance, int *free_edges);
 /* A solid through profiles already placed in space (ruled: flat sides). */
 hc_shape *hc_loft(const hc_shape *const *profiles, int n, int ruled);
