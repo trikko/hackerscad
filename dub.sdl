@@ -26,7 +26,7 @@ subPackage {
 	dependency "gid:adw1" version="~>0.9.14"
 	dependency "bindbc-opengl" version="~>1.0.5"
 	versions "GL_33"
-	stringImportPaths "examples" "docs" "build/gen"
+	stringImportPaths "examples" "docs" "gen"
 	// Windows: the logo as the executable's icon
 	preBuildCommands "sh \"$PACKAGE_DIR/tools/win-resources.sh\"" platform="windows"
 	lflags "$PACKAGE_DIR/build/win/native/hackerscad.res" platform="windows"
@@ -42,7 +42,7 @@ subPackage {
 	importPaths "source"
 	excludedSourceFiles "source/hackerscad/cli/*" "source/hackerscad/gui/*"
 	dependency "djson" version="~>0.9.6"
-	stringImportPaths "docs" "examples" "lib" "build/gen"
+	stringImportPaths "docs" "examples" "lib" "gen"
 	// the list of the Examples menu, from the files in examples/
 	preBuildCommands "sh \"$PACKAGE_DIR/tools/examples-list.sh\""
 	// the version shown: a release's number, or the commit and its date

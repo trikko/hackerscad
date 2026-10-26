@@ -1,0 +1,4 @@
+# files written by tools/examples-list.sh and tools/version.sh before each build: the folder
+# stays in the repository (dub looks for it before they run), its files do not
+*
+!.gitignore
