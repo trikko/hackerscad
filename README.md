@@ -23,8 +23,9 @@ versions and reviews like any other code.
   arguments and library functions, signatures while you type, help on hover,
   and a searchable cheatsheet (F1).
 * 🖱️ **And with the mouse**: fillets, chamfers, shells, holes, pockets and
-  bosses from the context menu, parts moved, turned, scaled, split and
-  coloured, all written back into the code.
+  bosses from the context menu, faces removed or moved, parts moved,
+  turned, scaled, repeated in a grid, split and coloured, all written
+  back into the code.
 * 📐 **Sketches you see**: a constrained sketch shows in the view as soon as
   the cursor is in its code, its dimensions edited by clicking them; draw on
   a face of a part, measuring from its edges.

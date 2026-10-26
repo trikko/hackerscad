@@ -5433,6 +5433,8 @@ private:
                 some ~= MenuEntry.item("Chamfer edges of the faces" ~ on, () => ctx("chamfer-face", "0.5.mm"));
                 some ~= MenuEntry.item("Shell, opening the faces" ~ on, () => ctx("shell", "2.mm"));
                 some ~= MenuEntry.item("Draft faces" ~ on, () => ctx("draft", "3.deg"));
+                some ~= MenuEntry.item("Remove faces (heal)" ~ on, () => ctx("remove-faces", ""));
+                some ~= MenuEntry.item("Offset faces" ~ on, () => ctx("offset-faces", "1.mm"));
                 some ~= MenuEntry.item("Extrude faces" ~ on, () => ctx("extrude-face", "5.mm"));
                 some ~= MenuEntry.item("Cut faces" ~ on, () => ctx("cut-face", "2.mm"));
                 some ~= MenuEntry.item("Tag faces" ~ on, () => ctx("tag-face", "name"));
@@ -5472,6 +5474,11 @@ private:
         {
             entries ~= I(ne == 1 ? "Fillet edge…" : format("Fillet %d edges…", ne), () => ctx("fillet-edge", "1.mm"));
             entries ~= I(ne == 1 ? "Chamfer edge…" : format("Chamfer %d edges…", ne), () => ctx("chamfer-edge", "0.5.mm"));
+            entries ~= I(ne == 1 ? "Fillet edge, growing…" : format("Fillet %d edges, growing…", ne),
+                () => ctx("fillet-var-edge", "1.mm"));
+            if (contextHit.face >= 0)
+                entries ~= G("Chamfer, uneven", [I("Two distances…", () => ctx("chamfer-two-edge", "1.mm")),
+                    I("Distance and angle…", () => ctx("chamfer-angle-edge", "1.mm"))]);
             entries ~= I("Select the chain", () { info(growSelection(true)); });
         }
         if (nf)
@@ -5481,7 +5488,13 @@ private:
             entries ~= I(nf == 1 ? "Chamfer face edges…" : "Chamfer edges of the faces…", () => ctx("chamfer-face", "0.5.mm"));
             entries ~= I(nf == 1 ? "Shell, opening this face…" : format("Shell, opening %d faces…", nf),
                 () => ctx("shell", "2.mm"));
+            entries ~= I(nf == 1 ? "Shell outwards, opening this face…" : format("Shell outwards, opening %d faces…", nf),
+                () => ctx("shell-outward", "2.mm"));
             entries ~= I(nf == 1 ? "Draft face…" : format("Draft %d faces…", nf), () => ctx("draft", "3.deg"));
+            entries ~= I(nf == 1 ? "Full round" : format("Full round %d faces", nf), () => ctx("full-round", ""));
+            entries ~= I(nf == 1 ? "Remove face (heal)" : format("Remove %d faces (heal)", nf),
+                () => ctx("remove-faces", ""));
+            entries ~= I(nf == 1 ? "Offset face…" : format("Offset %d faces…", nf), () => ctx("offset-faces", "1.mm"));
             entries ~= I(nf == 1 ? "Extrude face…" : format("Extrude %d faces…", nf), () => ctx("extrude-face", "5.mm"));
             entries ~= I(nf == 1 ? "Cut face…" : format("Cut %d faces…", nf), () => ctx("cut-face", "2.mm"));
             entries ~= I(nf == 1 ? "Tag face…" : format("Tag %d faces…", nf), () => ctx("tag-face", "name"));
@@ -5689,6 +5702,7 @@ private:
         entries ~= I("Move…", () => startTransform(Viewport.Gizmo.move, contextHit.part));
         entries ~= I("Rotate…", () => startTransform(Viewport.Gizmo.rotate, contextHit.part));
         entries ~= I("Scale…", () => startTransform(Viewport.Gizmo.scale, contextHit.part));
+        entries ~= I("Grid of copies…", () => ctx("grid", "2"));
         {
             // the face under the click gives the plane, whatever the selection mode
             auto under = viewport.pickAny(x, y);
@@ -6030,10 +6044,34 @@ private:
         {
         case "fillet-edge": return edges ? format(".fillet(%s, r: %s)", edgesCode(), or("1.mm")) : null;
         case "chamfer-edge": return edges ? format(".chamfer(%s, d: %s)", edgesCode(), or("0.5.mm")) : null;
+        // a round growing along the edges, from r at their start to r2 at their end
+        case "fillet-var-edge":
+            return edges ? format(".fillet(%s, r: %s, r2: 3.mm)", edgesCode(), or("1.mm")) : null;
+        // uneven chamfers, d measured on the face under the click
+        case "chamfer-two-edge":
+            return edges && onFace ? format(".chamfer(%s, d: %s, d2: 0.5.mm, on: %s)", edgesCode(), or("1.mm"),
+                ctxSelector(false)) : null;
+        case "chamfer-angle-edge":
+            return edges && onFace ? format(".chamfer(%s, d: %s, angle: 30.deg, on: %s)", edgesCode(), or("1.mm"),
+                ctxSelector(false)) : null;
         case "fillet-face": return faces ? format(".fillet(edges.of(%s), r: %s)", facesCode(), or("1.mm")) : null;
         case "chamfer-face": return faces ? format(".chamfer(edges.of(%s), d: %s)", facesCode(), or("0.5.mm")) : null;
         case "shell": return faces ? format(".shell(open: %s, thickness: %s)", facesCode(), or("2.mm")) : null;
         case "draft": return faces ? format(".draft(%s, angle: %s)", facesCode(), or("3.deg")) : null;
+        case "shell-outward":
+            return faces ? format(".shell(open: %s, thickness: %s, outward: true)", facesCode(), or("2.mm")) : null;
+        // a flat face between two parallel ones made a half round as wide as it
+        case "full-round": return faces ? format(".fullRound(%s)", facesCode()) : null;
+        // copies of the whole part in a grid, as far apart as it is big and 5 mm more
+        case "grid":
+            {
+                auto sz = last.parts[contextHit.part].bbox.size;
+                return format(".linearPattern(%s, step: vec(%g.mm, 0.mm, 0.mm),\n    n2: 2, step2: vec(0.mm, %g.mm, 0.mm))",
+                    or("2"), sz.x + 5, sz.y + 5);
+            }
+        // the faces taken away, the solid closed again round the gap; or moved, the others following
+        case "remove-faces": return faces ? format(".removeFaces(%s)", facesCode()) : null;
+        case "offset-faces": return faces ? format(".offsetFaces(%s, d: %s)", facesCode(), or("1.mm")) : null;
         // flat faces swept along their normals (along: vec(…) slants them)
         case "extrude-face": return faces ? format(".extrude(%s, depth: %s)", facesCode(), or("5.mm")) : null;
         case "cut-face": return faces ? format(".cut(%s, depth: %s)", facesCode(), or("2.mm")) : null;
