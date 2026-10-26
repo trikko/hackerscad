@@ -346,7 +346,12 @@ it turns full or empty, written as a point of its own, drawn in the
 areas' colour, and `s.fill(inside)` (or `full: false`). Constrain that
 point like any other to keep it in its area when the sketch changes (to
 the two places where the circles cross, say); left free, it does not count
-among the degrees of freedom. Esc goes back a step at a time: the
+among the degrees of freedom. ✂ trims: the piece under the pointer
+turns red, between what crosses the line (the whole line when nothing
+does), and a click takes it away. The buttons under the constraints
+change what is selected: ⇥ carries a line on to another, ⧉ copies an
+outline a distance away, ⇆ mirrors across the line selected last, ∷ and
+✲ repeat in a row or round the point selected last. Esc goes back a step at a time: the
 shape being drawn, then the tool and the selection (back to ↖), and only
 then out of the sketch.
 

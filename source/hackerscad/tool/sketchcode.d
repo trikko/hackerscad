@@ -48,6 +48,7 @@ struct SketchWriter
     {
         size_t offset;
         string text;
+        size_t cut;   /// characters taken away at offset (a statement dropped)
     }
 
     /// The statements of the function's body, first and last token each (a
@@ -213,8 +214,34 @@ struct SketchWriter
         all.sort!((a, b) => a.offset > b.offset);
         string r = source;
         foreach (ins; all)
-            r = r[0 .. ins.offset] ~ ins.text ~ r[ins.offset .. $];
+            r = r[0 .. ins.offset] ~ ins.text ~ r[ins.offset + ins.cut .. $];
         return r;
+    }
+
+    /// Takes away the statement of the constraint made at `s`, when it is a line of its own
+    /// (`s.length(l, 20.mm);`); false when it is not (a shape's own, in a loop, sharing its line).
+    bool drop(Span s)
+    {
+        immutable c = callToken(s);
+        if (c == size_t.max || c < bodyOpen || c > bodyClose || !direct(c))
+            return false;
+        immutable st = statementStart(c), end = closing(c);
+        if (!(toks[st].kind == Tok.ident && toks[st].text == var && st + 3 == c && end + 1 < toks.length
+                && toks[end + 1].kind == Tok.semicolon))
+            return false;
+        size_t from = offsetOf(source, toks[st].span);
+        while (from > 0 && (source[from - 1] == ' ' || source[from - 1] == '\t'))
+            from--;
+        if (from == 0 || source[from - 1] != '\n')
+            return false;
+        size_t to = offsetOf(source, toks[end + 1].span) + 1;
+        while (to < source.length && (source[to] == ' ' || source[to] == '\t'))
+            to++;
+        if (to < source.length && source[to] != '\n')
+            return false;
+        // the line with the newline before it: what is added after it still goes where the line ended
+        inserts ~= Insert(from - 1, "", to - (from - 1));
+        return true;
     }
 
 private:
@@ -509,10 +536,12 @@ struct SketchStep
 
 /// The constraint tools of the sketch bar.
 immutable string[] sketchTools = ["coincident", "on", "horizontal", "vertical", "parallel", "perpendicular", "equal",
-    "tangent", "concentric", "midpoint", "symmetric", "fix", "length", "distance", "angle", "radius", "diameter"];
+    "tangent", "concentric", "midpoint", "symmetric", "fix", "length", "distance", "angle", "radius", "diameter",
+    "extend", "offset", "mirror", "pattern", "circular-pattern"];
 
-/// The tools that take a value (a length, an angle).
-immutable string[] valueTools = ["length", "distance", "angle", "radius", "diameter"];
+/// The tools that take a value (a length, an angle; a pattern's count, and its step).
+immutable string[] valueTools = ["length", "distance", "angle", "radius", "diameter", "offset", "pattern",
+    "circular-pattern"];
 
 /// What constraint tool `tool` writes for the entities `sel` of sketch `v`,
 /// selected in that order (`value` for the tools that take one, "20.mm",
@@ -546,6 +575,12 @@ SketchStep[] planConstraint(const ref SketchView v, const(size_t)[] sel, string 
         return r;
     }
     bool only(const(size_t)[] kind, size_t least = 1) => kind.length == n && n >= least;
+    // the first k of the selection, as a list: [%s, %s]
+    static string list(size_t k)
+    {
+        import std.array : join, replicate;
+        return "[" ~ ["%s"].replicate(k).join(", ") ~ "]";
+    }
     string fail(string reason)
     {
         why = reason;
@@ -690,6 +725,35 @@ SketchStep[] planConstraint(const ref SketchView v, const(size_t)[] sel, string 
         else
             fail(tool ~ ": circles or arcs (the first that size, the others as big)");
         break;
+    case "extend":
+        if (n == 2 && v.entities[sel[0]].kind == "line" && v.entities[sel[1]].kind != "point")
+            steps ~= step("s.extend(%s, to: %s)", sel[0], sel[1]);
+        else
+            fail("extend: a line, then the line or curve it is carried on to (its nearer end goes)");
+        break;
+    case "offset":
+        if (n >= 1 && lines.length + sel.count!(e => v.entities[e].kind == "arc") == n)
+            steps ~= step("s.offset(" ~ list(n) ~ ", " ~ value ~ ")", sel.dup);
+        else
+            fail("offset: lines and arcs end to end (copied that far away: outwards round a closed chain, else to "
+                ~ "the left going from the first to the last)");
+        break;
+    case "mirror":
+        if (n >= 2 && v.entities[sel[$ - 1]].kind == "line")
+            steps ~= step("s.mirror(" ~ list(n - 1) ~ ", %s)", sel.dup);
+        else
+            fail("mirror: what to copy, then the line to mirror it across (selected last)");
+        break;
+    case "pattern":
+        if (n >= 1)
+            steps ~= step("s.pattern(" ~ list(n) ~ ", " ~ value ~ ")", sel.dup);
+        break;
+    case "circular-pattern":
+        if (n >= 2 && v.entities[sel[$ - 1]].kind == "point")
+            steps ~= step("s.circularPattern(" ~ list(n - 1) ~ ", " ~ value ~ ", center: %s)", sel.dup);
+        else
+            fail("circular pattern: what to copy, then the point to copy it round (selected last)");
+        break;
     default:
         fail("no such tool: " ~ tool);
     }
@@ -776,6 +840,16 @@ unittest
     assert(plan("radius", [6, 7], "5.mm") == "s.radius(e6, 5.mm); s.equal(e6, e7)");
     assert(plan("diameter", [3])[0] == '!');
     assert(plan("horizontal", []) == "! select what to constrain first: points, lines, circles");
+    // the sketch's own editing: a line extended to another, outlines offset, mirrored and repeated
+    assert(plan("extend", [3, 6]) == "s.extend(e3, to: e6)");
+    assert(plan("extend", [6, 3])[0] == '!');
+    assert(plan("offset", [3, 7, 4], "2.mm") == "s.offset([e3, e7, e4], 2.mm)");
+    assert(plan("offset", [3, 6])[0] == '!');
+    assert(plan("mirror", [6, 7, 5]) == "s.mirror([e6, e7], e5)");
+    assert(plan("mirror", [6, 7])[0] == '!');
+    assert(plan("pattern", [6], "3, step: vec(10.mm, 0.mm)") == "s.pattern([e6], 3, step: vec(10.mm, 0.mm))");
+    assert(plan("circular-pattern", [6, 7, 0], "6") == "s.circularPattern([e6, e7], 6, center: e0)");
+    assert(plan("circular-pattern", [6, 7])[0] == '!');
 }
 
 /// Deletes entities `ids` of sketch `v` from the source: the statements

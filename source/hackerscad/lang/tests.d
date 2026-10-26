@@ -836,11 +836,27 @@ unittest
     });
     assert(isClose(partVolume(crossing, "r"), 1000, 1e-6));
     assert(isClose(partVolume(edited, "g"), (600 - (4 - PI) * 16) - (26 * 16 - (4 - PI) * 4), 1e-6));
-    // a fixed end cannot move to the cut; nothing crossing: nothing to trim
-    foreach (bad; [q{unittest { auto s = sketch(); auto h = s.line(vec(-9.mm, 0.mm), vec(9.mm, 0.mm)); s.fix(h.end);
-                auto v = s.line(vec(0.mm, -9.mm), vec(0.mm, 9.mm)); s.trim(h, at: vec(5.mm, 0.mm)); }},
-            q{unittest { auto s = sketch(); auto h = s.line(vec(-9.mm, 0.mm), vec(9.mm, 0.mm));
-                s.trim(h, at: vec(5.mm, 0.mm)); }}])
+    // an end joined to something else (a rectangle's corner, a fixed point) stays with it, the line taking a
+    // new end at the cut
+    output(q{
+        auto s = sketch();
+        auto r = s.rect(vec(0.mm, 0.mm), vec(30.mm, 20.mm));
+        foreach (side; r)
+            s.fix(side.start);
+        auto v = s.line(vec(20.mm, 10.mm), vec(20.mm, 25.mm));
+        s.fix(v.start);
+        s.vertical(v);
+        s.length(v, 15.mm);
+        s.trim(r[2], at: vec(25.mm, 20.mm));
+        assert(abs(r[2].start.pos.x.to!double - 20) < 1e-6 && abs(r[2].end.pos.x.to!double) < 1e-6);
+        assert(abs(r[1].end.pos.x.to!double - 30) < 1e-6 && abs(r[1].end.pos.y.to!double - 20) < 1e-6);
+        assert(s.dof == 0);
+    });
+    // nothing crossing: nothing to trim; a line's length constrained: an error, not a sketch that cannot solve
+    foreach (bad; [q{unittest { auto s = sketch(); auto h = s.line(vec(-9.mm, 0.mm), vec(9.mm, 0.mm));
+                s.trim(h, at: vec(5.mm, 0.mm)); }},
+            q{unittest { auto s = sketch(); auto h = s.line(vec(-9.mm, 0.mm), vec(9.mm, 0.mm)); s.length(h, 18.mm);
+                auto v = s.line(vec(0.mm, -9.mm), vec(0.mm, 9.mm)); s.trim(h, at: vec(5.mm, 0.mm)); }}])
         error(bad);
 
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two

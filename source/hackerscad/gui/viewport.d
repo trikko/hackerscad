@@ -129,6 +129,7 @@ final class Viewport
     Vec3[][] drawingLines;
     Vec3[] drawingPoints;
     Vec3[] drawingSnap;   /// the point the pointer would snap to (none: empty)
+    Vec3[][] trimLines;   /// the piece of a line Trim would take away, under the pointer
     int drawingSnapKind;  /// what it is: 0 a point, 1 a line's middle, 2 where two lines cross
     private long lastClickAt;          /// when the last left click was (hnsecs)
     private double lastClickX = -1e9, lastClickY = -1e9;
@@ -4272,6 +4273,8 @@ private:
                 drawPolyline(l, drawing, 2);
         foreach (q; drawingPoints)
             drawKnob(q, drawing, handlePixels - 3);
+        foreach (l; trimLines)
+            drawPolyline(l, Vec3(0.86, 0.15, 0.15), 4);
         foreach (q; drawingSnap)
         {
             // where the pointer snaps, in violet, all of one size: a square round a point of the sketch (the point

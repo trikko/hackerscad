@@ -29,6 +29,8 @@ mixin template SketchEdit()
     bool sketchEditHold;  /// the bar wrote into the code: the sketch stays shown until it is evaluated
     Vec3[] drawn;         /// its clicks so far, on the sketch's plane
     ptrdiff_t[] drawnAt;  /// for each: the point of the sketch it snapped to, or -1 (a new one)
+    ptrdiff_t trimHint = -1; /// the line a click with Trim was on (-1: the nearest to where it was)
+    string trimSaid;         /// what the last trim took away besides the piece, for the info line
     Hidden[] drawnVia;    /// for each: the hidden place it snapped to (a crossing, a middle), if any
 
     /// A place to snap to that is no point of the sketch, shown only under the pointer: where two lines cross
@@ -86,12 +88,14 @@ mixin template SketchEdit()
         ["arc", "◜", "Arc by its centre", "Arc: its centre, where it starts, where it ends (counter-clockwise)"],
         ["3-point-arc", "⌒", "Arc through 3 points", "Arc through three points: where it starts, where it ends, a point on it"],
         ["fill", "◩", "Fill", "Fill: a click inside a closed area makes it full (extruded) or empty"],
+        ["trim", "✂", "Trim", "Trim: a click on a line takes away its piece there, between the lines and curves "
+            ~ "crossing it"],
     ];
 
     /// The drawing tools by button: a right-click (or a click on the one at work) gives the others of its group.
     static immutable string[][] drawGroups = [["select"], ["point"], ["line", "spline"],
         ["rect", "center-rect", "turned-rect", "polygon", "slot"], ["circle", "ellipse", "teardrop"],
-        ["arc", "3-point-arc"], ["fill"]];
+        ["arc", "3-point-arc"], ["fill"], ["trim"]];
 
     /// The row of drawTools for `tool`.
     static string[4] drawToolInfo(string tool)
@@ -107,7 +111,7 @@ mixin template SketchEdit()
     {
         switch (tool)
         {
-        case "point", "fill":
+        case "point", "fill", "trim":
             return 1;
         case "rect", "center-rect", "polygon", "circle", "teardrop":
             return 2;
@@ -137,6 +141,11 @@ mixin template SketchEdit()
             ["angle", "∠", "Angle: between two lines, or of one from X"],
             ["radius", "R", "Radius: circles and arcs that size (the others as big)"],
             ["diameter", "⌀", "Diameter: circles and arcs that size (the others as big)"]],
+        [["extend", "⇥", "Extend: a line, then the line or curve its nearer end is carried on to"],
+            ["offset", "⧉", "Offset: lines and arcs end to end copied that far away (outwards round a closed outline)"],
+            ["mirror", "⇆", "Mirror: what to copy, then the line to mirror it across (selected last)"],
+            ["pattern", "∷", "Pattern: copies of the selection in a row, a step apart"],
+            ["circular-pattern", "✲", "Circular pattern: what to copy, then the point to copy it round (selected last)"]],
     ];
 
     /// The bar, made once: two columns of buttons by group, separators
@@ -686,7 +695,7 @@ mixin template SketchEdit()
         import std.math : acos, abs;
         auto v = drawnSketch();
         if (v is null || sketchSel.length == 0)
-            return tool == "angle" ? "90.deg" : "10.mm";
+            return tool == "angle" ? "90.deg" : tool == "circular-pattern" ? "6" : "10.mm";
         Vec3 pos(size_t p)
         {
             foreach (pt; v.points)
@@ -729,6 +738,31 @@ mixin template SketchEdit()
                 if (g.entity == sketchSel[0])
                     return mm(tool == "radius" ? g.r : 2 * g.r);
             return "5.mm";
+        case "offset":
+            return "2.mm";
+        case "circular-pattern":
+            return "6";
+        case "pattern":
+        {
+            // three in a row, each the selection's width (and 5 mm) on from the one before
+            double lo = double.infinity, hi = -double.infinity;
+            foreach (e; sketchSel)
+                foreach (p; pointsOf(v, e))
+                {
+                    lo = min(lo, pos(p).x);
+                    hi = max(hi, pos(p).x);
+                }
+            foreach (g; v.segments)
+                if (sketchSel.canFind(g.entity))
+                    foreach (seg; polylineOf(g))
+                        foreach (q; seg)
+                        {
+                            lo = min(lo, q.x);
+                            hi = max(hi, q.x);
+                        }
+            immutable w = hi >= lo ? hi - lo : 0;
+            return format("3, step: vec(%s, 0.mm)", mm(w + 5));
+        }
         default:
             return null;
         }
@@ -1213,6 +1247,7 @@ mixin template SketchEdit()
     void startDrawing(string tool)
     {
         drawTool = tool;
+        viewport.trimLines = null;
         drawn = null;
         drawnAt = null;
         drawnVia = null;
@@ -1392,8 +1427,117 @@ mixin template SketchEdit()
         return found;
     }
 
+    /// The line of the sketch nearest to `q` (on its plane), 1 mm away at most; -1 when none is.
+    static ptrdiff_t lineNear(const(SketchView)* v, Vec3 q)
+    {
+        double best = 1;
+        ptrdiff_t line = -1;
+        foreach (k, en; v.entities)
+        {
+            if (en.kind != "line")
+                continue;
+            Vec3 a, b;
+            foreach (pt; v.points)
+            {
+                if (pt.entity == en.points[0])
+                    a = pt.pos;
+                if (pt.entity == en.points[1])
+                    b = pt.pos;
+            }
+            immutable d = b - a;
+            immutable t = d.length > 0 ? clamp((q - a).dot(d) / d.dot(d), 0.0, 1.0) : 0;
+            immutable off = (a + d * t - q).length;
+            if (off <= best)
+            {
+                best = off;
+                line = k;
+            }
+        }
+        return line;
+    }
+
+    /// What Trim on line e at `at` (on the sketch's plane) takes away: the piece's ends, and the constraints
+    /// that would no longer hold (its length, an equal length, its middle), which go with it. Null, or why not.
+    string trimPlan(const(SketchView)* v, ptrdiff_t e, Vec3 at, out Vec3[2] piece, out size_t[] dropped)
+    {
+        bool whole;
+        return trimPlan(v, e, at, piece, dropped, whole);
+    }
+
+    /// The same; whole: nothing crosses the line, and Trim deletes it all (as ⌫).
+    string trimPlan(const(SketchView)* v, ptrdiff_t e, Vec3 at, out Vec3[2] piece, out size_t[] dropped,
+        out bool whole)
+    {
+        import std.algorithm : canFind;
+        if (v is null || e < 0 || e >= v.entities.length || v.entities[e].kind != "line")
+            return "Trim takes a line: point at one, the piece to take away turns red";
+        if (v.entities[e].reference)
+            return "a face's edge is a reference: it cannot be trimmed";
+        Vec3 pos(size_t p)
+        {
+            foreach (pt; v.points)
+                if (pt.entity == p)
+                    return pt.pos;
+            return Vec3.init;
+        }
+        immutable a = pos(v.entities[e].points[0]), b = pos(v.entities[e].points[1]), d = b - a;
+        if (d.dot(d) <= 0)
+            return "the line has no length";
+        immutable ta = (at - a).dot(d) / d.dot(d);
+        static double cross(Vec3 p, Vec3 q) => p.x * q.y - p.y * q.x;
+        // the crossings nearest to the pointer either side, as s.trim finds them: lines and curves, not guides
+        double lo = 0, hi = 1;
+        bool cut;
+        foreach (g; v.segments)
+        {
+            if (g.entity == e || g.construction || g.reference)
+                continue;
+            foreach (piece2; polylineOf(g))
+            {
+                immutable p = piece2[0], w = piece2[1] - piece2[0], den = cross(d, w);
+                if (abs(den) < 1e-12)
+                    continue;
+                immutable t = cross(p - a, w) / den, u = cross(p - a, d) / den;
+                if (u < -1e-6 || u > 1 + 1e-6 || t <= 1e-6 || t >= 1 - 1e-6)
+                    continue;
+                cut = true;
+                if (t < ta && t > lo)
+                    lo = t;
+                else if (t > ta && t < hi)
+                    hi = t;
+            }
+        }
+        if (!cut)
+        {
+            // nothing crosses it: the whole line goes, unless it is a side of a shape, which goes only whole
+            foreach (i, other; v.entities)
+                if (i != e && other.kind != "point" && other.span == v.entities[e].span)
+                    return format("nothing crosses this line, a side of the shape at line %d: the shape goes only "
+                        ~ "whole (select it, then ⌫)", other.span.line);
+            whole = true;
+            piece = [a, b];
+            return null;
+        }
+        piece = [a + d * lo, a + d * hi];
+        foreach (k, c; v.constraints)
+            if (c.entities.canFind(e) && ["length", "equal", "midpoint"].canFind(c.kind))
+                dropped ~= k;
+        return null;
+    }
+
     void drawingClick(double x, double y)
     {
+        // trim: the line under the click, cut where it is clicked (not at a point it would snap to)
+        if (drawTool == "trim")
+        {
+            Vec3 at;
+            if (!onSketchPlane(x, y, at))
+                return;
+            trimHint = sketchHit(x, y);
+            viewport.trimLines = null;
+            viewport.refresh();
+            return info(writeDrawing("trim", [at], [-1], false, false));
+        }
         // drawing again: the preview is the new shape's, not the last one's kept
         drawingHeld = false;
         Vec3 p;
@@ -1542,6 +1686,34 @@ mixin template SketchEdit()
                 info(hiddenText(h) ~ ": a click selects it");
             if (before.length || viewport.drawingSnap.length)
                 viewport.refresh();
+            return;
+        }
+        if (drawTool == "trim")
+        {
+            // the piece a click would take away, in red; or why there is none
+            auto v = drawnSketch();
+            Vec3 at;
+            immutable e = v is null || !onSketchPlane(x, y, at) ? -1 : sketchHit(x, y);
+            Vec3[2] piece;
+            size_t[] dropped;
+            bool whole;
+            immutable why = e < 0 ? null : trimPlan(v, e, at, piece, dropped, whole);
+            viewport.drawingSnap = null;
+            viewport.trimLines = e >= 0 && why is null ? [[v.world(piece[0]), v.world(piece[1])]] : null;
+            if (e < 0)
+                info(drawToolInfo("trim")[3]);
+            else if (why !is null)
+                info(why);
+            else
+            {
+                import std.array : join;
+                import std.algorithm : map;
+                info(whole ? "nothing crosses this line: a click deletes it whole, with what is drawn on it"
+                    : "a click takes the red piece away" ~ (dropped.length ? "; with it "
+                    ~ dropped.map!(k => format("the %s at line %d", v.constraints[k].kind,
+                        v.constraints[k].span.line)).join(", ") ~ ", which would no longer hold" : ""));
+            }
+            viewport.refresh();
             return;
         }
         if (drawTool !is null && drawn.length)
@@ -1738,6 +1910,52 @@ mixin template SketchEdit()
                     select = n;
                     break;
                 }
+            case "trim":
+                {
+                    viewport.trimLines = null;
+                    // the line clicked (or, from the socket, the nearest one, 1 mm away at most): its piece there
+                    auto q = pts[0];
+                    ptrdiff_t line = trimHint >= 0 && trimHint < v.entities.length
+                        && v.entities[trimHint].kind == "line" ? trimHint : -1;
+                    trimHint = -1;
+                    if (line < 0)
+                        line = lineNear(v, q);
+                    if (line < 0)
+                        return "click on a line: its piece there is taken away";
+                    Vec3[2] piece;
+                    size_t[] dropped;
+                    bool whole;
+                    if (auto why = trimPlan(v, line, q, piece, dropped, whole))
+                        return why;
+                    // nothing crosses it: deleted whole, as ⌫ does
+                    if (whole)
+                    {
+                        import hackerscad.tool.sketchcode : deleteFromSketch;
+                        string why;
+                        auto after = deleteFromSketch(src, v.span.file, *v, [cast(size_t) line], why);
+                        if (after is null)
+                            return why;
+                        sketchEditHold = true;
+                        applyEdit(editBetween(src, after));
+                        sketchSel = null;
+                        return "nothing crossed the line: deleted whole from the sketch's code, with what was "
+                            ~ "drawn on it and the constraints on it";
+                    }
+                    // what would no longer hold goes first, else the trim is an error
+                    string[] gone;
+                    foreach (k; dropped)
+                    {
+                        if (!w.drop(v.constraints[k].span))
+                            return format("line %d keeps this line's %s: trim another line, or change it by hand",
+                                v.constraints[k].span.line, v.constraints[k].kind == "midpoint" ? "middle" : "length");
+                        gone ~= format("the %s at line %d", v.constraints[k].kind, v.constraints[k].span.line);
+                    }
+                    w.add(format("%s.trim(%s, at: vec(%s.mm, %s.mm))", w.var, w.name(line), num(q.x), num(q.y)));
+                    if (gone.length)
+                        trimSaid = format("; %-(%s, %) taken away, as the trim would break %s", gone,
+                            gone.length > 1 ? "them" : "it");
+                    break;
+                }
             case "fill":
                 {
                     auto q = pts[0];
@@ -1830,6 +2048,12 @@ mixin template SketchEdit()
         }
         catch (Exception e)
             return e.msg;
+        if (tool == "trim" && trimSaid.length)
+        {
+            immutable said = trimSaid;
+            trimSaid = null;
+            return "trim written in the sketch's code" ~ said;
+        }
         return tool ~ " written in the sketch's code";
     }
 

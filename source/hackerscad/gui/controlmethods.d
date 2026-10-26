@@ -838,10 +838,37 @@ mixin template ControlMethods()
                                 else
                                     return reply(JValue.init, "each point is [x, y] or the id of a point of the sketch");
                             }
+                            // trim with preview: true: the piece it would take away (shown in red) and the
+                            // constraints that would go with it, nothing written
+                            if (t == "trim" && p.safe!bool("preview").or(false))
+                            {
+                                if (pts.length != 1)
+                                    return reply(JValue.init, "trim takes one point, on the line");
+                                immutable line = lineNear(drawn, pts[0]);
+                                Vec3[2] piece;
+                                size_t[] dropped;
+                                bool whole;
+                                if (auto why = line < 0 ? "no line passes within 1 mm of that point"
+                                        : trimPlan(drawn, line, pts[0], piece, dropped, whole))
+                                    return reply(JValue.init, why);
+                                viewport.trimLines = [[drawn.world(piece[0]), drawn.world(piece[1])]];
+                                viewport.refresh();
+                                auto r = state();
+                                auto tp = JSOB("entity", line, "from", JValue([JValue(piece[0].x), JValue(piece[0].y)]),
+                                    "to", JValue([JValue(piece[1].x), JValue(piece[1].y)]));
+                                JValue[] gone;
+                                foreach (k; dropped)
+                                    gone ~= JSOB("kind", drawn.constraints[k].kind, "line",
+                                        drawn.constraints[k].span.line);
+                                tp["constraints_removed"] = JValue(gone);
+                                tp["whole"] = whole;
+                                r["trim"] = tp;
+                                return reply(r, null);
+                            }
                             said = writeDrawing(t, pts, at, p.safe!bool("closed").or(false),
                                 p.safe!bool("construction").or(false));
-                            import std.algorithm : endsWith;
-                            if (!said.endsWith("written in the sketch's code"))
+                            import std.algorithm : canFind;
+                            if (!said.canFind("written in the sketch's code") && !said.canFind("deleted whole"))
                                 return reply(JValue.init, said);
                         }
                         auto r = state();

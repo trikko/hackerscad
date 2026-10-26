@@ -1120,7 +1120,11 @@ JValue toolList()
             ~ "its buttons do: horizontal, vertical (each line, or two points), parallel, equal, concentric, "
             ~ "coincident (to the first), perpendicular, midpoint, symmetric, tangent (a curve and lines), on, fix, "
             ~ "and with value (\"20.mm\", \"30.deg\") length, distance, angle, radius, diameter (a value on "
-            ~ "several: one dimension, the others equal to it). A selection that does not fit says why. Drawing: "
+            ~ "several: one dimension, the others equal to it); it also edits the sketch, as the bar's lower buttons: "
+            ~ "extend (a line, then the line or curve it is carried on to), offset (lines and arcs end to end; value the "
+            ~ "distance, \"2.mm\"), mirror (what to copy, then the line across which, last), pattern (value the count "
+            ~ "and step, \"3, step: vec(10.mm, 0.mm)\"), circular-pattern (what to copy, then the centre point, last; "
+            ~ "value the count, \"6\"). A selection that does not fit says why. Drawing: "
             ~ "draw with points ([x, y] on the sketch's plane, or ids of its points to join) writes the shape at "
             ~ "once, the points its button's clicks: point (1), line and spline (2 or more; closed: true joins them "
             ~ "back to the first), rect (two corners), center-rect (centre, corner), turned-rect (one side's ends, "
@@ -1128,7 +1132,12 @@ JValue toolList()
             ~ "centres, then a point on its side), circle and teardrop (centre, a point on it), ellipse (centre, end of "
             ~ "its rx axis, a point as far as ry), arc (centre, start, end, counter-clockwise), 3-point-arc (start, "
             ~ "end, a point on it), fill (a point inside a closed area: it turns full or empty, as s.fill; state's "
-            ~ "sketch shows the areas); sizes are written as numbers (a value to change); construction: true draws it as "
+            ~ "sketch shows the areas), trim (a point on a line, 1 mm from it at most: its piece there, between "
+            ~ "what crosses it, taken away, as s.trim; its length, an equal length or its middle constrained: those "
+            ~ "statements taken away with it, and done says so; a line nothing crosses is deleted whole, as delete does "
+            ~ "(a side of a shape says why not); with preview: true nothing is written, trim tells the "
+            ~ "piece (entity, from, to; whole: the whole line) and constraints_removed, and the view shows the piece in red, as the user's "
+            ~ "pointer over the line with ✂ does); sizes are written as numbers (a value to change); construction: true draws it as "
             ~ "construction geometry (dashed guides to constrain to, never filled or extruded). With select instead, "
             ~ "construction: true turns the selected into construction geometry, false into plain geometry (the "
             ~ "bar's ┄; a shape's every side changes with it). move [dx, dy] (with select) moves the selected "
@@ -1148,12 +1157,13 @@ JValue toolList()
             ~ `"run": {"type": "integer"}, "select": {"type": "array", "items": {"type": "integer"}}, `
             ~ `"constrain": {"type": "string", "enum": ["coincident", "on", "horizontal", "vertical", "parallel", `
             ~ `"perpendicular", "equal", "tangent", "concentric", "midpoint", "symmetric", "fix", "length", "distance", `
-            ~ `"angle", "radius", "diameter"]}, "value": {"type": "string"}, `
+            ~ `"angle", "radius", "diameter", "extend", "offset", "mirror", "pattern", "circular-pattern"]}, `
+            ~ `"value": {"type": "string"}, `
             ~ `"draw": {"type": "string", "enum": ["point", "line", "spline", "rect", "center-rect", "turned-rect", `
-            ~ `"polygon", "slot", "circle", "ellipse", "teardrop", "arc", "3-point-arc", "fill"]}, `
-            ~ `"points": {"type": "array", "items": {}}, "closed": {"type": "boolean"}, "sides": {"type": "integer"}, "construction": {"type": "boolean"}, "move": {"type": "array", "items": {"type": "number"}}, `
+            ~ `"polygon", "slot", "circle", "ellipse", "teardrop", "arc", "3-point-arc", "fill", "trim"]}, `
+            ~ `"points": {"type": "array", "items": {}}, "closed": {"type": "boolean"}, "preview": {"type": "boolean"}, "sides": {"type": "integer"}, "construction": {"type": "boolean"}, "move": {"type": "array", "items": {"type": "number"}}, `
             ~ `"tool": {"type": "string", "enum": ["select", "point", "line", "spline", "rect", "center-rect", `
-            ~ `"turned-rect", "polygon", "slot", "circle", "ellipse", "teardrop", "arc", "3-point-arc", "fill"]}, `
+            ~ `"turned-rect", "polygon", "slot", "circle", "ellipse", "teardrop", "arc", "3-point-arc", "fill", "trim"]}, `
             ~ `"delete": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_step", "Click a row of the Steps panel in the user's window: the model as it was after that "
             ~ "step (its new faces in orange; for a union or difference, its two operands coloured; for a line run "

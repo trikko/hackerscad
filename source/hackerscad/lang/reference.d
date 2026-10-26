@@ -656,7 +656,8 @@ immutable Ref[] reference =
         ~ "A wall round an outline, a lip inside a lid."),
     withForms(F("trim", "Sketch", ["line: SketchLine", "at: SketchPoint | Vec2"], "SketchLine | SketchLine[]",
         "Takes away the piece of the line holding at, between the lines, arcs and circles crossing it: at an end, "
-        ~ "that end moves to the cut and is held on what cuts it (it must be free: joined to nothing else); in the "
+        ~ "that end moves to the cut and is held on what cuts it (an end joined to something else, as a "
+        ~ "rectangle's corner, stays with it, the line taking a new end at the cut); in the "
         ~ "middle, the line ends at the first cut and a new one starts at the second, in line with it (both given "
         ~ "back). A line whose length or middle is constrained cannot be trimmed."), [
         "s.trim(h, at: vec(6.mm, 0.mm))   // the piece of h right of the line crossing it"]),

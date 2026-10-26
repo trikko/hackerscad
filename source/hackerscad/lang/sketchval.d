@@ -2037,9 +2037,16 @@ final class SketchVal : ObjectVal
             immutable end = loBy == size_t.max ? en.refs[0] : en.refs[1];
             immutable t = loBy == size_t.max ? hi : lo;
             immutable by = loBy == size_t.max ? hiBy : loBy;
+            // joined to something else there: the line takes an end of its own at the cut, the old one stays
+            // with what it is joined to
             if (usesOf(end, l) > 0)
-                throw new HcadError(Code.sketch, "that end of the line is joined to something else: the piece to trim "
-                    ~ "must end free (trim the other piece, or the line it is joined to)", s);
+            {
+                immutable cut = a + dir * t;
+                immutable fresh = newPoint(cut.x, cut.y, s);
+                sk.entities[l].refs[end == en.refs[0] ? 0 : 1] = fresh;
+                holdOn(fresh, by, s);
+                return entity(l);
+            }
             startAt(end, a + dir * t);
             holdOn(end, by, s);
             return entity(l);
