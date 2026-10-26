@@ -5580,6 +5580,38 @@ unittest
 {
     mixin(slowTest);
     import std.process : environment;
+    // laid on the faces a box uses turned over (bottom, front, left) and inside a bore: the holed face turned
+    // as the one it replaces, the direct way taken (HCAD_WRAP_DEBUG makes why it was not a warning), the
+    // volumes those of the boolean way
+    auto before = environment.get("HCAD_WRAP_DEBUG");
+    environment["HCAD_WRAP_DEBUG"] = "1";
+    scope (exit)
+    {
+        if (before is null)
+            environment.remove("HCAD_WRAP_DEBUG");
+        else
+            environment["HCAD_WRAP_DEBUG"] = before;
+    }
+    auto r = runModel(q{
+        @part Solid a() => box(40, 30, 20).knurl(faces.bottom);
+        @part Solid b() => box(40, 30, 20).knurl(faces.front);
+        @part Solid c() => box(40, 30, 20)
+            .cut(rect(30, 20).tiles(kind: "hex", size: 6, gap: 1), wrap: faces.left, depth: 1);
+        @part Solid d() => (cylinder(d: 40, h: 20) - cylinder(d: 30, h: 30).move(z: -5))
+            .knurl(faces.filter(f => f.area > 1500 * 1.mm * 1.mm && f.area < 2000 * 1.mm * 1.mm));
+    });
+    foreach (d; r.diagnostics)
+        assert(d.severity != Severity.error && d.code != Code.kernel, d.message);
+    foreach (p; r.parts)
+        assert(kernel.isValid(p.solid.brep), p.name);
+    assert(isClose(partVolume(r, "a"), 24252.03, 1e-5), format("%s", partVolume(r, "a")));
+    assert(isClose(partVolume(r, "b"), 24163.78, 1e-5), format("%s", partVolume(r, "b")));
+}
+
+unittest
+{
+    mixin(slowTest);
+    import std.process : environment;
     // pockets, reliefs and cuts through a wall laid on a curved face, built at once (no boolean) and
     // the boolean way: the same solid; on a cone, a hole's inner wall, with islands (the O, the D), and
     // through a conical sleeve. A few cells each: the boolean way takes most of a second a cell. The
@@ -5952,7 +5984,14 @@ unittest
     bad += check(minkowski(b, box(2, 2, 2, center: true)), "minkowski box", [], [],
         iota(0, 6).map(i => cs[i] + ns[i] * 1.mm).array, ns);
 
-    bad += same(b.cut(rect(10, 5), wrap: faces.tagged("front"), depth: 1), "wrap cut front");
+    auto wc = b.cut(rect(10, 5), wrap: faces.tagged("front"), depth: 1);
+    bad += same(wc, "wrap cut front", [], ["front"]);
+    // the pocket's floor and four walls are made from the face: they keep its tag
+    if (wc.faces.tagged("front").count != 6)
+    {
+        writeln("wrap cut front: ", wc.faces.tagged("front").count, " faces tagged front, not 6");
+        bad++;
+    }
     bad += same(b.cut(rect(30, 20).tiles(kind: "hex", size: 6, gap: 1), on: b.frame(faces.tagged("top")), depth: 1),
         "tiles on top");
     bad += same(b - hole(M3, 10, "counterbore").move(z: 20), "hole() counterbore");

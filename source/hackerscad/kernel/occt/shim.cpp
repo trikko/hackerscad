@@ -4162,7 +4162,14 @@ static hc_shape *wrap_impl(const hc_shape *s, int face, const hc_shape *profile,
                 throw Standard_Failure("direct: the holes could not be made in the face");
             if (through && !holedFar.IsDone())
                 throw Standard_Failure("direct: the holes could not be made in the far face");
-            const TopoDS_Face holedNear = holed.Face(), holedFarFace = through ? holedFar.Face() : TopoDS_Face();
+            // turned as the faces they replace are in the solid: made on them FORWARD, a face the solid uses
+            // REVERSED (a box's bottom, front and left) came out facing in, its volume counted the wrong way
+            // round, and the direct way was given up for the boolean one (knurl on a box's front: 5.5 s)
+            auto asIn = [](const TopoDS_Face &made, const TopoDS_Face &was) {
+                return was.Orientation() == TopAbs_REVERSED ? TopoDS::Face(made.Reversed()) : made;
+            };
+            const TopoDS_Face holedNear = asIn(holed.Face(), base),
+                              holedFarFace = through ? asIn(holedFar.Face(), farBase) : TopoDS_Face();
             // each cell's faces turned the way the holed face's edges say, from its hole's rim inwards: a wall
             // takes the hole's edge the other way round from the holed face, the floor and the neighbouring
             // walls theirs from the walls (ShapeFix on the whole shell, thousands of faces, took seconds)

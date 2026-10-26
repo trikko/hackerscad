@@ -6412,8 +6412,12 @@ Value knurlOf(Interp it, ref CallArgs a)
     try
         return Value.of(derived(it, k.wrapDirect(body.brep, idx[0], cells, false, anchor, Vec3(0, 0, 0), depth), [body],
             "knurl", a.span));
-    catch (KernelException)
+    catch (KernelException e)
     {
+        // why the direct way was not taken, for whoever works on it
+        import std.process : environment;
+        if (environment.get("HCAD_WRAP_DEBUG"))
+            it.diagnostics ~= Diagnostic(Severity.warning, Code.kernel, e.msg, a.span);
     }
     try
     {
