@@ -6655,10 +6655,24 @@ Value threadFace(Interp it, ref CallArgs a)
     {
         CylinderInfo ci;
         if (!k.faceCylinder(b, f, ci))
-            throw new HcadError(Code.type, idx.length == 1
-                ? "a thread goes on a cylindrical face: the outside of a shaft or the wall of a hole"
-                : format("the selector matched %d faces, not all cylindrical: a thread needs the one face of a shaft "
-                    ~ "or hole (faces.largest, faces.tagged(…))", idx.length), x.spanOf("face"));
+        {
+            if (idx.length == 1)
+                throw new HcadError(Code.type, "a thread goes on a cylindrical face: the outside of a shaft or the "
+                    ~ "wall of a hole", x.spanOf("face"));
+            // a tool tagged recursive tags its caps too: a hole it does not cut through keeps one, its floor
+            size_t round;
+            foreach (g; idx)
+            {
+                CylinderInfo gi;
+                round += k.faceCylinder(b, g, gi);
+            }
+            throw new HcadError(Code.type, round == 0
+                ? format("the selector matched %d faces, none cylindrical: a thread needs the one face of a shaft "
+                    ~ "or hole (faces.largest, faces.tagged(…))", idx.length)
+                : format("the selector matched %d faces, %d not cylindrical: the floor of a hole that does not go "
+                    ~ "through, or a cap of a tool tagged recursive; cut the hole through (a tool longer than the "
+                    ~ "part) or tag its wall alone", idx.length, idx.length - round), x.spanOf("face"));
+        }
         if (n == 0)
             c = ci;
         else

@@ -3266,6 +3266,10 @@ unittest
     assert(error(`@part Solid p() => (box(20, 20, 8) - cylinder(d: 8, h: 20, center: true))`
         ~ `.thread(faces.filter(f => f.area > 165 * 1.mm ^^ 2 && f.area < 220 * 1.mm ^^ 2), "M8");`).message.canFind("tap drill"));
     assert(error(`@part Solid p() => box(10, 10, 10).thread(faces.top, "M8");`).message.canFind("cylindrical"));
+    // a centred tool tagged recursive that stops inside the part: its cap, the hole's floor, is tagged too
+    assert(error(`@part Solid p() { auto r = cylinder(d: 58, h: 12)
+            - cylinder(d: 45, h: 20, center: true).addTag("bore", recursive: true);
+        return r.thread(r.faces.tagged("bore"), "M48x3"); }`).message.canFind("1 not cylindrical: the floor"));
 }
 
 unittest
