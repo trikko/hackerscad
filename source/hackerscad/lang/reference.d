@@ -277,7 +277,13 @@ immutable Ref[] reference =
     F("on", "Solid", ["other: Solid", "gap: Length"], "Solid", "On top of another solid."),
     F("align", "Solid", ["other: Solid", "x: string", "y: string", "z: string"], "Solid",
         "Aligns bounding boxes per axis: \"min\", \"center\" or \"max\"."),
-    F("linearPattern", "Solid", ["n: int", "step: Vec"], "Solid", "n copies, step apart, as one solid (its tagged references: the first copy's)."),
+    F("linearPattern", "Solid", ["n: int", "step: Vec", "n2: int", "step2: Vec"], "Solid",
+        "n copies, step apart, as one solid (its tagged references: the first copy's); n2:, step2: a second "
+        ~ "direction, a grid of n × n2."),
+    F("pathPattern", "Solid", ["path: Path", "n: int", "rotate: bool"], "Solid",
+        "n copies evenly along a path (both ends included; a closed path all round, the start not repeated), the "
+        ~ "solid built where the path starts: each turned as the path turns from there (rotate: false only moves "
+        ~ "them), as one solid: pegs along a curve, teeth round a rim."),
     F("circularPattern", "Solid", ["n: int", "axis: Axis", "angle: Angle"], "Solid", "n copies around an axis, as one solid (its tagged references: the first copy's)."),
     F("placeOn", "Solid", ["frame: Frame", "from: Faces", "at: Vec"], "Solid",
         "A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin)."),

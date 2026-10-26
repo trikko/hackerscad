@@ -4,7 +4,7 @@ Many copies of one thing: a row, a ring, a grid, a mirror image; layouts the pla
 
 ![A row, a ring, a grid and a mirror](img/patterns-four.png)
 
-A *pattern* is one shape repeated: `linearPattern` copies it along a straight line at an even step, `circularPattern` round an axis at even angles, `mirror` reflects it across a plane. A grid is two `linearPattern`s, one along each side. Copies that change from one to the next, or skip some places, are a loop (below).
+A *pattern* is one shape repeated: `linearPattern` copies it along a straight line at an even step (with `n2:` and `step2:`, in a grid), `circularPattern` round an axis at even angles, `pathPattern` along any path, turning as it turns, `mirror` reflects it across a plane. Copies that change from one to the next, or skip some places, are a loop (below).
 
 A pattern gives **one solid** with all the copies. Add it to a part to put pegs on it; subtract it to cut all the holes at once.
 
@@ -30,8 +30,8 @@ Solid ring() => (cylinder(d: 44.mm, h: 4.mm)
 @part("gold")
 Solid grid() => (box(44.mm, 44.mm, 3.mm)
         - cylinder(d: 6.mm, h: 10.mm, center: true)
-            .linearPattern(4, step: vec(10.mm, 0.mm, 0.mm))
-            .linearPattern(4, step: vec(0.mm, 10.mm, 0.mm))
+            .linearPattern(4, step: vec(10.mm, 0.mm, 0.mm),
+                n2: 4, step2: vec(0.mm, 10.mm, 0.mm))
             .move(x: -15.mm, y: -15.mm))
     .move(x: 115.mm);
 
@@ -52,6 +52,10 @@ Mind the brackets: a chained call belongs to what stands right before it. In `pl
 |---|---|---|---|
 | `linearPattern` | `n` | how many copies, the first where the solid is | — |
 | | `step:` | from one copy to the next: a vector with units | — |
+| | `n2:`, `step2:` | a second direction: a grid of `n` × `n2` copies | one row |
+| `pathPattern` | `path` | the path (`path`, `spline`, `helix`, a sketch's path); the solid is built where it starts | — |
+| | `n:` | how many copies, evenly along it: both ends included, or all round a closed path | — |
+| | `rotate:` | each copy turned as the path turns from its start; `false` only moves them | `true` |
 | `circularPattern` | `n` | how many copies | — |
 | | `axis:` | a direction through the origin (`Z`), or an `Axis` anywhere: `axis(origin: vec(…), direction: Z)`, `body.axis(edges…)` | `Z` |
 | | `angle:` | a full turn spaces the copies evenly; less than a turn puts the first and the last at its two ends | `360.deg` |

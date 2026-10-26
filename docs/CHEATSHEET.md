@@ -138,7 +138,8 @@ s is a Solid, p a Profile, f a Frame; every value is immutable: operations give 
 - `s.nextTo(other: Solid, dir: Direction, gap: Length) → Solid` — Beside another solid: a.nextTo(b, X, gap: 10.mm), its box just past b's that way (only its x changes); an oblique direction (vec(1, 2, 0)) puts its centre on the line from b's centre that way, the boxes touching, gap further along it.
 - `s.on(other: Solid, gap: Length) → Solid` — On top of another solid.
 - `s.align(other: Solid, x: string, y: string, z: string) → Solid` — Aligns bounding boxes per axis: "min", "center" or "max".
-- `s.linearPattern(n: int, step: Vec) → Solid` — n copies, step apart, as one solid (its tagged references: the first copy's).
+- `s.linearPattern(n: int, step: Vec, n2: int, step2: Vec) → Solid` — n copies, step apart, as one solid (its tagged references: the first copy's); n2:, step2: a second direction, a grid of n × n2.
+- `s.pathPattern(path: Path, n: int, rotate: bool) → Solid` — n copies evenly along a path (both ends included; a closed path all round, the start not repeated), the solid built where the path starts: each turned as the path turns from there (rotate: false only moves them), as one solid: pegs along a curve, teeth round a rim.
 - `s.circularPattern(n: int, axis: Axis, angle: Angle) → Solid` — n copies around an axis, as one solid (its tagged references: the first copy's).
 - `s.placeOn(frame: Frame, from: Faces, at: Vec) → Solid` — A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin).
 - `s.split(plane: Plane | Surface | Solid) → Solid[]` — Cuts with a plane (or a surface, or another solid's skin) into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…

@@ -945,15 +945,58 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
 
     // patterns: copies united into one solid (subtract it to cut many holes)
     def("linearPattern", (ref CallArgs a) {
-        auto x = Args(it, a, "linearPattern", ["solid", "n", "step"]);
+        // linearPattern(n, step:); n2:, step2: a second direction, a grid of n × n2
+        auto x = Args(it, a, "linearPattern", ["solid", "n", "step", "n2", "step2"]);
         auto s = x.solid("solid");
         immutable n = count(x, "n");
         auto step = x.vecLen("step");
         if (n > 1 && step.length == 0)
             throw new HcadError(Code.type, "a step of zero puts every copy in the same place", x.spanOf("step"));
+        if (x.has("n2") != x.has("step2"))
+            throw new HcadError(Code.missingArg, "n2: and step2: go together: how many rows, and how far apart",
+                x.spanOf(x.has("n2") ? "n2" : "step2"));
+        immutable n2 = x.has("n2") ? count(x, "n2") : 1;
+        auto step2 = x.has("step2") ? x.vecLen("step2") : Vec3(0, 0, 0);
+        if (n2 > 1 && step2.length == 0)
+            throw new HcadError(Code.type, "a step2 of zero puts every row in the same place", x.spanOf("step2"));
+        if (n > 1 && n2 > 1 && step.cross(step2).length < 1e-9 * step.length * step2.length)
+            throw new HcadError(Code.type, "step and step2 run the same way: the rows would lie on each other",
+                x.spanOf("step2"));
         Value[] copies;
-        foreach (i; 0 .. n)
-            copies ~= transformed(it, a.span, s, b => k.translate(b, step * i));
+        foreach (j; 0 .. n2)
+            foreach (i; 0 .. n)
+                copies ~= transformed(it, a.span, s, b => k.translate(b, step * i + step2 * j));
+        return firstCopyAnchors(unionAll(it, copies, a.span), s);
+    });
+    def("pathPattern", (ref CallArgs a) {
+        // pathPattern(path, n:): n copies evenly along a path, the solid built at its start; each turned as the
+        // path turns from there (rotate: false keeps them as they are, only moved)
+        auto x = Args(it, a, "pathPattern", ["solid", "path", "n", "rotate"]);
+        auto s = x.solid("solid");
+        auto p = x.solid("path");
+        if (!p.path)
+            throw new HcadError(Code.type, "pathPattern needs a path (path, spline, helix, a sketch's path)",
+                x.spanOf("path"));
+        immutable n = count(x, "n");
+        if (n < 2)
+            throw new HcadError(Code.type, "pathPattern needs 2 copies or more", x.spanOf("n"));
+        immutable turn = x.flag("rotate", true);
+        auto frames = pathFrames(it, p, n);
+        immutable f0 = frames[0];
+        Value[] copies;
+        foreach (f; frames)
+        {
+            // the turn taking the first frame to this one, about the first frame's origin
+            Vec3 col(Vec3 e) => f[1] * f0[1].dot(e) + f[2] * f0[2].dot(e) + f[3] * f0[3].dot(e);
+            Vec3 axis;
+            immutable angle = turn ? axisAngle(col(Vec3(1, 0, 0)), col(Vec3(0, 1, 0)), col(Vec3(0, 0, 1)), axis) : 0;
+            immutable shift = f[0] - f0[0];
+            copies ~= transformed(it, a.span, s, (Brep b) {
+                if (angle > 1e-12)
+                    b = k.translate(k.rotate(k.translate(b, -f0[0]), axis, angle), f0[0]);
+                return k.translate(b, shift);
+            });
+        }
         return firstCopyAnchors(unionAll(it, copies, a.span), s);
     });
     def("circularPattern", (ref CallArgs a) {

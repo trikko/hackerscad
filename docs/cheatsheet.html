@@ -162,7 +162,8 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 <dt>s.nextTo(other: Solid, dir: Direction, gap: Length) → Solid</dt><dd>Beside another solid: a.nextTo(b, X, gap: 10.mm), its box just past b's that way (only its x changes); an oblique direction (vec(1, 2, 0)) puts its centre on the line from b's centre that way, the boxes touching, gap further along it.</dd>
 <dt>s.on(other: Solid, gap: Length) → Solid</dt><dd>On top of another solid.</dd>
 <dt>s.align(other: Solid, x: string, y: string, z: string) → Solid</dt><dd>Aligns bounding boxes per axis: "min", "center" or "max".</dd>
-<dt>s.linearPattern(n: int, step: Vec) → Solid</dt><dd>n copies, step apart, as one solid (its tagged references: the first copy's).</dd>
+<dt>s.linearPattern(n: int, step: Vec, n2: int, step2: Vec) → Solid</dt><dd>n copies, step apart, as one solid (its tagged references: the first copy's); n2:, step2: a second direction, a grid of n × n2.</dd>
+<dt>s.pathPattern(path: Path, n: int, rotate: bool) → Solid</dt><dd>n copies evenly along a path (both ends included; a closed path all round, the start not repeated), the solid built where the path starts: each turned as the path turns from there (rotate: false only moves them), as one solid: pegs along a curve, teeth round a rim.</dd>
 <dt>s.circularPattern(n: int, axis: Axis, angle: Angle) → Solid</dt><dd>n copies around an axis, as one solid (its tagged references: the first copy's).</dd>
 <dt>s.placeOn(frame: Frame, from: Faces, at: Vec) → Solid</dt><dd>A solid built on XY (Z up) moved onto a frame or plane; from: one of its faces laid against it instead (at: a point of that face onto the origin).</dd>
 <dt>s.split(plane: Plane | Surface | Solid) → Solid[]</dt><dd>Cuts with a plane (or a surface, or another solid's skin) into the pieces it leaves, both sides, along X, then Y, then Z: for @parts, or .above(plane), .largest…</dd>

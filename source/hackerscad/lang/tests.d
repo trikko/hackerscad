@@ -575,6 +575,31 @@ unittest
                 wallThickness: 2.mm);}])
         error(bad);
 
+    // patterns: a grid (n2:, step2:) and copies along a path, turned as it turns
+    auto patterns = runModel(q{
+        @part Solid grid() => cylinder(d: 2, h: 3)
+            .linearPattern(4, step: vec(5.mm, 0.mm, 0.mm), n2: 3, step2: vec(0.mm, 6.mm, 0.mm));
+        immutable arc = path([vec(0.mm, 0.mm, 0.mm), vec(30.mm, 0.mm, 0.mm), vec(30.mm, 30.mm, 0.mm)], bend: 10.mm);
+        @part Solid along() => box(2, 4, 6).pathPattern(arc, n: 8);
+        @part Solid moved() => box(2, 4, 6).pathPattern(arc, n: 8, rotate: false);
+        unittest
+        {
+            assert(grid().pieces.length == 12);
+            assert(along().pieces.length == 8);
+            // the last copy where the path runs along Y: turned a quarter, 4 wide along X
+            assert(abs(along().bbox.max.x.to!double - 32) < 1e-6 && abs(along().bbox.max.y.to!double - 31) < 1e-6);
+            // not turned: still 2 wide along X
+            assert(abs(moved().bbox.max.x.to!double - 31) < 1e-6 && abs(moved().bbox.max.y.to!double - 32) < 1e-6);
+        }
+    });
+    assert(isClose(partVolume(patterns, "grid"), 12 * PI * 3, 1e-6));
+    assert(isClose(partVolume(patterns, "along"), 8 * 48, 1e-6));
+    foreach (bad; [q{@part Solid x() => box(1, 1, 1).linearPattern(3, step: vec(2.mm, 0.mm, 0.mm), n2: 2);},
+            q{@part Solid x() => box(1, 1, 1).linearPattern(3, step: vec(2.mm, 0.mm, 0.mm), n2: 2,
+                step2: vec(4.mm, 0.mm, 0.mm));},
+            q{@part Solid x() => box(1, 1, 1).pathPattern(box(2, 2, 2), n: 3);}])
+        error(bad);
+
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{
         @part Solid a() => rect(10, 4).across(X).extrude(3);
