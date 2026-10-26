@@ -136,8 +136,28 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
     long key(Vec3 p) => (cast(long) floor(p.x / g) + (1L << 20)) | ((cast(long) floor(p.y / g) + (1L << 20)) << 21)
         | ((cast(long) floor(p.z / g) + (1L << 20)) << 42);
 
-    foreach (vi, d; directions)
+    // each direction on a thread of its own (--threads, HCAD_THREADS): they share only the meshes; what
+    // each finds is laid into the cells afterwards in their order, as drawn one after the other
+    struct Found
     {
+        long[] keys;
+        Kind[] kinds;
+        size_t differing;
+        Image picture;
+        double tolerance;
+    }
+    auto found = new Found[directions.length];
+    import std.parallelism : parallel;
+    import std.range : iota;
+    foreach (vi; parallel(iota(directions.length), 1))
+    {
+        immutable d = directions[vi];
+        auto f = &found[vi];
+        void note(Kind kind, long c)
+        {
+            f.kinds ~= kind;
+            f.keys ~= c;
+        }
         auto cam = Camera(d.eye);
         // one frame for both, so that their pictures lie on each other
         double x0 = double.max, y0 = double.max, x1 = -double.max, y1 = -double.max, z0 = double.max, z1 = -double.max;
@@ -178,7 +198,7 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
 
         // lines farther than r pixels from any line of the other
         enum reach = 3 * ss / 2;
-        r.tolerance = reach / k;
+        f.tolerance = reach / k;
         auto onlyB = minus(db.line, grow(da.line, n, reach)), onlyA = minus(da.line, grow(db.line, n, reach));
         dropSpecks(onlyB, n, 6 * ss);
         dropSpecks(onlyA, n, 6 * ss);
@@ -214,15 +234,15 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
         foreach (q; 0 .. n * n)
         {
             if (onlyB[q])
-                mark(Kind.missing, key(db.at[q]), vi);
+                note(Kind.missing, key(db.at[q]));
             if (onlyA[q])
-                mark(Kind.extra, key(da.at[q]), vi);
+                note(Kind.extra, key(da.at[q]));
             if (facing[q])
-                mark(Kind.facing, key(db.pos[q]), vi);
+                note(Kind.facing, key(db.pos[q]));
             count += onlyA[q] + onlyB[q];
             shaded += facing[q];
         }
-        r.differing ~= count / ss + shaded / (ss * ss);
+        f.differing = count / ss + shaded / (ss * ss);
 
         // the picture: grey the lines in common, red and blue (thickened) what differs, violet the
         // surface facing otherwise
@@ -241,11 +261,21 @@ LineDiff lineDiff(const Mesh a, const Mesh b, const Direction[] directions, uint
                         gg |= lines[q];
                         vv |= facing[q];
                     }
-                ubyte[3] c = rr ? [220, 30, 30] : bb ? [30, 90, 230] : gg ? [150, 150, 158] : vv ? [176, 120, 236]
-                    : [255, 255, 255];
-                img.rgb[(y * size + x) * 3 .. (y * size + x) * 3 + 3] = c[];
+                // constants: an array literal per pixel would be a GC allocation each
+                static immutable ubyte[3] red_ = [220, 30, 30], blue_ = [30, 90, 230], grey = [150, 150, 158],
+                    violet = [176, 120, 236], white = [255, 255, 255];
+                img.rgb[(y * size + x) * 3 .. (y * size + x) * 3 + 3] = rr ? red_ : bb ? blue_ : gg ? grey
+                    : vv ? violet : white;
             }
-        r.pictures ~= img;
+        f.picture = img;
+    }
+    foreach (vi, ref f; found)
+    {
+        foreach (i, c; f.keys)
+            mark(f.kinds[i], c, vi);
+        r.differing ~= f.differing;
+        r.pictures ~= f.picture;
+        r.tolerance = f.tolerance;
     }
 
     // the strokes: cells that touch, of one kind
@@ -505,9 +535,32 @@ struct Lines
             immutable xs = max(0, cast(int) floor(min(a.x, b.x, c.x))), xe = min(cast(int) n - 1, cast(int) ceil(max(a.x, b.x, c.x)));
             immutable ys = max(0, cast(int) floor(min(a.y, b.y, c.y))), ye = min(cast(int) n - 1, cast(int) ceil(max(a.y, b.y, c.y)));
             foreach (y; ys .. ye + 1)
-                foreach (x; xs .. xe + 1)
+            {
+                // only the pixels between where the row's middle crosses the triangle's sides (and one more
+                // on each end): a long thin triangle's box is mostly empty
+                immutable py = y + 0.5;
+                double l = double.infinity, rt = -double.infinity;
+                foreach (e; 0 .. 3)
                 {
-                    immutable px = x + 0.5, py = y + 0.5;
+                    immutable u = e == 0 ? a : e == 1 ? b : c, v = e == 0 ? b : e == 1 ? c : a;
+                    if ((u.y - py) * (v.y - py) > 0)
+                        continue;
+                    if (u.y == v.y)
+                    {
+                        l = min(l, u.x, v.x);
+                        rt = max(rt, u.x, v.x);
+                        continue;
+                    }
+                    immutable x = u.x + (py - u.y) * (v.x - u.x) / (v.y - u.y);
+                    l = min(l, x);
+                    rt = max(rt, x);
+                }
+                if (l > rt)
+                    continue;
+                immutable x0 = max(xs, cast(int) floor(l - 0.5) - 1), x1 = min(xe, cast(int) ceil(rt - 0.5) + 1);
+                foreach (x; x0 .. x1 + 1)
+                {
+                    immutable px = x + 0.5;
                     immutable w0 = ((b.x - px) * (c.y - py) - (b.y - py) * (c.x - px)) / area;
                     immutable w1 = ((c.x - px) * (a.y - py) - (c.y - py) * (a.x - px)) / area;
                     immutable w2 = 1 - w0 - w1;
@@ -525,6 +578,7 @@ struct Lines
                         d.pos[q] = p0 * w0 + p1 * w1 + p2 * w2;
                     }
                 }
+            }
         }
         d.line = new bool[n * n];
         d.at = new Vec3[n * n];

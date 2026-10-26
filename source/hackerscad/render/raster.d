@@ -599,8 +599,14 @@ public struct Canvas
         foreach (y; 0 .. h)
         {
             immutable t = cast(float) y / h; // soft vertical gradient
+            immutable float r = 246 - 20 * t, g = 247 - 18 * t, b = 250 - 12 * t;
+            // one channel at a time: an array literal per pixel would be a GC allocation each
             foreach (x; 0 .. w)
-                color[(y * w + x) * 3 .. (y * w + x) * 3 + 3] = [246 - 20 * t, 247 - 18 * t, 250 - 12 * t];
+            {
+                color[(y * w + x) * 3] = r;
+                color[(y * w + x) * 3 + 1] = g;
+                color[(y * w + x) * 3 + 2] = b;
+            }
         }
     }
 
