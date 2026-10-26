@@ -239,12 +239,7 @@ mixin template Annotate()
             if (noteArea.getVisible())
                 new WidgetPaintable(noteArea).snapshot(snap, w, h);
             if (auto node = snap.toNode())
-            {
-                // let go on this thread (releaseNode, in app.d)
-                scope (exit)
-                    releaseNode(node);
                 return window.getRenderer().renderTexture(node, null).saveToPngBytes().getData().dup;
-            }
         }
         import cairo.global : imageSurfaceCreateFromPng, create;
         import hackerscad.render.png : encodePng;

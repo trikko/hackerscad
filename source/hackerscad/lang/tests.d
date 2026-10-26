@@ -2247,30 +2247,17 @@ unittest
     // gid 0.9.13 and older had three bugs hackerscad worked around, the workarounds now gone: GObjects let
     // go on the thread that collects (macOS stops the program), GErrors not owned freed (GLArea.getError,
     // the heap corrupted), and symbols looked up in the first library of a pair only (macOS, Windows).
-    // Fixed upstream in release 0.9.14 (issues #54, #55)
+    // Fixed upstream in release 0.9.14 (issues #54, #55). 0.9.14 still let render nodes go on the thread
+    // that collects (a screenshot's, holding the 3D view's GL texture, crashed the program on Windows):
+    // fixed after it (commits 02a77896 and f9a73348), the workaround gone too
     import std.file : thisExePath, readText;
     import djson : parseJSONComplete;
     import std.path : dirName;
     auto root = dirName(dirName(dirName(thisExePath)));
     auto gid = parseJSONComplete(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"];
     immutable v = gid.isString ? gid.get!string : gid["version"].get!string;
-    assert(!["0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13"].canFind(v), "gid " ~ v ~ " has the bugs fixed in "
-        ~ "0.9.14 and no workaround for them any more: use 0.9.14 or later");
-}
-
-unittest
-{
-    // WORKAROUND (gid 0.9.14, gsk.RenderNode): render nodes are unreffed on the thread that collects, which
-    // crashes when one holds the 3D view's GL texture; the screenshots let theirs go at once
-    // (MainWindow.releaseNode, gui/app.d). A newer gid: does RenderNode.~this still unref the node itself?
-    // If not, releaseNode can go; either way, update the version here
-    import std.file : thisExePath, readText;
-    import djson : parseJSONComplete;
-    import std.path : dirName;
-    auto root = dirName(dirName(dirName(thisExePath)));
-    auto gid = parseJSONComplete(readText(buildPath(root, "dub.selections.json")))["versions"]["gid"];
-    immutable v = gid.isString ? gid.get!string : gid["version"].get!string;
-    assert(v == "0.9.14", "gid " ~ v ~ ": check whether MainWindow.releaseNode (gui/app.d) is still needed");
+    assert(!["0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14"].canFind(v), "gid " ~ v ~ " has bugs "
+        ~ "fixed after 0.9.14 and no workaround for them any more: use a later commit or release");
 }
 
 unittest

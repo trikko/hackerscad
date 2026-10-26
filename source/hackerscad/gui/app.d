@@ -2493,22 +2493,7 @@ private:
             stderr.writeln("screenshot: the window has not been drawn (is the screen locked?)");
             return false;
         }
-        scope (exit)
-            releaseNode(node);
         return w.getRenderer().renderTexture(node, null).saveToPng(file);
-    }
-
-    /// WORKAROUND (gid 0.9.14, gsk.RenderNode): a render node's D object unrefs it in its destructor, on
-    /// the thread whose allocation started the collection (gid hands GObjects to the main loop, not render
-    /// nodes): a screenshot's node, holding the 3D view's GL texture, freed so on an evaluation's thread
-    /// frees the texture there, with no GL context, and the program crashes (Windows, glDeleteSync
-    /// through a null pointer, two users' minidumps of 2026-10-24). So it is let go here, on GTK's thread,
-    /// as soon as it has been drawn. Check: does gid's RenderNode.~this still call gsk_render_node_unref
-    /// itself? The test pinning gid's version in lang/tests.d says when to look again
-    static void releaseNode(imported!"gsk.render_node".RenderNode node)
-    {
-        if (node !is null)
-            destroy(node);
     }
 
     /// The problems marked in the code, with their line (0-based).
