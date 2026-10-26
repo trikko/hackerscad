@@ -51,8 +51,8 @@ shelf to rest on.
 
 1. Open the eye in the view bar and untick **tank**: the tank hides, the pot
    stays. Click **Top**.
-2. Right-click the middle of the bottom of the pot and choose **Hole at point
-   › Clearance › M8**: a hole 9 mm wide, for the cord. (The menu sizes holes
+2. Right-click the middle of the bottom of the pot and choose **At this point
+   › Hole › Clearance › M8**: a hole 9 mm wide, for the cord. (The menu sizes holes
    for screws; any size can be typed afterwards.) Make its `at:` `vec(0.mm,
    0.mm, …)`, the middle.
 

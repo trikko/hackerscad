@@ -5436,15 +5436,16 @@ private:
             }
             if (nfs)
             {
-                some ~= MenuEntry.item("Fillet edges of the faces" ~ on, () => ctx("fillet-face", "1.mm"));
-                some ~= MenuEntry.item("Chamfer edges of the faces" ~ on, () => ctx("chamfer-face", "0.5.mm"));
-                some ~= MenuEntry.item("Shell, opening the faces" ~ on, () => ctx("shell", "2.mm"));
-                some ~= MenuEntry.item("Draft faces" ~ on, () => ctx("draft", "3.deg"));
-                some ~= MenuEntry.item("Remove faces (heal)" ~ on, () => ctx("remove-faces", ""));
-                some ~= MenuEntry.item("Offset faces" ~ on, () => ctx("offset-faces", "1.mm"));
-                some ~= MenuEntry.item("Extrude faces" ~ on, () => ctx("extrude-face", "5.mm"));
-                some ~= MenuEntry.item("Cut faces" ~ on, () => ctx("cut-face", "2.mm"));
-                some ~= MenuEntry.item("Tag faces" ~ on, () => ctx("tag-face", "name"));
+                alias Ii = MenuEntry.item;
+                some ~= Ii("Tag faces" ~ on, () => ctx("tag-face", "name"));
+                some ~= MenuEntry.group("Edges", [Ii("Fillet edges of the faces" ~ on, () => ctx("fillet-face", "1.mm")),
+                    Ii("Chamfer edges of the faces" ~ on, () => ctx("chamfer-face", "0.5.mm"))]);
+                some ~= MenuEntry.group("Push and pull", [Ii("Extrude faces" ~ on, () => ctx("extrude-face", "5.mm")),
+                    Ii("Cut faces" ~ on, () => ctx("cut-face", "2.mm")),
+                    Ii("Offset faces" ~ on, () => ctx("offset-faces", "1.mm")),
+                    Ii("Draft faces" ~ on, () => ctx("draft", "3.deg")),
+                    Ii("Remove faces (heal)" ~ on, () => ctx("remove-faces", ""))]);
+                some ~= MenuEntry.group("Hollow", [Ii("Shell, opening the faces" ~ on, () => ctx("shell", "2.mm"))]);
             }
             MenuEntry[] sizes;
             foreach (row; selectionRows())
@@ -5490,78 +5491,31 @@ private:
         }
         if (nf)
         {
-            entries ~= I(nf == 1 ? "Fillet face edges…" : "Fillet edges of the faces…", () => ctx("fillet-face", "1.mm"));
-            entries ~= I(nf == 1 ? "Select its outer edges" : "Select their outer edges", () { info(growSelection(false)); });
-            entries ~= I(nf == 1 ? "Chamfer face edges…" : "Chamfer edges of the faces…", () => ctx("chamfer-face", "0.5.mm"));
-            entries ~= I(nf == 1 ? "Shell, opening this face…" : format("Shell, opening %d faces…", nf),
-                () => ctx("shell", "2.mm"));
-            entries ~= I(nf == 1 ? "Shell outwards, opening this face…" : format("Shell outwards, opening %d faces…", nf),
-                () => ctx("shell-outward", "2.mm"));
-            entries ~= I(nf == 1 ? "Draft face…" : format("Draft %d faces…", nf), () => ctx("draft", "3.deg"));
-            entries ~= I(nf == 1 ? "Full round" : format("Full round %d faces", nf), () => ctx("full-round", ""));
-            entries ~= I(nf == 1 ? "Remove face (heal)" : format("Remove %d faces (heal)", nf),
-                () => ctx("remove-faces", ""));
-            entries ~= I(nf == 1 ? "Offset face…" : format("Offset %d faces…", nf), () => ctx("offset-faces", "1.mm"));
-            // dividing the face under the click, across an axis it is not square to
-            if (contextHit.face >= 0)
-            {
-                MenuEntry[] across;
-                foreach (k, axis; ["X", "Y", "Z"])
-                    if (abs([contextHit.normal.x, contextHit.normal.y, contextHit.normal.z][k]) < 0.99)
-                        across ~= I("Across " ~ axis ~ ", through this point", splitFaceAction(k));
-                if (across.length)
-                    entries ~= G("Split face", across);
-            }
-            entries ~= I(nf == 1 ? "Extrude face…" : format("Extrude %d faces…", nf), () => ctx("extrude-face", "5.mm"));
-            entries ~= I(nf == 1 ? "Cut face…" : format("Cut %d faces…", nf), () => ctx("cut-face", "2.mm"));
+            // grouped by what they do, the name first: the menu stays short however many there are
             entries ~= I(nf == 1 ? "Tag face…" : format("Tag %d faces…", nf), () => ctx("tag-face", "name"));
-            // a sketch to draw on a flat face, its edges as references
-            if (nf == 1 && canSketchOn(contextHit.part, selFaces[0]))
-            {
-                immutable index = contextHit.part, face = selFaces[0];
-                entries ~= I("Sketch on face…", () {
-                    if (auto problem = sketchOnFaceOf(index, face))
-                        info(problem);
-                });
-            }
-            // planes from the faces: on one, moved off it; halfway between two
-            if (nf <= 2 && wholePartFn(contextHit.part) !is null)
-            {
-                immutable index = contextHit.part;
-                auto faces = selFaces.dup;
-                entries ~= I(nf == 1 ? "Plane on face…" : "Plane between faces", () {
-                    if (auto problem = planeOnFaces(index, faces))
-                        info(problem);
-                });
-            }
-        }
-        // a plane through three corners
-        if (nv == 3)
-        {
-            immutable index = contextHit.part;
-            auto vertices = selVertices.dup;
-            entries ~= I("Plane through the 3 points", () {
-                if (auto problem = planeThroughVertices(index, vertices))
-                    info(problem);
-            });
-        }
-        if (hit.face >= 0)
-        {
-            entries ~= S();
-            MenuEntry[] holes;
-            foreach (kind; [["Clearance", "clearance"], ["Tapping", "tap"], ["Heat-set insert", "insert"],
-                    ["Counterbore", "counterbore"], ["Countersink", "countersink"], ["Ribs (the screw cuts its thread)", "ribs"]])
-            {
-                MenuEntry[] sizes;
-                foreach (size; ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"])
-                    sizes ~= I(size, holeAction(kind[1], size), format("⌀ %g", holeDiameter(kind[1], size)));
-                holes ~= G(kind[0], sizes);
-            }
-            entries ~= G("Hole at point", holes);
-            entries ~= I("Pocket at point…", () => ctx("pocket", "2.mm"));
-            entries ~= I("Boss at point…", () => ctx("boss", "3.mm"));
+            entries ~= G("Edges", [
+                I(nf == 1 ? "Fillet face edges…" : "Fillet edges of the faces…", () => ctx("fillet-face", "1.mm")),
+                I(nf == 1 ? "Chamfer face edges…" : "Chamfer edges of the faces…", () => ctx("chamfer-face", "0.5.mm")),
+                I(nf == 1 ? "Full round" : format("Full round %d faces", nf), () => ctx("full-round", "")),
+                I(nf == 1 ? "Select its outer edges" : "Select their outer edges", () { info(growSelection(false)); })]);
+            entries ~= G("Push and pull", [
+                I(nf == 1 ? "Extrude face…" : format("Extrude %d faces…", nf), () => ctx("extrude-face", "5.mm")),
+                I(nf == 1 ? "Cut face…" : format("Cut %d faces…", nf), () => ctx("cut-face", "2.mm")),
+                I(nf == 1 ? "Offset face…" : format("Offset %d faces…", nf), () => ctx("offset-faces", "1.mm")),
+                I(nf == 1 ? "Draft face…" : format("Draft %d faces…", nf), () => ctx("draft", "3.deg")),
+                I(nf == 1 ? "Remove face (heal)" : format("Remove %d faces (heal)", nf), () => ctx("remove-faces", ""))]);
+            entries ~= G("Hollow", [
+                I(nf == 1 ? "Shell, opening this face…" : format("Shell, opening %d faces…", nf),
+                    () => ctx("shell", "2.mm")),
+                I(nf == 1 ? "Shell outwards, opening this face…" : format("Shell outwards, opening %d faces…", nf),
+                    () => ctx("shell-outward", "2.mm"))]);
+            // what changes the face's surface where it is: a texture, a thread, the face divided
+            MenuEntry[] surface;
+            if (nf == 1)
+                surface ~= G("Knurl", [I("Diamond", () => ctx("knurl-diamond", "")),
+                    I("Straight", () => ctx("knurl-straight", "")), I("Diagonal", () => ctx("knurl-diagonal", ""))]);
             // a whole cylinder: the ISO threads that fit it
-            auto sizes = threadSizes();
+            auto sizes = hit.face >= 0 ? threadSizes() : null;
             if (sizes.length)
             {
                 // by family: ISO metric, unified inch, trapezoidal, pipe threads
@@ -5578,8 +5532,70 @@ private:
                             group ~= I(t.name, threadAction(t.name));
                     th ~= families.length == 1 ? group : [G(f, group)];
                 }
-                entries ~= G(threadOutside ? "Thread (outside)" : "Thread (in the hole)", th);
+                surface ~= G(threadOutside ? "Thread (outside)" : "Thread (in the hole)", th);
             }
+            // dividing the face under the click, across an axis it is not square to
+            if (contextHit.face >= 0)
+            {
+                MenuEntry[] across;
+                foreach (k, axis; ["X", "Y", "Z"])
+                    if (abs([contextHit.normal.x, contextHit.normal.y, contextHit.normal.z][k]) < 0.99)
+                        across ~= I("Across " ~ axis ~ ", through this point", splitFaceAction(k));
+                if (across.length)
+                    surface ~= G("Split face", across);
+            }
+            if (surface.length)
+                entries ~= G("Surface", surface);
+            // a sketch to draw on a flat face, its edges as references; planes from the faces: on one, moved off
+            // it; halfway between two
+            MenuEntry[] drawOn;
+            if (nf == 1 && canSketchOn(contextHit.part, selFaces[0]))
+            {
+                immutable index = contextHit.part, face = selFaces[0];
+                drawOn ~= I("Sketch on face…", () {
+                    if (auto problem = sketchOnFaceOf(index, face))
+                        info(problem);
+                });
+            }
+            if (nf <= 2 && wholePartFn(contextHit.part) !is null)
+            {
+                immutable index = contextHit.part;
+                auto faces = selFaces.dup;
+                drawOn ~= I(nf == 1 ? "Plane on face…" : "Plane between faces", () {
+                    if (auto problem = planeOnFaces(index, faces))
+                        info(problem);
+                });
+            }
+            if (drawOn.length)
+                entries ~= G("Sketch and planes", drawOn);
+        }
+        // a plane through three corners
+        if (nv == 3)
+        {
+            immutable index = contextHit.part;
+            auto vertices = selVertices.dup;
+            entries ~= I("Plane through the 3 points", () {
+                if (auto problem = planeThroughVertices(index, vertices))
+                    info(problem);
+            });
+        }
+        if (hit.face >= 0)
+        {
+            MenuEntry[] holes;
+            foreach (kind; [["Clearance", "clearance"], ["Tapping", "tap"], ["Heat-set insert", "insert"],
+                    ["Counterbore", "counterbore"], ["Countersink", "countersink"], ["Ribs (the screw cuts its thread)", "ribs"]])
+            {
+                MenuEntry[] sizes;
+                foreach (size; ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"])
+                    sizes ~= I(size, holeAction(kind[1], size), format("⌀ %g", holeDiameter(kind[1], size)));
+                holes ~= G(kind[0], sizes);
+            }
+            entries ~= G("At this point", [G("Hole", holes), I("Pocket…", () => ctx("pocket", "2.mm")),
+                I("Boss…", () => ctx("boss", "3.mm")), G("Text", [I("Engraved…", () => ctx("text-engraved", "\"TEXT\"")),
+                    I("Raised…", () => ctx("text-raised", "\"TEXT\""))])]);
+            // for printing: the part turned so this face lies on the bed
+            if (canSketchOn(contextHit.part, hit.face))
+                entries ~= I("Lay on the bed, this face down", () => ctx("lay-flat", ""));
         }
 
         // measurements: values on the right, a click copies them
@@ -5720,6 +5736,7 @@ private:
         entries ~= I("Rotate…", () => startTransform(Viewport.Gizmo.rotate, contextHit.part));
         entries ~= I("Scale…", () => startTransform(Viewport.Gizmo.scale, contextHit.part));
         entries ~= I("Grid of copies…", () => ctx("grid", "2"));
+        entries ~= I("Ring of copies…", () => ctx("ring", "6"));
         {
             // the face under the click gives the plane, whatever the selection mode
             auto under = viewport.pickAny(x, y);
@@ -6099,6 +6116,9 @@ private:
         // flat faces swept along their normals (along: vec(…) slants them)
         case "extrude-face": return faces ? format(".extrude(%s, depth: %s)", facesCode(), or("5.mm")) : null;
         case "cut-face": return faces ? format(".cut(%s, depth: %s)", facesCode(), or("2.mm")) : null;
+        // a knurl on the face: diamond, straight or diagonal ridges
+        case "knurl-diamond", "knurl-straight", "knurl-diagonal":
+            return faces && selFaces.length == 1 ? format(".knurl(%s, kind: \"%s\")", facesCode(), action[6 .. $]) : null;
         case "tag-face":
             {
                 // each face tagged by its own selector: a name to find it by later, wherever the part goes
@@ -6136,6 +6156,23 @@ private:
         case "pocket":
             return onFace ? format(".cut(rect(10.mm, 6.mm), on: %s, at: %s, depth: %s)", ctxSelector(false), ctxAt(),
                 or("2.mm")) : null;
+        // a text at the point: on a flat face cut in or raised, on a curved one laid round it
+        case "text-engraved", "text-raised":
+        {
+            if (!onFace)
+                return null;
+            immutable flat = canSketchOn(contextHit.part, contextHit.face);
+            immutable fn = action == "text-engraved" ? "cut" : "extrude";
+            immutable txt = format("text(%s, size: 5.mm).centered", or("\"TEXT\""));
+            return flat ? format(".%s(%s, on: %s, at: %s, depth: 0.5.mm)", fn, txt, ctxSelector(false), ctxAt())
+                : format(".%s(%s, wrap: %s, depth: 0.5.mm)", fn, txt, ctxSelector(false));
+        }
+        // the part turned and moved so this face rests on the bed (z = 0), for printing
+        case "lay-flat":
+            return onFace ? format(".placeOn(XY, from: %s)", ctxSelector(false)) : null;
+        // copies round Z, as one solid
+        case "ring":
+            return format(".circularPattern(%s)", or("6"));
         case "boss":
             return onFace ? format(".extrude(circle(d: 6.mm), on: %s, at: %s, depth: %s)", ctxSelector(false), ctxAt(),
                 or("3.mm")) : null;

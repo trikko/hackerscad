@@ -252,4 +252,4 @@ A thread on a shaft is built straight from its faces and joined to the part by h
 
 ## In the application
 
-Right-click a cylindrical face in the 3D view: **Thread (outside)** on a shaft, **Thread (in the hole)** in a hole, lists the sizes that fit that diameter. Choosing one writes the `.thread(…)` line in the code, where you add `starts:`, `clearance:` and the rest.
+Right-click a cylindrical face in the 3D view: **Surface › Thread (outside)** on a shaft, **Surface › Thread (in the hole)** in a hole, lists the sizes that fit that diameter. Choosing one writes the `.thread(…)` line in the code, where you add `starts:`, `clearance:` and the rest.

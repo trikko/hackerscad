@@ -605,7 +605,9 @@ mixin template ControlMethods()
                         return reply(JValue.init, "unknown action, or it does not apply there: use fillet-edge, "
                             ~ "chamfer-edge, fillet-var-edge, chamfer-two-edge, chamfer-angle-edge (an edge), fillet-face, "
                             ~ "chamfer-face, shell, shell-outward, draft, full-round, remove-faces, offset-faces, "
-                            ~ "extrude-face, cut-face (faces), split-face-x, split-face-y, split-face-z (the face, by a "
+                            ~ "extrude-face, cut-face (faces), text-engraved, text-raised (value: the text, quoted), "
+                            ~ "lay-flat (a flat face down on the bed), ring (copies round Z, value how many), knurl-diamond, knurl-straight, knurl-diagonal (one face), "
+                            ~ "split-face-x, split-face-y, split-face-z (the face, by a "
                             ~ "plane through the point), grid (copies of the whole part), thread (size: an ISO size that fits the cylinder, e.g. M8), hole (kind: "
                             ~ "clearance, tap or insert; size: M2 to M8), pocket or boss (a face), sketch (a flat face)");
                     appendFeature(last.parts[hit.part], code, null);
@@ -653,7 +655,7 @@ mixin template ControlMethods()
             }
         case "menu":
             {
-                // {"x": 0.5, "y": 0.5, "path": ["Hole at point", "Clearance", "M3"]}: the right-click menu there,
+                // {"x": 0.5, "y": 0.5, "path": ["At this point", "Hole", "Clearance", "M3"]}: the right-click menu there,
                 // then its entries clicked in order; without path, the entries it has there; with
                 // "open": true it stays open (path: groups to open), for a screenshot; {"bar": "view", "path":
                 // ["Sketches", "line 12 · …"]}: the view bar's View menu instead

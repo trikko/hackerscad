@@ -16,7 +16,7 @@ its sides lean out a little. Tilting a face like that is called a *draft*.
 2. Turn the view (drag with the right button) until you see the other two
    sides, and click them too. Then click **Iso** to come back. The note
    at the bottom right says *4 faces selected*.
-3. Right-click one of the four faces and choose **Draft 4 faces…**.
+3. Right-click one of the four faces and choose **Push and pull › Draft 4 faces…**.
 4. The angle, `3.deg`, is selected. Type `-4.deg`: 4 degrees, and the minus
    sign makes the sides open out instead of closing in.
 
@@ -25,7 +25,7 @@ its sides lean out a little. Tilting a face like that is called a *draft*.
 ## A round bottom
 
 1. Turn the view to look at the block from below, and click its bottom face.
-2. Right-click it and choose **Fillet face edges…**: it rounds all the edges
+2. Right-click it and choose **Edges › Fillet face edges…**: it rounds all the edges
    around that face.
 3. Type `12.mm` in place of `1.mm`: a large rounding, which makes the
    bottom soft, like a pot's.
@@ -33,7 +33,7 @@ its sides lean out a little. Tilting a face like that is called a *draft*.
 ## Hollow it out
 
 1. Click **Iso**, then click the top face.
-2. Right-click it and choose **Shell, opening this face…**. *Shell* empties a
+2. Right-click it and choose **Hollow › Shell, opening this face…**. *Shell* empties a
    solid, keeping walls of a given thickness, and leaves open the face you
    chose.
 3. Type `1.6.mm` in place of `2.mm`: walls 1.6 mm thick, four lines of a

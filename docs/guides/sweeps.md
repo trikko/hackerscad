@@ -368,5 +368,5 @@ The outline is a closed path, or a profile (its outer edge); it must be flat. Th
 There is no menu entry for a sweep or a loft: they are written in the code. The application helps with what they are made of:
 
 - **Paths from a sketch:** in the sketch toolbar, the line tool and **Smooth curve** (∿) draw open chains; the code they write gives `s.path`. Right-click a flat face, **Sketch on face…**, to draw a route on it.
-- **Paths from edges:** click an edge, right-click, **Select the chain** to take every edge running on from it without a corner (on a face: **Select its outer edges**); then **Copy as code → Edge selector** gives the selector for `body.path(…)`.
+- **Paths from edges:** click an edge, right-click, **Select the chain** to take every edge running on from it without a corner (on a face: **Edges › Select its outer edges**); then **Copy as code → Edge selector** gives the selector for `body.path(…)`.
 - **Seeing a path:** **Inspect** (Ctrl+I, Cmd+I on a Mac; or Ctrl+click a line of code) shows in orange what a line makes, paths included; in the **Steps** panel a function returning a path says *returns a path*.

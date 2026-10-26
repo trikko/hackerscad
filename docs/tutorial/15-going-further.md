@@ -287,7 +287,7 @@ digs it into the face, `body.extrude(s.profile, depth:)` raises it, with no
 `on:`. Make Carlo longer or shorter and the groove follows its bottom side.
 `s.project(edges.…)` brings other edges of the solid into the sketch, flattened
 onto its plane: the rim of a hole underneath, to centre something over it. In
-the 3D view, right-click a flat face and choose **Sketch on face…**: an empty
+the 3D view, right-click a flat face and choose **Sketch and planes › Sketch on face…**: an empty
 sketch on it is written for you, its edges already there, ready to draw on.
 Not on a face but on a plane (XY, XZ, YZ, or `auto mid = XY.offset(15.mm)`):
 the planes button of the view bar shows them, and **Sketch on plane…** in a

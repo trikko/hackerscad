@@ -62,7 +62,7 @@ The bar down the left of the view, while an outline is shown, draws and adds rul
 - **the left column draws**: points, lines, smooth curves, rectangles, polygons, slots, circles, arcs, ellipses; ⌫ deletes what is selected;
 - **the right column adds rules** to what is selected: level, upright, parallel, at right angles, the same length, touching, a size typed in.
 
-To start a new outline: **View › New sketch…** in the view bar, then the plane to draw on; or right-click a flat face of a part, **Sketch on face…**, to draw on it. Hover a tool to see what it needs selected.
+To start a new outline: **View › New sketch…** in the view bar, then the plane to draw on; or right-click a flat face of a part, **Sketch and planes › Sketch on face…**, to draw on it. Hover a tool to see what it needs selected.
 
 ## Ready-made shapes
 

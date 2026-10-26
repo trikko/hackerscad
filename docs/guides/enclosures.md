@@ -512,6 +512,6 @@ What to measure on a real board, with calipers:
 ## In the application
 
 - **Examples › Box with lid** opens a box with a lid to choose (snap, lip, screws, flush) and its parameters: a good start to change.
-- In the 3D view, pick faces (Alt+2) and right-click: **Shell, opening this face…** (or *opening N faces*) writes `.shell(open: …, thickness: 2.mm)` with the selected faces. Fillet the edges first (**Fillet face edges…**).
-- Right-click a face, at the point where it goes: **Hole at point** › *Clearance* or *Tapping* › M2 to M12 writes a `.cut(circle(d: …), on: …, at: …, depth: 5.mm)`, *Heat-set insert*, *Counterbore*, *Countersink* or *Ribs* a `.cut(hole(M3, 6.mm, "insert"), on: …, at: …)` (5 mm deep, or as deep as an insert or a head's seat needs); **Boss at point…** an `.extrude(circle(d: 6.mm), …)`; **Pocket at point…** a rectangular pocket. Change the sizes in the code.
+- In the 3D view, pick faces (Alt+2) and right-click: **Hollow › Shell, opening this face…** (or *opening N faces*) writes `.shell(open: …, thickness: 2.mm)` with the selected faces. Fillet the edges first (**Edges › Fillet face edges…**).
+- Right-click a face, at the point where it goes: **At this point › Hole** › *Clearance* or *Tapping* › M2 to M12 writes a `.cut(circle(d: …), on: …, at: …, depth: 5.mm)`, *Heat-set insert*, *Counterbore*, *Countersink* or *Ribs* a `.cut(hole(M3, 6.mm, "insert"), on: …, at: …)` (5 mm deep, or as deep as an insert or a head's seat needs); **At this point › Boss…** an `.extrude(circle(d: 6.mm), …)`; **At this point › Pocket…** a rectangular pocket. Change the sizes in the code.
 - The `@param`s of the case (the board's size, the room, the play) are sliders in the Parameters panel: the case follows.

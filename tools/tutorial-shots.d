@@ -120,18 +120,18 @@ void page4()
     click([0, 31, 33], true);
     click([-31, 0, 33], true);
     view(`{"preset": "iso"}`);
-    menu([0, -31, 33], ["Draft 4 faces…"]);
+    menu([0, -31, 33], ["Push and pull", "Draft 4 faces…"]);
     type("angle: 3.deg", "angle: -4.deg");
     clearSelection();
     shot("04-draft");
     // the bottom, seen from below
     view(`{"orbit": [0, -55]}`);
     click([0, 0, 0], false);
-    menu([0, 0, 0], ["Fillet face edges…"]);
+    menu([0, 0, 0], ["Edges", "Fillet face edges…"]);
     type("r: 1.mm", "r: 12.mm");
     view(`{"preset": "iso"}`);
     click([0, 0, 66], false);
-    menu([0, 0, 66], ["Shell, opening this face…"]);
+    menu([0, 0, 66], ["Hollow", "Shell, opening this face…"]);
     type("thickness: 2.mm", "thickness: 1.6.mm");
     clearSelection();
     shot("04-shell");
@@ -161,11 +161,11 @@ void page6()
     // the holes in the floor of the pot, seen from above with the tank hidden
     view(`{"hidden": ["tank"], "preset": "top", "projection": "orthographic"}`);
     view(`{"preset": "fit"}`);
-    menuOpen([0, 0, 17.6], ["Hole at point", "Clearance"]);
+    menuOpen([0, 0, 17.6], ["At this point", "Hole", "Clearance"]);
     Thread.sleep(500.msecs);
     shot("06-hole-menu");
-    menu([0, 0, 17.6], ["Hole at point", "Clearance", "M8"]);
-    menu([-12, -12, 17.6], ["Hole at point", "Clearance", "M3"]);
+    menu([0, 0, 17.6], ["At this point", "Hole", "Clearance", "M8"]);
+    menu([-12, -12, 17.6], ["At this point", "Hole", "Clearance", "M3"]);
     clearSelection();
     shot("06-one-hole", lineOf("Solid pot()"));
     replacePart("pot", potLoop6);
@@ -315,7 +315,7 @@ void page15()
     open(hook);
     view(`{"preset": "iso", "style": "edges"}`);
     shot("15-hook");
-    menu([0, -22, 33], ["Extrude face…"]);
+    menu([0, -22, 33], ["Push and pull", "Extrude face…"]);
     type("depth: 5.mm", "depth: 10.mm");
     clearSelection();
     view(`{"preset": "iso"}`);

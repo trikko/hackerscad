@@ -573,4 +573,4 @@ Measured on a 200 × 200 mm plate with 400 holes:
 
 ## In the application
 
-Right-click a part › **Grid of copies…** writes a `linearPattern` of 2 × 2 copies, a step apart of the part's size plus 5 mm each way, the count selected to type over. Any other pattern is a line of code: write it in the editor and the view follows as you type; the copies are one solid, picked together. A count or a step made a `@param` gets a field in the Parameters panel, to try other counts with the mouse.
+Right-click a part › **Grid of copies…** writes a `linearPattern` of 2 × 2 copies, a step apart of the part's size plus 5 mm each way, the count selected to type over; **Ring of copies…** a `circularPattern` of 6 round Z. Any other pattern is a line of code: write it in the editor and the view follows as you type; the copies are one solid, picked together. A count or a step made a `@param` gets a field in the Parameters panel, to try other counts with the mouse.

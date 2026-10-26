@@ -1051,6 +1051,11 @@ JValue toolList()
             ~ "outside), full-round (a face between two parallel ones made a half round), remove-faces (the faces taken "
             ~ "away, the solid healed round the gap), offset-faces (moved along their normals, value the distance), "
             ~ "grid (copies of the whole part in a grid, value how many in a row), "
+            ~ "text-engraved, text-raised (a text at the point, value the text with its quotes, \"Carlo\": cut in or "
+            ~ "raised 0.5 mm on a flat face, laid round a curved one), lay-flat (the part turned so that flat face "
+            ~ "rests on the bed, z = 0: .placeOn(XY, from: face)), ring (copies of the whole part round Z, value how "
+            ~ "many: .circularPattern(n)), "
+            ~ "knurl-diamond, knurl-straight, knurl-diagonal (a knurled grip on that one face: .knurl(face, kind:)), "
             ~ "split-face-x, split-face-y, split-face-z (the face divided by a plane through the point, across that "
             ~ "axis: .splitFace(face, by: plane(…)); the solid stays one, its new faces to extrude, round or tag), "
             ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), tag-face (value the tag: .faces.….addTag(\"name\"), a name to select the face by later), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep; clearance and tap a plain round hole, insert, counterbore, countersink and ribs (three ribs the screw cuts its thread into) hole() of the hardware library, imported), pocket (a rectangle cut "
@@ -1063,14 +1068,14 @@ JValue toolList()
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"action": {"type": "string", "enum": ["fillet-edge", "chamfer-edge", "fillet-var-edge", "chamfer-two-edge", `
             ~ `"chamfer-angle-edge", "fillet-face", "chamfer-face", "shell", "shell-outward", "draft", "full-round", `
-            ~ `"remove-faces", "offset-faces", "split-face-x", "split-face-y", "split-face-z", "grid", "extrude-face", "cut-face", "tag-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
+            ~ `"remove-faces", "offset-faces", "knurl-diamond", "knurl-straight", "knurl-diagonal", "text-engraved", "text-raised", "lay-flat", "ring", "split-face-x", "split-face-y", "split-face-z", "grid", "extrude-face", "cut-face", "tag-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
             ~ `"radius, distance, thickness, angle or depth, e.g. 2.mm or -4.deg"}, `
             ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert", "counterbore", "countersink", "ribs"]}, `
             ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6, M8, M10 or M12 for holes; any that fits the cylinder for thread (M10, M12…)"}, `
             ~ `"use_selection": {"type": "boolean"}, `
             ~ `"plane": {"type": "string", "description": "action sketch on a plane instead of a face: XY, XZ, YZ, or a plane the code keeps in a variable, by its name"}`, `["action"]`),
         gui("hcad_gui_menu", "Right-click the user's 3D view at x, y (fractions of its size) or at a model point and "
-            ~ "choose entries of the menu in order, e.g. [\"Hole at point\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: "
+            ~ "choose entries of the menu in order, e.g. [\"At this point\", \"Hole\", \"Clearance\", \"M3\"] or [\"Fillet edge…\"]: "
             ~ "what the user would do with the mouse. Entries that write code append it to the part in the editor; with "
             ~ "items of several parts selected (\"Fillet edges on 2 parts…\"), to each part in turn, the first one's "
             ~ "value left selected and the others to change by hand. "
@@ -1251,7 +1256,7 @@ JValue toolList()
             ~ "which faces or edges you mean; the right-click menu then acts on them. clear: true empties it. "
             ~ "chain: true grows the selected edges along the edges running on from them without a corner "
             ~ "(edges.chain), outer_edges: true turns the selected faces into the edges of their outer loops "
-            ~ "(edges.loop), as the right-click menu's Select the chain and Select its outer edges.",
+            ~ "(edges.loop), as the right-click menu's Select the chain and Edges › Select its outer edges.",
             `"selector": {"type": "string"}, "part": {"type": "string", "description": "needed with several parts"}, `
             ~ `"clear": {"type": "boolean"}, "chain": {"type": "boolean"}, "outer_edges": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_measure", "Measure in the user's window: the distance between a and b (part names, or points "

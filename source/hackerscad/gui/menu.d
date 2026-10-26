@@ -75,7 +75,7 @@ void closeLastMenu()
 }
 
 /// Clicks the entries of the last menu shown, one label per level (for
-/// scripts and agents): ["Hole at point", "Clearance", "M3"]. Returns null,
+/// scripts and agents): ["At this point", "Hole", "Clearance", "M3"]. Returns null,
 /// or what went wrong with the entries that were available.
 string activateMenuPath(string[] path)
 {

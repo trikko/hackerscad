@@ -439,7 +439,7 @@ Each post is 7 mm across for a 3.6 mm insert: leave at least 1.5 mm of wall roun
 
 ## In the application
 
-Right-click a face in the 3D view: **Hole at point** opens six groups, **Clearance**, **Tapping**, **Heat-set insert**, **Counterbore**, **Countersink** and **Ribs**, each with the sizes M2 to M12 and the hole's diameter beside them. Clearance and tapping write a plain round hole 5 mm deep at the point clicked, with a comment naming it (any size can be typed over it):
+Right-click a face in the 3D view: **At this point › Hole** opens six groups, **Clearance**, **Tapping**, **Heat-set insert**, **Counterbore**, **Countersink** and **Ribs**, each with the sizes M2 to M12 and the hole's diameter beside them. Clearance and tapping write a plain round hole 5 mm deep at the point clicked, with a comment naming it (any size can be typed over it):
 
 <!-- render: holes-menu-clearance --from 1,-1,1.4 -->
 ```d
@@ -471,6 +471,6 @@ Solid block() => box(30.mm, 20.mm, 8.mm)
 
 ![An M3 counterbore on a block's top, as the menu writes it](img/holes-menu-counterbore.png)
 
-Change the depth there, or write `through: true` in its place. **Pocket at point…** and **Boss at point…** beside it cut a rectangle and raise a cylinder the same way. On a cylindrical hole, **Thread (in the hole)** lists the threads it is the tap drill of ([the guide on threads](threads.md)).
+Change the depth there, or write `through: true` in its place. **Pocket…** and **Boss…** beside it cut a rectangle and raise a cylinder the same way. On a cylindrical hole, **Surface › Thread (in the hole)** lists the threads it is the tap drill of ([the guide on threads](threads.md)).
 
 In the sketch view the shape bar has a **Teardrop** tool: its centre, then a point on its circle. The **Printability** check box of the display menu marks the overhangs a round hole across a wall leaves.
