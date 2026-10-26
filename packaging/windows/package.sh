@@ -76,6 +76,9 @@ gidlibs="libgtk-4-1.dll libadwaita-1-0.dll libgtksourceview-5-0.dll libgobject-2
 seeds="$out/bin/hcad.exe $out/bin/hackerscad.exe $out/bin/hcad_native.dll
     $(for dll in $gidlibs; do printf '%s ' "$sys/bin/$dll"; done)
     $(ls "$out"/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll)"
+# OpenCascade's DLLs from our build (packaging/windows/build-occt.sh) when there is one, else MSYS2's
+occtbin="$root/build/win/occt/bin"
+dllfrom() { if [ -f "$occtbin/$1" ]; then echo "$occtbin/$1"; elif [ -f "$sys/bin/$1" ]; then echo "$sys/bin/$1"; fi; }
 todo="$seeds"
 while [ -n "$todo" ]; do
     next=""
@@ -84,8 +87,9 @@ while [ -n "$todo" ]; do
             # never Mesa's opengl32.dll next to the program: it would replace
             # the graphics card's OpenGL for everyone
             case "$dll" in [Oo][Pp][Ee][Nn][Gg][Ll]32.[Dd][Ll][Ll]) continue ;; esac
-            if [ -f "$sys/bin/$dll" ] && ! [ -f "$out/bin/$dll" ]; then
-                cp "$sys/bin/$dll" "$out/bin/"
+            from="$(dllfrom "$dll")"
+            if [ -n "$from" ] && ! [ -f "$out/bin/$dll" ]; then
+                cp "$from" "$out/bin/"
                 next="$next $out/bin/$dll"
             fi
         done

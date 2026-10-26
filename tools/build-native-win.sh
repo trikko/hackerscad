@@ -24,18 +24,24 @@ MINGW*|MSYS*|CLANG*)
     ;;
 esac
 mkdir -p "$out"
+# OpenCascade: ours (packaging/windows/build-occt.sh) when built, else MSYS2's
+occt_inc="$sys/include/opencascade" occt_lib="$sys/lib"
+if [ -f "$win/occt/include/opencascade/Standard.hxx" ]; then
+    occt_inc="$win/occt/include/opencascade" occt_lib="$win/occt/lib"
+fi
 
 # --- the DLL ---------------------------------------------------------------
 src="$root/source/hackerscad/kernel/occt"
 dll="$out/hcad_native.dll"
-# rebuilt when the shim's content changes (see stamp in build-native.sh)
-sum="$(cat "$src/shim.cpp" "$src/shim.h" | cksum | cut -d' ' -f1)"
+# rebuilt when the shim's content, its options or the OpenCascade it builds on change (see build-native.sh)
+flags="-std=c++17 -O2 -ffp-contract=off -D_USE_MATH_DEFINES"
+sum="$( (cat "$src/shim.cpp" "$src/shim.h"; echo "$flags $occt_inc") | cksum | cut -d' ' -f1)"
 if ! [ -f "$dll" ] || [ "$(cat "$dll.stamp" 2>/dev/null)" != "$sum" ]; then
-    "$cxx" -std=c++17 -O2 -D_USE_MATH_DEFINES -I"$sys/include/opencascade" -c "$src/shim.cpp" -o "$out/shim.o"
+    "$cxx" $flags -I"$occt_inc" -c "$src/shim.cpp" -o "$out/shim.o"
     occt="TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKBO TKBool TKFillet \
         TKOffset TKFeat TKShHealing TKMesh TKV3d TKService TKXSBase TKDE TKDESTEP TKHLR"
     "$cxx" -shared -o "$dll" "$out/shim.o" \
-        -L"$sys/lib" $(for l in $occt; do printf -- '-l%s ' "$l"; done) \
+        -L"$occt_lib" $(for l in $occt; do printf -- '-l%s ' "$l"; done) \
         -Wl,--export-all-symbols -Wl,--out-implib,"$out/hcad_native.lib"
     echo "$sum" > "$dll.stamp"
 fi
