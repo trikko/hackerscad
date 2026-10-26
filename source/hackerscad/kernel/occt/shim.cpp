@@ -4876,12 +4876,87 @@ hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thick
 
 // A shell whose walls differ: faces[i] (open) removed, the walls `thickness` thick but walls[j] `values[j]`
 // thick; outward: the walls grown outside the solid, its faces the inside of the shell.
+// A shell grown outside the solid: the solid with every face but the open ones moved out by its wall's
+// thickness, less the solid. Null when the kernel cannot (the caller then tries MakeThickSolid).
+static hc_shape *shell_outward(const hc_shape *s, const TopTools_IndexedMapOfShape &m, const int *faces, int nfaces,
+                               double thickness, const int *walls, const double *values, int nwalls)
+{
+    std::vector<double> d(m.Extent(), thickness);
+    for (int i = 0; i < nfaces; i++)
+        d[faces[i]] = 0;
+    for (int j = 0; j < nwalls; j++)
+        d[walls[j]] = values[j];
+    for (GeomAbs_JoinType join : {GeomAbs_Intersection, GeomAbs_Arc}) {
+        try {
+            BRepOffset_MakeOffset mk;
+            mk.Initialize(s->shape, 0, 1e-4, BRepOffset_Skin, Standard_True, Standard_False, join);
+            for (int i = 1; i <= m.Extent(); i++)
+                if (d[i - 1] != 0)
+                    mk.SetOffsetOnFace(TopoDS::Face(m(i)), d[i - 1]);
+            mk.MakeOffsetShape();
+            if (!mk.IsDone())
+                continue;
+            TopoDS_Shape grown = mk.Shape();
+            if (grown.IsNull())
+                continue;
+            if (!TopExp_Explorer(grown, TopAbs_SOLID).More()) {
+                BRepBuilderAPI_MakeSolid ms;
+                for (TopExp_Explorer e(grown, TopAbs_SHELL); e.More(); e.Next())
+                    ms.Add(TopoDS::Shell(e.Current()));
+                if (!ms.IsDone())
+                    continue;
+                grown = ms.Solid();
+            }
+            BRepAlgoAPI_Cut cut(grown, s->shape);
+            if (!cut.IsDone() || cut.HasErrors())
+                continue;
+            const TopoDS_Shape r = cut.Shape();
+            if (r.IsNull() || !BRepCheck_Analyzer(r).IsValid())
+                continue;
+            GProp_GProps p;
+            BRepGProp::VolumeProperties(r, p);
+            if (p.Mass() <= 0)
+                continue;
+            // each face from the solid's face it lies on (the inside) or was moved out from (the outside)
+            history_new(r);
+            TopTools_IndexedMapOfShape res;
+            TopExp::MapShapes(r, TopAbs_FACE, res);
+            auto from = [&](const TopoDS_Shape &f, int i) {
+                const TopTools_ListOfShape &mods = cut.Modified(f);
+                if (mods.IsEmpty()) {
+                    if (int j = res.FindIndex(f); j > 0)
+                        history_from(j, Origin{0, i - 1});
+                }
+                for (TopTools_ListOfShape::Iterator it(mods); it.More(); it.Next())
+                    if (int j = res.FindIndex(it.Value()); j > 0)
+                        history_from(j, Origin{0, i - 1});
+            };
+            for (int i = 1; i <= m.Extent(); i++) {
+                from(m(i), i);
+                const TopTools_ListOfShape &moved = mk.Modified(m(i));
+                if (moved.IsEmpty())
+                    continue;
+                for (TopTools_ListOfShape::Iterator it(moved); it.More(); it.Next())
+                    from(it.Value(), i);
+            }
+            return wrap(unify_history(r));
+        } catch (const Standard_Failure &) {
+        }
+    }
+    return nullptr;
+}
+
 hc_shape *hc_shell_walls(const hc_shape *s, const int *faces, int nfaces, double thickness, const int *walls,
                          const double *values, int nwalls, int outward)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
         const auto &m = map_of(s, TopAbs_FACE);
         const double sign = outward ? 1 : -1;
+        // outwards: the solid grown on every face but the open ones, then the solid taken out of it. The
+        // skin MakeThickSolid gives outwards is valid but cannot be filleted or chamfered afterwards
+        if (outward)
+            if (hc_shape *r = shell_outward(s, m, faces, nfaces, thickness, walls, values, nwalls))
+                return r;
         // outwards the walls meet at sharp edges, as the solid's own (Arc would round every convex one)
         const std::vector<GeomAbs_JoinType> joins = outward
             ? std::vector<GeomAbs_JoinType>{GeomAbs_Intersection, GeomAbs_Arc}

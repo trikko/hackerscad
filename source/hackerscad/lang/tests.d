@@ -561,12 +561,21 @@ unittest
         @part Solid two() => box(40, 30, 20).shell(open: faces.top, thickness: 2.mm,
             walls: [faces.bottom, faces.front], wallThickness: [5.mm, 4.mm]);
         @part Solid outer() => box(40, 30, 20).shell(open: faces.top, thickness: 2.mm, outward: true);
+        // grown outwards, still rounded and bevelled afterwards
+        @part Solid outerRound() => box(40, 30, 20).shell(open: faces.top, thickness: 2.mm, outward: true)
+            .fillet(edges.parallel(Z), r: 1.mm)
+            .chamfer(edges.of(faces.bottom).parallel(X), d: 1.mm, d2: 0.5.mm, on: faces.bottom);
+        @part Solid outerFloor() => box(40, 30, 20).shell(open: faces.top, thickness: 2.mm, outward: true,
+            walls: faces.bottom, wallThickness: 5.mm);
         @part Solid cup() => cylinder(d: 30, h: 40).shell(open: faces.top, thickness: 2.mm, walls: faces.bottom,
             wallThickness: 6.mm);
     });
     assert(isClose(partVolume(shells, "tray"), 40 * 30 * 20 - 36 * 26 * 15, 1e-6));
     assert(isClose(partVolume(shells, "two"), 40 * 30 * 20 - 36 * 24 * 15, 1e-6));
     assert(isClose(partVolume(shells, "outer"), 44 * 34 * 22 - 40 * 30 * 20, 1e-6));
+    // the bevel runs on round the rounded corners, all along the bottom: 0.25 mm² by about 154 mm
+    assert(abs(partVolume(shells, "outer") - partVolume(shells, "outerRound") - 40) < 3);
+    assert(isClose(partVolume(shells, "outerFloor"), 44 * 34 * 25 - 40 * 30 * 20, 1e-6));
     assert(isClose(partVolume(shells, "cup"), PI * 15 * 15 * 40 - PI * 13 * 13 * 34, 1e-4));
     foreach (bad; [q{@part Solid x() => box(9, 9, 9).shell(open: faces.top, thickness: 1, walls: faces.bottom);},
             q{@part Solid x() => box(9, 9, 9).shell(open: faces.top, thickness: 1, walls: [faces.bottom],
@@ -6909,4 +6918,26 @@ unittest
     }, "true\ntrue\n8\ntrue");
     assert(error(`unittest { text("x", weight: "fat"); }`).message.canFind("no font weight is called 'fat'"));
     assert(error(`unittest { text("x", weight: 700, bold: true); }`).message.canFind("not both"));
+}
+
+unittest
+{
+    // the construction lines a circular pattern adds belong to its call, so Inspect on that line shows them
+    import hackerscad.lang.sketchval : SketchVal;
+
+    auto it = make();
+    auto r = runModel(`@part Solid p()
+{
+    auto s = sketch();
+    auto o = s.point(0, 0, fixed: true);
+    auto c = s.circle(vec(10.mm, 0.mm), d: 2.mm);
+    s.distance(o, c.center, 10.mm);
+    s.circularPattern([c], 4, center: o);
+    return s.profile.extrude(1);
+}`, it);
+    foreach (dg; r.diagnostics)
+        assert(dg.severity != Severity.error, dg.message);
+    auto v = (cast(SketchVal) it.sketches[0]).view();
+    foreach (e; v.entities[3 .. $])
+        assert(e.span.line == 7, format("%s at line %d", e.kind, e.span.line));
 }

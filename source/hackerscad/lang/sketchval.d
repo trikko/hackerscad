@@ -714,9 +714,16 @@ final class SketchVal : ObjectVal
                         immutable v = at(p) - centre, t = stepAngle * k;
                         immutable to = centre + Vec3(v.x * cos(t) - v.y * sin(t), v.x * sin(t) + v.y * cos(t), 0);
                         immutable q = newPoint(to.x, to.y, a.span);
+                        size_t spokeTo(size_t end)
+                        {
+                            immutable id = sk.line(c, end, true);
+                            entitySpans.length = sk.entities.length;
+                            entitySpans[id] = a.span;
+                            return id;
+                        }
                         if (p !in spoke)
-                            previous[p] = spoke[p] = sk.line(c, p, true);
-                        immutable arm = sk.line(c, q, true);
+                            previous[p] = spoke[p] = spokeTo(p);
+                        immutable arm = spokeTo(q);
                         add(ConstraintKind.equalLength, [spoke[p], arm], a.span);
                         add(ConstraintKind.angle, [previous[p], arm], a.span, stepAngle);
                         previous[p] = arm;
