@@ -49,6 +49,7 @@ enum Shine
     none,       /// matte, the light in parallel rays: each flat face one even tone
     normal,     /// a light from the viewer, a small highlight on curves
     high,       /// a shiny material (a matcap): soft highlights on every curve
+    zebra,      /// black and white stripes reflected, as on a car's paint: they bend where a surface is not smooth
 }
 
 /// What a click in the view picks: whole parts, faces, edges or vertices.
@@ -3999,7 +4000,7 @@ private:
         glUniformMatrix4fv(uMvp, 1, GL_FALSE, mvp.ptr);
         forPart(-1);
         // how the surfaces look, and the lights that go with the viewer
-        glUniform1i(uSurface, shine == Shine.high ? 1 : 0);
+        glUniform1i(uSurface, shine == Shine.high ? 1 : shine == Shine.zebra ? 2 : 0);
         glUniform1i(uEven, shine == Shine.none ? 1 : 0);
         glUniform3f(uForward, cast(float) b.forward.x, cast(float) b.forward.y, cast(float) b.forward.z);
         {
@@ -5255,7 +5256,7 @@ uniform int uPattern;   // 1 diagonal stripes, 2 a cross-hatch: marks that no pa
 uniform float uAlpha;
 uniform int uClipOn;
 uniform vec4 uClip;   // keeps dot(p, xyz) <= w
-uniform int uSurface;   // 0 standard, 1 glossy (a matcap)
+uniform int uSurface;   // 0 standard, 1 glossy (a matcap), 2 zebra stripes
 uniform int uEven;      // 1: matte light in parallel rays, a fixed line of sight: each flat face one even tone
 uniform vec3 uForward;  // the line of sight, for that
 uniform vec3 uRight;    // for glossy: the viewer's right and up, to see normals as on the screen
@@ -5304,7 +5305,16 @@ void main()
     vec3 l = normalize(v + vec3(0.0, 0.0, 0.6));
     float diffuse = max(dot(n, l), 0.0);
     vec3 lit;
-    if (uSurface == 1)
+    if (uSurface == 2)
+    {
+        // zebra: what a mirror would show of a row of long lights, bands round the world's Z: where two faces meet
+        // with a break in the curve the bands jump, where they meet smoothly they run on (but turn), the part's
+        // colour faint in the light bands
+        vec3 r = reflect(-v, n);
+        float band = smoothstep(0.4, 0.6, abs(fract(atan(r.z, length(r.xy)) * 6.0) * 2.0 - 1.0));
+        lit = mix(mix(vec3(0.22), uColor * 0.3, 0.3), mix(vec3(0.97), uColor, 0.15), band);
+    }
+    else if (uSurface == 1)
     {
         // glossy, as a matcap: the colour of a point from where its normal
         // points on the screen, as if photographed on a glossy sphere: a soft

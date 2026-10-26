@@ -58,7 +58,10 @@ The cube in the view bar opens a small menu:
 - **Perspective** or **Orthographic** (sizes that do not shrink with the
   distance: the side views become true drawings).
 - **Shine** and, under *Quality*, smooth edges and smooth rotation: turn
-  them down if the view is slow. The choices are kept.
+  them down if the view is slow. The choices are kept. **Shine › Zebra**
+  draws black and white stripes on the surfaces, as a car's paint reflects
+  a row of lights: where faces meet smoothly the stripes run on, where
+  the curve breaks they jump.
 
 ## Keys worth knowing
 

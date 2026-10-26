@@ -395,6 +395,8 @@ The outline is a closed path, or a profile (its outer edge); it must be flat. Th
 
 ## In the application
 
+- **Checking a surface:** the cube in the view bar › **Shine › Zebra** draws black and white stripes reflected on the parts. Along a sweep or a loft that is smooth they run on without a break; where two faces meet with a kink they jump, and where the curvature changes suddenly they bend sharply.
+
 There is no menu entry for a sweep or a loft: they are written in the code. The application helps with what they are made of:
 
 - **Paths from a sketch:** in the sketch toolbar, the line tool and **Smooth curve** (∿) draw open chains; the code they write gives `s.path`. Right-click a flat face, **Sketch on face…**, to draw a route on it.

@@ -4378,14 +4378,14 @@ private:
     import gtk.check_button : CheckButton;
     CheckButton[Shading] shadingChoice;
     CheckButton perspectiveChoice, orthographicChoice, antialiasChoice, smoothTurnChoice, printabilityChoice;
-    CheckButton[3] shineChoice;   /// none, normal, high
+    CheckButton[4] shineChoice;   /// none, normal, high, zebra
 
     /// The shine chosen last (Normal the first time).
     static Shine savedShine()
     {
         import hackerscad.gui.settings : setting;
         immutable v = setting("shine", "normal");
-        return v == "none" ? Shine.none : v == "high" ? Shine.high : Shine.normal;
+        return v == "none" ? Shine.none : v == "high" ? Shine.high : v == "zebra" ? Shine.zebra : Shine.normal;
     }
 
 
@@ -4551,7 +4551,7 @@ private:
         heading("Shine");
         {
             import hackerscad.gui.settings : setSetting, setting;
-            static immutable string[3] keys = ["none", "normal", "high"];
+            static immutable string[4] keys = ["none", "normal", "high", "zebra"];
             auto pick(Shine sh) => () {
                 setSetting("shine", keys[sh]);
                 viewport.setShine(sh);
@@ -4562,6 +4562,9 @@ private:
                 shineChoice[Shine.none], pick(Shine.normal));
             shineChoice[Shine.high] = choice("High", "A shiny material: soft highlights on every curve, at any angle",
                 shineChoice[Shine.none], pick(Shine.high));
+            shineChoice[Shine.zebra] = choice("Zebra", "Black and white stripes reflected, as on a car's paint, to "
+                ~ "check surfaces: where faces meet smoothly the stripes run on, where the curve breaks they jump",
+                shineChoice[Shine.none], pick(Shine.zebra));
             shineChoice[savedShine()].setActive(true);
         }
         box.append(new Separator(Orientation.Horizontal));
@@ -7692,7 +7695,7 @@ private:
         jc["style"] = viewport.shading == Shading.wireframe ? "wireframe"
             : viewport.shading == Shading.shaded ? "shaded" : "edges";
         jc["printability"] = viewport.printability;
-        jc["shine"] = ["none", "normal", "high"][viewport.shine];
+        jc["shine"] = ["none", "normal", "high", "zebra"][viewport.shine];
         jc["select"] = ["part", "face", "edge", "vertex"][viewport.selectMode];
         j["camera"] = jc;
         if (viewport.printability)

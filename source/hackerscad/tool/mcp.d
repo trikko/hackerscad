@@ -926,7 +926,7 @@ JValue toolList()
             ~ `"printability": {"type": "boolean"}, `
             ~ `"planes": {"type": "boolean", "description": "show the planes to sketch on (false hides them)"}, `
             ~ `"select": {"type": "string", "enum": ["part", "face", "edge", "vertex"], "description": "what a click (and hcad_gui_pick, hcad_gui_menu) picks, as the view bar's selection buttons; the right-click menu offers what fits it (kept between runs)"}, `
-            ~ `"shine": {"type": "string", "enum": ["none", "normal", "high"], "description": "how shiny the surfaces are: none matte (each flat face one even tone), normal a small highlight on curves, high a shiny material (kept between runs)"}, `
+            ~ `"shine": {"type": "string", "enum": ["none", "normal", "high", "zebra"], "description": "how shiny the surfaces are: none matte (each flat face one even tone), normal a small highlight on curves, high a shiny material (kept between runs); zebra black and white stripes reflected, to check that surfaces meet smoothly (the stripes run on) or with a break (they jump)"}, `
             ~ `"overhang_angle": {"type": "number", "description": "printability: degrees from a wall (45)"}, `
             ~ `"min_wall": {"type": "number", "description": "printability: thinnest wall in mm (0.8)"}, `
             ~ `"projection": {"type": "string", "enum": ["perspective", "orthographic"]}, `

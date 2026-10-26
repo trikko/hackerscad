@@ -221,9 +221,9 @@ mixin template ControlMethods()
                 if (auto v = arg("shine"))
                 {
                     import std.algorithm : countUntil;
-                    immutable at = ["none", "normal", "high"].countUntil(v);
+                    immutable at = ["none", "normal", "high", "zebra"].countUntil(v);
                     if (at < 0)
-                        return reply(JValue.init, "shine must be none, normal or high");
+                        return reply(JValue.init, "shine must be none, normal, high or zebra");
                     shineChoice[at].setActive(true);
                 }
                 // the printability marks, over any style, as the cube's check box
