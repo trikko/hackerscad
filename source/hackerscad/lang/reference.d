@@ -649,6 +649,20 @@ immutable Ref[] reference =
     F("circularPattern", "Sketch", ["entities", "n: int", "center: SketchPoint | Vec2", "angle: Angle"], "Entity[]",
         "n - 1 copies round a point, each point as far from it as its own, turned by an even share of angle (a full "
         ~ "turn by default: n round it; less, the first and the last at its two ends): holes on a bolt circle."),
+    F("offset", "Sketch", ["entities", "d: Length"], "Entity[]",
+        "Lines and arcs end to end (a shape's lines, a polyline, in order) copied d away, the corners joined: a closed "
+        ~ "chain outwards for d > 0, inwards for d < 0; an open one to its left going from its first piece to its "
+        ~ "last. Each line held parallel to its own, d from it; the corners' fillets come along, d bigger or smaller. "
+        ~ "A wall round an outline, a lip inside a lid."),
+    withForms(F("trim", "Sketch", ["line: SketchLine", "at: SketchPoint | Vec2"], "SketchLine | SketchLine[]",
+        "Takes away the piece of the line holding at, between the lines, arcs and circles crossing it: at an end, "
+        ~ "that end moves to the cut and is held on what cuts it (it must be free: joined to nothing else); in the "
+        ~ "middle, the line ends at the first cut and a new one starts at the second, in line with it (both given "
+        ~ "back). A line whose length or middle is constrained cannot be trimmed."), [
+        "s.trim(h, at: vec(6.mm, 0.mm))   // the piece of h right of the line crossing it"]),
+    F("extend", "Sketch", ["line: SketchLine", "to: SketchLine | SketchArc | SketchCircle"], "SketchLine",
+        "Carries the line on, the way it runs, to a line, arc or circle: its nearer end (free, joined to nothing "
+        ~ "else) moves to where they meet and is held on it."),
     F("fix", "Sketch", ["p: SketchPoint"], "", "Pins a point."),
     F("horizontal", "Sketch", ["line: SketchLine"], "", "A horizontal line (or two points at the same height, or an ellipse's x axis along X)."),
     F("vertical", "Sketch", ["line: SketchLine"], "", "A vertical line."),

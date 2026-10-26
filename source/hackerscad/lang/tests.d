@@ -730,6 +730,77 @@ unittest
     assert(isClose(partVolume(sketched, "b"), PI * 400 - 6 * PI * 4, 1e-6));
     assert(isClose(partVolume(sketched, "c"), 4 * PI, 1e-6));
 
+    // sketch offsets, trims and extensions
+    auto edited = runModel(q{
+        Profile frame()
+        {
+            auto s = sketch();
+            auto r = s.rect(vec(0.mm, 0.mm), vec(30.mm, 20.mm));
+            s.fix(r[0].start);
+            s.horizontal(r[0]);
+            s.length(r[0], 30.mm);
+            s.length(r[1], 20.mm);
+            s.offset(r, 3.mm);
+            assert(s.dof == 0);
+            return s.profile;
+        }
+        Profile rounded()
+        {
+            auto s = sketch();
+            auto r = s.rect(vec(0.mm, 0.mm), vec(30.mm, 20.mm));
+            s.fix(r[0].start);
+            s.horizontal(r[0]);
+            s.length(r[0], 30.mm);
+            s.length(r[1], 20.mm);
+            foreach (l; r)
+                s.fillet(l.start, 4.mm);
+            s.offset(r, -2.mm);
+            return s.profile;
+        }
+        @part Solid f() => frame().extrude(1);
+        @part Solid g() => rounded().extrude(1);
+        unittest
+        {
+            auto s = sketch();
+            auto h = s.line(vec(-20.mm, 0.mm), vec(20.mm, 0.mm));
+            s.fix(h.start);
+            s.fix(h.end);
+            auto a = s.line(vec(-5.mm, -5.mm), vec(-5.mm, 5.mm));
+            auto b = s.circle(vec(8.mm, 0.mm), d: 6.mm);
+            s.fix(a.start);
+            s.fix(a.end);
+            s.fix(b.center);
+            s.diameter(b, 6.mm);
+            // the middle piece: from the line to the circle
+            auto parts = s.trim(h, at: vec(0.mm, 0.mm));
+            assert(abs(parts[0].end.pos.x.to!double + 5) < 1e-6 && abs(parts[1].start.pos.x.to!double - 5) < 1e-6);
+            assert(s.dof == 0);
+            // an end piece, and a line carried on to it
+            auto t = sketch();
+            auto k = t.line(vec(-10.mm, 0.mm), vec(10.mm, 0.mm));
+            t.fix(k.start);
+            t.horizontal(k);
+            auto v = t.line(vec(0.mm, -10.mm), vec(0.mm, 10.mm));
+            t.fix(v.start);
+            t.fix(v.end);
+            t.trim(k, at: vec(6.mm, 0.mm));
+            assert(abs(k.end.pos.x.to!double) < 1e-6);
+            auto w = t.line(vec(-8.mm, 5.mm), vec(-8.mm, 2.mm));
+            t.fix(w.start);
+            t.vertical(w);
+            t.extend(w, to: k);
+            assert(abs(w.end.pos.y.to!double) < 1e-6 && t.dof == 0);
+        }
+    });
+    assert(isClose(partVolume(edited, "f"), 36 * 26 - 30 * 20, 1e-6));
+    assert(isClose(partVolume(edited, "g"), (600 - (4 - PI) * 16) - (26 * 16 - (4 - PI) * 4), 1e-6));
+    // a fixed end cannot move to the cut; nothing crossing: nothing to trim
+    foreach (bad; [q{unittest { auto s = sketch(); auto h = s.line(vec(-9.mm, 0.mm), vec(9.mm, 0.mm)); s.fix(h.end);
+                auto v = s.line(vec(0.mm, -9.mm), vec(0.mm, 9.mm)); s.trim(h, at: vec(5.mm, 0.mm)); }},
+            q{unittest { auto s = sketch(); auto h = s.line(vec(-9.mm, 0.mm), vec(9.mm, 0.mm));
+                s.trim(h, at: vec(5.mm, 0.mm)); }}])
+        error(bad);
+
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{
         @part Solid a() => rect(10, 4).across(X).extrude(3);

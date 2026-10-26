@@ -194,6 +194,36 @@ Solid plate() => flange().extrude(4.mm);
 
 Other guides that come up often: a construction diagonal of a rectangle, whose midpoint is its centre; a construction line joining two centres; a construction circle a polygon is inscribed in (`s.on(s.polygon(c, 6), circle)`) or drawn round (`s.tangent(…)`).
 
+## Offset, trim and extend
+
+`s.offset(lines, d)` copies lines and arcs end to end `d` away, their corners joined: a closed outline grows outwards (shrinks inwards with a negative `d`), and the rounds of its corners come along, `d` bigger or smaller. Each copied line is held parallel to its own, `d` from it, so the copy follows when the outline changes: a wall round a shape, a lip inside a lid.
+
+`s.trim(line, at: p)` takes away the piece of a line between the lines, arcs and circles that cross it, the piece holding `p`. A piece at an end moves that end to the cut, held on what cuts it; a piece in the middle splits the line in two, in line with each other. `s.extend(line, to: other)` carries a line on, the way it runs, until it meets another line, an arc or a circle. Both move a free end only (joined to nothing else), and keep it on what it meets.
+
+<!-- render: sketches-offset --from top -->
+```d
+// a frame: a rounded outline and the same 3 mm inside it
+
+Profile frame()
+{
+    auto s = sketch();
+    auto r = s.rect(vec(0.mm, 0.mm), vec(40.mm, 25.mm));
+    s.fix(r[0].start);
+    s.horizontal(r[0]);
+    s.length(r[0], 40.mm);
+    s.length(r[1], 25.mm);
+    foreach (side; r)
+        s.fillet(side.start, 6.mm);
+    s.offset(r, -3.mm);
+    return s.profile;
+}
+
+@part
+Solid part() => frame().extrude(2.mm);
+```
+
+![A rounded frame: an outline and its offset 3 mm inside](img/sketches-offset.png)
+
 ## Mirrors and patterns
 
 Half an outline is half the constraints: draw one side, then `s.mirror(half, axis)` copies it across a line of the sketch, usually a construction one. Each new point is held symmetric to its own, so when a dimension of the first half changes, the copy follows; a point on the line is its own image, which joins the two halves. `s.pattern(entities, n, step:)` repeats geometry in a row, `s.circularPattern(entities, n, center:)` round a point: holes from one constrained circle, every copy following it.

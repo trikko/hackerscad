@@ -726,6 +726,40 @@ final class SketchVal : ObjectVal
                 }
                 return returned(a.span, Value.of(all));
             };
+        case "offset":
+            return (ref CallArgs a) {
+                // s.offset(chain, d): the lines and arcs (in order, end to end) copied d away, the corners joined;
+                // a closed chain: d > 0 outwards, an open one: to the left going from its first to its last
+                auto x = Args(it, a, "offset", ["sketch", "entities", "d"]);
+                auto ids = entitiesArg(x, "entities");
+                immutable d = x.len("d");
+                if (d == 0)
+                    throw new HcadError(Code.type, "an offset of 0 lies on the outline itself", x.spanOf("d"));
+                calling = "offset";
+                return returned(a.span, Value.of(offsetChain(ids, d, x.spanOf("entities"), a.span)));
+            };
+        case "trim":
+            return (ref CallArgs a) {
+                // s.trim(line, at:): the piece of the line holding at, between the lines and curves crossing it, taken
+                // away; the cut ends held on what cuts them
+                auto x = Args(it, a, "trim", ["sketch", "line", "at"]);
+                auto l = lineArg(x, "line");
+                auto atv = x.get("at");
+                immutable where = atv.kind == Kind.object_ && cast(SketchEntityVal) atv.obj ? at(pointOf(atv, x.spanOf("at")))
+                    : vecOf(x, atv, x.spanOf("at"));
+                calling = "trim";
+                return trimLine(l, where, a.span);
+            };
+        case "extend":
+            return (ref CallArgs a) {
+                // s.extend(line, to:): the line's nearer end carried on, the way it runs, to the line or curve given
+                auto x = Args(it, a, "extend", ["sketch", "line", "to"]);
+                auto l = lineArg(x, "line");
+                auto target = entityArg(x, "to");
+                calling = "extend";
+                extendLine(l, target, a.span, x.spanOf("to"));
+                return entity(l);
+            };
         case "fillet":
             return constraint("fillet", ["point", "r"], (ref Args x, Span s) {
                 // rounds the corner where two lines meet at this point
@@ -1794,6 +1828,13 @@ final class SketchVal : ObjectVal
             return sk.guess(p);
     }
 
+    /// Where a point starts, for the solver: moved there.
+    void startAt(size_t p, Vec3 q)
+    {
+        sk.vars[sk.entities[p].var] = q.x;
+        sk.vars[sk.entities[p].var + 1] = q.y;
+    }
+
     /// How big the sketch is: for tolerances.
     double extent()
     {
@@ -1869,6 +1910,333 @@ final class SketchVal : ObjectVal
         return r;
     }
 
+    /// The entities that use point `p`, and the constraints that name it, but entity `but`.
+    size_t usesOf(size_t p, size_t but)
+    {
+        size_t n;
+        foreach (i, e; sk.entities)
+            if (i != but && e.kind != EntityKind.point && (e.refs[].canFind(p) || e.through.canFind(p)))
+                n++;
+        foreach (c; sk.constraints)
+            if (c.kind != ConstraintKind.arcRadius && c.refs[].canFind(p))
+                n++;
+        return n;
+    }
+
+    /// Where the segment a → b crosses entity `e` (lines as segments, arcs within their span, circles whole),
+    /// as fractions along a → b strictly between its ends.
+    double[] crossings(Vec3 a, Vec3 b, size_t e)
+    {
+        import std.math : atan2, PI, sqrt;
+        double[] ts;
+        auto en = sk.entities[e];
+        immutable dir = b - a;
+        if (en.kind == EntityKind.line)
+        {
+            immutable p = at(en.refs[0]), q = at(en.refs[1]), w = q - p;
+            immutable den = dir.x * w.y - dir.y * w.x;
+            if (abs(den) < 1e-12)
+                return ts;
+            immutable t = ((p.x - a.x) * w.y - (p.y - a.y) * w.x) / den;
+            immutable u = ((p.x - a.x) * dir.y - (p.y - a.y) * dir.x) / den;
+            if (u >= -1e-9 && u <= 1 + 1e-9)
+                ts ~= t;
+        }
+        else if (en.kind == EntityKind.arc || en.kind == EntityKind.circle)
+        {
+            immutable c = at(en.refs[0]);
+            immutable r = en.kind == EntityKind.circle ? sk.radius(e) : (at(en.refs[1]) - c).length;
+            immutable f = a - c;
+            immutable qa = dir.dot(dir), qb = 2 * f.dot(dir), qc = f.dot(f) - r * r;
+            immutable disc = qb * qb - 4 * qa * qc;
+            if (disc < 0)
+                return ts;
+            foreach (sgn; [-1.0, 1.0])
+            {
+                immutable t = (-qb + sgn * sqrt(disc)) / (2 * qa);
+                if (en.kind == EntityKind.arc)
+                {
+                    // within the arc, counter-clockwise from its start to its end
+                    immutable pt = a + dir * t - c, s0 = at(en.refs[1]) - c, s1 = at(en.refs[2]) - c;
+                    double ang(Vec3 v) => atan2(v.y, v.x);
+                    double span = ang(s1) - ang(s0), here = ang(pt) - ang(s0);
+                    while (span <= 0)
+                        span += 2 * PI;
+                    while (here < 0)
+                        here += 2 * PI;
+                    if (here > span + 1e-9)
+                        continue;
+                }
+                ts ~= t;
+            }
+        }
+        double[] inside;
+        foreach (t; ts)
+            if (t > 1e-9 && t < 1 - 1e-9)
+                inside ~= t;
+        return inside;
+    }
+
+    /// A point held on entity `e`: on its line, or on its circle or arc.
+    void holdOn(size_t p, size_t e, Span s)
+    {
+        immutable k = sk.entities[e].kind;
+        if (k == EntityKind.line)
+            add(ConstraintKind.onLine, [p, e], s);
+        else if (k == EntityKind.arc || k == EntityKind.circle)
+            add(ConstraintKind.onCircle, [p, e], s);
+        else
+            throw new HcadError(Code.type, "trim and extend meet lines, arcs and circles", s);
+    }
+
+    Value trimLine(size_t l, Vec3 where, Span s)
+    {
+        auto en = sk.entities[l];
+        immutable a = at(en.refs[0]), b = at(en.refs[1]), dir = b - a;
+        immutable ta = (where - a).dot(dir) / dir.dot(dir);
+        // the cuts nearest to `where` either side, and what makes each
+        double lo = 0, hi = 1;
+        size_t loBy = size_t.max, hiBy = size_t.max;
+        foreach (i, e; sk.entities)
+        {
+            if (i == l || e.kind == EntityKind.point || e.construction)
+                continue;
+            foreach (t; crossings(a, b, i))
+            {
+                if (t < ta && t > lo)
+                    lo = t, loBy = i;
+                else if (t > ta && t < hi)
+                    hi = t, hiBy = i;
+            }
+        }
+        if (loBy == size_t.max && hiBy == size_t.max)
+            throw new HcadError(Code.sketch, "nothing crosses the line there: no piece to trim (lines, arcs and circles "
+                ~ "that cross it cut it into pieces)", s);
+        foreach (c; sk.constraints)
+            if (c.refs[].canFind(l) && (c.kind == ConstraintKind.length || c.kind == ConstraintKind.equalLength
+                    || c.kind == ConstraintKind.midpoint))
+                throw new HcadError(Code.sketch, "the line's length or middle is constrained: trimming it would change "
+                    ~ "that; trim before giving it, or trim another line", s);
+        // a piece at an end: that end moves to the cut, held on what cuts it
+        if (loBy == size_t.max || hiBy == size_t.max)
+        {
+            immutable end = loBy == size_t.max ? en.refs[0] : en.refs[1];
+            immutable t = loBy == size_t.max ? hi : lo;
+            immutable by = loBy == size_t.max ? hiBy : loBy;
+            if (usesOf(end, l) > 0)
+                throw new HcadError(Code.sketch, "that end of the line is joined to something else: the piece to trim "
+                    ~ "must end free (trim the other piece, or the line it is joined to)", s);
+            startAt(end, a + dir * t);
+            holdOn(end, by, s);
+            return entity(l);
+        }
+        // a piece in the middle: the line ends at the first cut, a new one starts at the second, in line with it
+        immutable p1 = newPoint((a + dir * lo).x, (a + dir * lo).y, s);
+        immutable p2 = newPoint((a + dir * hi).x, (a + dir * hi).y, s);
+        immutable q = en.refs[1];
+        sk.entities[l].refs[1] = p1;
+        holdOn(p1, loBy, s);
+        auto rest = made(s, () => sk.line(p2, q, en.construction));
+        holdOn(p2, hiBy, s);
+        add(ConstraintKind.onLine, [p2, l], s);
+        add(ConstraintKind.parallel, [idOf(rest), l], s);
+        return Value.of([entity(l), rest]);
+    }
+
+    void extendLine(size_t l, size_t target, Span s, Span targetSpan)
+    {
+        import std.math : sqrt;
+        if (target == l)
+            throw new HcadError(Code.type, "a line extends to another line or curve", targetSpan);
+        auto en = sk.entities[l];
+        immutable a = at(en.refs[0]), b = at(en.refs[1]), dir = b - a;
+        // the line, carried on far both ways: where it meets the target
+        immutable far = 1e3 * (extent() + dir.length);
+        immutable u = dir.normalized;
+        immutable from = a - u * far, to = b + u * far;
+        double best = double.max;
+        Vec3 hit;
+        bool found;
+        auto tk = sk.entities[target].kind;
+        if (tk == EntityKind.line)
+        {
+            immutable p = at(sk.entities[target].refs[0]), q = at(sk.entities[target].refs[1]), w = q - p;
+            immutable den = u.x * w.y - u.y * w.x;
+            if (abs(den) > 1e-12)
+            {
+                immutable t = ((p.x - a.x) * w.y - (p.y - a.y) * w.x) / den;
+                hit = a + u * t;
+                found = true;
+            }
+        }
+        else
+            foreach (t; crossings(from, to, target))
+            {
+                immutable q = from + (to - from) * t;
+                // the meeting nearest the line's ends, outside it
+                immutable dd = min((q - a).length, (q - b).length);
+                if ((q - a).dot(u) > -1e-9 && (q - b).dot(u) < 1e-9)
+                    continue;
+                if (dd < best)
+                    best = dd, hit = q, found = true;
+            }
+        if (!found)
+            throw new HcadError(Code.sketch, "the line, carried on, never meets that", targetSpan);
+        // the end nearer the meeting goes there
+        immutable endA = (hit - a).length < (hit - b).length;
+        immutable end = endA ? en.refs[0] : en.refs[1];
+        if ((hit - a).dot(u) > 1e-9 * far && (hit - b).dot(u) < -1e-9 * far)
+            throw new HcadError(Code.sketch, "that already crosses the line: trim it instead", targetSpan);
+        if (usesOf(end, l) > 0)
+            throw new HcadError(Code.sketch, "the end to carry on is joined to something else: it must be free", s);
+        startAt(end, hit);
+        holdOn(end, target, s);
+    }
+
+    /// Lines and arcs end to end, copied d away (see "offset").
+    Value[] offsetChain(size_t[] ids, double d, Span argSpan, Span s)
+    {
+        foreach (e; ids)
+            if (sk.entities[e].kind != EntityKind.line && sk.entities[e].kind != EntityKind.arc)
+                throw new HcadError(Code.type, "offset takes lines and arcs end to end (a polyline, a shape's lines)",
+                    argSpan);
+        // each piece's ends in the order the chain runs
+        size_t[2][] ends;
+        foreach (e; ids)
+        {
+            auto en = sk.entities[e];
+            ends ~= en.kind == EntityKind.line ? [en.refs[0], en.refs[1]] : [en.refs[1], en.refs[2]];
+        }
+        foreach (i; 0 .. ends.length)
+        {
+            if (i + 1 < ends.length)
+            {
+                // the next piece starts where this one ends (or runs the other way)
+                if (ends[i][1] != ends[i + 1][0])
+                {
+                    if (ends[i][1] == ends[i + 1][1])
+                        ends[i + 1] = [ends[i + 1][1], ends[i + 1][0]];
+                    else if (i == 0 && ends[0][0] == ends[1][0])
+                        ends[0] = [ends[0][1], ends[0][0]];
+                    else if (i == 0 && ends[0][0] == ends[1][1])
+                    {
+                        ends[0] = [ends[0][1], ends[0][0]];
+                        ends[1] = [ends[1][1], ends[1][0]];
+                    }
+                    if (ends[i][1] != ends[i + 1][0])
+                        throw new HcadError(Code.type, "offset takes pieces end to end, in order: these do not join",
+                            argSpan);
+                }
+            }
+        }
+        immutable closed = ends.length > 1 && ends[$ - 1][1] == ends[0][0];
+        // the side: a closed chain outwards for d > 0 (its area's sign tells which way it runs), an open one to
+        // the left going along it
+        double side = 1;
+        if (closed)
+        {
+            double area = 0;
+            foreach (g; ends)
+            {
+                immutable p = at(g[0]), q = at(g[1]);
+                area += p.x * q.y - q.x * p.y;
+            }
+            // counter-clockwise: left is inside
+            side = area > 0 ? -1 : 1;
+        }
+        immutable off = d * side;
+        Vec3 leftOf(Vec3 p, Vec3 q)
+        {
+            immutable t = (q - p).normalized;
+            return Vec3(-t.y, t.x, 0);
+        }
+        // where each piece's offset copy starts and ends, before the corners are joined
+        Vec3[2][] spots;
+        foreach (i, e; ids)
+        {
+            immutable p = at(ends[i][0]), q = at(ends[i][1]);
+            if (sk.entities[e].kind == EntityKind.line)
+            {
+                immutable n = leftOf(p, q) * off;
+                spots ~= [p + n, q + n];
+            }
+            else
+            {
+                // an arc: its points moved along their radius (outwards when the arc turns right, going along it)
+                immutable c = at(sk.entities[e].refs[0]);
+                immutable mid = (p + q) * 0.5;
+                immutable turnsLeft = leftOf(p, q).dot(c - mid) > 0;
+                immutable sgn = turnsLeft ? -1 : 1;
+                spots ~= [p + (p - c).normalized * (sgn * off), q + (q - c).normalized * (sgn * off)];
+            }
+        }
+        // the new corners: one point where two copies meet (their meeting, for lines; the average else)
+        size_t[] corner;
+        immutable count = closed ? ids.length : ids.length + 1;
+        foreach (k; 0 .. count)
+        {
+            Vec3 pos;
+            if (!closed && k == 0)
+                pos = spots[0][0];
+            else if (!closed && k == ids.length)
+                pos = spots[$ - 1][1];
+            else
+            {
+                immutable i = (k + ids.length - 1) % ids.length, j = k % ids.length;
+                pos = (spots[i][1] + spots[j][0]) * 0.5;
+                if (sk.entities[ids[i]].kind == EntityKind.line && sk.entities[ids[j]].kind == EntityKind.line)
+                {
+                    // two lines: where the copies cross
+                    immutable a1 = spots[i][0], d1 = spots[i][1] - spots[i][0];
+                    immutable a2 = spots[j][0], d2 = spots[j][1] - spots[j][0];
+                    immutable den = d1.x * d2.y - d1.y * d2.x;
+                    if (abs(den) > 1e-12)
+                        pos = a1 + d1 * (((a2.x - a1.x) * d2.y - (a2.y - a1.y) * d2.x) / den);
+                }
+            }
+            corner ~= newPoint(pos.x, pos.y, s);
+        }
+        Value[] r;
+        foreach (i, e; ids)
+        {
+            immutable p = corner[i], q = corner[(i + 1) % corner.length];
+            auto en = sk.entities[e];
+            if (en.kind == EntityKind.line)
+            {
+                auto copy = made(s, () => sk.line(p, q, en.construction));
+                add(ConstraintKind.parallel, [idOf(copy), e], s);
+                add(ConstraintKind.pointLineDistance, [p, e], s, abs(d));
+                r ~= copy;
+            }
+            else
+            {
+                // round the same centre, the way the original runs
+                immutable c = en.refs[0];
+                immutable forward = en.refs[1] == ends[i][0];
+                r ~= made(s, () => forward ? sk.arc(c, p, q, en.construction) : sk.arc(c, q, p, en.construction));
+                // alone, or between arcs: its radius as the original's now, d bigger or smaller
+                immutable lineBefore = sk.entities[ids[(i + ids.length - 1) % ids.length]].kind == EntityKind.line
+                    && (closed || i > 0);
+                immutable lineAfter = sk.entities[ids[(i + 1) % ids.length]].kind == EntityKind.line
+                    && (closed || i + 1 < ids.length);
+                if (!(lineBefore && lineAfter))
+                    add(ConstraintKind.distance, [c, p], s, (at(p) - at(c)).length);
+            }
+        }
+        // the corners' fillets, as big as the original's, d more or less
+        foreach (k; 0 .. corner.length)
+        {
+            immutable orig = closed ? ends[k][0] : (k < ends.length ? ends[k][0] : ends[$ - 1][1]);
+            if (auto rad = orig in sk.fillets)
+            {
+                // a convex corner: outwards (d > 0) the round grows by d, inwards it shrinks
+                immutable grown = *rad + d;
+                if (grown > 0)
+                    sk.fillets[corner[k]] = grown;
+            }
+        }
+        return r;
+    }
 
     Value made(Span s, size_t delegate() f)
     {
