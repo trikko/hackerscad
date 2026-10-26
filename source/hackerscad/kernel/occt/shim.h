@@ -121,6 +121,10 @@ int hc_edge_faces(const hc_shape *s, int *out);
 
 hc_shape *hc_fillet(const hc_shape *s, const int *edges, int nedges, double r);
 hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d);
+/* Chamfers measured from a face: on each edge, d along faces[i] and d2 along the other face, or, with angle > 0
+ * (radians), d along faces[i] and the bevel at that angle from it. */
+hc_shape *hc_chamfer_on(const hc_shape *s, const int *edges, const int *faces, int nedges, double d, double d2,
+                        double angle);
 int hc_point_inside(const hc_shape *s, double x, double y, double z);
 int hc_face_cylinder(const hc_shape *s, int index, double out[11]);
 /* The axis of a face turned round one (cylinder, cone, torus, revolved): point xyz, direction xyz;

@@ -2928,6 +2928,29 @@ hc_shape *hc_chamfer(const hc_shape *s, const int *edges, int nedges, double d)
     });
 }
 
+// Chamfers measured from a face: on each edge, `d` along its face faces[i] and `d2` along the other, or,
+// with angle > 0 (radians), `d` along that face and the bevel at `angle` from it.
+hc_shape *hc_chamfer_on(const hc_shape *s, const int *edges, const int *faces, int nedges, double d, double d2,
+                        double angle)
+{
+    return guarded<>((hc_shape *)nullptr, [&] {
+        const auto &em = map_of(s, TopAbs_EDGE);
+        const auto &fm = map_of(s, TopAbs_FACE);
+        BRepFilletAPI_MakeChamfer mk(s->shape);
+        for (int i = 0; i < nedges; i++) {
+            const TopoDS_Edge e = TopoDS::Edge(em(edges[i] + 1));
+            const TopoDS_Face f = TopoDS::Face(fm(faces[i] + 1));
+            if (angle > 0)
+                mk.AddDA(d, angle, e, f);
+            else
+                mk.Add(d, d2, e, f);
+        }
+        require_valid(mk.Shape(), "the result is not a valid solid");
+        history_record(mk, {&s->shape}, mk.Shape());
+        return checked(wrap(mk.Shape()));
+    });
+}
+
 // The flat face `face` swept by the vector v: the solid a push or pull of
 // the face adds or removes.
 // ---------------------------------------------------------------- profiles on curved faces

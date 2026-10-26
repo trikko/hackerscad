@@ -153,7 +153,7 @@ dd { margin: 0 0 0 12px; color: #4a5a54; }
 </dl></section>
 <section><h2>Features</h2><dl>
 <dt>s.fillet(edges: Edges, r: Length) → Solid</dt><dd>Rounds the selected edges. Apply it before shell and before cutting holes.</dd>
-<dt>s.chamfer(edges: Edges, d: Length) → Solid</dt><dd>Bevels the selected edges.</dd>
+<dt>s.chamfer(edges: Edges, d: Length, d2: Length, angle: Angle, on: Faces) → Solid</dt><dd>Bevels the selected edges, d on both faces; uneven: d along the face on: names (one of each edge's two) and d2 along the other, or d along it and the bevel at angle from it (a countersink's 45°, a lead-in at 30°): chamfer(edges.of(faces.top), d: 2.mm, d2: 1.mm, on: faces.top).</dd>
 <dt>s.shell(open: Faces, thickness: Length) → Solid</dt><dd>Hollows the solid, leaving the faces in open: open. Open several faces in one shell.</dd>
 <dt>s.draft(faces: Faces, angle: Angle, pull: Direction, neutral: Length) → Solid</dt><dd>Tapers faces so the part leaves a mould.</dd>
 </dl></section>

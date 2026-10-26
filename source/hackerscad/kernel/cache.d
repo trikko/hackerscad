@@ -238,6 +238,8 @@ final class CachingKernel : BrepKernel
 
     Brep fillet(Brep s, const(int)[] edges, double r) => op(key("fillet", s, edges, r), inner.fillet(s, edges, r));
     Brep chamfer(Brep s, const(int)[] edges, double d) => op(key("chamfer", s, edges, d), inner.chamfer(s, edges, d));
+    Brep chamferOn(Brep s, const(int)[] edges, const(int)[] faces, double d, double d2, double angle) =>
+        op(key("chamferOn", s, edges, faces, d, d2, angle), inner.chamferOn(s, edges, faces, d, d2, angle));
     bool faceCylinder(Brep s, int face, out CylinderInfo info) => inner.faceCylinder(s, face, info);
     bool faceAxis(Brep s, int face, out Vec3 origin, out Vec3 direction) => inner.faceAxis(s, face, origin, direction);
     Brep sweepSolid(Brep s, Vec3 v) => op(key("sweepSolid", s, v), inner.sweepSolid(s, v));

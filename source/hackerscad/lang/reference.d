@@ -254,7 +254,10 @@ immutable Ref[] reference =
     ]) ~
     group("Features", [
     F("fillet", "Solid", ["edges: Edges", "r: Length"], "Solid", "Rounds the selected edges. Apply it before shell and before cutting holes."),
-    F("chamfer", "Solid", ["edges: Edges", "d: Length"], "Solid", "Bevels the selected edges."),
+    F("chamfer", "Solid", ["edges: Edges", "d: Length", "d2: Length", "angle: Angle", "on: Faces"], "Solid",
+        "Bevels the selected edges, d on both faces; uneven: d along the face on: names (one of each edge's two) and "
+        ~ "d2 along the other, or d along it and the bevel at angle from it (a countersink's 45°, a lead-in at 30°): "
+        ~ "chamfer(edges.of(faces.top), d: 2.mm, d2: 1.mm, on: faces.top)."),
     F("shell", "Solid", ["open: Faces", "thickness: Length"], "Solid",
         "Hollows the solid, leaving the faces in open: open. Open several faces in one shell."),
     F("draft", "Solid", ["faces: Faces", "angle: Angle", "pull: Direction", "neutral: Length"], "Solid",

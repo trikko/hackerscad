@@ -740,14 +740,55 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         return edgeFeature(it, a, s, idx, "fillet", "r", r, (b, e, v) => k.fillet(b, e, v));
     });
     def("chamfer", (ref CallArgs a) {
-        auto x = Args(it, a, "chamfer", ["solid", "edges", "d"]);
+        // chamfer(edges, d:) the same on both faces; d2: the other face's distance, or angle: the bevel's
+        // angle from the face d is measured on, which on: names (one face of each edge)
+        auto x = Args(it, a, "chamfer", ["solid", "edges", "d", "d2", "angle", "on"]);
         auto s = x.solid("solid");
         auto sel = x.selector("edges", false);
         immutable d = x.len("d");
         if (!(d > 0))
             throw new HcadError(Code.type, "the chamfer size d must be greater than 0", x.spanOf("d"));
         auto idx = resolveSelector(it, sel, s, x.spanOf("edges"));
-        return edgeFeature(it, a, s, idx, "chamfer", "d", d, (b, e, v) => k.chamfer(b, e, v));
+        if (x.has("d2") && x.has("angle"))
+            throw new HcadError(Code.type, "chamfer takes d2: (a second distance) or angle:, not both", x.spanOf("angle"));
+        if (!x.has("d2") && !x.has("angle"))
+        {
+            if (x.has("on"))
+                throw new HcadError(Code.type, "on: says which face d is measured on: it needs d2: or angle: too "
+                    ~ "(a chamfer of d alone is the same on both faces)", x.spanOf("on"));
+            return edgeFeature(it, a, s, idx, "chamfer", "d", d, (b, e, v) => k.chamfer(b, e, v));
+        }
+        immutable d2 = x.has("d2") ? x.len("d2") : 0;
+        immutable ang = x.has("angle") ? x.angle("angle") : 0;
+        if (x.has("d2") && !(d2 > 0))
+            throw new HcadError(Code.type, "the second chamfer distance d2 must be greater than 0", x.spanOf("d2"));
+        if (x.has("angle") && !(ang > 0 && ang < PI / 2))
+            throw new HcadError(Code.type, "the chamfer's angle must be between 0 and 90 degrees", x.spanOf("angle"));
+        if (!x.has("on"))
+            throw new HcadError(Code.missingArg, format("an uneven chamfer needs on:, the face %s is measured on: "
+                ~ "chamfer(edges.of(faces.top), d: 2.mm, %s, on: faces.top)", "d", x.has("d2") ? "d2: 1.mm"
+                : "angle: 30.deg"), a.span);
+        // each edge's face among on:, the one d runs along
+        auto onFaces = resolveSelector(it, x.selector("on", true), s, x.spanOf("on"));
+        auto ef = k.edgeFaces(s.brep);
+        int[int] faceOf;
+        foreach (e; idx)
+        {
+            int found = -1, count;
+            foreach (f; ef[e])
+                if (f >= 0 && onFaces.canFind(f))
+                    found = f, count++;
+            if (count != 1)
+                throw new HcadError(Code.type, count == 0 ? "an edge to chamfer touches none of the faces in on "
+                    ~ "(name a face beside each edge)" : "an edge to chamfer lies between two faces of on (on names "
+                    ~ "one face of each edge)", x.spanOf("on"));
+            faceOf[e] = found;
+        }
+        return edgeFeature(it, a, s, idx, "chamfer", "d", d, (b, e, v) {
+            auto fs = e.map!(i => faceOf[i]).array;
+            // the uneven sizes scale together while a size that works is looked for
+            return k.chamferOn(b, e, fs, v, d2 * v / d, ang);
+        });
     });
     def("shell", (ref CallArgs a) {
         auto x = Args(it, a, "shell", ["solid", "open", "thickness"]);

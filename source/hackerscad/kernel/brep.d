@@ -372,6 +372,9 @@ interface BrepKernel
 
     Brep fillet(Brep s, const(int)[] edges, double r);
     Brep chamfer(Brep s, const(int)[] edges, double d);
+    /// Chamfers measured from a face: on each edge, `d` along `faces[i]` (one of the edge's two) and `d2`
+    /// along the other, or, with `angle` > 0 (radians), `d` along `faces[i]` and the bevel at `angle` from it.
+    Brep chamferOn(Brep s, const(int)[] edges, const(int)[] faces, double d, double d2, double angle);
     /// Whether point `p` lies inside the solid (not on its surface).
     bool inside(Brep s, Vec3 p);
     /// Whether face `face` lies on a cylinder, and which.

@@ -11,7 +11,7 @@ A feature changes a solid that is already there. A *fillet* is a rounded edge; a
 | Feature | What it does | Takes |
 |---|---|---|
 | `s.fillet(edges, r:)` | rounds edges with an arc of radius `r` | edges |
-| `s.chamfer(edges, d:)` | bevels edges at 45°, `d` back on each face | edges |
+| `s.chamfer(edges, d:)` | bevels edges at 45°, `d` back on each face; uneven with `d2:` or `angle:` | edges |
 | `s.shell(open:, thickness:)` | hollows the solid, the `open` faces removed, walls `thickness` thick | faces |
 | `s.draft(faces, angle:, pull:, neutral:)` | tilts faces so that the part comes out of a mould | faces |
 
@@ -68,7 +68,10 @@ Solid smooth() => carlo()
 |---|---|---|
 | `edges` (fillet, chamfer) | which edges: an edge selector | — |
 | `r:` | the fillet's radius; it must fit on the faces beside the edge | — |
-| `d:` | how far back the chamfer cuts on each face | — |
+| `d:` | how far back the chamfer cuts on each face (with `d2:` or `angle:`, on the face `on:` names) | — |
+| `d2:` (chamfer) | how far back it cuts on the other face: an uneven chamfer | `d` |
+| `angle:` (chamfer) | instead of `d2:`, the bevel's angle from the face `on:` names (a lead-in at 30°) | 45° |
+| `on:` (chamfer) | with `d2:` or `angle:`, the face `d` is measured on: one face of each edge | — |
 | `open:` (shell) | the faces taken away: one or several, in one call | — |
 | `thickness:` | the wall left all round, measured inwards | — |
 | `faces` (draft) | the faces to tilt | — |

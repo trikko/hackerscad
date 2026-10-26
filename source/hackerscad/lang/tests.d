@@ -8,7 +8,7 @@ import std.algorithm : map, canFind, count;
 import std.array : array, join;
 import std.format : format;
 import std.conv : to;
-import std.math : isClose, PI, sqrt, abs;
+import std.math : isClose, PI, sqrt, abs, tan;
 import std.file : tempDir, mkdirRecurse, write, rmdirRecurse;
 import std.path : buildPath;
 
@@ -504,6 +504,33 @@ unittest
     });
     assert(isClose(partVolume(joined, "joined"), partVolume(joined, "whole"), 1e-6));
     assert(isClose(partVolume(joined, "overlapping"), partVolume(joined, "single"), 1e-6));
+
+    // uneven chamfers: d along the face on: names, d2 along the other, or the bevel at angle from on:
+    auto uneven = runModel(q{
+        @part Solid dd() => box(20, 20, 10)
+            .chamfer(edges.between(faces.top, faces.front), d: 3.mm, d2: 1.mm, on: faces.top);
+        @part Solid flipped() => box(20, 20, 10)
+            .chamfer(edges.between(faces.top, faces.front), d: 3.mm, d2: 1.mm, on: faces.front);
+        @part Solid da() => box(20, 20, 10)
+            .chamfer(edges.between(faces.top, faces.front), d: 2.mm, angle: 30.deg, on: faces.top);
+        @part Solid all() => box(20, 20, 10).chamfer(edges.of(faces.top), d: 2.mm, d2: 1.mm, on: faces.top);
+        unittest
+        {
+            // 3 mm into the top, 1 mm down the front
+            assert(!dd().contains(vec(0.mm, -8.mm, 9.9.mm)));
+            assert(dd().contains(vec(0.mm, -9.9.mm, 8.8.mm)));
+            assert(flipped().contains(vec(0.mm, -8.mm, 9.9.mm)));
+        }
+    });
+    assert(isClose(partVolume(uneven, "dd"), 4000 - 0.5 * 3 * 1 * 20, 1e-6));
+    assert(isClose(partVolume(uneven, "flipped"), 4000 - 0.5 * 3 * 1 * 20, 1e-6));
+    assert(isClose(partVolume(uneven, "da"), 4000 - 0.5 * 2 * (2 * tan(PI / 6)) * 20, 1e-6));
+    assert(partVolume(uneven, "all") < 4000 - 2 * 20);
+    foreach (bad; [q{@part Solid x() => box(9, 9, 9).chamfer(edges.of(faces.top), d: 2.mm, d2: 1.mm);},
+            q{@part Solid x() => box(9, 9, 9).chamfer(edges.of(faces.top), d: 2.mm, d2: 1.mm, on: faces.bottom);},
+            q{@part Solid x() => box(9, 9, 9).chamfer(edges.of(faces.top), d: 1.mm, on: faces.top);},
+            q{@part Solid x() => box(9, 9, 9).chamfer(edges.of(faces.top), d: 1.mm, d2: 1.mm, angle: 9.deg, on: faces.top);}])
+        error(bad);
 
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{

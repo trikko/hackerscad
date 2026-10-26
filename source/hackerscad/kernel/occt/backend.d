@@ -580,6 +580,12 @@ final class OcctKernel : BrepKernel
     Brep chamfer(Brep s, const(int)[] edges, double d) =>
         wrap(hc_chamfer(h(s), edges.ptr, cast(int) edges.length, d), "chamfer");
 
+    Brep chamferOn(Brep s, const(int)[] edges, const(int)[] faces, double d, double d2, double angle)
+    {
+        assert(edges.length == faces.length);
+        return wrap(hc_chamfer_on(h(s), edges.ptr, faces.ptr, cast(int) edges.length, d, d2, angle), "chamfer");
+    }
+
     bool inside(Brep s, Vec3 p)
     {
         immutable r = hc_point_inside(h(s), p.x, p.y, p.z);

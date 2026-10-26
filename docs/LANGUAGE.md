@@ -172,7 +172,7 @@ This page lists everything in brief; the [guides by topic](GUIDES.md) explain ea
 - **Centring:** `shape.centered` moves a profile (in X and Y) or a solid (in X, Y and Z) so its bounding box is centred on the origin, e.g. `text("LABEL", size: 4.mm).centered`.
 - **Measuring:** `distance(a, b)` between two solids (0 when they touch), `s.bbox`, `s.volume`, `s.area`.
 - **Introspection:** `s.bbox` (`min`, `max`, `size`, `center`), `s.volume`, `s.area`, `s.isValid`.
-- **Features:** `fillet(edges, r:)`, `chamfer(edges, d:)`, `shell(open: faces, thickness:)`, `draft(faces, angle:, pull: Z, neutral: 0.mm)` (mould taper around the neutral plane).
+- **Features:** `fillet(edges, r:)`, `chamfer(edges, d:)` (uneven: `d2:` along the other face, or `angle:` from the face `on:` names, which `d` is measured on), `shell(open: faces, thickness:)`, `draft(faces, angle:, pull: Z, neutral: 0.mm)` (mould taper around the neutral plane).
 - **Face provenance:** every face remembers the feature that created it (primitive, fillet, shell, split…). Clicking a face in the GUI highlights it and jumps to that line.
 - **Topological selectors** are resolved against the solid the feature is applied to:
   - predicates: `edges.filter(e => e.isParallel(Z))`, `faces.filter(f => f.normal == Z)`;
