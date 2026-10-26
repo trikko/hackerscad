@@ -157,6 +157,10 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+      # the files as they are in the repository (LF), not turned into CRLF: the tests read docs and examples
+      - name: Line endings
+        shell: pwsh
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
