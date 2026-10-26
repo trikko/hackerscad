@@ -136,6 +136,10 @@ int hc_face_axis(const hc_shape *s, int index, double out[6]);
 /* The volume the solid sweeps moving along v: planes and cylinders only. */
 hc_shape *hc_sweep_solid(const hc_shape *s, double vx, double vy, double vz);
 hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, double vz);
+/* A shell whose walls differ: faces (open) removed, the walls `thickness` thick but walls[j] values[j] thick;
+ * outward: grown outside the solid, its faces the shell's inside. */
+hc_shape *hc_shell_walls(const hc_shape *s, const int *faces, int nfaces, double thickness, const int *walls,
+                         const double *values, int nwalls, int outward);
 hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thickness);
 /* Tilts faces by `angle` around their intersection with the neutral plane
  * (point + normal); `pull` is the mould opening direction. */

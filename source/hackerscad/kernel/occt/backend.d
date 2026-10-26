@@ -623,6 +623,14 @@ final class OcctKernel : BrepKernel
 
     Brep facePrism(Brep s, int face, Vec3 v) => wrap(hc_face_prism(h(s), face, v.x, v.y, v.z), "push/pull");
 
+    Brep shellWalls(Brep s, const(int)[] faces, double thickness, const(int)[] walls, const(double)[] values,
+        bool outward)
+    {
+        assert(walls.length == values.length);
+        return wrap(hc_shell_walls(h(s), faces.ptr, cast(int) faces.length, thickness, walls.ptr, values.ptr,
+            cast(int) walls.length, outward), "shell");
+    }
+
     Brep shell(Brep s, const(int)[] faces, double thickness) =>
         wrap(hc_shell(h(s), faces.ptr, cast(int) faces.length, thickness), "shell");
 

@@ -92,6 +92,8 @@ int hc_edge_faces(const(hc_shape)* s, int* output);
 hc_shape* hc_fillet(const(hc_shape)* s, const(int)* edges, int nedges, double r);
 hc_shape* hc_fillet_var(const(hc_shape)* s, const(int)* edges, int nedges, double r1, double r2);
 hc_shape* hc_chamfer(const(hc_shape)* s, const(int)* edges, int nedges, double d);
+hc_shape* hc_shell_walls(const(hc_shape)* s, const(int)* faces, int nfaces, double thickness, const(int)* walls,
+    const(double)* values, int nwalls, int outward);
 hc_shape* hc_chamfer_on(const(hc_shape)* s, const(int)* edges, const(int)* faces, int nedges, double d, double d2,
     double angle);
 int hc_point_inside(const(hc_shape)* s, double x, double y, double z);

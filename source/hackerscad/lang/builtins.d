@@ -821,7 +821,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         });
     });
     def("shell", (ref CallArgs a) {
-        auto x = Args(it, a, "shell", ["solid", "open", "thickness"]);
+        // shell(open:, thickness:); walls: faces (or a list of selectors) with wallThickness: their own
+        // (a length, or a list in the same order); outward: true grows the walls outside the solid
+        auto x = Args(it, a, "shell", ["solid", "open", "thickness", "walls", "wallThickness", "outward"]);
         auto s = x.solid("solid");
         auto sel = x.selector("open", true);
         immutable t = x.len("thickness");
@@ -835,12 +837,52 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                     x.spanOf("open"));
             auto size = k.bbox(s.brep).size;
             immutable thinnest = min(size.x, size.y, size.z);
-            // (an open side needs one wall across, a closed one two: the kernel says the rest)
-            if (t >= thinnest)
+            // (an open side needs one wall across, a closed one two: the kernel says the rest); outwards
+            // the walls grow round the solid, whatever its size
+            if (t >= thinnest && !x.flag("outward", false))
                 throw new HcadError(Code.type, format("a wall of %g mm leaves nothing inside a part %g mm thin", t,
                     thinnest), x.spanOf("thickness"));
         }
-        return transformed(it, a.span, s, b => k.shell(b, idx, t), "shell");
+        immutable outward = x.flag("outward", false);
+        if (!x.has("walls") && !x.has("wallThickness") && !outward)
+            return transformed(it, a.span, s, b => k.shell(b, idx, t), "shell");
+        if (x.has("walls") != x.has("wallThickness"))
+            throw new HcadError(Code.missingArg, "walls: and wallThickness: go together: which faces, and how thick "
+                ~ "their walls are", x.spanOf(x.has("walls") ? "walls" : "wallThickness"));
+        int[] walls;
+        double[] values;
+        if (x.has("walls"))
+        {
+            // one selector and one length, or lists of both in the same order
+            auto wv = x.get("walls"), tv = x.get("wallThickness");
+            Value[] sels = wv.kind == Kind.array ? wv.arr : [wv];
+            Value[] lens = tv.kind == Kind.array ? tv.arr : [tv];
+            if (sels.length != lens.length)
+                throw new HcadError(Code.type, format("walls: has %d selectors and wallThickness: %d lengths: one "
+                    ~ "each, in the same order", sels.length, lens.length), x.spanOf("wallThickness"));
+            foreach (i, sv; sels)
+            {
+                if (sv.kind != Kind.selector || !sv.sel.faces)
+                    throw new HcadError(Code.type, "walls: takes face selectors (faces.bottom, or a list of them)",
+                        x.spanOf("walls"));
+                auto lv = lens[i];
+                if (!lv.isNum || !(lv.n.dim == Dim.length || lv.n.dim == Dim.none))
+                    throw new HcadError(Code.type, "wallThickness: takes lengths (4.mm, or a list of them)",
+                        x.spanOf("wallThickness"));
+                immutable v = lv.n.dim == Dim.length ? lv.n.value : lv.n.value * x.unitFactor;
+                if (!(v > 0))
+                    throw new HcadError(Code.type, "a wall's thickness must be greater than 0", x.spanOf("wallThickness"));
+                foreach (f; resolveSelector(it, sv.sel, s, x.spanOf("walls")))
+                {
+                    if (idx.canFind(f))
+                        throw new HcadError(Code.type, "a face of walls: is also open: an open face has no wall",
+                            x.spanOf("walls"));
+                    if (!walls.canFind(f))
+                        walls ~= f, values ~= v;
+                }
+            }
+        }
+        return transformed(it, a.span, s, b => k.shellWalls(b, idx, t, walls, values, outward), "shell");
     });
 
     // placement relative to another solid

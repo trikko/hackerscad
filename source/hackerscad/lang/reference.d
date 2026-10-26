@@ -263,8 +263,12 @@ immutable Ref[] reference =
         "Bevels the selected edges, d on both faces; uneven: d along the face on: names (one of each edge's two) and "
         ~ "d2 along the other, or d along it and the bevel at angle from it (a countersink's 45°, a lead-in at 30°): "
         ~ "chamfer(edges.of(faces.top), d: 2.mm, d2: 1.mm, on: faces.top)."),
-    F("shell", "Solid", ["open: Faces", "thickness: Length"], "Solid",
-        "Hollows the solid, leaving the faces in open: open. Open several faces in one shell."),
+    F("shell", "Solid", ["open: Faces", "thickness: Length", "walls: Faces | Faces[]",
+        "wallThickness: Length | Length[]", "outward: bool"], "Solid",
+        "Hollows the solid, leaving the faces in open: open. Open several faces in one shell. walls: faces whose "
+        ~ "walls are wallThickness: thick instead (a list of selectors and a list of lengths, in the same order: "
+        ~ "walls: [faces.bottom, faces.front], wallThickness: [5.mm, 4.mm]); outward: true grows the walls outside "
+        ~ "the solid, its faces the inside of the shell (a case round a part)."),
     F("draft", "Solid", ["faces: Faces", "angle: Angle", "pull: Direction", "neutral: Length"], "Solid",
         "Tapers faces so the part leaves a mould."),
     ]) ~

@@ -554,6 +554,27 @@ unittest
                 .fullRound(faces.filter(f => abs(f.center.z.to!double - 15) < 0.1 && f.normal.z > 0.9));}])
         error(bad);
 
+    // shells with walls of their own thickness, and grown outwards
+    auto shells = runModel(q{
+        @part Solid tray() => box(40, 30, 20).shell(open: faces.top, thickness: 2.mm, walls: faces.bottom,
+            wallThickness: 5.mm);
+        @part Solid two() => box(40, 30, 20).shell(open: faces.top, thickness: 2.mm,
+            walls: [faces.bottom, faces.front], wallThickness: [5.mm, 4.mm]);
+        @part Solid outer() => box(40, 30, 20).shell(open: faces.top, thickness: 2.mm, outward: true);
+        @part Solid cup() => cylinder(d: 30, h: 40).shell(open: faces.top, thickness: 2.mm, walls: faces.bottom,
+            wallThickness: 6.mm);
+    });
+    assert(isClose(partVolume(shells, "tray"), 40 * 30 * 20 - 36 * 26 * 15, 1e-6));
+    assert(isClose(partVolume(shells, "two"), 40 * 30 * 20 - 36 * 24 * 15, 1e-6));
+    assert(isClose(partVolume(shells, "outer"), 44 * 34 * 22 - 40 * 30 * 20, 1e-6));
+    assert(isClose(partVolume(shells, "cup"), PI * 15 * 15 * 40 - PI * 13 * 13 * 34, 1e-4));
+    foreach (bad; [q{@part Solid x() => box(9, 9, 9).shell(open: faces.top, thickness: 1, walls: faces.bottom);},
+            q{@part Solid x() => box(9, 9, 9).shell(open: faces.top, thickness: 1, walls: [faces.bottom],
+                wallThickness: [2.mm, 3.mm]);},
+            q{@part Solid x() => box(9, 9, 9).shell(open: faces.top, thickness: 1, walls: faces.top,
+                wallThickness: 2.mm);}])
+        error(bad);
+
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{
         @part Solid a() => rect(10, 4).across(X).extrude(3);

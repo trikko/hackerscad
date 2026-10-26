@@ -248,6 +248,8 @@ final class CachingKernel : BrepKernel
     bool inside(Brep s, Vec3 p) => inner.inside(s, p);
     Brep facePrism(Brep s, int face, Vec3 v) => op(key("facePrism", s, face, v), inner.facePrism(s, face, v));
     Brep shell(Brep s, const(int)[] faces, double t) => op(key("shell", s, faces, t), inner.shell(s, faces, t));
+    Brep shellWalls(Brep s, const(int)[] faces, double t, const(int)[] walls, const(double)[] values, bool outward) =>
+        op(key("shellWalls", s, faces, t, walls, values, outward), inner.shellWalls(s, faces, t, walls, values, outward));
     Brep draft(Brep s, const(int)[] faces, double angle, Vec3 pull, Vec3 neutral) =>
         op(key("draft", s, faces, angle, pull, neutral), inner.draft(s, faces, angle, pull, neutral));
 

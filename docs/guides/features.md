@@ -76,6 +76,8 @@ Solid smooth() => carlo()
 | `on:` (chamfer) | with `d2:` or `angle:`, the face `d` is measured on: one face of each edge | — |
 | `open:` (shell) | the faces taken away: one or several, in one call | — |
 | `thickness:` | the wall left all round, measured inwards | — |
+| `walls:`, `wallThickness:` (shell) | faces whose walls have a thickness of their own (a thicker floor); lists of both for several, in the same order | — |
+| `outward:` (shell) | `true`: the walls grow outside the solid, which becomes the hollow inside (a case round a part) | `false` |
 | `faces` (draft) | the faces to tilt | — |
 | `angle:` | how far they lean, between 0 and 90° (moulds use 1–3°) | — |
 | `pull:` | the way the part leaves the mould | `Z` |

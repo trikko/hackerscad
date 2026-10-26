@@ -391,6 +391,10 @@ interface BrepKernel
     Brep facePrism(Brep s, int face, Vec3 v);
     /// Hollows the solid inwards, opening the given faces.
     Brep shell(Brep s, const(int)[] faces, double thickness);
+    /// A shell whose walls differ: `faces` removed, the walls `thickness` thick but `walls[j]` `values[j]`
+    /// thick; `outward`: grown outside the solid, whose faces are then the shell's inside.
+    Brep shellWalls(Brep s, const(int)[] faces, double thickness, const(int)[] walls, const(double)[] values,
+        bool outward);
     /// Tilts faces by `angle` for moulding: `pull` is the opening direction,
     /// the faces pivot on the plane through `neutral` normal to `pull`.
     Brep draft(Brep s, const(int)[] faces, double angle, Vec3 pull, Vec3 neutral);
