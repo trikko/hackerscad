@@ -272,6 +272,20 @@ Solid horn()
 
 ![A horn](img/sweeps-ex3.png)
 
+With `along: curve` the profiles are blended along the curve itself, its centreline, rather than straight from one to the next: the loft follows the curve between them even where they are few (two or three rings on a bend).
+
+### How it leaves and arrives: start and end
+
+A loft from one profile to the next goes the shortest way. `start:` and `end:` give the direction it leaves the first profile and reaches the last: a spout that rises straight out of a body before it bends, a duct that meets its flange square. `weight:` says how strongly the direction holds (1 by default; 2 holds it about twice as far).
+
+```d
+// a duct between two openings 30 mm apart, leaving and arriving upright
+
+@part("Sky Pop")
+Solid duct() => loft([circle(r: 5.mm), circle(r: 5.mm).move(x: 30.mm, z: 40.mm)],
+    start: Z, end: Z);
+```
+
 For textured shapes with many rings, `loft` also takes rings of points (`Vec3[][]`), much faster: see *Textures and noise* in the [language reference](../LANGUAGE.md) and `examples/03_randomvase.hcad`.
 
 ## The parameters
@@ -291,6 +305,9 @@ For textured shapes with many rings, `loft` also takes rings of points (`Vec3[][
 | | `frenet:` | follow the curvature | `false` |
 | `loft` | `profiles` | profiles (a solid) or paths (a surface), at least 2 | — |
 | | `ruled:` | flat sides between the sections | `false` |
+| | `along:` | a path, its centreline: the profiles blended along it, each where it lies across it | straight between them |
+| | `start:`, `end:` | the directions it leaves the first profile and reaches the last | free |
+| | `weight:` | how strongly `start:` and `end:` hold, 0 to 4 | `1` |
 | `frames` | `n` | how many frames, ends included | — |
 
 ## Common errors

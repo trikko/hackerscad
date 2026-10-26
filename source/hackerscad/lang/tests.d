@@ -651,6 +651,32 @@ unittest
             q{@part Solid x() => box(10, 10, 10).offsetFaces(faces.top, d: 0.mm);}])
         error(bad);
 
+    // lofts along a centreline, and leaving and arriving in given directions
+    auto lofts = runModel(q{
+        immutable bend = path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 30.mm), vec(30.mm, 0.mm, 30.mm)], bend: 15.mm);
+        immutable fs = bend.frames(3);
+        @part Solid along() => loft([circle(r: 8.mm).placeOn(fs[0]), rect(10, 10).placeOn(fs[1]),
+            circle(r: 4.mm).placeOn(fs[2])], along: bend);
+        immutable lo = circle(r: 5.mm);
+        immutable hi = circle(r: 5.mm).move(x: 30.mm, z: 40.mm);
+        @part Solid upright() => loft([lo, hi], start: Z, end: Z);
+        @part Solid straight() => loft([lo, hi]);
+        unittest
+        {
+            // 3 mm up, the upright loft still over its start, the straight one already on its way
+            auto mid(Solid s) => s.section(plane(origin: vec(0.mm, 0.mm, 3.mm), normal: Z)).bbox.center.x.to!double;
+            assert(abs(mid(upright())) < 0.6 && mid(straight()) > 2);
+            assert(abs(upright().bbox.size.x.to!double - 40) < 0.1);
+            assert(along().volume > 1000.mm ^^ 3);
+        }
+    });
+    // a round tube along a longer, bent centreline: more than the straight one
+    assert(partVolume(lofts, "upright") > partVolume(lofts, "straight") + 100);
+    foreach (bad; [q{@part Solid x() => loft([circle(r: 5), circle(r: 5).move(z: 9)], weight: 2);},
+            q{@part Solid x() => loft([circle(r: 5), circle(r: 5).move(z: 9)], ruled: true, start: Z);},
+            q{@part Solid x() => loft([circle(r: 5), circle(r: 5).move(z: 9)], along: box(1, 1, 1));}])
+        error(bad);
+
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{
         @part Solid a() => rect(10, 4).across(X).extrude(3);

@@ -150,6 +150,23 @@ final class CachingKernel : BrepKernel
             ks ~= keyOf(p);
         return op(key("sew", cast(const(double)[]) ks.map!(x => cast(double) x).array, tolerance), inner.sew(parts, tolerance));
     }
+    Brep splineEnds(const(Vec3)[] pts, Vec3 t0, Vec3 t1, double weight)
+    {
+        double[] xyz;
+        foreach (p; pts)
+            xyz ~= [p.x, p.y, p.z];
+        return op(key("splineEnds", xyz, [t0.x, t0.y, t0.z, t1.x, t1.y, t1.z], weight), inner.splineEnds(pts, t0, t1, weight));
+    }
+
+    Brep loftAlong(Brep[] profiles, Brep path)
+    {
+        ulong[] ks;
+        foreach (p; profiles)
+            ks ~= keyOf(p);
+        ks ~= keyOf(path);
+        return op(key("loftAlong", cast(const(double)[]) ks.map!(x => cast(double) x).array), inner.loftAlong(profiles, path));
+    }
+
     Brep loft(Brep[] profiles, bool ruled)
     {
         ulong[] ks;

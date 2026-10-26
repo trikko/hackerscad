@@ -92,6 +92,8 @@ int hc_edge_faces(const(hc_shape)* s, int* output);
 hc_shape* hc_fillet(const(hc_shape)* s, const(int)* edges, int nedges, double r);
 hc_shape* hc_fillet_var(const(hc_shape)* s, const(int)* edges, int nedges, double r1, double r2);
 hc_shape* hc_chamfer(const(hc_shape)* s, const(int)* edges, int nedges, double d);
+hc_shape* hc_spline_ends(const(double)* xyz, int n, ref const(double)[3] t0, ref const(double)[3] t1, double weight);
+hc_shape* hc_loft_along(const(hc_shape*)* profiles, int n, const(hc_shape)* path);
 hc_shape* hc_remove_faces(const(hc_shape)* s, const(int)* faces, int nfaces);
 hc_shape* hc_faces_open(const(hc_shape)* s, const(int)* faces, int nfaces);
 hc_shape* hc_offset_faces(const(hc_shape)* s, const(int)* faces, int nfaces, double d);

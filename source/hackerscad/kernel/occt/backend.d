@@ -248,6 +248,23 @@ final class OcctKernel : BrepKernel
         return wrap(hc_loft(ps.ptr, cast(int) ps.length, ruled), "loft");
     }
 
+    Brep splineEnds(const(Vec3)[] pts, Vec3 t0, Vec3 t1, double weight)
+    {
+        double[] xyz;
+        foreach (p; pts)
+            xyz ~= [p.x, p.y, p.z];
+        const(double)[3] a = [t0.x, t0.y, t0.z], b = [t1.x, t1.y, t1.z];
+        return wrap(hc_spline_ends(xyz.ptr, cast(int) pts.length, a, b, weight), "spline");
+    }
+
+    Brep loftAlong(Brep[] profiles, Brep path)
+    {
+        const(hc_shape)*[] ps;
+        foreach (p; profiles)
+            ps ~= h(p);
+        return wrap(hc_loft_along(ps.ptr, cast(int) ps.length, h(path)), "loft");
+    }
+
     Brep loftOpen(Brep[] paths, bool ruled)
     {
         const(hc_shape)*[] ps;

@@ -274,6 +274,11 @@ interface BrepKernel
     /// towards `up` (non-zero), or towards the curve `guide` (non-null).
     Brep sweepRoll(Brep profile, Brep path, const(double)[] angles, Vec3 up, Brep guide);
     Brep loft(Brep[] profiles, bool ruled);
+    /// A loft through profiles placed along a path, its centreline: the sections carried along it.
+    Brep loftAlong(Brep[] profiles, Brep path);
+    /// A smooth curve through `pts` leaving the first along `t0` and reaching the last along `t1` (zero: free),
+    /// the tangents `weight` times the chord between the ends long.
+    Brep splineEnds(const(Vec3)[] pts, Vec3 t0, Vec3 t1, double weight);
     /// Surfaces: through paths in order (not filled); the solids of `s` cut by
     /// a surface; a surface made `t` thick (on its normals' side; t < 0 the
     /// other); surfaces sewn along their edges into one closed solid.

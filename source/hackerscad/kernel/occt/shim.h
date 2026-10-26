@@ -147,6 +147,11 @@ hc_shape *hc_remove_faces(const hc_shape *s, const int *faces, int nfaces);
 hc_shape *hc_faces_open(const hc_shape *s, const int *faces, int nfaces);
 /* Those faces moved out along their normals by d (in for d < 0), the faces round them following. */
 hc_shape *hc_offset_faces(const hc_shape *s, const int *faces, int nfaces, double d);
+/* A loft through profiles placed along a path (its centreline). */
+hc_shape *hc_loft_along(const hc_shape *const *profiles, int n, const hc_shape *path);
+/* A smooth curve through the points, leaving the first along t0 and reaching the last along t1 (zero: free),
+ * weight times as strongly as the curve's own tangents. */
+hc_shape *hc_spline_ends(const double *xyz, int n, const double t0[3], const double t1[3], double weight);
 hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thickness);
 /* Tilts faces by `angle` around their intersection with the neutral plane
  * (point + normal); `pull` is the mould opening direction. */

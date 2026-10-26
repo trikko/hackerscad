@@ -155,6 +155,8 @@
 #include <TopoDS_Compound.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepAlgoAPI_Defeaturing.hxx>
+#include <TColStd_HArray1OfBoolean.hxx>
+#include <TColgp_Array1OfVec.hxx>
 #include <cstring>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
@@ -6965,6 +6967,42 @@ hc_shape *hc_spline(const double *xyz, int n, int closed)
     });
 }
 
+// A smooth curve through the points leaving the first along (t0) and reaching the last along (t1), each
+// tangent scaled by `weight` (1: as long as the curve's chords make it); a zero vector leaves that end free.
+hc_shape *hc_spline_ends(const double *xyz, int n, const double t0[3], const double t1[3], double weight)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, n);
+        for (int i = 0; i < n; i++)
+            pts->SetValue(i + 1, gp_Pnt(xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]));
+        GeomAPI_Interpolate interp(pts, Standard_False, 1e-7);
+        TColgp_Array1OfVec tangents(1, n);
+        Handle(TColStd_HArray1OfBoolean) given = new TColStd_HArray1OfBoolean(1, n);
+        for (int i = 1; i <= n; i++) {
+            tangents.SetValue(i, gp_Vec(0, 0, 1));
+            given->SetValue(i, Standard_False);
+        }
+        // the directions, weight times as strong as the curve's own (its parameter runs along its chords: 1 is
+        // natural)
+        const gp_Vec a(t0[0], t0[1], t0[2]), b(t1[0], t1[1], t1[2]);
+        if (a.Magnitude() > 1e-12) {
+            tangents.SetValue(1, a.Normalized() * weight);
+            given->SetValue(1, Standard_True);
+        }
+        if (b.Magnitude() > 1e-12) {
+            tangents.SetValue(n, b.Normalized() * weight);
+            given->SetValue(n, Standard_True);
+        }
+        interp.Load(tangents, given, Standard_False);
+        interp.Perform();
+        if (!interp.IsDone()) {
+            set_error("cannot fit a curve through these points with these directions");
+            return nullptr;
+        }
+        return primitive(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(interp.Curve()).Edge()).Wire());
+    });
+}
+
 hc_shape *hc_helix(double r, double pitch, double height, int left)
 {
     return hc_helix_tapered(r, pitch, height, left, 0);
@@ -9427,6 +9465,51 @@ hc_shape *hc_loft(const hc_shape *const *profiles, int n, int ruled)
                 sec.push_back(l.holes[h]);
             result = BRepAlgoAPI_Cut(result, solid_through(sec, ruled)).Shape();
         }
+        return primitive(result);
+    });
+}
+
+// A loft through profiles placed along a path (its centreline): the sections carried along it and blended,
+// each where it lies; holes when every profile has as many.
+hc_shape *hc_loft_along(const hc_shape *const *profiles, int n, const hc_shape *path)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const TopoDS_Wire spine = single_wire(path->shape);
+        std::vector<ProfileLoops> ls;
+        for (int i = 0; i < n; i++)
+            ls.push_back(loops_of(profiles[i]->shape));
+        auto through = [&](const std::vector<TopoDS_Wire> &sections) {
+            BRepOffsetAPI_MakePipeShell mk(spine);
+            for (const auto &w : sections)
+                mk.Add(w, Standard_False, Standard_False);
+            mk.Build();
+            if (!mk.IsDone())
+                throw Standard_Failure("the profiles could not be blended along this path (each must lie across it, "
+                                       "where the path passes)");
+            mk.MakeSolid();
+            TopoDS_Shape r = mk.Shape();
+            GProp_GProps gp;
+            BRepGProp::VolumeProperties(r, gp);
+            if (gp.Mass() < 0)
+                r.Reverse();
+            return r;
+        };
+        std::vector<TopoDS_Wire> outer;
+        for (auto &l : ls)
+            outer.push_back(l.outer);
+        TopoDS_Shape result = through(outer);
+        const size_t holes = ls[0].holes.size();
+        for (auto &l : ls)
+            if (l.holes.size() != holes)
+                throw Standard_Failure("every profile of a loft with holes needs the same number of holes");
+        for (size_t h = 0; h < holes; h++) {
+            std::vector<TopoDS_Wire> sec;
+            for (auto &l : ls)
+                sec.push_back(l.holes[h]);
+            result = BRepAlgoAPI_Cut(result, through(sec)).Shape();
+        }
+        if (!BRepCheck_Analyzer(result).IsValid())
+            throw Standard_Failure("the loft along this path is not a valid solid");
         return primitive(result);
     });
 }

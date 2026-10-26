@@ -1834,8 +1834,10 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
     });
     def("loft", (ref CallArgs a) {
         // loft([circle(r: 20), rect(30).move(z: 40), circle(r: 10).move(z: 80)]): a solid through
-        // profiles placed in space; ruled: true gives flat sides between them
-        auto x = Args(it, a, "loft", ["profiles", "ruled", "inside"]);
+        // profiles placed in space; ruled: true gives flat sides between them; along: a path, the centreline
+        // the profiles are blended along; start:, end: the directions it leaves the first profile and reaches
+        // the last, weight: how far that holds (a share of the way to the next profile)
+        auto x = Args(it, a, "loft", ["profiles", "ruled", "inside", "along", "start", "end", "weight"]);
         auto v = x.get("profiles");
         if (v.kind != Kind.array || v.arr.length < 2)
             throw new HcadError(Code.type, "loft needs an array of at least 2 profiles", x.spanOf("profiles"));
@@ -1916,6 +1918,57 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             // a profile drawn on a face or plane: there
             bs ~= p.solid.placed ? toPlace(k, p.solid.place, nonEmpty(p.solid, a.span)) : nonEmpty(p.solid, a.span);
             ins ~= p.solid;
+        }
+        if (x.has("along"))
+        {
+            foreach (n; ["ruled", "start", "end", "weight"])
+                if (x.has(n))
+                    throw new HcadError(Code.type, format("a loft along a path follows the path: %s: does not go with "
+                        ~ "along:", n), x.spanOf(n));
+            auto p = x.solid("along");
+            if (!p.path)
+                throw new HcadError(Code.type, "along: takes a path (path, spline, a sketch's path): the loft's "
+                    ~ "centreline", x.spanOf("along"));
+            Brep b;
+            try
+                b = k.loftAlong(bs, nonEmpty(p, a.span));
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, e.msg, a.span, "place each profile across the path, where it passes "
+                    ~ "(p.frames(n) gives frames along it to place them on)");
+            auto sv = derived(it, b, ins ~ [p], "loft", a.span);
+            sv.flat = false;
+            sv.placed = false;
+            sv.path = false;
+            return Value.of(sv);
+        }
+        if (x.has("weight") && !x.has("start") && !x.has("end"))
+            throw new HcadError(Code.type, "weight: says how far start: or end: holds: give one of them", x.spanOf("weight"));
+        if ((x.has("start") || x.has("end")) && x.flag("ruled", false))
+            throw new HcadError(Code.type, "a ruled loft has flat sides: start: and end: shape a smooth one",
+                x.spanOf(x.has("start") ? "start" : "end"));
+        if (x.has("start") || x.has("end"))
+        {
+            // blended along a smooth centreline through the profiles' middles, which leaves the first along
+            // start: and reaches the last along end:; weight: how strongly (1: as the chord between the ends)
+            immutable w = x.has("weight") ? x.num("weight") : 1.0;
+            if (!(w > 0 && w <= 4))
+                throw new HcadError(Code.type, "weight goes from 0 to 4 (1: as strongly as the chord between the "
+                    ~ "end profiles)", x.spanOf("weight"));
+            Vec3[] middles;
+            foreach (b; bs)
+                middles ~= k.bbox(b).center;
+            immutable t0 = x.has("start") ? x.dir("start").normalized : Vec3(0, 0, 0);
+            immutable t1 = x.has("end") ? x.dir("end").normalized : Vec3(0, 0, 0);
+            Brep b;
+            try
+                b = k.loftAlong(bs, k.splineEnds(middles, t0, t1, w));
+            catch (KernelException e)
+                throw new HcadError(Code.kernel, e.msg, a.span, "a direction nearer the way to the next profile, or a "
+                    ~ "smaller weight");
+            auto sv = derived(it, b, ins, "loft", a.span);
+            sv.flat = false;
+            sv.placed = false;
+            return Value.of(sv);
         }
         auto sv = derived(it, k.loft(bs, x.flag("ruled", false)), ins, "loft", a.span);
         sv.flat = false;
