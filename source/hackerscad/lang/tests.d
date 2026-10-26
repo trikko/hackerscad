@@ -4842,6 +4842,25 @@ unittest
         .message.canFind("no volume the shapes close off holds"));
     assert(error(`@part Solid p() => enclosed([XY, XZ], at: vec(1.mm, 1.mm, 1.mm));`).message.canFind("planes alone"));
 
+    // a sweep growing or shrinking on the way: a horn to a quarter, a bulge in the middle; scale 1 the plain sweep
+    expectOut(`auto bend = path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 40.mm), vec(40.mm, 0.mm, 40.mm)], bend: 15.mm);
+        auto horn = circle(r: 8.mm).sweep(bend, scale: 0.25);
+        writeln(abs(horn.section(plane(origin: vec(39.99.mm, 0.mm, 0.mm), normal: X)).bbox.size.y - 4.mm) < 0.01.mm, " ",
+            horn.isValid);
+        auto line = path([vec(0.mm, 0.mm, 0.mm), vec(60.mm, 0.mm, 0.mm)]);
+        writeln(circle(r: 5.mm).sweep(line, scale: t => 1 + sin(t * 180.deg))
+            .section(plane(origin: vec(30.mm, 0.mm, 0.mm), normal: X)).bbox.size.y);
+        auto plain = rect(10.mm, 4.mm).sweep(line), same = rect(10.mm, 4.mm).sweep(line, scale: 1);
+        writeln(same.bbox.size == plain.bbox.size, " ", abs(plain.volume - same.volume) < 1e-6 * plain.volume);`,
+        "true true\n20 mm\ntrue true", "import std.math;");
+    foreach (bad, msg; [q{@part Solid p() => circle(r: 5.mm).sweep(path([vec(0.mm, 0.mm, 0.mm), vec(30.mm, 0.mm, 0.mm)]),
+                scale: 0);}: "shrunk to nothing",
+            q{@part Solid p() => circle(r: 5.mm).sweep(path([vec(0.mm, 0.mm, 0.mm), vec(30.mm, 0.mm, 0.mm)]),
+                scale: 0.5, twist: 90.deg);}: "not with twist",
+            q{@part Solid p() => circle(r: 2.mm).sweep(path([vec(0.mm, 0.mm, 0.mm), vec(30.mm, 0.mm, 0.mm),
+                vec(30.mm, 30.mm, 0.mm)], closed: true, bend: 5.mm), scale: 0.5);}: "two ends"])
+        assert(error(bad).message.canFind(msg), error(bad).message);
+
     // moldings: a profile run round a closed outline, outside (its corners rounding about the outline's) or inside,
     // the same up whichever way the outline goes round; taken off a plate's top edge, a cove
     expectOut(`auto bead = rect(vec(0.mm, 0.mm), vec(6.mm, 4.mm)) + circle(vec(3.mm, 4.mm), r: 3.mm);

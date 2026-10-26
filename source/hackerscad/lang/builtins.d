@@ -1774,7 +1774,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         // curvature), twist: 360.deg (once, evenly; or t => angle, 0 to 1 along it), up: Z
         // (its +Y towards Z all along), guide: rail (its +Y towards that path)
         // a curve (a Path on XY) instead of a profile: swept, a Surface
-        auto x = Args(it, a, "sweep", ["profile", "path", "frenet", "twist", "up", "guide"]);
+        auto x = Args(it, a, "sweep", ["profile", "path", "frenet", "twist", "up", "guide", "scale"]);
         immutable open = x.get("profile").kind == Kind.solid && x.get("profile").solid.path;
         SolidVal p;
         if (open)
@@ -1837,7 +1837,9 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         Brep made;
         try
         {
-            if (x.has("twist") && x.get("twist").isCallable)
+            if (x.has("scale"))
+                made = sweepScaled(it, x, p, route, ways, a.span);
+            else if (x.has("twist") && x.get("twist").isCallable)
             {
                 // a roll that varies along the path: the function at 65 places from 0 (the start) to 1 (the end)
                 auto f = x.get("twist");
@@ -3031,6 +3033,57 @@ string shown(Interp it, Value v, Span span)
 /// is left is spread evenly, so the last matches the first. A closed path
 /// has no end: there the n frames are a length/n apart all round, the start
 /// not repeated.
+/// sweep(…, scale:): the profile's copies, scaled as scale: says (a number: the size at the end, the sizes
+/// between in a straight line; t => factor: the size at t, 0 at the start to 1 at the end), placed across the
+/// path as the sweep places it and lofted along the path
+Brep sweepScaled(Interp it, ref Args x, SolidVal p, SolidVal route, string[] ways, Span span)
+{
+    import std.math : atan2;
+    auto k = it.kernel;
+    if (ways.length)
+        throw new HcadError(Code.type, format("scale: goes with a sweep that turns as little as it can, not with %s",
+            ways[0]), x.spanOf("scale"));
+    if (p.path)
+        throw new HcadError(Code.type, "scale: grows a profile along the path: a curve swept into a surface takes "
+            ~ "none", x.spanOf("scale"));
+    Vec3 from, to, t0, t1;
+    k.pathFrame(route.brep, false, from, t0);
+    k.pathFrame(route.brep, true, to, t1);
+    if ((from - to).length < 1e-6)
+        throw new HcadError(Code.type, "scale: takes a path with two ends: a closed one would have to end the size it "
+            ~ "starts", x.spanOf("scale"));
+    auto sv = x.get("scale");
+    immutable law = sv.isCallable;
+    double at(double t)
+    {
+        if (!law)
+            return 1 + (x.num("scale") - 1) * t;
+        auto v = call1(it, sv, Value.number(t), x.spanOf("scale"));
+        if (!v.isNum || v.n.dim != Dim.none)
+            throw new HcadError(Code.units, format("scale: t => … must give a number (1: the profile as drawn), not %s",
+                v.typeName), x.spanOf("scale"));
+        return v.n.value;
+    }
+    immutable n = law ? 17 : 2;
+    auto frames = pathFrames(it, route, n);
+    // the sweep's own start: +Y towards world +Z (+Y when the path starts upright); the frames along the path
+    // turn as little as they can from theirs: the profile turned once by the angle between the two
+    auto up = abs(t0.z) > 0.999 ? Vec3(0, 1, 0) : Vec3(0, 0, 1);
+    auto ys = (up - t0 * up.dot(t0)).normalized, xs = ys.cross(t0);
+    immutable turn = atan2(xs.dot(frames[0][2]), xs.dot(frames[0][1]));
+    auto base = k.rotate(nonEmpty(p, span), Vec3(0, 0, 1), turn);
+    Brep[] bs;
+    foreach (i, f; frames)
+    {
+        immutable s = at(i / (n - 1.0));
+        if (!(s > 1e-6))
+            throw new HcadError(Code.type, format("scale: %g at %g of the way: a profile shrunk to nothing (or turned "
+                ~ "inside out) cannot be swept", s, i / (n - 1.0)), x.spanOf("scale"));
+        bs ~= toPlace(k, f, k.scale(base, s));
+    }
+    return k.loftAlong(bs, route.brep);
+}
+
 Vec3[4][] pathFrames(Interp it, SolidVal s, int n)
 {
     import std.math : atan2;

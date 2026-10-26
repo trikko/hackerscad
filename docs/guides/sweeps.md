@@ -198,6 +198,35 @@ Solid swinging() => strip()
 
 Sweep a curve instead of a profile, `path([vec(-8.mm, 0), vec(8.mm, 0)]).sweep(route)`, and the result is a `Surface`, an open sheet: a ribbon through the middle of anything swept along the same route. It is not a part; it splits solids, thickens into one, or sews with others. See [the guide on surfaces](surfaces.md).
 
+### Growing or shrinking on the way
+
+`scale:` changes the profile's size as it goes: a number is its size at the end, reached evenly (`0.25`: a quarter as wide), and a function `t => …` gives its size at each point, `t` going from 0 at the start to 1 at the end. A horn, a tentacle, a handle that thins towards its ends:
+
+<!-- render: sweeps-scale -->
+```d
+// a horn that narrows to a quarter, and a handle that
+// is thickest in its middle
+
+immutable bend = path([vec(0.mm, 0.mm, 0.mm),
+    vec(0.mm, 0.mm, 40.mm), vec(40.mm, 0.mm, 40.mm)],
+    bend: 15.mm);
+
+@part("Sky Pop")
+Solid horn() => circle(r: 8.mm).sweep(bend, scale: 0.25);
+
+immutable arch = spline([vec(60.mm, 0.mm, 0.mm),
+    vec(75.mm, 0.mm, 30.mm), vec(105.mm, 0.mm, 30.mm),
+    vec(120.mm, 0.mm, 0.mm)]);
+
+@part("Pink Pop")
+Solid handle() => circle(r: 3.mm)
+    .sweep(arch, scale: t => 1 + 0.6 * sin(t * 180.deg));
+```
+
+![A horn narrowing to a quarter along a bend, and a handle thickest in the middle](img/sweeps-scale.png)
+
+It works on a path with two ends, with the profile turning as little as it can: not with `twist:`, `up:` or `guide:`.
+
 ## Lofting
 
 A loft is for an outline that changes on the way: a vase, a nozzle, a square duct ending round. `loft([a, b, c])` makes a smooth solid through profiles placed in space, in order. `ruled: true` joins them with flat sides instead. Profiles with holes loft as tubes when every profile has the same number of holes. Stand a profile up with `across(X)` or `across(Y)` (as `extrude(along:)` stands it), not with `rotate`, to loft sideways:
@@ -336,6 +365,7 @@ The outline is a closed path, or a profile (its outer edge); it must be flat. Th
 | | `guide:` | a path its +Y points at | — |
 | | `twist:` | an angle, or `t => angle` for 0…1 along | `0.deg` |
 | | `frenet:` | follow the curvature | `false` |
+| | `scale:` | the size at the end (a number, evenly), or `t => factor` along the way | `1` |
 | `loft` | `profiles` | profiles (a solid) or paths (a surface), at least 2 | — |
 | | `ruled:` | flat sides between the sections | `false` |
 | | `along:` | a path, its centreline: the profiles blended along it, each where it lies across it | straight between them |
