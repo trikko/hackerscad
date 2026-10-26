@@ -968,6 +968,46 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 copies ~= transformed(it, a.span, s, b => k.translate(b, step * i + step2 * j));
         return firstCopyAnchors(unionAll(it, copies, a.span), s);
     });
+    def("removeFaces", (ref CallArgs a) {
+        // removeFaces(faces): the solid without them, healed, the faces round them grown or cut back until they
+        // close it (a hole, a fillet, a boss taken away); open: true leaves the gap: a Surface
+        auto x = Args(it, a, "removeFaces", ["solid", "faces", "open"]);
+        auto s = x.solid("solid");
+        if (s.flat || s.path || s.surface)
+            throw new HcadError(Code.type, "removeFaces works on a solid", x.spanOf("solid"));
+        auto idx = resolveSelector(it, x.selector("faces", true), s, x.spanOf("faces"));
+        if (idx.length >= k.faceCount(nonEmpty(s, a.span)))
+            throw new HcadError(Code.type, "every face would go: nothing would be left", x.spanOf("faces"));
+        if (x.flag("open", false))
+        {
+            auto sv = derived(it, k.facesOpen(s.brep, idx), [s], "removeFaces", a.span);
+            sv.flat = false;
+            sv.path = false;
+            sv.surface = true;
+            return Value.of(sv);
+        }
+        try
+            return transformed(it, a.span, s, (Brep b) => k.removeFaces(b, idx), "removeFaces");
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, "removeFaces: " ~ kernelWords(e.msg), a.span,
+                "open: true leaves the gap open (a Surface: close it with fill and sew, or thicken it); or take away "
+                ~ "fewer faces, the whole of one feature at a time");
+    });
+    def("offsetFaces", (ref CallArgs a) {
+        // offsetFaces(faces, d:): those faces moved out along their normals by d (in for d < 0), the faces round
+        // them following: a hole wider (d < 0 on its wall), a wall thicker, a step higher
+        auto x = Args(it, a, "offsetFaces", ["solid", "faces", "d"]);
+        auto s = x.solid("solid");
+        auto idx = resolveSelector(it, x.selector("faces", true), s, x.spanOf("faces"));
+        immutable d = x.len("d");
+        if (d == 0)
+            throw new HcadError(Code.type, "an offset of 0 leaves the faces where they are", x.spanOf("d"));
+        try
+            return transformed(it, a.span, s, (Brep b) => k.offsetFaces(b, idx, d), "offsetFaces");
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, "offsetFaces: " ~ kernelWords(e.msg), a.span,
+                "a smaller d, or fewer faces at a time");
+    });
     def("rib", (ref CallArgs a) {
         // rib(plane:, from:, to:, thickness:): the line from → to, in the plane, a rib's free edge; the rib
         // fills from it to the part, thickness wide across the plane (half each side)
@@ -4741,6 +4781,14 @@ Value edgeFeature(Interp it, ref CallArgs a, SolidVal s, int[] idx, string kind,
         immutable silent = words.canFind("NotDone") || words.canFind("command not done");
         throw new HcadError(Code.kernel, msg ~ (silent ? "" : " (" ~ words ~ ")"), a.span, hint ~ together);
     }
+}
+
+/// A kernel error's own words, without the operation's name it starts with.
+string kernelWords(string msg)
+{
+    import std.algorithm : findSplitAfter;
+    auto said = msg.findSplitAfter(": ");
+    return said ? said[1].idup : msg;
 }
 
 /// Whether face `face` of `s` is flat (every point of its outline on its plane).

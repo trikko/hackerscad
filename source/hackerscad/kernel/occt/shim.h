@@ -140,6 +140,13 @@ hc_shape *hc_face_prism(const hc_shape *s, int face, double vx, double vy, doubl
  * outward: grown outside the solid, its faces the shell's inside. */
 hc_shape *hc_shell_walls(const hc_shape *s, const int *faces, int nfaces, double thickness, const int *walls,
                          const double *values, int nwalls, int outward);
+/* The solid without those faces, healed (the faces round them grown or cut back to close it); null if they
+ * cannot. */
+hc_shape *hc_remove_faces(const hc_shape *s, const int *faces, int nfaces);
+/* The faces of a solid but those: an open shell. */
+hc_shape *hc_faces_open(const hc_shape *s, const int *faces, int nfaces);
+/* Those faces moved out along their normals by d (in for d < 0), the faces round them following. */
+hc_shape *hc_offset_faces(const hc_shape *s, const int *faces, int nfaces, double d);
 hc_shape *hc_shell(const hc_shape *s, const int *faces, int nfaces, double thickness);
 /* Tilts faces by `angle` around their intersection with the neutral plane
  * (point + normal); `pull` is the mould opening direction. */

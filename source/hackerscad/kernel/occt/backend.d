@@ -631,6 +631,13 @@ final class OcctKernel : BrepKernel
             cast(int) walls.length, outward), "shell");
     }
 
+    Brep removeFaces(Brep s, const(int)[] faces) =>
+        wrap(hc_remove_faces(h(s), faces.ptr, cast(int) faces.length), "removeFaces");
+    Brep facesOpen(Brep s, const(int)[] faces) =>
+        wrap(hc_faces_open(h(s), faces.ptr, cast(int) faces.length), "removeFaces");
+    Brep offsetFaces(Brep s, const(int)[] faces, double d) =>
+        wrap(hc_offset_faces(h(s), faces.ptr, cast(int) faces.length, d), "offsetFaces");
+
     Brep shell(Brep s, const(int)[] faces, double thickness) =>
         wrap(hc_shell(h(s), faces.ptr, cast(int) faces.length, thickness), "shell");
 

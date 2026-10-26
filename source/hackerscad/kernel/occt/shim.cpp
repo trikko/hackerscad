@@ -154,6 +154,7 @@
 #include <gp_Circ.hxx>
 #include <TopoDS_Compound.hxx>
 #include <BRep_Builder.hxx>
+#include <BRepAlgoAPI_Defeaturing.hxx>
 #include <cstring>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
@@ -4912,6 +4913,112 @@ hc_shape *hc_shell_walls(const hc_shape *s, const int *faces, int nfaces, double
         }
         set_error("the kernel could not hollow this solid with these walls: each must be thinner than the "
                   "fillet radii and narrow parts it meets (try thinner walls, or shell before filleting)");
+        return (hc_shape *)nullptr;
+    });
+}
+
+// The solid without those faces, healed: the faces round them grown or cut back until they close it again
+// (a hole, a fillet, a boss taken away). Fails rather than give an open or broken solid.
+hc_shape *hc_remove_faces(const hc_shape *s, const int *faces, int nfaces)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const auto &m = map_of(s, TopAbs_FACE);
+        BRepAlgoAPI_Defeaturing df;
+        df.SetShape(s->shape);
+        for (int i = 0; i < nfaces; i++)
+            df.AddFaceToRemove(m(faces[i] + 1));
+        df.SetRunParallel(Standard_True);
+        df.SetToFillHistory(Standard_True);
+        df.Build();
+        if (!df.IsDone() || df.HasErrors()) {
+            set_error("the faces round them cannot close the gap (they would never meet, as a box's walls without "
+                      "its lid)");
+            return nullptr;
+        }
+        // a face it could not take away is left where it was, with a warning only: that is a failure here
+        for (int i = 0; i < nfaces; i++)
+            if (!df.IsDeleted(m(faces[i] + 1))) {
+                set_error("the faces round them cannot close the gap (they would never meet, as a box's walls "
+                          "without its lid)");
+                return nullptr;
+            }
+        const TopoDS_Shape r = df.Shape();
+        if (r.IsNull() || !BRepCheck_Analyzer(r).IsValid() || !TopExp_Explorer(r, TopAbs_SOLID).More()) {
+            set_error("the faces round them did not close it into a valid solid");
+            return nullptr;
+        }
+        history_record(df, {&s->shape}, r);
+        return wrap(unify_history(r));
+    });
+}
+
+// The faces of a solid but those: an open shell, a surface.
+hc_shape *hc_faces_open(const hc_shape *s, const int *faces, int nfaces)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const auto &m = map_of(s, TopAbs_FACE);
+        std::vector<bool> gone(m.Extent(), false);
+        for (int i = 0; i < nfaces; i++)
+            gone[faces[i]] = true;
+        TopoDS_Shell shell;
+        BRep_Builder b;
+        b.MakeShell(shell);
+        std::vector<int> kept;
+        for (int i = 0; i < m.Extent(); i++)
+            if (!gone[i]) {
+                b.Add(shell, m(i + 1));
+                kept.push_back(i);
+            }
+        shell.Closed(Standard_False);
+        history_new(shell);
+        TopTools_IndexedMapOfShape res;
+        TopExp::MapShapes(shell, TopAbs_FACE, res);
+        for (int i : kept) {
+            const int j = res.FindIndex(m(i + 1));
+            if (j > 0)
+                history_from(j, Origin{0, i});
+        }
+        return wrap(shell);
+    });
+}
+
+// The solid with those faces moved out along their normals by d (in for d < 0), the faces round them grown
+// or cut back to follow: a hole made wider, a wall thicker, a step higher.
+hc_shape *hc_offset_faces(const hc_shape *s, const int *faces, int nfaces, double d)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        const auto &m = map_of(s, TopAbs_FACE);
+        for (GeomAbs_JoinType join : {GeomAbs_Intersection, GeomAbs_Arc}) {
+            try {
+                BRepOffset_MakeOffset mk;
+                mk.Initialize(s->shape, 0, 1e-4, BRepOffset_Skin, Standard_True, Standard_False, join);
+                for (int i = 0; i < nfaces; i++)
+                    mk.SetOffsetOnFace(TopoDS::Face(m(faces[i] + 1)), d);
+                mk.MakeOffsetShape();
+                if (!mk.IsDone())
+                    continue;
+                TopoDS_Shape r = mk.Shape();
+                if (r.IsNull() || !BRepCheck_Analyzer(r).IsValid())
+                    continue;
+                // a shell back: made a solid
+                if (!TopExp_Explorer(r, TopAbs_SOLID).More()) {
+                    BRepBuilderAPI_MakeSolid ms;
+                    for (TopExp_Explorer e(r, TopAbs_SHELL); e.More(); e.Next())
+                        ms.Add(TopoDS::Shell(e.Current()));
+                    if (!ms.IsDone())
+                        continue;
+                    r = ms.Solid();
+                }
+                GProp_GProps p;
+                BRepGProp::VolumeProperties(r, p);
+                if (p.Mass() <= 0)
+                    continue;
+                history_record(mk, {&s->shape}, r);
+                return wrap(unify_history(r));
+            } catch (const Standard_Failure &) {
+            }
+        }
+        set_error("the faces round them cannot follow (a face moved past another, or into nothing)");
         return (hc_shape *)nullptr;
     });
 }

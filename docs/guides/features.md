@@ -11,6 +11,8 @@ A feature changes a solid that is already there. A *fillet* is a rounded edge; a
 | Feature | What it does | Takes |
 |---|---|---|
 | `s.fillet(edges, r:)` | rounds edges with an arc of radius `r`; with `r2:` from `r` to `r2` along each edge | edges |
+| `s.removeFaces(faces)` | the solid without those faces, the faces round them closing it again (a hole, a fillet, a boss taken away) | faces |
+| `s.offsetFaces(faces, d:)` | those faces moved out by `d` (in if negative), the faces round them following | faces |
 | `s.rib(plane:, from:, to:, thickness:)` | a rib (gusset): the line from → to in the plane is its free edge, filled to the part | a plane, two points |
 | `s.fullRound(faces)` | a flat face between two parallel ones becomes a half round as wide as it | faces |
 | `s.chamfer(edges, d:)` | bevels edges at 45°, `d` back on each face; uneven with `d2:` or `angle:` | edges |
@@ -250,6 +252,29 @@ Solid shellFirst() => block()
 ![Fillet then shell keeps the wall even; shell then fillet thickens the corners](img/features-order.png)
 
 Fillets before holes, because a hole near an edge narrows the faces a fillet needs room on, and because `edges.of(faces.top)` taken after the holes also takes their rims.
+
+## Changing a solid you did not build
+
+A mesh or STEP loaded with `load`, or a part from a library, has no code to edit: its features are changed on its faces. `removeFaces` takes faces away and heals the solid, the faces round them grown or cut back until they close it again: a hole's wall, a fillet's face, a boss and its top. `offsetFaces` moves faces along their normals and the faces round them follow: a step higher, a wall thicker, a hole wider (its wall moved out of the hole: a negative `d`).
+
+```d
+import std;
+
+// a block with a hole through it, and the same block healed
+immutable hole = cylinder(d: 8.mm, h: 30.mm, center: true).move(z: 10.mm);
+immutable drilled = box(20.mm, 20.mm, 20.mm) - hole;
+
+@part
+Solid whole() => drilled.removeFaces(faces.from(hole));
+
+// the hole 4 mm wider
+@part
+Solid wider() => drilled
+    .offsetFaces(faces.from(hole), d: -2.mm)
+    .move(x: 30.mm);
+```
+
+A `Solid` is always closed: when the faces round a gap can never meet (a box's walls without its lid), `removeFaces` is an error, not an open solid. `open: true` leaves the gap on purpose and gives a `Surface`, to close with `fill` and `sew` or to make a solid with `thicken`.
 
 ## Common errors
 

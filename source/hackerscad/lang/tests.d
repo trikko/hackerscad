@@ -626,6 +626,31 @@ unittest
                 from: vec(-16.mm, 0.mm, 24.mm), to: vec(30.mm, 0.mm, 24.mm), thickness: 3.mm);}])
         error(bad);
 
+    // faces taken away (healed, or left open) and moved
+    auto direct = runModel(q{
+        immutable hole = cylinder(d: 8, h: 30, center: true).move(z: 10.mm);
+        immutable drilled = box(20, 20, 20) - hole;
+        @part Solid healed() => drilled.removeFaces(faces.from(hole));
+        @part Solid wider() => drilled.offsetFaces(faces.from(hole), d: -2.mm);
+        @part Solid taller() => box(20, 20, 20).offsetFaces(faces.top, d: 5.mm);
+        @part Solid sharp() => box(20, 20, 20).fillet(edges.parallel(Z), r: 4.mm)
+            .removeFaces(faces.filter(f => abs(f.normal.x) > 0.5 && abs(f.normal.y) > 0.5));
+        unittest
+        {
+            assert(healed().faces.count == 6);
+            assert(sharp().faces.count == 6);
+            assert(drilled.removeFaces(faces.from(hole), open: true).faces.count == 6);
+        }
+    });
+    assert(isClose(partVolume(direct, "healed"), 8000, 1e-9));
+    assert(isClose(partVolume(direct, "wider"), 8000 - PI * 36 * 20, 1e-6));
+    assert(isClose(partVolume(direct, "taller"), 10_000, 1e-9));
+    assert(isClose(partVolume(direct, "sharp"), 8000, 1e-9));
+    // a lid's walls never meet: an error, not the box back
+    foreach (bad; [q{@part Solid x() => box(10, 10, 10).removeFaces(faces.top);},
+            q{@part Solid x() => box(10, 10, 10).offsetFaces(faces.top, d: 0.mm);}])
+        error(bad);
+
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{
         @part Solid a() => rect(10, 4).across(X).extrude(3);

@@ -280,6 +280,14 @@ immutable Ref[] reference =
     F("linearPattern", "Solid", ["n: int", "step: Vec", "n2: int", "step2: Vec"], "Solid",
         "n copies, step apart, as one solid (its tagged references: the first copy's); n2:, step2: a second "
         ~ "direction, a grid of n × n2."),
+    F("removeFaces", "Solid", ["faces: Faces", "open: bool"], "Solid",
+        "The solid without those faces, healed: the faces round them grown or cut back until they close it again "
+        ~ "(a hole, a fillet, a boss taken away: drilled.removeFaces(faces.from(hole)) is the block whole again); an "
+        ~ "error when they cannot meet (a box's walls without its lid), never an open solid. open: true leaves the gap "
+        ~ "instead: a Surface, to close with fill and sew or to thicken."),
+    F("offsetFaces", "Solid", ["faces: Faces", "d: Length"], "Solid",
+        "Those faces moved out along their normals by d (in for d < 0), the faces round them following: a step "
+        ~ "higher, a wall thicker, a hole wider (its wall moved out of the hole, d < 0)."),
     F("rib", "Solid", ["plane: Plane", "from: Vec", "to: Vec", "thickness: Length"], "Solid",
         "A rib (a gusset): the line from → to, in the plane, is its free edge, outside the part; the rib fills "
         ~ "from it to the part, thickness wide across the plane, half each side: "
