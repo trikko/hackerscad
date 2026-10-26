@@ -288,6 +288,39 @@ Solid duct() => loft([circle(r: 5.mm), circle(r: 5.mm).move(x: 30.mm, z: 40.mm)]
 
 For textured shapes with many rings, `loft` also takes rings of points (`Vec3[][]`), much faster: see *Textures and noise* in the [language reference](../LANGUAGE.md) and `examples/03_randomvase.hcad`.
 
+## Moldings
+
+A *molding* is a profile run round an outline that closes: the frame of a picture, the rim of a tray, the decorated edge of a table. `molding(outline, profile)` builds it. The profile is drawn as if you cut through the molding: its x is how far from the outline (outwards), its y how high above the outline's plane. Round the outline's corners it turns about the corner itself, as a router does going round the edge of a board; with `inward: true` it runs inside the outline instead, its corners meeting in a mitre, as the pieces of a frame do.
+
+The same idea shapes a part's edge: take off the shape a router bit would, and the edge is left with its profile. A quarter circle taken off the top edge of a plate leaves a cove (a hollow round edge) all round:
+
+<!-- render: sweeps-molding -->
+```d
+// a frame round a picture, and a plate whose top
+// edge was routed into a cove
+
+// the frame's cut: a flat strip with a round bead on it
+immutable bead = rect(vec(0.mm, 0.mm), vec(6.mm, 4.mm))
+    + circle(vec(3.mm, 4.mm), r: 3.mm);
+
+@part("Sky Pop")
+Solid frame() => molding(rect(80.mm, 60.mm), bead);
+
+// a quarter of a circle, inside the edge, below its top
+immutable cove = rect(vec(0.mm, -3.mm), vec(3.mm, 0.mm))
+    & circle(r: 3.mm);
+
+@part("Pink Pop")
+Solid plate() => (box(60.mm, 40.mm, 8.mm)
+        - molding(rect(60.mm, 40.mm).move(z: 8.mm), cove,
+            inward: true))
+    .move(x: 90.mm);
+```
+
+![A frame with a round bead, and a plate with a cove routed along its top edge](img/sweeps-molding.png)
+
+The outline is a closed path, or a profile (its outer edge); it must be flat. The profile is one piece: a molding whose cut has two separate parts is two moldings.
+
 ## The parameters
 
 | Call | Parameter | What it does | Default |
@@ -309,6 +342,8 @@ For textured shapes with many rings, `loft` also takes rings of points (`Vec3[][
 | | `start:`, `end:` | the directions it leaves the first profile and reaches the last | free |
 | | `weight:` | how strongly `start:` and `end:` hold, 0 to 4 | `1` |
 | `frames` | `n` | how many frames, ends included | — |
+| `molding` | `outline`, `profile` | the profile (x away from the outline, y up) run round the closed outline | — |
+| | `inward:` | inside the outline, its corners mitred | `false`: outside, its corners round |
 
 ## Common errors
 
@@ -324,6 +359,8 @@ For textured shapes with many rings, `loft` also takes rings of points (`Vec3[][
 | *the edges make 24 separate pieces: a path is one chain, end to end* | select edges that join: `edges.loop(…)`, `edges.chain(…)` |
 | *cannot combine a Path with '+': sweep a profile along it first* | a path is not a part |
 | *every profile of a loft with holes needs the same number of holes* | add or remove holes so the counts match |
+| *molding failed: a molding runs round a closed outline* | close the path (`closed: true`), or give a profile's outline |
+| *the profile is several separate pieces* | one molding per piece of its cut |
 | *not a valid closed solid (… overlapping sweep or fold?)* (warning) | the profile is wider than a bend is tight: a bigger `bend:`, a smaller profile, a smoother spline |
 
 ## In the application

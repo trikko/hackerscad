@@ -314,6 +314,13 @@ immutable Ref[] reference =
         "fill(rim, through: [vec(0.mm, 0.mm, 10.mm)]) // a dome",
         "body.fill(edges.between(faces.from(pocket), faces.top), tangent: faces.top) // an opening closed"]),
     F("sew", "", ["surfaces: Surface[]"], "Solid", "Surfaces (and flat profiles, to close their ends) that close round a space, joined along their edges into one solid; an error says how many edges stay open."),
+    withForms(F("molding", "", ["outline: Path | Profile", "profile: Profile", "inward: bool"], "Solid",
+        "A molding: the profile run round a closed, flat outline, x across it (outwards; inward: true, inwards), y up "
+        ~ "from its plane (the outline's plane normal towards +Z, or a profile's own normal). Outside, its corners turn "
+        ~ "about the outline's; inside they meet in a mitre. A picture frame, a rim; taken off a part, the edge a "
+        ~ "router bit leaves (a cove, a bead, an ogee). The outline must close; the profile is one piece."), [
+        "molding(rect(80.mm, 60.mm), bead)                                       // a frame round a picture",
+        "plate - molding(rect(60.mm, 40.mm).move(z: 8.mm), cove, inward: true)   // a cove routed along the top edge"]),
     withForms(F("enclosed", "", ["shapes: (Surface | Solid | Profile | Plane)[]", "at: Vec3 | Vec3[]"], "Solid[] | Solid",
         "The volumes the shapes given close off between them (a boundary fill): surfaces, solids (their faces), flat profiles and planes (as large as needed), crossing one another, wall in regions of space; each region is a solid, sorted as pieces. at: a point gives the one holding it, a list of points those holding them joined. Tags on the faces given carry on to the faces of the volumes on them. An error when they close off nothing (a side left open) or no volume holds a point."), [
         "enclosed([tube, wave, XY], at: vec(0.mm, 0.mm, 10.mm))   // the part of the tube between the floor and the wavy sheet",

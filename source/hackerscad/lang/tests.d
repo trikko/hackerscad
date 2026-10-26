@@ -4830,6 +4830,30 @@ unittest
     assert(error(`@part Solid p() => enclosed([box(10, 10, 10)], at: vec(50.mm, 0.mm, 0.mm));`)
         .message.canFind("no volume the shapes close off holds"));
     assert(error(`@part Solid p() => enclosed([XY, XZ], at: vec(1.mm, 1.mm, 1.mm));`).message.canFind("planes alone"));
+
+    // moldings: a profile run round a closed outline, outside (its corners rounding about the outline's) or inside,
+    // the same up whichever way the outline goes round; taken off a plate's top edge, a cove
+    expectOut(`auto bead = rect(vec(0.mm, 0.mm), vec(6.mm, 4.mm)) + circle(vec(3.mm, 4.mm), r: 3.mm);
+        auto frame = molding(rect(80.mm, 60.mm), bead);
+        auto inner = molding(rect(80.mm, 60.mm), bead, inward: true);
+        auto cw = molding(path([vec(-40.mm, -30.mm), vec(-40.mm, 30.mm), vec(40.mm, 30.mm), vec(40.mm, -30.mm)],
+            closed: true), bead, inward: true);
+        // outside: the profile's area along its centroid's path (3 mm out: 280 mm and a circle of radius 3)
+        writeln(frame.bbox.size, " ", abs(frame.volume / (bead.area * (280.mm + 2 * PI * 3.mm)) - 1) < 1e-6);
+        writeln(inner.bbox.size, " ", cw.bbox.min.z, " ", abs(cw.volume / inner.volume - 1) < 1e-9);
+        auto plate = box(60.mm, 40.mm, 8.mm);
+        auto cove = rect(vec(0.mm, -3.mm), vec(3.mm, 0.mm)) & circle(r: 3.mm);
+        auto routed = plate - molding(rect(60.mm, 40.mm).move(z: 8.mm), cove, inward: true);
+        // a quarter disc along its centroid's path, 4r/3pi inside the edge
+        writeln(abs((plate.volume - routed.volume) / (PI * 9.mm * 1.mm / 4 * (200.mm - 8 * 4 * 3.mm / (3 * PI))) - 1)
+            < 1e-6, " ", routed.isValid);`,
+        "[92 mm, 72 mm, 7 mm] true\n[80 mm, 60 mm, 7 mm] 0 mm true\ntrue true", "import std.math;");
+    // an open outline; a profile in two pieces
+    foreach (bad, msg; [q{@part Solid p() => molding(path([vec(0.mm, 0.mm), vec(30.mm, 0.mm)]), rect(2.mm, 2.mm));}:
+                "closed outline",
+            q{@part Solid p() => molding(rect(20.mm, 20.mm), rect(1.mm, 1.mm) + rect(1.mm, 1.mm).move(x: 5.mm));}:
+                "several separate pieces"])
+        assert(error(bad).message.canFind(msg), error(bad).message);
 }
 
 unittest

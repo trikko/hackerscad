@@ -305,6 +305,9 @@ interface BrepKernel
     Brep thicken(Brep s, double t);
     /// The point of `s` nearest to `p`, and its face's normal there; false off its faces.
     bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal);
+    /// A molding: the flat profile (x across, y up) run round `spine` (a path or a flat face's outline); x > 0
+    /// outside when `outward`
+    Brep molding(Brep spine, Brep profile, bool outward);
     /// Face `face` of `s` divided, the solid staying one: along the outline of the flat profile `tool` lying
     /// on it (mode 0), where the surface or solid `tool` crosses it (1), or the plane (origin, normal) does
     /// (2); `inside`: the result's faces inside the outline, or on the plane's normal side

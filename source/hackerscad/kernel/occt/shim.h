@@ -229,6 +229,7 @@ hc_shape *hc_split_by(const hc_shape *s, const hc_shape *tool);
 hc_shape *hc_thicken(const hc_shape *s, double t);
 /* the point of s nearest to p and its face's normal there: x y z nx ny nz; 0 off its faces */
 int hc_normal_at(const hc_shape *s, const double p[3], double out[6]);
+hc_shape *hc_molding(const hc_shape *spine, const hc_shape *profile, int out);
 hc_shape *hc_split_face(const hc_shape *s, int face, const hc_shape *tool, const double *plane, int mode);
 int hc_split_face_inside(int *out, int max);
 hc_shape *hc_enclosed(const hc_shape *const *parts, int n, const double *planes, int np);

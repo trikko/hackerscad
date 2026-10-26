@@ -2911,6 +2911,32 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
             throw new HcadError(Code.kernel, e.msg, a.span);
         return Value.of(derived(it, joined, from, "enclosed", a.span));
     });
+    // molding(outline, profile, inward:): the profile (x away from the outline, y up from its plane) run round
+    // a flat outline (a path, or a profile's edge), turning round its corners: a frame's moulding, or the cutter's
+    // shape to take off a part's edge
+    def("molding", (ref CallArgs a) {
+        auto x = Args(it, a, "molding", ["outline", "profile", "inward"]);
+        auto o = x.get("outline"), p = x.get("profile");
+        if (o.kind != Kind.solid || !(o.solid.path || o.solid.flat))
+            throw new HcadError(Code.type, format("molding runs round a Path or a Profile's outline, not %s", o.typeName),
+                x.spanOf("outline"));
+        if (p.kind != Kind.solid || !p.solid.flat)
+            throw new HcadError(Code.type, format("the profile is a Profile (x away from the outline, y up), not %s",
+                p.typeName), x.spanOf("profile"));
+        auto spine = o.solid.placed ? toPlace(k, o.solid.place, nonEmpty(o.solid, a.span)) : nonEmpty(o.solid, a.span);
+        Brep b;
+        try
+            b = k.molding(spine, nonEmpty(p.solid, a.span), !x.flag("inward", false));
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, e.msg, a.span, "the outline must be flat; a profile narrower than the "
+                ~ "outline's tightest inside corner (or rounder corners) keeps it from folding on itself");
+        auto sv = derived(it, b, [o.solid, p.solid], "molding", a.span);
+        sv.flat = false;
+        sv.path = false;
+        sv.surface = false;
+        sv.placed = false;
+        return Value.of(sv);
+    });
     def("halves", (ref CallArgs a) {
         auto sides = cutSides(a, "halves");
         // a copy: sides lives on this call's stack

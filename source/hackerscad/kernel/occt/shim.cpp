@@ -180,6 +180,7 @@
 #include <BOPAlgo_Builder.hxx>
 #include <BOPAlgo_MakerVolume.hxx>
 #include <BRepFeat_SplitShape.hxx>
+#include <BRepOffsetAPI_MakeEvolved.hxx>
 #include <BOPTools_AlgoTools3D.hxx>
 #include <IntTools_Context.hxx>
 #include <Geom_TrimmedCurve.hxx>
@@ -9850,6 +9851,113 @@ hc_shape *hc_thicken(const hc_shape *s, double t)
 // region of space they wall in on all sides, as solids of a compound. A plane (origin and normal, three
 // numbers each) stands for a face large enough to cross everything else. The faces keep the history of
 // the shapes they lie on (not of the planes).
+// A molding: the profile (a flat face on XY: x across the spine, y up from its plane) run round the spine (a
+// path, or a flat face's outline), keeping its place relative to it, round its corners too (they turn about the
+// spine's normal there), its self-intersections taken away. `out` gives which side x > 0 lies on: 1 outside a
+// closed spine (or right of an open one going forward), -1 inside.
+hc_shape *hc_molding(const hc_shape *spine, const hc_shape *profile, int out)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        // the outline: a closed wire (a face: its outer one), and which way is up: a face's normal, or its plane's
+        // normal turned towards +Z
+        TopoDS_Wire sp;
+        TopoDS_Face given;
+        if (TopExp_Explorer(spine->shape, TopAbs_FACE).More()) {
+            given = TopoDS::Face(TopExp_Explorer(spine->shape, TopAbs_FACE).Current());
+            sp = BRepTools::OuterWire(given);
+        } else
+            sp = single_wire(spine->shape);
+        if (!BRep_Tool::IsClosed(sp))
+            throw Standard_Failure("a molding runs round a closed outline: close the path (closed: true)");
+        BRepBuilderAPI_MakeFace mf(sp, Standard_True);
+        if (!mf.IsDone())
+            throw Standard_Failure("the outline must be flat");
+        auto normal = [](const TopoDS_Face &f) {
+            gp_Dir n = BRepAdaptor_Surface(f).Plane().Axis().Direction();
+            return f.Orientation() == TopAbs_REVERSED ? n.Reversed() : n;
+        };
+        const gp_Dir along = normal(mf.Face());   // the side the wire goes round counter-clockwise
+        gp_Dir up = along;
+        if (!given.IsNull() && BRepAdaptor_Surface(given).GetType() == GeomAbs_Plane)
+            up = normal(given);
+        else if (up.Z() < -1e-9 || (std::abs(up.Z()) <= 1e-9 && (up.Y() < -1e-9 || (std::abs(up.Y()) <= 1e-9 && up.X() < 0))))
+            up.Reverse();
+        // counter-clockwise seen from up: then the wire's left is its inside, and OpenCascade's Z is up
+        if (along.Dot(up) < 0)
+            sp.Reverse();
+        // a profile joined from shapes can come as several faces side by side: one face first
+        ShapeUpgrade_UnifySameDomain unify(profile->shape, Standard_True, Standard_True, Standard_False);
+        unify.Build();
+        const TopoDS_Shape prof = unify.Shape();
+        int faces = 0;
+        for (TopExp_Explorer ex(prof, TopAbs_FACE); ex.More(); ex.Next())
+            faces++;
+        if (faces == 0)
+            throw Standard_Failure("the profile has no area");
+        if (faces > 1)
+            throw Standard_Failure("the profile is several separate pieces: a molding runs one outline round");
+        const TopoDS_Wire w0 = BRepTools::OuterWire(TopoDS::Face(TopExp_Explorer(prof, TopAbs_FACE).Current()));
+        TopoDS_Shape res;
+        if (out < 0) {
+            // inwards: OpenCascade's evolved shape, the profile in the outline's frame (X along it, Z up, Y its
+            // left, the inside): x to Y, y to Z, the profile's z (0) to X, a rotation
+            gp_Trsf across;
+            across.SetValues(0, 0, 1, 0,
+                             1, 0, 0, 0,
+                             0, 1, 0, 0);
+            const TopoDS_Wire w = TopoDS::Wire(BRepBuilderAPI_Transform(w0, across, Standard_True).Shape());
+            BRepOffsetAPI_MakeEvolved mk(sp, w, GeomAbs_Arc, Standard_True, Standard_True, Standard_False, 1e-7,
+                                         Standard_False, Standard_False);
+            mk.Build();
+            if (!mk.IsDone())
+                throw Standard_Failure("the profile could not be run round the outline");
+            res = mk.Shape();
+        } else {
+            // outwards: the profile swept round the outline, its corners turning about the outline's corners
+            BRepTools_WireExplorer first(sp);
+            const TopoDS_Edge e = first.Current();
+            BRepAdaptor_Curve cv(e);
+            const double t = e.Orientation() == TopAbs_REVERSED ? cv.LastParameter() : cv.FirstParameter();
+            gp_Pnt p0;
+            gp_Vec d1;
+            cv.D1(t, p0, d1);
+            if (e.Orientation() == TopAbs_REVERSED)
+                d1.Reverse();
+            const gp_Dir tan(d1);
+            const gp_Dir outward = tan.Crossed(up);
+            gp_Trsf place;
+            place.SetTransformation(gp_Ax3(p0, tan.Reversed(), outward), gp_Ax3());
+            const TopoDS_Wire w = TopoDS::Wire(BRepBuilderAPI_Transform(w0, place, Standard_True).Shape());
+            BRepOffsetAPI_MakePipeShell ps(sp);
+            ps.SetMode(up);
+            ps.SetTransitionMode(BRepBuilderAPI_RoundCorner);
+            ps.Add(w, Standard_False, Standard_False);
+            ps.Build();
+            if (!ps.IsDone() || !ps.MakeSolid())
+                throw Standard_Failure("the profile could not be run round the outline");
+            res = ps.Shape();
+        }
+        BRep_Builder b;
+        TopoDS_Compound c;
+        b.MakeCompound(c);
+        int count = 0;
+        for (TopExp_Explorer ex(res, TopAbs_SOLID); ex.More(); ex.Next(), count++)
+            b.Add(c, ex.Current());
+        if (count == 0)
+            throw Standard_Failure("the molding came out with no inside: the outline must be flat");
+        res = count == 1 ? TopoDS_Shape(TopExp_Explorer(c, TopAbs_SOLID).Current()) : TopoDS_Shape(c);
+        if (!BRepCheck_Analyzer(res).IsValid())
+            throw Standard_Failure("the molding came out broken: a smaller profile, or rounder corners");
+        GProp_GProps g;
+        BRepGProp::VolumeProperties(res, g);
+        if (g.Mass() < 0)
+            res.Reverse();
+        else if (g.Mass() == 0)
+            throw Standard_Failure("the molding came out with no volume");
+        return primitive(res);
+    });
+}
+
 // The pieces of the last hc_split_face that lie inside the profile's outline, or on the plane's normal side
 // (indices of the result's faces)
 static thread_local std::vector<int> g_split_inside;
