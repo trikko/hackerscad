@@ -12,7 +12,7 @@ A feature changes a solid that is already there. A *fillet* is a rounded edge; a
 |---|---|---|
 | `s.fillet(edges, r:)` | rounds edges with an arc of radius `r`; with `r2:` from `r` to `r2` along each edge | edges |
 | `s.removeFaces(faces)` | the solid without those faces, the faces round them closing it again (a hole, a fillet, a boss taken away) | faces |
-| `s.offsetFaces(faces, d:)` | those faces moved out by `d` (in if negative), the faces round them following | faces |
+| `s.offsetFaces(faces, d:)` | those faces moved out by `d` (in if negative), the faces round them following; those that carry on from them with no edge between move too | faces |
 | `s.splitFace(face, by:, tag:)` | one face divided in pieces, the solid unchanged: by an outline drawn on it, a plane or a surface | one face |
 | `s.rib(plane:, from:, to:, thickness:)` | a rib (gusset): the line from → to in the plane is its free edge, filled to the part | a plane, two points |
 | `s.fullRound(faces)` | a flat face between two parallel ones becomes a half round as wide as it | faces |

@@ -660,6 +660,13 @@ unittest
             q{@part Solid x() => box(10, 10, 10).offsetFaces(faces.top, d: 0.mm);}])
         error(bad);
 
+    // offsetFaces moves the faces carrying on from those given with no edge between too: a band of a cylinder's
+    // side, divided off, takes the whole side with it (OpenCascade's offset keeps them joined)
+    expectOut(`auto c = cylinder(d: 30.mm, h: 40.mm)
+            .splitFace(faces.largest, by: plane(origin: vec(0.mm, 0.mm, 25.mm), normal: Z), tag: "band");
+        writeln(c.offsetFaces(faces.tagged("band"), d: 1.mm).section(plane(origin: vec(0.mm, 0.mm, 10.mm), normal: Z))
+            .bbox.size.x);`, "32 mm");
+
     // a face divided, the solid one and whole: by an outline drawn on it (the zone inside tagged, then raised
     // alone), by a plane (the side its normal points to tagged), by a surface crossing it
     expectOut(`auto plate = box(60.mm, 40.mm, 5.mm);

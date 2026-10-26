@@ -287,7 +287,8 @@ immutable Ref[] reference =
         ~ "instead: a Surface, to close with fill and sew or to thicken."),
     F("offsetFaces", "Solid", ["faces: Faces", "d: Length"], "Solid",
         "Those faces moved out along their normals by d (in for d < 0), the faces round them following: a step "
-        ~ "higher, a wall thicker, a hole wider (its wall moved out of the hole, d < 0)."),
+        ~ "higher, a wall thicker, a hole wider (its wall moved out of the hole, d < 0). Faces that carry on from them "
+        ~ "with no edge between (the rest of a cylinder's side, a fillet's round) move with them."),
     F("splitFace", "Solid", ["face: Faces", "by: Profile | Plane | Surface", "tag: string"], "Solid",
         "One face divided, the solid staying one and the same: along the outline of a profile drawn on it "
         ~ "(body.sketch(face)), or where a plane or a surface crosses it from edge to edge. tag: names the new pieces "
