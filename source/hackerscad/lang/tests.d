@@ -600,6 +600,32 @@ unittest
             q{@part Solid x() => box(1, 1, 1).pathPattern(box(2, 2, 2), n: 3);}])
         error(bad);
 
+    // ribs: from the free edge to the part, thickness across the plane
+    auto ribs = runModel(q{
+        immutable bracket = box(40, 30, 4) + box(4, 30, 40).move(x: -18.mm);
+        @part Solid one() => bracket.rib(plane: XZ, from: vec(-16.mm, 0.mm, 24.mm), to: vec(4.mm, 0.mm, 4.mm),
+            thickness: 3.mm);
+        @part Solid shifted() => bracket.rib(plane: plane(origin: vec(0.mm, 10.mm, 0.mm), normal: Y),
+            from: vec(-16.mm, 10.mm, 24.mm), to: vec(4.mm, 10.mm, 4.mm), thickness: 3.mm);
+        @part Solid plain() => bracket;
+        unittest
+        {
+            assert(one().contains(vec(-10.mm, 1.mm, 10.mm)));
+            assert(!one().contains(vec(-10.mm, 2.mm, 10.mm)));
+            assert(shifted().contains(vec(-10.mm, 11.mm, 10.mm)));
+        }
+    });
+    assert(isClose(partVolume(ribs, "one") - partVolume(ribs, "plain"), 0.5 * 20 * 20 * 3, 1e-6));
+    assert(isClose(partVolume(ribs, "shifted") - partVolume(ribs, "plain"), 0.5 * 20 * 20 * 3, 1e-6));
+    foreach (bad; [q{@part Solid x() => (box(40, 30, 4) + box(4, 30, 40).move(x: -18.mm)).rib(plane: plane(origin:
+                vec(0.mm, 50.mm, 0.mm), normal: Y), from: vec(-16.mm, 0.mm, 24.mm), to: vec(4.mm, 0.mm, 4.mm),
+                thickness: 3.mm);},
+            q{@part Solid x() => (box(40, 30, 4) + box(4, 30, 40).move(x: -18.mm)).rib(plane: XZ,
+                from: vec(-30.mm, 0.mm, 24.mm), to: vec(4.mm, 0.mm, 2.mm), thickness: 3.mm);},
+            q{@part Solid x() => (box(40, 30, 4) + box(4, 30, 40).move(x: -18.mm)).rib(plane: XZ,
+                from: vec(-16.mm, 0.mm, 24.mm), to: vec(30.mm, 0.mm, 24.mm), thickness: 3.mm);}])
+        error(bad);
+
     // across: a profile stood up across X, as extrude(along: X) does; a loft along X through two
     auto stood = runModel(q{
         @part Solid a() => rect(10, 4).across(X).extrude(3);

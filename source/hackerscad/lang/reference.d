@@ -280,6 +280,10 @@ immutable Ref[] reference =
     F("linearPattern", "Solid", ["n: int", "step: Vec", "n2: int", "step2: Vec"], "Solid",
         "n copies, step apart, as one solid (its tagged references: the first copy's); n2:, step2: a second "
         ~ "direction, a grid of n × n2."),
+    F("rib", "Solid", ["plane: Plane", "from: Vec", "to: Vec", "thickness: Length"], "Solid",
+        "A rib (a gusset): the line from → to, in the plane, is its free edge, outside the part; the rib fills "
+        ~ "from it to the part, thickness wide across the plane, half each side: "
+        ~ "bracket.rib(plane: XZ, from: vec(-16.mm, 0.mm, 24.mm), to: vec(4.mm, 0.mm, 4.mm), thickness: 3.mm)."),
     F("pathPattern", "Solid", ["path: Path", "n: int", "rotate: bool"], "Solid",
         "n copies evenly along a path (both ends included; a closed path all round, the start not repeated), the "
         ~ "solid built where the path starts: each turned as the path turns from there (rotate: false only moves "

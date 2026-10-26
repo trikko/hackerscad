@@ -11,6 +11,7 @@ A feature changes a solid that is already there. A *fillet* is a rounded edge; a
 | Feature | What it does | Takes |
 |---|---|---|
 | `s.fillet(edges, r:)` | rounds edges with an arc of radius `r`; with `r2:` from `r` to `r2` along each edge | edges |
+| `s.rib(plane:, from:, to:, thickness:)` | a rib (gusset): the line from → to in the plane is its free edge, filled to the part | a plane, two points |
 | `s.fullRound(faces)` | a flat face between two parallel ones becomes a half round as wide as it | faces |
 | `s.chamfer(edges, d:)` | bevels edges at 45°, `d` back on each face; uneven with `d2:` or `angle:` | edges |
 | `s.shell(open:, thickness:)` | hollows the solid, the `open` faces removed, walls `thickness` thick | faces |

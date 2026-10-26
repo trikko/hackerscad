@@ -968,6 +968,89 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 copies ~= transformed(it, a.span, s, b => k.translate(b, step * i + step2 * j));
         return firstCopyAnchors(unionAll(it, copies, a.span), s);
     });
+    def("rib", (ref CallArgs a) {
+        // rib(plane:, from:, to:, thickness:): the line from → to, in the plane, a rib's free edge; the rib
+        // fills from it to the part, thickness wide across the plane (half each side)
+        auto x = Args(it, a, "rib", ["solid", "plane", "from", "to", "thickness"]);
+        auto s = x.solid("solid");
+        Vec3 o, n;
+        planeArg(x, "plane", o, n);
+        n = n.normalized;
+        immutable t = x.len("thickness");
+        if (!(t > 0))
+            throw new HcadError(Code.type, "the rib's thickness must be greater than 0", x.spanOf("thickness"));
+        auto from = x.vecLen("from"), to = x.vecLen("to");
+        // the plane's own frame: everything is worked out on its XY, then put back
+        immutable u = faceXAxis(n), v = n.cross(u);
+        Vec3 axis;
+        immutable angle = axisAngle(u, v, n, axis);
+        Brep toLocal(Brep b)
+        {
+            b = k.translate(b, -o);
+            return angle > 1e-12 ? k.rotate(b, axis, -angle) : b;
+        }
+        Vec3 local(Vec3 p) => Vec3((p - o).dot(u), (p - o).dot(v), 0);
+        immutable pa = local(from), pb = local(to);
+        if ((pb - pa).length < 1e-6)
+            throw new HcadError(Code.type, "the rib's edge needs two points apart: from: and to:", x.spanOf("to"));
+        auto body = nonEmpty(s, a.span);
+        Brep cut;
+        try
+            cut = k.section(toLocal(body), Vec3(0, 0, 0), Vec3(0, 0, 1));
+        catch (KernelException)
+            cut = null;
+        if (cut is null || k.area(cut) <= 0)
+            throw new HcadError(Code.type, "the plane does not cut the part: a rib lies in a plane through it",
+                x.spanOf("plane"));
+        immutable along = (pb - pa).normalized;
+        {
+            // the edge outside the part (its ends may sink into the faces a little, to hold on)
+            immutable len = (pb - pa).length, w = 1e-3 * len;
+            immutable side = Vec3(-along.y, along.x, 0) * (w / 2);
+            auto line = k.polygon([pa.x + side.x, pa.y + side.y, pb.x + side.x, pb.y + side.y, pb.x - side.x,
+                pb.y - side.y, pa.x - side.x, pa.y - side.y]);
+            double inside = 0;
+            try
+                inside = k.area(k.boolean(line, cut, BoolOp.common)) / w;
+            catch (KernelException)
+            {
+            }
+            if (inside > 0.1 * len)
+                throw new HcadError(Code.type, format("the rib's edge runs %s mm through the part: from: and to: are "
+                    ~ "its free edge, outside the part, the rib filling from it to the part", fmtNum(inside)),
+                    x.spanOf("from"));
+        }
+        immutable far = 4 * k.bbox(body).size.length;
+        // the strip from the edge towards the part, on the side where the part is
+        Brep strip(double side)
+        {
+            immutable m = Vec3(-along.y, along.x, 0) * side * far;
+            return k.polygon([pa.x, pa.y, pb.x, pb.y, pb.x + m.x, pb.y + m.y, pa.x + m.x, pa.y + m.y]);
+        }
+        double towards(double side)
+        {
+            try
+                return k.area(k.boolean(strip(side), cut, BoolOp.common));
+            catch (KernelException)
+                return 0;
+        }
+        immutable side = towards(1) >= towards(-1) ? 1.0 : -1.0;
+        // the room between the edge and the part: the piece of the strip, less the part, along the edge
+        auto room = k.boolean(strip(side), cut, BoolOp.cut);
+        immutable probe = (pa + pb) * 0.5 + Vec3(-along.y, along.x, 0) * side * (1e-3 * (pb - pa).length);
+        Brep piece;
+        foreach (part; k.profileParts(room, 2))
+            if (k.inside(k.extrude(part, 1, 0), Vec3(probe.x, probe.y, 0.5)))
+                piece = part;
+        if (piece is null)
+            throw new HcadError(Code.type, "the rib's edge runs through the part: from: and to: are its free edge, "
+                ~ "outside the part, the rib filling from it to the part", x.spanOf("from"));
+        if (k.bbox(piece).size.length > 0.5 * far)
+            throw new HcadError(Code.type, "the rib would run on for ever: the part does not close the room between "
+                ~ "its edge and it (put from: and to: on the part's faces)", x.spanOf("from"));
+        auto rib = inFrame(k, k.translate(k.extrude(piece, t, 0), Vec3(0, 0, -t / 2)), o, u, v, n);
+        return transformed(it, a.span, s, (Brep b) => k.booleanMerged(b, rib, BoolOp.fuse), "rib");
+    });
     def("pathPattern", (ref CallArgs a) {
         // pathPattern(path, n:): n copies evenly along a path, the solid built at its start; each turned as the
         // path turns from there (rotate: false keeps them as they are, only moved)
