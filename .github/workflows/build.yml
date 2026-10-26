@@ -100,6 +100,21 @@ jobs:
           key: win-downloads-${{ hashFiles('tools/setup-win-cross.sh') }}
       - name: Toolchain and libraries
         run: ./tools/setup-win-cross.sh
+      # OpenCascade built by us (see the script): once, then from the cache
+      # (saved at once: a later step that fails would otherwise leave it unsaved)
+      - uses: actions/cache/restore@v4
+        id: occt
+        with:
+          path: build/win/occt
+          key: occt-win-${{ hashFiles('packaging/windows/build-occt.sh') }}
+      - name: OpenCascade
+        if: steps.occt.outputs.cache-hit != 'true'
+        run: packaging/windows/build-occt.sh
+      - uses: actions/cache/save@v4
+        if: steps.occt.outputs.cache-hit != 'true'
+        with:
+          path: build/win/occt
+          key: occt-win-${{ hashFiles('packaging/windows/build-occt.sh') }}
       # dub's packages and objects and the native DLL; the DLL is
       # rebuilt when the shim changes, all of it when the MSYS2 packages do
       - uses: actions/cache@v4
@@ -107,8 +122,8 @@ jobs:
           path: |
             ~/.dub
             build/win/native
-          key: win-${{ hashFiles('build/win/pkgs.txt', 'tools/setup-win-cross.sh', 'tools/build-native*.sh', 'dub.selections.json') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*', 'data/logo/*.svg') }}
-          restore-keys: win-${{ hashFiles('build/win/pkgs.txt', 'tools/setup-win-cross.sh', 'tools/build-native*.sh', 'dub.selections.json') }}-
+          key: win-${{ hashFiles('build/win/pkgs.txt', 'tools/setup-win-cross.sh', 'tools/build-native*.sh', 'packaging/windows/build-occt.sh', 'dub.selections.json') }}-${{ hashFiles('source/hackerscad/kernel/occt/shim.*', 'data/logo/*.svg') }}
+          restore-keys: win-${{ hashFiles('build/win/pkgs.txt', 'tools/setup-win-cross.sh', 'tools/build-native*.sh', 'packaging/windows/build-occt.sh', 'dub.selections.json') }}-
       - name: Package
         run: |
           export PATH="$(ls -d $PWD/build/win/ldc2-*-linux-x86_64)/bin:$PATH"
@@ -117,12 +132,24 @@ jobs:
         run: |
           export WINEPREFIX=$PWD/build/win/prefix WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=-all
           for f in examples/*.hcad; do wine dist/hackerscad/bin/hcad.exe check "$f" || exit 1; done
+      # the unit tests built for Windows, run on a real Windows machine by windows-test: dub runs them
+      # after building, which here fails at once (no DLLs beside them), so only the program is checked for
+      - name: Unit tests for Windows
+        run: |
+          export PATH="$(ls -d $PWD/build/win/ldc2-*-linux-x86_64)/bin:$PATH"
+          rm -f build/lib/hackerscad-core-test-library.exe
+          dub test :core --compiler=ldc2 --arch=x86_64-windows-msvc || true
+          test -f build/lib/hackerscad-core-test-library.exe
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: dist/*.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-tests
+          path: build/lib/hackerscad-core-test-library.exe
 
-  # the zip on a real Windows machine: the examples
+  # the zip on a real Windows machine: the unit tests and the examples
   windows-test:
     needs: windows
     runs-on: windows-latest
@@ -134,6 +161,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-tests
+          path: build/lib
       - uses: msys2/setup-msys2@v2
         with:
           msystem: CLANG64
@@ -142,6 +173,10 @@ jobs:
         # both zips (Mesa's lands in the same folder): the runner has no
         # graphics card
         run: for z in *.zip; do unzip -q -o "$z" -d out; done
+      # the whole suite, as on Linux and macOS: from the checkout (the tests find the repository from where
+      # they are), with the package's DLLs
+      - name: Test
+        run: PATH="$PWD/out/hackerscad/bin:$PATH" build/lib/hackerscad-core-test-library.exe
       - name: Check the examples
         run: for f in examples/*.hcad; do out/hackerscad/bin/hcad.exe check "$f" || exit 1; done
       # on request, the package is opened through hackerscad.exe, as a user
