@@ -1617,6 +1617,26 @@ mixin template ControlMethods()
                 });
                 return;
             }
+        case "interference":
+            // {}: every two parts that overlap, the volume they share shown in red (as the main menu's Check
+            // Interference); {"close": true}: back to the model
+            whenIdle(() {
+                if (p.safe!bool("close").or(false))
+                {
+                    if (viewport.inInspect)
+                        closeShown();
+                    return reply(state(), null);
+                }
+                if (busy())
+                    return reply(JValue.init, "the model is being evaluated: try again when it is done");
+                checkInterference((Evaluator.Clash[] clashes) {
+                    JValue[] list;
+                    foreach (c; clashes)
+                        list ~= JSOB("a", last.parts[c.a].name, "b", last.parts[c.b].name, "volume_mm3", c.volume);
+                    reply(JSOB("clashes", JValue(list), "parts", last.parts.length), null);
+                });
+            });
+            return;
         case "about":
             // {"debug": true}: the debug information About copies, without opening it
             if (p.safe!bool("debug").or(false))

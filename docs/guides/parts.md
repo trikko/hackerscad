@@ -255,6 +255,7 @@ hcad render bracket.hcad -o bracket.pdf
 
 - The **Export** button in the header bar opens a menu of the formats: **3MF** (one object per part, with colours), **3MF, one object** (the parts as its pieces, for prints in several colours), **STL** (a zip of one STL per part when there are more), **STEP**, **PNG** (a picture of the parts). Ctrl+E (⌘E on macOS) repeats the last format. The same menu is under **☰ › Export**.
 - **Export › Mesh quality** chooses Draft, Normal or Fine for STL and 3MF files, or **Custom…** a distance in mm; the choice is kept for the next times. After an export, the line at the bottom says how many triangles the file holds and at which quality.
+- **☰ › Check Interference** looks at every two parts and lists those that overlap, with the volume they share, shown in red over the parts (Esc goes back to the model): a lid that sits too low, a pin wider than its hole. Parts that only touch are not counted.
 - Right-click a part › **Export *name*** › **3MF…**, **STL…**, **STEP…** exports that part alone.
 - Right-click a part › **Colour** writes the colour into the code (the Pop colours, or **Other…** for any); **Hide *name***, **Show only *name***, **Show all parts** change only what the view shows.
 - Exports use the parameters and preset set in the side panel, and run the `unittest`s first.

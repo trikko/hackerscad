@@ -1271,6 +1271,12 @@ JValue toolList()
         gui("hcad_gui_test", "Run the model's unittests in the user's window, as its bug button and F5 do (the window "
             ~ "does not run them at every change): returns how many it has, how many failed, and the state with the "
             ~ "problems.", ``),
+        gui("hcad_gui_interference", "Check Interference (the main menu's) in the user's window: every two parts that "
+            ~ "overlap, with the volume they share (clashes: a, b, volume_mm3), shown in red over the parts until Esc or "
+            ~ "close: true; a contact with no volume is no clash. Parts that must not overlap (a lid and its box, a pin "
+            ~ "and its hole with play) should give none; a part meant to sit inside another (a reference part) shows how "
+            ~ "much it would cut into it.",
+            `"close": {"type": "boolean"}`, `[]`),
         gui("hcad_gui_about", "Open the About window of the user's hackerscad (version, credits, licences); close: true "
             ~ "closes it; debug: true returns the debug information its Copy button copies (versions, system, screen, "
             ~ "renderer, frame times, fonts, model size) without opening it; logs: true returns the folder of the logs "
@@ -1785,7 +1791,7 @@ JValue callTool(string name, JValue args)
             break;
         }
     case "hcad_gui_open", "hcad_gui_set", "hcad_gui_state", "hcad_gui_pick", "hcad_gui_view", "hcad_gui_sketch",
-            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_ai", "hcad_gui_test", "hcad_gui_find", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
+            "hcad_gui_new", "hcad_gui_rename", "hcad_gui_dimension", "hcad_gui_step", "hcad_gui_rollback", "hcad_gui_inspect", "hcad_gui_feature", "hcad_gui_section", "hcad_gui_menu", "hcad_gui_about", "hcad_gui_interference", "hcad_gui_ai", "hcad_gui_test", "hcad_gui_find", "hcad_gui_stop", "hcad_gui_save", "hcad_gui_export",
             "hcad_gui_edit", "hcad_gui_undo", "hcad_gui_project", "hcad_gui_selection", "hcad_gui_measure", "hcad_gui_complete", "hcad_gui_cheatsheet",
             "hcad_gui_transform", "hcad_gui_colour", "hcad_gui_split", "hcad_gui_annotate":
         {

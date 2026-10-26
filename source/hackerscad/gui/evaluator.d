@@ -205,6 +205,53 @@ final class Evaluator
     /// Tessellates solids and profiles, and outlines paths (for Inspect), on
     /// the worker thread; `done` gets one mesh per value, in order, on the GTK
     /// thread (empty when it could not be made).
+    /// Two parts that overlap: which (indices into the parts given) and the volume they share.
+    struct Clash
+    {
+        size_t a, b;
+        double volume;
+    }
+
+    /// Every two of `parts` that overlap, with the solid they share (meshed, to show), on the worker: only parts
+    /// whose boxes meet are intersected; a contact with no volume is no clash.
+    void interference(PartMesh[] parts, void delegate(Clash[], PartMesh[]) done)
+    {
+        jobs ~= (Engine e) {
+            import std.algorithm : min;
+            Clash[] found;
+            PartMesh[] shared_;
+            foreach (i; 0 .. parts.length)
+                foreach (j; i + 1 .. parts.length)
+                {
+                    auto pa = parts[i], pb = parts[j];
+                    if (pa.brep is null || pb.brep is null || pa.flat || pb.flat || pa.path || pb.path)
+                        continue;
+                    immutable lo = pa.bbox.min, hi = pa.bbox.max, lo2 = pb.bbox.min, hi2 = pb.bbox.max;
+                    if (hi.x < lo2.x || hi2.x < lo.x || hi.y < lo2.y || hi2.y < lo.y || hi.z < lo2.z || hi2.z < lo.z)
+                        continue;
+                    try
+                    {
+                        auto c = e.kernel.boolean(pa.brep, pb.brep, BoolOp.common);
+                        immutable v = e.kernel.volume(c);
+                        // a speck of rounding where two faces touch is no overlap
+                        if (!(v > 1e-6 * min(pa.volume, pb.volume) && v > 1e-6))
+                            continue;
+                        found ~= Clash(i, j, v);
+                        PartResult p;
+                        p.solid = new SolidVal(c, Span.init);
+                        p.rgb = 0xE53935;
+                        shared_ ~= prepare(e.kernel, p, 0.02);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            return () => done(found, shared_);
+        };
+        if (!running)
+            startNext();
+    }
+
     void prepareSolids(SolidVal[] vals, void delegate(PartMesh[]) done)
     {
         jobs ~= (Engine e) {

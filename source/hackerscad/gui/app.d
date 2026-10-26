@@ -1457,6 +1457,7 @@ final class MainWindow
                 inspectToggle.setActive(!inspectToggle.getActive());
         });
         action(app, "about", [], &showAbout);
+        action(app, "interference", [], () => checkInterference(null));
         action(app, "ai-agents", [], &showAi);
         action(app, "run-tests", ["F5"], &runTests);
         action(app, "build", ["<Primary>b"], () => build());
@@ -1895,12 +1896,15 @@ private:
         style.append("Dark", "win.theme::dark");
         auto look = new Menu;
         look.appendSubmenu("Style", style);
+        auto model = new Menu;
+        model.append("Check Interference", "win.interference");
         auto app = new Menu;
         app.append("AI Agents", "win.ai-agents");
         app.append("About hackerscad", "win.about");
         app.append("Quit", "app.quit");
         auto menu = new Menu;
         menu.appendSection(null, files);
+        menu.appendSection(null, model);
         menu.appendSection(null, help);
         menu.appendSection(null, look);
         menu.appendSection(null, app);
@@ -4324,6 +4328,43 @@ private:
             immutable where = format("Line %d · %s%s%s", f.span.line, f.kind, runs, shown);
             info(where ~ (boolean ? " · its operands" : " · every run"));
             showModeBar(boolean ? where ~ ": " ~ legend : where ~ ": what every run made", boolean);
+        });
+    }
+
+    /// Check Interference: every two parts that overlap, the volume they share shown in red over the parts (as
+    /// Inspect shows, Esc back to the model), listed in the mode bar and the console; `then` (the socket) gets the
+    /// clashes once found
+    void checkInterference(void delegate(Evaluator.Clash[]) then)
+    {
+        if (busy())
+            return info("wait for the evaluation to finish, then try again");
+        auto parts = last.parts.dup;
+        if (parts.length < 2)
+        {
+            info("Check Interference looks at two parts or more: the model has " ~ (parts.length ? "one" : "none"));
+            if (then !is null)
+                then(null);
+            return;
+        }
+        info("Checking every two parts…");
+        evaluator.interference(parts, (Evaluator.Clash[] clashes, PartMesh[] shared_) {
+            if (then !is null)
+                then(clashes);
+            if (clashes.length == 0)
+                return info(format("No two of the %d parts overlap", parts.length));
+            import std.array : join;
+            string[] said;
+            foreach (c; clashes)
+                said ~= format("%s & %s %.4g mm³", parts[c.a].name, parts[c.b].name, c.volume);
+            if (viewport.inRollback)
+                viewport.clearRollback();
+            auto red = new Vec3[shared_.length];
+            red[] = Vec3(0.9, 0.22, 0.2);
+            viewport.showInspect(shared_, red);
+            immutable text = format("%d overlap%s: %s", clashes.length, clashes.length == 1 ? "" : "s", said.join(" · "));
+            note(text);
+            info(format("%d overlap%s, in red: Esc goes back to the model", clashes.length, clashes.length == 1 ? "" : "s"));
+            showModeBar(text);
         });
     }
 

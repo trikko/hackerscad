@@ -335,5 +335,6 @@ A failing `assert` in a `unittest` does not stop the model: the parts are still 
 
 - The **display** menu of the view bar (the cube) has a **Printability** check box: overhangs in red, thin walls in violet, with fields for the overhang angle (**overhang °**) and the thinnest wall (**wall mm**). The status line gives their areas.
 - Right-click a part: **Measure** gives distances between two selected faces, **Part size** and **Part volume**.
+- **☰ › Check Interference**: every two parts that overlap, with how much, in red in the view: a fit with too little play shows up there before the print.
 - Right-click a flat face: **Place on…** places another solid against it, writing `placeOn(…)`.
 - Reference parts (`alpha:`, `export: false`) show see-through, so you see a fit from outside; a `unittest` runs with F5 or the bug button over the console, and before an export.
