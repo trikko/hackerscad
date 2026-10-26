@@ -13,6 +13,7 @@ A feature changes a solid that is already there. A *fillet* is a rounded edge; a
 | `s.fillet(edges, r:)` | rounds edges with an arc of radius `r`; with `r2:` from `r` to `r2` along each edge | edges |
 | `s.removeFaces(faces)` | the solid without those faces, the faces round them closing it again (a hole, a fillet, a boss taken away) | faces |
 | `s.offsetFaces(faces, d:)` | those faces moved out by `d` (in if negative), the faces round them following | faces |
+| `s.splitFace(face, by:, tag:)` | one face divided in pieces, the solid unchanged: by an outline drawn on it, a plane or a surface | one face |
 | `s.rib(plane:, from:, to:, thickness:)` | a rib (gusset): the line from → to in the plane is its free edge, filled to the part | a plane, two points |
 | `s.fullRound(faces)` | a flat face between two parallel ones becomes a half round as wide as it | faces |
 | `s.chamfer(edges, d:)` | bevels edges at 45°, `d` back on each face; uneven with `d2:` or `angle:` | edges |
@@ -81,6 +82,8 @@ Solid smooth() => carlo()
 | `thickness:` | the wall left all round, measured inwards | — |
 | `walls:`, `wallThickness:` (shell) | faces whose walls have a thickness of their own (a thicker floor); lists of both for several, in the same order | — |
 | `outward:` (shell) | `true`: the walls grow outside the solid, which becomes the hollow inside (a case round a part) | `false` |
+| `by:` (splitFace) | a profile drawn on the face, a `Plane` or a `Surface` crossing it | — |
+| `tag:` (splitFace) | names the pieces inside the outline, or on the plane normal's side | none |
 | `faces` (draft) | the faces to tilt | — |
 | `angle:` | how far they lean, between 0 and 90° (moulds use 1–3°) | — |
 | `pull:` | the way the part leaves the mould | `Z` |
@@ -276,6 +279,37 @@ Solid wider() => drilled
 
 A `Solid` is always closed: when the faces round a gap can never meet (a box's walls without its lid), `removeFaces` is an error, not an open solid. `open: true` leaves the gap on purpose and gives a `Surface`, to close with `fill` and `sew` or to make a solid with `thicken`.
 
+## Dividing a face
+
+A feature works on whole faces. To work on part of one (raise a label on a plate, round only the front of a top, colour a band round a can), divide it first: `splitFace` cuts one face into pieces without changing the solid. Draw the zone on the face with a sketch, or cut it with a plane or a surface; `tag:` names the pieces inside the outline, or on the side the plane's normal points to, and the features that follow take them by that name:
+
+<!-- render: features-split-face -->
+```d
+// a label on a plate: the zone drawn on the top,
+// divided off, then raised alone
+
+immutable plate = box(60.mm, 40.mm, 5.mm);
+
+Solid marked()
+{
+    auto s = plate.sketch(faces.top);
+    auto r = s.rect(vec(-15.mm, -8.mm), vec(15.mm, 8.mm),
+        corner: 3.mm);
+    s.fix(r[0].start);
+    s.fix(r[2].start);
+    return plate.splitFace(faces.top, by: s.profile,
+        tag: "label");
+}
+
+@part("Sky Pop")
+Solid raised() => marked()
+    .extrude(faces.tagged("label"), depth: 1.mm);
+```
+
+![A plate whose top has a rounded rectangle divided off and raised](img/features-split-face.png)
+
+The outline must lie on the face (draw it with `body.sketch(face)`), and a plane or a surface must cross the face from one edge to another. A curved face that closes round on itself, a cylinder's side, has a seam where it joins: dividing it, the piece across the seam comes in two faces, both tagged.
+
 ## Common errors
 
 | Message | What it means, what to do |
@@ -290,6 +324,8 @@ A `Solid` is always closed: when the faces round a gap can never meet (a box's w
 | *every face is open: nothing would be left to make the walls of* | `open:` takes some faces, not all |
 | *the draft angle goes from 0 to 90° (either way), both excluded* | a draft of 0° or 90° |
 | *the kernel could not draft these faces* | a smaller angle, or fewer faces at a time |
+| *splitFace: the outline does not lie on the face* | the profile is elsewhere: draw it with `body.sketch(face)`, on that face |
+| *splitFace: it does not cross the face* | the plane or surface misses it, or stops inside it: it must run from edge to edge |
 
 ## In the application
 
@@ -300,7 +336,7 @@ Right-click the selection:
 - **Fillet edge…**, **Chamfer edge…** on edges (**Fillet 3 edges…** with several), and **Select the chain**, which grows the selection along edges running on without a corner (`edges.chain`).
 - **Fillet edge, growing…** writes a fillet whose radius goes from `r` at one end of the edge to `r2:` at the other; **Chamfer, uneven › Two distances…** or **Distance and angle…** (on an edge clicked on a face) writes a chamfer measured from that face, with `d2:` or `angle:`.
 - **Fillet face edges…**, **Chamfer face edges…**, **Shell, opening this face…**, **Shell outwards, opening this face…** (the walls grow outside the part, which keeps its inside), **Draft face…** on faces, and **Select its outer edges** (`edges.loop`).
-- **Full round** rounds a face between two parallel faces into a half cylinder; **Remove face (heal)** takes the face away and closes the solid round the gap (a hole or a boss disappears; a face the solid cannot close without gives an error); **Offset face…** moves the face by a distance, the faces round it following.
+- **Full round** rounds a face between two parallel faces into a half cylinder; **Remove face (heal)** takes the face away and closes the solid round the gap (a hole or a boss disappears; a face the solid cannot close without gives an error); **Offset face…** moves the face by a distance, the faces round it following. **Split face › Across X, Y or Z** divides the face under the click by a plane through the point clicked (`splitFace`): its pieces can then be picked one by one.
 - With items of several parts selected, the same entries act on each part in turn (**Fillet edges on 2 parts…**).
 - **Tag face…** writes `.faces.….addTag("name")` with the name selected to type over; from then on, clicking that face shows its tags, and every entry above picks it by its tag.
 - **Copy as code › Face selector** or **Edge selector** puts a selector for what is selected on the clipboard.

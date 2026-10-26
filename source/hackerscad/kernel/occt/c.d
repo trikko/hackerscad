@@ -157,6 +157,8 @@ hc_shape* hc_thicken_loft(const(hc_shape*)* paths, int n, int ruled, double t);
 hc_shape* hc_split_by(const(hc_shape)* s, const(hc_shape)* tool);
 hc_shape* hc_thicken(const(hc_shape)* s, double t);
 int hc_normal_at(const(hc_shape)* s, ref const double[3] p, ref double[6] output);
+hc_shape* hc_split_face(const(hc_shape)* s, int face, const(hc_shape)* tool, const(double)* plane, int mode);
+int hc_split_face_inside(int* dst, int max);
 hc_shape* hc_enclosed(const(hc_shape*)* parts, int n, const(double)* planes, int np);
 hc_shape* hc_sew(const(hc_shape*)* parts, int n, double tolerance, int* free_edges);
 int hc_hlr(const(hc_shape)* s, double dx, double dy, double dz, double ux, double uy, double uz, double deflection,

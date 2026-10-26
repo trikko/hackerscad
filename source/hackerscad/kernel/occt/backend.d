@@ -301,6 +301,15 @@ final class OcctKernel : BrepKernel
         normal = Vec3(r[3], r[4], r[5]);
         return true;
     }
+    Brep splitFace(Brep s, int face, Brep tool, const(Vec3)[2] plane, int mode, out int[] inside)
+    {
+        double[6] q = [plane[0].x, plane[0].y, plane[0].z, plane[1].x, plane[1].y, plane[1].z];
+        auto r = wrap(hc_split_face(h(s), face, tool is null ? null : h(tool), q.ptr, mode), "splitFace");
+        inside.length = hc_split_face_inside(null, 0);
+        if (inside.length)
+            hc_split_face_inside(inside.ptr, cast(int) inside.length);
+        return r;
+    }
     Brep enclosed(Brep[] parts, const(Vec3)[2][] planes)
     {
         const(hc_shape)*[] ps;

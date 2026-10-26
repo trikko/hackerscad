@@ -288,6 +288,11 @@ immutable Ref[] reference =
     F("offsetFaces", "Solid", ["faces: Faces", "d: Length"], "Solid",
         "Those faces moved out along their normals by d (in for d < 0), the faces round them following: a step "
         ~ "higher, a wall thicker, a hole wider (its wall moved out of the hole, d < 0)."),
+    F("splitFace", "Solid", ["face: Faces", "by: Profile | Plane | Surface", "tag: string"], "Solid",
+        "One face divided, the solid staying one and the same: along the outline of a profile drawn on it "
+        ~ "(body.sketch(face)), or where a plane or a surface crosses it from edge to edge. tag: names the new pieces "
+        ~ "inside the outline, or on the side the plane's normal points to: then extrude(faces.tagged(…), depth:) "
+        ~ "raises that zone alone, fillet or colour it. The other pieces keep the face's own tags."),
     F("rib", "Solid", ["plane: Plane", "from: Vec", "to: Vec", "thickness: Length"], "Solid",
         "A rib (a gusset): the line from → to, in the plane, is its free edge, outside the part; the rib fills "
         ~ "from it to the part, thickness wide across the plane, half each side: "

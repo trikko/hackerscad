@@ -179,6 +179,9 @@
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BOPAlgo_Builder.hxx>
 #include <BOPAlgo_MakerVolume.hxx>
+#include <BRepFeat_SplitShape.hxx>
+#include <BOPTools_AlgoTools3D.hxx>
+#include <IntTools_Context.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <Geom_OffsetCurve.hxx>
 #include <GeomConvert_ApproxCurve.hxx>
@@ -9847,6 +9850,111 @@ hc_shape *hc_thicken(const hc_shape *s, double t)
 // region of space they wall in on all sides, as solids of a compound. A plane (origin and normal, three
 // numbers each) stands for a face large enough to cross everything else. The faces keep the history of
 // the shapes they lie on (not of the planes).
+// The pieces of the last hc_split_face that lie inside the profile's outline, or on the plane's normal side
+// (indices of the result's faces)
+static thread_local std::vector<int> g_split_inside;
+
+int hc_split_face_inside(int *out, int max)
+{
+    const int n = (int)g_split_inside.size();
+    for (int i = 0; i < n && i < max; i++)
+        out[i] = g_split_inside[i];
+    return n;
+}
+
+// Face `face` of solid `s` divided, the solid staying one and closed: along the outline of `tool` when it is a
+// flat profile lying on the face (mode 0), along where the surface or solid `tool` crosses it (mode 1), or
+// where the plane (origin, normal) does (mode 2). The pieces inside the outline, or on the plane's normal
+// side, are kept for hc_split_face_inside.
+hc_shape *hc_split_face(const hc_shape *s, int face, const hc_shape *tool, const double *plane, int mode)
+{
+    return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {
+        g_split_inside.clear();
+        const auto &fm = map_of(s, TopAbs_FACE);
+        if (face < 0 || face >= fm.Extent())
+            throw Standard_Failure("face index out of range");
+        const TopoDS_Face f = TopoDS::Face(fm(face + 1));
+        BRepFeat_SplitShape sp(s->shape);
+        int added = 0;
+        TopoDS_Face region;
+        if (mode == 0) {
+            // the outline's wires lie on the face: each divides it
+            for (TopExp_Explorer ex(tool->shape, TopAbs_FACE); ex.More(); ex.Next())
+                if (region.IsNull())
+                    region = TopoDS::Face(ex.Current());
+            for (TopExp_Explorer ex(tool->shape, TopAbs_WIRE); ex.More(); ex.Next(), added++) {
+                const TopoDS_Wire w = TopoDS::Wire(ex.Current());
+                for (TopExp_Explorer v(w, TopAbs_VERTEX); v.More(); v.Next()) {
+                    BRepExtrema_DistShapeShape d(v.Current(), f);
+                    if (!d.IsDone() || d.Value() > 1e-4)
+                        throw Standard_Failure("the outline does not lie on the face: draw it on that face "
+                                               "(body.sketch(face)), or cut with a plane or a surface");
+                }
+                sp.Add(w, f);
+            }
+        } else {
+            TopoDS_Shape cut;
+            if (mode == 2) {
+                Bnd_Box box;
+                BRepBndLib::Add(f, box);
+                double x0, y0, z0, x1, y1, z1;
+                box.Get(x0, y0, z0, x1, y1, z1);
+                const double reach = 2 * gp_Pnt(x0, y0, z0).Distance(gp_Pnt(x1, y1, z1)) + 1;
+                // centred on the face, so the square reaches across it whatever the plane's origin
+                const gp_Pnt mid((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+                const gp_Dir nrm(plane[3], plane[4], plane[5]);
+                const gp_Vec off(gp_Pnt(plane[0], plane[1], plane[2]), mid);
+                const gp_Pnt c = mid.Translated(-gp_Vec(nrm) * off.Dot(gp_Vec(nrm)));
+                cut = BRepBuilderAPI_MakeFace(gp_Pln(c, nrm), -reach, reach, -reach, reach).Face();
+            } else
+                cut = tool->shape;
+            BRepAlgoAPI_Section sec(f, cut, Standard_False);
+            sec.ComputePCurveOn1(Standard_True);
+            sec.Approximation(Standard_True);
+            sec.Build();
+            if (!sec.IsDone())
+                throw Standard_Failure("where it crosses the face could not be found");
+            for (TopExp_Explorer ex(sec.Shape(), TopAbs_EDGE); ex.More(); ex.Next(), added++)
+                sp.Add(TopoDS::Edge(ex.Current()), f);
+        }
+        if (added == 0)
+            throw Standard_Failure(mode == 0 ? "the profile has no outline" : "it does not cross the face");
+        sp.Build();
+        if (!sp.IsDone())
+            throw Standard_Failure("the face could not be divided there");
+        const TopoDS_Shape r = sp.Shape();
+        if (r.IsNull() || !BRepCheck_Analyzer(r).IsValid())
+            throw Standard_Failure("dividing the face left a broken solid");
+        const TopTools_ListOfShape &pieces = sp.Modified(f);
+        if (pieces.Extent() < 2)
+            throw Standard_Failure(mode == 0 ? "the outline does not divide the face (it must lie inside it, or run "
+                                               "from one of its edges to another)"
+                                             : "it does not divide the face: it must cross it from edge to edge");
+        // which pieces are inside: a point inside each, on the profile or on the plane's side
+        TopTools_IndexedMapOfShape res;
+        TopExp::MapShapes(r, TopAbs_FACE, res);
+        Handle(IntTools_Context) ctx = new IntTools_Context;
+        for (TopTools_ListOfShape::Iterator it(pieces); it.More(); it.Next()) {
+            const TopoDS_Face pf = TopoDS::Face(it.Value());
+            gp_Pnt p;
+            gp_Pnt2d uv;
+            if (BOPTools_AlgoTools3D::PointInFace(pf, p, uv, ctx) != 0)
+                continue;
+            bool in = false;
+            if (mode == 0 && !region.IsNull()) {
+                BRepExtrema_DistShapeShape d(BRepBuilderAPI_MakeVertex(p).Vertex(), region);
+                in = d.IsDone() && d.Value() < 1e-4;
+            } else if (mode == 2)
+                in = gp_Vec(gp_Pnt(plane[0], plane[1], plane[2]), p).Dot(gp_Vec(plane[3], plane[4], plane[5])) > 0;
+            const int j = res.FindIndex(pf);
+            if (in && j > 0)
+                g_split_inside.push_back(j - 1);
+        }
+        history_record(sp, {&s->shape}, r);
+        return wrap(r);
+    });
+}
+
 hc_shape *hc_enclosed(const hc_shape *const *parts, int n, const double *planes, int np)
 {
     return guarded<>((hc_shape *)nullptr, [&]() -> hc_shape * {

@@ -143,6 +143,9 @@ final class CachingKernel : BrepKernel
     Brep splitBy(Brep s, Brep tool) => op(key("splitBy", s, tool), inner.splitBy(s, tool));
     Brep thicken(Brep s, double t) => op(key("thicken", s, t), inner.thicken(s, t));
     bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal) => inner.normalAt(s, p, point, normal);
+    // not cached: which faces are inside comes with the result, and the operation is quick
+    Brep splitFace(Brep s, int face, Brep tool, const(Vec3)[2] plane, int mode, out int[] inside)
+        => inner.splitFace(s, face, tool, plane, mode, inside);
     Brep enclosed(Brep[] parts, const(Vec3)[2][] planes)
     {
         double[] ks;

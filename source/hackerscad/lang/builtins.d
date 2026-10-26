@@ -993,6 +993,62 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                 "open: true leaves the gap open (a Surface: close it with fill and sew, or thicken it); or take away "
                 ~ "fewer faces, the whole of one feature at a time");
     });
+    def("splitFace", (ref CallArgs a) {
+        // splitFace(face, by:, tag:): the face divided, the solid staying one: along a profile's outline drawn on
+        // it (the pieces inside tagged), or where a plane (the pieces on its normal's side tagged) or a surface
+        // crosses it
+        auto x = Args(it, a, "splitFace", ["solid", "face", "by", "tag"]);
+        auto s = x.solid("solid");
+        if (s.flat || s.path || s.surface)
+            throw new HcadError(Code.type, "splitFace works on a solid", x.spanOf("solid"));
+        auto idx = resolveSelector(it, x.selector("face", true), s, x.spanOf("face"));
+        if (idx.length != 1)
+            throw new HcadError(Code.type, format("splitFace divides one face, and this selects %d: pick one "
+                ~ "(faces.top, faces.tagged(\"…\"))", idx.length), x.spanOf("face"));
+        auto by = x.get("by");
+        Brep tool;
+        Vec3[2] plane;
+        int mode;
+        if (by.kind == Kind.struct_ && by.st.def is planeDef)
+        {
+            mode = 2;
+            plane = [by.st.fields[0].v.v, by.st.fields[1].v.v.normalized];
+        }
+        else if (by.kind == Kind.solid && !by.solid.path)
+        {
+            mode = by.solid.flat ? 0 : 1;
+            tool = by.solid.placed ? toPlace(k, by.solid.place, nonEmpty(by.solid, a.span)) : nonEmpty(by.solid, a.span);
+        }
+        else
+            throw new HcadError(Code.type, format("splitFace divides by a profile drawn on the face, a Plane or a "
+                ~ "Surface, not %s", by.typeName), x.spanOf("by"));
+        if (x.has("tag") && mode == 1)
+            throw new HcadError(Code.type, "a surface has no inside: tag: goes with a profile (the pieces inside its "
+                ~ "outline) or a plane (those on its normal's side); tag the pieces after, with faces", x.spanOf("tag"));
+        immutable tag = x.has("tag") ? tagName(x.get("tag"), x.spanOf("tag")) : null;
+        int[] inside;
+        Brep b;
+        try
+            b = k.splitFace(nonEmpty(s, a.span), idx[0], tool, plane, mode, inside);
+        catch (KernelException e)
+            throw new HcadError(Code.kernel, "splitFace: " ~ kernelWords(e.msg), a.span,
+                mode == 0 ? "draw the outline on the face (body.sketch(face)), inside it or across it"
+                    : "make the plane or surface cross the face from one edge to another");
+        auto sv = derived(it, b, [s], "splitFace", a.span);
+        if (tag.length)
+        {
+            if (inside.length == 0)
+                throw new HcadError(Code.kernel, mode == 0 ? "splitFace: no piece lies inside the outline"
+                    : "splitFace: no piece lies on the plane's normal side: turn the normal round", x.spanOf("tag"));
+            immutable n = k.faceCount(sv.brep);
+            if (sv.faceTags.length != n)
+                sv.faceTags.length = n;
+            foreach (f; inside)
+                if (f >= 0 && f < n)
+                    sv.faceTags[f] = tagUnion(sv.faceTags[f], [tag]);
+        }
+        return Value.of(sv);
+    });
     def("offsetFaces", (ref CallArgs a) {
         // offsetFaces(faces, d:): those faces moved out along their normals by d (in for d < 0), the faces round
         // them following: a hole wider (d < 0 on its wall), a wall thicker, a step higher

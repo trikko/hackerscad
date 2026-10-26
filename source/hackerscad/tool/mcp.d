@@ -1051,6 +1051,8 @@ JValue toolList()
             ~ "outside), full-round (a face between two parallel ones made a half round), remove-faces (the faces taken "
             ~ "away, the solid healed round the gap), offset-faces (moved along their normals, value the distance), "
             ~ "grid (copies of the whole part in a grid, value how many in a row), "
+            ~ "split-face-x, split-face-y, split-face-z (the face divided by a plane through the point, across that "
+            ~ "axis: .splitFace(face, by: plane(…)); the solid stays one, its new faces to extrude, round or tag), "
             ~ "draft (tilts the face), extrude-face (grows a flat face outwards, value the depth), cut-face (sinks it into the material), tag-face (value the tag: .faces.….addTag(\"name\"), a name to select the face by later), thread (an ISO metric thread on a cylindrical face, size e.g. M8: the shaft's diameter, or for a hole the size it is the tap drill of), hole (kind and size: a hole for a screw, 5 mm deep; clearance and tap a plain round hole, insert, counterbore, countersink and ribs (three ribs the screw cuts its thread into) hole() of the hardware library, imported), pocket (a rectangle cut "
             ~ "in), boss (a cylinder standing on the face), sketch (Sketch on face…: the part's function keeps its "
             ~ "solid in a variable and starts an empty sketch on that flat face, its edges as references; add its "
@@ -1061,7 +1063,7 @@ JValue toolList()
             `"x": {"type": "number"}, "y": {"type": "number"}, ` ~ `"point": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "a model point in mm instead of x, y: it must be visible"}, `
             ~ `"action": {"type": "string", "enum": ["fillet-edge", "chamfer-edge", "fillet-var-edge", "chamfer-two-edge", `
             ~ `"chamfer-angle-edge", "fillet-face", "chamfer-face", "shell", "shell-outward", "draft", "full-round", `
-            ~ `"remove-faces", "offset-faces", "grid", "extrude-face", "cut-face", "tag-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
+            ~ `"remove-faces", "offset-faces", "split-face-x", "split-face-y", "split-face-z", "grid", "extrude-face", "cut-face", "tag-face", "thread", "hole", "pocket", "boss", "sketch"]}, "value": {"type": "string", "description": `
             ~ `"radius, distance, thickness, angle or depth, e.g. 2.mm or -4.deg"}, `
             ~ `"kind": {"type": "string", "enum": ["clearance", "tap", "insert", "counterbore", "countersink", "ribs"]}, `
             ~ `"size": {"type": "string", "description": "ISO metric size: M2, M2.5, M3, M4, M5, M6, M8, M10 or M12 for holes; any that fits the cylinder for thread (M10, M12…)"}, `

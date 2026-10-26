@@ -5502,6 +5502,16 @@ private:
             entries ~= I(nf == 1 ? "Remove face (heal)" : format("Remove %d faces (heal)", nf),
                 () => ctx("remove-faces", ""));
             entries ~= I(nf == 1 ? "Offset face…" : format("Offset %d faces…", nf), () => ctx("offset-faces", "1.mm"));
+            // dividing the face under the click, across an axis it is not square to
+            if (contextHit.face >= 0)
+            {
+                MenuEntry[] across;
+                foreach (k, axis; ["X", "Y", "Z"])
+                    if (abs([contextHit.normal.x, contextHit.normal.y, contextHit.normal.z][k]) < 0.99)
+                        across ~= I("Across " ~ axis ~ ", through this point", splitFaceAction(k));
+                if (across.length)
+                    entries ~= G("Split face", across);
+            }
             entries ~= I(nf == 1 ? "Extrude face…" : format("Extrude %d faces…", nf), () => ctx("extrude-face", "5.mm"));
             entries ~= I(nf == 1 ? "Cut face…" : format("Cut %d faces…", nf), () => ctx("cut-face", "2.mm"));
             entries ~= I(nf == 1 ? "Tag face…" : format("Tag %d faces…", nf), () => ctx("tag-face", "name"));
@@ -6040,6 +6050,9 @@ private:
             selFaces = [hit.face];
     }
 
+    // a function of its own: closures made in the menu's loop would share its variable
+    void delegate() splitFaceAction(size_t k) => () => ctx(["split-face-x", "split-face-y", "split-face-z"][k], "");
+
     /// The code the right-click menu's `action` appends for the context
     /// (see setContext), `value` in place of its default size; null when
     /// the action does not apply there.
@@ -6079,6 +6092,10 @@ private:
         // the faces taken away, the solid closed again round the gap; or moved, the others following
         case "remove-faces": return faces ? format(".removeFaces(%s)", facesCode()) : null;
         case "offset-faces": return faces ? format(".offsetFaces(%s, d: %s)", facesCode(), or("1.mm")) : null;
+        // the face under the click divided by a plane through the point clicked, across X, Y or Z
+        case "split-face-x", "split-face-y", "split-face-z":
+            return onFace ? format(".splitFace(%s, by: plane(origin: %s, normal: %s))", ctxSelector(false), ctxAt(),
+                ["X", "Y", "Z"][action[$ - 1] - 'x']) : null;
         // flat faces swept along their normals (along: vec(…) slants them)
         case "extrude-face": return faces ? format(".extrude(%s, depth: %s)", facesCode(), or("5.mm")) : null;
         case "cut-face": return faces ? format(".cut(%s, depth: %s)", facesCode(), or("2.mm")) : null;

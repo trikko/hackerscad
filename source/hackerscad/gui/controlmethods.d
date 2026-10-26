@@ -605,7 +605,8 @@ mixin template ControlMethods()
                         return reply(JValue.init, "unknown action, or it does not apply there: use fillet-edge, "
                             ~ "chamfer-edge, fillet-var-edge, chamfer-two-edge, chamfer-angle-edge (an edge), fillet-face, "
                             ~ "chamfer-face, shell, shell-outward, draft, full-round, remove-faces, offset-faces, "
-                            ~ "extrude-face, cut-face (faces), grid (copies of the whole part), thread (size: an ISO size that fits the cylinder, e.g. M8), hole (kind: "
+                            ~ "extrude-face, cut-face (faces), split-face-x, split-face-y, split-face-z (the face, by a "
+                            ~ "plane through the point), grid (copies of the whole part), thread (size: an ISO size that fits the cylinder, e.g. M8), hole (kind: "
                             ~ "clearance, tap or insert; size: M2 to M8), pocket or boss (a face), sketch (a flat face)");
                     appendFeature(last.parts[hit.part], code, null);
                     whenIdle(() {

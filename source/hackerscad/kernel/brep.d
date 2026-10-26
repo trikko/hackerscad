@@ -305,6 +305,10 @@ interface BrepKernel
     Brep thicken(Brep s, double t);
     /// The point of `s` nearest to `p`, and its face's normal there; false off its faces.
     bool normalAt(Brep s, Vec3 p, out Vec3 point, out Vec3 normal);
+    /// Face `face` of `s` divided, the solid staying one: along the outline of the flat profile `tool` lying
+    /// on it (mode 0), where the surface or solid `tool` crosses it (1), or the plane (origin, normal) does
+    /// (2); `inside`: the result's faces inside the outline, or on the plane's normal side
+    Brep splitFace(Brep s, int face, Brep tool, const(Vec3)[2] plane, int mode, out int[] inside);
     /// The volumes `parts` (surfaces, solids) and the planes (origin, normal) close off between them, as
     /// solids of one compound (a boundary fill)
     Brep enclosed(Brep[] parts, const(Vec3)[2][] planes);

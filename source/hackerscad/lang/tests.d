@@ -660,6 +660,35 @@ unittest
             q{@part Solid x() => box(10, 10, 10).offsetFaces(faces.top, d: 0.mm);}])
         error(bad);
 
+    // a face divided, the solid one and whole: by an outline drawn on it (the zone inside tagged, then raised
+    // alone), by a plane (the side its normal points to tagged), by a surface crossing it
+    expectOut(`auto plate = box(60.mm, 40.mm, 5.mm);
+        auto s = plate.sketch(faces.top);
+        auto r = s.rect(vec(-15.mm, -8.mm), vec(15.mm, 8.mm));
+        s.fix(r[0].start);
+        s.fix(r[1].end);
+        auto m = plate.splitFace(faces.top, by: s.profile, tag: "label");
+        auto raised = m.extrude(faces.tagged("label"), depth: 1.mm);
+        writeln(m.faces.count, " ", m.volume == plate.volume, " ", m.faces.tagged("label").count, " ",
+            format("%.1f", (raised.volume - plate.volume) / 1.mm ^^ 3));
+        auto c = cylinder(d: 30.mm, h: 40.mm)
+            .splitFace(faces.largest, by: plane(origin: vec(0.mm, 0.mm, 25.mm), normal: Z), tag: "band");
+        writeln(c.faces.count, " ", c.faces.tagged("band").count, " ", c.faces.tagged("band").list[0].center.z);
+        auto wave = spline([vec(-25.mm, 0.mm), vec(-10.mm, 5.mm), vec(5.mm, -5.mm), vec(25.mm, 3.mm)])
+            .sweep(path([vec(0.mm, 0.mm, 5.mm), vec(0.mm, 0.mm, 15.mm)]));
+        auto b = box(40.mm, 30.mm, 10.mm).splitFace(faces.top, by: wave.rotate(z: 90.deg));
+        writeln(b.faces.count, " ", b.isValid);`,
+        "7 true 1 480.0\n4 1 32.5 mm\n7 true");
+    // an outline off the face, a plane missing it, a surface with tag:, several faces at once
+    foreach (bad, msg; [q{@part Solid p() => box(20, 20, 5).splitFace(faces.top, by: rect(5.mm, 5.mm));}: "does not lie on the face",
+            q{@part Solid p() => box(20, 20, 5).splitFace(faces.top, by: plane(origin: vec(0.mm, 0.mm, 50.mm), normal: Z));}:
+                "does not cross the face",
+            q{@part Solid p() => box(20, 20, 5).splitFace(faces.top, by: path([vec(-20.mm, 0.mm), vec(20.mm, 0.mm)])
+                .sweep(path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 10.mm)])), tag: "x");}: "a surface has no inside",
+            q{@part Solid p() => box(20, 20, 5).splitFace(faces.filter(f => true), by: plane(origin: vec(0.mm, 0.mm, 0.mm), normal: X));}:
+                "divides one face"])
+        assert(error(bad).message.canFind(msg), error(bad).message);
+
     // lofts along a centreline, and leaving and arriving in given directions
     auto lofts = runModel(q{
         immutable bend = path([vec(0.mm, 0.mm, 0.mm), vec(0.mm, 0.mm, 30.mm), vec(30.mm, 0.mm, 30.mm)], bend: 15.mm);
