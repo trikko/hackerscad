@@ -33,9 +33,12 @@ if [ -z "$occt_inc" ]; then
         if [ -f "$d/Standard.hxx" ]; then occt_inc="$d"; break; fi
     done
 fi
-sum="$(stamp "$src/shim.cpp" "$src/shim.h")"
+# no fused multiply-adds (clang makes them on Apple Silicon, and on ARM by default): they round otherwise
+# than x86, and on macOS a knurl's direct build came out broken, falling back on a boolean twenty times slower
+flags="-std=c++17 -O2 -ffp-contract=off -fPIC"
+sum="$( (cat "$src/shim.cpp" "$src/shim.h"; echo "$flags") | cksum | cut -d' ' -f1)"
 if ! [ -f "$lib" ] || [ "$(cat "$lib.stamp" 2>/dev/null)" != "$sum" ]; then
-    ${CXX:-g++} -std=c++17 -O2 -fPIC -I"$occt_inc" -c "$src/shim.cpp" -o "$out/shim.o"
+    ${CXX:-g++} $flags -I"$occt_inc" -c "$src/shim.cpp" -o "$out/shim.o"
     rm -f "$lib"
     ar rcs "$lib" "$out/shim.o"
     echo "$sum" > "$lib.stamp"
