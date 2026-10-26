@@ -145,8 +145,141 @@ Brep hullOf(BrepKernel k, Brep[] items, bool allFlat, Span span, out bool flat)
     auto corners = convexHull2(flatten(pts, origin, normal));
     if (corners.length < 3)
         throw new HcadError(Code.type, "the profiles are on a line: their hull has no area", span);
+    // as lines and arcs, tangent where they meet: the hull of a curve not a polygon of dozens of sides,
+    // each a face of what is extruded from it and of every boolean after (a case round Carlo: 69 sides,
+    // 138 once offset, booleans of hundreds of faces)
+    auto segs = tangentHull(corners, deflection);
+    if (segs.length)
+        try
+        {
+            auto b = k.outline(segs);
+            Vec3 axis;
+            double angle;
+            turnFromZ(normal, axis, angle);
+            if (angle > 1e-12)
+                b = k.rotate(b, axis, angle);
+            return k.translate(b, origin);
+        }
+        catch (KernelException)
+        {
+        }
     return placedPolygon(k, corners, origin, normal);
 }
+
+/// A convex polygon (counter-clockwise) as lines and arcs: its runs of
+/// corners on a circle read as arcs (as a section's outline is read), the
+/// rest corners; then each two neighbours joined by the line touching both
+/// from outside, each circle's arc between where those lines touch it. So
+/// lines and arcs meet tangent, exactly: an offset of the outline puts no
+/// sliver of an arc where they meet. Empty when the result does not hold
+/// every corner within `tol` outside it (then the polygon stands).
+OutlineSeg[] tangentHull(const(double[2])[] corners, double tol)
+{
+    import std.math : atan2, cos, sin, sqrt;
+    import hackerscad.geom.outlinefit : fit, P2, withoutSlivers;
+    struct Site
+    {
+        P2 c;
+        double r = 0; /// 0: a corner
+    }
+    P2[] pts;
+    foreach (c; corners)
+        pts ~= [c[0], c[1]];
+    auto els = withoutSlivers(fit(pts, tol, false, 3 * tol));
+    if (els.length == 0)
+        return null;
+    if (els.length == 1 && els[0].circle)
+        return [OutlineSeg(OutlineSeg.Kind.ellipse, els[0].center[0], els[0].center[1], els[0].radius,
+            els[0].radius, 0), OutlineSeg(OutlineSeg.Kind.end)];
+    Site[] sites;
+    foreach (i, e; els)
+    {
+        immutable prevArc = els[(i + els.length - 1) % els.length].arc;
+        if (e.circle)
+            return null;
+        if (e.arc)
+        {
+            // an arc of a convex outline turns left; one bent the other way is no part of a hull
+            if (e.sweep <= 0)
+                return null;
+            if (sites.length && sites[$ - 1].r > 0 && dist2(sites[$ - 1].c, e.center) < tol * tol
+                && abs(sites[$ - 1].r - e.radius) < tol)
+                continue;
+            sites ~= Site(e.center, e.radius);
+        }
+        else if (!prevArc)
+            sites ~= Site(e.from, 0);
+    }
+    if (sites.length > 1 && sites[0].r > 0 && sites[$ - 1].r > 0 && dist2(sites[0].c, sites[$ - 1].c) < tol * tol
+        && abs(sites[0].r - sites[$ - 1].r) < tol)
+        sites = sites[0 .. $ - 1];
+    if (sites.length < 2)
+        return null;
+    // the line touching a and b from outside, both on its left going from a to b: where it touches each
+    immutable n = sites.length;
+    auto from = new P2[n], to = new P2[n];
+    foreach (i; 0 .. n)
+    {
+        auto a = sites[i], b = sites[(i + 1) % n];
+        immutable dx = b.c[0] - a.c[0], dy = b.c[1] - a.c[1], l = sqrt(dx * dx + dy * dy);
+        if (l <= abs(a.r - b.r) + 1e-9)
+            return null;
+        immutable ux = dx / l, uy = dy / l, c = (a.r - b.r) / l, sn = sqrt(1 - c * c);
+        // the outward normal: along the way by c, to its right by sn
+        immutable nx = c * ux + sn * uy, ny = c * uy - sn * ux;
+        from[i] = [a.c[0] + a.r * nx, a.c[1] + a.r * ny];
+        to[i] = [b.c[0] + b.r * nx, b.c[1] + b.r * ny];
+    }
+    OutlineSeg[] segs;
+    foreach (i; 0 .. n)
+    {
+        // into site i along the line from the one before, round it, out along the next
+        auto s = sites[i];
+        immutable P2 inAt = to[(i + n - 1) % n], outAt = from[i];
+        if (s.r > 0)
+        {
+            immutable a0 = atan2(inAt[1] - s.c[1], inAt[0] - s.c[0]);
+            double a1 = atan2(outAt[1] - s.c[1], outAt[0] - s.c[0]);
+            while (a1 <= a0)
+                a1 += 2 * PI;
+            immutable sweep = a1 - a0;
+            if (sweep >= 2 * PI - 1e-9)
+                return null;
+            if (sweep * s.r > 1e-6)
+            {
+                immutable m = (a0 + a1) / 2;
+                segs ~= OutlineSeg(OutlineSeg.Kind.arc, inAt[0], inAt[1], outAt[0], outAt[1],
+                    s.c[0] + s.r * cos(m), s.c[1] + s.r * sin(m));
+            }
+        }
+        segs ~= OutlineSeg(OutlineSeg.Kind.line, from[i][0], from[i][1], to[i][0], to[i][1]);
+    }
+    segs ~= OutlineSeg(OutlineSeg.Kind.end);
+    // every corner of the polygon inside it, or outside by the tolerance at most: on the left of each line
+    // (as far as it reaches) or within the radius of a circle round which the outline turns
+    foreach (q; corners)
+    {
+        double outside = -double.infinity;
+        bool beside;
+        foreach (i; 0 .. n)
+        {
+            immutable dx = to[i][0] - from[i][0], dy = to[i][1] - from[i][1], l = sqrt(dx * dx + dy * dy);
+            if (l < 1e-12)
+                continue;
+            // the signed distance out of the line (right of it)
+            outside = max(outside, ((q[0] - from[i][0]) * dy - (q[1] - from[i][1]) * dx) / l);
+        }
+        // a corner beyond a line's reach, round an arc: its distance from the circle
+        foreach (st; sites)
+            if (st.r > 0)
+                beside = beside || sqrt(dist2(q, st.c)) <= st.r + tol;
+        if (outside > tol && !beside)
+            return null;
+    }
+    return segs;
+}
+
+private double dist2(const double[2] a, const double[2] b) => (a[0] - b[0]) ^^ 2 + (a[1] - b[1]) ^^ 2;
 
 /// The convex hull of `pts` grown by `r` (> 0) all round, its edges and
 /// corners rounded: the hull of its corners each moved out in 42 directions

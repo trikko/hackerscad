@@ -3023,6 +3023,21 @@ unittest
 
 unittest
 {
+    // the hull of profiles as lines and arcs meeting tangent, not a polygon of dozens of sides: a slot's
+    // two half circles and two lines (its area exact, an offset of it with no arc added), a circle's a
+    // circle, Carlo's shadow a few pieces, and a case round him built
+    expectOut(q{
+        auto slot = hull(circle(r: 4), circle(r: 4).move(x: 20));
+        writeln(slot.edges.count, " ", slot.offset(1).edges.count, " ",
+            format("%.4f", (slot.area - (20 * 8 + PI * 16) * 1.mm * 1.mm) / 1.mm / 1.mm));
+        writeln(hull(circle(r: 5)).edges.count, " ", hull(carlo().projection(XY)).edges.count <= 10);
+        auto c = shadowCase(carlo(), close: "snap");
+        writeln(c.base.volume > 0.mm ^^ 3, " ", c.lid.volume > 0.mm ^^ 3);
+    }, "4 4 0.0000\n1 true\ntrue true", "import std;\n");
+}
+
+unittest
+{
     // mass properties of a block 10 × 20 × 30: its centre, 6 g of water, the
     // moments m/12 (b² + c²) about its three axes
     expectOut(`auto b = box(10, 20, 30).move(x: 5); writeln(b.centroid, " ", b.mass(density: 1), " ", b.inertia(density: 1));`,
