@@ -681,11 +681,15 @@ unittest
         auto c = cylinder(d: 30.mm, h: 40.mm)
             .splitFace(faces.largest, by: plane(origin: vec(0.mm, 0.mm, 25.mm), normal: Z), tag: "band");
         writeln(c.faces.count, " ", c.faces.tagged("band").count, " ", c.faces.tagged("band").list[0].center.z);
+        // a feature on the curved piece alone: knurled the band, the rest of the side plain
+        auto k = c.knurl(faces.tagged("band"));
+        writeln(k.section(plane(origin: vec(0.mm, 0.mm, 10.mm), normal: Z)).bbox.size.x, " ",
+            k.section(plane(origin: vec(0.mm, 0.mm, 32.5.mm), normal: Z)).bbox.size.x > 30.5.mm);
         auto wave = spline([vec(-25.mm, 0.mm), vec(-10.mm, 5.mm), vec(5.mm, -5.mm), vec(25.mm, 3.mm)])
             .sweep(path([vec(0.mm, 0.mm, 5.mm), vec(0.mm, 0.mm, 15.mm)]));
         auto b = box(40.mm, 30.mm, 10.mm).splitFace(faces.top, by: wave.rotate(z: 90.deg));
         writeln(b.faces.count, " ", b.isValid);`,
-        "7 true 1 480.0\n4 1 32.5 mm\n7 true");
+        "7 true 1 480.0\n4 1 32.5 mm\n30 mm true\n7 true");
     // an outline off the face, a plane missing it, a surface with tag:, several faces at once
     foreach (bad, msg; [q{@part Solid p() => box(20, 20, 5).splitFace(faces.top, by: rect(5.mm, 5.mm));}: "does not lie on the face",
             q{@part Solid p() => box(20, 20, 5).splitFace(faces.top, by: plane(origin: vec(0.mm, 0.mm, 50.mm), normal: Z));}:

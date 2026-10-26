@@ -3235,7 +3235,7 @@ private:
     {
         uint vao, vbo, ebo, edgeVao, edgeVbo;
         int indexCount, edgeCount;
-        int tangentCount;   /// after the edges in their buffer: drawn in wireframe
+        int tangentCount;   /// after the edges in their buffer: drawn faint (in wireframe as the others)
         uint outlineVao, outlineVbo;   /// the outline of curved surfaces (wireframe), from the latest frame
         int outlineCount;
         Vec3 outlineEye, outlineForward;   /// where the outline was seen from
@@ -4185,6 +4185,21 @@ private:
             }
             glBindVertexArray(g.edgeVao);
             glDrawArrays(GL_LINES, 0, wire ? g.edgeCount + g.tangentCount : g.edgeCount);
+            // where faces meet with no corner (a divided face, a fillet's sides): fainter than an edge, so the
+            // pieces show without being taken for corners
+            if (!wire)
+            {
+                if (!faded)
+                {
+                    glEnable(GL_BLEND);
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                }
+                glUniform1f(uAlpha, cast(float)(0.4 * crowd));
+                glDrawArrays(GL_LINES, g.edgeCount, g.tangentCount);
+                glUniform1f(uAlpha, 1);
+                if (!faded)
+                    glDisable(GL_BLEND);
+            }
             if (wire)
             {
                 glBindVertexArray(g.outlineVao);
