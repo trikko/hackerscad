@@ -1913,12 +1913,19 @@ final class SketchVal : ObjectVal
     /// The entities that use point `p`, and the constraints that name it, but entity `but`.
     size_t usesOf(size_t p, size_t but)
     {
+        // only the references each one uses (the rest of its three are zeros, which would name point 0)
         size_t n;
         foreach (i, e; sk.entities)
-            if (i != but && e.kind != EntityKind.point && (e.refs[].canFind(p) || e.through.canFind(p)))
+        {
+            if (i == but)
+                continue;
+            immutable used = e.kind == EntityKind.line ? 2 : e.kind == EntityKind.arc ? 3
+                : e.kind == EntityKind.circle || e.kind == EntityKind.ellipse ? 1 : 0;
+            if (e.refs[0 .. used].canFind(p) || e.through.canFind(p))
                 n++;
+        }
         foreach (c; sk.constraints)
-            if (c.kind != ConstraintKind.arcRadius && c.refs[].canFind(p))
+            if (c.kind != ConstraintKind.arcRadius && c.tag < constraintRefs.length && constraintRefs[c.tag].canFind(p))
                 n++;
         return n;
     }

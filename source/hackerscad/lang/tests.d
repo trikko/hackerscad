@@ -793,6 +793,39 @@ unittest
         }
     });
     assert(isClose(partVolume(edited, "f"), 36 * 26 - 30 * 20, 1e-6));
+    // four lines drawn long, their ends trimmed off: a rectangle (the first line starts at point 0, which a
+    // constraint's unused references must not be taken for)
+    auto crossing = runModel(q{
+        Profile trimmed()
+        {
+            auto s = sketch();
+            auto bottom = s.line(vec(-5.mm, 0.mm), vec(45.mm, 0.mm));
+            auto top = s.line(vec(-5.mm, 25.mm), vec(45.mm, 25.mm));
+            auto left = s.line(vec(0.mm, -5.mm), vec(0.mm, 30.mm));
+            auto right = s.line(vec(40.mm, -5.mm), vec(40.mm, 30.mm));
+            foreach (l; [bottom, top])
+                s.horizontal(l);
+            foreach (l; [left, right])
+                s.vertical(l);
+            foreach (l; [bottom, top])
+            {
+                s.trim(l, at: l.start.pos + vec(1.mm, 0.mm));
+                s.trim(l, at: l.end.pos - vec(1.mm, 0.mm));
+            }
+            foreach (l; [left, right])
+            {
+                s.trim(l, at: l.start.pos + vec(0.mm, 1.mm));
+                s.trim(l, at: l.end.pos - vec(0.mm, 1.mm));
+            }
+            s.fix(bottom.start);
+            s.length(bottom, 40.mm);
+            s.length(left, 25.mm);
+            assert(s.dof == 0);
+            return s.profile;
+        }
+        @part Solid r() => trimmed().extrude(1);
+    });
+    assert(isClose(partVolume(crossing, "r"), 1000, 1e-6));
     assert(isClose(partVolume(edited, "g"), (600 - (4 - PI) * 16) - (26 * 16 - (4 - PI) * 4), 1e-6));
     // a fixed end cannot move to the cut; nothing crossing: nothing to trim
     foreach (bad; [q{unittest { auto s = sketch(); auto h = s.line(vec(-9.mm, 0.mm), vec(9.mm, 0.mm)); s.fix(h.end);
