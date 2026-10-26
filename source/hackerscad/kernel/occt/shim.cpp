@@ -7006,10 +7006,13 @@ static std::vector<TopoDS_Wire> same_edge_count(const std::vector<TopoDS_Wire> &
     return out;
 }
 
-static double diagonal(const TopoDS_Shape &s)
+static double diagonal(const TopoDS_Shape &s, bool exact = false)
 {
     Bnd_Box b;
-    BRepBndLib::Add(s, b);
+    if (exact)
+        BRepBndLib::AddOptimal(s, b, Standard_False, Standard_False);
+    else
+        BRepBndLib::Add(s, b);
     return b.IsVoid() ? 0 : std::sqrt(b.SquareExtent());
 }
 
@@ -7043,7 +7046,9 @@ static TopoDS_Shape solid_through(const std::vector<TopoDS_Wire> &given, bool ru
                     flat = true;
                     continue;
                 }
-                if (diagonal(mk.Shape()) <= 1.5 * span + 1e-6)
+                // the loose box holds the B-spline poles, which on a loft that bulges between its
+                // sections lie far outside it: then the exact one (slow on large lofts) decides
+                if (diagonal(mk.Shape()) <= 1.5 * span + 1e-6 || diagonal(mk.Shape(), true) <= 1.5 * span + 1e-6)
                     return mk.Shape();
                 twisted = true;
             }

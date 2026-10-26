@@ -1574,6 +1574,7 @@ unittest
         @part Solid spring() => circle(d: 1).sweep(helix(r: 5, pitch: 3, height: 9), frenet: true);
         @part Solid frustum() => loft([circle(r: 10), circle(r: 5).move(z: 10)], ruled: true);
         @part Solid hollow() => loft([rect(20) - rect(10), (rect(20) - rect(10)).move(z: 10)]);
+        @part Solid bulge() => loft([circle(r: 12), circle(r: 18).move(z: 20), circle(r: 10).move(z: 40)]);
         unittest { writeln(helix(r: 5, pitch: 3, height: 9), " ", path([vec(0, 0), vec(1, 1)])); }
     });
     foreach (d; r.diagnostics)
@@ -1585,6 +1586,8 @@ unittest
     assert(isClose(partVolume(r, "spring"), PI * 0.25 * wire, 1e-2));
     assert(isClose(partVolume(r, "frustum"), PI * 10 / 3 * (100 + 50 + 25), 1e-6));
     assert(isClose(partVolume(r, "hollow"), 300 * 10, 1e-6));
+    // a smooth loft wider in the middle: its B-spline poles lie far outside it, the solid does not
+    assert(partVolume(r, "bulge") > 30_000 && partVolume(r, "bulge") < 33_000);
     assert(r.log[0].text == "Path 94.68 mm long, open Path 1.414 mm long, open", r.log[0].text);
 
     assert(error(`@part Solid p() => helix(r: 5, pitch: 1, height: 5);`).code == Code.type);
