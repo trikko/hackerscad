@@ -1180,7 +1180,13 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
         auto root = buildNormalizedPath(absolutePath(it.root));
         auto base = a.caller && a.caller.path.length && a.caller.path[0] != '<' ? dirName(a.caller.path) : root;
         auto file = buildNormalizedPath(absolutePath(p.s, base));
-        if (!(file == root || file.startsWith(root ~ "/")))
+        // inside the project: the root, or under it (on Windows the separator is \, and a path may use / too)
+        bool inside(string f)
+        {
+            import std.path : dirSeparator;
+            return f == root || f.startsWith(root ~ dirSeparator) || f.startsWith(root ~ "/");
+        }
+        if (!inside(file))
             throw new HcadError(Code.sandbox, "load can only read files inside the project directory", x.spanOf("path"));
         it.filesRead ~= file;
         if (!exists(file) || !isFile(file))
@@ -1227,7 +1233,7 @@ private void installGeometry(Interp it, Env env, void delegate(string, BuiltinIm
                     {
                         import std.uri : decodeComponent;
                         auto f = buildNormalizedPath(absolutePath(decodeComponent(uri), dirName(file)));
-                        if (!f.startsWith(root ~ "/") || !exists(f) || !isFile(f))
+                        if (f == root || !inside(f) || !exists(f) || !isFile(f))
                             throw new MeshFormatException("the glTF buffer " ~ uri ~ " is not a file inside the project");
                         return cast(const(ubyte)[]) read(f);
                     }

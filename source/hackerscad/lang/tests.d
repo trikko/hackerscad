@@ -436,7 +436,7 @@ unittest
 
     // not found: the message lists where it looked
     auto e = error("import calzone;", at(project));
-    assert(e.code == Code.import_ && e.message.canFind("calzone/package.hcad") && e.message.canFind(lib));
+    assert(e.code == Code.import_ && e.message.canFind(buildPath("calzone", "package.hcad")) && e.message.canFind(lib));
 }
 
 unittest
