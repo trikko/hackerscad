@@ -28,16 +28,23 @@ mixin template ControlMethods()
                 auto file = absolutePath(arg("path"));
                 if (!exists(file))
                     return reply(JValue.init, "file not found: " ~ file);
-                if (auto why = notAModel(file))
+                // load: true, a mesh or CAD file: a new model that loads it (as the window offers when one is
+                // opened or dropped)
+                import std.uni : toLower;
+                immutable loading = p.safe!bool("load").or(false) && importable.canFind(extension(file).toLower);
+                if (auto why = loading ? null : notAModel(file))
                 {
                     import std.array : replace;
                     return reply(JValue.init, why.replace("\n\n", " ") ~ " To use a mesh or CAD file, write a model "
-                        ~ "that calls load() on it.");
+                        ~ "that calls load() on it, or open it with load: true (a new model that loads it).");
                 }
                 if (modified && !p.safe!bool("force").or(false))
                     return reply(JValue.init, "the user has unsaved changes in " ~ baseName(path)
                         ~ ": ask them to save, or pass force: true to discard them");
-                load(file);
+                if (loading)
+                    newModelLoading(file);
+                else
+                    load(file);
                 whenIdle(() => reply(state(), null));
                 return;
             }

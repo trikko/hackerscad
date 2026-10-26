@@ -861,8 +861,10 @@ JValue toolList()
         tool("hcad_gui_windows", "The hackerscad windows open on this computer: name (the user may call a window by it), "
             ~ "file, unsaved changes, whether it is evaluating. Pass the name as 'window' to the other hcad_gui_* tools.", ``),
         gui("hcad_gui_open", "Open a model file in the user's hackerscad window (it must be running). Refused when the "
-            ~ "user has unsaved changes, unless force is true (which discards them: ask the user first).",
-            `"path": {"type": "string"}, "force": {"type": "boolean"}`, `["path"]`),
+            ~ "user has unsaved changes, unless force is true (which discards them: ask the user first). A mesh or CAD "
+            ~ "file (.stl, .obj, .ply, .3mf, .glb, .gltf, .step, .svg, .dxf) with load: true opens a new, unsaved model "
+            ~ "next to it that loads it (as the window offers when the user opens or drops one on it).",
+            `"path": {"type": "string"}, "force": {"type": "boolean"}, "load": {"type": "boolean"}`, `["path"]`),
         gui("hcad_gui_set", "Change the model shown in the user's window: replace its source, set parameter "
             ~ "overrides or a preset (preset \"\" goes back to the defaults, as Reset to defaults). A preset clears the "
             ~ "values set before; params given in the same call apply on top of it; reset lists parameters to take "

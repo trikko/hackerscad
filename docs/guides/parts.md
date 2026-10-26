@@ -258,4 +258,5 @@ hcad render bracket.hcad -o bracket.pdf
 - Right-click a part › **Export *name*** › **3MF…**, **STL…**, **STEP…** exports that part alone.
 - Right-click a part › **Colour** writes the colour into the code (the Pop colours, or **Other…** for any); **Hide *name***, **Show only *name***, **Show all parts** change only what the view shows.
 - Exports use the parameters and preset set in the side panel, and run the `unittest`s first.
+- A file dragged onto the window: a `.hcad` model opens in its place, a mesh or CAD file (STL, OBJ, PLY, 3MF, glTF, STEP, SVG, DXF) becomes a new model next to it that loads it; the window asks first, and offers to save the changes not saved yet.
 - The same menu's last section is the model's `@drawing`: **Show the drawing** opens it in a window of its own, as it prints (a list at the top when there are several; it follows the code as you change it), with **PDF…**, **SVG…** and **DXF…** to export it; **Drawing as PDF / SVG / DXF** export it at once.

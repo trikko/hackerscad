@@ -1622,6 +1622,28 @@ final class MainWindow
                 return false;
             });
             window.addController(windowKeys);
+            // a file dropped on the window (the editor too): asked before it is opened
+            {
+                import gtk.drop_target : DropTarget;
+                import gdk.file_list : FileList;
+                import gdk.types : DragAction;
+                import gtk.types : PropagationPhase;
+                auto drop = new DropTarget(FileList._getGType(), DragAction.Copy);
+                drop.setPropagationPhase(PropagationPhase.Capture);
+                drop.connectDrop((imported!"gobject.value".Value v, double x, double y) {
+                    auto list = v.get!FileList();
+                    if (list is null)
+                        return false;
+                    auto files = list.getFiles();
+                    if (files.length == 0 || files[0].getPath().length == 0)
+                        return false;
+                    immutable file = files[0].getPath(), count = files.length;
+                    // after the drop has finished: a dialog opened inside it would hold the drag
+                    idleAdd(PRIORITY_DEFAULT, () { askOpenDropped(file, count); return false; });
+                    return true;
+                });
+                window.addController(drop);
+            }
             auto motion = new EventControllerMotion;
             motion.connectMotion((double x, double y, EventControllerMotion m) {
                 updateEditorCursor((m.getCurrentEventState() & inspectClick) != 0);
@@ -7036,6 +7058,61 @@ private:
             d.addResponse("ok", "_OK");
             d.setCloseResponse("ok");
         }
+        d.present(window);
+    }
+
+    /// A file dropped on the window: a model opened, or a mesh or CAD file loaded by a new model, once the
+    /// user says so (and has saved or given up the changes not saved); anything else, why not.
+    void askOpenDropped(string file, size_t count)
+    {
+        import adw.alert_dialog : AlertDialog;
+        import adw.types : ResponseAppearance;
+        import std.uni : toLower;
+
+        immutable ext = extension(file).toLower;
+        immutable model = ext == ".hcad";
+        if (auto why = notAModel(file))
+            if (!importable.canFind(ext))
+                return refuseFile(file, why);
+        string text = model
+            ? format("It opens in this window, in place of “%s”.", baseName(path))
+            : format("hackerscad opens models written as code: a new model can load “%s” with load(), to cut it, "
+                ~ "add to it or measure it.", baseName(file));
+        if (count > 1)
+            text ~= format("\n\nOnly the first of the %d files dropped.", count);
+        if (modified)
+            text ~= format("\n\n“%s” has changes not saved.", baseName(path));
+        auto d = new AlertDialog(model ? format("Open “%s”?", baseName(file))
+            : format("A new model that loads “%s”?", baseName(file)), text);
+        void act()
+        {
+            if (model)
+                load(file);
+            else
+                newModelLoading(file);
+        }
+        d.addResponse("cancel", "_Cancel");
+        if (modified)
+        {
+            d.addResponse("discard", model ? "_Discard changes and open" : "_Discard changes");
+            d.addResponse("save", model ? "_Save and open" : "_Save first");
+            d.setResponseAppearance("discard", ResponseAppearance.Destructive);
+            d.setResponseAppearance("save", ResponseAppearance.Suggested);
+            d.setDefaultResponse("save");
+        }
+        else
+        {
+            d.addResponse("open", model ? "_Open" : "_New model");
+            d.setResponseAppearance("open", ResponseAppearance.Suggested);
+            d.setDefaultResponse("open");
+        }
+        d.setCloseResponse("cancel");
+        d.connectResponse(null, (string response) {
+            if (response == "open" || response == "discard")
+                act();
+            else if (response == "save")
+                saveThen(() => act());
+        });
         d.present(window);
     }
 
