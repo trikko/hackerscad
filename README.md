@@ -128,18 +128,21 @@ Solid body()
         .fillet(edges.of(faces.bottom), r: diameter * 0.12);
 }
 
-/// The handle: a ring standing on its side, round edges.
+/// The handle: an oval swept along an arc out from the
+/// wall and back, thick where it joins the cup, slimmer
+/// in the middle where the fingers go.
 Solid handle()
 {
-    // its sizes follow the cup's
-    immutable d = height * 0.6, band = diameter * 0.07;
-    immutable thick = diameter * 0.08;
-    auto ring = cylinder(d: d, h: thick, center: true)
-        - cylinder(d: d - 2 * band, h: thick, center: true);
-    return ring
-        .fillet(edges.circles, r: diameter * 0.02)
-        .rotate(x: 90)
-        .move(x: diameter * 0.45, z: height * 0.55);
+    // the wall's radius at a height (the loft is straight)
+    Length wallAt(Length z) => diameter * (0.35 + 0.15 * z / height);
+    immutable top = height * 0.78, low = height * 0.3;
+    auto arc = spline([vec(wallAt(top) - wall, 0.mm, top),
+        vec(wallAt(top) + diameter * 0.2, 0.mm, top + height * 0.02),
+        vec(wallAt(height * 0.55) + diameter * 0.3, 0.mm, height * 0.55),
+        vec(wallAt(low) + diameter * 0.17, 0.mm, low - height * 0.04),
+        vec(wallAt(low) - wall, 0.mm, low)]);
+    return ellipse(rx: diameter * 0.075, ry: diameter * 0.045)
+        .sweep(arc, scale: t => 1 - 0.3 * sin(t * 180.deg));
 }
 
 // @part: a body to show and export (one object in 3MF)
