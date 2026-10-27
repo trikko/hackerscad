@@ -17,7 +17,7 @@ import gtk.entry : Entry;
 import gtk.button : Button;
 import gtk.separator : Separator;
 import gtk.widget : Widget;
-import gtk.types : Orientation, Align;
+import gtk.types : Orientation, Align, StateFlags;
 
 import hackerscad.lang.interp : ParamInfo;
 import hackerscad.lang.value;
@@ -156,6 +156,11 @@ final class ParamsPanel
         scope (exit)
             updating = false;
 
+        // the focus leaves the rows before they go (a ↺ just clicked has
+        // it): GTK would hand it to a field near the top and scroll there
+        if (rows.getStateFlags() & StateFlags.FocusWithin)
+            if (auto root = rows.getRoot())
+                root.setFocus(null);
         for (auto c = rows.getFirstChild(); c !is null; c = rows.getFirstChild())
             rows.remove(c);
         labels = null;
