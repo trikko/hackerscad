@@ -1088,6 +1088,14 @@ final class MainWindow
             auto mark = new TextTag("message-mark");
             mark.weight = 700;
             console.getBuffer().getTagTable().add(mark);
+            // the problems' first lines, in the colours of the problem banner
+            foreach (kind, colour; ["error": "#e01b24", "warning": "#c88800"])
+            {
+                auto t = new TextTag(kind ~ "-console");
+                t.foreground = colour;
+                t.scale = 0.88;
+                console.getBuffer().getTagTable().add(t);
+            }
         }
         console.setMonospace(true);
         console.setWrapMode(WrapMode.None);
@@ -2393,24 +2401,32 @@ private:
             updateSection(false);
         updateDimensions();
 
-        // writeln's lines, timed as the program's own messages
+        // writeln's lines and the problems, timed as the program's own
+        // messages: "MSG:", "ERROR:", "WARNING:" after the time; under a
+        // problem its line of code, lined up with the message
+        size_t errors;
         {
             import std.datetime.systime : Clock;
-            import std.string : splitLines;
+            import std.string : splitLines, indexOf;
             auto t = Clock.currTime();
-            modelMessages = null;
+            immutable time = format("%02d:%02d:%02d  ", t.hour, t.minute, t.second);
+            modelLines = null;
             foreach (l; o.log)
                 foreach (line; l.text.splitLines)
-                    modelMessages ~= format("%02d:%02d:%02d  MSG: %s", t.hour, t.minute, t.second, line);
+                    modelLines ~= ConsoleLine(time ~ "MSG: " ~ line, "message", 3);
+            foreach (d; o.diagnostics)
+            {
+                errors += d.severity == Severity.error;
+                auto lines = render(d, o.sources.get(d.span.file, "")).splitLines;
+                immutable label = format("%s", d.severity).toUpper;
+                // render's first line, "error[E0200]: message", becomes "ERROR[E0200]: message"
+                modelLines ~= ConsoleLine(time ~ label ~ lines[0][label.length .. $],
+                    d.severity == Severity.note ? "message" : format("%s", d.severity) ~ "-console",
+                    lines[0].indexOf(':'));
+                foreach (line; lines[1 .. $])
+                    modelLines ~= ConsoleLine("          " ~ line, "message", 0);
+            }
         }
-        string log;
-        size_t errors;
-        foreach (d; o.diagnostics)
-        {
-            errors += d.severity == Severity.error;
-            log ~= render(d, o.sources.get(d.span.file, "")) ~ "\n";
-        }
-        modelProblems = log;
         busyIndicator.stop();
         busyIndicator.setTooltipText(null);
         stopProgress();
@@ -2707,8 +2723,14 @@ private:
         buffer.createSourceMark(null, kind, lineStart);
     }
 
-    string[] modelMessages;  /// writeln output of the latest evaluation, a line each with its time
-    string modelProblems;    /// problems of the latest evaluation
+    /// A line of the model's in the console: its tag, and how long its
+    /// label after the time is ("MSG:", "ERROR[E0200]:"), shown in bold
+    struct ConsoleLine
+    {
+        string text, tag;
+        long label;   /// where the label's ':' is (0: no label)
+    }
+    ConsoleLine[] modelLines;   /// writeln output and problems of the latest evaluation
     string[] programLog;     /// messages of the program itself, with their time
     bool lastWasEvaluation;
 
@@ -2922,21 +2944,18 @@ private:
         }
         foreach (line; programLog)
             put(line, "program");
-        foreach (line; modelMessages)
+        foreach (line; modelLines)
         {
-            // "MSG:" in bold, after the time ("hh:mm:ss  ")
-            immutable from = put(line, "message");
+            // the label in bold, after the time ("hh:mm:ss  ")
+            immutable from = put(line.text, line.tag);
+            if (line.label <= 0)
+                continue;
             TextIter a, z;
             b.getIterAtOffset(a, from + 10);
-            b.getIterAtOffset(z, from + 14);
+            b.getIterAtOffset(z, from + 10 + cast(int) line.label + 1);
             b.applyTagByName("message-mark", a, z);
         }
-        if (modelProblems.length)
-        {
-            import std.string : stripRight;
-            put(modelProblems.stripRight, null);
-        }
-        consoleHint.setVisible(modelMessages.length == 0 && modelProblems.length == 0 && programLog.length == 0);
+        consoleHint.setVisible(modelLines.length == 0 && programLog.length == 0);
         // keep the latest lines in view
         // through a mark: scrolling to an iter now would use the old layout
         TextIter last;
