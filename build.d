@@ -260,7 +260,7 @@ string page(string title, string body, string active = "", string side = "")
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="/fonts/fonts.css" rel="stylesheet">
 <style>%s</style>
 </head>
 <body>
@@ -273,7 +273,7 @@ string page(string title, string body, string active = "", string side = "")
     <label for="menu" class="burger">menu</label>
   </nav>
   %s
-  <footer><img src="/logo.svg" alt=""><span>hackerscad.com</span><a href="https://github.com/trikko/hackerscad">GitHub</a><a href="https://www.printables.com/model/345684">Carlo on Printables</a><a href="%sLICENSE">License</a></footer>
+  <footer><img src="/logo.svg" alt=""><span>hackerscad.com</span><a href="https://github.com/trikko/hackerscad">GitHub</a><a href="https://www.printables.com/model/345684">Carlo on Printables</a><a href="%sLICENSE">License</a><a href="/privacy.html">Privacy</a></footer>
 </div>
 </body>
 </html>
@@ -415,6 +415,10 @@ void main(string[] args)
         "Reference", `<aside class="side"><a class="up" href="#">On this page</a>` ~ toc ~ "</aside>"));
     auto cheat = convert("docs/CHEATSHEET.md", title);
     put("/cheatsheet.html", page("Cheatsheet", cheat, "Cheatsheet"));
+
+    // privacy, in English and Italian
+    auto privacy = convert("docs/privacy.md", readText(buildPath(here, "pages", "privacy.md")), title);
+    put("/privacy.html", page(title, privacy));
 
     // agents: the README's section, its prompt with a copy button
     auto agentsText = readmeSection("## Using hackerscad with an AI agent")

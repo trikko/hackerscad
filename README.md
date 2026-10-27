@@ -26,9 +26,10 @@ To look at it: any static file server on `out/`, for example `websitino out --in
 | `pages/index.html` | the home page, written by hand |
 | `pages/reference.md` | the language reference for people (`docs/LANGUAGE.md` in `main` is the one for agents) |
 | `pages/site.css` | the style of the generated pages |
+| `pages/privacy.md` | the privacy page, in English and Italian: update it when the site starts collecting or loading something new |
 | `pages/build-it-yourself.md`, `pages/download-buttons.html` | the parts of the download page that are not in the README |
 | `img/` | the home page's pictures and the 3D viewer's STL files |
-| `static/` | the favicons and the web manifest, copied to the top of the site |
+| `static/` | copied to the top of the site: the favicons, the web manifest, the fonts (`fonts/`, instead of Google Fonts) and three.js for the 3D viewer (`js/three/`, instead of a CDN), so that nothing is loaded from elsewhere |
 | `models/` | the models the pictures are rendered from, and `images.sh`, which renders them again |
 
 ## The pictures
