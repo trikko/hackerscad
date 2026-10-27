@@ -256,6 +256,10 @@ string page(string title, string body, string active = "", string side = "")
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%s · hackerscad</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>%s</style>
 </head>
@@ -356,6 +360,8 @@ void main(string[] args)
         copyTree(buildPath(repo, "docs", d), buildPath(outDir, d));
     copy(buildPath(repo, "docs", "logo.svg"), buildPath(outDir, "logo.svg"));
     copyTree(buildPath(here, "img"), buildPath(outDir, "img"));
+    // the favicons and the web manifest, at the top of the site
+    copyTree(buildPath(here, "static"), outDir);
 
     // the home page, as written
     put("/", readText(buildPath(here, "pages", "index.html")));

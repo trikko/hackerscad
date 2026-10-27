@@ -28,6 +28,7 @@ To look at it: any static file server on `out/`, for example `websitino out --in
 | `pages/site.css` | the style of the generated pages |
 | `pages/build-it-yourself.md`, `pages/download-buttons.html` | the parts of the download page that are not in the README |
 | `img/` | the home page's pictures and the 3D viewer's STL files |
+| `static/` | the favicons and the web manifest, copied to the top of the site |
 | `models/` | the models the pictures are rendered from, and `images.sh`, which renders them again |
 
 ## The pictures
