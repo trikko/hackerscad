@@ -368,21 +368,27 @@ renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, came
   else if (/Mac/i.test(platform) || /Mac OS X/.test(ua)) os = navigator.maxTouchPoints > 1 ? null : 'mac';
   else if (/Linux/i.test(platform) || /Linux/.test(ua)) os = 'linux';
   if (!os) return;
-  // the processor: told by Chrome and Edge; on a Mac also by the graphics, "Apple M…" on Apple Silicon
+  // the processor: told by Chrome and Edge (Brave may give a false one, Safari none)
   try {
     if (uad && uad.getHighEntropyValues)
       arch = (await uad.getHighEntropyValues(['architecture'])).architecture || null;
   } catch (e) {}
   if (!arch && /aarch64|arm64|armv/i.test(ua + ' ' + navigator.platform)) arch = 'arm';
   if (!arch && os !== 'mac') arch = 'x86';
-  if (os === 'mac' && !arch) {
+  // on a Mac the graphics tell first: an Apple M… GPU, or ASTC textures, which on macOS only Apple Silicon
+  // offers (Safari and Brave hide the GPU's name, not this); Intel, AMD or NVIDIA graphics: an Intel Mac,
+  // sent to the download page
+  if (os === 'mac') {
     try {
-      const gl = document.createElement('canvas').getContext('webgl');
-      const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
-      const gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
-      if (/Apple M\d/.test(gpu)) arch = 'arm';
+      const gl = document.createElement('canvas').getContext('webgl2') || document.createElement('canvas').getContext('webgl');
+      const info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+      const astc = !!(gl && gl.getExtension('WEBGL_compressed_texture_astc'));
+      if (/Apple M\d/.test(gpu) || astc) arch = 'arm';
       else if (/Intel|AMD|Radeon|NVIDIA/i.test(gpu)) arch = 'x86';
     } catch (e) {}
+    // still not known: a Mac sold since 2020 is Apple Silicon
+    if (!arch) arch = 'arm';
   }
   const ok = (os === 'mac' && arch === 'arm') || (os !== 'mac' && arch === 'x86');
   if (!ok) return;
