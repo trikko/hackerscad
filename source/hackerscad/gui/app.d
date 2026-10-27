@@ -1081,6 +1081,13 @@ final class MainWindow
             program.foreground = "#8a8f98";
             program.scale = 0.88;
             console.getBuffer().getTagTable().add(program);
+            // the model's writeln lines: timed as the program's, darker
+            auto message = new TextTag("message");
+            message.scale = 0.88;
+            console.getBuffer().getTagTable().add(message);
+            auto mark = new TextTag("message-mark");
+            mark.weight = 700;
+            console.getBuffer().getTagTable().add(mark);
         }
         console.setMonospace(true);
         console.setWrapMode(WrapMode.None);
@@ -2386,16 +2393,24 @@ private:
             updateSection(false);
         updateDimensions();
 
+        // writeln's lines, timed as the program's own messages
+        {
+            import std.datetime.systime : Clock;
+            import std.string : splitLines;
+            auto t = Clock.currTime();
+            modelMessages = null;
+            foreach (l; o.log)
+                foreach (line; l.text.splitLines)
+                    modelMessages ~= format("%02d:%02d:%02d  MSG: %s", t.hour, t.minute, t.second, line);
+        }
         string log;
-        foreach (l; o.log)
-            log ~= l.text ~ "\n";
         size_t errors;
         foreach (d; o.diagnostics)
         {
             errors += d.severity == Severity.error;
             log ~= render(d, o.sources.get(d.span.file, "")) ~ "\n";
         }
-        modelOutput = log;
+        modelProblems = log;
         busyIndicator.stop();
         busyIndicator.setTooltipText(null);
         stopProgress();
@@ -2692,7 +2707,8 @@ private:
         buffer.createSourceMark(null, kind, lineStart);
     }
 
-    string modelOutput;      /// writeln output and problems of the latest evaluation
+    string[] modelMessages;  /// writeln output of the latest evaluation, a line each with its time
+    string modelProblems;    /// problems of the latest evaluation
     string[] programLog;     /// messages of the program itself, with their time
     bool lastWasEvaluation;
 
@@ -2874,23 +2890,53 @@ private:
         renderConsole();
     }
 
-    /// The model's output first, then the program's messages.
+    /// The program's messages, then the model's writeln lines among them
+    /// (the latest evaluation's, after its summary: darker, after "MSG:"),
+    /// then its problems.
     void renderConsole()
     {
         auto b = console.getBuffer();
-        b.setText(modelOutput);
-        if (programLog.length)
+        b.setText("");
+
+        // text at the end of the console, on a line of its own, with a
+        // tag; where it starts
+        int put(string text, string tag)
         {
             TextIter end;
             b.getEndIter(end);
+            if (end.getOffset() > 0)
+            {
+                b.insert(end, "\n");
+                b.getEndIter(end);
+            }
             immutable from = end.getOffset();
-            b.insert(end, (modelOutput.length ? "\n" : "") ~ programLog.join("\n"));
-            TextIter a, z;
-            b.getIterAtOffset(a, from);
-            b.getEndIter(z);
-            b.applyTagByName("program", a, z);
+            b.insert(end, text);
+            if (tag.length)
+            {
+                TextIter a, z;
+                b.getIterAtOffset(a, from);
+                b.getEndIter(z);
+                b.applyTagByName(tag, a, z);
+            }
+            return from;
         }
-        consoleHint.setVisible(modelOutput.length == 0 && programLog.length == 0);
+        foreach (line; programLog)
+            put(line, "program");
+        foreach (line; modelMessages)
+        {
+            // "MSG:" in bold, after the time ("hh:mm:ss  ")
+            immutable from = put(line, "message");
+            TextIter a, z;
+            b.getIterAtOffset(a, from + 10);
+            b.getIterAtOffset(z, from + 14);
+            b.applyTagByName("message-mark", a, z);
+        }
+        if (modelProblems.length)
+        {
+            import std.string : stripRight;
+            put(modelProblems.stripRight, null);
+        }
+        consoleHint.setVisible(modelMessages.length == 0 && modelProblems.length == 0 && programLog.length == 0);
         // keep the latest lines in view
         // through a mark: scrolling to an iter now would use the old layout
         TextIter last;
