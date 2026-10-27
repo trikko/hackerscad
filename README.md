@@ -39,10 +39,9 @@ models/images.sh --shot   # also the screenshot of the application (needs hacker
 
 ## Publishing
 
-`.github/workflows/pages.yml` builds the site and publishes it with GitHub Pages on every push to this branch. In `main`, `site-trigger.yml` starts it again when the docs change.
+The workflow that builds the site and publishes it with GitHub Pages is `site.yml`, in `main` (a workflow started by hand must live in the default branch). It runs when the docs change in `main`, by hand (Actions › site › Run workflow), and after every push to this branch, whose `.github/workflows/pages.yml` starts it.
 
 Once, in the repository's settings:
 
 - **Pages:** source "GitHub Actions", custom domain `hackerscad.com`, "Enforce HTTPS".
-- **Environments › github-pages:** allow deployments from the `site` branch.
 - At the domain's provider: `A` records for `hackerscad.com` to GitHub Pages (185.199.108.153, 185.199.109.153, 185.199.110.153, 185.199.111.153) and a `CNAME` record for `www` to `trikko.github.io`.
