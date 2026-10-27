@@ -1,0 +1,7 @@
+import std;
+@part("Red Pop")
+Solid plate()
+{
+    return kerf(box(120.mm, 40.mm, 3.mm),
+        box(40.mm, 50.mm, 10.mm, center: true));
+}

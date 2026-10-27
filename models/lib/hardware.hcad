@@ -1,0 +1,28 @@
+import std;
+immutable t = 10.mm;
+// a plate with the kinds of screw hole, M4, cut in
+// half to show them
+@part("Blue Pop")
+Solid plate()
+{
+    auto p = box(64.mm, 18.mm, t)
+        .fillet(edges.parallel(Z), r: 3.mm);
+    auto kinds = ["countersink", "counterbore", "clearance", "insert"];
+    foreach (i, k; kinds)
+        p -= hole(M4, t, k).move(x: (i - 1.5) * 15.mm, z: t);
+    return p - box(80.mm, 20.mm, 30.mm, center: true)
+        .move(y: -10.mm);
+}
+// the screws in the first two, their heads home
+@part("Gray Pop")
+Solid flatScrew()
+{
+    return screw(M4, 12.mm, head: "flat")
+        .move(x: -22.5.mm, z: t);
+}
+@part("Gray Pop")
+Solid socketScrew()
+{
+    return screw(M4, 12.mm)
+        .move(x: -7.5.mm, z: t - 4.mm);
+}

@@ -1,0 +1,253 @@
+// Carlo: the bag clip of the logo, drawn with a sketch
+
+/*
+    Carlo is hackerscad's mascot, the little
+    crocodile of the logo, and a clip that keeps
+    bags of biscuits closed.
+
+    carlo() below makes one: it is the function of
+    the carlo library, which comes with hackerscad
+    (`import std.carlo;` gives it to any model). Its
+    sizes are the parameters, to change in
+    Parameters while the view follows.
+*/
+
+module bagclip;
+
+import std.shapes;
+
+@param("Teeth per jaw", min: 1, max: 8)
+immutable teeth = 3;
+
+@param("Height", min: 5.mm, max: 40.mm)
+immutable height = 15.mm;
+
+@param("Tooth radius", min: 1.mm, max: 5.mm)
+immutable toothR = 2.5.mm;
+
+@param("Gap for the bag", min: 0.5.mm, max: 6.mm)
+immutable gap = 2.9.mm;
+
+@param("Jaw thickness", min: 2.mm, max: 10.mm)
+immutable jaw = 5.mm;
+
+@param("Back thickness", min: 2.mm, max: 10.mm)
+immutable back = 5.4.mm;
+
+@param("Lean of back and tips", min: 0.deg, max: 30.deg)
+immutable lean = 17.deg;
+
+@param("Mouth: + opens, - closes",
+    min: -5.deg, max: 5.deg)
+immutable mouth = 1.5.deg;
+
+@param("Keyring eye")
+immutable eye = true;
+
+@part
+Solid clip()
+{
+    return carlo(teeth: teeth, height: height,
+        toothR: toothR, gap: gap, jaw: jaw, back: back,
+        lean: lean, mouth: mouth, eye: eye);
+}
+
+/// Carlo lying flat on z = 0, `height` tall, the
+/// slot opening towards +X. `lean` is how far the back
+/// and the tips lean (the clip slides onto the bag).
+/// `mouth` tilts the lower jaw: down to open the slot
+/// towards the tips (it slides on more easily), up to
+/// close it (it holds tighter). `eye` adds the keyring
+/// eye on the top corner. Prints flat, as it comes: a
+/// constrained sketch, extruded.
+Solid carlo(int teeth = 3, Length height = 15.mm,
+    Length toothR = 2.5.mm, Length gap = 2.9.mm,
+    Length jaw = 5.mm, Length back = 5.4.mm,
+    Angle lean = 17.deg, Angle mouth = 1.5.deg,
+    bool eye = true)
+{
+    assert(teeth >= 1, "a jaw needs a tooth at least");
+    auto s = sketch();
+
+    // where the points start: near where they end up
+    // (the constraints below move them into place),
+    // from the rows of teeth, the top and bottom sides
+    // and the slot's depth
+    immutable axis = toothR + gap / 2;
+    immutable top = axis + toothR + jaw;
+    immutable slot = 4 * teeth * toothR;
+    immutable slope = tan(lean);
+    auto a = s.point(-back + top * slope, -top,
+        fixed: true);
+    auto b = s.point(slot + 2 * toothR, -top);
+    auto c = s.point(slot - 2 * toothR, top);
+
+    // the block: a level top, the back leaning, the
+    // tips of the jaws parallel to it
+    auto bottom = s.line(a, b);
+    SketchLine left, topSide;
+    immutable corner = -back - top * slope; // top left
+    if (eye)
+    {
+        // the eye: a ring on the top edge, its centre
+        // on the top's line, round over the corner and
+        // down onto the back, touching it; where it
+        // rises from the top, a small rounding (an arc
+        // touching both), not a corner
+        immutable eyeR = 5.mm, nook = 1.5.mm;
+        immutable rise = corner + 2 * eyeR;
+        auto centre = s.point(corner + eyeR, top);
+        auto eyeBack = s.point(corner + 3.mm * slope,
+            top - 3.mm);
+        auto nookCentre = s.point(rise + 1.mm,
+            top + nook);
+        auto nookTop = s.point(rise + 1.mm, top);
+        auto nookEye = s.point(rise - 0.3.mm,
+            top + 1.mm);
+        left = s.line(a, eyeBack);
+        topSide = s.line(c, nookTop);
+        auto ring = s.arc(centre, nookEye, eyeBack);
+        auto rounding = s.arc(nookCentre, nookEye,
+            nookTop);
+        s.on(centre, topSide);
+        s.radius(ring, eyeR);
+        s.tangent(left, ring);
+        s.radius(rounding, nook);
+        s.tangent(topSide, rounding);
+        s.tangent(ring, rounding);
+        s.distance(a, centre, 2 * top, along: Y);
+
+        // the keyring hole, in the middle of the eye
+        s.circle(centre, d: 3.8.mm);
+    }
+    else
+    {
+        // no eye: the back meets the top in a corner,
+        // rounded
+        auto d = s.point(corner, top);
+        left = s.line(a, d);
+        topSide = s.line(c, d);
+        s.distance(a, d, 2 * top, along: Y);
+        s.fillet(d, 2.5.mm);
+    }
+    s.horizontal(topSide);
+    s.angle(topSide, left, 90.deg - lean);
+
+    // the two rows of teeth: semicircles of one radius,
+    // end to end, pocket and tooth in turn; a row is
+    // points along a line, each arc between two of
+    // them, its centre on the line too. The upper row
+    // is level, the lower one tilts by the mouth. The
+    // first pocket of each row starts where it touches
+    // the end of the slot instead, and the last tooth
+    // ends where it touches the tip of its jaw
+    SketchPoint[] lower, upper;
+    foreach (i; 0 .. 2 * teeth + 1)
+    {
+        lower ~= s.point(2 * toothR * i, -axis);
+        upper ~= s.point(2 * toothR * i, axis);
+    }
+    SketchArc firstLower, firstUpper;
+    SketchArc lastLower, lastUpper;
+
+    // the upper row's last centre: with upper[1], its
+    // direction
+    SketchPoint lastCentre;
+
+    // the lower row's points and centres, put on its
+    // line below
+    SketchPoint[] lowerOnRow;
+    foreach (k; 0 .. 2 * teeth)
+    {
+        immutable x = 2 * toothR * k + toothR;
+        auto cl = s.point(x, -axis);
+        auto cu = s.point(x, axis);
+
+        // counter-clockwise from start to end: left to
+        // right goes under, right to left goes over.
+        // Lower row: pockets down, teeth up; upper row:
+        // pockets up, teeth down (facing the lower
+        // pockets)
+        auto pl = k % 2 == 0
+            ? s.arc(cl, lower[k], lower[k + 1])
+            : s.arc(cl, lower[k + 1], lower[k]);
+        auto pu = k % 2 == 0
+            ? s.arc(cu, upper[k + 1], upper[k])
+            : s.arc(cu, upper[k], upper[k + 1]);
+        s.radius(pl, toothR);
+        s.radius(pu, toothR);
+
+        // each centre on its row; the upper row level
+        immutable onRow = k == 0 ? k + 1 : k;
+        lowerOnRow ~= cl;
+        if (k > 1)
+            lowerOnRow ~= lower[k];
+        s.horizontal(upper[onRow], cu);
+        if (k > 0 && k < 2 * teeth - 1)
+            s.horizontal(upper[k], upper[k + 1]);
+        if (k == 0)
+        {
+            firstLower = pl;
+            firstUpper = pu;
+        }
+        if (k == 2 * teeth - 1)
+        {
+            lastLower = pl;
+            lastUpper = pu;
+            lastCentre = cu;
+        }
+    }
+
+    // the end of the slot: parallel to the back, the
+    // back's thickness behind it, touching the first
+    // pocket of each row where they meet it
+    auto end = s.line(lower[0], upper[0]);
+    s.parallel(end, left);
+    s.distance(lower[0], left, back * cos(lean));
+    s.tangent(end, firstLower);
+    s.tangent(end, firstUpper);
+
+    // the rows start on the end's line, the gap apart:
+    // the upper one level, the lower one tilted by the
+    // mouth, down to open it, up to close it
+    // (construction lines, which guide the outline
+    // without being part of it)
+    auto start = s.point(axis * slope, -axis);
+    s.on(start, end);
+    s.distance(a, start, top - axis, along: Y);
+    s.distance(start, upper[1], 2 * axis, along: Y);
+    auto lowerRow = s.line(start, lowerOnRow[$ - 1],
+        construction: true);
+    auto upperRow = s.line(upper[1], lastCentre,
+        construction: true);
+
+    // from the lower row to the upper one:
+    // counter-clockwise when it opens
+    s.angle(lowerRow, upperRow, mouth);
+    foreach (p; lowerOnRow[0 .. $ - 1])
+        s.on(p, lowerRow);
+    s.on(lower[1], lowerRow);
+
+    // the bottom drops with the lower row, from below
+    // its start
+    auto under = s.point(axis * slope, -top);
+    s.vertical(start, under);
+    s.horizontal(a, under);
+    auto drop = s.line(under, b, construction: true);
+    s.parallel(drop, lowerRow);
+
+    // the tips of the jaws, parallel to the back,
+    // touching the last teeth
+    auto tipLow = s.line(b, lower[$ - 1]);
+    auto tipUp = s.line(upper[$ - 1], c);
+    s.parallel(tipLow, left);
+    s.parallel(tipUp, left);
+    s.tangent(tipLow, lastLower);
+    s.tangent(tipUp, lastUpper);
+
+    // round outer corners
+    foreach (p; [a, b, c])
+        s.fillet(p, 2.5.mm);
+
+    return s.profile.extrude(height);
+}

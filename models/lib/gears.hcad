@@ -1,0 +1,8 @@
+import std;
+@part("Orange Pop")
+Solid gear()
+{
+    return spurGear(2.mm, 24, 10.mm)
+        + cylinder(d: 18.mm, h: 16.mm)
+        - cylinder(d: 8.mm, h: 100.mm, center: true);
+}

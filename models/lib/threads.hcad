@@ -1,0 +1,26 @@
+import std;
+// a jar and its screw lid, the lid upside down beside
+// it to show its thread
+@part("Yellow Pop")
+Solid jar()
+{
+    auto body = cylinder(d: 56.mm, h: 40.mm)
+        .fillet(edges.of(faces.bottom), r: 4.mm);
+    auto neck = cylinder(d: 48.mm, h: 14.mm)
+        .thread(faces.largest, "M48x3")
+        .move(z: 40.mm);
+    return body + neck
+        - cylinder(d: 40.mm, h: 60.mm).move(z: 3.mm);
+}
+@part("Pink Pop")
+Solid lid()
+{
+    auto bore = cylinder(d: 45.mm, h: 14.mm).move(z: -1.mm)
+        .addTag("bore", recursive: true);
+    auto ring = cylinder(d: 58.mm, h: 12.mm) - bore;
+    auto threaded = ring.thread(ring.faces.tagged("bore"),
+        "M48x3", clearance: 0.3.mm);
+    auto l = (threaded + cylinder(d: 58.mm, h: 3.mm).move(z: 12.mm))
+        .rotate(x: 180);
+    return l.move(x: 66.mm, z: -l.bbox.min.z);
+}

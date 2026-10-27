@@ -1,0 +1,18 @@
+import std;
+Joint cut()
+{
+    auto beam = box(20.mm, 20.mm, 80.mm);
+    auto middle = plane(origin: vec(0.mm, 0.mm, 40.mm), normal: Z);
+    return splitJoint(beam, middle, kind: "dovetail");
+}
+@part("Violet Pop")
+Solid lower()
+{
+    return cut().a;
+}
+// pulled up, to see the dovetail and its socket
+@part("Yellow Pop")
+Solid upper()
+{
+    return cut().b.move(z: 18.mm);
+}

@@ -1,0 +1,11 @@
+import std;
+@part("Pink Pop")
+Solid fixedLeaf()
+{
+    return hinge().fixed;
+}
+@part("Blue Pop")
+Solid movingLeaf()
+{
+    return hinge().moving;
+}

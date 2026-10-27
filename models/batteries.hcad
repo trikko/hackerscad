@@ -1,0 +1,46 @@
+// batteries.hcad: a holder for AA cells
+import std;
+
+@param immutable cells = 4;
+immutable aa = 14.5.mm, play = 0.4.mm;
+immutable hole = aa + play, pitch = hole + 2.mm;
+
+@part
+Solid holder()
+{
+    auto b = box(cells * pitch + 2.mm,
+            pitch + 2.mm, 22.mm)
+        .fillet(edges.parallel(Z), r: 3.mm);
+
+    // a pocket for each cell, its rim chamfered
+    foreach (i; 0 .. cells)
+        b -= cylinder(d: hole, h: 22.mm)
+            .move(x: (i - (cells - 1) / 2.0) * pitch,
+                z: 3.mm);
+    b = b.chamfer(edges.of(faces.top), d: 0.6.mm);
+
+    // a grip on both long sides, last
+    return b
+        .knurl(faces.front, kind: "diagonal",
+            pitch: 3.mm)
+        .knurl(faces.back, kind: "diagonal",
+            pitch: 3.mm);
+}
+
+// a cell in the first pocket, to see it fit
+@part("Yellow Pop", alpha: 0.4, export: false)
+Solid cell()
+{
+    auto body = cylinder(d: aa, h: 49.5.mm);
+    auto tip = cylinder(d: 5.5.mm, h: 1.mm)
+        .move(z: 49.5.mm);
+    return (body + tip)
+        .move(x: -(cells - 1) / 2.0 * pitch, z: 3.mm);
+}
+
+unittest
+{
+    assert(hole > aa, "an AA cell does not fit");
+    assert((holder & cell).volume < 0.01.mm ^^ 3,
+        "the cell rubs against the holder");
+}

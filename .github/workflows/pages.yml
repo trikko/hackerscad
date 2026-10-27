@@ -1,0 +1,50 @@
+# hackerscad.com: built from this branch (the home page, the reference, the pictures) and from the docs
+# of main, then published with GitHub Pages. Runs on a push to this branch, and when main's workflow
+# site-trigger.yml starts it after the docs change (or by hand: Actions › site › Run workflow).
+name: site
+
+on:
+  push:
+    branches: [site]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# one publication at a time; a newer one replaces one still waiting
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: site
+      # the docs and the lexer the pages are made from
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: repo
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd-latest
+      - name: Build the site
+        run: dub run --single build.d --compiler=dmd -- out
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

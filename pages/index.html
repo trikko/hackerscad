@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hackerscad — parts you write, see and print</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root { --sky: #0FC3F2; --pink: #F587C2; --yellow: #F4E55E; --violet: #C597FE; --ink: #14232a; --muted: #5d6c73; --cream: #fbfaf6; --card: #ece9df; --code: #14232a; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--cream); color: var(--ink); font-family: Inter, sans-serif; }
+a { color: inherit; text-decoration: none; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+nav { display: flex; align-items: center; height: 76px; gap: 26px; }
+nav .brand { font: 600 22px Fredoka, sans-serif; display: flex; gap: 10px; align-items: center; }
+nav .brand img { width: 40px; }
+nav .links { margin-left: auto; display: flex; gap: 24px; color: var(--muted); }
+nav .gh { display: inline-flex; color: var(--ink); }
+h1 { font-family: Fredoka, sans-serif; font-weight: 600; }
+h2, h3 { font-family: "JetBrains Mono", monospace; font-weight: 700; letter-spacing: -0.5px; }
+.hero { display: grid; grid-template-columns: 1fr 1.1fr; align-items: center; gap: 44px; padding: 36px 0 70px; }
+.hero h1 { font-size: 60px; line-height: 1.03; margin: 0 0 18px; }
+.hero h1 em { font-style: normal; background: var(--yellow); padding: 0 10px; border-radius: 12px; }
+.hero p { font-size: 19px; line-height: 1.6; color: var(--muted); margin: 0 0 26px; }
+.btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-height: 58px; padding: 8px 24px; border: 2px solid transparent; border-radius: 999px; font-weight: 500; margin: 0 8px 10px 0; vertical-align: top; }
+.btn.go { background: var(--ink); border-color: var(--ink); color: #fff; }
+.btn.alt { border-color: var(--ink); }
+.dlbtn { line-height: 1.15; }
+.dlbtn small { display: block; font-size: 12px; font-weight: 400; opacity: 0.75; margin-top: 3px; }
+.os { font-size: 14px; color: var(--muted); }
+.duo { display: flex; flex-direction: column; min-width: 0; }
+.pic { position: relative; border-radius: 26px; overflow: hidden; border: 2px solid var(--card); background: #fff; }
+.pic img { display: block; width: 100%; }
+.code { background: var(--code); color: #dfe9ed; border-radius: 20px; padding: 18px 20px; font: 13px/1.65 "JetBrains Mono", monospace; white-space: pre; margin-top: 14px; overflow-x: auto; }
+.code .k { color: #f6b26b; } .code .t { color: #6fd3f5; } .code .n { color: #c9b5ff; } .code .c { color: #7d949c; } .code .s { color: #b6e39b; }
+.points { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; padding: 40px 0 80px; }
+.point { background: #fff; border: 2px solid var(--card); border-radius: 22px; padding: 26px; }
+.tagc { display: inline-block; font: 500 13px "JetBrains Mono", monospace; padding: 4px 12px; border-radius: 999px; margin-bottom: 12px; }
+.point h3 { font-size: 23px; margin: 0 0 8px; }
+.point p { margin: 0; color: var(--muted); line-height: 1.6; }
+h2 { font-size: 40px; margin: 0 0 8px; }
+.lead { color: var(--muted); font-size: 18px; margin: 0 0 30px; line-height: 1.55; }
+.section { padding-bottom: 84px; }
+.term { background: var(--code); border-radius: 26px; overflow: hidden; color: #dfe9ed; display: grid; grid-template-columns: 1.1fr 1fr; }
+.term pre { margin: 0; padding: 24px; font: 13px/1.7 "JetBrains Mono", monospace; border-right: 1px solid #263840; }
+.term .k { color: #f6b26b; } .term .t { color: #6fd3f5; } .term .s { color: #b6e39b; } .term .c { color: #7d949c; }
+.term .out { padding: 24px; font: 13px/1.7 "JetBrains Mono", monospace; }
+.term .ok { color: #b6e39b; } .term .o { color: #9fb1b8; }
+.term .out img { width: 100%; border-radius: 14px; margin-top: 14px; background: #fff; }
+.wall { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 22px; }
+.wall figure { margin: 0; background: #fff; border-radius: 18px; overflow: hidden; border: 2px solid var(--card); }
+.wall img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; }
+.wall figcaption { padding: 10px 14px 12px; font: 500 15px "JetBrains Mono", monospace; }
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.fact { border: 2px dashed #d8d3c4; border-radius: 18px; padding: 18px 20px; }
+.fact b { font: 700 16px "JetBrains Mono", monospace; display: block; margin-bottom: 4px; }
+.fact span { color: var(--muted); line-height: 1.55; font-size: 15px; }
+.agents { background: var(--ink); color: #fff; border-radius: 30px; padding: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 36px; align-items: center; }
+.agents h2 { color: #fff; } .agents .lead { color: #b9c7cd; }
+.agents .btn { background: var(--sky); color: var(--ink); }
+.chat { background: #fff; color: var(--ink); border-radius: 20px; padding: 18px; font-size: 15px; line-height: 1.55; }
+.chat .u { background: #fdf3c8; border-radius: 14px; padding: 10px 14px; margin-bottom: 10px; }
+.chat .a { color: var(--muted); font-size: 13px; }
+.chat .made { display: block; width: 100%; border-radius: 14px; margin-bottom: 6px; }
+.chat code { font: 13px "JetBrains Mono"; background: #e4f7fd; border-radius: 6px; padding: 1px 6px; color: var(--ink); }
+.cmd { margin-top: 14px; font: 12.5px/1.7 "JetBrains Mono", monospace; color: #9fb1b8; background: #1c2d35; border-radius: 14px; padding: 12px 14px; }
+.cmd .p { color: #b6e39b; }
+.dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.dl a { background: #fff; border: 2px solid var(--card); border-radius: 20px; padding: 22px; }
+.dl b { font: 700 19px "JetBrains Mono", monospace; display: block; } .dl span { color: var(--muted); display: block; } .dl .size { font-size: 12px; margin-top: 4px; }
+footer { padding: 0 0 40px; color: var(--muted); font-size: 14px; display: flex; gap: 22px; align-items: center; }
+footer img { width: 26px; }
+.ai { background: #fff; border: 2px solid var(--card); border-radius: 22px; padding: 22px 26px; display: grid; grid-template-columns: auto 1fr 1.3fr; gap: 20px; align-items: center; margin: 10px 0 0; }
+.ai > * { min-width: 0; }
+.ai .badge { font: 500 13px "JetBrains Mono", monospace; background: #ece2ff; border-radius: 999px; padding: 6px 14px; white-space: nowrap; }
+.ai h3 { font-size: 22px; margin: 0 0 4px; }
+.ai p { margin: 0; color: var(--muted); line-height: 1.55; }
+.ai p a { color: var(--ink); text-decoration: underline; }
+.prompt { position: relative; background: #f4f2ea; border-radius: 14px; padding: 14px 16px 36px; font: 12.5px/1.6 "JetBrains Mono", monospace; overflow-wrap: anywhere; }
+.copy { position: absolute; right: 10px; bottom: 8px; font: 500 12px "JetBrains Mono", monospace; color: #fff; background: var(--ink); border: 0; border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.ai .lines { font: 12.5px/1.8 "JetBrains Mono", monospace; background: #f4f2ea; border-radius: 14px; padding: 10px 14px; white-space: nowrap; overflow-x: auto; }
+.ai .lines .p { color: #3a8f4a; }
+.shot { min-width: 0; border-radius: 18px; overflow: hidden; border: 2px solid var(--card); background: #fff; }
+.shot img { display: block; width: 100%; }
+#viewer { position: relative; background: #fff; border: 2px solid var(--card); border-radius: 22px; overflow: hidden; height: 360px; margin-top: 14px; touch-action: none; }
+#viewer canvas { display: block; }
+#viewer .hint { position: absolute; left: 14px; bottom: 12px; font: 12px "JetBrains Mono", monospace; color: var(--muted); }
+.ways { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+.ways > * { min-width: 0; }
+.way { background: #fff; border: 2px solid var(--card); border-radius: 22px; padding: 24px; }
+.way h3 { font-size: 21px; margin: 0 0 8px; }
+.way p, .way li { color: var(--muted); line-height: 1.6; }
+.way ol { padding-left: 20px; margin: 0 0 12px; }
+.way li { margin-bottom: 10px; }
+.way code { font: 12.5px "JetBrains Mono", monospace; background: #f4f2ea; border-radius: 6px; padding: 1px 5px; color: var(--ink); }
+.way .lines { margin-top: 8px; font: 12px/1.8 "JetBrains Mono", monospace; background: #f4f2ea; color: var(--ink); border-radius: 12px; padding: 10px 12px; white-space: nowrap; overflow-x: auto; }
+.way .lines .p { color: #3a8f4a; }
+.way .more { font: 500 14px "JetBrains Mono", monospace; color: var(--ink); }
+/* JetBrains Mono joins >= != => into one sign: code shows what is typed */
+code, pre, .code, .src, .lines, .prompt, .cmd, .term, kbd { font-variant-ligatures: none !important; font-feature-settings: "liga" 0, "calt" 0 !important; }
+@media (max-width: 760px) {
+  .ways { grid-template-columns: 1fr; }
+  #viewer { height: 300px; }
+  .ai { grid-template-columns: 1fr; padding: 20px; }
+  .wrap { padding: 0 18px; }
+  nav .links { display: none; } nav .gh { margin-left: auto; }
+  .hero { grid-template-columns: 1fr; gap: 26px; padding: 14px 0 40px; }
+  .hero > * { min-width: 0; }
+  .hero h1 { font-size: 42px; } .hero p { font-size: 17px; }
+  .code { font-size: 12px; }
+  .points, .facts, .dl, .term, .agents { grid-template-columns: 1fr; }
+  .points { padding: 28px 0 56px; } .section { padding-bottom: 56px; }
+  .term pre { border-right: 0; border-bottom: 1px solid #263840; overflow-x: auto; font-size: 12px; }
+  .term .out { font-size: 12px; overflow-x: auto; }
+  .wall { grid-template-columns: 1fr 1fr; gap: 10px; }
+  h2 { font-size: 30px; }
+  .agents { padding: 28px 22px; border-radius: 24px; } .agents > * { min-width: 0; }
+  .cmd { overflow-x: auto; }
+  footer { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="/"><img src="/logo.svg" alt="">hackerscad</a>
+    <div class="links"><a href="/tutorial/">Tutorial</a><a href="/guides/">Guides</a><a href="/reference.html">Reference</a><a href="/cheatsheet.html">Cheatsheet</a><a href="/agents.html">For agents</a><a href="/download.html">Download</a></div>
+    <a class="gh" href="https://github.com/trikko/hackerscad" aria-label="hackerscad on GitHub" title="GitHub"><svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+  </nav>
+
+  <div class="hero">
+    <div>
+      <h1>Parts you <em>write</em>, see and print.</h1>
+      <p>hackerscad is a parametric CAD where the model is code. Type and the 3D view follows; round an edge with the mouse and the code is written for you. Exact solids, real threads, files for every printer.</p>
+      <a class="btn go dlbtn" id="dlbtn" href="/download.html">Download<small id="dlfor">all systems</small></a><a class="btn alt" href="/tutorial/">Make your first part</a>
+      <div class="os">Linux, Windows and macOS · free and open source</div>
+    </div>
+    <div class="shot"><img src="/img/app-split.png" alt="hackerscad with Carlo open, half in the light theme and half in the dark one"></div>
+  </div>
+
+  <div class="ai">
+    <span class="badge">AI assistants</span>
+    <div>
+      <h3>Using an AI coding assistant?</h3>
+      <p>Paste this to it: it installs hackerscad's skill, then hackerscad itself if it's missing (asking you first) and the MCP server. Then it reads the language from docs written for agents, checks and renders its models, and shows them in your window. <a href="#agents">More below</a></p>
+    </div>
+    <div class="prompt"><div class="text">Install the hackerscad skill for all my projects from https://raw.githubusercontent.com/trikko/hackerscad/main/docs/SKILL.md, with https://raw.githubusercontent.com/trikko/hackerscad/main/docs/llms-full.txt next to it, then follow its &quot;Setup and updates&quot; section.</div><button class="copy" type="button">copy</button></div>
+  </div>
+
+  <div class="points">
+    <div class="point"><span class="tagc" style="background:#d9f5fd">1 · write</span><h3>Code is the model</h3><p>A small, sandboxed language with units, selectors and libraries. It diffs, versions and reviews like any other code.</p></div>
+    <div class="point"><span class="tagc" style="background:#fde3f0">2 · click</span><h3>The mouse writes code</h3><p>Fillets, holes, sketches on a face, parts moved and patterned: every click lands in the file, readable.</p></div>
+    <div class="point"><span class="tagc" style="background:#fbf6c6">3 · print</span><h3>Send it to the printer</h3><p>3MF with a colour per part, STL, STEP, or a drawing with views and dimensions.</p></div>
+  </div>
+
+  <div class="section">
+    <h2>Checked like code</h2>
+    <p class="lead">unittest blocks hold what the part must do. The command line checks, renders and exports, in a script or in CI.</p>
+    <div class="term">
+<pre><span class="c">// batteries.hcad: a holder for AA cells</span>
+<span class="k">import</span> std;
+
+<span class="k">@param</span> <span class="k">immutable</span> cells = 4;
+<span class="k">immutable</span> aa = 14.5.mm, play = 0.4.mm;
+<span class="k">immutable</span> hole = aa + play, pitch = hole + 2.mm;
+
+<span class="k">@part</span>
+<span class="t">Solid</span> holder()
+{
+    <span class="k">auto</span> b = box(cells * pitch + 2.mm,
+            pitch + 2.mm, 22.mm)
+        .fillet(edges.parallel(Z), r: 3.mm);
+
+    <span class="c">// a pocket for each cell, its rim chamfered</span>
+    <span class="k">foreach</span> (i; 0 .. cells)
+        b -= cylinder(d: hole, h: 22.mm)
+            .move(x: (i - (cells - 1) / 2.0) * pitch,
+                z: 3.mm);
+    b = b.chamfer(edges.of(faces.top), d: 0.6.mm);
+
+    <span class="c">// a grip on both long sides, last</span>
+    <span class="k">return</span> b
+        .knurl(faces.front, kind: <span class="s">&quot;diagonal&quot;</span>,
+            pitch: 3.mm)
+        .knurl(faces.back, kind: <span class="s">&quot;diagonal&quot;</span>,
+            pitch: 3.mm);
+}
+
+<span class="c">// a cell in the first pocket, to see it fit</span>
+<span class="k">@part</span>(<span class="s">&quot;Yellow Pop&quot;</span>, alpha: 0.4, export: false)
+<span class="t">Solid</span> cell()
+{
+    <span class="k">auto</span> body = cylinder(d: aa, h: 49.5.mm);
+    <span class="k">auto</span> tip = cylinder(d: 5.5.mm, h: 1.mm)
+        .move(z: 49.5.mm);
+    <span class="k">return</span> (body + tip)
+        .move(x: -(cells - 1) / 2.0 * pitch, z: 3.mm);
+}
+
+<span class="k">unittest</span>
+{
+    assert(hole &gt; aa, <span class="s">&quot;an AA cell does not fit&quot;</span>);
+    assert((holder &amp; cell).volume &lt; 0.01.mm ^^ 3,
+        <span class="s">&quot;the cell rubs against the holder&quot;</span>);
+}</pre>
+      <div class="out">
+        <div><span class="ok">$</span> hcad check batteries.hcad</div>
+        <div class="o">part holder  69.6 × 19.9 × 22.0 mm  volume 16091.0 mm³</div>
+        <div class="o">part cell  14.5 × 14.5 × 50.5 mm  (reference)</div>
+        <div class="ok">ok in 366 ms</div>
+        <div style="margin-top:8px"><span class="ok">$</span> hcad export batteries.hcad -o batteries.3mf</div>
+          <div id="viewer"><span class="hint">batteries.3mf · drag to turn</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Ready-made, from screws to moulds</h2>
+    <div class="wall">
+      <figure><img src="/img/lib-hardware.png" alt=""><figcaption>Hardware</figcaption></figure>
+      <figure><img src="/img/lib-threads.png" alt=""><figcaption>Threads</figcaption></figure>
+      <figure><img src="/img/lib-gears.png" alt=""><figcaption>Gears</figcaption></figure>
+      <figure><img src="/img/lib-hinges.png" alt=""><figcaption>Hinges</figcaption></figure>
+      <figure><img src="/img/lib-snaps.png" alt=""><figcaption>Snaps</figcaption></figure>
+      <figure><img src="/img/lib-enclosures.png" alt=""><figcaption>Enclosures</figcaption></figure>
+      <figure><img src="/img/lib-joints.png" alt=""><figcaption>Joints</figcaption></figure>
+      <figure><img src="/img/lib-molds.png" alt=""><figcaption>Molds</figcaption></figure>
+      <figure><img src="/img/lib-flex.png" alt=""><figcaption>Flex</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Under the hood</h2>
+    <p class="lead">For the curious.</p>
+    <div class="facts">
+      <div class="fact"><b>Exact solids</b><span>OpenCascade B-rep: fillets, shells, sweeps, lofts and real threads.</span></div>
+      <div class="fact"><b>Safe to open</b><span>A C-style scripting language, familiar from C, Java or JavaScript, in a sandbox: no files, no network. Any model is safe to open.</span></div>
+      <div class="fact"><b>A real editor</b><span>Completion, hover help and constrained sketches you edit with a click.</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="agents" id="agents">
+      <div>
+        <h2>Rather just ask?</h2>
+        <p class="lead">Tell Claude or another agent what you need. It models it, checks its sizes, shows it in your window and leaves you code you can change.</p>
+      </div>
+      <div class="chat">
+        <div class="u">A wall hook for a 30 mm broom handle, two M4 screws.</div>
+        <img class="made" src="/img/hook.png" alt="The wall hook the agent made">
+        <div class="a">hook.hcad · the handle's diameter a @param</div>
+      </div>
+    </div>
+    <div class="ways">
+      <div class="way">
+        <span class="tagc" style="background:#d9f5fd">the easy way</span>
+        <h3>Ask your agent</h3>
+        <p>Paste this: it installs the skill, then hackerscad itself if it is missing (asking you first) and the MCP server.</p>
+        <div class="prompt"><div class="text">Install the hackerscad skill for all my projects from https://raw.githubusercontent.com/trikko/hackerscad/main/docs/SKILL.md, with https://raw.githubusercontent.com/trikko/hackerscad/main/docs/llms-full.txt next to it, then follow its &quot;Setup and updates&quot; section.</div><button class="copy" type="button">copy</button></div>
+      </div>
+      <div class="way">
+        <span class="tagc" style="background:#fde3f0">by hand</span>
+        <h3>The skill and the MCP server</h3>
+        <ol>
+          <li><code>hcad --version</code> tells whether <code>hcad</code> is in your PATH; if not, use its full path below.</li>
+          <li>The skill, the rules that avoid most mistakes, made by <code>hcad</code> itself (Claude Code shown):
+            <div class="lines">mkdir -p ~/.claude/skills/hackerscad<br>hcad docs --skill &gt; ~/.claude/skills/hackerscad/SKILL.md<br>hcad docs &gt; ~/.claude/skills/hackerscad/llms-full.txt</div></li>
+          <li>The MCP server, the tools: one command, then restart the agent.
+            <div class="lines"><span class="p">$</span> claude mcp add -s user hcad -- hcad mcp<br><span class="p">$</span> codex mcp add hcad -- hcad mcp<br><span class="p">$</span> agy mcp add hcad hcad mcp</div></li>
+        </ol>
+        <a class="more" href="/agents.html">Every agent, folder and path →</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Download</h2>
+    <p class="lead">One package per system: the app, the command line tool and the MCP server.</p>
+    <div class="dl">
+      <a href="https://github.com/trikko/hackerscad/releases/download/nightly/hackerscad-nightly-x86_64.AppImage"><b>Linux</b><span>AppImage · x86-64 · glibc 2.39+</span><span class="size">87 MB</span></a>
+      <a href="https://github.com/trikko/hackerscad/releases/download/nightly/hackerscad-nightly-windows-x86_64.zip"><b>Windows</b><span>zip · x86-64 · Windows 10, 11</span><span class="size">83 MB</span></a>
+      <a href="https://github.com/trikko/hackerscad/releases/download/nightly/hackerscad-nightly-macos-arm64.zip"><b>macOS</b><span>zip · Apple Silicon · macOS 15+</span><span class="size">65 MB</span></a>
+    </div>
+  </div>
+
+  <footer><img src="/logo.svg" alt=""><span>hackerscad.com</span><a href="https://github.com/trikko/hackerscad">GitHub</a><a href="https://www.printables.com/model/345684">Carlo on Printables</a><a href="https://github.com/trikko/hackerscad/blob/main/LICENSE">License</a></footer>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(b => b.addEventListener('click', () => {
+  navigator.clipboard.writeText(b.parentElement.querySelector('.text').innerText.trim());
+  b.textContent = 'copied'; setTimeout(() => b.textContent = 'copy', 1500);
+}));
+</script>
+
+<script type="importmap">{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const box = document.getElementById('viewer');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+box.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, 1, 1, 3000);
+// Z up, as in hackerscad; set before the controls, which orbit about the camera's up
+camera.up.set(0, 0, 1);
+camera.position.set(110, -150, 110);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.7);
+sun.position.set(80, -120, 200);
+scene.add(sun);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 1.5;
+controls.addEventListener('start', () => controls.autoRotate = false);
+const parts = [
+  { url: '/img/holder.stl', color: 0x0FC3F2, opacity: 1 },
+  { url: '/img/cell.stl', color: 0xF4E55E, opacity: 0.45 },
+];
+const loader = new STLLoader();
+const all = new THREE.Box3();
+let left = parts.length;
+for (const p of parts)
+  loader.load(p.url, g => {
+    g.computeVertexNormals();
+    const m = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.5,
+      transparent: p.opacity < 1, opacity: p.opacity, depthWrite: p.opacity >= 1 });
+    const mesh = new THREE.Mesh(g, m);
+    if (p.opacity < 1) mesh.renderOrder = 1;
+    scene.add(mesh);
+    g.computeBoundingBox();
+    all.union(g.boundingBox);
+    if (--left === 0) {
+      const c = all.getCenter(new THREE.Vector3()), size = all.getSize(new THREE.Vector3()).length();
+      controls.target.copy(c);
+      camera.position.copy(c).add(new THREE.Vector3(0.75, -1.05, 0.7).multiplyScalar(size));
+      controls.update();
+    }
+  });
+function fit() {
+  const w = box.clientWidth, h = box.clientHeight;
+  renderer.setSize(w, h, false);
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(fit).observe(box);
+fit();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+<script>
+// the hero's Download: straight to the file for the system the browser runs on, when it is one there is a
+// file for; else, or when it cannot tell, to the download page
+(async () => {
+  const files = {
+    linux: ['Linux', 'hackerscad-nightly-x86_64.AppImage'],
+    windows: ['Windows', 'hackerscad-nightly-windows-x86_64.zip'],
+    mac: ['macOS', 'hackerscad-nightly-macos-arm64.zip'],
+  };
+  const ua = navigator.userAgent, uad = navigator.userAgentData;
+  let os = null, arch = null;
+  if (/Android|iPhone|iPad|iPod/i.test(ua) || (uad && uad.mobile)) return;
+  const platform = (uad && uad.platform) || navigator.platform || '';
+  if (/Win/i.test(platform) || /Windows/.test(ua)) os = 'windows';
+  else if (/Mac/i.test(platform) || /Mac OS X/.test(ua)) os = navigator.maxTouchPoints > 1 ? null : 'mac';
+  else if (/Linux/i.test(platform) || /Linux/.test(ua)) os = 'linux';
+  if (!os) return;
+  // the processor: told by Chrome and Edge; on a Mac also by the graphics, "Apple M…" on Apple Silicon
+  try {
+    if (uad && uad.getHighEntropyValues)
+      arch = (await uad.getHighEntropyValues(['architecture'])).architecture || null;
+  } catch (e) {}
+  if (!arch && /aarch64|arm64|armv/i.test(ua + ' ' + navigator.platform)) arch = 'arm';
+  if (!arch && os !== 'mac') arch = 'x86';
+  if (os === 'mac' && !arch) {
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+      if (/Apple M\d/.test(gpu)) arch = 'arm';
+      else if (/Intel|AMD|Radeon|NVIDIA/i.test(gpu)) arch = 'x86';
+    } catch (e) {}
+  }
+  const ok = (os === 'mac' && arch === 'arm') || (os !== 'mac' && arch === 'x86');
+  if (!ok) return;
+  const [name, file] = files[os];
+  document.getElementById('dlbtn').href = 'https://github.com/trikko/hackerscad/releases/download/nightly/' + file;
+  document.getElementById('dlfor').textContent = 'for ' + name;
+})();
+</script>
+</body>
+</html>

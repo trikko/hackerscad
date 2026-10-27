@@ -1,0 +1,11 @@
+import std;
+
+// a case for Carlo; snap: the lid clicks shut
+immutable c = shadowCase(carlo(), close: "snap");
+
+@part("Sky Pop")
+Solid base() => c.base;
+
+
+@part("Yellow Pop")
+Solid clip() => carlo();

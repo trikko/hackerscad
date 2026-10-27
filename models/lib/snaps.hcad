@@ -1,0 +1,17 @@
+import std;
+// a lid held by a snap hook: the barb clicks over the
+// edge of a window in the lid
+immutable beam = 10.mm, barb = 1.mm, wall = 2.mm, play = 0.3.mm;
+@part("Cyan Pop")
+Solid base()
+{
+    return box(24.mm, 12.mm, 2.mm).move(z: -2.mm)
+        + snapHook(length: beam, overhang: barb);
+}
+@part("Pink Pop")
+Solid lid()
+{
+    return (box(24.mm, 12.mm, wall)
+            - snapSlot(overhang: barb, wall: wall, clearance: play))
+        .move(z: beam - wall - play);
+}

@@ -1,0 +1,7 @@
+import std;
+@part("Sky Pop")
+Solid lower()
+{
+    return mold(carlo(eye: false),
+        plane(origin: vec(0.mm, 0.mm, 7.5.mm), normal: Z)).a;
+}

@@ -1,0 +1,6 @@
+# a checkout of main (a link to one, locally): the docs and the lexer the pages are made from
+repo
+# the site as built, and dub's own
+out/
+.dub/
+site

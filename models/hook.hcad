@@ -1,0 +1,46 @@
+// a wall hook for a broom handle, two M4 screws
+import std;
+
+@param("Handle", min: 20.mm, max: 40.mm)
+immutable handle = 30.mm;
+
+immutable play = 0.5.mm, wall = 4.mm, plate = 4.mm, width = 24.mm;
+immutable r = handle / 2 + play;
+
+// the handle's axis: the ring sits on the plate
+immutable axisZ = plate + r;
+
+@part("Sky Pop")
+Solid hook()
+{
+    auto base = box(80.mm, width, plate)
+        .fillet(edges.parallel(Z), r: 6.mm);
+    auto ring = circle(r: r + wall)
+        .extrude(width, along: Y)
+        .move(y: -width / 2, z: axisZ);
+
+    // the handle's room, and the mouth it snaps in through
+    auto room = circle(r: r)
+        .extrude(width + 2.mm, along: Y)
+        .move(y: -width / 2 - 1.mm, z: axisZ);
+    auto mouth = box(handle * 0.85, width + 2.mm, 3 * r)
+        .move(z: axisZ + r * 0.45);
+    auto holes = hole(M4, plate, "countersink").move(x: 32.mm, z: plate)
+        + hole(M4, plate, "countersink").move(x: -32.mm, z: plate);
+
+    // the mouth's lips rounded, so the handle slides in
+    // a fillet where the ring meets the plate, both
+    // sides, holding it on
+    auto body = (base + ring)
+        .fillet(edges.between(faces.from(ring),
+            faces.from(base)).parallel(Y), r: 4.mm);
+    return (body - room - mouth)
+        .fillet(edges.of(faces.from(mouth)), r: 1.5.mm)
+        - holes;
+}
+
+unittest
+{
+    // the handle snaps in: the mouth narrower than it, wider than 3/4 of it
+    assert(handle * 0.85 < handle && handle * 0.85 > handle * 0.75);
+}
