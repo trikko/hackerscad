@@ -395,10 +395,11 @@ void main(string[] args)
         string items;
         foreach (u; listed)
             items ~= format(`<a href="%s"%s>%s</a>`, u, u == current ? ` class="on"` : "", esc(titles[u]));
-        return `<aside class="side"><a class="up" href="/guides/">All guides</a>` ~ items ~ "</aside>";
+        return format(`<aside class="side"><a class="up%s" href="/guides/">All guides</a>`,
+            current == "/guides/" ? " on" : "") ~ items ~ "</aside>";
     }
     auto guidesBody = convert("docs/GUIDES.md", title);
-    put("/guides/", page(title, guidesBody, "Guides"));
+    put("/guides/", page(title, guidesBody, "Guides", side("/guides/")));
     foreach (src, dst; pages)
         if (src.startsWith("docs/guides/"))
         {
