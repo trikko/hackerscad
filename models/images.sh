@@ -3,12 +3,21 @@
 #   models/images.sh            the renders and the viewer's STL files, into img/
 #   models/images.sh --shot     also the screenshot of the application, half light half dark
 #                               (needs hackerscad and mutter: a headless Wayland session)
+#   models/images.sh --og       only the picture of shared links, static/og.png, from og.html
+#                               (needs Chrome or Chromium; CHROME names it)
 # HCAD and HACKERSCAD name the programs when they are not in the PATH.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 img="$here/../img"
 hcad="${HCAD:-hcad}"
 mkdir -p "$img"
+
+if [ "${1:-}" = "--og" ]; then
+    "${CHROME:-google-chrome}" --headless=new --disable-gpu --hide-scrollbars --allow-file-access-from-files \
+        --force-device-scale-factor=1 --window-size=1200,630 --virtual-time-budget=3000 \
+        --screenshot="$here/../static/og.png" "file://$here/og.html"
+    exit 0
+fi
 
 render() { "$hcad" render "$here/$1" "${@:3}" -o "$img/$2"; }
 

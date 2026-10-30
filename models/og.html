@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- The picture shown when a link to the site is shared (static/og.png, 1200×630):
+     made again by models/images.sh --og, with headless Chrome -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: Fredoka; font-weight: 300 700; src: url(../static/fonts/fredoka.woff2) format("woff2"); }
+@font-face { font-family: Inter; font-weight: 100 900; src: url(../static/fonts/inter.woff2) format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 100 800; src: url(../static/fonts/jetbrains-mono.woff2) format("woff2"); }
+:root { --sky: #0FC3F2; --yellow: #F4E55E; --ink: #14232a; --muted: #5d6c73; --cream: #fbfaf6; --card: #ece9df; }
+html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+body { background: var(--cream); color: var(--ink); font-family: Inter, sans-serif; position: relative; }
+.text { position: absolute; left: 64px; top: 0; bottom: 0; width: 520px; display: flex; flex-direction: column; justify-content: center; }
+.brand { display: flex; align-items: center; gap: 16px; font: 600 40px Fredoka, sans-serif; margin-bottom: 34px; }
+.brand img { width: 72px; }
+h1 { font: 600 64px/1.05 Fredoka, sans-serif; margin: 0 0 26px; }
+h1 em { font-style: normal; background: var(--yellow); padding: 0 12px; border-radius: 14px; }
+p { font-size: 25px; line-height: 1.45; color: var(--muted); margin: 0 0 30px; }
+.tags { display: flex; gap: 10px; }
+.tags span { font: 500 17px "JetBrains Mono", monospace; padding: 6px 14px; border-radius: 999px; background: #d9f5fd; }
+.tags span:nth-child(2) { background: #fde3f0; }
+.tags span:nth-child(3) { background: #fbf6c6; }
+.shot { position: absolute; left: 640px; top: 70px; width: 720px; height: 490px; border-radius: 26px; overflow: hidden;
+    border: 3px solid var(--card); box-shadow: 0 18px 50px rgba(20, 35, 42, 0.18); }
+.shot img { width: 784px; display: block; margin-left: -4px; }
+</style>
+</head>
+<body>
+<div class="text">
+  <div class="brand"><img src="../repo/docs/logo.svg" alt="">hackerscad</div>
+  <h1>Parts you <em>write</em>, see and print.</h1>
+  <p>A parametric CAD where the model is code, and the mouse writes code too.</p>
+  <div class="tags"><span>B-rep</span><span>MCP server</span><span>open source</span></div>
+</div>
+<div class="shot"><img src="../img/app-split.png" alt=""></div>
+</body>
+</html>

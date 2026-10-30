@@ -20,7 +20,7 @@ import std.format : format;
 import std.path : baseName, buildNormalizedPath, buildPath, dirName, stripExtension;
 import std.regex : ctRegex, matchFirst, regex, replaceAll, matchAll;
 import std.stdio : writeln;
-import std.string : indexOf, strip, toLower;
+import std.string : indexOf, lastIndexOf, strip, stripRight, toLower;
 import std.uni : isAlphaNum;
 
 import commonmarkd : convertMarkdownToHTML, MarkdownFlag;
@@ -292,8 +292,45 @@ string convert(string src, string text, out string title)
 
 string convert(string src, out string title) => convert(src, readText(buildPath(repo, src)), title);
 
+enum site = "https://hackerscad.com";
+string[] written; /// the pages put on the site, for the sitemap
+
+/// What a page says of itself to search engines and to the previews of shared links: its first
+/// paragraph as the description, its address, the picture of static/og.png.
+string shareTags(string sitePath, string content)
+{
+    auto t = content.matchFirst(regex(`<title>([\s\S]*?)</title>`));
+    auto p = content.matchFirst(regex(`<p>([\s\S]*?)</p>`));
+    auto text = p ? stripTags(p[1]).unescapeHtml.replaceAll(regex(`\s+`), " ").strip : "";
+    if (text.length > 200)
+    {
+        auto cut = text[0 .. 200];
+        auto space = cut.lastIndexOf(' ');
+        text = (space > 0 ? cut[0 .. space] : cut).stripRight(",;:") ~ "…";
+    }
+    auto description = esc(text).replace(`"`, "&quot;");
+    return format(`<meta name="description" content="%2$s">
+<link rel="canonical" href="%3$s">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="hackerscad">
+<meta property="og:title" content="%1$s">
+<meta property="og:description" content="%2$s">
+<meta property="og:url" content="%3$s">
+<meta property="og:image" content="%4$s/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="hackerscad: parts you write, see and print">
+<meta name="twitter:card" content="summary_large_image">
+`, t ? t[1] : "hackerscad", description, site ~ sitePath, site);
+}
+
 void put(string sitePath, string content)
 {
+    if (sitePath.endsWith(".html") || sitePath.endsWith("/"))
+    {
+        content = content.replace("</title>\n", "</title>\n" ~ shareTags(sitePath, content));
+        written ~= sitePath;
+    }
     auto rel = sitePath.startsWith("/") ? sitePath[1 .. $] : sitePath;
     if (rel == "" || rel.endsWith("/"))
         rel ~= "index.html";
@@ -447,5 +484,41 @@ void main(string[] args)
             copy(buildPath(repo, p), dst);
         }
     }
+    // for search engines: every page, and where the list is
+    written.sort();
+    put("/sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+` ~ written.map!(p => "  <url><loc>" ~ site ~ p ~ "</loc></url>\n").join ~ "</urlset>\n");
+    put("/robots.txt", "User-agent: *\nAllow: /\n\nSitemap: " ~ site ~ "/sitemap.xml\n");
+
+    // for language models: the pages in the llms.txt format, and the docs written for agents whole
+    string links(string[string] from)
+    {
+        string r;
+        foreach (u; from.keys.sort)
+            r ~= "- [" ~ from[u] ~ "](" ~ site ~ u ~ ")\n";
+        return r;
+    }
+    string[string] lessons;
+    foreach (src, dst; pages)
+        if (src.startsWith("docs/tutorial/"))
+        {
+            convert(src, title);
+            lessons[dst] = title;
+        }
+    put("/llms.txt", "# hackerscad\n\n"
+        ~ "> A parametric CAD where the model is code: .hcad files, a sandboxed subset of the D language with units, "
+        ~ "evaluated into exact B-rep solids (OpenCascade) and exported as STL, 3MF, STEP or drawings. "
+        ~ "A desktop application (GTK 4), a command line tool and an MCP server for AI agents. Free and open source.\n\n"
+        ~ "## Docs\n\n"
+        ~ "- [Language reference](" ~ site ~ "/reference.html): the language, its types, units and functions\n"
+        ~ "- [Cheatsheet](" ~ site ~ "/cheatsheet.html): every function on one page\n"
+        ~ "- [For agents](" ~ site ~ "/agents.html): the skill, the MCP server and how an agent sets them up\n"
+        ~ "- [Download](" ~ site ~ "/download.html): Linux, Windows and macOS, and how to build it\n"
+        ~ "- [Full docs for agents](" ~ site ~ "/llms-full.txt): the reference and the rules for writing models, in one file\n\n"
+        ~ "## Tutorial\n\n" ~ links(lessons) ~ "\n## Guides\n\n" ~ links(titles)
+        ~ "\n## Optional\n\n- [Source code](https://github.com/trikko/hackerscad)\n");
+    copy(buildPath(repo, "docs", "llms-full.txt"), buildPath(outDir, "llms-full.txt"));
+
     writeln("site written to ", outDir);
 }
