@@ -6395,7 +6395,7 @@ private:
     /// together. None when nothing is selected.
     string[2][] selectionRows()
     {
-        import hackerscad.gui.measure : measure, spread, faceItem, edgeItem, pointItem, Item;
+        import hackerscad.gui.measure : measure, spread, faceItem, edgeItem, pointItem, Item, Distance;
         import hackerscad.kernel.brep : CylinderInfo, EdgeKind;
         auto sel = viewport.selection();
         if (sel.length == 0)
@@ -6496,18 +6496,25 @@ private:
                 return [["distance", format("%s mm", g(d.length))],
                     ["along X, Y, Z", format("%s, %s, %s mm", g(d.x), g(d.y), g(d.z))]];
             }
-            auto m = measure(a, b);
-            // two parts: the nearest exactly, on the solids
+            // two parts: the nearest exactly, on the solids (the triangles
+            // only if that fails: two whole surfaces take seconds)
+            Distance m;
+            bool exact;
             if (mode == SelectMode.part)
             {
                 auto pa = last.parts[sel[0].part], pb = last.parts[sel[1].part];
                 Vec3 onA, onB;
                 try
+                {
                     m.distance = pa.kernel.distance(pa.brep, pb.brep, onA, onB);
+                    exact = true;
+                }
                 catch (Exception)
                 {
                 }
             }
+            if (!exact)
+                m = measure(a, b);
             auto s = spread(a, b);
             string[2][] r;
             // the same everywhere (parallel faces, parallel edges): one number

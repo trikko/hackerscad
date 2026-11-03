@@ -875,6 +875,21 @@ final class Viewport
     /// Everything selected, in picking order (on one part or several).
     Hit[] selection() => selected.part >= 0 ? others ~ selected : null;
 
+    /// Whether part i is picked whole, the latest pick or an earlier one:
+    /// with two parts picked, both show it.
+    private bool pickedWhole(size_t i)
+    {
+        static bool whole(Hit h, size_t i) => h.part == i && h.face < 0 && h.edge < 0 && h.vertex < 0;
+        if (selected.part < 0)
+            return false;
+        if (whole(selected, i))
+            return true;
+        foreach (h; others)
+            if (whole(h, i))
+                return true;
+        return false;
+    }
+
     /// Replaces the selection (the last item is the main one).
     void setSelection(Hit[] items)
     {
@@ -3595,7 +3610,7 @@ private:
         forPart(i);
         auto c = rgbOf(parts[i].rgb);
         // the whole part picked: tinted and dotted (picked faces are striped)
-        immutable whole = i == selected.part && selected.face < 0 && selected.edge < 0 && selected.vertex < 0;
+        immutable whole = pickedWhole(i);
         if (whole)
         {
             c = c * 0.6 + standOut(parts[i].rgb, Vec3(1, 0.85, 0.2), Vec3(0.3, 0.5, 1.0)) * 0.4;
@@ -4158,7 +4173,7 @@ private:
             forPart(i);
             // the outline of a part picked whole (picked faces and edges show themselves);
             // in wireframe, where no surface shows the pick, thick and yellow
-            immutable whole = i == selected.part && selected.face < 0 && selected.edge < 0 && selected.vertex < 0;
+            immutable whole = pickedWhole(i);
             if (whole && wire)
             {
                 auto c = standOut(parts[i].rgb, Vec3(1.0, 0.86, 0.0), Vec3(0.15, 0.35, 0.95), 0.32);

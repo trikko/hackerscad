@@ -99,10 +99,11 @@ Distance measure(Item a, Item b)
     Distance r;
     void from(ref const Item src, ref const Item dst, bool swapped)
     {
+        const near = Near(dst);
         foreach (q; src.points)
         {
             Vec3 c;
-            immutable d = closest(dst, q, c);
+            immutable d = closest(dst, near, q, c);
             if (d < r.distance)
             {
                 r.distance = d;
@@ -197,20 +198,27 @@ Spread spread(Item a, Item b, size_t budget = 1200)
                 at ~= q;
                 weight ~= 1;
             }
+        const near = Near(dst);
+        // one point's nearest is the next one's first guess: they come in order
+        size_t hint;
         double sum = 0, wsum = 0;
         foreach (i, q; at)
         {
             Vec3 c;
-            immutable d = closest(dst, q, c);
+            immutable d = closest(dst, near, q, c, &hint);
             sum += d * weight[i];
             wsum += weight[i];
             r.max = max(r.max, d);
         }
-        // the corners too, for the farthest
+        // the corners too, for the farthest: each once, not once per triangle
+        bool[Vec3] seen;
         foreach (q; src.points)
         {
+            if (q in seen)
+                continue;
+            seen[q] = true;
             Vec3 c;
-            r.max = max(r.max, closest(dst, q, c));
+            r.max = max(r.max, closest(dst, near, q, c, &hint));
         }
         means += wsum > 0 ? sum / wsum : 0;
     }
@@ -222,8 +230,38 @@ Spread spread(Item a, Item b, size_t budget = 1200)
 
 private:
 
-double closest(ref const Item it, Vec3 q, out Vec3 c)
+/// The triangles' and segments' bounding spheres, so that closest skips
+/// at once those too far to hold the nearest point: two whole parts have
+/// thousands of triangles, and a point was checked against every one.
+struct Near
 {
+    Vec3[] centre;
+    double[] radius;
+
+    this(ref const Item it)
+    {
+        foreach (t; it.triangles)
+        {
+            immutable m = (t[0] + t[1] + t[2]) / 3;
+            centre ~= m;
+            radius ~= max((t[0] - m).length, (t[1] - m).length, (t[2] - m).length);
+        }
+        foreach (sg; it.segments)
+        {
+            centre ~= (sg[0] + sg[1]) / 2;
+            radius ~= (sg[1] - sg[0]).length / 2;
+        }
+    }
+}
+
+/// The nearest point of `it` to q. With `hint`, the index of a triangle or
+/// segment near q, checked first (in place of a pass over all of them),
+/// and set to the nearest one found.
+double closest(ref const Item it, ref const Near near, Vec3 q, out Vec3 c, size_t* hint = null)
+{
+    immutable nt = it.triangles.length;
+    Vec3 on(size_t i) => i < nt ? onTriangle(q, it.triangles[i][0], it.triangles[i][1], it.triangles[i][2])
+        : onSegment(q, it.segments[i - nt][0], it.segments[i - nt][1]);
     double best = double.infinity;
     void take(Vec3 p)
     {
@@ -234,11 +272,39 @@ double closest(ref const Item it, Vec3 q, out Vec3 c)
             c = p;
         }
     }
-    foreach (t; it.triangles)
-        take(onTriangle(q, t[0], t[1], t[2]));
-    foreach (s; it.segments)
-        take(onSegment(q, s[0], s[1]));
-    if (it.triangles.length == 0 && it.segments.length == 0)
+    if (near.centre.length)
+    {
+        // the one whose sphere comes nearest first: a good bound early
+        size_t first;
+        if (hint !is null && *hint < near.centre.length)
+            first = *hint;
+        else
+        {
+            double low = double.infinity;
+            foreach (i, m; near.centre)
+            {
+                immutable l = (m - q).length - near.radius[i];
+                if (l < low)
+                {
+                    low = l;
+                    first = i;
+                }
+            }
+        }
+        size_t won = first;
+        take(on(first));
+        foreach (i, m; near.centre)
+            if (i != first && (m - q).length - near.radius[i] < best)
+            {
+                immutable was = best;
+                take(on(i));
+                if (best < was)
+                    won = i;
+            }
+        if (hint !is null)
+            *hint = won;
+    }
+    else
         foreach (p; it.points)
             take(p);
     return best;
@@ -354,4 +420,34 @@ unittest
     }
     auto e = measure(seg(Vec3(-1, 0, 0), Vec3(1, 0, 0)), seg(Vec3(0, -1, 2), Vec3(0, 1, 2)));
     assert(abs(e.distance - 2) < 1e-9 && abs(e.angle - 90) < 1e-9);
+}
+
+unittest
+{
+    // the spheres only skip what cannot be nearest: the same as trying
+    // every triangle, from scattered points, with and without a hint
+    import std.random : Random, uniform;
+    auto rnd = Random(7);
+    Vec3 any() => Vec3(uniform(-20.0, 20.0, rnd), uniform(-20.0, 20.0, rnd), uniform(-20.0, 20.0, rnd));
+    Item it;
+    foreach (k; 0 .. 300)
+    {
+        auto a = any();
+        Vec3[3] t = [a, a + any() * 0.1, a + any() * 0.1];
+        it.triangles ~= t;
+        it.points ~= t[];
+    }
+    const near = Near(it);
+    size_t hint;
+    foreach (k; 0 .. 200)
+    {
+        auto q = any() * 1.5;
+        double brute = double.infinity;
+        foreach (t; it.triangles)
+            brute = min(brute, (onTriangle(q, t[0], t[1], t[2]) - q).length);
+        Vec3 c;
+        assert(abs(closest(it, near, q, c) - brute) < 1e-12);
+        assert(abs(closest(it, near, q, c, &hint) - brute) < 1e-12);
+        assert(abs((c - q).length - brute) < 1e-12);
+    }
 }
