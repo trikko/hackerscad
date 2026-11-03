@@ -2,7 +2,8 @@
 
 hackerscad builds CAD models from .hcad files, a sandboxed subset of D.
 Typical loop: read this reference, write a model, call hcad_render to get
-dimensions and pictures, compare them with the request, fix, then export.
+dimensions and pictures, compare them with the request, fix, then show the
+result in a hackerscad window.
 
 ## Rules that avoid most mistakes
 - Every exported body is a function marked @part that takes no arguments and
@@ -364,6 +365,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   the pictures actually looked at.
 - Say what was not checked (a fit that needs a test print, a size guessed).
 - Say it briefly, and name the @params the user can change to try variants.
+- The result is in a window (unless the user said not to), and no file was
+  written that the user did not ask for.
 
 ## Showing and asking with annotations (hcad_gui_annotate)
 - Use them to ask and to answer, not only words: "is this the face you

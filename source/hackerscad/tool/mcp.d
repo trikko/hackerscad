@@ -30,7 +30,9 @@ enum serverVersion = appVersion;
 enum instructions = "hackerscad is a parametric CAD for code-defined models (.hcad, a sandboxed subset of D). "
     ~ "Call hcad_docs with format: agents first: its rules avoid most mistakes (format: cheatsheet lists the "
     ~ "functions only, not the rules). Then iterate with hcad_render (it returns "
-    ~ "dimensions, problems and pictures) until the model matches the request, then hcad_export. If the user "
+    ~ "dimensions, problems and pictures) until the model matches the request. Write no files (the .hcad, STL, "
+    ~ "3MF, STEP, pictures) unless the user asks: they save from the window. When done, always show the result "
+    ~ "in a hackerscad window, unless told not to: hcad_gui_edit in the user's, or hcad_gui_launch with code. If the user "
     ~ "has hackerscad open, hcad_gui_* tools show your work in their window, and only they drive it: never "
     ~ "through the screen (clicks, keys, computer use), its file or its socket; change its code with "
     ~ "hcad_gui_edit. If these tools are missing or fail, stop and tell the user to connect hackerscad's MCP "
@@ -740,7 +742,8 @@ JValue toolList()
             ~ "evaluation): .3mf (one object per part, with colours), .stl (one part), .zip (one STL per part), .step or "
             ~ ".stp (one named body per part), or .png (name.png the iso view, name-views.png iso/front/top/right, "
             ~ "name-top.png and so on one view); .svg, .pdf or .dxf write a @drawing (the first, or the one named by "
-            ~ "'drawing').",
+            ~ "'drawing'). Only when the user asks for the file: to show the result, open it in a window "
+            ~ "(hcad_gui_launch with code).",
             modelProps ~ `, "output": {"type": ["string", "array"], "items": {"type": "string"}}, "drawing": {"type": "string"}, `
             ~ partsProp ~ `, ` ~ oneObjectProp, `["output"]`),
         tool("hcad_drawing", "Evaluate a model and return a @drawing as SVG text (views with hidden lines, sections, "

@@ -13,7 +13,8 @@ enum agentGuide = `# hackerscad for agents
 
 hackerscad builds CAD models from .hcad files, a sandboxed subset of D.
 Typical loop: read this reference, write a model, call hcad_render to get
-dimensions and pictures, compare them with the request, fix, then export.
+dimensions and pictures, compare them with the request, fix, then show the
+result in a hackerscad window.
 
 ## Rules that avoid most mistakes
 - Every exported body is a function marked @part that takes no arguments and
@@ -375,6 +376,8 @@ dimensions and pictures, compare them with the request, fix, then export.
   the pictures actually looked at.
 - Say what was not checked (a fit that needs a test print, a size guessed).
 - Say it briefly, and name the @params the user can change to try variants.
+- The result is in a window (unless the user said not to), and no file was
+  written that the user did not ask for.
 
 ## Showing and asking with annotations (hcad_gui_annotate)
 - Use them to ask and to answer, not only words: "is this the face you
@@ -561,8 +564,16 @@ format stamp):
   coarse multi-start one for a printed lid that opens often; under M5 a
   heat-set insert instead of a printed thread.
 - The loop: write the model, check it, render and look, compare sizes and
-  pictures with the request, fix, then export. Put the request's
-  requirements in unittest blocks so the checks repeat them.
+  pictures with the request, fix, then show it in a window. Put the
+  request's requirements in unittest blocks so the checks repeat them.
+- Files only when asked: write no .hcad, STL, 3MF, STEP or pictures for the
+  user unless they ask for them (the user saves and exports from the
+  window); scratch files of your own, to check the work, go in a temporary
+  folder.
+- The result in a window, always: when the model is done, show it in
+  hackerscad unless the user said not to: hcad_gui_edit in the window they
+  work in, or hcad_gui_launch with code (a window of no file) when none is
+  open. Pictures in the chat do not replace it.
 
 INTRO";
 
