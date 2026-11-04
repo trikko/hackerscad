@@ -43,12 +43,22 @@ class CodegenException : Exception
 /// one (faces.top…) when possible, otherwise one based on its position.
 string faceSelector(Interp it, SolidVal s, int face)
 {
-    auto info = it.kernel.faces(s.brep)[face];
+    auto all = it.kernel.faces(s.brep);
+    auto info = all[face];
     // a tag of its own first: it follows the face wherever the part goes
     string[] candidates;
     if (face < s.faceTags.length)
         foreach (t; s.faceTags[face])
             candidates ~= format("faces.tagged(%(%s%))", [t]);
+    // a mesh loaded whole (a scan: a face per triangle) has no top or largest face of its own, and trying each
+    // name on all its faces took seconds a click: only its tags, then its position
+    if (all.length > 20_000)
+    {
+        foreach (c; candidates)
+            if (unique(it, c, s, face))
+                return c;
+        return format("faces.filter(f => distance(f.center, %s) < 0.01.mm)", vecMm(info.center));
+    }
     candidates ~= ["faces.top", "faces.bottom", "faces.front", "faces.back", "faces.left", "faces.right",
         "faces.largest"];
     if (auto ax = axisName(info.normal))

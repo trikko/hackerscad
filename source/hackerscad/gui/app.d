@@ -64,6 +64,7 @@ import glib.global : idleAdd;
 
 import hackerscad.geom.mesh;
 import hackerscad.kernel.brep : EdgeKind, tangentChain;
+import hackerscad.kernel.cache : CachingKernel;
 import hackerscad.examples : examples, exampleNames;
 import hackerscad.tool.codegen : transformPart;
 import hackerscad.lang.errors;
@@ -2342,6 +2343,7 @@ private:
         auto selBefore = viewport.selection();
         auto partsBefore = last.parts;
         last = o;
+        selectorKernel = null;
         hadResult = true;
         if (drawingWin !is null && o.ok)
             drawingWin.setSheets(o.drawings);
@@ -5971,6 +5973,20 @@ private:
 
     int[] selFaces, selEdges, selVertices;
 
+    /// The selectors' kernel: the parts' own, with a cache of this thread's
+    /// (theirs has none), so that a part's faces are found once per
+    /// evaluation, not at every click (a scan's 200k took a second each time).
+    /// Dropped when an evaluation ends.
+    CachingKernel selectorKernel;
+
+    /// selectorKernel, for `part`.
+    CachingKernel cachedKernel(PartMesh part)
+    {
+        if (selectorKernel is null || selectorKernel.inner !is part.kernel)
+            selectorKernel = new CachingKernel(part.kernel);
+        return selectorKernel;
+    }
+
     /// An interpreter to resolve selectors on `part`, and the part as a
     /// solid value (with where its faces come from, for stable selectors).
     Interp selectorInterp(PartMesh part, out SolidVal sv)
@@ -5978,7 +5994,7 @@ private:
         sv = new SolidVal(part.brep, Span.init);
         sv.creators = part.creators;
         sv.faceTags = part.faceTags;
-        return new Interp(part.kernel);
+        return new Interp(cachedKernel(part));
     }
 
     /// ditto, on the part the right-click menu is for

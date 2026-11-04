@@ -638,7 +638,8 @@ mixin template Annotate()
         Vec3 at;
         if (face < 0)
         {
-            at = pm.kernel.massProps(pm.brep).centroid;
+            // the shown mesh's centre of mass: the solid's took 11 s on a scan of 200k faces
+            at = pm.welded.triangleCount ? pm.welded.centroid : pm.kernel.massProps(pm.brep).centroid;
             double[4] r;
             if (viewport.partRect(index, r))
             {
@@ -648,7 +649,7 @@ mixin template Annotate()
         }
         else
         {
-            auto fs = pm.kernel.faces(pm.brep);
+            auto fs = cachedKernel(pm).faces(pm.brep);
             if (face >= fs.length)
                 return format("part '%s' has no face %d", part, face);
             at = fs[face].center;

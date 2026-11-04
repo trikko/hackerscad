@@ -7559,14 +7559,24 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
         {
             // the largest among the faces selected so far: faces.normal(X).largest
             auto prefix = copy(sel);
+            bool[] memo;
+            const(int)* key;
             result = with_((size_t i, ref SelectCtx c) {
                 auto candidates = c.resolve(prefix);
-                if (!candidates.canFind(cast(int) i))
+                if (candidates.length == 0)
                     return false;
-                double best = 0;
-                foreach (j; candidates)
-                    best = max(best, c.faces[j].area);
-                return c.faces[i].area >= best * (1 - 1e-9);
+                // once per solid, not per face: per face it was quadratic, a scan of 200k faces froze the window
+                if (candidates.ptr !is key)
+                {
+                    key = candidates.ptr;
+                    double best = 0;
+                    foreach (j; candidates)
+                        best = max(best, c.faces[j].area);
+                    memo = new bool[c.faces.length];
+                    foreach (j; candidates)
+                        memo[j] = c.faces[j].area >= best * (1 - 1e-9);
+                }
+                return memo[i];
             });
             return true;
         }
@@ -7587,14 +7597,24 @@ bool selectorMember(Interp it, SelectorVal sel, string name, Span span, out Valu
             auto x = Args(it, a, "farthest", ["selector", "axis"]);
             auto ax = x.dir("axis");
             auto prefix = copy(sel);
+            bool[] memo;
+            const(int)* key;
             return with_((size_t i, ref SelectCtx c) {
                 auto candidates = c.resolve(prefix);
-                if (!candidates.canFind(cast(int) i))
+                if (candidates.length == 0)
                     return false;
-                double best = -double.infinity;
-                foreach (j; candidates)
-                    best = max(best, c.faces[j].center.dot(ax));
-                return c.faces[i].center.dot(ax) >= best - 1e-6;
+                // once per solid, not per face, as largest
+                if (candidates.ptr !is key)
+                {
+                    key = candidates.ptr;
+                    double best = -double.infinity;
+                    foreach (j; candidates)
+                        best = max(best, c.faces[j].center.dot(ax));
+                    memo = new bool[c.faces.length];
+                    foreach (j; candidates)
+                        memo[j] = c.faces[j].center.dot(ax) >= best - 1e-6;
+                }
+                return memo[i];
             });
         });
     case "normal":

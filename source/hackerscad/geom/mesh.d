@@ -301,6 +301,44 @@ struct Mesh
         }
         return v / 6;
     }
+
+    /// Centre of mass of a closed mesh, as volume() (tetrahedra from its
+    /// first vertex); the vertices' average when it encloses nothing.
+    Vec3 centroid() const
+    {
+        if (triangleCount == 0)
+            return Vec3(0, 0, 0);
+        immutable o = vertex(0);
+        double v = 0;
+        auto sum = Vec3(0, 0, 0);
+        foreach (t; 0 .. triangleCount)
+        {
+            auto a = vertex(tris[t * 3]) - o, b = vertex(tris[t * 3 + 1]) - o, c = vertex(tris[t * 3 + 2]) - o;
+            immutable w = a.dot(b.cross(c));
+            v += w;
+            sum = sum + (a + b + c) * (w / 4);
+        }
+        // either winding: both sums change sign
+        if (v > 1e-12 || v < -1e-12)
+            return o + sum / v;
+        auto avg = Vec3(0, 0, 0);
+        foreach (i; 0 .. vertexCount)
+            avg = avg + vertex(i);
+        return avg / vertexCount;
+    }
+}
+
+unittest
+{
+    import std.math : isClose;
+
+    // a tetrahedron's centre of mass: a quarter of the way from the base
+    Mesh m;
+    m.verts = [1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1, 2];
+    m.tris = [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3];
+    assert(m.volume > 0);
+    auto c = m.centroid;
+    assert(isClose(c.x, 1.25) && isClose(c.y, 1.25) && isClose(c.z, 1.25), "centroid");
 }
 
 unittest
