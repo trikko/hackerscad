@@ -4,6 +4,9 @@
 
 #include <string>
 #include <exception>
+#include <clocale>
+#include <cstdio>
+#include <cstring>
 
 #include <Standard_Failure.hxx>
 #include <Message.hxx>
@@ -873,20 +876,37 @@ static bool smooth_at(const TopoDS_Face &face, const TopoDS_Vertex &v)
     return tangents.size() == 2 && tangents[0].IsParallel(tangents[1], 1e-2);
 }
 
+// v as %g writes it, with a dot whatever the locale: the window runs in the
+// user's (GTK sets it), where Italian or German would write "r = 7,5 mm"
+// and a point "(5,5, -5)".
+static std::string num(double v)
+{
+    char b[64];
+    std::snprintf(b, sizeof b, "%g", v);
+    std::string s = b;
+    const char *point = std::localeconv()->decimal_point;
+    if (point && *point && std::strcmp(point, ".") != 0) {
+        const auto at = s.find(point);
+        if (at != std::string::npos)
+            s.replace(at, std::strlen(point), ".");
+    }
+    return s;
+}
+
 // One closed outline with each of its corners rounded by r, convex or
 // concave. Throws, naming the corner, when r does not fit.
 static TopoDS_Wire rounded_loop(const TopoDS_Wire &w, double r)
 {
     const TopoDS_Face face = upward(BRepBuilderAPI_MakeFace(w, Standard_True).Face());
     auto too_large = [&](const TopoDS_Vertex *v) {
-        char msg[200];
         if (v) {
             const gp_Pnt p = BRep_Tool::Pnt(*v);
-            std::snprintf(msg, sizeof msg, "r = %g mm is too large for the corner at (%g, %g) mm: its sides are too short",
-                          r, std::abs(p.X()) < 1e-9 ? 0.0 : p.X(), std::abs(p.Y()) < 1e-9 ? 0.0 : p.Y());
-        } else
-            std::snprintf(msg, sizeof msg, "r = %g mm is too large for the corners: the roundings overlap", r);
-        return Standard_Failure(msg);
+            return Standard_Failure(("r = " + num(r) + " mm is too large for the corner at (" +
+                                     num(std::abs(p.X()) < 1e-9 ? 0.0 : p.X()) + ", " +
+                                     num(std::abs(p.Y()) < 1e-9 ? 0.0 : p.Y()) + ") mm: its sides are too short")
+                                        .c_str());
+        }
+        return Standard_Failure(("r = " + num(r) + " mm is too large for the corners: the roundings overlap").c_str());
     };
     // the edges in order round the outline, each with the vertex it starts at
     std::vector<TopoDS_Edge> edges;
@@ -2104,8 +2124,7 @@ static void check_boolean(BRepAlgoAPI_BooleanOperation &mk, const TopoDS_Shape &
         case HC_CUT: lo = std::max(0.0, va - vb); hi = std::min(va, box - vb); break;
         default: lo = std::max(0.0, va + vb - box); hi = std::min(va, vb); break;
         }
-        why = "volume " + std::to_string(vr) + " mm³, it can only be between " + std::to_string(lo) + " and " +
-              std::to_string(hi);
+        why = "volume " + num(vr) + " mm³, it can only be between " + num(lo) + " and " + num(hi);
         return vr < lo - tol || vr > hi + tol;
     };
     std::string why;
@@ -9116,9 +9135,7 @@ struct PathRun {
 static std::string point_text(const gp_Pnt &p)
 {
     auto tidy = [](double v) { return std::abs(v) < 1e-9 ? 0.0 : v; };
-    char b[128];
-    std::snprintf(b, sizeof b, "(%g, %g, %g)", tidy(p.X()), tidy(p.Y()), tidy(p.Z()));
-    return b;
+    return "(" + num(tidy(p.X())) + ", " + num(tidy(p.Y())) + ", " + num(tidy(p.Z())) + ")";
 }
 
 // The runs of `spine`; `closingCorner` tells whether a closed path has a

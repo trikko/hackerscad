@@ -3859,6 +3859,37 @@ unittest
     assert(error("@part Solid p() => rect(10, 10).round(-2.mm).extrude(1);").message.canFind("greater than 0"));
 }
 
+// The kernel's messages write numbers with a dot whatever the locale: the
+// window runs in the user's locale (GTK sets it), where Italian or German
+// would make "r = 7,5 mm" and "(5,5, -5)" of them.
+unittest
+{
+    import core.stdc.locale : setlocale, LC_NUMERIC, localeconv;
+    import core.stdc.string : strlen;
+    import std.string : fromStringz, toStringz;
+    immutable before = setlocale(LC_NUMERIC, null).fromStringz.idup;
+    scope (exit)
+        setlocale(LC_NUMERIC, before.toStringz);
+    string comma;
+    foreach (name; ["it_IT.UTF-8", "de_DE.UTF-8", "fr_FR.UTF-8", "es_ES.UTF-8", "pt_BR.UTF-8", "ru_RU.UTF-8",
+            "Italian_Italy.1252", "German_Germany.1252", "it-IT", "de-DE"])
+        if (setlocale(LC_NUMERIC, name.toStringz) !is null && localeconv().decimal_point.fromStringz == ",")
+        {
+            comma = name;
+            break;
+        }
+    if (comma is null)
+    {
+        import std.stdio : stderr;
+        stderr.writeln("note: no locale with a decimal comma installed: the kernel's numbers not checked in one");
+        return;
+    }
+    immutable round = error("@part Solid p() => rect(10.mm).move(x: 0.5.mm).round(7.5.mm).extrude(1);").message;
+    assert(round.canFind("r = 7.5 mm") && round.canFind("(5.5, -5)"), comma ~ ": " ~ round);
+    immutable back = error("@part Solid a() => circle(d: 2.mm).sweep(path([vec(0, 0, 0), vec(10.5, 0, 0), vec(0, 0, 0)]));").message;
+    assert(back.canFind("at (10.5, 0, 0)"), comma ~ ": " ~ back);
+}
+
 unittest
 {
     mixin(slowTest);
