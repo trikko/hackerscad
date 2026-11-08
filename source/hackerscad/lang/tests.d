@@ -6888,6 +6888,48 @@ unittest
 unittest
 {
     mixin(slowTest);
+    // dowels on a large section: their pointed ends (once a chamfer the kernel refused from 28 mm up);
+    // joinParts on an end with notches narrower than twice the play, as a mesh's section has (once a
+    // solid offset of it that failed): dowels need none, the other kinds offset the outline
+    clean(runModel(q{
+        import std.joints;
+        @part Solid p() => box(1, 1, 1);
+        Solid notched()
+        {
+            Vec2[] pts;
+            immutable n = 60;
+            foreach (i; 0 .. n)
+            {
+                immutable a = i * 360.deg / n, b = (i + 0.5) * 360.deg / n, w = 0.3.deg;
+                pts ~= vec(12.mm * cos(a), 12.mm * sin(a));
+                pts ~= vec(12.mm * cos(b - w), 12.mm * sin(b - w));
+                pts ~= vec(11.8.mm * cos(b), 11.8.mm * sin(b));
+                pts ~= vec(12.mm * cos(b + w), 12.mm * sin(b + w));
+            }
+            return polygon(pts).extrude(20.mm);
+        }
+        unittest
+        {
+            foreach (c; [1, 2])
+                foreach (w; [29.mm, 40.mm])
+                {
+                    auto j = splitJoint(box(w, w, 60.mm), plane(origin: vec(0.mm, 0.mm, 30.mm), normal: Z),
+                        kind: "dowels", count: c);
+                    assert(j.loose.length == c && j.a.pieces.length == 1 && j.loose[0].pieces.length == 1);
+                }
+            immutable plate = box(40.mm, 40.mm, 10.mm).move(z: -10.mm);
+            foreach (k; ["dowels", "tenon"])
+            {
+                auto j = joinParts(plate, notched(), plane(origin: vec(0.mm, 0.mm, 0.mm), normal: Z), kind: k);
+                assert(j.a.volume < plate.volume && (j.a & j.b).volume == 0.mm ^^ 3, k);
+            }
+        }
+    }));
+}
+
+unittest
+{
+    mixin(slowTest);
     // kerf on a strap narrower than six pitches: one piece, its slots shorter; mold on a plane at 45°: its
     // pry notches cut, as on any other plane
     clean(runModel(q{
