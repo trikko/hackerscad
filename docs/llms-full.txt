@@ -274,6 +274,40 @@ result in a hackerscad window.
   up (flat: true cuts the point). Say how the part is meant to print, and
   lay it so (its largest flat face on the ground); look at --printability.
 
+## Designing an object: looks and printing
+- Printable unless told otherwise: when the user asks for an object and
+  says nothing about how it is made, design it for FDM printing without
+  supports, and say so.
+- Design it lying on the plate: a flat face on the ground, as large as the
+  object allows; overhangs no steeper than 45° from upright; bridges under
+  about 20 mm. If it cannot print without supports, make it whole anyway,
+  then tell the user where it might need them and ask whether to try
+  splitting it into pieces that print flat and join (std.joints,
+  splitFlat).
+- Minimum sizes for FDM with a 0.4 mm nozzle: walls 1.2 mm (2 mm or more
+  where it takes a load or a screw), floors and roofs 1 mm, details and
+  lettering 0.6 mm wide or more, raised or sunk 0.4 mm or more. As @params
+  when they matter.
+- Edges: round the edges the hand meets and the upper edges; on the edges
+  touching the plate a 0.5–1 mm chamfer, not a fillet (a fillet there
+  prints as an overhang, and the chamfer hides the first layer's squash).
+  Inner corners that take a load get a fillet.
+- Looks: few sizes of radius and chamfer, the same on the same kind of
+  edge (one for the outside, a smaller one for details); walls of even
+  thickness; proportions from one or two main sizes, so it stays in
+  proportion when they change; symmetry and alignment where nothing asks
+  otherwise; screws and joins hidden or set in a recess; text sunk rather
+  than raised on faces that print upright.
+- Less is better: no decoration the user did not ask for; a detail of style
+  (a groove, a bevel, a texture) only if it serves the object or the user
+  asked for it, and as a @param that turns it off.
+- Judge it in the pictures as an object, not only as sizes: the iso view at
+  a size it would be seen; does it look finished? Sharp edges left, parts
+  that do not line up, walls of mixed thickness, a lump where two shapes
+  meet: fix them before showing it. Then look at --printability.
+- In the reply: how it lies for printing, what printability found, and the
+  @params that change its look (radii, thickness, a style detail).
+
 ## Copying a real part, or building onto one
 - From a photo or a real object to copy or build onto (not a mesh or STEP:
   those have the sizes, see below), your first reply is
