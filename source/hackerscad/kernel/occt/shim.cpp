@@ -5680,16 +5680,17 @@ int hc_bbox(const hc_shape *s, double out[6])
             Bnd_Box rough;
             BRepBndLib::Add(s->shape, rough, false);
             const double deflection = std::max(0.01, 1e-4 * std::sqrt(rough.SquareExtent()));
-            // copies meshed: the faces' own mesh, if any, left as it is (see unmeshed_copy)
-            for (const auto &face : slow)
-            {
-                const TopoDS_Shape copy = unmeshed_copy(face);
-                BRepMesh_IncrementalMesh(copy, deflection, false, 0.5, true);
-                Bnd_Box fb;
-                BRepBndLib::Add(copy, fb, true);
-                fb.SetGap(0);
+            // copies meshed: the faces' own mesh, if any, left as it is (see unmeshed_copy); on every core
+            // (a knurl's cells on a surface offset from a B-spline, 90 ms each: 255 of them took 23 s)
+            std::vector<Bnd_Box> meshed(slow.size());
+            OSD_Parallel::For(0, (int)slow.size(), [&](int i) {
+                const TopoDS_Shape copy = unmeshed_copy(slow[i]);
+                BRepMesh_IncrementalMesh(copy, deflection, false, 0.5, false);
+                BRepBndLib::Add(copy, meshed[i], true);
+                meshed[i].SetGap(0);
+            }, slow.size() < 4);
+            for (const Bnd_Box &fb : meshed)
                 b.Add(fb);
-            }
         }
         if (!TopExp_Explorer(s->shape, TopAbs_FACE).More())
             BRepBndLib::AddOptimal(s->shape, b, false, false);   // wires, vertices
