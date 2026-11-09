@@ -2449,6 +2449,39 @@ unittest
 
 unittest
 {
+    mixin(slowTest);
+    import hackerscad.kernel.occt.c;
+    import std.datetime.stopwatch : StopWatch, AutoStart;
+    // a pot with a voronoi tiling of rounded cells raised on its side: a face of about 100 rounded holes
+    // (whole, 2.7 s to mesh; in slices, 0.35 s)
+    auto pot = runModel(q{
+        @part Solid pot()
+        {
+            auto body = cylinder(d: 75.mm, h: 70.mm).addTag("side", recursive: true);
+            auto cells = rect(PI * 75.mm - 2.mm, 54.mm)
+                .tiles(kind: "voronoi", size: 14.mm, gap: 1.2.mm, round: 1.5.mm, seed: 7);
+            return body.extrude(cells, wrap: faces.tagged("side").largest, depth: 0.8.mm);
+        }
+    }).parts[0].solid.brep;
+    // meshed in slices, the mesh is still closed, each face's triangles its own
+    auto sw = StopWatch(AutoStart.yes);
+    auto sliced = kernel.tessellate(pot, 0.02, 0.25);
+    immutable slicedTime = sw.peek;
+    assert(sliced.welded.isClosed, "the pot meshed in slices has cracks");
+    assert(sliced.faceStart.length == kernel.faces(pot).length + 1);
+    assert(abs(meshArea(sliced.welded) - kernel.area(pot)) < 0.01 * kernel.area(pot));
+    hc_workaround(HC_WORKAROUND_MESH_HOLES, 0);
+    scope (exit)
+        hc_workaround(HC_WORKAROUND_MESH_HOLES, 1);
+    sw.reset();
+    auto whole = kernel.tessellate(pot, 0.02, 0.25);
+    assert(whole.welded.isClosed);
+    stillBroken(sw.peek > 3 * slicedTime,
+        "BRepMesh slow on a face of many rounded holes (shim.cpp, tessellate_divided)");
+}
+
+unittest
+{
     // cut/extrude on a face of the same solid, at a point
     auto r = runModel(q{
         @part Solid a() => box(20, 20, 10).cut(circle(d: 4), on: faces.top, at: vec(5, 5, 0), depth: 3.mm);

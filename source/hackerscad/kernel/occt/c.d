@@ -23,7 +23,8 @@ const(char)* hc_last_error();
 enum HC_WORKAROUND_MESH_DIVIDE = 0, HC_WORKAROUND_SHELL_STRATEGIES = 1, HC_WORKAROUND_HELIX_PIECES = 2,
     HC_WORKAROUND_MESH_VOLUME = 3,
     HC_WORKAROUND_OFFSET_TOLERANCE = 4,
-    HC_WORKAROUND_FILL_CHORDS = 5;
+    HC_WORKAROUND_FILL_CHORDS = 5,
+    HC_WORKAROUND_MESH_HOLES = 6;
 void hc_workaround(int which, int on);
 void hc_set_threads(int n);
 

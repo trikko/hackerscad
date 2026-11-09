@@ -100,6 +100,7 @@
 #include <Geom_RectangularTrimmedSurface.hxx>
 #include <GeomConvert.hxx>
 #include <Geom2d_BSplineCurve.hxx>
+#include <GeomAPI_ProjectPointOnCurve.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <Geom2dAPI_PointsToBSpline.hxx>
 #include <TColgp_Array1OfPnt2d.hxx>
@@ -421,12 +422,12 @@ extern "C" {
 const char *hc_last_error(void) { return g_error.c_str(); }
 
 // the WORKAROUNDs below that a test can turn off (hc_workaround)
-static std::atomic<bool> g_workarounds[6] = {{true}, {true}, {true}, {true}, {true}, {true}};
+static std::atomic<bool> g_workarounds[7] = {{true}, {true}, {true}, {true}, {true}, {true}, {true}};
 static bool workaround(int which) { return g_workarounds[which].load(); }
 
 void hc_workaround(int which, int on)
 {
-    if (which >= 0 && which < 6)
+    if (which >= 0 && which < 7)
         g_workarounds[which] = on != 0;
 }
 
@@ -6131,20 +6132,199 @@ static int close_small_holes(hc_mesh *m)
     return open;
 }
 
+// WORKAROUND (OpenCascade 7.9.3, macOS arm64): BRepMesh never ended on a fillet's faces at 0.005 mm;
+// past its time limit the shape is meshed again from no mesh, twice as coarse, twice
+static hc_mesh *tessellate_retrying(const hc_shape *s, double linear_deflection, double angular_deflection)
+{
+    hc_mesh *m = nullptr;
+    for (double scale = 1; m == nullptr; scale *= 2)
+        try {
+            m = tessellate_once(s, linear_deflection * scale, angular_deflection * std::min(scale, 2.0), scale > 1,
+                                true);
+        } catch (const MeshTimeout &) {
+            if (scale >= 4)
+                throw Standard_Failure("meshing did not end (OpenCascade's mesher, at 4 times the tolerance too)");
+        }
+    return m;
+}
+
+void hc_mesh_free(hc_mesh *m);
+
+// The faces of `s` that take long to mesh (see tessellate_divided): more than 48 holes, outlined by more
+// than 6.5 edges each on average (rounded cells: a line and an arc at each corner), on a plane,
+// cylinder, cone, sphere or torus. Fewer holes, or holes of fewer sides (a knurl's diamonds, hexagons,
+// circles), mesh in a moment however many; on a B-spline (a knurl on a lofted face) the planes took 5 s
+// to cut, and the faces next to it then met the pieces with cracks.
+static std::vector<int> many_holed(const hc_shape *s)
+{
+    std::vector<int> many;
+    const auto &faces = map_of(s, TopAbs_FACE);
+    for (int f = 1; f <= faces.Extent(); f++) {
+        const TopoDS_Face &face = TopoDS::Face(faces(f));
+        int holes = -1, edges = 0;
+        for (TopoDS_Iterator w(face); w.More(); w.Next()) {
+            holes++;
+            for (TopoDS_Iterator e(w.Value()); e.More(); e.Next())
+                edges++;
+        }
+        if (holes > 48 && edges > 6.5 * holes && BRepAdaptor_Surface(face, false).GetType() <= GeomAbs_Torus)
+            many.push_back(f);
+    }
+    return many;
+}
+
+// WORKAROUND (OpenCascade 7.9.3, BRepMesh): a face of many rounded holes takes far longer to mesh than
+// its holes or points tell: a cylinder with a voronoi tiling of rounded cells laid on it, 139 holes
+// and 7446 points, took 20 s, a knurl's 1841 diamonds and 7664 points on a cylinder 2 s (the time
+// cannot be cut short inside a face). Such faces (many_holed) are meshed cut in slices of about 24
+// holes by planes across their longest side (the first: 0.5 s), the edges cut given to the faces next
+// to them through a context, so that the mesh stays closed, and each face's triangles then given back
+// to it. The solid itself is left as it is. Null when the cut failed: then meshed as it is.
+// (ShapeUpgrade_FaceDivideArea took 85 s to divide a knurl's face; cutting the whole shape cut each of
+// its cells too, 3 min.) The "known bugs" unittest in lang/tests.d turns this off
+// (HC_WORKAROUND_MESH_HOLES) and fails once such a face meshes whole in a few times its pieces' time.
+static hc_mesh *tessellate_divided(const hc_shape *s, const std::vector<int> &many, double linear_deflection,
+                                   double angular_deflection)
+{
+    const auto &faces = map_of(s, TopAbs_FACE);
+    Laps laps;
+    Bnd_Box all;
+    BRepBndLib::Add(s->shape, all, false);
+    const double big = 2 * std::sqrt(all.SquareExtent()) + 1;
+    TopTools_ListOfShape tools;
+    for (int f : many) {
+        const TopoDS_Face &face = TopoDS::Face(faces(f));
+        int wires = 0;
+        for (TopExp_Explorer w(face, TopAbs_WIRE); w.More(); w.Next())
+            wires++;
+        // slices of about 24 holes, the holes spread over the face
+        Bnd_Box box;
+        BRepBndLib::Add(face, box, false);
+        double x0, y0, z0, x1, y1, z1;
+        box.Get(x0, y0, z0, x1, y1, z1);
+        const double size[3] = {x1 - x0, y1 - y0, z1 - z0}, from[3] = {x0, y0, z0};
+        const int axis = size[0] >= size[1] && size[0] >= size[2] ? 0 : size[1] >= size[2] ? 1 : 2;
+        const int slices = (int)std::ceil((wires - 1) / 24.0);
+        for (int k = 1; k < slices; k++) {
+            double at[3] = {(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2};
+            at[axis] = from[axis] + size[axis] * k / slices;
+            const gp_Dir normal(axis == 0, axis == 1, axis == 2);
+            tools.Append(BRepBuilderAPI_MakeFace(gp_Pln(gp_Pnt(at[0], at[1], at[2]), normal), -big, big, -big, big)
+                             .Face());
+        }
+    }
+    if (tools.IsEmpty())
+        return nullptr;
+    // the faces of many holes alone are cut; their edges cut with them are then given to the faces
+    // next to them through a context (cutting the whole shape cut each of a knurl's cells too: 3 min)
+    TopTools_ListOfShape args;
+    for (int f : many)
+        args.Append(faces(f));
+    BRepAlgoAPI_Splitter split;
+    split.SetArguments(args);
+    split.SetTools(tools);
+    split.SetRunParallel(true);
+    split.Build();
+    if (!split.IsDone() || split.HasErrors())
+        return nullptr;
+    laps.lap("mesh: faces of many holes cut");
+    Handle(ShapeBuild_ReShape) context = new ShapeBuild_ReShape;
+    for (int f : many) {
+        TopoDS_Compound made;
+        BRep_Builder bb;
+        bb.MakeCompound(made);
+        const TopTools_ListOfShape &cutFace = split.Modified(faces(f));
+        if (cutFace.Extent() < 2)
+            continue;
+        for (const TopoDS_Shape &piece : cutFace)
+            bb.Add(made, piece);
+        context->Replace(faces(f), made);
+        // each edge cut: its pieces in a wire, in order along it and the way it goes
+        TopTools_IndexedMapOfShape edges;
+        TopExp::MapShapes(faces(f), TopAbs_EDGE, edges);
+        for (int i = 1; i <= edges.Extent(); i++) {
+            const TopoDS_Edge edge = TopoDS::Edge(edges(i).Oriented(TopAbs_FORWARD));
+            const TopTools_ListOfShape &cut = split.Modified(edge);
+            // one piece is no cut (and a wire of the edge itself, in its own place, would never end)
+            bool same = cut.Extent() < 2;
+            for (const TopoDS_Shape &c : cut)
+                same = same || c.IsSame(edge);
+            if (same)
+                continue;
+            double first, last;
+            const Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, first, last);
+            if (curve.IsNull())
+                return nullptr;
+            std::vector<std::pair<double, TopoDS_Edge>> along;
+            for (const TopoDS_Shape &c : cut) {
+                TopoDS_Edge piece = TopoDS::Edge(c);
+                double f0, l0;
+                const Handle(Geom_Curve) pc = BRep_Tool::Curve(piece, f0, l0);
+                if (pc.IsNull())
+                    return nullptr;
+                GeomAPI_ProjectPointOnCurve mid(pc->Value((f0 + l0) / 2), curve, first, last);
+                if (mid.NbPoints() == 0)
+                    return nullptr;
+                // the way it goes: its tangent against the edge's there
+                gp_Pnt p;
+                gp_Vec d, dp;
+                curve->D1(mid.LowerDistanceParameter(), p, d);
+                pc->D1((f0 + l0) / 2, p, dp);
+                const bool forward = d.Dot(dp) >= 0;
+                along.push_back({mid.LowerDistanceParameter(),
+                                 TopoDS::Edge(piece.Oriented(forward ? TopAbs_FORWARD : TopAbs_REVERSED))});
+            }
+            std::sort(along.begin(), along.end(), [](auto &a, auto &b) { return a.first < b.first; });
+            TopoDS_Wire wire;
+            bb.MakeWire(wire);
+            for (auto &a : along)
+                bb.Add(wire, a.second);
+            context->Replace(edge, wire);
+        }
+    }
+    hc_shape divided;
+    divided.shape = context->Apply(s->shape);
+    laps.lap("mesh: shape rebuilt");
+    // each face's pieces in the divided shape, by their index there
+    const auto &pieces = map_of(&divided, TopAbs_FACE);
+    std::vector<std::vector<int>> of(faces.Extent());
+    for (int f = 1; f <= faces.Extent(); f++) {
+        for (TopExp_Explorer e(context->Value(faces(f)), TopAbs_FACE); e.More(); e.Next()) {
+            const int i = pieces.FindIndex(e.Current());
+            if (i == 0)
+                return nullptr;
+            of[f - 1].push_back(i - 1);
+        }
+        if (of[f - 1].empty())
+            return nullptr;
+    }
+    hc_mesh *m = tessellate_retrying(&divided, linear_deflection, angular_deflection);
+    laps.lap("mesh: meshed");
+    // the same vertices, the triangles in the order of the shape's own faces
+    hc_mesh *out = new hc_mesh{m->nverts, m->verts, m->ntris, new int[m->ntris * 3], faces.Extent(),
+                               new int[faces.Extent() + 1]};
+    int ti = 0;
+    for (int f = 0; f < faces.Extent(); f++) {
+        out->face_start[f] = ti / 3;
+        for (int i : of[f])
+            for (int k = m->face_start[i] * 3; k < m->face_start[i + 1] * 3; k++)
+                out->tris[ti++] = m->tris[k];
+    }
+    out->face_start[faces.Extent()] = ti / 3;
+    m->verts = nullptr;
+    hc_mesh_free(m);
+    return out;
+}
+
 hc_mesh *hc_tessellate(const hc_shape *s, double linear_deflection, double angular_deflection)
 {
     return guarded<>((hc_mesh *)nullptr, [&]() -> hc_mesh * {
-        // WORKAROUND (OpenCascade 7.9.3, macOS arm64): BRepMesh never ended on a fillet's faces at
-        // 0.005 mm; past its time limit the shape is meshed again from no mesh, twice as coarse, twice
         hc_mesh *m = nullptr;
-        for (double scale = 1; m == nullptr; scale *= 2)
-            try {
-                m = tessellate_once(s, linear_deflection * scale, angular_deflection * std::min(scale, 2.0), scale > 1,
-                                    true);
-            } catch (const MeshTimeout &) {
-                if (scale >= 4)
-                    throw Standard_Failure("meshing did not end (OpenCascade's mesher, at 4 times the tolerance too)");
-            }
+        const std::vector<int> many = workaround(HC_WORKAROUND_MESH_HOLES) ? many_holed(s) : std::vector<int>();
+        if (!many.empty())
+            m = tessellate_divided(s, many, linear_deflection, angular_deflection);
+        if (m == nullptr)
+            m = tessellate_retrying(s, linear_deflection, angular_deflection);
         // a closed solid: its mesh's cracks closed (see close_small_holes)
         bool solid = TopExp_Explorer(s->shape, TopAbs_SOLID).More();
         for (TopExp_Explorer ex(s->shape, TopAbs_SHELL); ex.More() && solid; ex.Next())
