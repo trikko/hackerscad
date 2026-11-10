@@ -2476,8 +2476,14 @@ unittest
     sw.reset();
     auto whole = kernel.tessellate(pot, 0.02, 0.25);
     assert(whole.welded.isClosed);
-    stillBroken(sw.peek > 3 * slicedTime,
-        "BRepMesh slow on a face of many rounded holes (shim.cpp, tessellate_divided)");
+    // our own OpenCascade build for macOS arm64 (no fused multiply-adds) meshes it whole in about the
+    // same time already (CI, 2026-11-09): the bug shows on Linux and Windows
+    version (OSX)
+    {
+    }
+    else
+        stillBroken(sw.peek > 3 * slicedTime,
+            "BRepMesh slow on a face of many rounded holes (shim.cpp, tessellate_divided)");
 }
 
 unittest
