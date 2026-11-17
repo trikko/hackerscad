@@ -5314,26 +5314,75 @@ double hc_distance(const hc_shape *a, const hc_shape *b, double out[6])
     });
 }
 
-static bool plain_triangle(const TopoDS_Face &face, gp_Pnt p[3]);
+// The area of a flat face bounded by straight edges, and the point and outward normal of its plane;
+// false when it is anything else
+static bool plain_polygon(const TopoDS_Face &face, double &area, gp_Pnt &on, gp_Vec &outward)
+{
+    BRepAdaptor_Surface surface(face, false);
+    if (surface.GetType() != GeomAbs_Plane)
+        return false;
+    const gp_Pln plane = surface.Plane();
+    outward = gp_Vec(plane.Axis().Direction());
+    if (!plane.Direct())
+        outward.Reverse();
+    if (face.Orientation() == TopAbs_REVERSED)
+        outward.Reverse();
+    const TopoDS_Wire outer = BRepTools::OuterWire(face);
+    area = 0;
+    bool first = true;
+    for (TopExp_Explorer w(face, TopAbs_WIRE); w.More(); w.Next()) {
+        const TopoDS_Wire wire = TopoDS::Wire(w.Current());
+        // twice the wire's area along the normal, whichever way it runs: the outer one adds, the holes take away
+        gp_XYZ sum(0, 0, 0), start, last;
+        int n = 0;
+        for (BRepTools_WireExplorer e(wire, face); e.More(); e.Next(), n++) {
+            if (BRepAdaptor_Curve(e.Current()).GetType() != GeomAbs_Line)
+                return false;
+            const gp_XYZ p = BRep_Tool::Pnt(e.CurrentVertex()).XYZ();
+            if (n == 0)
+                start = p;
+            else
+                sum += last.Crossed(p);
+            last = p;
+        }
+        if (n < 3)
+            return false;
+        sum += last.Crossed(start);
+        if (first) {
+            on = gp_Pnt(start);
+            first = false;
+        }
+        const double a = std::abs(sum.Dot(outward.XYZ())) / 2;
+        area += wire.IsSame(outer) ? a : -a;
+    }
+    return !first;
+}
 
-// Volume and area of a solid made of plain triangles (an imported mesh),
-// summed from the triangles: BRepGProp integrates every face, which takes
-// about a second for 50 000 of them. False when a face is anything else.
-static bool triangle_properties(const hc_shape *s, double &volume, double &area)
+// Volume and area of a solid made of flat straight-edged faces (an imported
+// mesh, its triangles or the polygons its flat regions make), summed from the
+// faces' outlines: BRepGProp integrates every face, which takes seconds for
+// 50 000 of them. False when a face is anything else.
+static bool polygon_properties(const hc_shape *s, double &volume, double &area)
 {
     const auto &faces = map_of(s, TopAbs_FACE);
     if (faces.Extent() < 500)
         return false;
-    volume = area = 0;
-    gp_Pnt p[3];
-    for (int f = 1; f <= faces.Extent(); f++) {
-        if (!plain_triangle(TopoDS::Face(faces(f)), p))
-            return false;
-        gp_Vec a(p[0].XYZ()), b(p[1].XYZ()), c(p[2].XYZ());
-        volume += a.Dot(b.Crossed(c)) / 6;
-        area += gp_Vec(p[0], p[1]).Crossed(gp_Vec(p[0], p[2])).Magnitude() / 2;
+    try {
+        volume = area = 0;
+        for (int f = 1; f <= faces.Extent(); f++) {
+            double a;
+            gp_Pnt on;
+            gp_Vec outward;
+            if (!plain_polygon(TopoDS::Face(faces(f)), a, on, outward))
+                return false;
+            // the cone from the origin over the face
+            volume += gp_Vec(on.XYZ()).Dot(outward) * a / 3;
+            area += a;
+        }
+        return true;
+    } catch (const Standard_Failure &) {
+        return false;
     }
-    return true;
 }
 
 // The relative accuracy of the volumes, areas and moments reported: the
@@ -5445,7 +5494,7 @@ double hc_volume(const hc_shape *s)
         return s->volume;
     return guarded<>(-1.0, [&] {
         double volume, area;
-        if (triangle_properties(s, volume, area))
+        if (polygon_properties(s, volume, area))
             return volume;
         // a face with many holes (a knurl, a tiling laid on a face): the adaptive integration to 1e-5
         // takes seconds over it, to 1e-3 a fraction, and gives the same volume to a few parts in a million
@@ -5505,7 +5554,7 @@ double hc_area(const hc_shape *s)
 {
     return guarded<>(-1.0, [&] {
         double volume, area;
-        if (triangle_properties(s, volume, area))
+        if (polygon_properties(s, volume, area))
             return area;
         GProp_GProps p;
         BRepGProp::SurfaceProperties(s->shape, p, mass_accuracy);
@@ -5734,6 +5783,9 @@ int hc_is_valid(const hc_shape *s)
         for (int i = 1; i <= edgeFaces.Extent(); i++)
             if (!BRep_Tool::Degenerated(TopoDS::Edge(edgeFaces.FindKey(i))) && edgeFaces(i).Extent() != 2)
                 return 0;
+        double volume, area;
+        if (polygon_properties(s, volume, area))
+            return volume > 0 ? 1 : 0;
         GProp_GProps p;
         BRepGProp::VolumeProperties(s->shape, p);
         return p.Mass() > 0 ? 1 : 0;
@@ -6514,6 +6566,11 @@ static TopoDS_Shape grouped_shell_from_mesh(const float *verts, int nverts, cons
             if (group[across] != group[t])
                 outline[group[t]].push_back({p, q, group[across]});
         }
+    // each group's first triangle (looked for over all the triangles, group by group, it took seconds on
+    // a mesh of 100 000)
+    std::vector<int> firstOf(ntris, -1);
+    for (int t = ntris - 1; t >= 0; t--)
+        firstOf[group[t]] = t;
     // built once; the groups whose faces OpenCascade does not take (a region touching itself, a hole
     // within the tolerance of its outline: a few of thousands) found then are built again as their triangles,
     // the groups round them keeping every vertex of theirs, so that the edges they share are the triangles'
@@ -6572,10 +6629,7 @@ static TopoDS_Shape grouped_shell_from_mesh(const float *verts, int nverts, cons
         for (size_t i = 0; i < edges.size(); i++)
             out[edges[i].from].push_back((int)i);
         // the group's plane, from its first triangle
-        int t0 = -1;
-        for (int t = 0; t < ntris && t0 < 0; t++)
-            if (group[t] == g)
-                t0 = t;
+        const int t0 = firstOf[g];
         const gp_Pln pln(P(tris[3 * t0]), gp_Dir(normal[t0]));
         Handle(Geom_Plane) plane = new Geom_Plane(pln);
         TopoDS_Face face;
