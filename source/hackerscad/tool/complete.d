@@ -164,6 +164,9 @@ private struct Context
     Decl[] importedCache;
     bool importedDone;
     Decl[][string] aliasCache;
+    /// the names whose type is being worked out: `auto s = s.move(…)`, or `a = b` and `b = a`, would
+    /// go round for ever
+    string[] resolving;
 
     /// The model's declarations; while it does not parse (the line being
     /// typed), without the cursor's line.
@@ -349,6 +352,12 @@ private string nameType(ref Context ctx, string name)
         if (e.name == name && e.on.length == 0 && e.kind == RefKind.constant)
             return e.type;
     // a local: auto name = …; or Type name = …;
+    import std.algorithm : canFind;
+    if (ctx.resolving.canFind(name) || ctx.resolving.length > 32)
+        return null;
+    ctx.resolving ~= name;
+    scope (exit)
+        ctx.resolving = ctx.resolving[0 .. $ - 1];
     auto before = ctx.source[0 .. ctx.cursor];
     string found;
     foreach (m; matchAll(before, ctRegex!(`\b(\w+)\s+(\w+)\s*=\s*([^;]*)`)))
@@ -927,6 +936,12 @@ unittest
     src = "module m;\nimport std.hardware : M3;\nimmutable d = M3.cl";
     r = complete(src, src.length, "", null);
     assert(r.items.length && r.items[0].label == "clearance");
+
+    // a variable defined from itself, or two from each other: no type, and no endless search for it
+    src = "module m;\nimport std.shapes;\nSolid a()\n{\n    auto s = s.move(x: 10);\n    return s.fi";
+    r = complete(src, src.length, "", null);
+    src = "module m;\nSolid a()\n{\n    auto p = q;\n    auto q = p;\n    return p.";
+    r = complete(src, src.length, "", null);
 
     // another function's variables are not offered
     src = "module m;\nSolid a()\n{\n    auto zzz = 1;\n    return box(1, 2, 3);\n}\nSolid b() => zz";
