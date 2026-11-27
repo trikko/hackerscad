@@ -73,6 +73,42 @@ mixin template ControlMethods()
             // frame the changed model, keeping the angle it is seen from
             fitNext = true;
             scheduleEvaluation(0);
+            // the panel's Write to code and Save as preset…, on the values once built
+            if (p.safe!bool("write").or(false) || p.has("save_preset"))
+            {
+                if (p.safe!bool("write").or(false) && p.has("save_preset"))
+                    return reply(JValue.init, "write or save_preset, one at a time");
+                immutable over = p.safe!bool("replace_computed").or(false);
+                immutable presetName = p.has("save_preset") ? arg("save_preset") : null;
+                immutable asPreset = p.has("save_preset");
+                whenIdle(() {
+                    import std.string : strip;
+                    string[] computed;
+                    string why;
+                    if (asPreset)
+                    {
+                        auto values = presetValues();
+                        why = presetName.strip.length == 0 ? "save_preset is the preset's name"
+                            : values.length == 0 ? "every parameter has its default: no preset to save"
+                            : writeValues(values, presetName.strip, over, true, computed);
+                    }
+                    else
+                    {
+                        auto values = changedValues();
+                        why = values.length == 0 ? "no parameter is changed: nothing to write"
+                            : writeValues(values, params.preset, over, false, computed);
+                    }
+                    if (why !is null)
+                        return reply(JValue.init, why);
+                    whenIdle(() {
+                        auto j = state();
+                        if (computed.length && !over)
+                            j["left_computed"] = toJSON(computed);
+                        reply(j, null);
+                    });
+                });
+                return;
+            }
             whenIdle(() => reply(state(), null));
             return;
         case "state":

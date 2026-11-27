@@ -54,6 +54,8 @@ box.
 
 Click **Reset to defaults** to come back to 62 and 66. What you set in the
 panel is a trial: the code still says 62 and 66, and that is what is saved.
+To keep values you like, **Write to code** makes them the code's own, and
+**Save as preset…** keeps them as a preset with a name of your choice.
 
 ## Check
 

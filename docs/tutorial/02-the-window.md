@@ -44,6 +44,7 @@ In **Parameters**, find **Teeth per jaw** and click **+**: the clip gets one
 more tooth on each jaw. The code does not change: parameters are values you
 try on the model. A value you changed is marked with a dot; the ↺ at the end
 of its line, or **Reset to defaults**, brings back the one in the code.
+**Write to code** keeps the values you set, writing them into the code.
 
 ## How the parts are drawn
 

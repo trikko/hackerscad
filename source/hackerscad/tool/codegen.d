@@ -16,7 +16,7 @@ import hackerscad.lang.errors;
 import hackerscad.lang.interp;
 import hackerscad.lang.lexer;
 import hackerscad.lang.parser;
-import hackerscad.lang.value : SolidVal;
+import hackerscad.lang.value : SolidVal, Value;
 
 /// A change to the source: replace `length` bytes at `offset` with `text`,
 /// then select `selectLength` bytes at `selectOffset` (in the new source).
@@ -2211,4 +2211,289 @@ unittest
     auto src4 = "import std;\n@part\nSolid p() => box(10, 10, 10);\n";
     auto e4 = appendToPart(src4, "m.hcad", "p", ".x()");
     assert(withImport(src4, e4, "hardware", ["hole"]) == e4);
+}
+
+// ---- parameter values written into the code (the panel's Write to code, Save as preset)
+
+/// A parameter's value as .hcad code: what the panel writes for it.
+string valueLiteral(Value v)
+{
+    import std.array : replace;
+    import std.math : PI;
+    import hackerscad.lang.value : Dim, Kind;
+
+    if (v.kind == Kind.str)
+        return `"` ~ v.s.replace(`\`, `\\`).replace(`"`, `\"`) ~ `"`;
+    if (v.isNum && v.n.dim == Dim.length)
+        return format("%.6g.mm", v.n.value);
+    if (v.isNum && v.n.dim == Dim.angle)
+        return format("%.6g.deg", v.n.value * 180 / PI);
+    return v.toString;
+}
+
+/// What writeParams changes.
+struct ParamWrite
+{
+    Edit edit;            /// one change over all of them (no length and no text: nothing to write)
+    string[] computed;    /// parameters whose value in the code is worked out from other code (`2 * wall`)
+}
+
+/// Writes parameter values into the code: `values` (name → .hcad code) become the defaults of their
+/// @param, or with `preset` their `@preset(preset, …)`, added where it is missing. A value worked out
+/// from other code is left as it is (listed in `computed`) unless `overComputed`. `wholePreset`: the preset
+/// is these values only, its @preset on other parameters goes.
+ParamWrite writeParams(string source, string file, string[string] values, string preset = null,
+    bool overComputed = false, bool wholePreset = false)
+{
+    import std.algorithm : sort, min, max;
+    import std.array : replace;
+
+    auto prog = parse(source, file);
+    auto toks = lex(source, file);
+    struct Change
+    {
+        size_t offset, length;
+        string text;
+    }
+
+    Change[] changes;
+    ParamWrite r;
+    bool[string] found;
+
+    // the value's tokens [a, b): a literal (`-2.5.mm`, `"x"`, `true`, `Shape.round`), or code to work out
+    bool computed(size_t a, size_t b)
+    {
+        if (b == a + 3 && toks[a].kind == Tok.ident && toks[a + 1].kind == Tok.dot && toks[a + 2].kind == Tok.ident)
+            return false;
+        foreach (i; a .. b)
+        {
+            immutable k = toks[i].kind;
+            if (k == Tok.intLit || k == Tok.floatLit || k == Tok.stringLit || k == Tok.kwTrue || k == Tok.kwFalse
+                || k == Tok.dot || (k == Tok.minus && i == a) || (k == Tok.ident && i > a && toks[i - 1].kind == Tok.dot))
+                continue;
+            return true;
+        }
+        return false;
+    }
+
+    // where an expression starting at token `a` ends: at a `stops` token outside brackets
+    size_t exprEnd(size_t a, Tok[] stops)
+    {
+        int depth;
+        foreach (i; a .. toks.length)
+        {
+            immutable k = toks[i].kind;
+            if (depth == 0 && stops.canFind(k))
+                return i;
+            if (k == Tok.lparen || k == Tok.lbracket || k == Tok.lbrace)
+                depth++;
+            else if (k == Tok.rparen || k == Tok.rbracket || k == Tok.rbrace)
+                depth--;
+        }
+        throw new CodegenException("cannot find the end of a parameter's value");
+    }
+
+    // the value in tokens [a, b) replaced by `text`
+    void replaceValue(string name, size_t a, size_t b, string text)
+    {
+        immutable start = offsetOf(source, toks[a].span);
+        immutable end = start + trimRight(source[start .. offsetOf(source, toks[b].span)]).length;
+        if (source[start .. end] == text)
+            return;
+        if (computed(a, b))
+        {
+            r.computed ~= name;
+            if (!overComputed)
+                return;
+        }
+        changes ~= Change(start, end - start, text);
+    }
+
+    // the byte range of an attribute, from its '@' to its ')' (or its name)
+    void attrRange(Attribute at, out size_t start, out size_t end)
+    {
+        immutable i = tokenAt(toks, at.span);
+        start = offsetOf(source, toks[i].span);
+        size_t last = i + 1;
+        if (i + 2 < toks.length && toks[i + 2].kind == Tok.lparen && toks[i + 2].span.line == toks[i + 1].span.line
+            && toks[i + 2].span.col == toks[i + 1].span.col + toks[i + 1].span.length)
+            last = exprEnd(i + 3, [Tok.rparen]);
+        end = offsetOf(source, toks[last].span) + toks[last].span.length;
+    }
+
+    size_t lineStart(size_t o)
+    {
+        while (o > 0 && source[o - 1] != '\n')
+            o--;
+        return o;
+    }
+
+    size_t lineEnd(size_t o)
+    {
+        while (o < source.length && source[o] != '\n')
+            o++;
+        return o;
+    }
+
+    bool blank(string s)
+    {
+        foreach (c; s)
+            if (c != ' ' && c != '\t' && c != '\r')
+                return false;
+        return true;
+    }
+
+    immutable presetCode = preset.length ? `"` ~ preset.replace(`\`, `\\`).replace(`"`, `\"`) ~ `"` : null;
+    foreach (d; prog.decls)
+    {
+        auto v = cast(VarDecl) d;
+        if (v is null || !v.attrs.canFind!(a => a.name == "param"))
+            continue;
+        Attribute old;
+        bool hasOld;
+        foreach (a; v.attrs)
+            if (a.name == "preset" && a.args.length == 2)
+                if (auto lit = cast(Literal) a.args[0].value)
+                    if (preset.length && lit.text == preset)
+                    {
+                        old = a;
+                        hasOld = true;
+                    }
+        auto value = v.name in values;
+        if (value is null)
+        {
+            // a preset saved again without this parameter: its value for it goes
+            if (wholePreset && hasOld)
+            {
+                size_t s, e;
+                attrRange(old, s, e);
+                immutable ls = lineStart(s), le = lineEnd(e);
+                if (blank(source[ls .. s]) && blank(source[e .. le]))
+                    changes ~= Change(ls, min(le + 1, source.length) - ls, "");   // its own line
+                else
+                {
+                    // with others on the line: the spaces after it go too (before it, at the line's end)
+                    size_t e2 = e;
+                    while (e2 < le && (source[e2] == ' ' || source[e2] == '\t'))
+                        e2++;
+                    size_t s2 = s;
+                    if (e2 == le)
+                        while (s2 > ls && (source[s2 - 1] == ' ' || source[s2 - 1] == '\t'))
+                            s2--;
+                    changes ~= Change(s2, e2 - s2, "");
+                }
+            }
+            continue;
+        }
+        found[v.name] = true;
+        if (preset.length == 0)
+        {
+            if (v.init is null)
+                throw new CodegenException(format("'%s' has no value in the code to replace", v.name));
+            size_t a = tokenAt(toks, v.nameSpan);
+            while (a < toks.length && toks[a].kind != Tok.assign)
+                a++;
+            replaceValue(v.name, a + 1, exprEnd(a + 1, [Tok.semicolon]), *value);
+        }
+        else if (hasOld)
+        {
+            immutable a = tokenAt(toks, old.args[1].span);
+            replaceValue(v.name, a, exprEnd(a, [Tok.rparen, Tok.comma]), *value);
+        }
+        else
+        {
+            immutable attr = "@preset(" ~ presetCode ~ ", " ~ *value ~ ")";
+            // after the parameter's other presets, on their line while it stays short
+            Attribute last;
+            bool hasPreset;
+            foreach (a; v.attrs)
+                if (a.name == "preset")
+                {
+                    last = a;
+                    hasPreset = true;
+                }
+            if (hasPreset)
+            {
+                size_t s, e;
+                attrRange(last, s, e);
+                immutable ls = lineStart(s), le = lineEnd(e);
+                if (blank(source[e .. le]) && chars(source[ls .. e]) + 1 + chars(attr) <= 100)
+                {
+                    changes ~= Change(e, 0, " " ~ attr);
+                    continue;
+                }
+            }
+            // else on a line of its own, just above the declaration's line
+            size_t s, e;
+            attrRange(v.attrs[$ - 1], s, e);
+            size_t first = tokenAt(toks, v.attrs[$ - 1].span);
+            while (first < toks.length && offsetOf(source, toks[first].span) < e)
+                first++;
+            immutable ls = lineStart(offsetOf(source, toks[first].span));
+            size_t indent = ls;
+            while (indent < source.length && (source[indent] == ' ' || source[indent] == '\t'))
+                indent++;
+            changes ~= Change(ls, 0, source[ls .. indent] ~ attr ~ "\n");
+        }
+    }
+    foreach (name; values.byKey)
+        if (name !in found)
+            throw new CodegenException(format("no @param '%s' in the code", name));
+    if (changes.length == 0)
+        return r;
+    changes.sort!((x, y) => x.offset < y.offset);
+    size_t from = changes[0].offset, to = from;
+    string text;
+    foreach (c; changes)
+    {
+        text ~= source[to .. c.offset] ~ c.text;
+        to = c.offset + c.length;
+    }
+    r.edit.offset = from;
+    r.edit.length = to - from;
+    r.edit.text = text;
+    r.edit.selectOffset = from;
+    return r;
+}
+
+unittest
+{
+    auto src = "module m;\n\n@param(\"Diameter\", min: 50.mm, max: 100.mm)\n@preset(\"espresso\", 60.mm)\n"
+        ~ "immutable diameter = 80.mm;\n\n@param(\"Wall\")\nimmutable wall = 2.mm;\n\n"
+        ~ "@param(\"Rim\")\nimmutable rim = 2 * wall;\n\n@param(\"Label\") immutable label = \"cup\";\n";
+    // defaults: the literal replaced, the rest kept
+    auto w = writeParams(src, "m.hcad", ["diameter": "72.5.mm", "label": `"mug \"big\""`]);
+    auto a = w.edit.apply(src);
+    assert(a.canFind("immutable diameter = 72.5.mm;") && a.canFind(`immutable label = "mug \"big\"";`), a);
+    assert(a.canFind(`@preset("espresso", 60.mm)`) && w.computed.length == 0);
+    // worked out from other code: left, unless asked
+    w = writeParams(src, "m.hcad", ["rim": "3.mm", "wall": "1.5.mm"]);
+    assert(w.computed == ["rim"]);
+    a = w.edit.apply(src);
+    assert(a.canFind("immutable rim = 2 * wall;") && a.canFind("immutable wall = 1.5.mm;"), a);
+    assert(writeParams(src, "m.hcad", ["rim": "3.mm"], null, true).edit.apply(src).canFind("immutable rim = 3.mm;"));
+    // the same value: nothing to write
+    w = writeParams(src, "m.hcad", ["wall": "2.mm"]);
+    assert(w.edit.length == 0 && w.edit.text.length == 0);
+    // a preset: its value replaced, or added after the other presets (on their line), or on a line of its own
+    a = writeParams(src, "m.hcad", ["diameter": "64.mm", "wall": "1.8.mm", "label": `"tea"`], "espresso")
+        .edit.apply(src);
+    assert(a.canFind(`@preset("espresso", 64.mm)` ~ "\nimmutable diameter"), a);
+    assert(a.canFind("@param(\"Wall\")\n@preset(\"espresso\", 1.8.mm)\nimmutable wall = 2.mm;"), a);
+    assert(a.canFind("@preset(\"espresso\", \"tea\")\n@param(\"Label\") immutable label"), a);
+    a = writeParams(src, "m.hcad", ["diameter": "90.mm"], "big").edit.apply(src);
+    assert(a.canFind(`@preset("espresso", 60.mm) @preset("big", 90.mm)` ~ "\nimmutable diameter = 80.mm;"), a);
+    // saved again whole: the preset's values on other parameters go, a line of its own or on a shared one
+    auto b = writeParams(a, "m.hcad", ["wall": "3.mm"], "espresso", false, true).edit.apply(a);
+    assert(b.canFind("@param(\"Diameter\", min: 50.mm, max: 100.mm)\n@preset(\"big\", 90.mm)\nimmutable"), b);
+    assert(b.canFind("@preset(\"espresso\", 3.mm)\nimmutable wall"), b);
+    auto c = writeParams(src, "m.hcad", ["wall": "3.mm"], "espresso", false, true).edit.apply(src);
+    assert(c.canFind("max: 100.mm)\nimmutable diameter = 80.mm;"), c);
+    // a name the code has no @param for
+    bool threw;
+    try
+        writeParams(src, "m.hcad", ["depth": "3.mm"]);
+    catch (CodegenException)
+        threw = true;
+    assert(threw);
 }

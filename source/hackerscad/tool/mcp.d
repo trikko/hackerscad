@@ -876,10 +876,16 @@ JValue toolList()
             ~ "builds the code as it is in the editor (with nothing else given, it just builds: the user's Ctrl+B). "
             ~ "auto_rebuild: false stops the window rebuilding as the user types (true starts it again, the header's "
             ~ "button): the state's stale then says the code changed since the last build; what you write through "
-            ~ "these tools is built either way.",
+            ~ "these tools is built either way. write: true writes the values changed by hand into the code, as the "
+            ~ "panel's Write to code (they become the defaults; with a preset chosen, its values): one change the user "
+            ~ "can undo, saved with the file. save_preset \"name\" writes the values that differ from the defaults as "
+            ~ "@preset(\"name\", …), as Save as preset… (an existing preset of that name is replaced, and chosen). A "
+            ~ "default worked out from other code (2 * wall) is kept and listed in left_computed, unless "
+            ~ "replace_computed: true.",
             `"source": {"type": "string"}, "auto_rebuild": {"type": "boolean"}, "params": {"type": "object", "description": "Parameter values, name to value: `
             ~ `numbers are in the model unit (mm), strings are .hcad expressions such as \"80.mm\"."}, "preset": {"type": "string"}, `
-            ~ `"reset": {"type": "array", "items": {"type": "string"}, "description": "parameter names back to their default"}`),
+            ~ `"reset": {"type": "array", "items": {"type": "string"}, "description": "parameter names back to their default"}, `
+            ~ `"write": {"type": "boolean"}, "save_preset": {"type": "string"}, "replace_computed": {"type": "boolean"}`),
         gui("hcad_gui_pick", "Click in the user's 3D view at x, y (fractions of its size, 0..1) or at a model point: as "
             ~ "the user's click, what is there joins the selection (picked again, it leaves it; hcad_gui_selection with "
             ~ "clear: true empties it), items of several parts too, and the editor jumps to the feature that created "

@@ -30,6 +30,10 @@ final class ParamsPanel
     void delegate(int line) onGoto;   /// a click on a parameter's label: show its line in the code
     string[string] overrides;   /// name → .hcad expression
     string preset;
+    void delegate() onWrite;        /// Write to code
+    void delegate() onSavePreset;   /// Save as preset…
+    ParamInfo[] shown;              /// the parameters of the latest evaluation
+    private Button write, savePreset;
 
     private Box rows, partRows;
     Box partsWidget;   /// the parts with a check to show or hide each (shown by the view bar's eye)
@@ -68,6 +72,27 @@ final class ParamsPanel
                 onChange();
         });
         widget.append(reset);
+        // the values set here kept in the code: as the defaults (or the preset's values), or as a preset
+        auto keep = new Box(Orientation.Vertical, 6);
+        write = new Button;
+        write.setLabel("Write to code");
+        write.setTooltipText("Write the values changed here into the code: they become the defaults (with a "
+            ~ "preset chosen, that preset's values). Save the file to keep them");
+        write.connectClicked(() {
+            if (onWrite)
+                onWrite();
+        });
+        keep.append(write);
+        savePreset = new Button;
+        savePreset.setLabel("Save as preset…");
+        savePreset.setTooltipText("Write the values shown as a named preset in the code (@preset), the "
+            ~ "defaults kept: the Preset list offers it");
+        savePreset.connectClicked(() {
+            if (onSavePreset)
+                onSavePreset();
+        });
+        keep.append(savePreset);
+        widget.append(keep);
 
         partsWidget = new Box(Orientation.Vertical, 4);
         partsWidget.setMarginTop(6);
@@ -146,6 +171,8 @@ final class ParamsPanel
     void update(ParamInfo[] params, string[] presetNames)
     {
         auto sig = presetNames.to!string ~ params.map!(p => p.name ~ ":" ~ p.value.typeName).array.to!string;
+        shown = params;
+        presets = presetNames;
         scope (exit)
             markChanged();
         if (sig == signature)
@@ -204,7 +231,12 @@ final class ParamsPanel
             resets[name].setOpacity(changed ? 1 : 0);
             resets[name].setCanTarget(changed);
         }
+        write.setSensitive(overrides.length > 0);
+        savePreset.setSensitive(shown.length > 0);
     }
+
+    /// The names of the presets in the code.
+    string[] presetNames() => presets;
 
     /// Back to the code's value (or the preset's) for one parameter.
     void reset(string name)
@@ -416,13 +448,7 @@ private:
 
     static string literal(Value v)
     {
-        import std.array : replace;
-        if (v.kind == Kind.str)
-            return `"` ~ v.s.replace(`\`, `\\`).replace(`"`, `\"`) ~ `"`;
-        if (v.isNum && v.n.dim == Dim.length)
-            return format("%.6g.mm", v.n.value);
-        if (v.isNum && v.n.dim == Dim.angle)
-            return format("%.6g.deg", v.n.value * 180 / PI);
-        return v.toString;
+        import hackerscad.tool.codegen : valueLiteral;
+        return valueLiteral(v);
     }
 }

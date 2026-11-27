@@ -10,7 +10,7 @@ import std.string : toLower, toUpper;
 import std.array : join;
 import std.algorithm : endsWith;
 import std.math : abs, PI, round;
-import std.algorithm : min, max, canFind, clamp;
+import std.algorithm : min, max, canFind, clamp, map;
 
 import adw.application : AdwApplication = Application;
 import adw.application_window : ApplicationWindow;
@@ -1325,6 +1325,8 @@ final class MainWindow
         params = new ParamsPanel;
         partsMenu.setPopover(partsPopover());
         params.onChange = () => scheduleEvaluation(0);
+        params.onWrite = () => writeToCode();
+        params.onSavePreset = () => saveAsPreset();
         params.onGoto = (int line) => editorTools.showLine(line);
         params.onVisibility = (size_t part, bool visible) => viewport.setHidden(part, !visible);
         auto paramsScroll = new ScrolledWindow;
@@ -1699,7 +1701,7 @@ final class MainWindow
             control = null;
         window.connectCloseRequest(() {
             // unsaved changes: ask first, and close again once answered
-            if (modified && !closeConfirmed)
+            if ((modified || params.overrides.length) && !closeConfirmed)
             {
                 confirmDiscard(() {
                     closeConfirmed = true;
@@ -5971,6 +5973,174 @@ private:
             return "fix the errors in the code first: " ~ e.msg;
     }
 
+    /// A parameter as the panel calls it: its description, or its name.
+    string paramLabel(string name)
+    {
+        foreach (p; params.shown)
+            if (p.name == name && p.doc.length)
+                return p.doc;
+        return name;
+    }
+
+    /// The values set by hand in the panel, as code (name → .hcad), from the latest evaluation.
+    string[string] changedValues()
+    {
+        import hackerscad.tool.codegen : valueLiteral;
+        string[string] values;
+        foreach (p; params.shown)
+            if (p.name in params.overrides)
+                values[p.name] = valueLiteral(p.value);
+        return values;
+    }
+
+    /// The values that differ from the code's defaults (a preset's and those set by hand), as code.
+    string[string] presetValues()
+    {
+        import hackerscad.tool.codegen : valueLiteral;
+        string[string] values;
+        foreach (p; params.shown)
+            if (valueLiteral(p.value) != valueLiteral(p.defaultValue))
+                values[p.name] = valueLiteral(p.value);
+        return values;
+    }
+
+    /// Writes parameter values into the code as one change (Ctrl+Z undoes it): see codegen.writeParams. The
+    /// parameters written are no longer set by hand; with `wholePreset`, the preset `preset` is chosen. The
+    /// problem, or null; `computed`: those left as they are, worked out from other code.
+    string writeValues(string[string] values, string preset, bool overComputed, bool wholePreset,
+        out string[] computed)
+    {
+        import hackerscad.tool.codegen : writeParams;
+        try
+        {
+            auto w = writeParams(text(), path, values, preset, overComputed, wholePreset);
+            computed = w.computed;
+            if (w.edit.length || w.edit.text.length)
+                applyEdit(w.edit, false);
+            foreach (n; values.byKey)
+                if (overComputed || !computed.canFind(n))
+                    params.overrides.remove(n);
+            if (wholePreset)
+                params.preset = preset;
+            params.invalidate();
+            scheduleEvaluation(0);
+            return null;
+        }
+        catch (CodegenException e)
+            return e.msg;
+        catch (HcadError e)
+            return "fix the errors in the code first: " ~ e.msg;
+    }
+
+    /// Asks whether values worked out in the code (`rim = 2 * wall`) are to be replaced by numbers, then
+    /// runs `write` with the answer; nothing when cancelled.
+    void askComputed(string[string] values, string preset, void delegate(bool overComputed) write)
+    {
+        import hackerscad.tool.codegen : writeParams;
+        string[] computed;
+        try
+            computed = writeParams(text(), path, values, preset).computed;
+        catch (Exception)
+        {
+        }
+        if (computed.length == 0)
+            return write(false);
+        import adw.alert_dialog : AlertDialog;
+        import adw.types : ResponseAppearance;
+        auto d = new AlertDialog("Replace code with numbers?", format("In the code, %-(%s, %) %s worked out from "
+            ~ "other values. Written as numbers, %s no longer follow%s them.", computed.map!(n => paramLabel(n)),
+            computed.length > 1 ? "are" : "is", computed.length > 1 ? "they" : "it", computed.length > 1 ? "" : "s"));
+        d.addResponse("cancel", "_Cancel");
+        d.addResponse("keep", "_Keep the Code");
+        d.addResponse("replace", "_Replace");
+        d.setResponseAppearance("replace", ResponseAppearance.Destructive);
+        d.setDefaultResponse("keep");
+        d.setCloseResponse("cancel");
+        d.connectResponse(null, (string response) {
+            if (response != "cancel")
+                write(response == "replace");
+        });
+        d.present(window);
+    }
+
+    /// The panel's Write to code: the values set by hand become the defaults (with a preset chosen, its
+    /// values). `then` runs once they are written.
+    void writeToCode(void delegate() then = null)
+    {
+        whenIdle(() {
+            auto values = changedValues();
+            if (values.length == 0)
+            {
+                info("no parameter is changed in the panel: nothing to write");
+                return;
+            }
+            immutable preset = params.preset;
+            askComputed(values, preset, (bool over) {
+                string[] computed;
+                if (auto why = writeValues(values, preset, over, false, computed))
+                    return info(why);
+                info(format("written into the code%s: save the file to keep %s", preset.length
+                    ? " as the values of preset " ~ preset : "", values.length > 1 ? "them" : "it"));
+                if (then)
+                    then();
+            });
+        });
+    }
+
+    /// The panel's Save as preset…: the values shown, those that differ from the defaults, as a named
+    /// @preset; asked for its name.
+    void saveAsPreset()
+    {
+        whenIdle(() {
+            auto values = presetValues();
+            if (values.length == 0)
+            {
+                info("every parameter has its default: change some to make a preset of them");
+                return;
+            }
+            import adw.alert_dialog : AlertDialog;
+            import adw.types : ResponseAppearance;
+            import gtk.entry : Entry;
+            import std.algorithm : sort;
+            auto d = new AlertDialog("Save as preset", format("The values that differ from the defaults (%-(%s, %)) "
+                ~ "are written into the code under this name; the Preset list offers it.",
+                values.keys.sort.map!(n => paramLabel(n))));
+            auto name = new Entry;
+            name.setPlaceholderText("name");
+            name.setActivatesDefault(true);
+            if (params.preset.length)
+                name.setText(params.preset);
+            d.setExtraChild(name);
+            d.addResponse("cancel", "_Cancel");
+            d.addResponse("save", "_Save");
+            d.setResponseAppearance("save", ResponseAppearance.Suggested);
+            d.setDefaultResponse("save");
+            d.setCloseResponse("cancel");
+            void check()
+            {
+                import std.string : strip;
+                immutable n = name.getText().strip;
+                d.setResponseEnabled("save", n.length > 0);
+                d.setResponseLabel("save", params.presetNames.canFind(n) ? "_Replace" : "_Save");
+            }
+            check();
+            name.connectChanged(() => check());
+            d.connectResponse(null, (string response) {
+                import std.string : strip;
+                immutable n = name.getText().strip;
+                if (response != "save" || n.length == 0)
+                    return;
+                askComputed(values, n, (bool over) {
+                    string[] computed;
+                    if (auto why = writeValues(values, n, over, true, computed))
+                        return info(why);
+                    info("preset " ~ n ~ " written into the code: save the file to keep it");
+                });
+            });
+            d.present(window);
+        });
+    }
+
     int[] selFaces, selEdges, selVertices;
 
     /// The selectors' kernel: the parts' own, with a cache of this thread's
@@ -6637,12 +6807,13 @@ private:
             info("fix the errors in the code first: " ~ e.msg);
     }
 
-    /// Applies an edit to the buffer (one undo step) and selects its placeholder.
-    void applyEdit(Edit e)
+    /// Applies an edit to the buffer (one undo step) and selects its placeholder. `fromModel`: what it
+    /// writes comes from the model built (faces picked, where things are), so the code typed since is built first.
+    void applyEdit(Edit e, bool fromModel = true)
     {
         // typed and not built: what the view shows (the faces picked, where things are) is older than
         // the code, and what it would write could miss: built first, the action to do again
-        if (codeStale)
+        if (codeStale && fromModel)
         {
             build();
             idleAdd(PRIORITY_DEFAULT, () {
@@ -7014,8 +7185,36 @@ private:
     long diskTime;
 
     /// Runs `then` once unsaved changes are saved or knowingly discarded.
-    void confirmDiscard(void delegate() then)
+    /// Values set in the panel and not in the code are asked about first (`paramsDone`: already).
+    void confirmDiscard(void delegate() then, bool paramsDone = false)
     {
+        if (params.overrides.length && !paramsDone)
+        {
+            import adw.alert_dialog : AlertDialog;
+            import adw.types : ResponseAppearance;
+            import std.algorithm : sort;
+            import std.array : array;
+            auto names = params.overrides.keys.sort.map!(n => paramLabel(n)).array();
+            auto d = new AlertDialog("Keep the parameters you changed?", format("%-(%s, %) %s set in the panel only. "
+                ~ "Written into the code, %s stay%s with the model; if not, %s lost.", names,
+                names.length > 1 ? "are" : "is", names.length > 1 ? "they" : "it", names.length > 1 ? "" : "s",
+                names.length > 1 ? "they are" : "it is"));
+            d.addResponse("cancel", "_Cancel");
+            d.addResponse("discard", "_Discard");
+            d.addResponse("write", "_Write to Code");
+            d.setResponseAppearance("discard", ResponseAppearance.Destructive);
+            d.setResponseAppearance("write", ResponseAppearance.Suggested);
+            d.setDefaultResponse("write");
+            d.setCloseResponse("cancel");
+            d.connectResponse(null, (string response) {
+                if (response == "write")
+                    writeToCode(() => confirmDiscard(then, true));
+                else if (response == "discard")
+                    confirmDiscard(then, true);
+            });
+            d.present(window);
+            return;
+        }
         if (!modified)
             return then();
         import adw.alert_dialog : AlertDialog;
