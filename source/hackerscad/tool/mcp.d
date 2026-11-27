@@ -220,7 +220,7 @@ private void process(string line, Worker worker)
         if (method == "notifications/cancelled" && params.isObject && params.has("requestId"))
             worker.cancel(params["requestId"]);
         else if (method == "tools/call" && msg.has("id") && params.isObject && params.has("name")
-            && evaluates(params["name"].get!string))
+            && params["name"].isString && evaluates(params["name"].get!string))
             worker.start(msg["id"], line);
         else if (method == "tools/call")
             background(msg);    // the GUI tools can wait for the window
@@ -274,7 +274,13 @@ void serveWorker()
         }
         JValue response;
         try
-            response = handle(parseJSONComplete(line));
+        {
+            auto msg = parseJSONComplete(line);
+            // the server has had hcad_docs read (Worker.call)
+            if (msg.isObject && msg.has("hcad_rules_read"))
+                atomicStore(rulesRead, true);
+            response = handle(msg);
+        }
         catch (JSONException)
             response = errorResponse(JValue(null), -32700, "parse error");
         if (!response.isNull)
@@ -479,7 +485,15 @@ private:
         string reply;
         try
         {
-            proc.stdin.writeln(line);
+            // the rules are read here, by hcad_docs: the worker is told, or its answers would remind of them
+            if (atomicLoad(rulesRead))
+            {
+                auto msg = parseJSONComplete(line);
+                msg["hcad_rules_read"] = true;
+                proc.stdin.writeln(msg.toJSON());
+            }
+            else
+                proc.stdin.writeln(line);
             proc.stdin.flush();
             // the kernel may print on stdout: only JSON lines are responses
             while ((reply = proc.stdout.readln()) !is null && !reply.strip.startsWith("{"))

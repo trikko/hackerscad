@@ -7613,12 +7613,32 @@ private:
     bool hadResult;   /// the first evaluation has been shown
 
     /// Runs `f` once the pending evaluation has finished and been drawn.
+    /// The answer of the socket request being handled, for the steps it leaves for later (whenIdle).
+    void delegate(JValue, string) controlReply;
+
     void whenIdle(void delegate() f)
     {
+        // a step of a socket request that fails answers it with the error: else the agent would wait for
+        // an answer that never comes
+        auto reply = controlReply;
         timeoutAdd(PRIORITY_DEFAULT, 50, () {
             if (busy())
                 return true;
-            timeoutAdd(PRIORITY_DEFAULT, 150, () { f(); return false; });
+            timeoutAdd(PRIORITY_DEFAULT, 150, () {
+                auto outer = controlReply;
+                controlReply = reply;
+                scope (exit)
+                    controlReply = outer;
+                try
+                    f();
+                catch (Exception e)
+                {
+                    if (reply is null)
+                        throw e;
+                    reply(JValue.init, e.msg);
+                }
+                return false;
+            });
             return false;
         });
     }
@@ -7635,11 +7655,21 @@ private:
         agentLog.add(AgentCall(Clock.currTime, client, method));
         immutable logged = agentLog.calls.length - 1;
         auto plainReply = reply;
+        bool replied;
         reply = (JValue r, string e) {
+            // once: a failure after the answer (in a later step) has no one to tell
+            if (replied)
+                return;
+            replied = true;
             if (e.length && logged < agentLog.calls.length)
                 agentLog.calls[logged].error = e;
             plainReply(r, e);
         };
+        // the steps this request leaves for later (whenIdle) answer it if they fail
+        auto outer = controlReply;
+        controlReply = reply;
+        scope (exit)
+            controlReply = outer;
         if (agentText !is null)
             userChange = changedLines(agentText, text());
         // only: of the state a reply carries, the fields named (the rest of the reply stays), as state's own only
