@@ -2,11 +2,13 @@
 /// and glTF (.glb, .gltf).
 module hackerscad.io.meshread;
 
-import std.algorithm : startsWith, endsWith, max;
+import std.algorithm : startsWith, endsWith, max, min;
+import std.format : format;
 import std.array : split, replace;
 import std.bitmanip : littleEndianToNative;
 import std.conv : to, ConvException;
 import std.string : strip, lineSplitter, indexOf;
+import std.math : floor;
 
 import hackerscad.geom.mesh;
 
@@ -380,6 +382,8 @@ Mesh read3mf(const(ubyte)[] data)
             throw new MeshFormatException("3MF object " ~ id ~ " not found");
         size_t i = *found;
         immutable base = cast(uint)(result.verts.length / 3);
+        immutable mirrored = tr[0] * (tr[4] * tr[8] - tr[5] * tr[7]) - tr[1] * (tr[3] * tr[8] - tr[5] * tr[6])
+            + tr[2] * (tr[3] * tr[7] - tr[4] * tr[6]) < 0;
         for (i++; i < tags.length && !(tags[i].name == "object" && tags[i].closing); i++)
         {
             auto t = tags[i];
@@ -393,12 +397,14 @@ Mesh read3mf(const(ubyte)[] data)
             }
             else if (t.name == "triangle")
             {
-                foreach (v; ["v1", "v2", "v3"])
+                // a mirroring transform turns the triangles inside out: they are turned back
+                foreach (v; mirrored ? ["v1", "v3", "v2"] : ["v1", "v2", "v3"])
                 {
-                    immutable k = base + cast(uint) t.num(v);
-                    if (k >= result.verts.length / 3)
+                    // an index of this object's vertices: a whole number, not below 0
+                    immutable n = t.num(v);
+                    if (!(n >= 0 && n == floor(n)) || base + n >= result.verts.length / 3)
                         throw new MeshFormatException("3MF triangle refers to a missing vertex");
-                    result.tris ~= k;
+                    result.tris ~= cast(uint)(base + n);
                 }
             }
             else if (t.name == "component")
@@ -818,8 +824,6 @@ private string delegate()[string] unzip(const(ubyte)[] d)
 /// closure keeps its own copy of the values).
 private string delegate() member(const(ubyte)[] d, string name, ulong method, ulong packed, ulong size, ulong local)
 {
-    import std.zlib : uncompress, ZlibException;
-
     return () {
         ulong u16(size_t o) { return d[o] | d[o + 1] << 8; }
         ulong u32(size_t o) { return u16(o) | u16(o + 2) << 16; }
@@ -828,18 +832,53 @@ private string delegate() member(const(ubyte)[] d, string name, ulong method, ul
         if (u32(local) != 0x04034b50)
             throw new MeshFormatException("malformed zip entry " ~ name ~ " in the 3MF file");
         immutable start = local + 30 + u16(local + 26) + u16(local + 28);
-        if (start + packed > d.length)
+        // compared by subtraction: a Zip64 size near 2^64 would wrap round an addition
+        if (start > d.length || packed > d.length - start)
             throw new MeshFormatException("the 3MF zip archive is truncated");
-        auto raw = d[start .. start + packed];
+        auto raw = d[start .. start + cast(size_t) packed];
         if (method == 0)
             return (cast(const(char)[]) raw).idup;
         if (method != 8)
             throw new MeshFormatException("unsupported compression in the 3MF file");
-        try
-            return cast(string) uncompress(raw, cast(size_t) size, -15);
-        catch (ZlibException)
-            throw new MeshFormatException("corrupt zip entry " ~ name ~ " in the 3MF file");
+        return inflated(raw, size, name);
     };
+}
+
+/// A zip entry's deflated data unpacked, in pieces: no more than the size its header gives, nor than
+/// `limit` (a few kilobytes can unpack to gigabytes, and the header's size is the file's own word).
+private string inflated(const(ubyte)[] raw, ulong size, string name, ulong limit = 1UL << 30)
+{
+    import etc.c.zlib : inflate, inflateEnd, inflateInit2, z_stream, Z_OK, Z_STREAM_END, Z_NO_FLUSH, Z_BUF_ERROR;
+
+    if (size > limit)
+        throw new MeshFormatException(format("zip entry %s of the 3MF file unpacks to %s MB: more than the %s MB "
+            ~ "read", name, size >> 20, limit >> 20));
+    z_stream zs;
+    if (inflateInit2(&zs, -15) != Z_OK)
+        throw new MeshFormatException("cannot unpack the 3MF file");
+    scope (exit)
+        inflateEnd(&zs);
+    zs.next_in = cast(ubyte*) raw.ptr;
+    zs.avail_in = cast(uint) raw.length;
+    auto out_ = new ubyte[cast(size_t) size];
+    size_t done;
+    while (true)
+    {
+        ubyte[1] spare;   // room past the size the header gives: data there means the header lied
+        zs.next_out = done < out_.length ? out_.ptr + done : spare.ptr;
+        zs.avail_out = done < out_.length ? cast(uint) min(out_.length - done, uint.max) : 1;
+        immutable before = zs.avail_out;
+        immutable r = inflate(&zs, Z_NO_FLUSH);
+        immutable got = before - zs.avail_out;
+        if (done >= out_.length && got > 0)
+            throw new MeshFormatException("zip entry " ~ name ~ " of the 3MF file is longer than its header says");
+        done += got;
+        if (r == Z_STREAM_END)
+            break;
+        if (r != Z_OK && !(r == Z_BUF_ERROR && got > 0))
+            throw new MeshFormatException("corrupt zip entry " ~ name ~ " in the 3MF file");
+    }
+    return cast(string) out_[0 .. done];
 }
 
 /// "m00 m01 m02 m10 … m32" (identity when empty)
@@ -1127,4 +1166,50 @@ unittest
     assert(readGltf(format(gltf, 3, "")).vertexCount == 3);
     assertThrown!MeshFormatException(readGltf(format(gltf, -1, "")));
     assertThrown!MeshFormatException(readGltf(format(gltf, 3, `, "byteOffset": -8`)));
+}
+
+unittest
+{
+    import std.exception : assertThrown;
+    import std.math : isClose;
+    import std.zip : ArchiveMember, CompressionMethod, ZipArchive;
+
+    // a 3MF of one cube placed twice, the second mirrored in X: both come back outward, the volume of two
+    ubyte[] pack(string model)
+    {
+        auto zip = new ZipArchive;
+        auto m = new ArchiveMember;
+        m.name = "3D/3dmodel.model";
+        m.expandedData = cast(ubyte[]) model.dup;
+        m.compressionMethod = CompressionMethod.deflate;
+        zip.addMember(m);
+        return cast(ubyte[]) zip.build();
+    }
+    string cube(string tri)
+    {
+        string v;
+        foreach (p; [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]])
+            v ~= format(`<vertex x="%s" y="%s" z="%s"/>`, p[0], p[1], p[2]);
+        string t;
+        foreach (f; [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7],
+            [2, 7, 6], [3, 0, 4], [3, 4, 7]])
+            t ~= format(`<triangle v1="%s" v2="%s" v3="%s"/>`, f[0], f[1], tri.length ? tri : format("%s", f[2]));
+        return `<object id="1" type="model"><mesh><vertices>` ~ v ~ `</vertices><triangles>` ~ t
+            ~ `</triangles></mesh></object>`;
+    }
+    enum head = `<?xml version="1.0"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>`;
+    auto two = read3mf(pack(head ~ cube("") ~ `<object id="2" type="model"><components><component objectid="1"/>`
+        ~ `<component objectid="1" transform="-1 0 0 0 1 0 0 0 1 -2 0 0"/></components></object></resources>`
+        ~ `<build><item objectid="2"/></build></model>`));
+    assert(two.triangleCount == 24 && isClose(two.welded.volume, 2), format("%s", two.welded.volume));
+    // an index below 0 is no vertex
+    assertThrown!MeshFormatException(read3mf(pack(head ~ cube("-1") ~ `</resources><build><item objectid="1"/></build></model>`)));
+
+    // a zip entry unpacks only to the size its header gives, and to no more than the limit
+    import std.zlib : compress;
+    auto big = new ubyte[](1 << 20);
+    auto raw = cast(ubyte[]) compress(big)[2 .. $ - 4];   // the raw deflate stream, without zlib's header and sum
+    assert(inflated(raw, big.length, "x").length == big.length);
+    assertThrown!MeshFormatException(inflated(raw, 1000, "x"));
+    assertThrown!MeshFormatException(inflated(raw, big.length, "x", 1 << 10));
 }

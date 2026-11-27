@@ -67,6 +67,9 @@ private struct Matrix
 {
     double a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;   // x' = a x + c y + e, y' = b x + d y + f
 
+    /// How many mm a unit of the drawing becomes at most (curves are cut finer the larger they are drawn).
+    double size() const => max(sqrt(a * a + b * b), sqrt(c * c + d * d));
+
     Matrix opBinary(string op : "*")(Matrix m) const
         => Matrix(a * m.a + c * m.b, b * m.a + d * m.b, a * m.c + c * m.d, b * m.c + d * m.d,
             a * m.e + c * m.f + e, b * m.e + d * m.f + f);
@@ -201,7 +204,7 @@ private struct SvgParser
                 Loop l;
                 void corner(double cx, double cy, double from)
                 {
-                    immutable n = segmentsFor(max(rx, ry), PI / 2);
+                    immutable n = segmentsFor(max(rx, ry) * m.size, PI / 2);
                     foreach (i; 0 .. n + 1)
                     {
                         immutable a = from + PI / 2 * i / n;
@@ -221,7 +224,7 @@ private struct SvgParser
                 if (rx <= 0 || ry <= 0)
                     return;
                 Loop l;
-                immutable n = segmentsFor(max(rx, ry), 2 * PI);
+                immutable n = segmentsFor(max(rx, ry) * m.size, 2 * PI);
                 foreach (i; 0 .. n)
                     l ~= [cx + rx * cos(2 * PI * i / n), cy + ry * sin(2 * PI * i / n)];
                 add(l);
@@ -244,7 +247,7 @@ private struct SvgParser
                 return add(l);
             }
         case "path":
-            foreach (l; pathLoops(t.attrs.get("d", "")))
+            foreach (l; pathLoops(t.attrs.get("d", ""), m.size))
                 add(l);
             return;
         default:
@@ -432,7 +435,8 @@ private Matrix parseTransform(string s)
 
 /// The closed subpaths of path data: open ones are closed (a shape filled
 /// by a viewer is closed by it), single points and lines dropped.
-private Loop[] pathLoops(string d)
+/// `unit`: the mm a unit of the path becomes, for how finely curves are cut.
+private Loop[] pathLoops(string d, double unit = 1)
 {
     Loop[] loops;
     Loop cur;
@@ -499,7 +503,7 @@ private Loop[] pathLoops(string d)
     }
     void cubic(Pt c1, Pt c2, Pt p)
     {
-        immutable len = dist(pos, c1) + dist(c1, c2) + dist(c2, p);
+        immutable len = (dist(pos, c1) + dist(c1, c2) + dist(c2, p)) * unit;
         immutable n = max(4, cast(size_t) ceil(len / 0.5));
         auto p0 = pos;
         foreach (k; 1 .. n + 1)
@@ -512,7 +516,7 @@ private Loop[] pathLoops(string d)
     }
     void quadratic(Pt c, Pt p)
     {
-        immutable len = dist(pos, c) + dist(c, p);
+        immutable len = (dist(pos, c) + dist(c, p)) * unit;
         immutable n = max(4, cast(size_t) ceil(len / 0.5));
         auto p0 = pos;
         foreach (k; 1 .. n + 1)
@@ -557,7 +561,7 @@ private Loop[] pathLoops(string d)
             dt -= 2 * PI;
         else if (sweep && dt < 0)
             dt += 2 * PI;
-        immutable n = segmentsFor(max(rx, ry), dt);
+        immutable n = segmentsFor(max(rx, ry) * unit, dt);
         foreach (k; 1 .. n + 1)
         {
             immutable t = t1 + dt * k / n;
@@ -772,7 +776,7 @@ Loop[] readDxf(string text, out Round[] rounds)
             {
                 immutable cx = get("10"), cy = get("20"), r = get("40");
                 Loop l;
-                immutable n = segmentsFor(r, 2 * PI);
+                immutable n = segmentsFor(r * scale, 2 * PI);
                 foreach (k; 0 .. n)
                     l ~= [cx + r * cos(2 * PI * k / n), cy + r * sin(2 * PI * k / n)];
                 loops ~= l;
@@ -788,7 +792,7 @@ Loop[] readDxf(string text, out Round[] rounds)
                 if (a1 <= a0)
                     a1 += 2 * PI;
                 Loop l;
-                immutable n = segmentsFor(r, a1 - a0);
+                immutable n = segmentsFor(r * scale, a1 - a0);
                 foreach (k; 0 .. n + 1)
                 {
                     immutable a = a0 + (a1 - a0) * k / n;
@@ -804,7 +808,7 @@ Loop[] readDxf(string text, out Round[] rounds)
                 immutable t1 = t1raw <= t0 ? t1raw + 2 * PI : t1raw;
                 immutable major = sqrt(mx * mx + my * my);
                 Loop l;
-                immutable n = segmentsFor(major, t1 - t0);
+                immutable n = segmentsFor(major * scale, t1 - t0);
                 foreach (k; 0 .. n + 1)
                 {
                     immutable t = t0 + (t1 - t0) * k / n, u = cos(t), v = sin(t) * ratio;
@@ -834,7 +838,7 @@ Loop[] readDxf(string text, out Round[] rounds)
                         bulges[$ - 1] = p[1].to!double;
                 }
                 immutable closed = (cast(int) get("70")) & 1;
-                auto l = withBulges(pts, bulges, closed != 0);
+                auto l = withBulges(pts, bulges, closed != 0, scale);
                 if (closed)
                     loops ~= l;
                 else
@@ -866,7 +870,7 @@ Loop[] readDxf(string text, out Round[] rounds)
                     k++;
                 }
                 j = k;
-                auto l = withBulges(pts, bulges, closed != 0);
+                auto l = withBulges(pts, bulges, closed != 0, scale);
                 if (closed)
                     loops ~= l;
                 else
@@ -884,7 +888,7 @@ Loop[] readDxf(string text, out Round[] rounds)
                 auto ws = all("41");
                 Loop l;
                 if (ctrl.length > degree && knots.length == ctrl.length + degree + 1)
-                    l = bspline(degree, knots, ctrl, ws.length == ctrl.length ? ws : null);
+                    l = bspline(degree, knots, ctrl, ws.length == ctrl.length ? ws : null, scale);
                 else
                 {
                     // fit points only
@@ -919,7 +923,8 @@ Loop[] readDxf(string text, out Round[] rounds)
 }
 
 /// A polyline with the bulges of its pieces drawn as arcs.
-private Loop withBulges(Pt[] pts, double[] bulges, bool closed)
+/// `unit`: the mm a unit of the drawing is, for how finely arcs are cut.
+private Loop withBulges(Pt[] pts, double[] bulges, bool closed, double unit = 1)
 {
     Loop r;
     immutable n = pts.length;
@@ -944,7 +949,7 @@ private Loop withBulges(Pt[] pts, double[] bulges, bool closed)
         immutable side = b > 0 ? 1 : -1;
         immutable cx = mx - uy * h * side, cy = my + ux * h * side;
         immutable a0 = atan2(p[1] - cy, p[0] - cx);
-        immutable segs = segmentsFor(radius, theta);
+        immutable segs = segmentsFor(radius * unit, theta);
         foreach (s; 1 .. segs)
         {
             immutable a = a0 + theta * s / segs;
@@ -957,7 +962,7 @@ private Loop withBulges(Pt[] pts, double[] bulges, bool closed)
 }
 
 /// A B-spline (rational with weights) sampled along its knots.
-private Loop bspline(int p, double[] knots, Pt[] ctrl, double[] weights)
+private Loop bspline(int p, double[] knots, Pt[] ctrl, double[] weights, double unit = 1)
 {
     Pt at(double t)
     {
@@ -987,7 +992,7 @@ private Loop bspline(int p, double[] knots, Pt[] ctrl, double[] weights)
     double len = 0;
     foreach (k; 1 .. ctrl.length)
         len += dist(ctrl[k - 1], ctrl[k]);
-    immutable n = max(8, cast(size_t) ceil(len / 0.5));
+    immutable n = max(8, cast(size_t) ceil(len * unit / 0.5));
     Loop r;
     foreach (k; 0 .. n + 1)
         r ~= at(t0 + (t1 - t0) * k / n);
