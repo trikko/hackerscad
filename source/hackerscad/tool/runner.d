@@ -1202,7 +1202,7 @@ Run evaluateModel(RunOptions o)
         run.interp = new Interp(new OcctKernel);
     scope (exit)
         if (o.cache !is null)
-            o.cache.endRun();
+            o.cache.endRun(run.ok);
     run.interp.overrides = o.overrides;
     run.drawingName = o.drawing;
     run.tolerance = o.tolerance;

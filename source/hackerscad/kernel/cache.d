@@ -33,9 +33,17 @@ final class CachingKernel : BrepKernel
         hits = misses = 0;
     }
 
-    /// Drops what the last `keep` runs did not use.
-    void endRun(uint keep = 2)
+    /// Drops what the last `keep` runs did not use. A run that did not complete (a syntax error while
+    /// typing, an error halfway, a cancel) used little or nothing: it neither drops nor counts, or two
+    /// typos in a row would empty the cache.
+    void endRun(bool completed = true, uint keep = 2)
     {
+        if (!completed)
+        {
+            // what it used counts as used by the next run
+            run--;
+            return;
+        }
         ulong[] stale;
         foreach (k, e; entries)
             if (e.lastRun + keep <= run)
@@ -569,6 +577,18 @@ unittest
     // failures are remembered
     assertThrown!KernelException(k.fillet(a, [0], 100));
     assertThrown!KernelException(k.fillet(a, [0], 100));
+
+    // runs that stop at an error drop nothing, however many
+    auto kept = k.size;
+    foreach (_; 0 .. 3)
+    {
+        k.beginRun();
+        k.endRun(false);
+    }
+    assert(k.size == kept);
+    k.beginRun();
+    assert(k.translate(k.box(10, 10, 10), Vec3(1, 0, 0)) is a && k.misses == 0);
+    k.endRun();
 
     // entries unused for two runs are dropped
     auto before = k.size;

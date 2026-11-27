@@ -1495,6 +1495,7 @@ final class MainWindow
         evaluator = new Evaluator;
         evaluator.onResult = &showOutcome;
         evaluator.onProgress = (string what) { stage = what; };
+        evaluator.onFailure = (string why) { note(why); info(why); };
 
         // started on a file that is not a model: an empty model next to it, and why
         string refused, why;

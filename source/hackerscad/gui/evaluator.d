@@ -124,6 +124,7 @@ final class Evaluator
     void delegate(Outcome) onResult;
     /// What the running evaluation is doing ("part 3 of 12: gear"), on the GTK thread.
     void delegate(string) onProgress;
+    void delegate(string) onFailure;   /// a job failed unexpectedly: why
 
     private Request pending;
     private bool hasPending;
@@ -313,7 +314,18 @@ final class Evaluator
             auto t = new Thread({
                 if (e.kernel is null)
                     e.kernel = new CachingKernel(new OcctKernel);
-                auto deliver = job(e);
+                // a job that fails outside its own checks still ends: else the window would wait for it for ever
+                void delegate() deliver;
+                try
+                    deliver = job(e);
+                catch (Throwable t)
+                {
+                    immutable why = t.msg;
+                    deliver = () {
+                        if (onFailure !is null)
+                            onFailure("hackerscad failed at a task on the model (a bug: please report it): " ~ why);
+                    };
+                }
                 idleAdd(PRIORITY_DEFAULT, () {
                     if (run == mine)
                     {
@@ -343,7 +355,18 @@ final class Evaluator
         auto t = new Thread({
             if (e.kernel is null)
                 e.kernel = new CachingKernel(new OcctKernel);
-            auto o = evaluate(req, &s.set, e.kernel, e.prepared, &progress);
+            // an error the evaluation does not expect (a bug of hackerscad) is shown as one, and the window
+            // goes on: else it would wait for this run for ever
+            Outcome o;
+            try
+                o = evaluate(req, &s.set, e.kernel, e.prepared, &progress);
+            catch (Throwable t)
+            {
+                o = Outcome.init;
+                o.generation = req.generation;
+                o.diagnostics = [Diagnostic(Severity.error, Code.kernel, "hackerscad failed while evaluating "
+                    ~ "this (a bug: please report it): " ~ t.msg, Span(req.path))];
+            }
             idleAdd(PRIORITY_DEFAULT, () {
                 // left behind (it did not stop in time): another run took its place
                 if (run == mine)
@@ -384,7 +407,7 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     auto sw = StopWatch(AutoStart.yes);
     kernel.beginRun();
     scope (exit)
-        kernel.endRun();
+        kernel.endRun(o.ok);
     auto it = new Interp(kernel);
     it.root = dirName(absolutePath(req.path));
     it.overrides = req.overrides;
