@@ -683,6 +683,7 @@ final class MainWindow
         auto header = new HeaderBar;
         title = new WindowTitle(baseName(path), dirName(path));
         header.setTitleWidget(title);
+        window.setTitle(baseName(path) ~ " - hackerscad");
         // Windows: the header bar's empty part is the caption for Windows, which then moves the window itself,
         // offering Snap Assist and the snap layouts (see gui/winsnap.d)
         // Windows: not "decorated" for GTK, so that it leaves no margin round the window for its shadow and
@@ -2234,6 +2235,8 @@ private:
     {
         title.setTitle((modified ? "• " : "") ~ baseName(path));
         title.setSubtitle(dirName(path));
+        // the window's own title: what the task bar, Alt+Tab and the window list show
+        window.setTitle((modified ? "• " : "") ~ baseName(path) ~ " - hackerscad");
     }
 
     // ---- rebuilding as one types, or when asked
