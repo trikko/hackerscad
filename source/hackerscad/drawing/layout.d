@@ -231,57 +231,63 @@ void layout(ref Drawing d, double ax, double ay, double aw, double ah)
         return;
     }
     double wFront = front.maxX - front.minX, hFront = front.maxY - front.minY;
-    double side = 0, below = 0, iso = 0, isoH = 0, sections = 0;
+    // first angle: the top view goes below the front, the view from the right on its left; third angle
+    // the other way round. Each side's room is measured on its own: the views must fit on the sheet
+    // whichever side they are on
+    immutable first = d.projection != "third";
+    double above = 0, below = 0, left = 0, right = 0, iso = 0, isoH = 0, sections = 0;
     foreach (ref v; d.views)
     {
         if (!v.autoPlaced || &v is front)
             continue;
         if (v.name == "top" || v.name == "bottom")
-            below = max(below, v.maxY - v.minY);
+        {
+            if ((v.name == "top") == first)
+                below = max(below, v.maxY - v.minY);
+            else
+                above = max(above, v.maxY - v.minY);
+        }
         else if (v.name == "iso")
         {
             iso = max(iso, v.maxX - v.minX);
             isoH = max(isoH, v.maxY - v.minY);
         }
         else if (v.isSection)
-            sections += v.maxY - v.minY;           // stacked under the top view
+            sections += v.maxY - v.minY;           // stacked under the front column
+        else if ((v.name == "right" && first) || (v.name == "left" && !first))
+            left = max(left, v.maxX - v.minX);
         else
-            side = max(side, v.maxX - v.minX);
+            right = max(right, v.maxX - v.minX);
     }
     enum gap = 22.0;   // paper mm between views (room for dimensions)
+    // the room the views around the front take at scale s, across and up
+    double across(double s) => (left + wFront + right) * s + gap * (2 + (left > 0) + (right > 0));
+    double up(double s) => (above + hFront + below + sections) * s + gap * (1 + (above > 0) + (below > 0))
+        + gap * (sections > 0 ? 1 : 0) + (sections > 0 ? 8 : 0);
     double scale = d.scale;
     if (scale <= 0)
     {
         scale = standardScales[$ - 1];
         foreach (s; standardScales)
-        {
-            // the iso view goes in the free top-right corner and shrinks to fit there
-            immutable w = (wFront + side) * s + gap * (2 + (side > 0));
-            immutable h = (hFront + below + sections) * s + gap * (1 + (below > 0)) + gap * (sections > 0 ? 1 : 0)
-                + (sections > 0 ? 8 : 0);
-            if (w <= aw && h <= ah)
+            if (across(s) <= aw && up(s) <= ah)
             {
                 scale = s;
                 break;
             }
-        }
         d.scale = scale;
     }
     // room left for the iso view: right of the front column, above the title block
-    immutable usedW = (wFront + side) * scale + gap * (2 + (side > 0));
+    immutable usedW = across(scale);
     immutable isoScale = iso > 0 ? min(scale * 0.8, max(0.0, aw - usedW - 5) / iso, ah * 0.5 / max(isoH, 1e-9)) : scale;
     foreach (ref v; d.views)
         if (v.autoPlaced)
             v.scale = v.name == "iso" ? isoScale : scale;
 
-    // first angle: the top view goes below the front, the view from the
-    // right on the left; third angle the other way round
-    immutable first = d.projection != "third";
-    immutable col = ax + gap + (first ? side * scale + gap : 0) + wFront * scale / 2;
-    immutable row = ay + ah - gap / 2 - hFront * scale / 2;
+    immutable col = ax + gap + (left > 0 ? left * scale + gap : 0) + wFront * scale / 2;
+    immutable row = ay + ah - gap / 2 - (above > 0 ? above * scale + gap : 0) - hFront * scale / 2;
     front.x = col;
     front.y = row;
-    double sectionTop = row - hFront * scale / 2 - gap - (below > 0 && first ? below * scale + gap : 0);
+    double sectionTop = row - hFront * scale / 2 - gap - (below > 0 ? below * scale + gap : 0);
     foreach (ref v; d.views)
     {
         if (!v.autoPlaced || &v is front)
@@ -661,4 +667,29 @@ unittest
     d2.scale = 1;
     auto sh2 = render(d2, k);
     assert(sh2.lines.count!(l => l.pen == Pen.thin) > 20);
+}
+
+unittest
+{
+    import hackerscad.kernel.occt.backend : OcctKernel;
+    import std.algorithm : all;
+
+    // every view on the sheet, inside its border: third angle puts the top view above the front and the
+    // left one on its left, first angle the bottom view above
+    auto k = new OcctKernel;
+    auto part = k.box(60, 30, 20);
+    foreach (projection, names; ["third": ["front", "top", "left", "right", "iso"], "first": ["front", "bottom",
+        "top", "right", "left"]])
+    {
+        Drawing d;
+        d.projection = projection;
+        foreach (name; names)
+            d.views ~= View(part, name, directionOf(name), 1, 0, 0, true);
+        auto sh = render(d, k);
+        assert(sh.lines.all!(l => l.x1 >= 0 && l.x2 >= 0 && l.y1 >= 0 && l.y2 >= 0 && l.x1 <= sh.width
+            && l.x2 <= sh.width && l.y1 <= sh.height && l.y2 <= sh.height), projection);
+        foreach (v; d.views)
+            assert(v.x - v.width / 2 >= 0 && v.x + v.width / 2 <= sh.width && v.y - v.height / 2 >= 0
+                && v.y + v.height / 2 <= sh.height, projection ~ " " ~ v.name);
+    }
 }

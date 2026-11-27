@@ -102,8 +102,12 @@ private struct SvgParser
                 .canFind(t.name.toLower);
             if (t.closing)
             {
-                if (hidden && skipping > 0)
-                    skipping--;
+                // inside <defs> and the like nothing was pushed: a </g> there closes nothing of ours
+                if (skipping > 0)
+                {
+                    if (hidden)
+                        skipping--;
+                }
                 else if (stack.length > 1 && (t.name == "g" || t.name == "svg" || t.name == "a"))
                     stack = stack[0 .. $ - 1];
                 continue;
@@ -563,12 +567,18 @@ private Loop[] pathLoops(string d)
         }
     }
 
+    size_t stuck = size_t.max;   // where the last command started
     while (i < d.length)
     {
         while (i < d.length && (isWhite(d[i]) || d[i] == ','))
             i++;
         if (i >= d.length)
             break;
+        // something the path cannot read (a number after Z, a stray character): it ends there, as browsers
+        // draw it, rather than reading the same place for ever
+        if (stuck == i)
+            break;
+        stuck = i;
         char cmd;
         if (isAlpha(d[i]))
             cmd = d[i++];
@@ -1029,6 +1039,26 @@ private Loop[] joinPieces(Loop[] pieces)
             loops ~= chain[0 .. $ - 1];
     }
     return loops;
+}
+
+unittest
+{
+    // a </g> inside <defs> or <clipPath> leaves the document's scale and its y turned up
+    auto loops = readSvg(`<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="50mm" viewBox="0 0 200 100">
+        <defs><clipPath id="c"><g><rect width="1" height="1"/></g></clipPath></defs>
+        <rect x="0" y="0" width="20" height="10"/></svg>`);
+    assert(loops.length == 1);
+    double w = 0, top = 0;
+    foreach (p; loops[0])
+    {
+        w = max(w, p[0]);
+        top = max(top, p[1]);
+    }
+    assert(abs(w - 10) < 1e-9 && abs(top - 50) < 1e-9, format("%s %s", w, top));
+    // a path that cannot be read further ends there, rather than reading the same place for ever
+    assert(readSvg(`<svg width="10mm" height="10mm" viewBox="0 0 10 10"><path d="M0 0 L10 0 L10 10 Z 5 5"/></svg>`)
+        .length == 1);
+    readSvg(`<svg width="10mm" height="10mm" viewBox="0 0 10 10"><path d="M0 0 L10 0 L10 10 Z M0 0 L5 0 # 1"/></svg>`);
 }
 
 unittest

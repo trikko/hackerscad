@@ -3,7 +3,7 @@
 module hackerscad.io.meshread;
 
 import std.algorithm : startsWith, endsWith, max;
-import std.array : split;
+import std.array : split, replace;
 import std.bitmanip : littleEndianToNative;
 import std.conv : to, ConvException;
 import std.string : strip, lineSplitter, indexOf;
@@ -77,7 +77,9 @@ Mesh readObj(const(char)[] text)
     Mesh m;
     foreach (line; text.lineSplitter)
     {
-        auto l = line.strip;
+        // a comment ends the line; fields are apart by spaces or tabs
+        auto hash = line.indexOf('#');
+        auto l = (hash >= 0 ? line[0 .. hash] : line).strip.replace("\t", " ");
         try
         {
             if (l.startsWith("v "))
@@ -536,7 +538,16 @@ private Mesh gltfMesh(const(char)[] text, const(ubyte)[] bin, const(ubyte)[] del
         auto j = accessors[a];
         if (j.has("sparse"))
             throw new MeshFormatException("sparse glTF accessors are not read");
-        immutable n = cast(size_t) num(j, "count", 0);
+        // sizes and offsets: whole numbers, not below 0 (a negative one, cast, would reach anywhere in memory)
+        size_t whole(JValue o, string key)
+        {
+            immutable x = num(o, key, 0);
+            if (!(x >= 0 && x <= uint.max && x == cast(size_t) x))
+                throw new MeshFormatException("glTF " ~ key ~ " must be a whole number, not below 0");
+            return cast(size_t) x;
+        }
+
+        immutable n = whole(j, "count");
         immutable type = j.has("type") && j["type"].isString ? j["type"].get!string : "";
         switch (type)
         {
@@ -559,9 +570,9 @@ private Mesh gltfMesh(const(char)[] text, const(ubyte)[] bin, const(ubyte)[] del
         }
         auto v = views[index(j, "bufferView", count(views), "buffer view")];
         auto data = buffer(index(v, "buffer", count(buffersJ), "buffer"));
-        immutable start = cast(size_t)(num(v, "byteOffset", 0) + num(j, "byteOffset", 0));
-        immutable stride = num(v, "byteStride", 0) > 0 ? cast(size_t) num(v, "byteStride", 0) : size * width;
-        if (n && start + (n - 1) * stride + size * width > data.length)
+        immutable start = whole(v, "byteOffset") + whole(j, "byteOffset");
+        immutable stride = whole(v, "byteStride") > 0 ? whole(v, "byteStride") : size * width;
+        if (n && (start > data.length || (n - 1) * stride + size * width > data.length - start))
             throw new MeshFormatException("glTF accessor reaches past its buffer");
         foreach (e; 0 .. n)
             foreach (c; 0 .. width)
@@ -942,6 +953,9 @@ unittest
 
     auto obj = readObj("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n");
     assert(obj.triangleCount == 2);
+    // tabs between the fields, and comments at the end of a line
+    obj = readObj("# a square\nv\t0\t0\t0\nv 1 0 0\nv 1 1 0 # corner\nv 0 1 0\nf 1 2 3 4 # one face\n");
+    assert(obj.vertexCount == 4 && obj.triangleCount == 2);
 
     // a 3MF written by hackerscad comes back, scaled by the unit and the item transform
     import hackerscad.io.threemf : to3mf, Part;
@@ -1084,4 +1098,19 @@ unittest
     assertThrown!MeshFormatException(readObj("v 0 0\nf 1 1 1\n"));
     assertThrown!MeshFormatException(readObj("v 0 0 0\nv 1 0 0\nf 1 2\n"));
     assertThrown!MeshFormatException(readObj("v 0 0 0\nf\n"));
+}
+
+unittest
+{
+    import std.exception : assertThrown;
+    import std.format : format;
+
+    // a negative count or offset is refused, not read anywhere in memory
+    enum gltf = `{"asset": {"version": "2.0"}, "buffers": [{"byteLength": 36, "uri": "data:application/octet-stream;base64,`
+        ~ `AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA"}], "bufferViews": [{"buffer": 0, "byteLength": 36}], `
+        ~ `"accessors": [{"bufferView": 0, "componentType": 5126, "count": %s, "type": "VEC3"%s}], "meshes": `
+        ~ `[{"primitives": [{"attributes": {"POSITION": 0}}]}], "nodes": [{"mesh": 0}], "scenes": [{"nodes": [0]}]}`;
+    assert(readGltf(format(gltf, 3, "")).vertexCount == 3);
+    assertThrown!MeshFormatException(readGltf(format(gltf, -1, "")));
+    assertThrown!MeshFormatException(readGltf(format(gltf, 3, `, "byteOffset": -8`)));
 }
