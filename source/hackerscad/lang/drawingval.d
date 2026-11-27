@@ -35,6 +35,9 @@ void installDrawing(Interp it, void delegate(string, BuiltinImpl) def)
             throw new HcadError(Code.type, "projection must be \"first\" (ISO, Europe) or \"third\" (America)",
                 x.spanOf("projection"));
         d.d.scale = x.has("scale") ? x.num("scale") : 0;
+        if (!(d.d.scale >= 0 && d.d.scale < double.infinity))
+            throw new HcadError(Code.type, "a drawing's scale is above 0 (2 is 2:1, 0.5 is 1:2), or left out to choose it",
+                x.spanOf("scale"));
         d.d.file = baseName(a.span.file);
         return Value.make(Kind.object_, d);
     });
@@ -227,6 +230,8 @@ private:
             v.x = p.x;
             v.y = p.y;
             v.scale = x.has("scale") ? x.num("scale") : (d.scale > 0 ? d.scale : 1);
+            if (!(v.scale > 0 && v.scale < double.infinity))
+                throw new HcadError(Code.type, "a view's scale is above 0 (2 is 2:1, 0.5 is 1:2)", x.spanOf("scale"));
         }
     }
 

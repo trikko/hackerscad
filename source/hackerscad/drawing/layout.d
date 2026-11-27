@@ -117,6 +117,9 @@ immutable double[] standardScales = [10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.0
 
 string scaleText(double s)
 {
+    // no view, nothing to scale: no scale to give
+    if (!(s > 0 && s < double.infinity))
+        return "—";
     if (s >= 1)
         return format("%g:1", s);
     return format("1:%g", 1 / s);

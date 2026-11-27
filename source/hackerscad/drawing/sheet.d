@@ -67,9 +67,12 @@ struct Sheet
         line(x, y + h, x, y, pen);
     }
 
+    /// One line: a line break (in a title or a material, say) becomes a space. In a DXF a bare one would
+    /// end the group's value and break the file; notes are split into lines before they come here.
     void text(double x, double y, string s, double size = 3.5, Anchor anchor = Anchor.start, double angle = 0)
     {
-        texts ~= Text(x, y, size, s, anchor, angle);
+        import std.array : replace;
+        texts ~= Text(x, y, size, s.replace("\r\n", " ").replace("\n", " ").replace("\r", " "), anchor, angle);
     }
 
     /// Arrow head with its tip at (x, y) pointing along (dx, dy).
@@ -181,8 +184,10 @@ ubyte[] toPdf(const Sheet s)
     foreach (t; s.texts)
     {
         immutable size = t.size * 1.4 * k;
+        import std.range : walkLength;
         auto str = latin1(t.text);
-        immutable width = str.length * size * 0.52;   // Helvetica, roughly
+        // by the letters, not the bytes written (a bracket is written with a backslash before it)
+        immutable width = t.text.walkLength * size * 0.52;   // Helvetica, roughly
         immutable shift = t.anchor == Anchor.middle ? width / 2 : t.anchor == Anchor.end ? width : 0;
         immutable ca = cos(t.angle * PI / 180), sa = sin(t.angle * PI / 180);
         c ~= format("BT /F1 %s Tf %s %s %s %s %s %s Tm (%s) Tj ET\n", n(size), n(ca), n(sa), n(-sa), n(ca),
@@ -218,9 +223,12 @@ ubyte[] toPdf(const Sheet s)
     return cast(ubyte[]) pdf[].dup;
 }
 
-/// PDF string literal in WinAnsi (Latin-1 for the characters we use).
+/// PDF string literal in WinAnsi: Latin-1, and the characters WinAnsi puts at 0x80–0x9F (€, dashes,
+/// quotes, the bullet…); others become '?'.
 private string latin1(string s)
 {
+    static immutable dchar[32] winAnsi = ['€', '?', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '?',
+        'Ž', '?', '?', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '?', 'ž', 'Ÿ'];
     string r;
     foreach (dchar ch; s)
     {
@@ -228,10 +236,16 @@ private string latin1(string s)
             ch = 'Ø';
         if (ch == '(' || ch == ')' || ch == '\\')
             r ~= '\\';
-        if (ch < 256)
+        if (ch < 0x80 || (ch >= 0xA0 && ch < 256))
             r ~= cast(char) ch;   // the byte itself: PDF strings are bytes
         else
-            r ~= '?';
+        {
+            char b = '?';
+            foreach (k, w; winAnsi)
+                if (w == ch && w != '?')
+                    b = cast(char)(0x80 + k);
+            r ~= b;
+        }
     }
     return r;
 }
@@ -357,4 +371,11 @@ unittest
     assert(pdf[0 .. 8] == "%PDF-1.4" && pdf.canFind("/Helvetica") && pdf.canFind("%%EOF"));
     auto dxf = toDxf(s);
     assert(dxf.canFind("LINE\n8\nHIDDEN") && dxf.canFind("%%c6") && dxf.canFind("EOF"));
+    // a line break in a text (a title, a material) stays on its line: a bare one would break the DXF
+    Sheet t;
+    t.text(10, 10, "zero\nsecond (1) — 50 €");
+    auto d2 = toDxf(t);
+    assert(d2.canFind("\nzero second (1) — 50 €\n") && !d2.canFind("\nsecond"), d2);
+    // in the PDF, the dash and the euro are WinAnsi's, the brackets escaped
+    assert((cast(string) toPdf(t)).canFind("(zero second \\(1\\) \x97 50 \x80)"));
 }
