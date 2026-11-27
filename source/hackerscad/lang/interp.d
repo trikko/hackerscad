@@ -1622,7 +1622,16 @@ final class Interp
         if (auto c = as!Call(e))
             return call(c, env);
         if (auto m = as!Member(e))
+        {
+            // a.length only looks at the variable (see Index)
+            if (m.name == "length" && as!Ident(m.object))
+            {
+                auto obj = peeked(m.object, env);
+                if (obj.kind == Kind.array)
+                    return Value.integer(obj.arr.length);
+            }
             return member(m, env, false);
+        }
         if (auto u = as!Unary(e))
         {
             if (u.op == Tok.amp)
@@ -1717,7 +1726,8 @@ final class Interp
         }
         if (auto ix = as!Index(e))
         {
-            auto obj = eval(ix.object, env);
+            // a[i] of a variable only looks at it: an array it alone holds stays its own (Cell.owned)
+            auto obj = peeked(ix.object, env);
             auto idxEnv = dollarEnv(obj, env);
             if (ix.indices.length != 1)
                 throw new HcadError(Code.index, "only one index is supported", ix.span);
@@ -1877,6 +1887,25 @@ final class Interp
     }
 
     /// Assignment with value semantics: `a.b[2] = x` rebuilds a.b and a.
+    /// The value of `e`; a variable's only looked at, not read out (VarMap.peek), so that an array it
+    /// alone holds stays its own.
+    private Value peeked(Expr e, Env env)
+    {
+        if (auto id = as!Ident(e))
+        {
+            immutable sym = symOf(id);
+            for (auto s = env; s !is null; s = s.parent)
+            {
+                if (auto v = s.vars.peek(sym))
+                    if (v.kind == Kind.array || v.kind == Kind.aa)
+                        return *v;
+                if (s.vars.peek(sym) !is null || s.pending.find(sym) !is null)
+                    break;
+            }
+        }
+        return eval(e, env);
+    }
+
     /// `target` with its indices worked out, for a target both read and written (`a[k++] += x`): each
     /// index is then evaluated once, as in D.
     private Expr pinned(Expr target, Env env)
@@ -1908,7 +1937,38 @@ final class Interp
         return target;
     }
 
-    private void assignTo(Expr target, Value v, Env env)
+    /// `target[i] = v` on a copy of what `target` holds (`obj`, read here when not given), the copy put back:
+    /// a variable then holds it alone, and the next writes go in place.
+    private void assignIndexed(Index ix, Value i, Value v, Env env, Value obj = Value.init)
+    {
+        if (obj.kind == Kind.void_)
+            obj = eval(ix.object, env);
+        if (obj.kind == Kind.array)
+        {
+            auto k = toIndex(i, ix.span);
+            if (k >= obj.arr.length)
+                throw new HcadError(Code.index, format("index %d out of bounds for length %d", k, obj.arr.length), ix.span);
+            auto copy = obj.arr.dup;
+            copy[k] = v;
+            assignTo(ix.object, Value.of(copy), env, true);
+            return;
+        }
+        if (obj.kind == Kind.aa)
+        {
+            auto aa = new AAVal;
+            aa.vals = obj.aa.vals.dup;
+            aa.keys = obj.aa.keys.dup;
+            auto key = aaKey(i, ix.span);
+            aa.vals[key] = v;
+            aa.keys[key] = i;
+            assignTo(ix.object, Value.make(Kind.aa, aa), env, true);
+            return;
+        }
+        throw new HcadError(Code.type, "cannot assign to an element of " ~ obj.typeName, ix.span);
+    }
+
+    /// `fresh`: `v` is a copy just made, held by nothing else (see VarMap.setOwned).
+    private void assignTo(Expr target, Value v, Env env, bool fresh = false)
     {
         if (auto id = as!Ident(target))
         {
@@ -1922,34 +1982,50 @@ final class Interp
             if (auto t = e.vars.typeOf(sym))
                 v = coerce(v, t.type, env.mod, id.span, "'" ~ id.name ~ "'", t.mod);
             e.vars.set(sym, v);
+            if (fresh)
+                e.vars.setOwned(sym);
             return;
         }
         if (auto ix = as!Index(target))
         {
+            // a variable's array or table that it alone holds (a copy made by the write before): written in
+            // place. Copying it all at each write made filling one in a loop quadratic (20k writes: 19 s)
+            if (auto id = as!Ident(ix.object))
+            {
+                immutable sym = symOf(id);
+                auto holder = env.find(sym);
+                if (holder !is null && holder.vars.owned(sym) !is null && !holder.vars.isReadonly(sym))
+                {
+                    auto i = eval(ix.indices[0], dollarEnv(*holder.vars.peek(sym), env));
+                    // the index may have read the variable out (a[f(a)]): then it is shared, and copied below
+                    if (auto cur = holder.vars.owned(sym))
+                    {
+                        auto t = holder.vars.typeOf(sym);
+                        if (cur.kind == Kind.array)
+                        {
+                            auto k = toIndex(i, ix.span);
+                            if (k >= cur.arr.length)
+                                throw new HcadError(Code.index, format("index %d out of bounds for length %d", k,
+                                    cur.arr.length), ix.span);
+                            // a declared type: the element checked as the whole array would be
+                            cur.arr[k] = t !is null && t.type.isArray
+                                ? coerce(v, t.type.elem, env.mod, id.span, "'" ~ id.name ~ "'", t.mod) : v;
+                            return;
+                        }
+                        // a table's declared type checks only that it is a table (coerce), as a copy would
+                        if (cur.kind == Kind.aa)
+                        {
+                            auto key = aaKey(i, ix.span);
+                            cur.aa.vals[key] = v;
+                            cur.aa.keys[key] = i;
+                            return;
+                        }
+                    }
+                    return assignIndexed(ix, i, v, env);
+                }
+            }
             auto obj = eval(ix.object, env);
-            auto i = eval(ix.indices[0], dollarEnv(obj, env));
-            if (obj.kind == Kind.array)
-            {
-                auto k = toIndex(i, ix.span);
-                if (k >= obj.arr.length)
-                    throw new HcadError(Code.index, format("index %d out of bounds for length %d", k, obj.arr.length), ix.span);
-                auto copy = obj.arr.dup;
-                copy[k] = v;
-                assignTo(ix.object, Value.of(copy), env);
-                return;
-            }
-            if (obj.kind == Kind.aa)
-            {
-                auto aa = new AAVal;
-                aa.vals = obj.aa.vals.dup;
-                aa.keys = obj.aa.keys.dup;
-                auto key = aaKey(i, ix.span);
-                aa.vals[key] = v;
-                aa.keys[key] = i;
-                assignTo(ix.object, Value.make(Kind.aa, aa), env);
-                return;
-            }
-            throw new HcadError(Code.type, "cannot assign to an element of " ~ obj.typeName, ix.span);
+            return assignIndexed(ix, eval(ix.indices[0], dollarEnv(obj, env)), v, env, obj);
         }
         if (auto m = as!Member(target))
         {

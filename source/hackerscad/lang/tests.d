@@ -142,6 +142,30 @@ unittest
 
 unittest
 {
+    // arrays and tables are values: a write through one variable never shows in another, also once the
+    // writes go in place (the variable holds its own copy)
+    expectOut("int[] a = [1, 2, 3]; a[0] = 9; auto b = a; a[1] = 8; b[2] = 7; writeln(a, \" \", b);",
+        "[9, 8, 3] [9, 2, 7]");
+    expectOut("int[] f(int[] x) { x[0] = 5; return x; } int[] a = [1, 2]; a[1] = 3; auto c = f(a); a[0] = 4; "
+        ~ "writeln(a, \" \", c);", "[4, 3] [5, 3]");
+    expectOut("int[][] g = [[0, 0], [0, 0]]; g[0][0] = 1; auto row = g[0]; g[0][1] = 2; g[1] = row; g[1][0] = 3; "
+        ~ "writeln(g, \" \", row);", "[[1, 2], [3, 0]] [1, 0]");
+    expectOut("int[string] m = [\"a\": 1]; m[\"b\"] = 2; auto n = m; m[\"a\"] = 5; writeln(m[\"a\"], n[\"a\"]);",
+        "51");
+    expectOut("auto a = [1, 2, 3]; a[0] = 0; auto keep = () => a; auto k = keep(); a[1] = 0; writeln(k, a);",
+        "[0, 2, 3][0, 0, 3]");
+    expectOut("int f(int[] x) => 1; int[] a = [1, 2, 3]; a[0] = 0; a[a.length - 1] = a[0] + 1; a[f(a)] = 4; "
+        ~ "writeln(a);", "[0, 4, 1]");
+    expectErr("int[] a = [1]; a[0] = 0; a[0] = 1.5;", Code.type);
+    // filling an array by index in a loop takes a time in proportion to its length
+    import std.datetime.stopwatch : StopWatch, AutoStart;
+    auto sw = StopWatch(AutoStart.yes);
+    expectOut("int[] a; foreach (i; 0 .. 20000) a ~= 0; foreach (i; 0 .. 20000) a[i] = i; writeln(a[19999]);", "19999");
+    assert(sw.peek.total!"msecs" < 3000, format("%s", sw.peek));
+}
+
+unittest
+{
     // a target both read and written works out its index once, as in D
     expectOut("int[] a = [0, 0, 0]; int i = 0; a[i++] += 5; writeln(a, \" \", i);", "[5, 0, 0] 1");
     expectOut("int[] a = [1, 1, 1]; int i = 1; a[i++]++; writeln(a, \" \", i);", "[1, 2, 1] 2");

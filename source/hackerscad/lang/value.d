@@ -501,6 +501,9 @@ struct VarMap
         bool defined;    /// it has a value (read-only can be said of a name before it has one)
         bool readonly;
         bool typed;
+        /// its array or table is held by this binding alone (a copy an indexed write made, not read out
+        /// since): the next indexed writes go in place, instead of copying it all each time
+        bool owned;
         Typed type;
     }
 
@@ -578,11 +581,35 @@ struct VarMap
         return c;
     }
 
-    /// The value bound to `s`, or null.
+    /// The value bound to `s`, or null. Read out, it may be held elsewhere: no longer this binding's alone.
     Value* find(Sym s)
     {
         auto c = cell(s);
+        if (c is null || !c.defined)
+            return null;
+        c.owned = false;
+        return &c.value;
+    }
+
+    /// The value bound to `s`, or null, only looked at (an element read, its length): still its own.
+    Value* peek(Sym s)
+    {
+        auto c = cell(s);
         return c !is null && c.defined ? &c.value : null;
+    }
+
+    /// The array or table bound to `s` when this binding alone holds it (see Cell.owned), else null.
+    Value* owned(Sym s)
+    {
+        auto c = cell(s);
+        return c !is null && c.defined && c.owned ? &c.value : null;
+    }
+
+    /// The value bound to `s` is a copy of its own (just made): see Cell.owned.
+    void setOwned(Sym s)
+    {
+        if (auto c = cell(s))
+            c.owned = true;
     }
 
     /// Binds `s` to `v` (read-only and type unchanged).
@@ -591,6 +618,7 @@ struct VarMap
         auto c = make(s);
         c.value = v;
         c.defined = true;
+        c.owned = false;
     }
 
     bool isReadonly(Sym s)
@@ -803,7 +831,7 @@ final class Env
     Env find(Sym s)
     {
         for (auto e = this; e !is null; e = e.parent)
-            if (e.vars.find(s) !is null || e.pending.find(s) !is null)
+            if (e.vars.peek(s) !is null || e.pending.find(s) !is null)
                 return e;
         return null;
     }
