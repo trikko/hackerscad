@@ -21,6 +21,7 @@ import gtk.toggle_button : ToggleButton;
 import gio.types : ApplicationFlags;
 import gio.simple_action : SimpleAction;
 import gio.file : File;
+static import gio.menu;
 import gio.async_result : AsyncResult;
 import gobject.object : ObjectWrap;
 import glib.global : timeoutAdd;
@@ -1439,6 +1440,14 @@ final class MainWindow
         action(app, "open", ["<Primary>o"], &openFile);
         action(app, "new", ["<Primary>n"], &newFile);
         action(app, "new-window", ["<Primary><Shift>n"], &newWindow);
+        {
+            import glib.variant : Variant;
+            import glib.variant_type : VariantType;
+            auto a = new SimpleAction("open-recent", new VariantType("s"));
+            a.connectActivate((Variant v, SimpleAction self) { openRecent(v.getString()); });
+            window.addAction(a);
+        }
+        action(app, "clear-recent", [], &clearRecent);
         action(app, "save-as", ["<Primary><Shift>s"], () => saveAs());
         appQuit(app);
         appAbout(app);
@@ -1514,7 +1523,11 @@ final class MainWindow
             startText = null;
         }
         else
+        {
             buffer.setText(exists(path) ? readText(path) : newModelTemplate);
+            if (exists(path))
+                remember(path);
+        }
         markSaved();
         buffer.connectChanged(() {
             revision++;
@@ -1886,6 +1899,15 @@ private:
         files.append("New", "win.new");
         files.append("New Window", "win.new-window");
         files.append("Open…", "win.open");
+        if (recentMenu is null)
+        {
+            import gtk.recent_manager : RecentManager;
+            recentMenu = new gio.menu.Menu;
+            fillRecent();
+            // another window, or another program, used a file: the list follows
+            RecentManager.getDefault().connectChanged(() => fillRecent());
+        }
+        files.appendSubmenu("Open Recent", recentMenu);
         files.append("Save As…", "win.save-as");
         files.appendSubmenu("Export", exportModel());
         files.appendSubmenu("Examples", examplesModel());
@@ -1899,6 +1921,7 @@ private:
                 file.append("New", "win.new");
                 file.append("New Window", "win.new-window");
                 file.append("Open…", "win.open");
+                file.appendSubmenu("Open Recent", recentMenu);
                 file.append("Save", "win.save");
                 file.append("Save As…", "win.save-as");
                 auto bar = new Menu;
@@ -7131,6 +7154,7 @@ private:
             diskTime = mtimeOf(path);
             markSaved();
             note("saved " ~ path);
+            remember(path);
         }
         catch (Exception e)
         {
@@ -7556,6 +7580,105 @@ private:
         replaceCode(readText(path));
         diskTime = mtimeOf(path);
         markSaved();
+        remember(path);
+    }
+
+    // ---- the models opened lately
+
+    gio.menu.Menu recentMenu;   /// Open Recent: filled from the system's list, again when it changes
+
+    /// `file` among the documents used lately, in the list GTK keeps for the desktop (recently-used.xbel):
+    /// docks and launchers show it by the program's icon, and Open Recent here.
+    static void remember(string file)
+    {
+        import gtk.recent_manager : RecentManager;
+        import std.path : absolutePath;
+        try
+            RecentManager.getDefault().addItem(File.newForPath(absolutePath(file)).getUri());
+        catch (Exception)
+        {
+        }
+    }
+
+    /// The models used lately, the newest first: .hcad files of the system's list that are still there
+    /// (opened or saved here, or chosen in the file dialog).
+    static string[] recentModels(size_t most = 10)
+    {
+        import gtk.recent_manager : RecentManager;
+        import std.algorithm : sort;
+        import std.typecons : Tuple;
+        Tuple!(long, string)[] found;
+        foreach (info; RecentManager.getDefault().getItems())
+        {
+            if (!info.isLocal() || !info.getUri().endsWith(".hcad"))
+                continue;
+            immutable file = File.newForUri(info.getUri()).getPath();
+            if (file.length == 0 || !exists(file))
+                continue;
+            auto when = info.getModified();
+            found ~= Tuple!(long, string)(when is null ? 0 : when.toUnix(), file);
+        }
+        found.sort!((a, b) => a[0] > b[0]);
+        string[] r;
+        foreach (f; found)
+            if (r.length < most)
+                r ~= f[1];
+        return r;
+    }
+
+    /// Open Recent's entries: the models, each with its folder (home as ~), and Clear.
+    void fillRecent()
+    {
+        import gio.menu_item : MenuItem;
+        import glib.variant : Variant;
+        import std.path : expandTilde;
+        static import std.algorithm;
+        if (recentMenu is null)
+            return;
+        recentMenu.removeAll();
+        auto models = recentModels();
+        auto files = new gio.menu.Menu;
+        immutable home = expandTilde("~");
+        foreach (f; models)
+        {
+            auto dir = dirName(f);
+            if (std.algorithm.startsWith(dir, home))
+                dir = "~" ~ dir[home.length .. $];
+            auto item = new MenuItem(baseName(f) ~ "  —  " ~ dir, null);
+            item.setActionAndTargetValue("win.open-recent", Variant.newString(f));
+            files.appendItem(item);
+        }
+        recentMenu.appendSection(null, files);
+        auto clear = new gio.menu.Menu;
+        clear.append(models.length ? "Clear the List" : "No Models Opened Yet", models.length ? "win.clear-recent" : "win.none");
+        recentMenu.appendSection(null, clear);
+    }
+
+    /// Takes the models out of the list of recent documents (other files stay).
+    void clearRecent()
+    {
+        import gtk.recent_manager : RecentManager;
+        auto m = RecentManager.getDefault();
+        foreach (info; m.getItems())
+            if (info.getUri().endsWith(".hcad"))
+                try
+                    m.removeItem(info.getUri());
+                catch (Exception)
+                {
+                }
+        fillRecent();
+    }
+
+    /// Opens `file`, chosen in Open Recent, asking first about unsaved changes.
+    void openRecent(string file)
+    {
+        if (!exists(file))
+        {
+            info(file ~ " is no longer there");
+            fillRecent();
+            return;
+        }
+        confirmDiscard(() => load(file));
     }
 
     // ---- external control
@@ -7928,7 +8051,7 @@ private:
     static immutable string[] stateFields = ["path", "status", "window", "version", "outdated", "revision",
         "user_changed", "evaluating", "stage", "seconds", "modified", "auto_rebuild", "export_quality", "stale", "source_hash", "model_hash", "preset", "overrides", "parts",
         "params", "presets", "inspect", "sketch", "sketch_follow", "planes", "annotations", "annotate_mode", "annotated_view",
-        "cursor", "camera", "printability", "graphics", "problems", "log", "source", "steps"];
+        "cursor", "camera", "printability", "graphics", "problems", "log", "source", "steps", "recent_files"];
 
     /// The window's state, as hcad_gui_state gives it; `graphics` adds
     /// what draws the 3D view and how fast.
@@ -7959,6 +8082,7 @@ private:
             j["export_quality"] = JSOB("name", named.length ? JValue(named[0].name) : JValue(null), "mm", exportTolerance);
         }
         j["stale"] = codeStale;
+        j["recent_files"] = toJSON(recentModels());
         j["source_hash"] = format("%016x", codeHash(text()));
         {
             // what the model makes: the code's meaning (unchanged by spaces and comments) with its

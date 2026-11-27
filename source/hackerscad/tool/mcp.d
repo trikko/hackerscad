@@ -1334,7 +1334,7 @@ JValue toolList()
             ~ "window does not evaluate again when they keep every line where it was); modified is false when the code is the "
             ~ "one saved (typing and undoing back to it included); auto_rebuild whether the window builds as the "
             ~ "user types, stale that the code changed since the last build (rebuilding off: hcad_gui_set builds); "
-            ~ "export_quality the Export › Mesh quality chosen (name: draft, normal, fine, or none for a custom one; mm). "
+            ~ "export_quality the Export › Mesh quality chosen (name: draft, normal, fine, or none for a custom one; mm). recent_files the models opened or saved lately, the newest first (Open Recent in the menu; hcad_gui_open opens one). "
             ~ "only gives just the fields named (and the "
             ~ "window), e.g. [\"revision\", \"source_hash\", \"camera\"]: a quick look at what changed, "
             ~ "much shorter than the whole state. cursor is the editor's cursor (line, col); sketch the sketch shown (from_cursor, "
