@@ -756,9 +756,11 @@ public struct Canvas
 
     private void put(size_t i, Vec3 rgb, double alpha)
     {
-        rgb = Vec3(min(rgb.x, 255.0), min(rgb.y, 255.0), min(rgb.z, 255.0));
-        foreach (ch, v; [rgb.x, rgb.y, rgb.z])
-            color[i * 3 + ch] = cast(float)(alpha >= 1 ? v : color[i * 3 + ch] * (1 - alpha) + v * alpha);
+        // the three channels in a static array: a [x, y, z] literal is a new array on the collector at
+        // every subpixel, and the render threads queued on its lock
+        immutable double[3] c = [min(rgb.x, 255.0), min(rgb.y, 255.0), min(rgb.z, 255.0)];
+        foreach (ch; 0 .. 3)
+            color[i * 3 + ch] = cast(float)(alpha >= 1 ? c[ch] : color[i * 3 + ch] * (1 - alpha) + c[ch] * alpha);
     }
 
     Image downsample(uint f)
