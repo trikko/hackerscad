@@ -2223,7 +2223,8 @@ string valueLiteral(Value v)
     import hackerscad.lang.value : Dim, Kind;
 
     if (v.kind == Kind.str)
-        return `"` ~ v.s.replace(`\`, `\\`).replace(`"`, `\"`) ~ `"`;
+        return `"` ~ v.s.replace(`\`, `\\`).replace(`"`, `\"`).replace("\n", `\n`).replace("\r", `\r`)
+            .replace("\t", `\t`) ~ `"`;
     if (v.isNum && v.n.dim == Dim.length)
         return format("%.6g.mm", v.n.value);
     if (v.isNum && v.n.dim == Dim.angle)
@@ -2260,11 +2261,9 @@ ParamWrite writeParams(string source, string file, string[string] values, string
     ParamWrite r;
     bool[string] found;
 
-    // the value's tokens [a, b): a literal (`-2.5.mm`, `"x"`, `true`, `Shape.round`), or code to work out
+    // the value's tokens [a, b): a literal (`-2.5.mm`, `"x"`, `true`), or code to work out (`M3.clearance` too)
     bool computed(size_t a, size_t b)
     {
-        if (b == a + 3 && toks[a].kind == Tok.ident && toks[a + 1].kind == Tok.dot && toks[a + 2].kind == Tok.ident)
-            return false;
         foreach (i; a .. b)
         {
             immutable k = toks[i].kind;
@@ -2315,8 +2314,8 @@ ParamWrite writeParams(string source, string file, string[string] values, string
         immutable i = tokenAt(toks, at.span);
         start = offsetOf(source, toks[i].span);
         size_t last = i + 1;
-        if (i + 2 < toks.length && toks[i + 2].kind == Tok.lparen && toks[i + 2].span.line == toks[i + 1].span.line
-            && toks[i + 2].span.col == toks[i + 1].span.col + toks[i + 1].span.length)
+        // its arguments, as the parser reads them: the '(' after the name, a space between or not
+        if (at.args.length || (i + 2 < toks.length && toks[i + 2].kind == Tok.lparen))
             last = exprEnd(i + 3, [Tok.rparen]);
         end = offsetOf(source, toks[last].span) + toks[last].span.length;
     }
@@ -2489,6 +2488,17 @@ unittest
     assert(b.canFind("@preset(\"espresso\", 3.mm)\nimmutable wall"), b);
     auto c = writeParams(src, "m.hcad", ["wall": "3.mm"], "espresso", false, true).edit.apply(src);
     assert(c.canFind("max: 100.mm)\nimmutable diameter = 80.mm;"), c);
+    // a value from a library is worked out too; an attribute with a space before its '('
+    auto d = "module m;\n\n@param(\"Screw\")\nimmutable gap = M3.clearance;\n\n@param(\"W\")\n@preset (\"a\", 2.mm)\n"
+        ~ "immutable w = 1.mm;\n";
+    assert(writeParams(d, "m.hcad", ["gap": "3.4.mm"]).computed == ["gap"]);
+    auto e = writeParams(d, "m.hcad", ["w": "4.mm"], "a").edit.apply(d);
+    assert(e.canFind("@preset (\"a\", 4.mm)\nimmutable w"), e);
+    e = writeParams(d, "m.hcad", ["gap": "3.mm"], "a", false, true).edit.apply(d);
+    assert(e.canFind("@param(\"W\")\nimmutable w = 1.mm;"), e);
+    // a string with a line break stays on one line
+    import hackerscad.lang.value : Value;
+    assert(valueLiteral(Value.of("a\nb")) == `"a\nb"`);
     // a name the code has no @param for
     bool threw;
     try
