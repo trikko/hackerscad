@@ -42,6 +42,12 @@ struct LogLine
     Span span;
 }
 
+/// A value already worked out, standing for the expression it came from (Interp.pinned).
+private final class Held : Expr
+{
+    Value value;
+}
+
 struct ParamInfo
 {
     string name;
@@ -1495,13 +1501,18 @@ final class Interp
             if (lo.n.dim != hi.n.dim)
                 throw new HcadError(Code.units, format("range bounds have different units: %s and %s", lo.n.dim.name, hi.n.dim.name), f.span);
             immutable isInt = lo.n.isInt && hi.n.isInt;
-            auto count = cast(long) floor(hi.n.value - lo.n.value);
-            if (hi.n.value - lo.n.value > count)
+            // angles go a degree at a time (they are held in radians)
+            immutable step = lo.n.dim == Dim.angle ? PI / 180 : 1.0;
+            immutable span_ = (hi.n.value - lo.n.value) / step;
+            if (!(span_ < limits.arrayLength))
+                throw new HcadError(Code.limit, format("a range of more than %s steps", limits.arrayLength), f.span);
+            auto count = cast(long) floor(span_ + 1e-9);
+            if (span_ - count > 1e-9)
                 count++;
             foreach (k; 0 .. count < 0 ? 0 : count)
             {
                 immutable i = f.reverse ? count - 1 - k : k;
-                auto fl = iteration(Value.integer(i), Value.number(lo.n.value + i, lo.n.dim, isInt));
+                auto fl = iteration(Value.integer(i), Value.number(lo.n.value + i * step, lo.n.dim, isInt));
                 if (fl == Flow.break_) break;
                 if (fl == Flow.return_) return fl;
             }
@@ -1672,7 +1683,11 @@ final class Interp
                     : a.op == Tok.mulAssign ? Tok.mul : a.op == Tok.divAssign ? Tok.div
                     : a.op == Tok.modAssign ? Tok.mod : a.op == Tok.catAssign ? Tok.tilde
                     : a.op == Tok.andAssign ? Tok.amp : Tok.pipe;
-                v = applyBinary(op, eval(a.target, env), v, a.span);
+                // a[k++] += x: the index worked out once, for the read and the write
+                auto target = pinned(a.target, env);
+                v = applyBinary(op, eval(target, env), v, a.span);
+                assignTo(target, v, env);
+                return v;
             }
             assignTo(a.target, v, env);
             return v;
@@ -1744,13 +1759,19 @@ final class Interp
         }
         if (auto i = as!IncDec(e))
         {
-            auto old = eval(i.target, env);
+            // a[k++]++: the index worked out once
+            auto target = pinned(i.target, env);
+            auto old = eval(target, env);
             if (!old.isNum)
                 throw new HcadError(Code.type, "++/-- need a number", i.span);
-            auto nv = Value.number(old.n.value + (i.increment ? 1 : -1), old.n.dim, old.n.isInt);
-            assignTo(i.target, nv, env);
+            // an angle goes a degree (it is held in radians)
+            immutable step = old.n.dim == Dim.angle ? PI / 180 : 1.0;
+            auto nv = Value.number(old.n.value + (i.increment ? step : -step), old.n.dim, old.n.isInt);
+            assignTo(target, nv, env);
             return i.prefix ? nv : old;
         }
+        if (auto h = as!Held(e))
+            return h.value;
         throw new HcadError(Code.syntax, "unsupported expression", e.span);
     }
 
@@ -1856,6 +1877,37 @@ final class Interp
     }
 
     /// Assignment with value semantics: `a.b[2] = x` rebuilds a.b and a.
+    /// `target` with its indices worked out, for a target both read and written (`a[k++] += x`): each
+    /// index is then evaluated once, as in D.
+    private Expr pinned(Expr target, Env env)
+    {
+        if (auto ix = as!Index(target))
+        {
+            auto object = pinned(ix.object, env);
+            auto held = new Held;
+            held.span = ix.indices[0].span;
+            held.value = eval(ix.indices[0], dollarEnv(eval(object, env), env));
+            auto r = new Index;
+            r.span = ix.span;
+            r.object = object;
+            r.indices = [cast(Expr) held] ~ ix.indices[1 .. $];
+            return r;
+        }
+        if (auto m = as!Member(target))
+        {
+            auto object = pinned(m.object, env);
+            if (object is m.object)
+                return m;
+            auto r = new Member;
+            r.span = m.span;
+            r.object = object;
+            r.name = m.name;
+            r.nameSpan = m.nameSpan;
+            return r;
+        }
+        return target;
+    }
+
     private void assignTo(Expr target, Value v, Env env)
     {
         if (auto id = as!Ident(target))

@@ -142,6 +142,19 @@ unittest
 
 unittest
 {
+    // a target both read and written works out its index once, as in D
+    expectOut("int[] a = [0, 0, 0]; int i = 0; a[i++] += 5; writeln(a, \" \", i);", "[5, 0, 0] 1");
+    expectOut("int[] a = [1, 1, 1]; int i = 1; a[i++]++; writeln(a, \" \", i);", "[1, 2, 1] 2");
+    expectOut("int[][] a = [[0, 0], [0, 0]]; int i = 0; a[i++][i++] -= 3; writeln(a, \" \", i);", "[[0, -3], [0, 0]] 2");
+    // angles go a degree at a time
+    expectOut("int n = 0; foreach (x; 0.deg .. 90.deg) n++; writeln(n);", "90");
+    expectOut("Angle a = 10.deg; a++; writeln(a);", "11°");
+    expectOut("Angle last = 0.deg; foreach_reverse (x; 0.deg .. 3.deg) last = x; writeln(last);", "0°");
+    expectErr("foreach (x; 0 .. 1e20) {}", Code.limit);
+}
+
+unittest
+{
     // @unit(inch): bare lengths in this file are inches
     auto r = runModel("@unit(inch) module m;\n@part Solid p() { return box(1, 1, 1); }\nunittest { writeln(box(1, 2, 3).bbox.size.y); }");
     assert(isClose(partVolume(r, "p"), 25.4 ^^ 3, 1e-9));
