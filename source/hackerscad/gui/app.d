@@ -1440,6 +1440,7 @@ final class MainWindow
         action(app, "new-window", ["<Primary><Shift>n"], &newWindow);
         action(app, "save-as", ["<Primary><Shift>s"], () => saveAs());
         appQuit(app);
+        appAbout(app);
         // Ctrl+E (Cmd+E on macOS): the format used last (3MF at first); the menus name them all
         action(app, "export", ["<Primary>e"], () => exportFile(exportFormat));
         foreach (f; exportFormats)
@@ -2161,6 +2162,20 @@ private:
         });
         app.addAction(a);
         app.setAccelsForAction("app.quit", primary(["<Primary>q"]));
+    }
+
+    /// app.about, once per application: macOS's application menu has "About hackerscad" on it (where
+    /// users look for it), greyed out without this; it shows the About of the window in front.
+    static void appAbout(AdwApplication app)
+    {
+        if (app.lookupAction("about") !is null)
+            return;
+        auto a = new SimpleAction("about");
+        a.connectActivate(() {
+            if (auto w = app.getActiveWindow())
+                w.activateAction("win.about", null);
+        });
+        app.addAction(a);
     }
 
     void action(AdwApplication app, string name, string[] accels, void delegate() run)
