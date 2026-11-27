@@ -3,7 +3,7 @@
 /// window has its own evaluator, gui/evaluator).
 module hackerscad.tool.runner;
 
-import std.algorithm : map, endsWith, startsWith;
+import std.algorithm : canFind, map, endsWith, startsWith;
 import std.array : array;
 import std.datetime.stopwatch : StopWatch, AutoStart;
 import std.file : exists, readText, getcwd, write;
@@ -192,7 +192,9 @@ final class Run
         }
         if (result.parts.length == 0)
             throw new HcadError(Code.undefined, "nothing to export: the model has no @part, or each returned Solid.nothing", Span.init);
-        auto ms = partMeshes();
+        // STEP holds the solids themselves: no part is meshed for it
+        immutable solidsOnly = [".step", ".stp"].canFind(extension(file).toLower);
+        auto ms = solidsOnly ? new Mesh[result.parts.length] : partMeshes();
         immutable picture = extension(file).toLower == ".png";
         auto kept = partIndices(only, picture);
         if (kept.length == 0)

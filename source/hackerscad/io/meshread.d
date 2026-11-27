@@ -354,17 +354,31 @@ Mesh read3mf(const(ubyte)[] data)
         }
 
     Mesh result;
+    // each model part's tags read once, and where each of its objects starts: a file of many objects read
+    // the whole XML again for each (18 objects: 710 ms, 160 ms read once)
+    typeof(xmlTags(""))[string] tagsOf;
+    size_t[string][string] objectAt;
     // adds object `id` of model part `path`, placed by the row-major 4x3 matrix `tr`
     void add(string path, string id, const double[12] tr, int depth)
     {
         if (depth > 16)
             throw new MeshFormatException("3MF components nest too deeply");
-        auto tags = xmlTags(part(path));
-        size_t i;
-        while (i < tags.length && !(tags[i].name == "object" && !tags[i].closing && tags[i].attr("id") == id))
-            i++;
-        if (i == tags.length)
+        if (path !in tagsOf)
+        {
+            auto all = xmlTags(part(path));
+            size_t[string] at;
+            foreach (k, t; all)
+                if (t.name == "object" && !t.closing)
+                    if (t.attr("id") !in at)
+                        at[t.attr("id")] = k;
+            tagsOf[path] = all;
+            objectAt[path] = at;
+        }
+        auto tags = tagsOf[path];
+        auto found = id in objectAt[path];
+        if (found is null)
             throw new MeshFormatException("3MF object " ~ id ~ " not found");
+        size_t i = *found;
         immutable base = cast(uint)(result.verts.length / 3);
         for (i++; i < tags.length && !(tags[i].name == "object" && tags[i].closing); i++)
         {

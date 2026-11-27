@@ -153,10 +153,14 @@ immutable int[3][12] gradients = [[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0]
 /// 0…255 shuffled by the seed (a small fast generator: the same table for a seed everywhere).
 ubyte[256] permutation(long seed)
 {
-    static long lastSeed = long.min;
-    static ubyte[256] last;
-    if (seed == lastSeed)
-        return last;
+    // the last few tables: noise of several octaves asks for one seed each, in turn (one kept missed every time)
+    enum slots = 8;
+    static long[slots] seeds = long.min;
+    static ubyte[256][slots] tables;
+    static size_t nextSlot;
+    foreach (k; 0 .. slots)
+        if (seeds[k] == seed)
+            return tables[k];
     ubyte[256] p;
     foreach (i; 0 .. 256)
         p[i] = cast(ubyte) i;
@@ -176,8 +180,9 @@ ubyte[256] permutation(long seed)
         p[i] = p[j];
         p[j] = tmp;
     }
-    lastSeed = seed;
-    last = p;
+    seeds[nextSlot] = seed;
+    tables[nextSlot] = p;
+    nextSlot = (nextSlot + 1) % slots;
     return p;
 }
 

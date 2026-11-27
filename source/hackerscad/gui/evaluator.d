@@ -408,6 +408,7 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     kernel.beginRun();
     scope (exit)
         kernel.endRun(o.ok);
+    auto previous = prepared;   // the meshes of the last run: parts, and the solids under its sketches
     auto it = new Interp(kernel);
     it.root = dirName(absolutePath(req.path));
     it.overrides = req.overrides;
@@ -488,6 +489,9 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     }
     catch (KernelException e)
         o.diagnostics = [Diagnostic(Severity.error, Code.kernel, e.msg, Span(req.path))];
+    // cancelled: nobody will see the rest, and the next run waits for this one
+    if (o.cancelled)
+        return o;
     o.functions = it.functionsOf(absolutePath(req.path));
     // sketches are shown even when the evaluation failed (conflicting
     // constraints, an error after them): then marked partial
@@ -498,9 +502,13 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
     foreach (p; it.planes)
         if (p.span.file == absolutePath(req.path))
             o.planes ~= p;
-    // the solids sketches on faces are drawn on, to show under them (once each)
+    // the solids sketches on faces are drawn on, to show under them (once each); one meshed before, as a
+    // part or under a sketch, is taken again
     {
         PartMesh[Brep] made;
+        scope (exit)
+            foreach (b, m; made)
+                prepared[b] = m;
         o.sketchBodies = new PartMesh[o.sketches.length];
         foreach (i, sk; o.sketches)
             if (sk.body !is null)
@@ -508,6 +516,11 @@ Outcome evaluate(Request req, shared(bool)* cancel, CachingKernel kernel, ref Pa
                 if (auto had = sk.body in made)
                 {
                     o.sketchBodies[i] = *had;
+                    continue;
+                }
+                if (auto had = sk.body in previous)
+                {
+                    o.sketchBodies[i] = made[sk.body] = *had;
                     continue;
                 }
                 try

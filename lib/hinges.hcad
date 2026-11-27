@@ -42,9 +42,9 @@ Hinge hinge(Length length = 40.mm, Length width = 15.mm, Length thickness = 3.mm
     }
     // the pin belongs to the fixed leaf and runs through the moving knuckles with clearance
     a += cylinder(d: pin, h: length - 2 * clearance).rotate(y: 90).move(x: -length / 2 + clearance, z: thickness);
-    foreach (i; 0 .. knuckles)
-        if (i % 2 == 1)
-            b -= cylinder(d: pin + 2 * clearance, h: length).rotate(y: 90).move(x: -length / 2, z: thickness);
+    // one bore through all the moving knuckles
+    if (knuckles > 1)
+        b -= cylinder(d: pin + 2 * clearance, h: length).rotate(y: 90).move(x: -length / 2, z: thickness);
     return leaves(a, b, thickness);
 }
 

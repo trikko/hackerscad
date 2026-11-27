@@ -52,10 +52,14 @@ struct Mesh
                     foreach (dy; -1 .. 2)
                         foreach (dz; -1 .. 2)
                             if (found < 0)
-                                if (auto p = [key[0] + dx, key[1] + dy, key[2] + dz].to3 in cells)
+                            {
+                                // a static array: a [..] literal is a new one on the collector at each of the 27
+                                immutable long[3] near = [key[0] + dx, key[1] + dy, key[2] + dz];
+                                if (auto p = near in cells)
                                     foreach (id; *p)
                                         if (found < 0 && (r.vertex(id) - Vec3(p3[0], p3[1], p3[2])).length <= tolerance)
                                             found = id;
+                            }
             if (found >= 0)
                 remap[i] = cast(uint) found;
             else
@@ -66,7 +70,8 @@ struct Mesh
                 remap[i] = id;
             }
         }
-        r.tris.reserve(tris.length);
+        r.tris.length = tris.length;
+        size_t used;
         // the faces keep their triangles, less the ones that collapse
         size_t face;
         immutable faced = faceStart.length >= 2;
@@ -74,13 +79,19 @@ struct Mesh
         {
             while (faced && face < faceStart.length && faceStart[face] <= t)
             {
-                r.faceStart ~= cast(uint) r.triangleCount;
+                r.faceStart ~= cast(uint)(used / 3);
                 face++;
             }
             immutable a = remap[tris[t * 3]], b = remap[tris[t * 3 + 1]], c = remap[tris[t * 3 + 2]];
             if (a != b && b != c && a != c)
-                r.tris ~= [a, b, c];
+            {
+                r.tris[used] = a;
+                r.tris[used + 1] = b;
+                r.tris[used + 2] = c;
+                used += 3;
+            }
         }
+        r.tris.length = used;
         while (faced && face < faceStart.length)
         {
             r.faceStart ~= cast(uint) r.triangleCount;
